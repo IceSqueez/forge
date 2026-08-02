@@ -32,14 +32,16 @@ pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{
-    EngineParams, Language, SettingsRepo, UnknownLanguage, chat_history_display_limit,
+    EngineParams, Language, SettingsRepo, UnknownLanguage, VOICE_GATE_DEFAULT_HOLD_MS,
+    VOICE_GATE_DEFAULT_THRESHOLD, VoiceGateSettings, chat_history_display_limit,
     chat_history_store_limit, disabled_tts_engines, engine_params, get_bool_setting,
     get_json_setting, master_volume, reserved_keys, set_bool_setting,
     set_chat_history_display_limit, set_chat_history_store_limit, set_disabled_tts_engines,
     set_engine_params, set_json_setting, set_master_volume, set_soundboard_also_headphones,
     set_soundboard_enabled, set_soundboard_master_volume, set_soundboard_output_device,
-    soundboard_also_headphones, soundboard_enabled, soundboard_master_volume,
-    soundboard_output_device, synthesis_defaults,
+    set_voice_gate_enabled, set_voice_gate_hold_ms, set_voice_gate_input_device_id,
+    set_voice_gate_threshold, soundboard_also_headphones, soundboard_enabled,
+    soundboard_master_volume, soundboard_output_device, synthesis_defaults, voice_gate_settings,
 };
 pub use soundboard::{SoundboardClipsRepo, StoredClip};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};

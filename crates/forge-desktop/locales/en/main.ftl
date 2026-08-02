@@ -1669,6 +1669,25 @@ settings_audio_test_playing = Playing…
 settings_audio_test_error = Test tone error: { $error }
 settings_audio_persist_error = Failed to save device selection: { $error }
 
+## Settings - voice gate
+
+settings_voice_gate_title = Voice gate
+settings_voice_gate_enable_label = Hold speech while you talk
+settings_voice_gate_enable_hint = Pauses the speak queue whenever your microphone picks up sound above the threshold.
+settings_voice_gate_input_devices = INPUT DEVICE
+settings_voice_gate_scanning = Scanning devices…
+settings_voice_gate_threshold_label = Threshold
+settings_voice_gate_threshold_hint = Peak input level that counts as speech. The meter shows the live level.
+settings_voice_gate_hold_label = Hold
+settings_voice_gate_hold_hint = How long the queue stays held after you stop talking, in milliseconds.
+settings_voice_gate_hold_placeholder = 800
+settings_voice_gate_hold_range = Allowed: { $min }-{ $max } ms
+settings_voice_gate_state_off = Off
+settings_voice_gate_state_inactive = Listening - no speech detected
+settings_voice_gate_state_active = Speech detected - queue held
+settings_voice_gate_state_unavailable = Microphone unavailable: { $error }
+settings_voice_gate_persist_error = Failed to save voice gate settings: { $error }
+
 ## Script editor - API docs panel
 
 script_editor_api_no_matches = No matches

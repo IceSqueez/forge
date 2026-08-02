@@ -31,6 +31,7 @@ use crate::overlay_frame_sink::ServerOverlayFrameSink;
 use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::build_speak_queue;
 use crate::speak_bridge::SpeakBridge;
+use crate::voice_gate::{VoiceGateOwner, config_from_settings};
 
 pub enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
@@ -143,6 +144,7 @@ pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFail
 
     let (speak, speak_events, pipeline_config, tts_registry) =
         build_speak_queue(&bus, &backend).await;
+    let voice_gate = build_voice_gate(settings_repo.as_ref(), speak.clone()).await;
     let speak_bridge = speak
         .clone()
         .map(|handle| Arc::new(SpeakBridge::new(Arc::new(handle))));
@@ -326,7 +328,26 @@ pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFail
         pipeline_config,
         tts_registry,
         soundboard_player,
+        voice_gate,
     })
+}
+
+async fn build_voice_gate(
+    settings: &dyn SettingsRepo,
+    speak: Option<forge_speak_queue::SpeakQueueHandle>,
+) -> Arc<VoiceGateOwner> {
+    let owner = Arc::new(VoiceGateOwner::new(
+        tokio::runtime::Handle::current(),
+        speak,
+    ));
+    match forge_storage::voice_gate_settings(settings).await {
+        Ok(settings) if settings.enabled => owner.start(config_from_settings(&settings)),
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("forge-desktop: failed to load voice gate settings; leaving it off: {e}")
+        }
+    }
+    owner
 }
 
 async fn build_server(

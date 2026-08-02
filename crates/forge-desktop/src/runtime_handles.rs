@@ -12,6 +12,7 @@ use crate::integrations::{
     BuiltinRegistry, KickInstallSeed, ObsInstallSeed, VTubeInstallSeed, YoutubeInstallSeed,
 };
 use crate::log_tail::LogTail;
+use crate::voice_gate::VoiceGateOwner;
 
 #[allow(dead_code)]
 pub struct RuntimeHandles {
@@ -52,4 +53,5 @@ pub struct RuntimeHandles {
     pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
+    pub voice_gate: Arc<VoiceGateOwner>,
 }

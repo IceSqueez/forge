@@ -199,7 +199,12 @@ const FONT_DEFAULT_ID: &str = "__forge_default_font__";
 impl SettingsView {
     pub fn new(handles: Arc<RuntimeHandles>, cx: &mut Context<Self>) -> Self {
         let audio = cx.new(|cx| {
-            SettingsAudioView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+            SettingsAudioView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                Arc::clone(&handles.voice_gate),
+                cx,
+            )
         });
         let scripting = cx.new(|cx| {
             SettingsScriptingView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
@@ -241,6 +246,10 @@ impl SettingsView {
         let diagnostics_open = section == SettingsSection::Diagnostics;
         self.diagnostics.update(cx, |view, cx| {
             view.set_active(diagnostics_open, cx);
+        });
+        let audio_open = section == SettingsSection::Audio;
+        self.audio.update(cx, |view, cx| {
+            view.set_active(audio_open, cx);
         });
         cx.notify();
     }

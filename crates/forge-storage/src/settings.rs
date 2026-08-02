@@ -34,6 +34,10 @@ pub mod reserved_keys {
     pub const LANGUAGE: &str = "app.language";
     pub const KEYBOARD_SHORTCUTS: &str = "app.keyboard_shortcuts";
     pub const AUDIO_OUTPUT_DEVICE_ID: &str = "audio.output_device_id";
+    pub const AUDIO_VOICE_GATE_ENABLED: &str = "audio.voice_gate_enabled";
+    pub const AUDIO_VOICE_GATE_INPUT_DEVICE_ID: &str = "audio.voice_gate_input_device_id";
+    pub const AUDIO_VOICE_GATE_THRESHOLD: &str = "audio.voice_gate_threshold";
+    pub const AUDIO_VOICE_GATE_HOLD_MS: &str = "audio.voice_gate_hold_ms";
     pub const CHAT_HISTORY_STORE_LIMIT: &str = "chat_history.store_limit";
     pub const CHAT_HISTORY_DISPLAY_LIMIT: &str = "chat_history.display_limit";
     pub const PICKER_FAVORITES_SUB_ACTIONS: &str = "picker.favorites.sub_actions";
@@ -361,6 +365,111 @@ pub async fn set_master_volume(repo: &dyn SettingsRepo, volume: f32) -> Result<(
     repo.set_string(
         reserved_keys::TTS_MASTER_VOLUME,
         &volume.clamp(0.0, 1.0).to_string(),
+    )
+    .await
+}
+
+pub const VOICE_GATE_DEFAULT_THRESHOLD: f32 = 0.15;
+pub const VOICE_GATE_DEFAULT_HOLD_MS: u32 = 800;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceGateSettings {
+    pub enabled: bool,
+    pub input_device_id: Option<String>,
+    /// Linear peak amplitude in 0.0..=1.0, not decibels.
+    pub threshold: f32,
+    pub hold_ms: u32,
+}
+
+impl Default for VoiceGateSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            input_device_id: None,
+            threshold: VOICE_GATE_DEFAULT_THRESHOLD,
+            hold_ms: VOICE_GATE_DEFAULT_HOLD_MS,
+        }
+    }
+}
+
+pub async fn voice_gate_settings(
+    repo: &dyn SettingsRepo,
+) -> Result<VoiceGateSettings, StorageError> {
+    let defaults = VoiceGateSettings::default();
+    let enabled = get_bool_setting(
+        repo,
+        reserved_keys::AUDIO_VOICE_GATE_ENABLED,
+        defaults.enabled,
+    )
+    .await;
+    let input_device_id = repo
+        .get_string(reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID)
+        .await?;
+    let threshold = repo
+        .get_string(reserved_keys::AUDIO_VOICE_GATE_THRESHOLD)
+        .await?
+        .as_deref()
+        .and_then(|s| s.parse::<f32>().ok())
+        .filter(|v| v.is_finite())
+        .map(|v| v.clamp(0.0, 1.0))
+        .unwrap_or(defaults.threshold);
+    let hold_ms = repo
+        .get_string(reserved_keys::AUDIO_VOICE_GATE_HOLD_MS)
+        .await?
+        .as_deref()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(defaults.hold_ms);
+    Ok(VoiceGateSettings {
+        enabled,
+        input_device_id,
+        threshold,
+        hold_ms,
+    })
+}
+
+pub async fn set_voice_gate_enabled(
+    repo: &dyn SettingsRepo,
+    enabled: bool,
+) -> Result<(), StorageError> {
+    set_bool_setting(repo, reserved_keys::AUDIO_VOICE_GATE_ENABLED, enabled).await
+}
+
+/// `None` clears the preference (not a no-op) and falls back to the OS default device.
+pub async fn set_voice_gate_input_device_id(
+    repo: &dyn SettingsRepo,
+    device_id: Option<String>,
+) -> Result<(), StorageError> {
+    match device_id {
+        Some(id) => {
+            repo.set_string(reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID, &id)
+                .await
+        }
+        None => {
+            repo.delete(reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID)
+                .await?;
+            Ok(())
+        }
+    }
+}
+
+pub async fn set_voice_gate_threshold(
+    repo: &dyn SettingsRepo,
+    threshold: f32,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::AUDIO_VOICE_GATE_THRESHOLD,
+        &threshold.clamp(0.0, 1.0).to_string(),
+    )
+    .await
+}
+
+pub async fn set_voice_gate_hold_ms(
+    repo: &dyn SettingsRepo,
+    hold_ms: u32,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::AUDIO_VOICE_GATE_HOLD_MS,
+        &hold_ms.to_string(),
     )
     .await
 }

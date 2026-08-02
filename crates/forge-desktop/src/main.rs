@@ -60,6 +60,7 @@ mod settings_diagnostics;
 mod settings_scripting;
 mod settings_shortcuts;
 mod settings_storage;
+mod settings_voice_gate;
 mod settings_websocket;
 mod shell;
 mod shortcut_overrides;
@@ -80,6 +81,7 @@ mod tts_engines;
 mod tts_filters;
 mod unavailable_builtin;
 mod voice_aliases;
+mod voice_gate;
 mod vtube_connect;
 mod vtube_connect_form;
 

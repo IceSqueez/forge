@@ -7,24 +7,28 @@ use forge_components::{
     with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo};
-use gpui::{AnyElement, ClickEvent, Context, FocusHandle, Pixels, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, ClickEvent, Context, Entity, FocusHandle, Pixels, Window, div, prelude::*, px,
+};
 
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
+use crate::settings_voice_gate::SettingsVoiceGateView;
+use crate::voice_gate::VoiceGateOwner;
 
 const PANEL_WIDTH: Pixels = px(360.0);
 
 const TRIGGER_HEIGHT: Pixels = px(34.0);
 
 #[derive(Clone)]
-struct DeviceRow {
-    id: String,
-    name: String,
-    is_default: bool,
+pub struct DeviceRow {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
 }
 
 impl DeviceRow {
-    fn from_info(info: DeviceInfo) -> Self {
+    pub fn from_info(info: DeviceInfo) -> Self {
         Self {
             id: info.id.as_str().to_string(),
             name: info.name,
@@ -48,14 +52,24 @@ pub struct SettingsAudioView {
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
     devices_gen: async_bridge::Generation,
+    voice_gate: Entity<SettingsVoiceGateView>,
 }
 
 impl SettingsAudioView {
     pub fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
+        voice_gate_owner: Arc<VoiceGateOwner>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let voice_gate = cx.new(|cx| {
+            SettingsVoiceGateView::new(
+                Arc::clone(&backend),
+                rt_handle.clone(),
+                voice_gate_owner,
+                cx,
+            )
+        });
         let mut view = Self {
             backend,
             rt_handle,
@@ -71,9 +85,15 @@ impl SettingsAudioView {
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
             devices_gen: async_bridge::Generation::default(),
+            voice_gate,
         };
         view.load_devices(false, cx);
         view
+    }
+
+    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
+        self.voice_gate
+            .update(cx, |view, cx| view.set_active(active, cx));
     }
 
     fn load_devices(&mut self, uncached: bool, cx: &mut Context<Self>) {
@@ -474,7 +494,7 @@ impl Render for SettingsAudioView {
                 content.child(self.error_text("settings_audio_persist_error", message, &palette));
         }
 
-        div()
+        let output_card = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
@@ -484,7 +504,14 @@ impl Render for SettingsAudioView {
             .border_color(palette.border_regular)
             .bg(palette.elevated)
             .child(self.screen_header(&palette, density))
-            .child(content)
+            .child(content);
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .child(output_card)
+            .child(self.voice_gate.clone())
     }
 }
 

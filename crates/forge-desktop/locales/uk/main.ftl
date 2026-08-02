@@ -1688,6 +1688,25 @@ settings_audio_test_playing = Відтворення…
 settings_audio_test_error = Помилка тестового тону: { $error }
 settings_audio_persist_error = Не вдалося зберегти вибір пристрою: { $error }
 
+## Settings - voice gate
+
+settings_voice_gate_title = Голосовий гейт
+settings_voice_gate_enable_label = Утримувати озвучення, поки ти говориш
+settings_voice_gate_enable_hint = Призупиняє чергу озвучення, щойно мікрофон вловлює звук вище порогу.
+settings_voice_gate_input_devices = ПРИСТРІЙ ВВОДУ
+settings_voice_gate_scanning = Сканування пристроїв…
+settings_voice_gate_threshold_label = Поріг
+settings_voice_gate_threshold_hint = Піковий рівень входу, який вважається мовленням. Індикатор показує поточний рівень.
+settings_voice_gate_hold_label = Утримання
+settings_voice_gate_hold_hint = Скільки черга лишається утриманою після завершення мовлення, у мілісекундах.
+settings_voice_gate_hold_placeholder = 800
+settings_voice_gate_hold_range = Дозволено: { $min }-{ $max } мс
+settings_voice_gate_state_off = Вимкнено
+settings_voice_gate_state_inactive = Слухає - мовлення не виявлено
+settings_voice_gate_state_active = Виявлено мовлення - чергу утримано
+settings_voice_gate_state_unavailable = Мікрофон недоступний: { $error }
+settings_voice_gate_persist_error = Не вдалося зберегти налаштування голосового гейта: { $error }
+
 ## Script editor - API docs panel
 
 script_editor_api_no_matches = Збігів не знайдено

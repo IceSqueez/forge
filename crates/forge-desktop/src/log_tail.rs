@@ -91,3 +91,101 @@ impl Visit for MessageVisitor {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    use super::*;
+
+    fn line(message: &str) -> LogLine {
+        LogLine {
+            at: OffsetDateTime::now_utc(),
+            level: Level::INFO,
+            target: "qa_probe",
+            message: message.to_owned(),
+        }
+    }
+
+    fn messages(tail: &LogTail) -> Vec<String> {
+        tail.snapshot().into_iter().map(|l| l.message).collect()
+    }
+
+    fn capture(emit: impl FnOnce()) -> Vec<LogLine> {
+        let tail = LogTail::new();
+        let subscriber = tracing_subscriber::registry().with(tail.layer());
+        tracing::subscriber::with_default(subscriber, emit);
+        tail.snapshot()
+    }
+
+    #[test]
+    fn the_buffer_keeps_the_newest_lines_and_drops_the_oldest_past_capacity() {
+        for (pushes, first_kept, last_kept) in [
+            (CAPACITY - 1, 0, CAPACITY - 2),
+            (CAPACITY, 0, CAPACITY - 1),
+            (CAPACITY + 1, 1, CAPACITY),
+            (CAPACITY + 2, 2, CAPACITY + 1),
+        ] {
+            let tail = LogTail::new();
+            for i in 0..pushes {
+                tail.push(line(&format!("line {i}")));
+            }
+
+            let expected: Vec<String> = (first_kept..=last_kept)
+                .map(|i| format!("line {i}"))
+                .collect();
+            assert_eq!(messages(&tail), expected, "after {pushes} pushes");
+        }
+    }
+
+    #[test]
+    fn clear_empties_the_buffer_shared_with_every_clone_and_leaves_it_capturing() {
+        let tail = LogTail::new();
+        let clone = tail.clone();
+        for i in 0..3 {
+            tail.push(line(&format!("stale {i}")));
+        }
+
+        clone.clear();
+        assert!(
+            messages(&tail).is_empty(),
+            "clearing through a clone must empty the one shared buffer",
+        );
+
+        tail.push(line("fresh"));
+        assert_eq!(messages(&clone), vec!["fresh".to_owned()]);
+    }
+
+    #[test]
+    fn a_captured_line_records_the_level_target_and_message_in_emission_order() {
+        let captured = capture(|| {
+            tracing::info!(target: "qa_probe", "first");
+            tracing::warn!(target: "qa_probe", "second");
+            tracing::error!(target: "qa_other", "third");
+        });
+
+        let seen: Vec<(Level, &str, String)> = captured
+            .into_iter()
+            .map(|l| (l.level, l.target, l.message))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                (Level::INFO, "qa_probe", "first".to_owned()),
+                (Level::WARN, "qa_probe", "second".to_owned()),
+                (Level::ERROR, "qa_other", "third".to_owned()),
+            ],
+        );
+    }
+
+    #[test]
+    fn events_without_a_message_field_are_skipped() {
+        let captured = capture(|| {
+            tracing::info!(target: "qa_probe", counter = 7);
+            tracing::info!(target: "qa_probe", counter = 8, "carries a message");
+        });
+
+        let seen: Vec<String> = captured.into_iter().map(|l| l.message).collect();
+        assert_eq!(seen, vec!["carries a message".to_owned()]);
+    }
+}

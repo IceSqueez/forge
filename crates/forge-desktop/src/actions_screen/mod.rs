@@ -1,5 +1,6 @@
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
+use crate::run_history_modal::RunHistoryModal;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
@@ -17,9 +18,7 @@ use forge_storage::{
     SoundboardClipsRepo, TriggerInstanceRepo, reserved_keys,
 };
 use forge_tts_core::TtsRegistry;
-use forge_types::{
-    Action, ActionId, ExecutionContext, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId,
-};
+use forge_types::{Action, ActionId, ExecutionOutcome, QueueId, SubActionStep, TriggerInstanceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, Pixels, Point,
     SharedString, Subscription, Window, div, prelude::*, px,
@@ -38,6 +37,8 @@ mod run_history;
 mod sub_action_modal;
 mod test_run;
 mod test_trigger;
+
+pub(crate) use editor::parse_variable_segments;
 
 const LEFT_PANEL_W: Pixels = px(290.0);
 const LEFT_PANEL_MIN: Pixels = px(220.0);
@@ -95,16 +96,6 @@ const STEP_MODAL_W: Pixels = px(560.0);
 const STEP_TILE: Pixels = px(32.0);
 const STEP_TILE_GLYPH: Pixels = px(16.0);
 const GRID_COL_GAP: Pixels = px(12.0);
-const HISTORY_MODAL_W: Pixels = px(880.0);
-const HISTORY_BODY_H: Pixels = px(560.0);
-const HISTORY_RAIL_W: Pixels = px(220.0);
-const HISTORY_RAIL_ENTRY_GAP: Pixels = px(8.0);
-const HISTORY_RAIL_ENTRY_PAD_V: Pixels = px(6.0);
-const HISTORY_RAIL_ENTRY_PAD_H: Pixels = px(8.0);
-const HISTORY_ROW_DOT: Pixels = px(7.0);
-const HISTORY_STEP_DOT: Pixels = px(5.0);
-const HISTORY_STEP_NEST_INDENT: Pixels = px(14.0);
-const HISTORY_EMPTY_GLYPH: Pixels = px(26.0);
 
 const CHIP_RADIUS: Pixels = px(6.0);
 const BRANCH_GLYPH: Pixels = px(11.0);
@@ -164,11 +155,9 @@ struct ActionForm {
     _name_sub: Subscription,
 }
 
-struct HistoryModal {
-    action_id: ActionId,
-    action_name: SharedString,
-    runs: Option<Vec<ExecutionContext>>,
-    selected: usize,
+struct HistoryModalHost {
+    view: Entity<RunHistoryModal>,
+    _sub: Subscription,
 }
 
 pub struct ScreenActionsView {
@@ -202,7 +191,7 @@ pub struct ScreenActionsView {
     menu_open: Option<ActionId>,
     renaming: Option<Renaming>,
     action_modal: Option<ActionForm>,
-    history_modal: Option<HistoryModal>,
+    history_modal: Option<HistoryModalHost>,
     test_run: Option<Entity<test_run::TestRunModal>>,
     _test_run_sub: Option<Subscription>,
     header_menu_open: Option<Point<Pixels>>,
@@ -584,10 +573,7 @@ impl Render for ScreenActionsView {
             .action_modal
             .as_ref()
             .map(|form| self.render_action_modal(form, &palette, cx));
-        let history_modal = self
-            .history_modal
-            .as_ref()
-            .map(|state| self.render_history_modal(state, &palette, cx));
+        let history_modal = self.history_modal.as_ref().map(|host| host.view.clone());
         let test_run_modal = self.test_run.clone();
         let delete_modal = self
             .pending_delete

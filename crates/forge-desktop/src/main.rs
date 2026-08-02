@@ -46,6 +46,7 @@ mod presentation;
 mod queue_health;
 mod queues;
 mod root;
+mod run_history_modal;
 mod runtime_handles;
 mod runtime_status;
 mod screen;

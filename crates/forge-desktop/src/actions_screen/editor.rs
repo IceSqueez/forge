@@ -404,7 +404,7 @@ fn build_recent_group(
     (Some(group), picks)
 }
 
-pub(super) fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
+pub(crate) fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
     let bytes = s.as_bytes();
     let mut segs: Vec<(&str, bool)> = Vec::new();
     let mut plain_start = 0;

@@ -1,6 +1,7 @@
 use super::editor::{step_glyph, sub_category_color};
 use super::*;
 use crate::async_bridge;
+use crate::config_form::dependent_options;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     BORDER_THIN, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, FONT_SM, FONT_XS,
@@ -65,10 +66,16 @@ enum SubFormField {
         options: Vec<(String, String)>,
         gate: Option<String>,
         selected: String,
+        dependency: Option<SelectDependency>,
     },
     Hint {
         label: String,
     },
+}
+
+struct SelectDependency {
+    options_prefix: String,
+    depends_on: String,
 }
 
 pub(super) struct SubFormLaunch {
@@ -216,6 +223,27 @@ impl EditSubActionForm {
         }
     }
 
+    fn resolve_dependent_selects(&mut self, cx: &App) {
+        let values = self.current_values(cx);
+        let Self {
+            fields, options, ..
+        } = self;
+        for field in fields.iter_mut() {
+            if let SubFormField::Select {
+                options: opts,
+                dependency: Some(dependency),
+                ..
+            } = field
+            {
+                let sibling = values
+                    .get(&dependency.depends_on)
+                    .map(forge_types::display_scalar)
+                    .unwrap_or_default();
+                *opts = dependent_options(options, &dependency.options_prefix, &sibling);
+            }
+        }
+    }
+
     fn current_values(&self, cx: &App) -> SubActionConfig {
         let mut values = self.launch_config.clone();
         for field in &self.fields {
@@ -243,6 +271,7 @@ impl EditSubActionForm {
                 *options = opts.clone();
             }
         }
+        self.resolve_dependent_selects(cx);
         if let Some(picker_form) = self.select_picker.as_ref() {
             let key = picker_form.key.clone();
             if let Some(SubFormField::Select { options, .. }) = self
@@ -356,6 +385,7 @@ impl EditSubActionForm {
         if selector_changed {
             self.rebuild_refined(cx);
         }
+        self.resolve_dependent_selects(cx);
         cx.notify();
     }
 
@@ -1333,6 +1363,7 @@ fn push_form_field(
                 options,
                 gate,
                 selected,
+                dependency: None,
             });
         }
         FormField::DynamicSelect {
@@ -1352,6 +1383,34 @@ fn push_form_field(
                 options,
                 gate,
                 selected,
+                dependency: None,
+            });
+        }
+        FormField::DependentSelect {
+            key,
+            label,
+            options_prefix,
+            depends_on,
+        } => {
+            let selected = config
+                .get(*key)
+                .map(forge_types::display_scalar)
+                .unwrap_or_default();
+            let sibling = config
+                .get(*depends_on)
+                .map(forge_types::display_scalar)
+                .unwrap_or_default();
+            out.push(SubFormField::Select {
+                key: (*key).to_owned(),
+                label: (*label).to_owned(),
+                options_key: None,
+                options: dependent_options(options_map, options_prefix, &sibling),
+                gate,
+                selected,
+                dependency: Some(SelectDependency {
+                    options_prefix: (*options_prefix).to_owned(),
+                    depends_on: (*depends_on).to_owned(),
+                }),
             });
         }
         FormField::Toggle { key, label } => {

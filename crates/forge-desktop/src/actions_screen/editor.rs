@@ -853,6 +853,7 @@ impl ScreenActionsView {
         let globals_repo = Arc::clone(&self.globals_repo);
         let overlay_repo = Arc::clone(&self.overlay_repo);
         let tts_registry = self.tts_registry.clone();
+        let speak = self.speak.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -940,6 +941,13 @@ impl ScreenActionsView {
                         "tts.engine_ids".to_owned(),
                         ids.into_iter().map(|id| (id.0.clone(), id.0)).collect(),
                     );
+                }
+                if let Some(speak) = speak {
+                    for voice in speak.available_voices().iter() {
+                        map.entry(format!("tts.voices.{}", voice.engine_id.0))
+                            .or_default()
+                            .push((voice.id.0.clone(), voice.name.clone()));
+                    }
                 }
                 SelectOptionsFetch {
                     options: map,

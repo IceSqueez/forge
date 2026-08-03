@@ -65,10 +65,11 @@ impl SubActionRunner for AliasSwitchRunner {
                 label: "Engine ID",
                 options_key: "tts.engine_ids",
             },
-            FormField::Text {
+            FormField::DependentSelect {
                 key: "voice_id",
                 label: "Voice ID",
-                placeholder: "e.g. en_US-amy-medium",
+                options_prefix: "tts.voices",
+                depends_on: "engine_id",
             },
         ]
     }

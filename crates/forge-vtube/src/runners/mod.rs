@@ -98,6 +98,7 @@ mod tests {
             | FormField::DateTime { key, .. }
             | FormField::Select { key, .. }
             | FormField::DynamicSelect { key, .. }
+            | FormField::DependentSelect { key, .. }
             | FormField::Optional { key, .. }
             | FormField::SubChain { key, .. }
             | FormField::CaseList { key, .. }

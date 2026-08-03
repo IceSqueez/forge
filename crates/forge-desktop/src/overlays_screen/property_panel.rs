@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::config_form::{
     ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext, collect_field_values,
-    fold_config_field, render_config_control, sparse_overrides,
+    fold_config_field, render_config_control, resolve_dependent_choices, sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
 
@@ -76,6 +76,7 @@ pub(super) struct OverlayPropertyPanel {
     labels: HashMap<String, String>,
     sections: HashMap<String, ConfigSection>,
     fields: Vec<ConfigField>,
+    choices: HashMap<String, Vec<(String, String)>>,
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
     settle_epoch: u64,
@@ -105,6 +106,7 @@ impl OverlayPropertyPanel {
             labels: index.labels,
             sections: index.sections,
             fields,
+            choices: launch.choices,
             overridden_files: launch.overridden_files,
             picker: None,
             settle_epoch: 0,
@@ -274,6 +276,10 @@ impl OverlayPropertyPanel {
                 selected.clone_from(&value);
             }
         }
+        let Self {
+            fields, choices, ..
+        } = self;
+        resolve_dependent_choices(fields, choices, cx);
         self.picker = None;
         self.emit_save(cx);
         cx.notify();
@@ -407,6 +413,7 @@ fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
         | FormField::DateTime { key, label }
         | FormField::Select { key, label, .. }
         | FormField::DynamicSelect { key, label, .. }
+        | FormField::DependentSelect { key, label, .. }
         | FormField::Swatch { key, label, .. }
         | FormField::SubChain { key, label }
         | FormField::CaseList { key, label } => {

@@ -59,6 +59,13 @@ pub enum FormField {
         label: &'static str,
         options_key: &'static str,
     },
+    /// Options are looked up in the runtime map under `<options_prefix>.<current value of `depends_on`>`.
+    DependentSelect {
+        key: &'static str,
+        label: &'static str,
+        options_prefix: &'static str,
+        depends_on: &'static str,
+    },
     /// Static choices naming palette colors, presented as swatches rather than a dropdown.
     Swatch {
         key: &'static str,
@@ -96,6 +103,7 @@ impl FormField {
             | Self::DateTime { key, .. }
             | Self::Select { key, .. }
             | Self::DynamicSelect { key, .. }
+            | Self::DependentSelect { key, .. }
             | Self::Swatch { key, .. }
             | Self::Optional { key, .. }
             | Self::SubChain { key, .. }

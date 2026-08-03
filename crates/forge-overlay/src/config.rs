@@ -66,7 +66,8 @@ fn check_field(field: &FormField, config: &OverlayConfig) -> Result<(), OverlayE
         | FormField::Code { key, .. }
         | FormField::FilePicker { key, .. }
         | FormField::DateTime { key, .. }
-        | FormField::DynamicSelect { key, .. } => expect_string(config, key).map(|_| ()),
+        | FormField::DynamicSelect { key, .. }
+        | FormField::DependentSelect { key, .. } => expect_string(config, key).map(|_| ()),
         FormField::Select { key, options, .. } | FormField::Swatch { key, options, .. } => {
             let Some(value) = expect_string(config, key)? else {
                 return Ok(());

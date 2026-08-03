@@ -1812,6 +1812,7 @@ mod tests {
             | DateTime { key, .. }
             | Select { key, .. }
             | DynamicSelect { key, .. }
+            | DependentSelect { key, .. }
             | Optional { key, .. }
             | SubChain { key, .. }
             | CaseList { key, .. }

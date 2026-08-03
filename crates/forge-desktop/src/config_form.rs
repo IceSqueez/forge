@@ -63,10 +63,16 @@ pub(crate) enum ConfigField {
         gate: Option<String>,
         options: Vec<(String, String)>,
         selected: String,
+        dependency: Option<ChoiceDependency>,
     },
     Hint {
         key: String,
     },
+}
+
+pub(crate) struct ChoiceDependency {
+    options_prefix: String,
+    depends_on: String,
 }
 
 impl ConfigField {
@@ -87,7 +93,7 @@ pub(crate) type ConfigCommitHandler<V> =
 
 type ChoiceOpener<V> = fn(&mut V, String, Point<Pixels>, &mut Window, &mut Context<V>);
 
-/// Whether the calling view hosts a value picker. Without one, `Select`/`DynamicSelect` fall back
+/// Whether the calling view hosts a value picker. Without one, the select-shaped fields fall back
 /// to free text rather than rendering a control whose click would go nowhere.
 pub(crate) enum ChoiceSupport<'a> {
     Text,
@@ -204,6 +210,7 @@ pub(crate) fn fold_config_field<V: 'static>(
                     .map(|opt| ((*opt).to_owned(), (*opt).to_owned()))
                     .collect(),
                 selected: read_text(config, key),
+                dependency: None,
             }),
         },
         FormField::DynamicSelect {
@@ -224,6 +231,34 @@ pub(crate) fn fold_config_field<V: 'static>(
                 gate,
                 options: map.get(*options_key).cloned().unwrap_or_default(),
                 selected: read_text(config, key),
+                dependency: None,
+            }),
+        },
+        FormField::DependentSelect {
+            key,
+            options_prefix,
+            depends_on,
+            ..
+        } => match choices {
+            ChoiceSupport::Text => out.push(build_config_input(
+                key,
+                "",
+                false,
+                gate,
+                config,
+                palette,
+                on_committed,
+                cx,
+            )),
+            ChoiceSupport::Picker(map) => out.push(ConfigField::Choice {
+                key: (*key).to_owned(),
+                gate,
+                options: dependent_options(map, options_prefix, &read_text(config, depends_on)),
+                selected: read_text(config, key),
+                dependency: Some(ChoiceDependency {
+                    options_prefix: (*options_prefix).to_owned(),
+                    depends_on: (*depends_on).to_owned(),
+                }),
             }),
         },
         FormField::FilePicker { key, .. } | FormField::DateTime { key, .. } => out.push(
@@ -249,6 +284,42 @@ pub(crate) fn fold_config_field<V: 'static>(
                 value,
             });
             fold_config_field(inner, Some((*key).to_owned()), ctx, out, cx);
+        }
+    }
+}
+
+pub(crate) fn dependent_options(
+    map: &HashMap<String, Vec<(String, String)>>,
+    options_prefix: &str,
+    sibling_value: &str,
+) -> Vec<(String, String)> {
+    if sibling_value.is_empty() {
+        return Vec::new();
+    }
+    map.get(&format!("{options_prefix}.{sibling_value}"))
+        .cloned()
+        .unwrap_or_default()
+}
+
+pub(crate) fn resolve_dependent_choices(
+    fields: &mut [ConfigField],
+    map: &HashMap<String, Vec<(String, String)>>,
+    cx: &App,
+) {
+    let mut values = FieldConfig::new();
+    collect_field_values(fields, &mut values, cx);
+    for field in fields.iter_mut() {
+        if let ConfigField::Choice {
+            options,
+            dependency: Some(dependency),
+            ..
+        } = field
+        {
+            *options = dependent_options(
+                map,
+                &dependency.options_prefix,
+                &read_text(&values, &dependency.depends_on),
+            );
         }
     }
 }

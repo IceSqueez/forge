@@ -349,6 +349,7 @@ impl AppShell {
                 let overlay_repo = handles.backend.overlay_repo();
                 let overlay_kinds = Arc::clone(&handles.overlay_kinds);
                 let tts_registry = handles.tts_registry.clone();
+                let speak = handles.speak.clone();
                 let sub_action_registry = handles.sub_action_registry.clone();
                 let trigger_registry = handles.trigger_registry.clone();
                 let rt_handle = handles.rt_handle.clone();
@@ -367,6 +368,7 @@ impl AppShell {
                         overlay_repo,
                         overlay_kinds,
                         tts_registry,
+                        speak,
                         sub_action_registry,
                         trigger_registry,
                         rt_handle,

@@ -13,6 +13,7 @@ use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::{ActionDetail, ActionsService};
 use forge_runtime::{EventBus, QueueSchedulerHandle};
+use forge_speak_queue::SpeakQueueHandle;
 use forge_storage::{
     ActionRepo, ActionTelemetry, GlobalsRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo,
     SoundboardClipsRepo, TriggerInstanceRepo, reserved_keys,
@@ -174,6 +175,7 @@ pub struct ScreenActionsView {
     sub_action_favorites: HashSet<SharedString>,
     trigger_favorites: HashSet<SharedString>,
     tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
+    speak: Option<SpeakQueueHandle>,
     sub_action_registry: Arc<SubActionRegistry>,
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
@@ -226,6 +228,7 @@ impl ScreenActionsView {
         overlay_repo: Arc<dyn OverlayRepo>,
         overlay_kinds: Arc<OverlayKindRegistry>,
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
+        speak: Option<SpeakQueueHandle>,
         sub_action_registry: Arc<SubActionRegistry>,
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
@@ -252,6 +255,7 @@ impl ScreenActionsView {
             sub_action_favorites: HashSet::new(),
             trigger_favorites: HashSet::new(),
             tts_registry,
+            speak,
             sub_action_registry,
             trigger_registry,
             rt_handle,

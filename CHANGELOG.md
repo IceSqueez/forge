@@ -1,7 +1,71 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-08-03
+### 🐛 Bug Fixes
+- *(obs)* Reject empty name strings at config validation time
+- *(obs)* Trim whitespace when validating get_input_settings source
+- *(twitch)* Label automod terms output as term IDs
+- *(ui)* Validate quick action integer input instead of coercing
+- *(ui)* Cancel the pending loopback wait when a connect flow resets
+- *(tts)* Separate voice gate hold from manual queue pause
+- *(tts)* Broadcast the pending queue order on every queue change
+- *(ui)* Mirror the real speak queue order in the up next list
+- *(ui)* Drop the fabricated recent releases card from settings
+- *(ui)* Surface queue mode and free failures instead of lying
+
+### 📚 Documentation
+- *(storage)* Note stats summary excludes quick action runs
+
+### 🚀 Features
+- *(server)* Mark replayed events in the WS push envelope
+- *(twitch)* Surface automod v2 hold reason and blocked terms
+- *(kick)* Emit numeric trigger fields as integers
+- *(builtin)* Add numeric quick action fields with bounds
+- *(storage)* Query quick action runs and exclude them from stats
+- *(ui)* Surface quick action run history on integration detail
+- *(ui)* Keep an in-memory tail of recent runtime logs
+- *(ui)* Rebuild diagnostics settings as a live logs pane
+- *(tts)* Add mic input devices and a voice gate level monitor
+- *(tts)* Gate the speak queue on live microphone input
+- *(tts)* Reorder pending speak queue items by request id
+- *(ui)* Drag queue rows to reorder pending tts messages
+- *(tts)* Cap spoken audio at a configurable max duration
+- *(ui)* Add the cut off after n seconds tts output preset
+- *(ui)* Pick tts voices from an engine-dependent dropdown
+- *(queues)* Govern each queue with processing and intake modes
+- *(ui)* Control queue modes with pause drain hold and free presets
+
+### 🚜 Refactor
+- *(ui)* Extract the connect flow into its own view-entity
+- *(ui)* Extract run history modal into a reusable view entity
+
+### 🛠️ Build
+- *(audit)* Fall back to the cached advisory db when fetch fails
+
+### 🧪 Testing
+- *(server)* Pin the replay flag in the push envelope
+- *(obs)* Table-drive required string field validation
+- *(youtube)* Name the starved-poller failure in the drain helper
+- *(obs)* Cover get_input_settings in the required string table
+- *(twitch)* Cover automod v2 blocked-term payloads
+- *(kick)* Pin integer trigger fields against their schemas
+- *(builtin)* Marshal integer quick action values
+- *(ui)* Cover quick action integer field validation
+- *(storage)* Cover quick action history queries and stats exclusion
+- *(ui)* Cover log tail capture and log archive maintenance
+- *(tts)* Cover voice gate settings, input picker and config mapping
+- *(tts)* Cover voice gate hold split from manual pause
+- *(tts)* Cover pending speak queue reordering
+- *(tts)* Cover speak queue order projection from queue changed events
+- *(tts)* Cover the spoken audio duration cap end to end
+- *(ui)* Cover the engine-dependent voice dropdown
+- *(queues)* Cover processing and intake axes end to end
+
 ## [0.4.2] - 2026-07-29
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(discord)* Honest reset hint, storage-only name registry
 - *(discord)* Surface missing-webhook failures in health and posts
@@ -20,6 +84,7 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 - *(storage)* Describe overlay save as update-only
 - *(readme)* Describe the overlay designer and send step
+- *(release)* Release v0.4.2
 
 ### 🚀 Features
 - *(ui)* Rebuild the discord screen on honest webhook data

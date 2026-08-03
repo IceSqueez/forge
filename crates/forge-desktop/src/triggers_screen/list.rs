@@ -735,6 +735,19 @@ impl TriggersRegistryView {
                 .text_color(palette.bits)
                 .child(cooldown),
         );
+        if let Some(permission) = descriptor
+            .and_then(|d| d.chat_trigger_family())
+            .and_then(|_| permission_suffix(instance.permission_rung))
+        {
+            kind = kind.child(
+                div()
+                    .flex_none()
+                    .font_family(mono_family())
+                    .text_size(KIND_FS)
+                    .text_color(palette.info)
+                    .child(permission),
+            );
+        }
 
         let used: AnyElement = if instance.used_in_count > 0 {
             div()

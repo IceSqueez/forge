@@ -561,6 +561,15 @@ triggers_sheet_cooldown_value = перезарядка
 triggers_sheet_cooldown_scope = Глобальна перезарядка
 triggers_cooldown_suffix_global = { " · перезарядка=" }{ $secs }{ "с глобально" }
 triggers_cooldown_suffix_per_user = { " · перезарядка=" }{ $secs }{ "с на глядача" }
+triggers_sheet_section_permission = ДОСТУП
+triggers_sheet_permission_value = мінімальний щабель
+triggers_sheet_permission_helper = Вищі щаблі проходять завжди. Якщо платформа не може виразити щабель, він підвищується - суворіше, ніколи не слабше.
+triggers_permission_rung_everyone = усі
+triggers_permission_rung_subscriber = підписники+
+triggers_permission_rung_vip = vip+
+triggers_permission_rung_moderator = моди+
+triggers_permission_rung_broadcaster = ведучий
+triggers_permission_suffix = { " · доступ=" }{ $rung }
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_delete_btn = Видалити
 triggers_sheet_save_btn = Зберегти

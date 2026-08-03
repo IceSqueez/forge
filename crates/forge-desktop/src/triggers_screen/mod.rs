@@ -4,7 +4,7 @@ use forge_components::{
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
-use forge_types::{ActionId, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, PermissionRung, TriggerInstance, TriggerInstanceId};
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Pixels, Point, Rgba, SharedString,
     Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
@@ -145,6 +145,7 @@ struct TriggerInstanceRow {
     override_count: usize,
     cooldown_secs: u32,
     cooldown_global: bool,
+    permission_rung: PermissionRung,
 }
 
 struct TriggerDetail {
@@ -153,6 +154,7 @@ struct TriggerDetail {
     used_in: Vec<(ActionId, String)>,
     cooldown_input: Entity<TextInput>,
     cooldown_per_user: bool,
+    permission_rung: PermissionRung,
     _cooldown_sub: Subscription,
 }
 
@@ -162,6 +164,31 @@ pub(crate) fn cooldown_suffix(secs: u32, global: bool) -> String {
     } else {
         tr!("triggers_cooldown_suffix_per_user", secs = secs as i64)
     }
+}
+
+pub(crate) const PERMISSION_RUNGS: [PermissionRung; 5] = [
+    PermissionRung::Everyone,
+    PermissionRung::Subscriber,
+    PermissionRung::Vip,
+    PermissionRung::Moderator,
+    PermissionRung::Broadcaster,
+];
+
+pub(crate) fn permission_rung_label(rung: PermissionRung) -> String {
+    match rung {
+        PermissionRung::Everyone => tr!("triggers_permission_rung_everyone"),
+        PermissionRung::Subscriber => tr!("triggers_permission_rung_subscriber"),
+        PermissionRung::Vip => tr!("triggers_permission_rung_vip"),
+        PermissionRung::Moderator => tr!("triggers_permission_rung_moderator"),
+        PermissionRung::Broadcaster => tr!("triggers_permission_rung_broadcaster"),
+    }
+}
+
+pub(crate) fn permission_suffix(rung: PermissionRung) -> Option<String> {
+    (rung > PermissionRung::Everyone).then(|| {
+        let label = permission_rung_label(rung);
+        tr!("triggers_permission_suffix", rung = label.as_str())
+    })
 }
 
 struct TriggerDetailData {
@@ -469,6 +496,7 @@ async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstance
             override_count: instance.overrides.len(),
             cooldown_secs: instance.cooldown_secs,
             cooldown_global: instance.cooldown_global,
+            permission_rung: instance.permission_rung,
         });
     }
     Ok(rows)

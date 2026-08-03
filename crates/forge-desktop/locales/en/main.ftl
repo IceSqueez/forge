@@ -559,6 +559,15 @@ triggers_sheet_cooldown_value = cooldown
 triggers_sheet_cooldown_scope = Global cooldown
 triggers_cooldown_suffix_global = { " · cooldown=" }{ $secs }{ "s global" }
 triggers_cooldown_suffix_per_user = { " · cooldown=" }{ $secs }{ "s per-user" }
+triggers_sheet_section_permission = PERMISSION
+triggers_sheet_permission_value = minimum rung
+triggers_sheet_permission_helper = Higher rungs always pass. Where a platform cannot express a rung it collapses upward - stricter, never looser.
+triggers_permission_rung_everyone = everyone
+triggers_permission_rung_subscriber = subs+
+triggers_permission_rung_vip = vip+
+triggers_permission_rung_moderator = mods+
+triggers_permission_rung_broadcaster = broadcaster
+triggers_permission_suffix = { " · perm=" }{ $rung }
 triggers_sheet_section_used_in = USED IN
 triggers_sheet_delete_btn = Delete
 triggers_sheet_save_btn = Save

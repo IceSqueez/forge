@@ -8,7 +8,7 @@ use crate::presentation::ActivePresentation;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, Radius, ResizeEdge, ResizeRange, Spacing, TextInput,
     body_family, ghost_button_with_icon, icon, install_resize, mono_family, primary_button, radius,
-    row_card, spacing, status_dot, toggle, tr,
+    row_card, segment, segmented, spacing, status_dot, toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -96,6 +96,7 @@ impl TriggersRegistryView {
         let cooldown_seed = data.instance.cooldown_secs;
         let cooldown_input = self.build_cooldown_input(cooldown_seed, palette, cx);
         let cooldown_sub = cx.subscribe(&cooldown_input, Self::on_cooldown_committed);
+        let permission_rung = data.instance.permission_rung;
 
         self.detail = Some(TriggerDetail {
             instance: data.instance,
@@ -103,6 +104,7 @@ impl TriggersRegistryView {
             used_in: data.used_in,
             cooldown_input,
             cooldown_per_user,
+            permission_rung,
             _cooldown_sub: cooldown_sub,
         });
         cx.notify();
@@ -208,6 +210,18 @@ impl TriggersRegistryView {
         self.commit_config(cx);
     }
 
+    fn set_permission_rung(&mut self, rung: PermissionRung, cx: &mut Context<Self>) {
+        let Some(detail) = self.detail.as_mut() else {
+            return;
+        };
+        if detail.permission_rung == rung {
+            return;
+        }
+        detail.permission_rung = rung;
+        self.commit_config(cx);
+        cx.notify();
+    }
+
     fn commit_config(&mut self, cx: &mut Context<Self>) {
         let Some(detail) = self.detail.as_ref() else {
             return;
@@ -227,6 +241,7 @@ impl TriggersRegistryView {
         instance.overrides = sparse;
         instance.cooldown_secs = cooldown_secs;
         instance.cooldown_global = !detail.cooldown_per_user;
+        instance.permission_rung = detail.permission_rung;
         let repo = Arc::clone(&self.repo);
         self.spawn_reload(
             async move {
@@ -457,6 +472,7 @@ impl TriggersRegistryView {
             .flex_col()
             .child(self.render_config_section(detail, palette, cx))
             .child(self.render_cooldown_section(detail, palette, cx))
+            .children(self.render_permission_section(detail, palette, cx))
             .child(self.render_used_in_section(detail, palette, cx))
             .into_any_element()
     }
@@ -705,6 +721,80 @@ impl TriggersRegistryView {
             ))
             .child(framed)
             .into_any_element()
+    }
+
+    fn render_permission_section(
+        &self,
+        detail: &TriggerDetail,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        self.registry
+            .get(&detail.instance.kind_id)
+            .and_then(|d| d.chat_trigger_family())?;
+
+        let segments = PERMISSION_RUNGS
+            .into_iter()
+            .map(|rung| {
+                segment(
+                    SharedString::from(format!("triggers-detail-rung-{}", rung.as_str())),
+                    permission_rung_label(rung),
+                    detail.permission_rung == rung,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.set_permission_rung(rung, cx)
+                    }),
+                )
+            })
+            .collect();
+        let ladder = segmented(segments, palette).wrap(spacing(Spacing::Xxs, Density::Cozy));
+
+        let rung_row = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
+            .py(CFG_ROW_PAD_V)
+            .px(CFG_ROW_PAD_H)
+            .border_b(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .child(
+                div()
+                    .w(CFG_KEY_W)
+                    .flex_none()
+                    .overflow_hidden()
+                    .font_family(mono_family())
+                    .text_size(CFG_KEY_FS)
+                    .text_color(palette.text_muted)
+                    .child(tr!("triggers_sheet_permission_value")),
+            )
+            .child(div().flex_1().min_w(px(0.0)).child(ladder));
+
+        let helper_row = div()
+            .w_full()
+            .py(CFG_ROW_PAD_V)
+            .px(CFG_ROW_PAD_H)
+            .font_family(body_family())
+            .text_size(CFG_VAL_FS)
+            .text_color(palette.text_faint)
+            .child(tr!("triggers_sheet_permission_helper"));
+
+        let framed = div()
+            .w_full()
+            .rounded(radius(Radius::Md))
+            .border(HALF_BORDER)
+            .border_color(palette.border_regular)
+            .bg(palette.shell)
+            .child(div().flex().flex_col().child(rung_row).child(helper_row));
+
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .pb(spacing(Spacing::Md, Density::Cozy))
+                .child(self.section_label(tr!("triggers_sheet_section_permission"), None, palette))
+                .child(framed)
+                .into_any_element(),
+        )
     }
 
     fn render_used_in_section(

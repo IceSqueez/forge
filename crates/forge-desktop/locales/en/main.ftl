@@ -1078,18 +1078,33 @@ queues_filter_running = Running
 queues_filter_paused = Paused
 queues_filter_parallel = Parallel
 queues_filter_sequential = Sequential
-queues_drain_feedback = Draining “{ $name }”.
 queues_configure_btn = Configure
 queues_drain_btn = Drain
 queues_pause_btn = Pause
-queues_resume_btn = Resume
+queues_hold_btn = Hold
+queues_free_btn = Free
+
+## Queues - mode controls
+
+queues_mode_pause_tooltip = Stop processing and skip every new action
+queues_mode_drain_tooltip = Keep processing the backlog, skip every new action
+queues_mode_hold_tooltip = Stop processing but keep queueing new actions
+queues_mode_active_tooltip = Back to running
+queues_free_tooltip = Drop everything waiting - the action in flight still finishes and the mode stays as it is
+queues_free_feedback = Dropped { $count } waiting actions in “{ $name }”.
+queues_mode_running_caption = Running - processing actions as they arrive
+queues_mode_drain_caption = Draining - finishing the backlog, new actions are skipped
+queues_mode_hold_caption = Held - processing stopped, new actions still queue up
+queues_mode_pause_caption = Paused - processing stopped, new actions are skipped
+queues_strip_counts = { $pending } waiting · { $in_flight } in flight
+queues_overflow_badge = { $count } skipped over the { $cap } cap
 
 ## Queues - card menu
 
 queues_menu_configure = Configure…
 queues_menu_pause = Pause
 queues_menu_resume = Resume
-queues_menu_drain = Drain queue
+queues_menu_free = Free queue
 queues_menu_delete = Delete…
 queues_delete_confirm_title = Delete queue
 queues_delete_confirm_body = Actions in this queue move to Default. This cannot be undone.
@@ -1124,21 +1139,19 @@ queues_metric_in_flight = in flight
 queues_metric_idle = idle
 queues_metric_held = held
 
-## Queues - paused panel
-
-queues_paused_with_time = { $pending } actions waiting - paused { $mins } min ago
-queues_paused_simple = Queue is paused
-
 ## Queues - running panel
 
 queues_running_now_header = RUNNING NOW
 queues_no_actions_running = No actions running
+queues_running_count = { $count } actions running
 queues_running_label = running
 
 ## Queues - status badge
 
 queues_status_paused = PAUSED
 queues_status_running = RUNNING
+queues_status_draining = DRAINING
+queues_status_held = HELD
 
 ## Queues - live-membership divergence
 

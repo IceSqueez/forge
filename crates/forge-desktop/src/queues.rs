@@ -8,17 +8,18 @@ use forge_components::{
     SearchState, Spacing, TextInput, ToastKind, badge, body_family, card, chip, confirm_modal,
     empty_state, ghost_button_with_icon, header_stat, header_stats, icon, menu_button,
     menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
-    primary_button_with_icon, radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
+    primary_button_with_icon, radius, secondary_button, slider, spacing, spinner, tooltip_builder,
+    tr, with_alpha,
 };
-use forge_events::{Event, EventSource};
 use forge_runtime::{
-    EventBus, MembershipOutcome, QueueMode, QueueProcessing, QueueSchedulerHandle,
+    MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
+    QueueSchedulerHandle,
 };
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Queue, QueueId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Point,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Div, Entity, EventEmitter, FontWeight, Pixels, Point,
+    Rgba, SharedString, Stateful, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -64,11 +65,11 @@ impl QueueFilter {
         ("queue-filter-sequential", QueueFilter::Sequential),
     ];
 
-    fn keeps(self, row: &QueueRow, effective_paused: bool) -> bool {
+    fn keeps(self, row: &QueueRow) -> bool {
         match self {
             QueueFilter::All => true,
-            QueueFilter::Running => !effective_paused,
-            QueueFilter::Paused => effective_paused,
+            QueueFilter::Running => row.mode == QueueMode::RUNNING,
+            QueueFilter::Paused => row.mode != QueueMode::RUNNING,
             QueueFilter::Parallel => !row.blocking,
             QueueFilter::Sequential => row.blocking,
         }
@@ -84,7 +85,7 @@ impl QueueFilter {
         }
     }
 
-    fn dot(self, palette: &ForgePalette) -> gpui::Rgba {
+    fn dot(self, palette: &ForgePalette) -> Rgba {
         match self {
             QueueFilter::All => palette.brand,
             QueueFilter::Running => palette.success,
@@ -95,13 +96,76 @@ impl QueueFilter {
     }
 }
 
-fn queue_matches(
-    row: &QueueRow,
-    filter: QueueFilter,
-    search: &SearchState,
-    effective_paused: bool,
-) -> bool {
-    filter.keeps(row, effective_paused) && search.matches(&row.name)
+fn queue_matches(row: &QueueRow, filter: QueueFilter, search: &SearchState) -> bool {
+    filter.keeps(row) && search.matches(&row.name)
+}
+
+struct ModePreset {
+    mode: QueueMode,
+    label_key: &'static str,
+    tooltip_key: &'static str,
+    element_id: &'static str,
+    glyph: Icon,
+}
+
+const MODE_PRESETS: [ModePreset; 3] = [
+    ModePreset {
+        mode: QueueMode::PAUSED,
+        label_key: "queues_pause_btn",
+        tooltip_key: "queues_mode_pause_tooltip",
+        element_id: "q-mode-pause",
+        glyph: Icon::PlayerPause,
+    },
+    ModePreset {
+        mode: QueueMode::DRAINING,
+        label_key: "queues_drain_btn",
+        tooltip_key: "queues_mode_drain_tooltip",
+        element_id: "q-mode-drain",
+        glyph: Icon::FilterOff,
+    },
+    ModePreset {
+        mode: QueueMode::HOLDING,
+        label_key: "queues_hold_btn",
+        tooltip_key: "queues_mode_hold_tooltip",
+        element_id: "q-mode-hold",
+        glyph: Icon::ClockPause,
+    },
+];
+
+fn mode_ink(mode: QueueMode, palette: &ForgePalette) -> Rgba {
+    match (mode.processing, mode.intake) {
+        (QueueProcessing::Running, QueueIntake::Accept) => palette.success,
+        (QueueProcessing::Running, QueueIntake::Skip) => palette.info,
+        (QueueProcessing::Frozen, QueueIntake::Accept) => palette.bits,
+        (QueueProcessing::Frozen, QueueIntake::Skip) => palette.warning,
+    }
+}
+
+fn mode_glyph(mode: QueueMode) -> Icon {
+    match (mode.processing, mode.intake) {
+        (QueueProcessing::Running, QueueIntake::Accept) => Icon::PlayerPlay,
+        (QueueProcessing::Running, QueueIntake::Skip) => Icon::FilterOff,
+        (QueueProcessing::Frozen, QueueIntake::Accept) => Icon::ClockPause,
+        (QueueProcessing::Frozen, QueueIntake::Skip) => Icon::PlayerPause,
+    }
+}
+
+fn mode_badge_key(mode: QueueMode) -> &'static str {
+    match (mode.processing, mode.intake) {
+        (QueueProcessing::Running, QueueIntake::Accept) => "queues_status_running",
+        (QueueProcessing::Running, QueueIntake::Skip) => "queues_status_draining",
+        (QueueProcessing::Frozen, QueueIntake::Accept) => "queues_status_held",
+        (QueueProcessing::Frozen, QueueIntake::Skip) => "queues_status_paused",
+    }
+}
+
+fn mode_caption_key(mode: QueueMode) -> &'static str {
+    match (mode.processing, mode.intake) {
+        (QueueProcessing::Running, QueueIntake::Accept) => "queues_mode_running_caption",
+        (QueueProcessing::Running, QueueIntake::Skip) => "queues_mode_drain_caption",
+        (QueueProcessing::Frozen, QueueIntake::Accept) => "queues_mode_hold_caption",
+        (QueueProcessing::Frozen, QueueIntake::Skip) => "queues_mode_pause_caption",
+    }
 }
 
 struct QueueRow {
@@ -110,21 +174,25 @@ struct QueueRow {
     description: String,
     blocking: bool,
     concurrency: u32,
-    paused: bool,
+    mode: QueueMode,
     pending: u32,
     in_flight: u32,
+    overflowed: u64,
     actions: u32,
     running: Vec<String>,
-    paused_since_min: Option<i64>,
 }
 
 impl QueueRow {
-    fn mode_label(&self) -> SharedString {
+    fn concurrency_label(&self) -> SharedString {
         if self.blocking {
             SharedString::from(tr!("queues_metric_serial"))
         } else {
             SharedString::from(tr!("queues_metric_parallel"))
         }
+    }
+
+    fn frozen(&self) -> bool {
+        self.mode.processing == QueueProcessing::Frozen
     }
 }
 
@@ -425,9 +493,7 @@ pub struct QueuesView {
     menu_open: Option<QueueId>,
     menu_click_pos: Option<Point<Pixels>>,
     diverged: HashSet<QueueId>,
-    queue_health: Entity<QueueHealth>,
     scheduler: QueueSchedulerHandle,
-    bus: Arc<EventBus>,
     queue_repo: Arc<dyn QueueRepo>,
     action_repo: Arc<dyn ActionRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -438,18 +504,18 @@ pub struct QueuesView {
 }
 
 impl QueuesView {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         queue_health: Entity<QueueHealth>,
         scheduler: QueueSchedulerHandle,
-        bus: Arc<EventBus>,
         queue_repo: Arc<dyn QueueRepo>,
         action_repo: Arc<dyn ActionRepo>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let health_obs = cx.observe(&queue_health, |_this, _health, cx| cx.notify());
+        let health_obs = cx.observe(&queue_health, |this, health, cx| {
+            this.sync_modes(&health, cx);
+        });
         let search = SearchState::new(cx, palette, tr!("queues_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let view = Self {
@@ -461,9 +527,7 @@ impl QueuesView {
             menu_open: None,
             menu_click_pos: None,
             diverged: HashSet::new(),
-            queue_health,
             scheduler,
-            bus,
             queue_repo,
             action_repo,
             rt_handle,
@@ -492,18 +556,30 @@ impl QueuesView {
         cx.notify();
     }
 
-    fn effective_paused(&self, row: &QueueRow, cx: &Context<Self>) -> bool {
-        row.paused || self.queue_health.read(cx).is_paused(row.id)
+    fn sync_modes(&mut self, health: &Entity<QueueHealth>, cx: &mut Context<Self>) {
+        let mut changed = false;
+        {
+            let health = health.read(cx);
+            for row in &mut self.queues {
+                if let Some(mode) = health.mode(row.id)
+                    && row.mode != mode
+                {
+                    row.mode = mode;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.reload(cx);
+            cx.notify();
+        }
     }
 
-    fn visible_indices(&self, cx: &Context<Self>) -> Vec<usize> {
+    fn visible_indices(&self) -> Vec<usize> {
         self.queues
             .iter()
             .enumerate()
-            .filter(|(_, row)| {
-                let effective_paused = self.effective_paused(row, cx);
-                queue_matches(row, self.status_filter, &self.search, effective_paused)
-            })
+            .filter(|(_, row)| queue_matches(row, self.status_filter, &self.search))
             .map(|(i, _)| i)
             .collect()
     }
@@ -565,21 +641,6 @@ impl QueuesView {
         });
     }
 
-    fn dispatch_drain(&self, id: QueueId, queue_name: String) {
-        let scheduler = self.scheduler.clone();
-        let bus = Arc::clone(&self.bus);
-        self.rt_handle.spawn(async move {
-            bus.publish(Event::new(
-                EventSource::Core,
-                "queue.drain_requested",
-                serde_json::json!({ "queue_id": id.to_string(), "queue_name": queue_name }),
-            ));
-            if let Err(err) = scheduler.set_mode(id, QueueMode::DRAINING).await {
-                eprintln!("forge-desktop: queue drain failed: {err}");
-            }
-        });
-    }
-
     fn dispatch_pause_all(&self, ids: Vec<QueueId>) {
         let scheduler = self.scheduler.clone();
         self.rt_handle.spawn(async move {
@@ -591,42 +652,61 @@ impl QueuesView {
         });
     }
 
-    fn pause(&mut self, id: QueueId, cx: &mut Context<Self>) {
+    fn set_mode(&mut self, id: QueueId, mode: QueueMode, cx: &mut Context<Self>) {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
-            q.paused = true;
-            q.paused_since_min = Some(0);
+            q.mode = mode;
         }
-        self.dispatch_mode(id, QueueMode::PAUSED);
+        self.dispatch_mode(id, mode);
         cx.notify();
+    }
+
+    fn toggle_mode(&mut self, id: QueueId, preset: QueueMode, cx: &mut Context<Self>) {
+        let current = self.queues.iter().find(|q| q.id == id).map(|q| q.mode);
+        let next = if current == Some(preset) {
+            QueueMode::RUNNING
+        } else {
+            preset
+        };
+        self.set_mode(id, next, cx);
     }
 
     fn resume(&mut self, id: QueueId, cx: &mut Context<Self>) {
-        if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
-            q.paused = false;
-            q.paused_since_min = None;
-        }
-        self.dispatch_mode(id, QueueMode::RUNNING);
-        cx.notify();
+        self.set_mode(id, QueueMode::RUNNING, cx);
     }
 
-    fn drain(&mut self, id: QueueId, cx: &mut Context<Self>) {
-        let mut queue_name = String::new();
-        if let Some(q) = self.queues.iter().find(|q| q.id == id) {
-            queue_name = q.name.clone();
-            let message = tr!("queues_drain_feedback", name = q.name.as_str());
-            cx.push_toast(ToastKind::Info, message);
-        }
-        self.dispatch_drain(id, queue_name);
+    fn free(&mut self, id: QueueId, cx: &mut Context<Self>) {
+        let Some(q) = self.queues.iter_mut().find(|q| q.id == id) else {
+            return;
+        };
+        let name = q.name.clone();
+        let dropped = q.pending as i64;
+        q.pending = 0;
+        cx.push_toast(
+            ToastKind::Info,
+            tr!(
+                "queues_free_feedback",
+                name = name.as_str(),
+                count = dropped
+            ),
+        );
+
+        let scheduler = self.scheduler.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { scheduler.clear(id, true).await.map_err(|e| e.to_string()) },
+            |this, result, cx| match result {
+                Ok(()) => this.reload(cx),
+                Err(message) => this.on_repo_error(&message, cx),
+            },
+            cx,
+        );
         cx.notify();
     }
 
     fn pause_all(&mut self, cx: &mut Context<Self>) {
         let ids: Vec<QueueId> = self.queues.iter().map(|q| q.id).collect();
         for q in &mut self.queues {
-            if !q.paused {
-                q.paused = true;
-                q.paused_since_min = Some(0);
-            }
+            q.mode = QueueMode::PAUSED;
         }
         self.dispatch_pause_all(ids);
         cx.notify();
@@ -781,23 +861,22 @@ impl QueuesView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let paused = self.effective_paused(q, cx);
         let not_live = self.diverged.contains(&q.id);
 
-        let border_color = if paused {
-            with_alpha(palette.warning, 0.35)
-        } else {
+        let border_color = if q.mode == QueueMode::RUNNING {
             palette.border_input
+        } else {
+            with_alpha(mode_ink(q.mode, palette), 0.35)
         };
 
         let body = div()
             .h_full()
             .flex()
             .flex_col()
-            .child(self.card_header(index, q, paused, not_live, palette, cx))
-            .child(self.card_metrics(q, paused, palette))
-            .child(self.running_panel(q, paused, palette, density))
-            .child(self.card_buttons(index, q, paused, palette, density, cx));
+            .child(self.card_header(index, q, not_live, palette, cx))
+            .child(self.card_metrics(q, palette))
+            .child(status_panel(q, palette, density))
+            .child(self.card_buttons(index, q, palette, density, cx));
 
         card(body, palette)
             .full_width()
@@ -811,7 +890,6 @@ impl QueuesView {
         &self,
         index: usize,
         q: &QueueRow,
-        paused: bool,
         not_live: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -828,7 +906,7 @@ impl QueuesView {
             .items_center()
             .gap(BAR_GAP)
             .child(name)
-            .child(status_badge(spin_id, paused, palette));
+            .child(status_badge(spin_id, q.mode, palette));
         if not_live {
             name_row = name_row.child(not_live_badge(palette));
         }
@@ -857,7 +935,7 @@ impl QueuesView {
             .justify_between()
             .mb(HEADER_GAP)
             .child(left)
-            .child(self.card_menu(index, q, paused, palette, cx))
+            .child(self.card_menu(index, q, palette, cx))
             .into_any_element()
     }
 
@@ -865,7 +943,6 @@ impl QueuesView {
         &self,
         index: usize,
         q: &QueueRow,
-        paused: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -875,23 +952,25 @@ impl QueuesView {
         let menu_pos = if menu_open { self.menu_click_pos } else { None };
         let view = cx.entity();
 
-        let pause_resume: MenuItem = if paused {
+        let pause_resume: MenuItem = if q.mode == QueueMode::RUNNING {
+            menu_item(
+                ("q-menu-pause", index),
+                tr!("queues_menu_pause"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.set_mode(id, QueueMode::PAUSED, cx)
+                }),
+            )
+            .icon(Icon::PlayerPause)
+            .color(palette.warning)
+            .into()
+        } else {
             menu_item(
                 ("q-menu-resume", index),
                 tr!("queues_menu_resume"),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.resume(id, cx)),
             )
             .icon(Icon::PlayerPlay)
-            .color(palette.warning)
-            .into()
-        } else {
-            menu_item(
-                ("q-menu-pause", index),
-                tr!("queues_menu_pause"),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.pause(id, cx)),
-            )
-            .icon(Icon::PlayerPause)
-            .color(palette.warning)
+            .color(palette.success)
             .into()
         };
 
@@ -911,9 +990,9 @@ impl QueuesView {
                 menu_divider(),
                 pause_resume,
                 menu_item(
-                    ("q-menu-drain", index),
-                    tr!("queues_menu_drain"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.drain(id, cx)),
+                    ("q-menu-free", index),
+                    tr!("queues_menu_free"),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.free(id, cx)),
                 )
                 .icon(Icon::Eraser)
                 .into(),
@@ -940,18 +1019,19 @@ impl QueuesView {
             .into_any_element()
     }
 
-    fn card_metrics(&self, q: &QueueRow, paused: bool, palette: &ForgePalette) -> AnyElement {
-        let pending_value_color = if paused {
-            palette.warning
-        } else {
+    fn card_metrics(&self, q: &QueueRow, palette: &ForgePalette) -> AnyElement {
+        let running = q.mode == QueueMode::RUNNING;
+        let pending_value_color = if running {
             palette.text_primary
-        };
-        let pending_hint_color = if paused {
-            palette.warning
         } else {
-            palette.text_faint
+            mode_ink(q.mode, palette)
         };
-        let pending_hint = if paused {
+        let pending_hint_color = if running {
+            palette.text_faint
+        } else {
+            mode_ink(q.mode, palette)
+        };
+        let pending_hint = if q.frozen() {
             SharedString::from(tr!("queues_metric_held"))
         } else if q.in_flight > 0 {
             SharedString::from(tr!("queues_metric_in_flight"))
@@ -965,7 +1045,7 @@ impl QueuesView {
             .child(metric_col(
                 SharedString::from(tr!("queues_metric_concurrency")),
                 q.concurrency.to_string(),
-                q.mode_label(),
+                q.concurrency_label(),
                 palette.text_primary,
                 palette.text_faint,
                 palette,
@@ -997,67 +1077,64 @@ impl QueuesView {
             .into_any_element()
     }
 
-    fn running_panel(
-        &self,
-        q: &QueueRow,
-        paused: bool,
-        palette: &ForgePalette,
-        density: Density,
-    ) -> AnyElement {
-        if paused {
-            return paused_panel(q, palette, density);
-        }
-        if q.running.is_empty() {
-            return idle_panel(palette, density);
-        }
-        if !q.blocking && q.running.len() > 1 {
-            return concurrent_panel(q, palette, density);
-        }
-        serial_panel(q, palette, density)
-    }
-
     fn card_buttons(
         &self,
         index: usize,
         q: &QueueRow,
-        paused: bool,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = q.id;
 
-        let action = if paused {
-            card_button(
-                ("q-resume", index),
-                Icon::PlayerPlay,
-                SharedString::from(tr!("queues_resume_btn")),
-                palette.shell,
-                Some(palette.success),
-                palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.resume(id, cx)),
-            )
-        } else {
-            card_button(
-                ("q-pause", index),
-                Icon::PlayerPause,
-                SharedString::from(tr!("queues_pause_btn")),
-                palette.warning,
-                None,
-                palette,
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.pause(id, cx)),
-            )
-        };
+        let mut mode_row = div()
+            .w_full()
+            .flex()
+            .flex_row()
+            .items_stretch()
+            .gap(spacing(Spacing::Xs, density));
+        for preset in MODE_PRESETS {
+            let active = q.mode == preset.mode;
+            let ink = if active {
+                palette.shell
+            } else {
+                palette.text_secondary
+            };
+            let fill = active.then(|| mode_ink(preset.mode, palette));
+            let hint = if active {
+                tr!("queues_mode_active_tooltip")
+            } else {
+                tr!(preset.tooltip_key)
+            };
+            let mode = preset.mode;
+            mode_row = mode_row.child(
+                card_button(
+                    (preset.element_id, index),
+                    preset.glyph,
+                    SharedString::from(tr!(preset.label_key)),
+                    ink,
+                    fill,
+                    palette,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_mode(id, mode, cx)),
+                )
+                .tooltip(tooltip_builder(hint, palette)),
+            );
+        }
 
-        let drain = card_button(
-            ("q-drain", index),
+        let free = card_button(
+            ("q-free", index),
             Icon::Eraser,
-            SharedString::from(tr!("queues_drain_btn")),
+            SharedString::from(tr!("queues_free_btn")),
             palette.text_secondary,
             None,
             palette,
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.drain(id, cx)),
-        );
+            cx.listener(move |this, _: &ClickEvent, _, cx| this.free(id, cx)),
+        )
+        .tooltip(tooltip_builder(tr!("queues_free_tooltip"), palette));
+
+        let mode_row = mode_row
+            .child(div().w(BORDER_THIN).bg(palette.border_regular))
+            .child(free);
 
         let configure = card_button(
             ("q-configure", index),
@@ -1074,11 +1151,10 @@ impl QueuesView {
         div()
             .w_full()
             .flex()
-            .flex_row()
+            .flex_col()
             .gap(spacing(Spacing::Xs, density))
-            .child(action)
-            .child(drain)
-            .child(configure)
+            .child(mode_row)
+            .child(div().w_full().flex().flex_row().child(configure))
             .into_any_element()
     }
 
@@ -1089,7 +1165,7 @@ impl QueuesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let gap = spacing(Spacing::Sm, density);
-        let visible = self.visible_indices(cx);
+        let visible = self.visible_indices();
         let cards: Vec<AnyElement> = visible
             .into_iter()
             .map(|index| self.queue_card(index, &self.queues[index], palette, density, cx))
@@ -1145,17 +1221,13 @@ impl QueuesView {
 }
 
 impl QueuesView {
-    fn render_stats<'a>(
-        &self,
-        palette: &'a ForgePalette,
-        cx: &Context<Self>,
-    ) -> impl IntoElement + use<'a> {
-        let paused_count = self
+    fn render_stats<'a>(&self, palette: &'a ForgePalette) -> impl IntoElement + use<'a> {
+        let running_count = self
             .queues
             .iter()
-            .filter(|q| self.effective_paused(q, cx))
+            .filter(|q| q.mode == QueueMode::RUNNING)
             .count();
-        let running_count = self.queues.len().saturating_sub(paused_count);
+        let paused_count = self.queues.len().saturating_sub(running_count);
 
         header_stats(
             vec![
@@ -1250,7 +1322,7 @@ impl Render for QueuesView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let stats = self.render_stats(&palette, cx);
+        let stats = self.render_stats(&palette);
         let subheader_left = self.render_subheader_left(&palette, density, cx);
         let subheader_right = self.render_subheader_right(&palette, density, cx);
 
@@ -1260,7 +1332,7 @@ impl Render for QueuesView {
             .text_color(palette.text_muted)
             .child(tr!("queues_subtitle"));
 
-        let visible_count = self.visible_indices(cx).len();
+        let visible_count = self.visible_indices().len();
         let body = if self.queues.is_empty() {
             let caption = if self.loading {
                 SharedString::from(tr!("queues_loading"))
@@ -1330,20 +1402,14 @@ impl Render for QueuesView {
     }
 }
 
-fn status_badge(spin_id: SharedString, paused: bool, palette: &ForgePalette) -> AnyElement {
-    let (mark, label, ink): (AnyElement, SharedString, gpui::Rgba) = if paused {
-        (
-            icon(Icon::PlayerPause, BADGE_GLYPH, palette.warning).into_any_element(),
-            SharedString::from(tr!("queues_status_paused")),
-            palette.warning,
-        )
+fn status_badge(spin_id: SharedString, mode: QueueMode, palette: &ForgePalette) -> AnyElement {
+    let ink = mode_ink(mode, palette);
+    let mark: AnyElement = if mode == QueueMode::RUNNING {
+        spinner(spin_id, Icon::Loader2, BADGE_GLYPH, ink).into_any_element()
     } else {
-        (
-            spinner(spin_id, Icon::Loader2, BADGE_GLYPH, palette.success).into_any_element(),
-            SharedString::from(tr!("queues_status_running")),
-            palette.success,
-        )
+        icon(mode_glyph(mode), BADGE_GLYPH, ink).into_any_element()
     };
+    let label = SharedString::from(tr!(mode_badge_key(mode)));
     div()
         .flex()
         .items_center()
@@ -1367,8 +1433,8 @@ fn metric_col(
     caption: SharedString,
     value: String,
     hint: SharedString,
-    value_color: gpui::Rgba,
-    hint_color: gpui::Rgba,
+    value_color: Rgba,
+    hint_color: Rgba,
     palette: &ForgePalette,
 ) -> impl IntoElement {
     div()
@@ -1400,8 +1466,76 @@ fn metric_col(
         )
 }
 
-fn idle_panel(palette: &ForgePalette, density: Density) -> AnyElement {
-    div()
+fn status_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+    if q.mode != QueueMode::RUNNING {
+        return mode_panel(q, palette, density);
+    }
+    if q.running.is_empty() {
+        return activity_panel(q, palette, density);
+    }
+    if !q.blocking && q.running.len() > 1 {
+        return concurrent_panel(q, palette, density);
+    }
+    serial_panel(q, palette, density)
+}
+
+fn mode_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+    let ink = mode_ink(q.mode, palette);
+    status_strip(
+        icon(mode_glyph(q.mode), PANEL_GLYPH, ink).into_any_element(),
+        SharedString::from(tr!(mode_caption_key(q.mode))),
+        palette.text_primary,
+        Some(ink),
+        q,
+        palette,
+        density,
+    )
+}
+
+fn activity_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
+    if q.in_flight == 0 {
+        return status_strip(
+            icon(Icon::CircleDashed, PANEL_GLYPH, palette.text_faint).into_any_element(),
+            SharedString::from(tr!("queues_no_actions_running")),
+            palette.text_faint,
+            None,
+            q,
+            palette,
+            density,
+        );
+    }
+    let spin_id = SharedString::from(format!("q-strip-spin-{}", q.id));
+    status_strip(
+        spinner(spin_id, Icon::Loader2, PANEL_GLYPH, palette.brand).into_any_element(),
+        SharedString::from(tr!("queues_running_count", count = q.in_flight as i64)),
+        palette.text_primary,
+        None,
+        q,
+        palette,
+        density,
+    )
+}
+
+fn status_strip(
+    mark: AnyElement,
+    caption: SharedString,
+    caption_ink: Rgba,
+    tint: Option<Rgba>,
+    q: &QueueRow,
+    palette: &ForgePalette,
+    density: Density,
+) -> AnyElement {
+    let counts = div()
+        .font_family(mono_family())
+        .text_size(FONT_XXS)
+        .text_color(palette.text_faint)
+        .child(SharedString::from(tr!(
+            "queues_strip_counts",
+            pending = q.pending as i64,
+            in_flight = q.in_flight as i64
+        )));
+
+    let mut strip = div()
         .w_full()
         .flex()
         .items_center()
@@ -1410,14 +1544,53 @@ fn idle_panel(palette: &ForgePalette, density: Density) -> AnyElement {
         .px(spacing(Spacing::Sm, density))
         .mb(SECTION_GAP)
         .rounded(radius(Radius::Sm))
-        .bg(palette.shell)
-        .child(icon(Icon::CircleDashed, PANEL_GLYPH, palette.text_faint))
+        .child(mark)
         .child(
             div()
+                .flex_1()
+                .min_w_0()
                 .font_family(body_family())
                 .text_size(FONT_XS)
-                .text_color(palette.text_faint)
-                .child(SharedString::from(tr!("queues_no_actions_running"))),
+                .text_color(caption_ink)
+                .child(caption),
+        );
+    if q.overflowed > 0 {
+        strip = strip.child(overflow_badge(q.overflowed, palette));
+    }
+    strip = strip.child(counts);
+
+    match tint {
+        Some(ink) => strip
+            .bg(with_alpha(ink, 0.06))
+            .border(BORDER_THIN)
+            .border_color(with_alpha(ink, 0.20)),
+        None => strip.bg(palette.shell),
+    }
+    .into_any_element()
+}
+
+fn overflow_badge(overflowed: u64, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .py(spacing(Spacing::Xxs, Density::Cozy))
+        .px(spacing(Spacing::Xs, Density::Cozy))
+        .rounded(BADGE_RADIUS)
+        .bg(with_alpha(palette.random, 0.12))
+        .border(BORDER_THIN)
+        .border_color(with_alpha(palette.random, 0.30))
+        .child(icon(Icon::AlertTriangle, BADGE_GLYPH, palette.random))
+        .child(
+            div()
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.random)
+                .child(SharedString::from(tr!(
+                    "queues_overflow_badge",
+                    count = overflowed as i64,
+                    cap = MAX_PENDING_PER_QUEUE as i64
+                ))),
         )
         .into_any_element()
 }
@@ -1506,49 +1679,15 @@ fn running_pill(label: impl Into<SharedString>, palette: &ForgePalette) -> impl 
     .radius(PILL_RADIUS)
 }
 
-fn paused_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> AnyElement {
-    let caption: SharedString = match q.paused_since_min {
-        Some(min) if min > 0 => tr!(
-            "queues_paused_with_time",
-            pending = q.pending as i64,
-            mins = min
-        )
-        .into(),
-        _ => tr!("queues_paused_simple").into(),
-    };
-    div()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap(BAR_GAP)
-        .py(spacing(Spacing::Xs, density))
-        .px(spacing(Spacing::Sm, density))
-        .mb(SECTION_GAP)
-        .rounded(radius(Radius::Sm))
-        .bg(with_alpha(palette.warning, 0.06))
-        .border(BORDER_THIN)
-        .border_color(with_alpha(palette.warning, 0.20))
-        .child(icon(Icon::AlertTriangle, PANEL_GLYPH, palette.warning))
-        .child(
-            div()
-                .flex_1()
-                .font_family(body_family())
-                .text_size(FONT_XS)
-                .text_color(palette.text_primary)
-                .child(caption),
-        )
-        .into_any_element()
-}
-
 fn card_button(
     id: impl Into<gpui::ElementId>,
     glyph: Icon,
     label: SharedString,
-    ink: gpui::Rgba,
-    fill: Option<gpui::Rgba>,
+    ink: Rgba,
+    fill: Option<Rgba>,
     palette: &ForgePalette,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> AnyElement {
+) -> Stateful<Div> {
     let mut btn = div()
         .id(id.into())
         .flex_1()
@@ -1579,7 +1718,7 @@ fn card_button(
                 .hover(move |s| s.border_color(hover_border));
         }
     }
-    btn.into_any_element()
+    btn
 }
 
 async fn load_queues(
@@ -1603,12 +1742,12 @@ async fn load_queues(
                 description: q.description,
                 blocking: concurrency == SERIAL_CONCURRENCY,
                 concurrency,
-                paused: state.is_some_and(|s| s.mode.processing == QueueProcessing::Frozen),
+                mode: state.map_or(QueueMode::RUNNING, |s| s.mode),
                 pending: state.map_or(0, |s| s.pending as u32),
                 in_flight: state.map_or(0, |s| s.in_flight as u32),
+                overflowed: state.map_or(0, |s| s.overflowed),
                 actions: assigned,
                 running: vec![],
-                paused_since_min: None,
             }
         })
         .collect();

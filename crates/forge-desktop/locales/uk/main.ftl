@@ -1085,18 +1085,33 @@ queues_filter_running = Активні
 queues_filter_paused = На паузі
 queues_filter_parallel = Паралельна
 queues_filter_sequential = Послідовна
-queues_drain_feedback = Спустошення «{ $name }».
 queues_configure_btn = Налаштувати
 queues_drain_btn = Спустошити
 queues_pause_btn = Пауза
-queues_resume_btn = Продовжити
+queues_hold_btn = Утримати
+queues_free_btn = Звільнити
+
+## Черги - керування режимом
+
+queues_mode_pause_tooltip = Зупинити обробку та пропускати всі нові дії
+queues_mode_drain_tooltip = Продовжувати обробку накопиченого, пропускати всі нові дії
+queues_mode_hold_tooltip = Зупинити обробку, але й далі приймати нові дії в чергу
+queues_mode_active_tooltip = Повернути до виконання
+queues_free_tooltip = Прибрати все, що чекає - дія, яка вже виконується, завершиться, а режим лишиться той самий
+queues_free_feedback = Прибрано { $count } дій з очікування в черзі «{ $name }».
+queues_mode_running_caption = Виконується - дії обробляються щойно надходять
+queues_mode_drain_caption = Спустошення - накопичене завершується, нові дії пропускаються
+queues_mode_hold_caption = Утримано - обробку зупинено, нові дії далі стають у чергу
+queues_mode_pause_caption = Пауза - обробку зупинено, нові дії пропускаються
+queues_strip_counts = { $pending } в очікуванні · { $in_flight } виконується
+queues_overflow_badge = { $count } пропущено понад ліміт { $cap }
 
 ## Черги - меню картки
 
 queues_menu_configure = Налаштувати…
 queues_menu_pause = Пауза
 queues_menu_resume = Продовжити
-queues_menu_drain = Спустошити чергу
+queues_menu_free = Звільнити чергу
 queues_menu_delete = Видалити…
 queues_delete_confirm_title = Видалити чергу
 queues_delete_confirm_body = Дії з цієї черги перейдуть до черги Default. Це не можна скасувати.
@@ -1131,21 +1146,19 @@ queues_metric_in_flight = виконується
 queues_metric_idle = очікування
 queues_metric_held = заблоковано
 
-## Черги - панель паузи
-
-queues_paused_with_time = { $pending } дій в очікуванні - на паузі { $mins } хв тому
-queues_paused_simple = Черга на паузі
-
 ## Черги - панель запущених дій
 
 queues_running_now_header = ВИКОНУЄТЬСЯ ЗАРАЗ
 queues_no_actions_running = Дій не виконується
+queues_running_count = { $count } дій виконується
 queues_running_label = виконується
 
 ## Черги - бейдж статусу
 
 queues_status_paused = ПАУЗА
 queues_status_running = ВИКОНУЄТЬСЯ
+queues_status_draining = СПУСТОШЕННЯ
+queues_status_held = УТРИМАНО
 
 ## Черги - розбіжність живого членства
 

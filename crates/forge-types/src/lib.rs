@@ -2,6 +2,7 @@ pub mod action;
 pub mod data_flow;
 pub mod execution;
 pub mod ids;
+pub mod permission_rung;
 pub mod platform;
 pub mod platform_scope;
 pub mod queue;
@@ -22,6 +23,7 @@ pub use execution::{
     SubActionTelemetry, normalize_var_name, strip_var_decoration, variant_preview,
 };
 pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
+pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::PlatformId;
 pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;

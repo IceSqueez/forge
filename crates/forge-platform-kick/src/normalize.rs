@@ -1,4 +1,6 @@
+use forge_types::{ChatPayload, ChatSegment, ModerationMarks, UserBadge};
 use serde_json::Value;
+use tracing::debug;
 
 use crate::payload_fields::{chat, entity, host, moderation, subscription, subscription_gift};
 
@@ -19,6 +21,32 @@ fn entity_json(id: Option<u64>, username: Option<String>) -> Value {
         (entity::ID): id,
         (entity::USERNAME): username,
     })
+}
+
+fn identity_badges(identity: Option<&Value>) -> Vec<UserBadge> {
+    let badges = match identity
+        .and_then(|i| i.get("badges"))
+        .and_then(Value::as_array)
+    {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
+    badges
+        .iter()
+        .filter_map(|badge| match str_field(badge, "type").as_deref() {
+            Some("moderator") => Some(UserBadge::Moderator),
+            Some("subscriber") => Some(UserBadge::Subscriber {
+                months: u64_field(badge, "count").unwrap_or(0) as u32,
+            }),
+            // gifter status is not a subscription claim
+            Some("sub_gifter") => None,
+            Some(other) => {
+                debug!(badge_type = %other, "unrecognized kick identity badge type; dropping");
+                None
+            }
+            None => None,
+        })
+        .collect()
 }
 
 pub(crate) fn chat_message_sent(raw: &Value) -> Value {
@@ -46,6 +74,27 @@ pub(crate) fn chat_message_sent(raw: &Value) -> Value {
             (chat::COLOR): color,
         },
     })
+}
+
+pub(crate) fn chat_message_chat_payload(raw: &Value) -> ChatPayload {
+    let sender = raw.get("sender");
+    let identity = sender.and_then(|s| s.get("identity"));
+    let username = sender.and_then(|s| str_field(s, "username"));
+    let display_name = sender.and_then(|s| str_field(s, "slug"));
+    let author_color = non_empty(identity.and_then(|i| str_field(i, "color")));
+
+    ChatPayload {
+        platform_msg_id: str_field(raw, "id").unwrap_or_default(),
+        author: display_name.or(username).unwrap_or_default(),
+        author_color,
+        segments: vec![ChatSegment::Text {
+            text: str_field(raw, "content").unwrap_or_default(),
+        }],
+        badges: identity_badges(identity),
+        is_event: false,
+        event_detail: None,
+        moderation: ModerationMarks::default(),
+    }
 }
 
 pub(crate) fn chat_message_deleted(raw: &Value) -> Value {

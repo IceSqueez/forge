@@ -3,6 +3,7 @@ use std::time::Duration;
 use forge_events::{Event, EventSource};
 use forge_platform_core::Backoff;
 use forge_platform_core::chat::ConnectionState;
+use forge_types::ChatPayload;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -356,10 +357,12 @@ enum WsFrameHealth {
 
 pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Option<Event> {
     let (kind, normalized) = match event_name {
-        "App\\Events\\ChatMessageEvent" => (
-            "kick.chat.message.sent",
-            normalize::chat_message_sent(&payload),
-        ),
+        "App\\Events\\ChatMessageEvent" => {
+            let mut normalized = normalize::chat_message_sent(&payload);
+            let chat_payload = normalize::chat_message_chat_payload(&payload);
+            normalized[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+            ("kick.chat.message.sent", normalized)
+        }
         "App\\Events\\MessageDeletedEvent" => (
             "kick.chat.message.deleted",
             normalize::chat_message_deleted(&payload),

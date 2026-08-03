@@ -6,6 +6,7 @@ use forge_components::{
     ghost_button_with_icon, icon, mono_family, page_frame, radius, spacing, sparkline, status_dot,
     tr,
 };
+use forge_registry::TriggerRegistry;
 use forge_storage::DataProvider;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, Subscription,
@@ -80,6 +81,7 @@ struct JumpCard {
 pub struct HomeView {
     stats: Entity<HomeStats>,
     backend: Arc<dyn DataProvider>,
+    trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     _stats_obs: Subscription,
 }
@@ -88,6 +90,7 @@ impl HomeView {
     pub fn new(
         stats: Entity<HomeStats>,
         backend: Arc<dyn DataProvider>,
+        trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -95,6 +98,7 @@ impl HomeView {
         Self {
             stats,
             backend,
+            trigger_registry,
             rt_handle,
             _stats_obs: stats_obs,
         }
@@ -112,6 +116,7 @@ impl HomeView {
         });
         let stats = self.stats.clone();
         let backend = Arc::clone(&self.backend);
+        let trigger_registry = Arc::clone(&self.trigger_registry);
         let rt_handle = self.rt_handle.clone();
         cx.spawn(async move |this, cx| match rx.await {
             Ok(Ok(name)) => {
@@ -121,7 +126,7 @@ impl HomeView {
                         tr!("home_import_success", name = name.as_str()),
                     );
                 });
-                refresh_dashboard_stats(stats, backend, rt_handle, cx).await;
+                refresh_dashboard_stats(stats, backend, trigger_registry, rt_handle, cx).await;
             }
             Ok(Err(e)) => {
                 if e == async_bridge::DIALOG_CANCELLED {

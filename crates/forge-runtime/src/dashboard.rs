@@ -1,3 +1,4 @@
+use forge_registry::{ChatTriggerFamily, TriggerRegistry};
 use forge_storage::{ActionRepo, GlobalsRepo, HistoryRepo, StorageError, TriggerInstanceRepo};
 
 #[derive(Debug, Clone)]
@@ -13,6 +14,7 @@ pub async fn compute_stats(
     globals: &dyn GlobalsRepo,
     history: &dyn HistoryRepo,
     triggers: &dyn TriggerInstanceRepo,
+    registry: &TriggerRegistry,
 ) -> Result<DashboardStats, StorageError> {
     let actions_count = actions.list().await?.len();
     let globals_count = globals.list().await?.len();
@@ -20,7 +22,12 @@ pub async fn compute_stats(
         .list_all()
         .await?
         .iter()
-        .filter(|t| t.kind_id.ends_with(".command"))
+        .filter(|t| {
+            registry
+                .get(&t.kind_id)
+                .and_then(|d| d.chat_trigger_family())
+                == Some(ChatTriggerFamily::Command)
+        })
         .count();
     let since = time::OffsetDateTime::now_utc() - time::Duration::hours(24);
     let stats = history.stats_summary(since).await?;

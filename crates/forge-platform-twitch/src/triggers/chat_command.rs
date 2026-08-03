@@ -1,6 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{ArgStack, PlatformId, TriggerConfig, VariableSchema, Variant};
 
@@ -126,6 +127,10 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some(base_chat_schema())
+    }
+
+    fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
+        Some(ChatTriggerFamily::Command)
     }
 }
 

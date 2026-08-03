@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
-use forge_registry::{CancelSignal, TriggerRegistry, effective_config};
+use forge_registry::{CancelSignal, ChatTriggerFamily, TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{ArgStack, EventId, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
 use serde_json::json;
@@ -144,11 +144,12 @@ impl TriggerEvaluator {
                 }
 
                 let args = descriptor.build_arg_stack(&event);
+                let chat_family = descriptor.chat_trigger_family();
                 if self.throttled(instance, &args, event.id) {
                     continue;
                 }
 
-                if !command_emitted && instance.kind_id.ends_with(".command") {
+                if !command_emitted && chat_family == Some(ChatTriggerFamily::Command) {
                     self.bus.publish(Event::caused_by(
                         EventSource::Core,
                         "command.matched",

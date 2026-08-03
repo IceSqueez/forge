@@ -20,7 +20,7 @@ pub use chain::{
     StopMark, TelemetrySink,
 };
 pub use config_ext::SubActionConfigExt;
-pub use descriptor::TriggerKindDescriptor;
+pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
 pub use error::RegistryError;
 pub use evaluator::EventFilter;
 pub use form::{CodeLanguage, FormField};

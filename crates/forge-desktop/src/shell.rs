@@ -3,6 +3,7 @@ use std::sync::Arc;
 use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_events::EventPublisher;
 use forge_platform_core::BuiltinId;
+use forge_registry::TriggerRegistry;
 use forge_runtime::dashboard::compute_stats;
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo};
 use gpui::{
@@ -113,18 +114,28 @@ impl AppShell {
         match screen {
             Screen::Home => {
                 let home_backend = Arc::clone(&handles.backend);
+                let home_registry = Arc::clone(&handles.trigger_registry);
                 let home_rt = handles.rt_handle.clone();
-                let home = cx
-                    .new(|cx| HomeView::new(topics.home_stats.clone(), home_backend, home_rt, cx));
+                let home = cx.new(|cx| {
+                    HomeView::new(
+                        topics.home_stats.clone(),
+                        home_backend,
+                        home_registry,
+                        home_rt,
+                        cx,
+                    )
+                });
                 cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
                 })
                 .detach();
                 let home_stats = topics.home_stats.clone();
                 let backend = Arc::clone(&handles.backend);
+                let stats_registry = Arc::clone(&handles.trigger_registry);
                 let rt_handle = handles.rt_handle.clone();
                 cx.spawn(async move |_shell, cx| {
-                    refresh_dashboard_stats(home_stats, backend, rt_handle, cx).await;
+                    refresh_dashboard_stats(home_stats, backend, stats_registry, rt_handle, cx)
+                        .await;
                 })
                 .detach();
                 home.into()
@@ -611,6 +622,7 @@ impl AppShell {
 pub(crate) async fn refresh_dashboard_stats(
     home_stats: Entity<HomeStats>,
     backend: Arc<dyn DataProvider>,
+    trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     cx: &mut AsyncApp,
 ) {
@@ -620,7 +632,16 @@ pub(crate) async fn refresh_dashboard_stats(
     let triggers = backend.trigger_instance_repo();
     let (tx, rx) = tokio::sync::oneshot::channel();
     rt_handle.spawn(async move {
-        let _ = tx.send(compute_stats(&*actions, &*globals, &*history, &*triggers).await);
+        let _ = tx.send(
+            compute_stats(
+                &*actions,
+                &*globals,
+                &*history,
+                &*triggers,
+                &trigger_registry,
+            )
+            .await,
+        );
     });
     match rx.await {
         Ok(Ok(stats)) => {

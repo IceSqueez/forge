@@ -536,4 +536,36 @@ mod tests {
         assert!(event.payload.get("slug").is_none());
         assert!(event.payload["sender"].get("identity").is_none());
     }
+
+    #[test]
+    fn chat_message_event_carries_the_unified_envelope_with_mapped_badges() {
+        let mut raw = chat_payload();
+        raw["sender"]["identity"]["badges"] = serde_json::json!([
+            { "type": "moderator", "text": "Moderator" },
+            { "type": "subscriber", "text": "Subscriber", "count": 4 },
+        ]);
+        let event = build_event("App\\Events\\ChatMessageEvent", raw).expect("must build event");
+
+        let chat: ChatPayload = serde_json::from_value(event.payload[ChatPayload::KEY].clone())
+            .expect("typed envelope");
+        assert_eq!(
+            chat.badges,
+            vec![
+                forge_types::UserBadge::Moderator,
+                forge_types::UserBadge::Subscriber { months: 4 },
+            ]
+        );
+    }
+
+    #[test]
+    fn chat_message_event_exposes_no_flat_badge_strings_beside_the_envelope() {
+        // Raw platform badge strings are not an authorization source; only the typed envelope is.
+        let mut raw = chat_payload();
+        raw["sender"]["identity"]["badges"] =
+            serde_json::json!([{ "type": "moderator", "text": "Moderator" }]);
+        let event = build_event("App\\Events\\ChatMessageEvent", raw).expect("must build event");
+
+        assert!(event.payload.get("badges").is_none());
+        assert!(event.payload["sender"].get("badges").is_none());
+    }
 }

@@ -393,3 +393,51 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             .collect()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use super::*;
+
+    fn row(permission_rung: &str) -> InstanceRow {
+        InstanceRow {
+            id: "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_owned(),
+            kind_id: "twitch.chat.command".to_owned(),
+            name: "Gated".to_owned(),
+            overrides: "{}".to_owned(),
+            enabled: 1,
+            user_defined: 1,
+            platform_scope: "\"any\"".to_owned(),
+            cooldown_secs: 0,
+            cooldown_global: 1,
+            permission_rung: permission_rung.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_foreign_permission_rung_string_fails_the_row_decode() {
+        // A rung this build does not know must surface as a typed decode error rather than
+        // silently collapsing to the floor and quietly opening a gated command.
+        for foreign in ["regular", "owner", "", "Moderator"] {
+            let err = decode_row(row(foreign)).expect_err("must not decode");
+            assert!(
+                matches!(&err, SqliteStorageError::Decode(msg) if msg.contains(foreign)),
+                "expected a decode error naming {foreign:?}, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_canonical_permission_rung_string_decodes_to_its_rung() {
+        for rung in [
+            PermissionRung::Everyone,
+            PermissionRung::Subscriber,
+            PermissionRung::Vip,
+            PermissionRung::Moderator,
+            PermissionRung::Broadcaster,
+        ] {
+            let decoded = decode_row(row(rung.as_str())).expect("must decode");
+            assert_eq!(decoded.permission_rung, rung);
+        }
+    }
+}

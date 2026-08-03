@@ -212,6 +212,49 @@ mod tests {
     }
 
     #[test]
+    fn chat_payload_maps_pusher_identity_badges_onto_the_shared_vocabulary() {
+        for (raw_badges, expected) in [
+            (json!([]), vec![]),
+            (
+                json!([{ "type": "moderator", "text": "Moderator" }]),
+                vec![UserBadge::Moderator],
+            ),
+            (
+                json!([{ "type": "subscriber", "text": "Subscriber", "count": 7 }]),
+                vec![UserBadge::Subscriber { months: 7 }],
+            ),
+            (
+                json!([{ "type": "subscriber", "text": "Subscriber" }]),
+                vec![UserBadge::Subscriber { months: 0 }],
+            ),
+            // Gifting somebody else a subscription asserts nothing about the gifter's own role.
+            (json!([{ "type": "sub_gifter", "count": 20 }]), vec![]),
+            // The wire is unofficial: a type this build does not know must not authorize.
+            (json!([{ "type": "og" }, { "text": "Moderator" }]), vec![]),
+            (
+                json!([{ "type": "sub_gifter" }, { "type": "moderator" }]),
+                vec![UserBadge::Moderator],
+            ),
+        ] {
+            let payload = chat_message_chat_payload(&json!({
+                "id": "msg-1",
+                "content": "hi",
+                "sender": { "username": "viewer", "identity": { "badges": raw_badges } }
+            }));
+            assert_eq!(payload.badges, expected, "badges: {raw_badges}");
+        }
+    }
+
+    #[test]
+    fn chat_payload_carries_no_badges_when_the_sender_identity_is_absent() {
+        let payload = chat_message_chat_payload(&json!({ "id": "m", "content": "hi" }));
+        assert!(
+            payload.badges.is_empty(),
+            "a sender with no identity resolves to the floor rung, never above it"
+        );
+    }
+
+    #[test]
     fn chat_message_sent_reply_id_reads_metadata_original_message() {
         let out = chat_message_sent(&json!({
             "id": "m",

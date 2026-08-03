@@ -523,6 +523,54 @@ async fn platform_scope_only_subset_round_trips() {
 }
 
 #[tokio::test]
+async fn every_permission_rung_survives_a_save_and_get_roundtrip() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+
+    for rung in [
+        PermissionRung::Everyone,
+        PermissionRung::Subscriber,
+        PermissionRung::Vip,
+        PermissionRung::Moderator,
+        PermissionRung::Broadcaster,
+    ] {
+        let mut inst = make_instance("twitch.chat.command", "Gated", true);
+        inst.permission_rung = rung;
+        let id = inst.id;
+        repo.save(&inst).await.expect("save");
+        let got = repo.get(id).await.expect("get").expect("row must exist");
+        assert_eq!(got.permission_rung, rung);
+    }
+}
+
+#[tokio::test]
+async fn legacy_rows_without_a_permission_rung_read_as_everyone() {
+    let backend = setup().await;
+    let repo = backend.trigger_instance_repo();
+
+    let instance_id = TriggerInstanceId::new();
+    backend
+        .insert_trigger_instance_without_scope_for_test(
+            &instance_id.to_string(),
+            "twitch.chat.command",
+            "Legacy",
+        )
+        .await
+        .expect("raw insert without permission_rung column");
+
+    let got = repo
+        .get(instance_id)
+        .await
+        .expect("get")
+        .expect("row must exist");
+    assert_eq!(
+        got.permission_rung,
+        PermissionRung::Everyone,
+        "the backfill default must keep every pre-existing trigger open to everyone"
+    );
+}
+
+#[tokio::test]
 async fn migration_applies_any_default_to_legacy_rows() {
     let backend = setup().await;
     let repo = backend.trigger_instance_repo();

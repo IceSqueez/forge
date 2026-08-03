@@ -239,6 +239,195 @@ mod tests {
         }
     }
 
+    fn rid(id: &str) -> RequestId {
+        RequestId(id.to_owned())
+    }
+
+    fn enqueued(id: &str, is_high_priority: bool) -> SpeakEvent {
+        enqueued_saying(id, is_high_priority, "hello")
+    }
+
+    fn enqueued_saying(id: &str, is_high_priority: bool, text: &str) -> SpeakEvent {
+        SpeakEvent::Enqueued {
+            request_id: rid(id),
+            queue_len: 0,
+            viewer_name: format!("viewer-{id}"),
+            text: text.to_owned(),
+            is_high_priority,
+            voice_preview: "piper / amy".into(),
+            estimated_secs: 3,
+        }
+    }
+
+    fn queue_changed(order: &[(&str, bool)]) -> SpeakEvent {
+        SpeakEvent::QueueChanged {
+            queue_len: order.len(),
+            order: order
+                .iter()
+                .map(|(id, is_high_priority)| QueuedOrderEntry {
+                    request_id: rid(id),
+                    is_high_priority: *is_high_priority,
+                })
+                .collect(),
+        }
+    }
+
+    fn started(id: &str) -> SpeakEvent {
+        SpeakEvent::Started {
+            request_id: rid(id),
+            voice_id: forge_tts_core::VoiceId("amy".into()),
+            engine_id: forge_tts_core::EngineId("piper".into()),
+            viewer_name: format!("viewer-{id}"),
+            text: "hello".into(),
+            duration_secs: 3,
+        }
+    }
+
+    fn queue_ids(state: &SpeakState) -> Vec<String> {
+        state
+            .queue_snapshot()
+            .into_iter()
+            .map(|item| item.request_id.0)
+            .collect()
+    }
+
+    fn seeded(ids: &[&str]) -> SpeakState {
+        let mut state = SpeakState::new();
+        for id in ids {
+            state.apply_event(enqueued(id, false));
+        }
+        state
+    }
+
+    #[test]
+    fn queue_changed_order_reseats_the_pending_list_into_playback_sequence() {
+        let mut state = seeded(&["a", "b", "c"]);
+
+        state.apply_event(queue_changed(&[("c", false), ("a", false), ("b", false)]));
+
+        assert_eq!(queue_ids(&state), ["c", "a", "b"]);
+    }
+
+    #[test]
+    fn queue_changed_order_is_the_authority_on_queue_membership() {
+        for (case, order, expected) in [
+            (
+                "an id dropped from the order leaves the list",
+                vec![("a", false), ("c", false)],
+                vec!["a", "c"],
+            ),
+            (
+                "an id with no cached item renders no phantom row",
+                vec![("a", false), ("d", false), ("c", false)],
+                vec!["a", "c"],
+            ),
+        ] {
+            let mut state = seeded(&["a", "b", "c"]);
+
+            state.apply_event(queue_changed(&order));
+
+            assert_eq!(queue_ids(&state), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn queue_changed_entry_overrides_the_priority_the_item_was_enqueued_with() {
+        for (case, enqueued_high, seated_high) in [
+            ("promoted into the high queue", false, true),
+            ("demoted into the normal queue", true, false),
+        ] {
+            let mut state = SpeakState::new();
+            state.apply_event(enqueued("a", enqueued_high));
+
+            state.apply_event(queue_changed(&[("a", seated_high)]));
+
+            let flags: Vec<bool> = state
+                .queue_snapshot()
+                .iter()
+                .map(|item| item.is_high_priority)
+                .collect();
+            assert_eq!(flags, [seated_high], "{case}");
+        }
+    }
+
+    #[test]
+    fn queue_changed_reports_a_repaint_only_when_the_visible_list_moves() {
+        for (case, order, expected) in [
+            ("identical order", vec![("a", false), ("b", false)], false),
+            ("permuted order", vec![("b", false), ("a", false)], true),
+            ("priority flip only", vec![("a", true), ("b", false)], true),
+            ("shrunken membership", vec![("a", false)], true),
+        ] {
+            let mut state = seeded(&["a", "b"]);
+
+            assert_eq!(state.apply_event(queue_changed(&order)), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn repeated_enqueued_for_one_request_replaces_the_row_instead_of_duplicating_it() {
+        for (case, between) in [
+            ("back to back", Vec::new()),
+            (
+                "after the order was already reseated",
+                vec![queue_changed(&[("a", false)])],
+            ),
+        ] {
+            let mut state = SpeakState::new();
+            state.apply_event(enqueued_saying("a", false, "first"));
+            for event in between {
+                state.apply_event(event);
+            }
+
+            state.apply_event(enqueued_saying("a", false, "second"));
+
+            let queue = state.queue_snapshot();
+            assert_eq!(queue.len(), 1, "{case}");
+            assert_eq!(queue[0].text, "second", "{case}");
+        }
+    }
+
+    #[test]
+    fn starting_a_reordered_item_leaves_the_remaining_rows_in_the_broadcast_sequence() {
+        let mut state = seeded(&["a", "b", "c"]);
+        state.apply_event(queue_changed(&[("b", false), ("c", false), ("a", false)]));
+
+        state.apply_event(queue_changed(&[("c", false), ("a", false)]));
+        state.apply_event(started("b"));
+
+        assert_eq!(queue_ids(&state), ["c", "a"]);
+        assert_eq!(
+            state.now_speaking_snapshot().map(|ns| ns.request_id.0),
+            Some("b".to_owned())
+        );
+    }
+
+    #[test]
+    fn clearing_the_pending_list_is_owned_by_the_empty_order_not_by_the_cleared_event() {
+        let mut state = seeded(&["a", "b"]);
+        state.apply_event(queue_changed(&[("b", false)]));
+        state.apply_event(started("a"));
+
+        state.apply_event(SpeakEvent::Cleared);
+        assert_eq!(queue_ids(&state), ["b"]);
+        assert!(state.now_speaking_snapshot().is_none());
+
+        state.apply_event(queue_changed(&[]));
+        assert!(queue_ids(&state).is_empty());
+    }
+
+    #[test]
+    fn removed_neither_drops_the_row_nor_asks_for_a_repaint_on_its_own() {
+        let mut state = seeded(&["a", "b"]);
+
+        let changed = state.apply_event(SpeakEvent::Removed {
+            request_id: rid("a"),
+        });
+
+        assert!(!changed);
+        assert_eq!(queue_ids(&state), ["a", "b"]);
+    }
+
     #[test]
     fn manual_pause_events_leave_the_voice_gate_hold_untouched() {
         let mut state = SpeakState::new();

@@ -1,4 +1,4 @@
-use forge_speak_queue::{RequestId, SpeakEvent};
+use forge_speak_queue::{QueuedOrderEntry, RequestId, SpeakEvent};
 
 #[derive(Clone)]
 pub struct NowSpeaking {
@@ -72,7 +72,7 @@ impl SpeakState {
                 estimated_secs,
                 ..
             } => {
-                self.queue.push(QueueItem {
+                let item = QueueItem {
                     request_id,
                     viewer_name,
                     engine_voice: voice_preview,
@@ -80,7 +80,15 @@ impl SpeakState {
                     duration_secs: estimated_secs,
                     is_high_priority,
                     bits_amount: None,
-                });
+                };
+                match self
+                    .queue
+                    .iter_mut()
+                    .find(|queued| queued.request_id == item.request_id)
+                {
+                    Some(queued) => *queued = item,
+                    None => self.queue.push(item),
+                }
                 true
             }
             SpeakEvent::Started {
@@ -91,7 +99,6 @@ impl SpeakState {
                 text,
                 duration_secs,
             } => {
-                self.queue.retain(|item| item.request_id != request_id);
                 self.last_drop = None;
                 self.now_speaking = Some(NowSpeaking {
                     request_id,
@@ -130,16 +137,12 @@ impl SpeakState {
                 self.last_drop = Some(reason);
                 true
             }
-            SpeakEvent::Removed { request_id } => {
-                let before = self.queue.len();
-                self.queue.retain(|item| item.request_id != request_id);
-                self.queue.len() != before
-            }
+            SpeakEvent::Removed { .. } => false,
             SpeakEvent::Rejected { .. } => {
                 self.stats.filtered = self.stats.filtered.saturating_add(1);
                 true
             }
-            SpeakEvent::QueueChanged { .. } => false,
+            SpeakEvent::QueueChanged { order, .. } => self.reseat_queue(&order),
             SpeakEvent::Paused { .. } => {
                 let changed = !self.manual_paused;
                 self.manual_paused = true;
@@ -161,11 +164,36 @@ impl SpeakState {
                 changed
             }
             SpeakEvent::Cleared => {
-                self.queue.clear();
                 self.now_speaking = None;
                 true
             }
         }
+    }
+
+    /// `order` is the authority on membership, sequence and priority; ids with no cached
+    /// item (bridge lag) are skipped because the list can only render data it holds.
+    fn reseat_queue(&mut self, order: &[QueuedOrderEntry]) -> bool {
+        let reseated: Vec<QueueItem> = order
+            .iter()
+            .filter_map(|entry| {
+                self.queue
+                    .iter()
+                    .find(|item| item.request_id == entry.request_id)
+                    .map(|item| QueueItem {
+                        is_high_priority: entry.is_high_priority,
+                        ..item.clone()
+                    })
+            })
+            .collect();
+
+        let changed = reseated.len() != self.queue.len()
+            || reseated.iter().zip(&self.queue).any(|(new, old)| {
+                new.request_id != old.request_id || new.is_high_priority != old.is_high_priority
+            });
+        if changed {
+            self.queue = reseated;
+        }
+        changed
     }
 
     /// Optimistic: the confirming `Paused`/`Resumed` event re-seats the actual state.

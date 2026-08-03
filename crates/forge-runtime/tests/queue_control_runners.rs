@@ -9,7 +9,7 @@ use forge_runtime::sub_action_runners::{
     CoreQueueClearRunner, CoreQueuePauseRunner, CoreQueueResumeRunner,
 };
 use forge_runtime::{
-    EventBus, EventSubscription, NullEventLogRepo, QueueScheduler, QueueSchedulerHandle,
+    EventBus, EventSubscription, NullEventLogRepo, QueueMode, QueueScheduler, QueueSchedulerHandle,
     SchedulerCell, spawn_action_engine,
 };
 use forge_storage::DataProvider;
@@ -35,7 +35,6 @@ fn nonblocking(id: QueueId) -> Queue {
         name: "default".to_string(),
         description: String::new(),
         concurrency: 8,
-        paused: false,
     }
 }
 
@@ -103,10 +102,11 @@ async fn pause_runner_flips_registered_queue_to_paused() {
     let outcome = run_outcome(&runner, &cfg_queue(&q_id.to_string())).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
 
-    let paused = handle.paused_queues().await.unwrap();
-    assert!(
-        paused.contains(&q_id),
-        "pause runner must flip the queue's paused state via the live scheduler"
+    let states = handle.queue_states().await.unwrap();
+    assert_eq!(
+        states.get(&q_id).map(|s| s.mode),
+        Some(QueueMode::PAUSED),
+        "pause runner must flip the queue into Paused via the live scheduler"
     );
     handle.shutdown();
 }
@@ -151,16 +151,17 @@ async fn pause_runner_with_unregistered_queue_propagates_not_found() {
 async fn resume_runner_clears_paused_state_on_registered_queue() {
     let q_id = QueueId::new();
     let (cell, handle, _bus) = live_scheduler(nonblocking(q_id)).await;
-    handle.pause(q_id).await.unwrap();
+    handle.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
     let runner = CoreQueueResumeRunner::new(cell);
 
     let outcome = run_outcome(&runner, &cfg_queue(&q_id.to_string())).await;
     assert!(matches!(outcome, SubActionOutcome::Success));
 
-    let paused = handle.paused_queues().await.unwrap();
-    assert!(
-        !paused.contains(&q_id),
-        "resume runner must clear the queue's paused state via the live scheduler"
+    let states = handle.queue_states().await.unwrap();
+    assert_eq!(
+        states.get(&q_id).map(|s| s.mode),
+        Some(QueueMode::RUNNING),
+        "resume runner must return the queue to Running via the live scheduler"
     );
     handle.shutdown();
 }

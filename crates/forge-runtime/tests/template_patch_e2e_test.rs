@@ -42,7 +42,6 @@ fn make_queue(id: QueueId) -> Queue {
         name: "test".into(),
         description: String::new(),
         concurrency: 8,
-        paused: false,
     }
 }
 

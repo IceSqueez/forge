@@ -18,7 +18,6 @@ fn make_queue(name: &str, concurrency: u32) -> Queue {
         name: name.to_owned(),
         description: String::new(),
         concurrency,
-        paused: false,
     }
 }
 

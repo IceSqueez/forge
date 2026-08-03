@@ -1,6 +1,7 @@
 //! Dropping a slot's `sender` closes its channel; the runner drains and exits - a drain guarantee, not a leak.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
@@ -8,11 +9,14 @@ use forge_events::{Event, EventSource};
 use forge_registry::CancelSignal;
 use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId};
 use serde_json::json;
-use tokio::sync::{RwLock, Semaphore, mpsc, oneshot};
+use tokio::sync::{Semaphore, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
+
+/// Defensive ceiling on tasks buffered per queue; a frozen queue accumulates until it is hit.
+pub const MAX_PENDING_PER_QUEUE: usize = 500;
 
 /// Filled once `QueueScheduler::spawn` returns, avoiding a boot registration-order dependency.
 #[derive(Clone, Default)]
@@ -58,6 +62,92 @@ pub enum MembershipOutcome {
     NotFound,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueProcessing {
+    Running,
+    Frozen,
+}
+
+impl QueueProcessing {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Frozen => "frozen",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueIntake {
+    Accept,
+    Skip,
+}
+
+impl QueueIntake {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Accept => "accept",
+            Self::Skip => "skip",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueMode {
+    pub processing: QueueProcessing,
+    pub intake: QueueIntake,
+}
+
+impl QueueMode {
+    pub const RUNNING: Self = Self {
+        processing: QueueProcessing::Running,
+        intake: QueueIntake::Accept,
+    };
+    pub const DRAINING: Self = Self {
+        processing: QueueProcessing::Running,
+        intake: QueueIntake::Skip,
+    };
+    pub const HOLDING: Self = Self {
+        processing: QueueProcessing::Frozen,
+        intake: QueueIntake::Accept,
+    };
+    pub const PAUSED: Self = Self {
+        processing: QueueProcessing::Frozen,
+        intake: QueueIntake::Skip,
+    };
+
+    pub fn event_kind(self) -> &'static str {
+        match (self.processing, self.intake) {
+            (QueueProcessing::Running, QueueIntake::Accept) => "queue.resumed",
+            (QueueProcessing::Running, QueueIntake::Skip) => "queue.draining",
+            (QueueProcessing::Frozen, QueueIntake::Accept) => "queue.held",
+            (QueueProcessing::Frozen, QueueIntake::Skip) => "queue.paused",
+        }
+    }
+
+    fn skip_reason(self) -> &'static str {
+        match self.processing {
+            QueueProcessing::Running => "queue_draining",
+            QueueProcessing::Frozen => "queue_paused",
+        }
+    }
+}
+
+impl Default for QueueMode {
+    fn default() -> Self {
+        Self::RUNNING
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueRuntimeState {
+    pub mode: QueueMode,
+    pub pending: usize,
+    pub in_flight: usize,
+    /// Reset to zero whenever the queue enters a different mode.
+    pub overflowed: u64,
+}
+
 #[derive(Clone)]
 pub struct QueueSchedulerHandle {
     sender: mpsc::UnboundedSender<SchedulerCommand>,
@@ -65,23 +155,72 @@ pub struct QueueSchedulerHandle {
 
 enum SchedulerCommand {
     Enqueue(SchedulerRequest),
-    Pause(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
-    Resume(QueueId, oneshot::Sender<Result<(), SchedulerError>>),
+    SetMode(
+        QueueId,
+        QueueMode,
+        oneshot::Sender<Result<(), SchedulerError>>,
+    ),
     Clear(QueueId, bool, oneshot::Sender<Result<(), SchedulerError>>),
     Register(Queue, oneshot::Sender<MembershipOutcome>),
     Deregister(QueueId, oneshot::Sender<MembershipOutcome>),
     Reconfigure(Queue, oneshot::Sender<MembershipOutcome>),
-    QueryPaused(oneshot::Sender<std::collections::HashSet<QueueId>>),
+    QueryStates(oneshot::Sender<HashMap<QueueId, QueueRuntimeState>>),
     Shutdown,
 }
 
 struct QueueSlot {
     sender: mpsc::UnboundedSender<QueueTask>,
-    state: Arc<RwLock<PauseState>>,
+    processing: watch::Sender<QueueProcessing>,
+    mode: QueueMode,
+    counters: QueueCounters,
     name: String,
     concurrency: u32,
     runner: JoinHandle<()>,
     inflight: InflightTracker,
+}
+
+#[derive(Clone, Default)]
+struct QueueCounters {
+    pending: Arc<AtomicUsize>,
+    overflowed: Arc<AtomicU64>,
+}
+
+impl QueueCounters {
+    fn try_reserve(&self) -> bool {
+        self.pending
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                (current < MAX_PENDING_PER_QUEUE).then_some(current + 1)
+            })
+            .is_ok()
+    }
+
+    fn release(&self) {
+        let _ = self
+            .pending
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_sub(1))
+            });
+    }
+
+    fn record_overflow(&self) {
+        self.overflowed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn reset_overflow(&self) {
+        self.overflowed.store(0, Ordering::Relaxed);
+    }
+
+    fn overflowed(&self) -> u64 {
+        self.overflowed.load(Ordering::Relaxed)
+    }
+
+    fn adopt_overflow(&self, value: u64) {
+        self.overflowed.store(value, Ordering::Relaxed);
+    }
+
+    fn pending(&self) -> usize {
+        self.pending.load(Ordering::Relaxed)
+    }
 }
 
 /// Tracks in-flight cancel signals so `Clear(keep_current = false)` never cancels a finished execution.
@@ -115,13 +254,13 @@ impl InflightTracker {
         }
     }
 
+    fn len(&self) -> usize {
+        self.lock().signals.len()
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, InflightInner> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
-}
-
-struct PauseState {
-    paused: bool,
 }
 
 struct QueueTask {
@@ -129,6 +268,7 @@ struct QueueTask {
     trigger_event_id: EventId,
     trigger_kind: Option<String>,
     initial_args: ArgStack,
+    bypass_pause: bool,
 }
 
 impl QueueSchedulerHandle {
@@ -138,18 +278,10 @@ impl QueueSchedulerHandle {
             .map_err(|_| SchedulerError::ChannelClosed)
     }
 
-    pub async fn pause(&self, queue_id: QueueId) -> Result<(), SchedulerError> {
+    pub async fn set_mode(&self, queue_id: QueueId, mode: QueueMode) -> Result<(), SchedulerError> {
         let (tx, rx) = oneshot::channel();
         self.sender
-            .send(SchedulerCommand::Pause(queue_id, tx))
-            .map_err(|_| SchedulerError::ChannelClosed)?;
-        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
-    }
-
-    pub async fn resume(&self, queue_id: QueueId) -> Result<(), SchedulerError> {
-        let (tx, rx) = oneshot::channel();
-        self.sender
-            .send(SchedulerCommand::Resume(queue_id, tx))
+            .send(SchedulerCommand::SetMode(queue_id, mode, tx))
             .map_err(|_| SchedulerError::ChannelClosed)?;
         rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
@@ -191,12 +323,12 @@ impl QueueSchedulerHandle {
         let _ = self.sender.send(SchedulerCommand::Shutdown);
     }
 
-    pub async fn paused_queues(
+    pub async fn queue_states(
         &self,
-    ) -> Result<std::collections::HashSet<QueueId>, SchedulerError> {
+    ) -> Result<HashMap<QueueId, QueueRuntimeState>, SchedulerError> {
         let (tx, rx) = oneshot::channel();
         self.sender
-            .send(SchedulerCommand::QueryPaused(tx))
+            .send(SchedulerCommand::QueryStates(tx))
             .map_err(|_| SchedulerError::ChannelClosed)?;
         rx.await.map_err(|_| SchedulerError::ChannelClosed)
     }
@@ -216,7 +348,7 @@ impl QueueScheduler {
         let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
         for queue in initial_queues {
             let id = queue.id;
-            let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
+            let slot = Self::make_queue_slot(queue, Arc::clone(&engine), QueueMode::default());
             slots.insert(id, slot);
         }
 
@@ -225,21 +357,33 @@ impl QueueScheduler {
         QueueSchedulerHandle { sender: cmd_tx }
     }
 
-    fn make_queue_slot(queue: Queue, engine: Arc<ActionEngineHandle>) -> QueueSlot {
+    fn make_queue_slot(
+        queue: Queue,
+        engine: Arc<ActionEngineHandle>,
+        mode: QueueMode,
+    ) -> QueueSlot {
         let (task_tx, task_rx) = mpsc::unbounded_channel::<QueueTask>();
-        let state = Arc::new(RwLock::new(PauseState {
-            paused: queue.paused,
-        }));
+        let (processing_tx, processing_rx) = watch::channel(mode.processing);
         let inflight = InflightTracker::default();
+        let counters = QueueCounters::default();
         let name = queue.name.clone();
         let concurrency = queue.concurrency.max(1);
 
         let sem = Arc::new(Semaphore::new(concurrency as usize));
-        let runner = tokio::spawn(Self::run_bounded(task_rx, engine, sem, inflight.clone()));
+        let runner = tokio::spawn(Self::run_bounded(
+            task_rx,
+            processing_rx,
+            engine,
+            sem,
+            inflight.clone(),
+            counters.clone(),
+        ));
 
         QueueSlot {
             sender: task_tx,
-            state,
+            processing: processing_tx,
+            mode,
+            counters,
             name,
             concurrency,
             runner,
@@ -249,15 +393,42 @@ impl QueueScheduler {
 
     async fn run_bounded(
         mut rx: mpsc::UnboundedReceiver<QueueTask>,
+        mut processing: watch::Receiver<QueueProcessing>,
         engine: Arc<ActionEngineHandle>,
         sem: Arc<Semaphore>,
         inflight: InflightTracker,
+        counters: QueueCounters,
     ) {
-        while let Some(task) = rx.recv().await {
+        let mut frozen_out: VecDeque<QueueTask> = VecDeque::new();
+
+        loop {
             let permit = match Arc::clone(&sem).acquire_owned().await {
                 Ok(p) => p,
-                Err(_) => break,
+                Err(_) => return,
             };
+
+            let task = loop {
+                let frozen = *processing.borrow_and_update() == QueueProcessing::Frozen;
+                if !frozen && let Some(task) = frozen_out.pop_front() {
+                    break task;
+                }
+
+                tokio::select! {
+                    biased;
+                    changed = processing.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                    }
+                    received = rx.recv() => match received {
+                        Some(task) if frozen && !task.bypass_pause => frozen_out.push_back(task),
+                        Some(task) => break task,
+                        None => return,
+                    },
+                }
+            };
+
+            counters.release();
 
             let req = ExecutionRequest {
                 action_id: task.action_id,
@@ -294,19 +465,14 @@ impl QueueScheduler {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 SchedulerCommand::Enqueue(req) => {
-                    Self::enqueue(req, &slots, &bus).await;
+                    Self::enqueue(req, &slots, &bus);
                 }
-                SchedulerCommand::Pause(queue_id, reply) => {
-                    let r = Self::set_paused(&queue_id, true, &slots, &bus, "queue.paused").await;
-                    let _ = reply.send(r);
-                }
-                SchedulerCommand::Resume(queue_id, reply) => {
-                    let r = Self::set_paused(&queue_id, false, &slots, &bus, "queue.resumed").await;
+                SchedulerCommand::SetMode(queue_id, mode, reply) => {
+                    let r = Self::set_mode(&queue_id, mode, &mut slots, &bus);
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Clear(queue_id, keep_current, reply) => {
-                    let r =
-                        Self::clear_queue(&mut slots, &queue_id, keep_current, &bus, &engine).await;
+                    let r = Self::clear_queue(&mut slots, &queue_id, keep_current, &bus, &engine);
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Register(queue, reply) => {
@@ -314,7 +480,8 @@ impl QueueScheduler {
                         MembershipOutcome::AlreadyRegistered
                     } else {
                         let id = queue.id;
-                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
+                        let slot =
+                            Self::make_queue_slot(queue, Arc::clone(&engine), QueueMode::default());
                         slots.insert(id, slot);
                         MembershipOutcome::Applied
                     };
@@ -334,11 +501,12 @@ impl QueueScheduler {
                             MembershipOutcome::Applied
                         }
                         Some(old) => {
-                            // Rebuild must carry pause state forward, else it silently resumes.
-                            let was_paused = old.state.read().await.paused;
+                            // Rebuild must carry the mode forward, else the queue silently resumes.
+                            let mode = old.mode;
+                            let overflowed = old.counters.overflowed();
                             let id = queue.id;
-                            let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
-                            slot.state.write().await.paused = was_paused;
+                            let slot = Self::make_queue_slot(queue, Arc::clone(&engine), mode);
+                            slot.counters.adopt_overflow(overflowed);
                             slots.insert(id, slot);
                             MembershipOutcome::Applied
                         }
@@ -346,58 +514,33 @@ impl QueueScheduler {
                     };
                     let _ = reply.send(outcome);
                 }
-                SchedulerCommand::QueryPaused(reply) => {
-                    let mut paused = std::collections::HashSet::new();
-                    for (id, slot) in &slots {
-                        if slot.state.read().await.paused {
-                            paused.insert(*id);
-                        }
-                    }
-                    let _ = reply.send(paused);
+                SchedulerCommand::QueryStates(reply) => {
+                    let _ = reply.send(Self::queue_states(&slots));
                 }
                 SchedulerCommand::Shutdown => break,
             }
         }
     }
 
-    async fn enqueue(
-        req: SchedulerRequest,
-        slots: &HashMap<QueueId, QueueSlot>,
-        bus: &Arc<EventBus>,
-    ) {
+    fn enqueue(req: SchedulerRequest, slots: &HashMap<QueueId, QueueSlot>, bus: &Arc<EventBus>) {
         let slot = match slots.get(&req.queue_id) {
             Some(s) => s,
             None => {
                 warn!("enqueue: queue {} not found, dropping", req.queue_id);
-                bus.publish(Event::caused_by(
-                    EventSource::Core,
-                    "action.skipped",
-                    json!({
-                        "action_id": req.action_id.to_string(),
-                        "reason": "queue_not_found",
-                        "queue_id": req.queue_id.to_string(),
-                    }),
-                    req.trigger_event_id,
-                ));
+                Self::publish_skip(bus, &req, "queue_not_found");
                 return;
             }
         };
 
-        if !req.bypass_pause {
-            let paused = slot.state.read().await.paused;
-            if paused {
-                bus.publish(Event::caused_by(
-                    EventSource::Core,
-                    "action.skipped",
-                    json!({
-                        "action_id": req.action_id.to_string(),
-                        "reason": "queue_paused",
-                        "queue_id": req.queue_id.to_string(),
-                    }),
-                    req.trigger_event_id,
-                ));
-                return;
-            }
+        if !req.bypass_pause && slot.mode.intake == QueueIntake::Skip {
+            Self::publish_skip(bus, &req, slot.mode.skip_reason());
+            return;
+        }
+
+        if !slot.counters.try_reserve() {
+            slot.counters.record_overflow();
+            Self::publish_skip(bus, &req, "queue_pending_overflow");
+            return;
         }
 
         let task = QueueTask {
@@ -405,49 +548,85 @@ impl QueueScheduler {
             trigger_event_id: req.trigger_event_id,
             trigger_kind: req.trigger_kind,
             initial_args: req.initial_args,
+            bypass_pause: req.bypass_pause,
         };
 
         if slot.sender.send(task).is_err() {
+            slot.counters.release();
             warn!("queue task channel closed for queue {}", req.queue_id);
         }
     }
 
-    async fn set_paused(
+    fn publish_skip(bus: &EventBus, req: &SchedulerRequest, reason: &str) {
+        bus.publish(Event::caused_by(
+            EventSource::Core,
+            "action.skipped",
+            json!({
+                "action_id": req.action_id.to_string(),
+                "reason": reason,
+                "queue_id": req.queue_id.to_string(),
+            }),
+            req.trigger_event_id,
+        ));
+    }
+
+    fn queue_states(slots: &HashMap<QueueId, QueueSlot>) -> HashMap<QueueId, QueueRuntimeState> {
+        slots
+            .iter()
+            .map(|(id, slot)| {
+                (
+                    *id,
+                    QueueRuntimeState {
+                        mode: slot.mode,
+                        pending: slot.counters.pending(),
+                        in_flight: slot.inflight.len(),
+                        overflowed: slot.counters.overflowed(),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn set_mode(
         queue_id: &QueueId,
-        paused: bool,
-        slots: &HashMap<QueueId, QueueSlot>,
+        mode: QueueMode,
+        slots: &mut HashMap<QueueId, QueueSlot>,
         bus: &Arc<EventBus>,
-        event_kind: &'static str,
     ) -> Result<(), SchedulerError> {
         let slot = slots
-            .get(queue_id)
+            .get_mut(queue_id)
             .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
 
-        {
-            let mut state = slot.state.write().await;
-            state.paused = paused;
+        if slot.mode == mode {
+            return Ok(());
         }
+
+        slot.mode = mode;
+        slot.counters.reset_overflow();
+        slot.processing.send_replace(mode.processing);
 
         bus.publish(Event::new(
             EventSource::Core,
-            event_kind,
+            mode.event_kind(),
             json!({
                 "queue_id": queue_id.to_string(),
                 "queue_name": slot.name,
+                "processing": mode.processing.as_str(),
+                "intake": mode.intake.as_str(),
             }),
         ));
 
         Ok(())
     }
 
-    async fn clear_queue(
+    fn clear_queue(
         slots: &mut HashMap<QueueId, QueueSlot>,
         queue_id: &QueueId,
         keep_current: bool,
         bus: &Arc<EventBus>,
         engine: &Arc<ActionEngineHandle>,
     ) -> Result<(), SchedulerError> {
-        let (was_paused, name, concurrency) = {
+        let (mode, overflowed, name, concurrency) = {
             let slot = slots
                 .get(queue_id)
                 .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
@@ -459,7 +638,8 @@ impl QueueScheduler {
             slot.runner.abort();
 
             (
-                slot.state.read().await.paused,
+                slot.mode,
+                slot.counters.overflowed(),
                 slot.name.clone(),
                 slot.concurrency,
             )
@@ -471,10 +651,11 @@ impl QueueScheduler {
                 name: name.clone(),
                 description: String::new(),
                 concurrency,
-                paused: was_paused,
             },
             Arc::clone(engine),
+            mode,
         );
+        rebuilt.counters.adopt_overflow(overflowed);
         slots.insert(*queue_id, rebuilt);
 
         bus.publish(Event::new(
@@ -547,7 +728,6 @@ mod tests {
             name: "default".to_string(),
             description: String::new(),
             concurrency: 8,
-            paused: false,
         }
     }
 
@@ -557,7 +737,6 @@ mod tests {
             name: "serial".to_string(),
             description: String::new(),
             concurrency: 1,
-            paused: false,
         }
     }
 
@@ -705,7 +884,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
 
         let trigger = EventId::new();
         sched
@@ -757,7 +936,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
 
         sched
             .dispatch(SchedulerRequest {
@@ -798,8 +977,8 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
-        sched.resume(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
+        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
 
         sched
             .dispatch(SchedulerRequest {
@@ -838,7 +1017,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
 
         assert!(
             collect_events(&mut sub, "queue.paused", 10, 200).await,
@@ -865,8 +1044,8 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
-        sched.resume(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
+        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
 
         assert!(
             collect_events(&mut sub, "queue.resumed", 10, 200).await,
@@ -983,7 +1162,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         let outcome = sched.register(nonblocking(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::AlreadyRegistered);
 
@@ -1098,14 +1277,13 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
 
         let renamed = Queue {
             id: q_id,
             name: "renamed".to_string(),
             description: String::new(),
             concurrency: 8,
-            paused: false,
         };
         let outcome = sched.reconfigure(renamed).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
@@ -1207,7 +1385,7 @@ mod tests {
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
         let mut sub = bus.subscribe();
 
-        sched.pause(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         let outcome = sched.reconfigure(blocking_q(q_id)).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::Applied);
 
@@ -1266,7 +1444,6 @@ mod tests {
                 name: "ghost".to_string(),
                 description: String::new(),
                 concurrency: 8,
-                paused: false,
             })
             .await
             .unwrap();
@@ -1520,13 +1697,14 @@ mod tests {
         );
         let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
 
-        sched.pause(q_id).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
         sched.clear(q_id, true).await.unwrap();
 
-        let paused = sched.paused_queues().await.unwrap();
-        assert!(
-            paused.contains(&q_id),
-            "clear must preserve the paused state across the slot rebuild"
+        let states = sched.queue_states().await.unwrap();
+        assert_eq!(
+            states.get(&q_id).map(|s| s.mode),
+            Some(QueueMode::PAUSED),
+            "clear must preserve the queue mode across the slot rebuild"
         );
         sched.shutdown();
     }

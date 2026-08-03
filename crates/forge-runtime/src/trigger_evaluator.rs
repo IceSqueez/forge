@@ -404,7 +404,6 @@ mod tests {
             name: "default".into(),
             description: String::new(),
             concurrency: 8,
-            paused: false,
         };
         let action = log_action(a_id, q_id);
         let instance = custom_event_instance("my_event");
@@ -470,7 +469,6 @@ mod tests {
             name: "default".into(),
             description: String::new(),
             concurrency: 8,
-            paused: false,
         };
         let action = log_action(a_id, q_id);
         let instance = custom_event_instance("my_event");

@@ -11,7 +11,9 @@ use forge_components::{
     primary_button_with_icon, radius, secondary_button, slider, spacing, spinner, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
-use forge_runtime::{EventBus, MembershipOutcome, QueueSchedulerHandle};
+use forge_runtime::{
+    EventBus, MembershipOutcome, QueueMode, QueueProcessing, QueueSchedulerHandle,
+};
 use forge_storage::{ActionRepo, QueueRepo};
 use forge_types::{Queue, QueueId};
 use gpui::{
@@ -554,20 +556,11 @@ impl QueuesView {
         }
     }
 
-    fn dispatch_pause(&self, id: QueueId) {
+    fn dispatch_mode(&self, id: QueueId, mode: QueueMode) {
         let scheduler = self.scheduler.clone();
         self.rt_handle.spawn(async move {
-            if let Err(err) = scheduler.pause(id).await {
-                eprintln!("forge-desktop: queue pause failed: {err}");
-            }
-        });
-    }
-
-    fn dispatch_resume(&self, id: QueueId) {
-        let scheduler = self.scheduler.clone();
-        self.rt_handle.spawn(async move {
-            if let Err(err) = scheduler.resume(id).await {
-                eprintln!("forge-desktop: queue resume failed: {err}");
+            if let Err(err) = scheduler.set_mode(id, mode).await {
+                eprintln!("forge-desktop: queue mode change failed: {err}");
             }
         });
     }
@@ -581,8 +574,8 @@ impl QueuesView {
                 "queue.drain_requested",
                 serde_json::json!({ "queue_id": id.to_string(), "queue_name": queue_name }),
             ));
-            if let Err(err) = scheduler.pause(id).await {
-                eprintln!("forge-desktop: queue drain pause failed: {err}");
+            if let Err(err) = scheduler.set_mode(id, QueueMode::DRAINING).await {
+                eprintln!("forge-desktop: queue drain failed: {err}");
             }
         });
     }
@@ -591,28 +584,8 @@ impl QueuesView {
         let scheduler = self.scheduler.clone();
         self.rt_handle.spawn(async move {
             for id in ids {
-                if let Err(err) = scheduler.pause(id).await {
+                if let Err(err) = scheduler.set_mode(id, QueueMode::PAUSED).await {
                     eprintln!("forge-desktop: queue pause-all failed: {err}");
-                }
-            }
-        });
-    }
-
-    fn persist_paused(&self, id: QueueId, paused: bool) {
-        let queue_repo = Arc::clone(&self.queue_repo);
-        self.rt_handle.spawn(async move {
-            match queue_repo.get(id).await {
-                Ok(Some(mut queue)) => {
-                    if queue.paused != paused {
-                        queue.paused = paused;
-                        if let Err(err) = queue_repo.save(&queue).await {
-                            eprintln!("forge-desktop: queue pause persist failed: {err}");
-                        }
-                    }
-                }
-                Ok(None) => {}
-                Err(err) => {
-                    eprintln!("forge-desktop: queue pause persist load failed: {err}");
                 }
             }
         });
@@ -623,8 +596,7 @@ impl QueuesView {
             q.paused = true;
             q.paused_since_min = Some(0);
         }
-        self.dispatch_pause(id);
-        self.persist_paused(id, true);
+        self.dispatch_mode(id, QueueMode::PAUSED);
         cx.notify();
     }
 
@@ -633,22 +605,18 @@ impl QueuesView {
             q.paused = false;
             q.paused_since_min = None;
         }
-        self.dispatch_resume(id);
-        self.persist_paused(id, false);
+        self.dispatch_mode(id, QueueMode::RUNNING);
         cx.notify();
     }
 
     fn drain(&mut self, id: QueueId, cx: &mut Context<Self>) {
         let mut queue_name = String::new();
-        if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
-            q.paused = true;
-            q.paused_since_min = Some(0);
+        if let Some(q) = self.queues.iter().find(|q| q.id == id) {
             queue_name = q.name.clone();
             let message = tr!("queues_drain_feedback", name = q.name.as_str());
             cx.push_toast(ToastKind::Info, message);
         }
         self.dispatch_drain(id, queue_name);
-        self.persist_paused(id, true);
         cx.notify();
     }
 
@@ -659,9 +627,6 @@ impl QueuesView {
                 q.paused = true;
                 q.paused_since_min = Some(0);
             }
-        }
-        for id in &ids {
-            self.persist_paused(*id, true);
         }
         self.dispatch_pause_all(ids);
         cx.notify();
@@ -756,16 +721,11 @@ impl QueuesView {
 
     fn persist(&mut self, draft: &QueueDraft, cx: &mut Context<Self>) {
         let editing = draft.editing;
-        let paused = editing
-            .and_then(|id| self.queues.iter().find(|q| q.id == id))
-            .map(|q| q.paused)
-            .unwrap_or(false);
         let queue = Queue {
             id: editing.unwrap_or_default(),
             name: draft.name.clone(),
             description: draft.description.clone(),
             concurrency: draft.concurrency.clamp(MIN_CONCURRENCY, MAX_CONCURRENCY),
-            paused,
         };
         let id = queue.id;
         let is_edit = editing.is_some();
@@ -1629,23 +1589,23 @@ async fn load_queues(
 ) -> Result<Vec<QueueRow>, String> {
     let queues = queue_repo.list().await.map_err(|e| e.to_string())?;
     let actions = action_repo.list().await.map_err(|e| e.to_string())?;
-    let paused_ids = scheduler.paused_queues().await.unwrap_or_default();
+    let states = scheduler.queue_states().await.unwrap_or_default();
 
     let rows = queues
         .into_iter()
         .map(|q| {
             let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
             let concurrency = q.concurrency.max(1);
-            let paused = paused_ids.contains(&q.id);
+            let state = states.get(&q.id).copied();
             QueueRow {
                 id: q.id,
                 name: q.name,
                 description: q.description,
                 blocking: concurrency == SERIAL_CONCURRENCY,
                 concurrency,
-                paused,
-                pending: 0,
-                in_flight: 0,
+                paused: state.is_some_and(|s| s.mode.processing == QueueProcessing::Frozen),
+                pending: state.map_or(0, |s| s.pending as u32),
+                in_flight: state.map_or(0, |s| s.in_flight as u32),
                 actions: assigned,
                 running: vec![],
                 paused_since_min: None,

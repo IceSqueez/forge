@@ -5,7 +5,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::core_queue_shared::{resolve_queue_id, validate_queue_id};
-use crate::SchedulerCell;
+use crate::{QueueMode, SchedulerCell};
 
 pub struct CoreQueuePauseRunner {
     scheduler: SchedulerCell,
@@ -23,7 +23,7 @@ impl CoreQueuePauseRunner {
         let Some(scheduler) = self.scheduler.get() else {
             return SubActionOutcome::Failed("queue scheduler not ready".to_owned());
         };
-        match scheduler.pause(queue_id).await {
+        match scheduler.set_mode(queue_id, QueueMode::PAUSED).await {
             Ok(()) => SubActionOutcome::Success,
             Err(e) => SubActionOutcome::Failed(format!("core.queue.pause: {e}")),
         }

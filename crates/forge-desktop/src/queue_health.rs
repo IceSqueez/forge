@@ -14,14 +14,14 @@ impl QueueHealth {
         }
     }
 
-    /// `queue.cleared` deliberately advances nothing: the scheduler keeps pause state across a clear.
+    /// `queue.cleared` deliberately advances nothing: the scheduler keeps the mode across a clear.
     pub fn apply_event(&mut self, event: &Event) -> bool {
         let Some(id) = queue_id_of(event) else {
             return false;
         };
         match event.kind.as_str() {
-            "queue.paused" => self.paused.insert(id),
-            "queue.resumed" => self.paused.remove(&id),
+            "queue.paused" | "queue.held" => self.paused.insert(id),
+            "queue.resumed" | "queue.draining" => self.paused.remove(&id),
             _ => false,
         }
     }

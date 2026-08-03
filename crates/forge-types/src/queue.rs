@@ -7,7 +7,6 @@ pub struct Queue {
     pub name: String,
     pub description: String,
     pub concurrency: u32,
-    pub paused: bool,
 }
 
 impl Queue {
@@ -28,7 +27,6 @@ mod tests {
             name: "Default".to_string(),
             description: "Catch-all".to_string(),
             concurrency: 8,
-            paused: false,
         };
         let json = serde_json::to_string(&q).unwrap();
         let back: Queue = serde_json::from_str(&json).unwrap();
@@ -42,7 +40,6 @@ mod tests {
             name: "Slow".to_string(),
             description: String::new(),
             concurrency: 1,
-            paused: false,
         };
         let json = serde_json::to_string(&q).unwrap();
         let back: Queue = serde_json::from_str(&json).unwrap();

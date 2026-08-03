@@ -43,7 +43,8 @@ pub use overlay_service::{
     OverlayServiceError, OverlayServiceHandle, TestFire,
 };
 pub use queue_scheduler::{
-    MembershipOutcome, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,
+    MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
+    QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,
     SchedulerRequest,
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};

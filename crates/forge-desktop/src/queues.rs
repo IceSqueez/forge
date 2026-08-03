@@ -632,31 +632,62 @@ impl QueuesView {
         }
     }
 
-    fn dispatch_mode(&self, id: QueueId, mode: QueueMode) {
-        let scheduler = self.scheduler.clone();
-        self.rt_handle.spawn(async move {
-            if let Err(err) = scheduler.set_mode(id, mode).await {
-                eprintln!("forge-desktop: queue mode change failed: {err}");
-            }
-        });
+    fn on_scheduler_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
+        cx.push_toast(ToastKind::Error, message);
+        self.reload(cx);
     }
 
-    fn dispatch_pause_all(&self, ids: Vec<QueueId>) {
+    fn dispatch_mode(&self, id: QueueId, mode: QueueMode, cx: &mut Context<Self>) {
         let scheduler = self.scheduler.clone();
-        self.rt_handle.spawn(async move {
-            for id in ids {
-                if let Err(err) = scheduler.set_mode(id, QueueMode::PAUSED).await {
-                    eprintln!("forge-desktop: queue pause-all failed: {err}");
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                scheduler
+                    .set_mode(id, mode)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
+            |this, result, cx| {
+                if let Err(message) = result {
+                    this.on_scheduler_error(tr!("queues_mode_change_failed", error = message), cx);
                 }
-            }
-        });
+            },
+            cx,
+        );
+    }
+
+    fn dispatch_pause_all(&self, ids: Vec<QueueId>, cx: &mut Context<Self>) {
+        let scheduler = self.scheduler.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let mut failure: Option<String> = None;
+                for id in ids {
+                    if let Err(err) = scheduler.set_mode(id, QueueMode::PAUSED).await
+                        && failure.is_none()
+                    {
+                        failure = Some(err.to_string());
+                    }
+                }
+                match failure {
+                    Some(message) => Err(message),
+                    None => Ok(()),
+                }
+            },
+            |this, result, cx| {
+                if let Err(message) = result {
+                    this.on_scheduler_error(tr!("queues_pause_all_failed", error = message), cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn set_mode(&mut self, id: QueueId, mode: QueueMode, cx: &mut Context<Self>) {
         if let Some(q) = self.queues.iter_mut().find(|q| q.id == id) {
             q.mode = mode;
         }
-        self.dispatch_mode(id, mode);
+        self.dispatch_mode(id, mode, cx);
         cx.notify();
     }
 
@@ -675,32 +706,34 @@ impl QueuesView {
     }
 
     fn free(&mut self, id: QueueId, cx: &mut Context<Self>) {
-        let Some(q) = self.queues.iter_mut().find(|q| q.id == id) else {
+        let Some(q) = self.queues.iter().find(|q| q.id == id) else {
             return;
         };
         let name = q.name.clone();
         let dropped = q.pending as i64;
-        q.pending = 0;
-        cx.push_toast(
-            ToastKind::Info,
-            tr!(
-                "queues_free_feedback",
-                name = name.as_str(),
-                count = dropped
-            ),
-        );
 
         let scheduler = self.scheduler.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move { scheduler.clear(id, true).await.map_err(|e| e.to_string()) },
-            |this, result, cx| match result {
-                Ok(()) => this.reload(cx),
-                Err(message) => this.on_repo_error(&message, cx),
+            move |this, result, cx| match result {
+                Ok(()) => {
+                    cx.push_toast(
+                        ToastKind::Info,
+                        tr!(
+                            "queues_free_feedback",
+                            name = name.as_str(),
+                            count = dropped
+                        ),
+                    );
+                    this.reload(cx);
+                }
+                Err(message) => {
+                    this.on_scheduler_error(tr!("queues_free_failed", error = message), cx)
+                }
             },
             cx,
         );
-        cx.notify();
     }
 
     fn pause_all(&mut self, cx: &mut Context<Self>) {
@@ -708,7 +741,7 @@ impl QueuesView {
         for q in &mut self.queues {
             q.mode = QueueMode::PAUSED;
         }
-        self.dispatch_pause_all(ids);
+        self.dispatch_pause_all(ids, cx);
         cx.notify();
     }
 

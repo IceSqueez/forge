@@ -12,6 +12,7 @@ pub mod chat_moderation_stream;
 pub mod chat_stream;
 pub mod condition;
 pub mod config;
+mod cooldown;
 pub mod dashboard;
 mod egress;
 pub mod live_viewers;

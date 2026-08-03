@@ -161,6 +161,7 @@ mod tests {
             max_nesting_depth: 32,
             condition_op_limit: op_limit,
             condition_wall_time_ms: wall_time_ms,
+            ..Default::default()
         })
     }
 

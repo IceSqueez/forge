@@ -258,6 +258,7 @@ pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFail
         backend.action_repo(),
         backend.trigger_instance_repo(),
         scheduler.clone(),
+        Config::default(),
     );
     let live_viewers = spawn_live_viewer_aggregator();
     for source in integrations.viewer_sources {

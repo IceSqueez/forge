@@ -267,6 +267,7 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
         dp.action_repo(),
         dp.trigger_instance_repo(),
         sched,
+        forge_runtime::Config::default(),
     );
 
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -370,6 +371,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
         dp.action_repo(),
         dp.trigger_instance_repo(),
         sched,
+        forge_runtime::Config::default(),
     );
 
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -442,6 +444,7 @@ async fn linked_action_executes_via_join_table_only() {
         dp.action_repo(),
         dp.trigger_instance_repo(),
         sched,
+        forge_runtime::Config::default(),
     );
 
     tokio::time::sleep(Duration::from_millis(10)).await;

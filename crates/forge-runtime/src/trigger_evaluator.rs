@@ -1,19 +1,18 @@
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_registry::{CancelSignal, ChatTriggerFamily, TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
-    ArgStack, ChatPayload, EventId, PermissionRung, TriggerConfig, TriggerInstance,
-    TriggerInstanceId, Variant,
+    ArgStack, ChatPayload, EventId, PermissionRung, TriggerConfig, TriggerInstance, Variant,
 };
 use serde::Deserialize;
 use serde_json::json;
 use tracing::warn;
 
-use crate::{EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
+use crate::cooldown::CooldownMap;
+use crate::{Config, EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
 
 #[derive(Clone)]
 pub struct TriggerEvaluatorHandle {
@@ -33,7 +32,7 @@ pub struct TriggerEvaluator {
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
-    cooldowns: HashMap<(TriggerInstanceId, Option<String>), (Instant, EventId)>,
+    cooldowns: CooldownMap,
 }
 
 impl TriggerEvaluator {
@@ -43,6 +42,7 @@ impl TriggerEvaluator {
         actions: Arc<dyn ActionRepo>,
         trigger_instances: Arc<dyn TriggerInstanceRepo>,
         scheduler: QueueSchedulerHandle,
+        config: Config,
     ) -> TriggerEvaluatorHandle {
         let subscription = bus.subscribe();
         let evaluator = Self {
@@ -52,7 +52,7 @@ impl TriggerEvaluator {
             trigger_instances,
             scheduler,
             subscription,
-            cooldowns: HashMap::new(),
+            cooldowns: CooldownMap::new(config.max_cooldown_entries),
         };
         let cancel = CancelSignal::new();
         let cancel_clone = cancel.clone();
@@ -221,18 +221,7 @@ impl TriggerEvaluator {
         };
 
         let window = Duration::from_secs(instance.cooldown_secs as u64);
-        if let Some((last, stamped_event)) = self.cooldowns.get(&key) {
-            if *stamped_event == event_id {
-                return None;
-            }
-            let elapsed = last.elapsed();
-            if elapsed < window {
-                return Some(window - elapsed);
-            }
-        }
-
-        self.cooldowns.insert(key, (Instant::now(), event_id));
-        None
+        self.cooldowns.remaining_or_stamp(key, window, event_id)
     }
 }
 
@@ -307,8 +296,9 @@ pub fn spawn_trigger_evaluator(
     actions: Arc<dyn ActionRepo>,
     trigger_instances: Arc<dyn TriggerInstanceRepo>,
     scheduler: QueueSchedulerHandle,
+    config: Config,
 ) -> TriggerEvaluatorHandle {
-    TriggerEvaluator::spawn(bus, registry, actions, trigger_instances, scheduler)
+    TriggerEvaluator::spawn(bus, registry, actions, trigger_instances, scheduler, config)
 }
 
 #[cfg(test)]
@@ -509,6 +499,7 @@ mod tests {
             dp.action_repo(),
             dp.trigger_instance_repo(),
             sched,
+            Config::default(),
         );
 
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -574,6 +565,7 @@ mod tests {
             dp.action_repo(),
             dp.trigger_instance_repo(),
             sched,
+            Config::default(),
         );
 
         tokio::time::sleep(Duration::from_millis(10)).await;

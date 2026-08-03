@@ -751,6 +751,54 @@ mod tests {
             .is_some()
     }
 
+    fn spawn_sched(
+        dp: &Arc<dyn DataProvider>,
+        bus: &Arc<EventBus>,
+        registry: Arc<SubActionRegistry>,
+        queues: Vec<Queue>,
+    ) -> QueueSchedulerHandle {
+        let engine = spawn_action_engine(
+            Arc::clone(bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            registry,
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+        QueueScheduler::spawn(engine, Arc::clone(bus), queues)
+    }
+
+    async fn record(sub: &mut EventSubscription, window: Duration) -> Vec<Event> {
+        let deadline = tokio::time::Instant::now() + window;
+        let mut seen = Vec::new();
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match tokio::time::timeout(remaining, sub.recv()).await {
+                Ok(Ok(ev)) => seen.push(ev),
+                _ => break,
+            }
+        }
+        seen
+    }
+
+    fn ids_of(events: &[Event], kind: &str) -> Vec<String> {
+        events
+            .iter()
+            .filter(|ev| ev.kind == kind)
+            .filter_map(action_id_of)
+            .collect()
+    }
+
+    fn skip_reasons(events: &[Event]) -> Vec<&str> {
+        events
+            .iter()
+            .filter(|ev| ev.kind == "action.skipped")
+            .filter_map(|ev| ev.payload.get("reason").and_then(|v| v.as_str()))
+            .collect()
+    }
+
     async fn collect_event(
         sub: &mut EventSubscription,
         target_kind: &str,
@@ -1000,56 +1048,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pause_emits_queue_paused_event() {
+    async fn each_mode_change_publishes_its_kind_carrying_both_axes() {
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let queue = nonblocking(q_id);
         dp.queue_repo().save(&queue).await.unwrap();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
         let mut sub = bus.subscribe();
 
-        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
-
-        assert!(
-            collect_events(&mut sub, "queue.paused", 10, 200).await,
-            "pause must emit queue.paused"
-        );
+        for (mode, kind, processing, intake) in [
+            (QueueMode::DRAINING, "queue.draining", "running", "skip"),
+            (QueueMode::HOLDING, "queue.held", "frozen", "accept"),
+            (QueueMode::PAUSED, "queue.paused", "frozen", "skip"),
+            (QueueMode::RUNNING, "queue.resumed", "running", "accept"),
+        ] {
+            sched.set_mode(q_id, mode).await.unwrap();
+            let published = collect_event(&mut sub, kind, 10, 200).await;
+            assert!(published.is_some(), "mode change must publish {kind}");
+            let ev = published.unwrap();
+            assert_eq!(
+                ev.payload["processing"].as_str(),
+                Some(processing),
+                "{kind} must carry its processing axis"
+            );
+            assert_eq!(
+                ev.payload["intake"].as_str(),
+                Some(intake),
+                "{kind} must carry its intake axis"
+            );
+        }
         sched.shutdown();
     }
 
     #[tokio::test]
-    async fn resume_emits_queue_resumed_event() {
+    async fn re_applying_the_current_mode_publishes_nothing() {
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let queue = nonblocking(q_id);
         dp.queue_repo().save(&queue).await.unwrap();
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let mut sub = bus.subscribe();
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![queue]);
 
         sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
-        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
+        let mut sub = bus.subscribe();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
 
+        let seen = record(&mut sub, Duration::from_millis(200)).await;
+        let kinds: Vec<&str> = seen.iter().map(|ev| ev.kind.as_str()).collect();
         assert!(
-            collect_events(&mut sub, "queue.resumed", 10, 200).await,
-            "resume must emit queue.resumed"
+            kinds.iter().all(|kind| !kind.starts_with("queue.")),
+            "an unchanged mode must publish no queue event, saw {kinds:?}"
         );
         sched.shutdown();
     }
@@ -1750,6 +1801,233 @@ mod tests {
         assert!(
             await_queue_event(&mut sub, "queue.cleared", q_id, 10).await,
             "clear must emit queue.cleared carrying the cleared queue_id"
+        );
+        sched.shutdown();
+    }
+
+    async fn serial_queue_with_waits(
+        ms: &[(ActionId, i64)],
+        q_id: QueueId,
+    ) -> (Arc<dyn DataProvider>, Arc<EventBus>, QueueSchedulerHandle) {
+        let dp = make_dp().await;
+        dp.queue_repo().save(&blocking_q(q_id)).await.unwrap();
+        for (id, wait_ms) in ms {
+            dp.action_repo()
+                .save(&wait_action(*id, q_id, *wait_ms))
+                .await
+                .unwrap();
+        }
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let sched = spawn_sched(&dp, &bus, waiting_registry(), vec![blocking_q(q_id)]);
+        (dp, bus, sched)
+    }
+
+    #[tokio::test]
+    async fn freezing_lets_the_running_task_finish_but_withholds_the_next_one() {
+        let q_id = QueueId::new();
+        let (a, b) = (ActionId::new(), ActionId::new());
+        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 150), (b, 0)], q_id).await;
+        let mut sub = bus.subscribe();
+
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        assert!(
+            await_action_start(&mut sub, a, 30).await,
+            "A must occupy the single slot before the freeze"
+        );
+        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
+
+        let seen = record(&mut sub, Duration::from_millis(500)).await;
+        assert!(
+            ids_of(&seen, "action.done").contains(&a.to_string()),
+            "a task already in flight when the freeze lands must still finish"
+        );
+        assert!(
+            !ids_of(&seen, "action.start").contains(&b.to_string()),
+            "a frozen queue must stop between tasks, not start the buffered B"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn resuming_runs_tasks_buffered_while_frozen_in_enqueue_order() {
+        let q_id = QueueId::new();
+        let (a, b, c) = (ActionId::new(), ActionId::new(), ActionId::new());
+        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 0), (b, 0), (c, 0)], q_id).await;
+        let mut sub = bus.subscribe();
+
+        sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
+        for id in [a, b, c] {
+            sched.dispatch(req(q_id, id)).await.unwrap();
+        }
+
+        let while_frozen = record(&mut sub, Duration::from_millis(150)).await;
+        assert!(
+            ids_of(&while_frozen, "action.start").is_empty(),
+            "a holding queue must collect the dispatches without starting them"
+        );
+
+        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
+        let after_resume = record(&mut sub, Duration::from_millis(600)).await;
+        assert_eq!(
+            ids_of(&after_resume, "action.start"),
+            vec![a.to_string(), b.to_string(), c.to_string()],
+            "the frozen buffer must replay in enqueue order"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn draining_skips_new_work_while_buffered_tasks_keep_executing() {
+        let q_id = QueueId::new();
+        let (a, b, c) = (ActionId::new(), ActionId::new(), ActionId::new());
+        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 150), (b, 0), (c, 0)], q_id).await;
+        let mut sub = bus.subscribe();
+
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        assert!(
+            await_action_start(&mut sub, a, 30).await,
+            "A must occupy the single slot before draining starts"
+        );
+        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.set_mode(q_id, QueueMode::DRAINING).await.unwrap();
+        sched.dispatch(req(q_id, c)).await.unwrap();
+
+        let seen = record(&mut sub, Duration::from_millis(600)).await;
+        assert!(
+            ids_of(&seen, "action.done").contains(&b.to_string()),
+            "draining must keep executing work buffered before the switch"
+        );
+        assert!(
+            !ids_of(&seen, "action.start").contains(&c.to_string()),
+            "draining must refuse work dispatched after the switch"
+        );
+        assert_eq!(
+            skip_reasons(&seen),
+            vec!["queue_draining"],
+            "the refused dispatch must report the draining reason"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn pausing_withholds_buffered_work_until_the_queue_resumes() {
+        let q_id = QueueId::new();
+        let (a, b) = (ActionId::new(), ActionId::new());
+        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 150), (b, 0)], q_id).await;
+        let mut sub = bus.subscribe();
+
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        assert!(
+            await_action_start(&mut sub, a, 30).await,
+            "A must occupy the single slot before the pause"
+        );
+        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
+
+        let while_paused = record(&mut sub, Duration::from_millis(500)).await;
+        assert!(
+            !ids_of(&while_paused, "action.start").contains(&b.to_string()),
+            "pausing must freeze processing too, not only close intake"
+        );
+
+        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
+        let after_resume = record(&mut sub, Duration::from_millis(400)).await;
+        assert!(
+            ids_of(&after_resume, "action.done").contains(&b.to_string()),
+            "resuming must release the withheld task"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn queue_states_reports_live_pending_and_in_flight_counts() {
+        let q_id = QueueId::new();
+        let (a, b, c) = (ActionId::new(), ActionId::new(), ActionId::new());
+        let (_dp, bus, sched) = serial_queue_with_waits(&[(a, 300), (b, 0), (c, 0)], q_id).await;
+        let mut sub = bus.subscribe();
+
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        assert!(
+            await_action_start(&mut sub, a, 30).await,
+            "A must be executing before the counts are read"
+        );
+        sched.dispatch(req(q_id, b)).await.unwrap();
+        sched.dispatch(req(q_id, c)).await.unwrap();
+
+        let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
+        assert_eq!(state.in_flight, 1, "only A occupies the serial slot");
+        assert_eq!(state.pending, 2, "B and C must be counted as pending");
+        sched.shutdown();
+    }
+
+    async fn frozen_queue_filled_to_the_cap() -> (QueueId, Arc<EventBus>, QueueSchedulerHandle) {
+        let dp = make_dp().await;
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        dp.queue_repo().save(&nonblocking(q_id)).await.unwrap();
+        dp.action_repo()
+            .save(&log_action(a_id, q_id))
+            .await
+            .unwrap();
+
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let sched = spawn_sched(
+            &dp,
+            &bus,
+            Arc::new(SubActionRegistry::new()),
+            vec![nonblocking(q_id)],
+        );
+        sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
+        for _ in 0..MAX_PENDING_PER_QUEUE {
+            sched.dispatch(req(q_id, a_id)).await.unwrap();
+        }
+        (q_id, bus, sched)
+    }
+
+    #[tokio::test]
+    async fn dispatch_past_the_pending_cap_is_skipped_and_counted_as_overflow() {
+        let (q_id, bus, sched) = frozen_queue_filled_to_the_cap().await;
+        let mut sub = bus.subscribe();
+
+        sched.dispatch(req(q_id, ActionId::new())).await.unwrap();
+
+        let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
+        assert_eq!(
+            state.pending, MAX_PENDING_PER_QUEUE,
+            "the queue must buffer exactly the cap"
+        );
+        assert_eq!(
+            state.overflowed, 1,
+            "the dispatch past the cap must bump the overflow counter"
+        );
+
+        let seen = record(&mut sub, Duration::from_millis(150)).await;
+        assert_eq!(
+            skip_reasons(&seen),
+            vec!["queue_pending_overflow"],
+            "the dispatch past the cap must report the overflow reason"
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn overflow_counter_survives_a_no_op_mode_set_and_resets_on_a_real_change() {
+        let (q_id, _bus, sched) = frozen_queue_filled_to_the_cap().await;
+        sched.dispatch(req(q_id, ActionId::new())).await.unwrap();
+
+        sched.set_mode(q_id, QueueMode::HOLDING).await.unwrap();
+        let unchanged = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
+        assert_eq!(
+            unchanged.overflowed, 1,
+            "re-applying the same mode must not clear the overflow counter"
+        );
+
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
+        let changed = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
+        assert_eq!(
+            changed.overflowed, 0,
+            "a real mode change must reset the overflow counter"
         );
         sched.shutdown();
     }

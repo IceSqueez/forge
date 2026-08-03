@@ -51,3 +51,109 @@ fn mode_of(event: &Event) -> Option<QueueMode> {
     };
     Some(QueueMode { processing, intake })
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_events::EventSource;
+    use serde_json::json;
+
+    use super::*;
+
+    fn mode_event(kind: &str, id: QueueId, processing: &str, intake: &str) -> Event {
+        Event::new(
+            EventSource::Core,
+            kind,
+            json!({
+                "queue_id": id.to_string(),
+                "queue_name": "default",
+                "processing": processing,
+                "intake": intake,
+            }),
+        )
+    }
+
+    #[test]
+    fn each_mode_change_payload_maps_onto_the_queue_mode() {
+        for (kind, processing, intake, expected) in [
+            ("queue.resumed", "running", "accept", QueueMode::RUNNING),
+            ("queue.draining", "running", "skip", QueueMode::DRAINING),
+            ("queue.held", "frozen", "accept", QueueMode::HOLDING),
+            ("queue.paused", "frozen", "skip", QueueMode::PAUSED),
+        ] {
+            let id = QueueId::new();
+            let mut health = QueueHealth::new();
+            assert!(
+                health.apply_event(&mode_event(kind, id, processing, intake)),
+                "{kind} must register as a change"
+            );
+            assert_eq!(
+                health.mode(id),
+                Some(expected),
+                "{kind} maps to the wrong mode"
+            );
+        }
+    }
+
+    #[test]
+    fn only_an_actually_different_mode_reports_a_change() {
+        let id = QueueId::new();
+        let mut health = QueueHealth::new();
+        let paused = mode_event("queue.paused", id, "frozen", "skip");
+
+        assert!(
+            health.apply_event(&paused),
+            "the first mode seen for a queue is a change"
+        );
+        assert!(
+            !health.apply_event(&paused),
+            "a repeated mode must not request a repaint"
+        );
+        assert!(
+            health.apply_event(&mode_event("queue.draining", id, "running", "skip")),
+            "flipping one axis must report a change"
+        );
+    }
+
+    #[test]
+    fn events_without_a_readable_mode_leave_the_tracked_mode_untouched() {
+        let id = QueueId::new();
+        let mut health = QueueHealth::new();
+        health.apply_event(&mode_event("queue.paused", id, "frozen", "skip"));
+
+        let cleared = Event::new(
+            EventSource::Core,
+            "queue.cleared",
+            json!({ "queue_id": id.to_string(), "queue_name": "default", "keep_current": true }),
+        );
+        let no_queue_id = Event::new(
+            EventSource::Core,
+            "queue.held",
+            json!({ "processing": "frozen", "intake": "accept" }),
+        );
+        let unparseable_id = Event::new(
+            EventSource::Core,
+            "queue.held",
+            json!({ "queue_id": "not-a-queue-id", "processing": "frozen", "intake": "accept" }),
+        );
+
+        for event in [
+            cleared,
+            no_queue_id,
+            unparseable_id,
+            mode_event("queue.held", id, "thawing", "accept"),
+            mode_event("queue.held", id, "frozen", "hoard"),
+        ] {
+            assert!(
+                !health.apply_event(&event),
+                "unreadable {} must not report a change",
+                event.kind
+            );
+        }
+
+        assert_eq!(
+            health.mode(id),
+            Some(QueueMode::PAUSED),
+            "malformed events must not overwrite the tracked mode"
+        );
+    }
+}

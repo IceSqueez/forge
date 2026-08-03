@@ -678,6 +678,7 @@ pub(crate) fn render_config_row<V: 'static>(
 }
 
 #[cfg(test)]
+#[allow(clippy::panic)]
 mod tests {
     use super::*;
 
@@ -735,5 +736,135 @@ mod tests {
             sparse_overrides(&default, &FieldConfig::new()).is_empty(),
             "an empty form means no overrides, not every default written out longhand"
         );
+    }
+
+    fn options_map(entries: &[(&str, &[(&str, &str)])]) -> HashMap<String, Vec<(String, String)>> {
+        entries
+            .iter()
+            .map(|(key, options)| {
+                (
+                    (*key).to_owned(),
+                    options
+                        .iter()
+                        .map(|(value, label)| ((*value).to_owned(), (*label).to_owned()))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn voice_options() -> HashMap<String, Vec<(String, String)>> {
+        options_map(&[
+            ("tts.voices", &[("bare", "Bare prefix")]),
+            ("tts.voices.", &[("empty-engine", "Empty engine")]),
+            ("tts.voicespiper", &[("glued", "Glued key")]),
+            ("tts.voices.piper", &[("amy", "Amy"), ("alan", "Alan")]),
+            ("tts.voices.azure", &[("aria", "Aria")]),
+        ])
+    }
+
+    #[test]
+    fn a_dependent_list_is_read_from_the_prefix_joined_to_the_sibling_by_a_dot() {
+        assert_eq!(
+            dependent_options(&voice_options(), "tts.voices", "piper"),
+            vec![
+                ("amy".to_owned(), "Amy".to_owned()),
+                ("alan".to_owned(), "Alan".to_owned()),
+            ],
+            "the chosen engine selects its own voices, not the bare prefix and not a glued key"
+        );
+    }
+
+    #[test]
+    fn a_dependent_list_stays_empty_while_the_sibling_names_nothing_known() {
+        for sibling in ["", "espeak"] {
+            assert!(
+                dependent_options(&voice_options(), "tts.voices", sibling).is_empty(),
+                "engine {sibling:?} has no registered voices, so the dropdown must offer none"
+            );
+        }
+    }
+
+    fn choice(key: &str, selected: &str, depends_on: Option<&str>) -> ConfigField {
+        ConfigField::Choice {
+            key: key.to_owned(),
+            gate: None,
+            options: Vec::new(),
+            selected: selected.to_owned(),
+            dependency: depends_on.map(|depends_on| ChoiceDependency {
+                options_prefix: "tts.voices".to_owned(),
+                depends_on: depends_on.to_owned(),
+            }),
+        }
+    }
+
+    fn offered_values(field: &ConfigField) -> Vec<String> {
+        match field {
+            ConfigField::Choice { options, .. } => {
+                options.iter().map(|(value, _)| value.clone()).collect()
+            }
+            _ => panic!("expected a choice field"),
+        }
+    }
+
+    fn selected_value(field: &ConfigField) -> String {
+        match field {
+            ConfigField::Choice { selected, .. } => selected.clone(),
+            _ => panic!("expected a choice field"),
+        }
+    }
+
+    fn set_selected(field: &mut ConfigField, value: &str) {
+        match field {
+            ConfigField::Choice { selected, .. } => value.clone_into(selected),
+            _ => panic!("expected a choice field"),
+        }
+    }
+
+    #[gpui::test]
+    fn a_dependent_choice_reoffers_its_list_when_the_sibling_moves(cx: &mut gpui::TestAppContext) {
+        let map = voice_options();
+        let mut fields = vec![
+            choice("engine_id", "piper", None),
+            choice("voice_id", "", Some("engine_id")),
+        ];
+
+        cx.update(|cx| {
+            resolve_dependent_choices(&mut fields, &map, cx);
+            assert_eq!(
+                offered_values(&fields[1]),
+                ["amy", "alan"],
+                "the voice list must follow the engine the form currently holds"
+            );
+
+            set_selected(&mut fields[0], "azure");
+            resolve_dependent_choices(&mut fields, &map, cx);
+            assert_eq!(
+                offered_values(&fields[1]),
+                ["aria"],
+                "switching engines must re-offer the new engine's voices"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_selection_the_new_sibling_no_longer_offers_is_left_standing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let map = voice_options();
+        let mut fields = vec![
+            choice("engine_id", "azure", None),
+            choice("voice_id", "amy", Some("engine_id")),
+        ];
+
+        cx.update(|cx| {
+            resolve_dependent_choices(&mut fields, &map, cx);
+
+            assert_eq!(
+                selected_value(&fields[1]),
+                "amy",
+                "reoffering options must not silently rewrite or clear what the user picked"
+            );
+        });
     }
 }

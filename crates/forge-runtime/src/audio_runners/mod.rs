@@ -57,13 +57,13 @@ pub fn register_audio_sub_actions(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
-    use forge_registry::{RunContext, SubActionRunner};
+    use forge_registry::{FormField, RunContext, SubActionRunner};
     use forge_types::{
         ArgStack, ClipId, EventId, OutputDevice, SubActionConfig, SubActionOutcome, Variant,
     };
@@ -601,6 +601,92 @@ mod tests {
             assert!(
                 matches!(calls.as_slice(), [SoundCall::SetMasterVolume(g)] if (*g - expected).abs() < 1e-4),
                 "expected one SetMasterVolume(~{expected}), got {calls:?}"
+            );
+        }
+    }
+
+    fn audio_registry() -> forge_registry::SubActionRegistry {
+        let mut reg = forge_registry::SubActionRegistry::new();
+        register_audio_sub_actions(
+            &mut reg,
+            RecordingSoundPlayer::ok(),
+            RecordingDispatcher::ok(),
+        )
+        .unwrap();
+        reg
+    }
+
+    #[test]
+    fn a_dependent_field_names_a_sibling_of_the_same_schema_as_its_source() {
+        let reg = audio_registry();
+        let mut checked = 0;
+
+        for runner in reg.all() {
+            let fields = runner.config_fields();
+            let keys: Vec<&str> = fields.iter().map(FormField::key).collect();
+            for field in &fields {
+                let FormField::DependentSelect {
+                    key, depends_on, ..
+                } = field
+                else {
+                    continue;
+                };
+                assert!(
+                    keys.contains(depends_on),
+                    "{}: field {key:?} depends on {depends_on:?}, which no field of its own schema declares",
+                    runner.id()
+                );
+                assert!(
+                    runner.default_config().contains_key(*depends_on),
+                    "{}: {depends_on:?} drives {key:?} but has no default slot to read a value from",
+                    runner.id()
+                );
+                checked += 1;
+            }
+        }
+
+        assert!(
+            checked >= 2,
+            "expected the alias runners to declare dependent fields, found {checked}"
+        );
+    }
+
+    // Why: the prefix and the sibling's options_key are the map keys the UI fills at
+    // fetch time; nothing links the two sides at compile time, so a rename here
+    // silently empties the voice dropdown.
+    #[test]
+    fn alias_runners_pin_the_option_map_keys_the_voice_dropdown_is_fed_under() {
+        let reg = audio_registry();
+
+        for kind_id in ["tts.alias.set", "tts.alias.switch_active"] {
+            let runner = reg
+                .get(kind_id)
+                .unwrap_or_else(|| panic!("{kind_id} is not registered"));
+            let fields = runner.config_fields();
+
+            let engine = fields
+                .iter()
+                .find(|f| f.key() == "engine_id")
+                .unwrap_or_else(|| panic!("{kind_id} declares no engine_id field"));
+            assert!(
+                matches!(
+                    engine,
+                    FormField::DynamicSelect { options_key, .. } if *options_key == "tts.engine_ids"
+                ),
+                "{kind_id}: engine_id must read the engine list under \"tts.engine_ids\", got {engine:?}"
+            );
+
+            let voice = fields
+                .iter()
+                .find(|f| f.key() == "voice_id")
+                .unwrap_or_else(|| panic!("{kind_id} declares no voice_id field"));
+            assert!(
+                matches!(
+                    voice,
+                    FormField::DependentSelect { options_prefix, depends_on, .. }
+                        if *options_prefix == "tts.voices" && *depends_on == "engine_id"
+                ),
+                "{kind_id}: voice_id must read \"tts.voices.<engine_id>\", got {voice:?}"
             );
         }
     }

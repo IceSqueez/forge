@@ -811,6 +811,7 @@ tts_filters_output_emote = Емоція → слово
 tts_filters_output_emote_meta = перетворити :pog: → "pog"
 tts_filters_output_sanitize = Прибирати повтори пунктуації
 tts_filters_output_sanitize_meta = "!!!" → "!"
+tts_filters_output_max_duration_meta = після { $secs }с
 
 ## TTS Filters - список правил
 
@@ -857,6 +858,9 @@ tts_filters_preset_output_lang = Автовизначення мови
 tts_filters_preset_output_lang_hint = обирати голос за мовою повідомлення
 tts_filters_preset_output_maxdur = Обрізати після N секунд
 tts_filters_preset_output_maxdur_hint = зупиняти довгі повідомлення раніше
+tts_filters_preset_output_maxdur_label = МАКС. СЕКУНД
+tts_filters_preset_output_maxdur_placeholder = 30
+tts_filters_preset_output_maxdur_range = Дозволено: { $min }-{ $max } секунд
 tts_filters_preset_output_sanitize_hint = "!!!" → "!"
 
 tts_filters_modal_blocklist_words_label = СЛОВА АБО ФРАЗИ

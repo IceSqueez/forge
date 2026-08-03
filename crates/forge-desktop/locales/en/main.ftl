@@ -806,6 +806,7 @@ tts_filters_output_emote = Emote → word
 tts_filters_output_emote_meta = convert :pog: → "pog"
 tts_filters_output_sanitize = Strip repeated punctuation
 tts_filters_output_sanitize_meta = "!!!" → "!"
+tts_filters_output_max_duration_meta = after { $secs }s
 
 ## TTS Filters - rule list
 
@@ -852,6 +853,9 @@ tts_filters_preset_output_lang = Auto-detect language
 tts_filters_preset_output_lang_hint = pick voice per message language
 tts_filters_preset_output_maxdur = Cut off after N seconds
 tts_filters_preset_output_maxdur_hint = stop long messages early
+tts_filters_preset_output_maxdur_label = MAX SECONDS
+tts_filters_preset_output_maxdur_placeholder = 30
+tts_filters_preset_output_maxdur_range = Allowed: { $min }-{ $max } seconds
 tts_filters_preset_output_sanitize_hint = "!!!" → "!"
 
 tts_filters_modal_blocklist_words_label = WORDS OR PHRASES

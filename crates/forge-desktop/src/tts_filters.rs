@@ -25,6 +25,9 @@ use crate::presentation::ActivePresentation;
 const STAGE_CIRCLE: Pixels = px(22.0);
 const PREVIEW_W: Pixels = px(320.0);
 const MODAL_W: Pixels = px(480.0);
+const MAX_DURATION_MIN: u32 = 1;
+const MAX_DURATION_MAX: u32 = 600;
+const MAX_DURATION_DEFAULT: u32 = 30;
 
 #[derive(Clone, Copy)]
 enum SkipRule {
@@ -194,9 +197,37 @@ impl OutputPreset {
         .into()
     }
 
-    fn disabled(self) -> bool {
-        matches!(self, OutputPreset::Lang | OutputPreset::MaxDur)
+    fn param_label(self) -> Option<SharedString> {
+        match self {
+            OutputPreset::MaxDur => Some(tr!("tts_filters_preset_output_maxdur_label").into()),
+            _ => None,
+        }
     }
+
+    fn placeholder(self) -> SharedString {
+        match self {
+            OutputPreset::MaxDur => tr!("tts_filters_preset_output_maxdur_placeholder").into(),
+            _ => SharedString::default(),
+        }
+    }
+
+    fn default_param(self) -> String {
+        match self {
+            OutputPreset::MaxDur => MAX_DURATION_DEFAULT.to_string(),
+            _ => String::new(),
+        }
+    }
+
+    fn disabled(self) -> bool {
+        matches!(self, OutputPreset::Lang)
+    }
+}
+
+fn parse_max_duration(raw: &str) -> Option<u32> {
+    raw.trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|secs| (MAX_DURATION_MIN..=MAX_DURATION_MAX).contains(secs))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,6 +243,7 @@ enum FilterDraft {
     },
     Output {
         preset: OutputPreset,
+        param: String,
     },
     Blocklist {
         words: Vec<String>,
@@ -239,6 +271,7 @@ struct AddFilterModal {
     replace_kind: ReplaceKind,
     replace_from: Entity<TextInput>,
     replace_to: Entity<TextInput>,
+    _param_sub: Subscription,
 }
 
 impl EventEmitter<AddFilterEvent> for AddFilterModal {}
@@ -247,6 +280,12 @@ impl AddFilterModal {
     fn new(stage: ModalStage, blocklist_mode: BlocklistMode, cx: &mut Context<Self>) -> Self {
         let palette = cx.palette();
         let param = cx.new(|cx| TextInput::new(SharedString::default(), cx).with_palette(palette));
+        let param_sub = cx.subscribe(&param, |this, _input, event: &InputEvent, cx| {
+            if let InputEvent::Changed(_) = event {
+                this.revalidate_param(cx);
+                cx.notify();
+            }
+        });
         let blocklist_words = cx.new(|cx| {
             TextArea::new(tr!("tts_filters_modal_blocklist_words_placeholder"), cx)
                 .with_palette(palette)
@@ -274,6 +313,7 @@ impl AddFilterModal {
             replace_kind: ReplaceKind::Text,
             replace_from,
             replace_to,
+            _param_sub: param_sub,
         }
     }
 
@@ -283,15 +323,23 @@ impl AddFilterModal {
         self.param.update(cx, |field, cx| {
             field.set_placeholder(placeholder, cx);
             field.set_content("", cx);
+            field.set_invalid(false, cx);
         });
         cx.notify();
     }
 
     fn set_output_preset(&mut self, preset: OutputPreset, cx: &mut Context<Self>) {
-        if preset.disabled() {
+        if preset.disabled() || preset == self.output_preset {
             return;
         }
         self.output_preset = preset;
+        let placeholder = preset.placeholder();
+        let content = preset.default_param();
+        self.param.update(cx, |field, cx| {
+            field.set_placeholder(placeholder, cx);
+            field.set_content(content, cx);
+            field.set_invalid(false, cx);
+        });
         cx.notify();
     }
 
@@ -305,16 +353,32 @@ impl AddFilterModal {
         cx.notify();
     }
 
-    fn is_valid(&self, cx: &App) -> bool {
+    fn param_invalid(&self, cx: &App) -> bool {
+        let raw = self.param.read(cx).content();
         match self.stage {
             ModalStage::Skip => match self.skip_preset {
-                SkipPreset::Prefix | SkipPreset::Regex => {
-                    !self.param.read(cx).content().trim().is_empty()
-                }
-                SkipPreset::Length => self.param.read(cx).content().trim().parse::<u32>().is_ok(),
-                _ => true,
+                SkipPreset::Prefix | SkipPreset::Regex => raw.trim().is_empty(),
+                SkipPreset::Length => raw.trim().parse::<u32>().is_err(),
+                _ => false,
             },
-            ModalStage::Output => !self.output_preset.disabled(),
+            ModalStage::Output => match self.output_preset {
+                OutputPreset::MaxDur => parse_max_duration(raw).is_none(),
+                _ => false,
+            },
+            ModalStage::Blocklist | ModalStage::Replace => false,
+        }
+    }
+
+    fn revalidate_param(&mut self, cx: &mut Context<Self>) {
+        let invalid = self.param_invalid(cx);
+        self.param
+            .update(cx, |field, cx| field.set_invalid(invalid, cx));
+    }
+
+    fn is_valid(&self, cx: &App) -> bool {
+        match self.stage {
+            ModalStage::Skip => !self.param_invalid(cx),
+            ModalStage::Output => !self.output_preset.disabled() && !self.param_invalid(cx),
             ModalStage::Blocklist => !self.blocklist_words.read(cx).content().trim().is_empty(),
             ModalStage::Replace => !self.replace_from.read(cx).content().trim().is_empty(),
         }
@@ -331,6 +395,7 @@ impl AddFilterModal {
             },
             ModalStage::Output => FilterDraft::Output {
                 preset: self.output_preset,
+                param: self.param.read(cx).content().trim().to_owned(),
             },
             ModalStage::Blocklist => FilterDraft::Blocklist {
                 words: self
@@ -616,6 +681,14 @@ impl TtsFiltersView {
         self.set_output(opt, value, cx);
     }
 
+    fn clear_output_max_duration(&mut self, cx: &mut Context<Self>) {
+        if self.settings.output_max_duration_secs.is_none() {
+            return;
+        }
+        self.settings.output_max_duration_secs = None;
+        self.after_change(cx);
+    }
+
     fn set_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
         self.settings.blocklist_mode = mode;
         for rule in self.rules.iter_mut() {
@@ -701,7 +774,7 @@ impl TtsFiltersView {
             FilterDraft::Skip { preset, param } => {
                 self.apply_skip_preset(*preset, param.clone(), cx)
             }
-            FilterDraft::Output { preset } => self.apply_output_preset(*preset, cx),
+            FilterDraft::Output { preset, param } => self.apply_output_preset(*preset, param, cx),
             FilterDraft::Blocklist { words, mode } => {
                 self.apply_blocklist_words(words.clone(), *mode, cx)
             }
@@ -742,12 +815,22 @@ impl TtsFiltersView {
         })
     }
 
-    fn apply_output_preset(&mut self, preset: OutputPreset, cx: &mut Context<Self>) -> bool {
+    fn apply_output_preset(
+        &mut self,
+        preset: OutputPreset,
+        param: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let max_duration = parse_max_duration(param);
+        if preset == OutputPreset::MaxDur && max_duration.is_none() {
+            return false;
+        }
         self.try_apply(cx, |this| match preset {
             OutputPreset::Name => this.settings.output_read_display_name_first = true,
             OutputPreset::Emote => this.settings.output_emote_to_word = true,
             OutputPreset::Sanitize => this.settings.output_sanitize_punctuation = true,
-            OutputPreset::Lang | OutputPreset::MaxDur => {}
+            OutputPreset::MaxDur => this.settings.output_max_duration_secs = max_duration,
+            OutputPreset::Lang => {}
         })
     }
 
@@ -1431,21 +1514,39 @@ impl TtsFiltersView {
             ),
         ];
 
-        let last = rows.len() - 1;
+        let max_duration = self.settings.output_max_duration_secs;
+        let total = rows.len() + usize::from(max_duration.is_some());
         let mut body = div().flex().flex_col();
-        for (i, (opt, label, meta, on)) in rows.into_iter().enumerate() {
+        let mut i = 0usize;
+        for (opt, label, meta, on) in rows {
             let toggle_id = SharedString::from(format!("filt-out-t-{}", opt.key()));
             let x_id = SharedString::from(format!("filt-out-x-{}", opt.key()));
+            i += 1;
             body = body.child(self.stage_row(
                 label,
                 on,
                 Some(meta),
                 toggle_id,
                 x_id,
-                i != last,
+                i != total,
                 true,
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_output(opt, cx)),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.set_output(opt, false, cx)),
+                palette,
+                density,
+            ));
+        }
+        if let Some(secs) = max_duration {
+            body = body.child(self.stage_row(
+                tr!("tts_filters_preset_output_maxdur").into(),
+                true,
+                Some(tr!("tts_filters_output_max_duration_meta", secs = secs as i64).into()),
+                "filt-out-t-maxdur".into(),
+                "filt-out-x-maxdur".into(),
+                false,
+                true,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_max_duration(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_max_duration(cx)),
                 palette,
                 density,
             ));
@@ -1573,7 +1674,7 @@ impl AddFilterModal {
             );
         }
 
-        div()
+        let mut body = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
@@ -1581,8 +1682,25 @@ impl AddFilterModal {
                 palette,
                 tr!("tts_filters_modal_condition_label"),
                 list,
-            ))
-            .into_any_element()
+            ));
+
+        if let Some(param_label) = self.output_preset.param_label() {
+            body = body
+                .child(field_label(palette, param_label, self.param.clone()))
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child(tr!(
+                            "tts_filters_preset_output_maxdur_range",
+                            min = MAX_DURATION_MIN as i64,
+                            max = MAX_DURATION_MAX as i64
+                        )),
+                );
+        }
+
+        body.into_any_element()
     }
 
     fn render_blocklist_body(

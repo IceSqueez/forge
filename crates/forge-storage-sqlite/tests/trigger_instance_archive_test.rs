@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use forge_storage::{DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::{Action, ActionId, ExecutionMode, QueueId, TriggerInstance, TriggerInstanceId};
+use forge_types::{
+    Action, ActionId, ExecutionMode, PermissionRung, QueueId, TriggerInstance, TriggerInstanceId,
+};
 
 const TEST_KEY: [u8; 32] = [0xcd; 32];
 
@@ -58,6 +60,7 @@ fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstan
         platform_scope: Default::default(),
         cooldown_secs: 0,
         cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     }
 }
 

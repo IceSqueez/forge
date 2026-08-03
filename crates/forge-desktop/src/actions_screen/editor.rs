@@ -22,7 +22,8 @@ use forge_registry::{
     TriggerRegistry,
 };
 use forge_types::{
-    ExecutionOutcome, PlatformScope, SubActionStep, TriggerInstance, TriggerInstanceId, Variant,
+    ExecutionOutcome, PermissionRung, PlatformScope, SubActionStep, TriggerInstance,
+    TriggerInstanceId, Variant,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, FontWeight, Rgba, SharedString,
@@ -1409,6 +1410,7 @@ impl ScreenActionsView {
             platform_scope: PlatformScope::Any,
             cooldown_secs: 0,
             cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
         };
 
         if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {

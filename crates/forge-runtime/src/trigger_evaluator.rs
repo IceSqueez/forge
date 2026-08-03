@@ -321,6 +321,7 @@ mod tests {
             platform_scope: Default::default(),
             cooldown_secs: 0,
             cooldown_global: true,
+            permission_rung: forge_types::PermissionRung::Everyone,
         }
     }
 
@@ -533,6 +534,7 @@ mod tests {
             platform_scope: scope,
             cooldown_secs: 0,
             cooldown_global: true,
+            permission_rung: forge_types::PermissionRung::Everyone,
         }
     }
 

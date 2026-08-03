@@ -12,7 +12,7 @@ use forge_components::{
     modal, mono_family, overlay, primary_button, radius, secondary_button, spacing, tr,
 };
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
-use forge_types::{PlatformScope, TriggerInstance, TriggerInstanceId};
+use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, SharedString, Subscription, Window, div, prelude::*,
 };
@@ -252,6 +252,7 @@ impl TriggersRegistryView {
             platform_scope: PlatformScope::Any,
             cooldown_secs: 0,
             cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
         };
 
         if let Some(CreateStage::Fill(form)) = self.create.as_mut() {

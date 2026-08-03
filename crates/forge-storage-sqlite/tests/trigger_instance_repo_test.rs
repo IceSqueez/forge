@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use forge_storage::{DataProvider, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ExecutionMode, PlatformId, PlatformScope, QueueId, TriggerInstance,
-    TriggerInstanceId, Variant,
+    Action, ActionId, ExecutionMode, PermissionRung, PlatformId, PlatformScope, QueueId,
+    TriggerInstance, TriggerInstanceId, Variant,
 };
 
 const TEST_KEY: [u8; 32] = [0xcd; 32];
@@ -61,6 +61,7 @@ fn make_instance(kind_id: &str, name: &str, user_defined: bool) -> TriggerInstan
         platform_scope: Default::default(),
         cooldown_secs: 0,
         cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     }
 }
 
@@ -119,6 +120,7 @@ async fn overrides_survive_roundtrip() {
         platform_scope: Default::default(),
         cooldown_secs: 0,
         cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     };
     let id = inst.id;
     repo.save(&inst).await.expect("save");
@@ -512,6 +514,7 @@ async fn platform_scope_only_subset_round_trips() {
         platform_scope: scope.clone(),
         cooldown_secs: 0,
         cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     };
     let id = inst.id;
     repo.save(&inst).await.expect("save");

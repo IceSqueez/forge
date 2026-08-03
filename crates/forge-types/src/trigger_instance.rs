@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::TriggerInstanceId;
+use crate::permission_rung::PermissionRung;
 use crate::platform_scope::PlatformScope;
 use crate::trigger_config::TriggerConfig;
 
@@ -17,6 +18,8 @@ pub struct TriggerInstance {
     pub cooldown_secs: u32,
     #[serde(default = "default_cooldown_global")]
     pub cooldown_global: bool,
+    #[serde(default)]
+    pub permission_rung: PermissionRung,
 }
 
 fn default_cooldown_global() -> bool {
@@ -45,6 +48,7 @@ mod tests {
             platform_scope: Default::default(),
             cooldown_secs: 0,
             cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
         };
         let json = serde_json::to_string(&instance).unwrap();
         let back: TriggerInstance = serde_json::from_str(&json).unwrap();
@@ -69,6 +73,7 @@ mod tests {
             platform_scope: Default::default(),
             cooldown_secs: 0,
             cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
         };
         let json = serde_json::to_string(&instance).unwrap();
         let back: TriggerInstance = serde_json::from_str(&json).unwrap();

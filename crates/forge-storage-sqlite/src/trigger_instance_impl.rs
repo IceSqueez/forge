@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use async_trait::async_trait;
 use forge_storage::{StorageError, TriggerInstanceRepo};
-use forge_types::{ActionId, PlatformScope, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
@@ -21,6 +23,7 @@ struct InstanceRow {
     platform_scope: String,
     cooldown_secs: i64,
     cooldown_global: i64,
+    permission_rung: String,
 }
 
 fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
@@ -29,6 +32,12 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
         .map_err(|e| SqliteStorageError::Decode(format!("invalid overrides json: {e}")))?;
     let platform_scope = serde_json::from_str::<PlatformScope>(&row.platform_scope)
         .map_err(|e| SqliteStorageError::Decode(format!("invalid platform_scope json: {e}")))?;
+    let permission_rung = PermissionRung::from_str(&row.permission_rung).map_err(|e| {
+        SqliteStorageError::Decode(format!(
+            "invalid permission_rung '{}': {e}",
+            row.permission_rung
+        ))
+    })?;
     Ok(TriggerInstance {
         id,
         kind_id: row.kind_id,
@@ -39,6 +48,7 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
         platform_scope,
         cooldown_secs: row.cooldown_secs.max(0) as u32,
         cooldown_global: row.cooldown_global != 0,
+        permission_rung,
     })
 }
 
@@ -57,7 +67,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global
+                    cooldown_secs, cooldown_global, permission_rung
              FROM trigger_instances
              WHERE archived_at IS NULL
              ORDER BY user_defined ASC, name ASC",
@@ -74,7 +84,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global
+                    cooldown_secs, cooldown_global, permission_rung
              FROM trigger_instances WHERE user_defined = 1 AND archived_at IS NULL ORDER BY name",
         )
         .fetch_all(&self.pool)
@@ -93,7 +103,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let action_id_str = action_id.to_string();
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT ti.id, ti.kind_id, ti.name, ti.overrides, ti.enabled, ti.user_defined,
-                    ti.platform_scope, ti.cooldown_secs, ti.cooldown_global
+                    ti.platform_scope, ti.cooldown_secs, ti.cooldown_global, ti.permission_rung
              FROM trigger_instances ti
              JOIN action_trigger_instances ati ON ati.trigger_instance_id = ti.id
              WHERE ati.action_id = ? AND ti.archived_at IS NULL
@@ -181,7 +191,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let id_str = id.to_string();
         let row: Option<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global
+                    cooldown_secs, cooldown_global, permission_rung
              FROM trigger_instances WHERE id = ? AND archived_at IS NULL",
         )
         .bind(&id_str)
@@ -204,12 +214,13 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 
         let cooldown_secs: i64 = instance.cooldown_secs.into();
         let cooldown_global: i64 = if instance.cooldown_global { 1 } else { 0 };
+        let permission_rung = instance.permission_rung.as_str();
 
         sqlx::query(
             "INSERT INTO trigger_instances
                  (id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                  cooldown_secs, cooldown_global)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  cooldown_secs, cooldown_global, permission_rung)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                  kind_id         = excluded.kind_id,
                  name            = excluded.name,
@@ -218,7 +229,8 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
                  user_defined    = excluded.user_defined,
                  platform_scope  = excluded.platform_scope,
                  cooldown_secs   = excluded.cooldown_secs,
-                 cooldown_global = excluded.cooldown_global",
+                 cooldown_global = excluded.cooldown_global,
+                 permission_rung = excluded.permission_rung",
         )
         .bind(&id_str)
         .bind(&instance.kind_id)
@@ -229,6 +241,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         .bind(&platform_scope_json)
         .bind(cooldown_secs)
         .bind(cooldown_global)
+        .bind(permission_rung)
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -366,7 +379,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         let rows: Vec<InstanceRow> = sqlx::query_as(
             "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global
+                    cooldown_secs, cooldown_global, permission_rung
              FROM trigger_instances
              WHERE archived_at IS NOT NULL
              ORDER BY user_defined ASC, name ASC",

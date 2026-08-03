@@ -20,8 +20,8 @@ use forge_storage::{
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ArgStack, ExecutionMode, Queue, QueueId, SubActionOutcome, SubActionStep,
-    SubActionTelemetry, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, ExecutionMode, PermissionRung, Queue, QueueId, SubActionOutcome,
+    SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId, Variant,
 };
 use serde_json::json;
 use time::OffsetDateTime;
@@ -87,6 +87,7 @@ fn custom_instance(event_name: &str) -> TriggerInstance {
         platform_scope: Default::default(),
         cooldown_secs: 0,
         cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     }
 }
 

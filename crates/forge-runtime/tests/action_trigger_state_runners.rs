@@ -17,8 +17,8 @@ use forge_storage::{
     ActionRepo, ActionTelemetry, ExecutionStatus, StorageError, TriggerInstanceRepo,
 };
 use forge_types::{
-    Action, ActionId, ArgStack, EventId, ExecutionMode, QueueId, SubActionConfig, SubActionOutcome,
-    TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ArgStack, EventId, ExecutionMode, PermissionRung, QueueId, SubActionConfig,
+    SubActionOutcome, TriggerInstance, TriggerInstanceId, Variant,
 };
 use time::OffsetDateTime;
 
@@ -238,6 +238,7 @@ fn make_instance(enabled: bool) -> TriggerInstance {
         platform_scope: Default::default(),
         cooldown_secs: 0,
         cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     }
 }
 

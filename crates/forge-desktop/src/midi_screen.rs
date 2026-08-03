@@ -11,7 +11,7 @@ use forge_runtime::EventBus;
 use forge_storage::{
     ActionRepo, SettingsRepo, TriggerInstanceRepo, set_bool_setting, set_json_setting,
 };
-use forge_types::{ActionId, PlatformScope, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, Rgba, SharedString, Subscription,
@@ -224,6 +224,7 @@ async fn save_mapping(
                 platform_scope: PlatformScope::Any,
                 cooldown_secs: 0,
                 cooldown_global: true,
+                permission_rung: PermissionRung::Everyone,
             };
             triggers.save(&instance).await.map_err(|e| e.to_string())?;
             instance.id
@@ -1787,6 +1788,7 @@ mod tests {
             platform_scope: PlatformScope::Any,
             cooldown_secs: 45,
             cooldown_global: false,
+            permission_rung: PermissionRung::Everyone,
         }
     }
 

@@ -4,7 +4,9 @@ use std::sync::Arc;
 use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_platform_core::{BuiltinHealth, HealthValue};
 use forge_storage::DataProvider;
-use forge_types::{ActionId, PlatformScope, TriggerInstance, TriggerInstanceId, Variant};
+use forge_types::{
+    ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant,
+};
 use gpui::Keystroke;
 
 pub const HOTKEY_ENABLED_KEY: &str = "hotkey.enabled";
@@ -181,6 +183,7 @@ pub async fn do_bind(
         platform_scope: PlatformScope::default(),
         cooldown_secs: 0,
         cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
     };
     backend
         .trigger_instance_repo()
@@ -357,6 +360,7 @@ mod tests {
             platform_scope: PlatformScope::default(),
             cooldown_secs: 0,
             cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
         };
         let id = instance.id;
         backend

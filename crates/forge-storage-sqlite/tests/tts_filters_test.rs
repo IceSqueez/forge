@@ -84,6 +84,12 @@ async fn fresh_db_settings_row_has_documented_defaults() {
     assert!(s.strip_twitch_emotes, "strip_twitch_emotes default");
     assert!(s.strip_reward_emotes, "strip_reward_emotes default");
     assert!(s.max_length.is_none(), "max_length default is unlimited");
+    // The singleton row is seeded by an early migration and only later gained the duration
+    // column, so this also pins that an upgraded row reads back as "no cap" rather than 0.
+    assert!(
+        s.output_max_duration_secs.is_none(),
+        "output_max_duration_secs default is no cap"
+    );
 }
 
 #[tokio::test]
@@ -184,6 +190,24 @@ async fn pipeline_settings_max_length_none_and_some_round_trip() {
         r.get_pipeline_settings().await.expect("get").max_length,
         Some(u32::MAX)
     );
+}
+
+#[tokio::test]
+async fn pipeline_settings_max_duration_round_trips_including_clearing_a_previous_cap() {
+    let r = repo().await;
+
+    for cap in [Some(30u32), None, Some(1), Some(600), Some(u32::MAX), None] {
+        let s = TtsPipelineSettings {
+            output_max_duration_secs: cap,
+            ..TtsPipelineSettings::default()
+        };
+        r.set_pipeline_settings(&s).await.expect("set");
+        let got = r.get_pipeline_settings().await.expect("get");
+        assert_eq!(
+            got.output_max_duration_secs, cap,
+            "cap {cap:?} did not survive the round-trip"
+        );
+    }
 }
 
 #[tokio::test]

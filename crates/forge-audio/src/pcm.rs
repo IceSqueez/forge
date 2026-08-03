@@ -88,4 +88,58 @@ mod tests {
         let buf = PcmBuffer::new(vec![0; 100], 0, 2);
         assert_eq!(buf.duration_ms(), 0);
     }
+
+    fn ramp(len: usize, sample_rate: u32, channels: u16) -> PcmBuffer {
+        PcmBuffer::new((0..len).map(|i| i as i16).collect(), sample_rate, channels)
+    }
+
+    #[test]
+    fn truncate_to_secs_cuts_at_the_cap_counting_every_interleaved_channel() {
+        // A 2 s buffer at 8 kHz: 16_000 samples mono, 32_000 interleaved stereo.
+        for (channels, initial, cap, expected) in [
+            (1u16, 16_000usize, 1u32, 8_000usize),
+            (1, 16_000, 2, 16_000),
+            (1, 16_000, 3, 16_000),
+            (1, 16_000, u32::MAX, 16_000),
+            (2, 32_000, 1, 16_000),
+            (2, 32_000, 2, 32_000),
+            (2, 32_000, 3, 32_000),
+            (2, 32_000, u32::MAX, 32_000),
+        ] {
+            let mut buf = ramp(initial, 8_000, channels);
+            buf.truncate_to_secs(cap);
+            assert_eq!(
+                buf.samples.len(),
+                expected,
+                "cap {cap}s on a 2 s {channels}-channel buffer"
+            );
+            assert_eq!(
+                buf.samples.last(),
+                Some(&((expected - 1) as i16)),
+                "cap {cap}s on {channels} channels must keep the head of the clip, not its tail"
+            );
+        }
+    }
+
+    // Why: 0 is the settings layer's cap-disabled sentinel. Truncating to silence here would
+    // mute every spoken message the moment the user clears the duration field.
+    #[test]
+    fn truncate_to_secs_zero_leaves_the_buffer_intact() {
+        let mut buf = ramp(16_000, 8_000, 1);
+        buf.truncate_to_secs(0);
+        assert_eq!(buf.samples.len(), 16_000);
+    }
+
+    #[test]
+    fn truncate_to_secs_without_a_usable_rate_or_channel_count_is_a_noop() {
+        for (sample_rate, channels) in [(0u32, 2u16), (8_000, 0)] {
+            let mut buf = ramp(500, sample_rate, channels);
+            buf.truncate_to_secs(1);
+            assert_eq!(
+                buf.samples.len(),
+                500,
+                "rate={sample_rate} channels={channels} carries no frame size to cut on"
+            );
+        }
+    }
 }

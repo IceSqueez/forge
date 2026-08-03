@@ -2294,3 +2294,28 @@ fn is_replacement_kind(kind: &FilterRuleKind) -> bool {
         FilterRuleKind::Literal { .. } | FilterRuleKind::Regex { .. }
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_max_duration_accepts_whole_seconds_inside_the_inclusive_range() {
+        for (raw, expected) in [("1", 1u32), ("600", 600), ("30", 30), ("  45  ", 45)] {
+            assert_eq!(parse_max_duration(raw), Some(expected), "input {raw:?}");
+        }
+    }
+
+    #[test]
+    fn parse_max_duration_rejects_out_of_range_and_non_integer_input() {
+        for raw in [
+            "0", "601", "", "   ", "abc", "-5", "3.5", "30s", "1e2", "٣٠",
+        ] {
+            assert_eq!(
+                parse_max_duration(raw),
+                None,
+                "input {raw:?} must not produce a cap"
+            );
+        }
+    }
+}

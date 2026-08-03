@@ -176,7 +176,6 @@ settings_diagnostics_export_failed = Не вдалося експортуват�
 settings_version_title = Версія та оновлення
 settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
-settings_version_recent_releases = ОСТАННІ РЕЛІЗИ
 
 ## Налаштування → панель сховища
 

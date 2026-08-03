@@ -25,12 +25,6 @@ use crate::settings_websocket::SettingsWebSocketView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
-const RECENT_RELEASES: [(&str, &str, &str); 3] = [
-    ("v0.9.2", "Server panel, settings → websocket", "today"),
-    ("v0.9.1", "OBS scene metadata, lock indicators", "3d ago"),
-    ("v0.9.0", "TTS module GA, filters live preview", "1w ago"),
-];
-
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
         "settings_nav_group_preferences",
@@ -987,21 +981,6 @@ impl SettingsView {
                 ),
             );
 
-        let mut releases = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_version_recent_releases")),
-            );
-        for (tag, summary, when) in RECENT_RELEASES {
-            releases = releases.child(release_row(tag, summary, when, palette, density));
-        }
-
         div()
             .flex()
             .flex_col()
@@ -1012,7 +991,6 @@ impl SettingsView {
                 palette,
             ))
             .child(card(identity, palette))
-            .child(card(releases, palette))
             .into_any_element()
     }
 
@@ -1171,41 +1149,4 @@ fn section_divider(palette: &ForgePalette, density: Density) -> gpui::Div {
         .pt(spacing(Spacing::Md, density))
         .border_t(BORDER_THIN)
         .border_color(palette.border_regular)
-}
-
-fn release_row(
-    tag: &'static str,
-    summary: &'static str,
-    when: &'static str,
-    palette: &ForgePalette,
-    density: Density,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap(spacing(Spacing::Sm, density))
-        .child(
-            div()
-                .w(px(60.0))
-                .flex_shrink_0()
-                .font_family(mono_family())
-                .text_size(FONT_XS)
-                .text_color(palette.text_primary)
-                .child(tag),
-        )
-        .child(
-            div()
-                .flex_1()
-                .font_family(body_family())
-                .text_size(FONT_XS)
-                .text_color(palette.text_muted)
-                .child(summary),
-        )
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(when),
-        )
 }

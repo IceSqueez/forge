@@ -176,7 +176,6 @@ settings_diagnostics_export_failed = Could not export diagnostic bundle: { $erro
 settings_version_title = Version & updates
 settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
-settings_version_recent_releases = RECENT RELEASES
 
 ## Settings → Storage pane
 

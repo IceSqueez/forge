@@ -559,6 +559,9 @@ async fn handle_synth_result(
             voice_id,
             engine_id,
         } => {
+            if let Some(cap_secs) = deps.pipeline.load().output.max_duration_secs {
+                pcm.truncate_to_secs(cap_secs);
+            }
             let duration_secs = (pcm.duration_ms() / 1000) as u32;
             let _ = event_tx.send(SpeakEvent::Started {
                 request_id: result.request_id.clone(),

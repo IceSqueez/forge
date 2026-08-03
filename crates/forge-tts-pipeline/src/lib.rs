@@ -111,6 +111,7 @@ pub struct OutputConfig {
     pub read_display_name_first: bool,
     pub emote_to_word: bool,
     pub sanitize_punctuation: bool,
+    pub max_duration_secs: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -149,6 +149,7 @@ fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
         read_display_name_first: settings.output_read_display_name_first,
         emote_to_word: settings.output_emote_to_word,
         sanitize_punctuation: settings.output_sanitize_punctuation,
+        max_duration_secs: settings.output_max_duration_secs,
     }
 }
 

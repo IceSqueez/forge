@@ -93,6 +93,8 @@ pub struct TtsPipelineSettings {
     pub skip_custom_regexes: Vec<String>,
     #[serde(default)]
     pub output_sanitize_punctuation: bool,
+    #[serde(default)]
+    pub output_max_duration_secs: Option<u32>,
 }
 
 fn default_longer_than_max_chars() -> u32 {
@@ -126,6 +128,7 @@ impl Default for TtsPipelineSettings {
             skip_mostly_non_latin: false,
             skip_custom_regexes: Vec::new(),
             output_sanitize_punctuation: false,
+            output_max_duration_secs: None,
         }
     }
 }

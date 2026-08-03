@@ -41,6 +41,17 @@ impl PcmBuffer {
             *s = (*s as f32 * gain).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         }
     }
+
+    /// `secs == 0` is a no-op (caller's cap-disabled sentinel), not a truncation to silence.
+    pub fn truncate_to_secs(&mut self, secs: u32) {
+        if secs == 0 || self.sample_rate == 0 || self.channels == 0 {
+            return;
+        }
+        let max_frames = u64::from(secs) * u64::from(self.sample_rate);
+        let max_samples = max_frames.saturating_mul(u64::from(self.channels));
+        let max_samples = max_samples.min(self.samples.len() as u64) as usize;
+        self.samples.truncate(max_samples);
+    }
 }
 
 #[cfg(test)]

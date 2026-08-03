@@ -10,7 +10,7 @@ use crate::{
 
 /// Schema version this build expects. The startup gate compares `schema_version()`
 /// against this constant; a mismatch routes to `Screen::SchemaUpgradeRequired`.
-pub const EXPECTED_SCHEMA_VERSION: u32 = 40;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 41;
 
 #[async_trait]
 pub trait DataProvider:

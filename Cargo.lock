@@ -2781,6 +2781,7 @@ dependencies = [
  "rand 0.10.2",
  "regex",
  "reqwest",
+ "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.19",

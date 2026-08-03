@@ -5,7 +5,11 @@ use std::time::{Duration, Instant};
 use forge_events::{Event, EventSource};
 use forge_registry::{CancelSignal, ChatTriggerFamily, TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
-use forge_types::{ArgStack, EventId, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
+use forge_types::{
+    ArgStack, ChatPayload, EventId, PermissionRung, TriggerConfig, TriggerInstance,
+    TriggerInstanceId, Variant,
+};
+use serde::Deserialize;
 use serde_json::json;
 use tracing::warn;
 
@@ -92,8 +96,6 @@ impl TriggerEvaluator {
             }
         };
 
-        let mut command_emitted = false;
-
         for action in &actions {
             if !action.enabled {
                 continue;
@@ -145,11 +147,8 @@ impl TriggerEvaluator {
 
                 let args = descriptor.build_arg_stack(&event);
                 let chat_family = descriptor.chat_trigger_family();
-                if self.throttled(instance, &args, event.id) {
-                    continue;
-                }
 
-                if !command_emitted && chat_family == Some(ChatTriggerFamily::Command) {
+                if chat_family == Some(ChatTriggerFamily::Command) {
                     self.bus.publish(Event::caused_by(
                         EventSource::Core,
                         "command.matched",
@@ -159,7 +158,26 @@ impl TriggerEvaluator {
                         }),
                         event.id,
                     ));
-                    command_emitted = true;
+                }
+
+                if chat_family.is_some() {
+                    let resolved = resolve_rung(&event);
+                    if resolved < instance.permission_rung {
+                        self.publish_blocked(
+                            instance,
+                            event.id,
+                            BlockReason::Permission {
+                                required: instance.permission_rung,
+                                resolved,
+                            },
+                        );
+                        continue;
+                    }
+                }
+
+                if let Some(remaining) = self.cooldown_remaining(instance, &args, event.id) {
+                    self.publish_blocked(instance, event.id, BlockReason::Cooldown { remaining });
+                    continue;
                 }
 
                 let req = SchedulerRequest {
@@ -177,38 +195,86 @@ impl TriggerEvaluator {
         }
     }
 
-    fn throttled(
+    fn publish_blocked(&self, instance: &TriggerInstance, cause: EventId, reason: BlockReason) {
+        self.bus.publish(Event::caused_by(
+            EventSource::Core,
+            "trigger.blocked",
+            reason.into_payload(instance),
+            cause,
+        ));
+    }
+
+    fn cooldown_remaining(
         &mut self,
         instance: &TriggerInstance,
         args: &ArgStack,
         event_id: EventId,
-    ) -> bool {
+    ) -> Option<Duration> {
         if instance.cooldown_secs == 0 {
-            return false;
+            return None;
         }
 
         let key = if instance.cooldown_global {
             (instance.id, None)
         } else {
-            match arg_stack_user(args) {
-                Some(user) => (instance.id, Some(user)),
-                None => return false,
-            }
+            (instance.id, Some(arg_stack_user(args)?))
         };
 
         let window = Duration::from_secs(instance.cooldown_secs as u64);
         if let Some((last, stamped_event)) = self.cooldowns.get(&key) {
             if *stamped_event == event_id {
-                return false;
+                return None;
             }
-            if last.elapsed() < window {
-                return true;
+            let elapsed = last.elapsed();
+            if elapsed < window {
+                return Some(window - elapsed);
             }
         }
 
         self.cooldowns.insert(key, (Instant::now(), event_id));
-        false
+        None
     }
+}
+
+enum BlockReason {
+    Permission {
+        required: PermissionRung,
+        resolved: PermissionRung,
+    },
+    Cooldown {
+        remaining: Duration,
+    },
+}
+
+impl BlockReason {
+    fn into_payload(self, instance: &TriggerInstance) -> serde_json::Value {
+        match self {
+            Self::Permission { required, resolved } => json!({
+                "instance_id": instance.id,
+                "kind_id": instance.kind_id,
+                "reason": "permission",
+                "rung_required": required.as_str(),
+                "rung_resolved": resolved.as_str(),
+            }),
+            Self::Cooldown { remaining } => json!({
+                "instance_id": instance.id,
+                "kind_id": instance.kind_id,
+                "reason": "cooldown",
+                "remaining_ms": remaining.as_millis() as u64,
+            }),
+        }
+    }
+}
+
+fn resolve_rung(event: &Event) -> PermissionRung {
+    // The flat platform badge strings Twitch alone also puts on the event are not an authorization
+    // source: reading them would make the gate silently correct for one platform and blind on the rest.
+    event
+        .payload
+        .get(ChatPayload::KEY)
+        .and_then(|v| ChatPayload::deserialize(v).ok())
+        .map(|chat| PermissionRung::from_badges(&chat.badges))
+        .unwrap_or_default()
 }
 
 fn arg_stack_user(args: &ArgStack) -> Option<String> {

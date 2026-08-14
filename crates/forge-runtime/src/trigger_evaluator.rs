@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,7 +6,8 @@ use forge_events::{Event, EventSource};
 use forge_registry::{CancelSignal, ChatTriggerFamily, TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
-    ArgStack, ChatPayload, EventId, PermissionRung, TriggerConfig, TriggerInstance, Variant,
+    ArgStack, ChatPayload, EventId, PermissionRung, TriggerConfig, TriggerInstance,
+    TriggerInstanceId, Variant,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -96,6 +98,8 @@ impl TriggerEvaluator {
             }
         };
 
+        let mut decided: HashMap<TriggerInstanceId, Option<ArgStack>> = HashMap::new();
+
         for action in &actions {
             if !action.enabled {
                 continue;
@@ -114,71 +118,18 @@ impl TriggerEvaluator {
                     continue;
                 }
 
-                let descriptor = match self.registry.get(&instance.kind_id) {
-                    Some(d) => d,
+                let decision = match decided.get(&instance.id) {
+                    Some(cached) => cached.clone(),
                     None => {
-                        warn!(
-                            "unknown trigger kind_id: {} - trigger will never fire",
-                            instance.kind_id
-                        );
-                        continue;
+                        let fresh = self.decide(instance, &event);
+                        decided.insert(instance.id, fresh.clone());
+                        fresh
                     }
                 };
 
-                let filter = descriptor.event_filter();
-                let source_ok = filter.source.is_none_or(|s| s == event.source);
-                let prefix_ok = filter
-                    .kind_prefix
-                    .as_deref()
-                    .is_none_or(|p| event.kind.starts_with(p));
-
-                if !source_ok || !prefix_ok {
+                let Some(args) = decision else {
                     continue;
-                }
-
-                if !scope_matches(instance, &event) {
-                    continue;
-                }
-
-                let effective = effective_config(&descriptor.default_config(), &instance.overrides);
-                if !descriptor.matches_trigger(&effective, &event) {
-                    continue;
-                }
-
-                let args = descriptor.build_arg_stack(&event);
-                let chat_family = descriptor.chat_trigger_family();
-
-                if chat_family == Some(ChatTriggerFamily::Command) {
-                    self.bus.publish(Event::caused_by(
-                        EventSource::Core,
-                        "command.matched",
-                        json!({
-                            "command": command_phrase(&effective),
-                            "kind_id": instance.kind_id,
-                        }),
-                        event.id,
-                    ));
-                }
-
-                if chat_family.is_some() {
-                    let resolved = resolve_rung(&event);
-                    if resolved < instance.permission_rung {
-                        self.publish_blocked(
-                            instance,
-                            event.id,
-                            BlockReason::Permission {
-                                required: instance.permission_rung,
-                                resolved,
-                            },
-                        );
-                        continue;
-                    }
-                }
-
-                if let Some(remaining) = self.cooldown_remaining(instance, &args, event.id) {
-                    self.publish_blocked(instance, event.id, BlockReason::Cooldown { remaining });
-                    continue;
-                }
+                };
 
                 let req = SchedulerRequest {
                     queue_id: action.queue_id,
@@ -193,6 +144,77 @@ impl TriggerEvaluator {
                 }
             }
         }
+    }
+
+    /// Publishes the decision record, so callers must invoke it once per (event, instance) pair.
+    fn decide(&mut self, instance: &TriggerInstance, event: &Event) -> Option<ArgStack> {
+        let descriptor = match self.registry.get(&instance.kind_id) {
+            Some(d) => d,
+            None => {
+                warn!(
+                    "unknown trigger kind_id: {} - trigger will never fire",
+                    instance.kind_id
+                );
+                return None;
+            }
+        };
+
+        let filter = descriptor.event_filter();
+        let source_ok = filter.source.is_none_or(|s| s == event.source);
+        let prefix_ok = filter
+            .kind_prefix
+            .as_deref()
+            .is_none_or(|p| event.kind.starts_with(p));
+
+        if !source_ok || !prefix_ok {
+            return None;
+        }
+
+        if !scope_matches(instance, event) {
+            return None;
+        }
+
+        let effective = effective_config(&descriptor.default_config(), &instance.overrides);
+        if !descriptor.matches_trigger(&effective, event) {
+            return None;
+        }
+
+        let args = descriptor.build_arg_stack(event);
+        let chat_family = descriptor.chat_trigger_family();
+
+        if chat_family == Some(ChatTriggerFamily::Command) {
+            self.bus.publish(Event::caused_by(
+                EventSource::Core,
+                "command.matched",
+                json!({
+                    "command": command_phrase(&effective),
+                    "kind_id": instance.kind_id,
+                }),
+                event.id,
+            ));
+        }
+
+        if chat_family.is_some() {
+            let resolved = resolve_rung(event);
+            if resolved < instance.permission_rung {
+                self.publish_blocked(
+                    instance,
+                    event.id,
+                    BlockReason::Permission {
+                        required: instance.permission_rung,
+                        resolved,
+                    },
+                );
+                return None;
+            }
+        }
+
+        if let Some(remaining) = self.cooldown_remaining(instance, &args, event.id) {
+            self.publish_blocked(instance, event.id, BlockReason::Cooldown { remaining });
+            return None;
+        }
+
+        Some(args)
     }
 
     fn publish_blocked(&self, instance: &TriggerInstance, cause: EventId, reason: BlockReason) {

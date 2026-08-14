@@ -2164,6 +2164,12 @@ impl ScreenActionsView {
             instance.cooldown_secs,
             instance.cooldown_global,
         ));
+        if let Some(permission) = descriptor
+            .and_then(TriggerKindDescriptor::chat_trigger_family)
+            .and_then(|_| crate::triggers_screen::permission_suffix(instance.permission_rung))
+        {
+            condition.push_str(&permission);
+        }
         let glyph = Icon::from_name(
             descriptor
                 .map(TriggerKindDescriptor::icon_name)

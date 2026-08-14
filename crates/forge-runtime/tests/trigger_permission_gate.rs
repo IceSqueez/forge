@@ -340,6 +340,52 @@ async fn two_instances_matching_one_message_each_emit_their_own_command_matched(
 }
 
 #[tokio::test]
+async fn one_instance_on_two_actions_records_a_single_refusal_per_message() {
+    let inst = instance(CHAT_COMMAND_KIND, PermissionRung::Moderator, 0);
+    let mut h = harness(&[(&inst, ActionId::new()), (&inst, ActionId::new())]).await;
+
+    h.bus.publish(chat_event("rando", vec![]));
+    let seen = drain_kinds(&mut h.sub, &["command.matched", "trigger.blocked"], 600).await;
+
+    let matched = seen.iter().filter(|e| e.kind == "command.matched").count();
+    let blocked: Vec<_> = seen
+        .iter()
+        .filter(|e| e.kind == "trigger.blocked")
+        .collect();
+
+    assert_eq!(
+        matched, 1,
+        "the decision is per instance, so fanning the instance across actions must not multiply the match record"
+    );
+    assert_eq!(
+        blocked.len(),
+        1,
+        "one refused chatter on one message is one refusal, however many actions the instance drives"
+    );
+    assert_eq!(block_reason(blocked[0]), "permission");
+}
+
+#[tokio::test]
+async fn one_authorized_instance_on_two_actions_matches_once_and_dispatches_twice() {
+    let inst = instance(CHAT_COMMAND_KIND, PermissionRung::Everyone, 0);
+    let mut h = harness(&[(&inst, ActionId::new()), (&inst, ActionId::new())]).await;
+
+    h.bus.publish(chat_event("rando", vec![]));
+    let seen = drain_kinds(&mut h.sub, &["command.matched", "action.done"], 800).await;
+
+    assert_eq!(
+        seen.iter().filter(|e| e.kind == "command.matched").count(),
+        1,
+        "collapsing the duplicate decision must not depend on the gate outcome"
+    );
+    assert_eq!(
+        seen.iter().filter(|e| e.kind == "action.done").count(),
+        2,
+        "every linked action still runs: deduplication covers the decision, not the dispatch"
+    );
+}
+
+#[tokio::test]
 async fn two_instances_matching_one_message_get_independent_gate_outcomes() {
     let open = instance(CHAT_COMMAND_KIND, PermissionRung::Everyone, 0);
     let gated = instance(CHAT_COMMAND_KIND, PermissionRung::Moderator, 0);

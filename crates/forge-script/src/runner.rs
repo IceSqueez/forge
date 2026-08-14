@@ -4,12 +4,10 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_storage::{GlobalsRepo, SettingsRepo};
-use forge_types::{ArgStack, EventId, ScriptId};
+use forge_types::{ArgStack, EventId, ScriptContract, ScriptId};
 
 use crate::error::ScriptError;
-use crate::{
-    Engine, ForgeApi, build_scope_for_contract, load_script_engine_config, parse_contract,
-};
+use crate::{Engine, ForgeApi, build_scope_for_contract, load_script_engine_config};
 
 #[derive(Debug, Clone)]
 pub struct RunResult {
@@ -27,16 +25,13 @@ pub fn content_hash(body: &str) -> String {
 
 pub async fn run_inline(
     body: String,
+    contract: ScriptContract,
     arg_stack: ArgStack,
     globals: Arc<dyn GlobalsRepo>,
     settings: Arc<dyn SettingsRepo>,
     bus: Arc<dyn EventPublisher>,
     script_id: ScriptId,
 ) -> Result<RunResult, ScriptError> {
-    let contract = parse_contract(&body).map_err(|e| ScriptError::Compile {
-        script: body.chars().take(80).collect(),
-        reason: e.to_string(),
-    })?;
     let mut scope =
         build_scope_for_contract(&contract, &arg_stack).map_err(|e| ScriptError::Runtime {
             script: body.chars().take(80).collect(),

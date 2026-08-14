@@ -11,6 +11,15 @@ use tokio::runtime::Handle;
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
 
+/// Must list exactly the identifiers `ForgeApi::into_module` installs; a script input may not shadow one.
+pub const ENGINE_BOUND_NAMES: [&str; 11] = [
+    "log", "warn", "error", "sleep", "chat", "globals", "audio", "http", "tts", "time", "obs",
+];
+
+pub fn is_engine_bound_name(name: &str) -> bool {
+    ENGINE_BOUND_NAMES.contains(&name)
+}
+
 /// Concrete impl lives in `forge-desktop::speak_bridge` to keep this crate cycle-free with respect to `forge-speak-queue`.
 #[async_trait::async_trait]
 pub trait SpeakRequester: Send + Sync {

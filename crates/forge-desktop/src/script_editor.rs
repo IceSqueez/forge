@@ -815,6 +815,11 @@ impl ScriptEditorView {
         script_id: ScriptId,
         cx: &mut Context<Self>,
     ) {
+        let contract = self
+            .open
+            .as_ref()
+            .map(|o| o.record.contract.clone())
+            .unwrap_or_default();
         let globals = Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>;
         let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let publisher = Arc::clone(&self.bus) as Arc<dyn EventPublisher>;
@@ -823,9 +828,11 @@ impl ScriptEditorView {
             &self.rt_handle,
             async move {
                 let started_at = OffsetDateTime::now_utc();
-                let result = run_inline(body, args, globals, settings, publisher, script_id)
-                    .await
-                    .map_err(|e| e.to_string());
+                let result = run_inline(
+                    body, contract, args, globals, settings, publisher, script_id,
+                )
+                .await
+                .map_err(|e| e.to_string());
                 if let Ok(r) = &result {
                     let status = if r.error_count == 0 {
                         ExecutionStatus::Success

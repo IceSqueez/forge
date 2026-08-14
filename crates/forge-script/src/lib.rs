@@ -13,7 +13,7 @@ pub mod http_config;
 pub mod math_evaluator;
 pub mod runner;
 
-pub use api::{ForgeApi, SpeakRequester};
+pub use api::{ENGINE_BOUND_NAMES, ForgeApi, SpeakRequester, is_engine_bound_name};
 pub use catalog::{MethodDescriptor, ParamDescriptor, catalog};
 pub use condition::ConditionEvaluator;
 pub use contract::{

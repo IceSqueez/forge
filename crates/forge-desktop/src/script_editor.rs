@@ -2,17 +2,18 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, ModalSize, OverlayPosition,
-    Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextArea, TextInput, badge, body_family,
-    confirm_modal, context_menu, fmt_relative_time, ghost_button, icon, inline_edit,
-    install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
+    ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, MenuItem, ModalSize,
+    OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextArea, TextInput,
+    badge, body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
+    inline_edit, install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, ScriptRegistry};
 use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
-    MethodDescriptor, RunResult, content_hash, format_script, run_inline, validate_syntax,
+    MethodDescriptor, RunResult, content_hash, format_script, is_engine_bound_name, run_inline,
+    validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
@@ -22,12 +23,13 @@ use forge_types::{
     Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
 };
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, MouseButton,
     MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::globals::variant_kind_color;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
@@ -52,6 +54,19 @@ const DIVIDER_H: Pixels = px(16.0);
 
 const FILE_BAR_DIRTY_DOT: Pixels = px(5.0);
 const FILE_BAR_STATUS_DOT: Pixels = px(6.0);
+
+const GLYPH_SIGNATURE_ACTION: Pixels = px(11.0);
+const SIGNATURE_NAME_MIN_W: Pixels = px(56.0);
+
+const CONTRACT_KINDS: [VariantKind; 7] = [
+    VariantKind::Int,
+    VariantKind::Float,
+    VariantKind::Bool,
+    VariantKind::String,
+    VariantKind::Datetime,
+    VariantKind::Array,
+    VariantKind::Object,
+];
 
 const GLYPH_RUN: Pixels = px(11.0);
 const GLYPH_TOOLBAR: Pixels = px(13.0);
@@ -139,6 +154,87 @@ struct RenameState {
 struct RowMenu {
     id: ScriptId,
     position: Point<Pixels>,
+}
+
+struct InputRename {
+    index: usize,
+    editor: Entity<InlineEdit>,
+    _sub: Subscription,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KindTarget {
+    Input(usize),
+    Returns,
+}
+
+struct KindMenu {
+    target: KindTarget,
+    position: Point<Pixels>,
+}
+
+enum InputNameError {
+    Empty,
+    NotIdentifier,
+    Reserved,
+    Duplicate,
+}
+
+impl InputNameError {
+    fn message(&self, name: &str) -> String {
+        match self {
+            InputNameError::Empty => tr!("script_editor_input_name_empty"),
+            InputNameError::NotIdentifier => tr!("script_editor_input_name_invalid", name = name),
+            InputNameError::Reserved => tr!("script_editor_input_name_reserved", name = name),
+            InputNameError::Duplicate => tr!("script_editor_input_name_duplicate", name = name),
+        }
+    }
+}
+
+fn is_rhai_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn validate_input_name(
+    name: &str,
+    index: usize,
+    inputs: &[ScriptInput],
+) -> Result<(), InputNameError> {
+    if name.is_empty() {
+        return Err(InputNameError::Empty);
+    }
+    if !is_rhai_identifier(name) {
+        return Err(InputNameError::NotIdentifier);
+    }
+    if is_engine_bound_name(name) {
+        return Err(InputNameError::Reserved);
+    }
+    if inputs
+        .iter()
+        .enumerate()
+        .any(|(i, input)| i != index && input.name == name)
+    {
+        return Err(InputNameError::Duplicate);
+    }
+    Ok(())
+}
+
+fn next_input_name(inputs: &[ScriptInput]) -> String {
+    let mut ordinal = 1usize;
+    loop {
+        let candidate = format!("input_{ordinal}");
+        if inputs.iter().all(|input| input.name != candidate) {
+            return candidate;
+        }
+        ordinal += 1;
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -341,6 +437,10 @@ pub struct ScriptEditorView {
     pending_delete: Confirm<ScriptId>,
     pending_nav: Option<PendingNav>,
 
+    input_rename: Option<InputRename>,
+    kind_menu: Option<KindMenu>,
+    contract_error: Option<SharedString>,
+
     code_input: Entity<TextArea>,
     _code_sub: Subscription,
 
@@ -433,6 +533,9 @@ impl ScriptEditorView {
             row_menu: None,
             pending_delete: Confirm::default(),
             pending_nav: None,
+            input_rename: None,
+            kind_menu: None,
+            contract_error: None,
             code_input,
             _code_sub: code_sub,
             console: Vec::new(),
@@ -628,6 +731,7 @@ impl ScriptEditorView {
                     original_contract: record.contract.clone(),
                     record,
                 });
+                self.reset_contract_editing();
                 self.load_telemetry(id, cx);
             }
             Err(e) => {
@@ -660,6 +764,7 @@ impl ScriptEditorView {
         };
         open.record.contract = open.original_contract.clone();
         let original = open.original_body.clone();
+        self.reset_contract_editing();
         self.code_input.update(cx, |area, cx| {
             area.set_content(original.clone(), cx);
         });
@@ -698,6 +803,172 @@ impl ScriptEditorView {
     fn on_code_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.code_input.read(cx).content().to_owned();
         self.recompute_diagnostics(&content, cx);
+        cx.notify();
+    }
+
+    fn reset_contract_editing(&mut self) {
+        self.input_rename = None;
+        self.kind_menu = None;
+        self.contract_error = None;
+    }
+
+    fn contract(&self) -> Option<&ScriptContract> {
+        self.open.as_ref().map(|open| &open.record.contract)
+    }
+
+    fn contract_mut(&mut self) -> Option<&mut ScriptContract> {
+        self.open.as_mut().map(|open| &mut open.record.contract)
+    }
+
+    fn add_contract_input(&mut self, cx: &mut Context<Self>) {
+        let Some(contract) = self.contract_mut() else {
+            return;
+        };
+        let name = next_input_name(&contract.inputs);
+        contract.inputs.push(ScriptInput {
+            name,
+            kind: VariantKind::String,
+        });
+        self.reset_contract_editing();
+        cx.notify();
+    }
+
+    fn remove_contract_input(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(contract) = self.contract_mut() else {
+            return;
+        };
+        if index >= contract.inputs.len() {
+            return;
+        }
+        contract.inputs.remove(index);
+        self.reset_contract_editing();
+        cx.notify();
+    }
+
+    fn move_contract_input(&mut self, index: usize, up: bool, cx: &mut Context<Self>) {
+        let Some(contract) = self.contract_mut() else {
+            return;
+        };
+        let target = if up {
+            index.checked_sub(1)
+        } else {
+            index.checked_add(1)
+        };
+        let Some(target) = target.filter(|t| *t < contract.inputs.len()) else {
+            return;
+        };
+        contract.inputs.swap(index, target);
+        self.reset_contract_editing();
+        cx.notify();
+    }
+
+    fn open_kind_menu(
+        &mut self,
+        target: KindTarget,
+        position: Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.row_menu = None;
+        self.kind_menu = Some(KindMenu { target, position });
+        cx.notify();
+    }
+
+    fn close_kind_menu(&mut self, cx: &mut Context<Self>) {
+        self.kind_menu = None;
+        cx.notify();
+    }
+
+    fn set_contract_kind(&mut self, target: KindTarget, kind: VariantKind, cx: &mut Context<Self>) {
+        let Some(contract) = self.contract_mut() else {
+            return;
+        };
+        match target {
+            KindTarget::Input(index) => {
+                let Some(input) = contract.inputs.get_mut(index) else {
+                    return;
+                };
+                input.kind = kind;
+            }
+            KindTarget::Returns => contract.returns = Some(kind),
+        }
+        self.kind_menu = None;
+        self.contract_error = None;
+        cx.notify();
+    }
+
+    fn clear_contract_return(&mut self, cx: &mut Context<Self>) {
+        let Some(contract) = self.contract_mut() else {
+            return;
+        };
+        contract.returns = None;
+        self.kind_menu = None;
+        self.contract_error = None;
+        cx.notify();
+    }
+
+    fn start_input_rename(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(current) = self
+            .contract()
+            .and_then(|contract| contract.inputs.get(index))
+            .map(|input| input.name.clone())
+        else {
+            return;
+        };
+        let palette = cx.palette();
+        let editor = inline_edit(current, palette, FONT_XS, window, cx);
+        let sub = cx.subscribe(
+            &editor,
+            |this, _e, event: &InlineEditEvent, cx| match event {
+                InlineEditEvent::Commit(next) => this.commit_input_rename(next.clone(), cx),
+                InlineEditEvent::Cancel => this.cancel_input_rename(cx),
+            },
+        );
+        self.kind_menu = None;
+        self.contract_error = None;
+        self.input_rename = Some(InputRename {
+            index,
+            editor,
+            _sub: sub,
+        });
+        cx.notify();
+    }
+
+    fn commit_input_rename(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some(state) = self.input_rename.take() else {
+            return;
+        };
+        let index = state.index;
+        let name = name.trim().to_owned();
+        let Some(contract) = self.contract() else {
+            cx.notify();
+            return;
+        };
+        let unchanged = contract
+            .inputs
+            .get(index)
+            .is_some_and(|input| input.name == name);
+        let outcome = if unchanged {
+            Ok(())
+        } else {
+            validate_input_name(&name, index, &contract.inputs)
+        };
+
+        match outcome {
+            Ok(()) => {
+                if let Some(contract) = self.contract_mut()
+                    && let Some(input) = contract.inputs.get_mut(index)
+                {
+                    input.name = name;
+                }
+                self.contract_error = None;
+            }
+            Err(error) => self.contract_error = Some(error.message(&name).into()),
+        }
+        cx.notify();
+    }
+
+    fn cancel_input_rename(&mut self, cx: &mut Context<Self>) {
+        self.input_rename = None;
         cx.notify();
     }
 
@@ -975,6 +1246,7 @@ impl ScriptEditorView {
                     original_contract: record.contract.clone(),
                     record,
                 });
+                self.reset_contract_editing();
                 self.load_telemetry(id, cx);
             }
             Err(e) => {
@@ -1022,6 +1294,7 @@ impl ScriptEditorView {
                 if self.selected == Some(id) {
                     self.selected = None;
                     self.open = None;
+                    self.reset_contract_editing();
                     self.code_input.update(cx, |area, cx| {
                         area.set_content("", cx);
                     });
@@ -1130,6 +1403,7 @@ impl ScriptEditorView {
     }
 
     fn open_row_menu(&mut self, id: ScriptId, position: Point<Pixels>, cx: &mut Context<Self>) {
+        self.kind_menu = None;
         self.row_menu = Some(RowMenu { id, position });
         cx.notify();
     }
@@ -1188,6 +1462,7 @@ impl ScriptEditorView {
 
     fn toggle_api_docs(&mut self, cx: &mut Context<Self>) {
         self.api_docs_open = !self.api_docs_open;
+        self.reset_contract_editing();
         cx.notify();
     }
 
@@ -2222,6 +2497,290 @@ impl ScriptEditorView {
         )
     }
 
+    fn signature_section(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let Some(contract) = self.contract() else {
+            return div().into_any_element();
+        };
+
+        let mut section = div().flex().flex_col().child(details_heading(
+            tr!("script_editor_signature_heading"),
+            true,
+            palette,
+        ));
+
+        if contract.inputs.is_empty() {
+            section = section.child(
+                div()
+                    .py(spacing(Spacing::Xxs, Density::Cozy))
+                    .font_family(body_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("script_editor_signature_no_inputs")),
+            );
+        }
+
+        let last_index = contract.inputs.len().saturating_sub(1);
+        for (index, input) in contract.inputs.iter().enumerate() {
+            section = section.child(self.signature_input_row(
+                index,
+                input,
+                index == last_index,
+                palette,
+                cx,
+            ));
+        }
+
+        if let Some(error) = self.contract_error.as_ref() {
+            section = section.child(
+                div()
+                    .pt(spacing(Spacing::Xxs, Density::Cozy))
+                    .font_family(body_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.random)
+                    .child(error.clone()),
+            );
+        }
+
+        let hover_bg = palette.surface_overlay;
+        section
+            .child(
+                div()
+                    .id("script-contract-add")
+                    .flex()
+                    .items_center()
+                    .gap(spacing(Spacing::Xs, Density::Cozy))
+                    .mt(spacing(Spacing::Xxs, Density::Cozy))
+                    .py(spacing(Spacing::Xxs, Density::Compact))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(hover_bg))
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.add_contract_input(cx)),
+                    )
+                    .child(icon(Icon::Plus, GLYPH_SIGNATURE_ACTION, palette.brand))
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XXS)
+                            .text_color(palette.brand)
+                            .child(tr!("script_editor_signature_add_input")),
+                    ),
+            )
+            .child(self.signature_returns_row(contract.returns, palette, cx))
+            .into_any_element()
+    }
+
+    fn signature_input_row(
+        &self,
+        index: usize,
+        input: &ScriptInput,
+        is_last: bool,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let hover_bg = palette.surface_overlay;
+        let renaming = self
+            .input_rename
+            .as_ref()
+            .filter(|state| state.index == index);
+
+        let name_cell: AnyElement = match renaming {
+            Some(state) => div()
+                .flex_1()
+                .min_w(SIGNATURE_NAME_MIN_W)
+                .child(state.editor.clone())
+                .into_any_element(),
+            None => div()
+                .id(("script-contract-name", index))
+                .flex_1()
+                .min_w(SIGNATURE_NAME_MIN_W)
+                .truncate()
+                .cursor_pointer()
+                .text_color(palette.code_var)
+                .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.start_input_rename(index, window, cx)
+                }))
+                .child(SharedString::from(input.name.clone()))
+                .into_any_element(),
+        };
+
+        let kind = input.kind;
+        let kind_cell = div()
+            .id(("script-contract-kind", index))
+            .flex_none()
+            .px(spacing(Spacing::Xxs, Density::Compact))
+            .rounded(radius(Radius::Sm))
+            .cursor_pointer()
+            .text_size(FONT_XXS)
+            .text_color(variant_kind_color(kind, palette))
+            .hover(move |s| s.bg(hover_bg))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    let position = e.position;
+                    this.open_kind_menu(KindTarget::Input(index), position, cx);
+                }),
+            )
+            .child(variant_kind_display(kind));
+
+        let move_up: AnyElement = if index == 0 {
+            signature_action_disabled(Icon::ArrowUp, palette).into_any_element()
+        } else {
+            signature_action(
+                ("script-contract-up", index),
+                Icon::ArrowUp,
+                palette.text_faint,
+                hover_bg,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.move_contract_input(index, true, cx)
+                }),
+            )
+            .into_any_element()
+        };
+
+        let move_down: AnyElement = if is_last {
+            signature_action_disabled(Icon::ArrowDown, palette).into_any_element()
+        } else {
+            signature_action(
+                ("script-contract-down", index),
+                Icon::ArrowDown,
+                palette.text_faint,
+                hover_bg,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.move_contract_input(index, false, cx)
+                }),
+            )
+            .into_any_element()
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xxs, Density::Cozy))
+            .py(spacing(Spacing::Xxs, Density::Cozy))
+            .font_family(mono_family())
+            .text_size(FONT_XS)
+            .child(name_cell)
+            .child(kind_cell)
+            .child(move_up)
+            .child(move_down)
+            .child(signature_action(
+                ("script-contract-remove", index),
+                Icon::X,
+                palette.text_faint,
+                hover_bg,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.remove_contract_input(index, cx)
+                }),
+            ))
+            .into_any_element()
+    }
+
+    fn signature_returns_row(
+        &self,
+        returns: Option<VariantKind>,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let hover_bg = palette.surface_overlay;
+        let (value, value_color): (SharedString, Rgba) = match returns {
+            Some(kind) => (
+                variant_kind_display(kind).into(),
+                variant_kind_color(kind, palette),
+            ),
+            None => (
+                tr!("script_editor_signature_no_return").into(),
+                palette.text_faint,
+            ),
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, Density::Cozy))
+            .mt(spacing(Spacing::Xxs, Density::Cozy))
+            .pt(spacing(Spacing::Xs, Density::Cozy))
+            .border_t(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .font_family(mono_family())
+            .text_size(FONT_XS)
+            .child(icon(Icon::ArrowBackUp, GLYPH_RETURNS, palette.text_faint))
+            .child(
+                div()
+                    .text_color(palette.text_faint)
+                    .child(tr!("script_editor_details_returns")),
+            )
+            .child(
+                div()
+                    .id("script-contract-returns")
+                    .flex_1()
+                    .flex()
+                    .justify_end()
+                    .px(spacing(Spacing::Xxs, Density::Compact))
+                    .rounded(radius(Radius::Sm))
+                    .cursor_pointer()
+                    .text_size(FONT_XXS)
+                    .text_color(value_color)
+                    .hover(move |s| s.bg(hover_bg))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, e: &MouseDownEvent, _, cx| {
+                            let position = e.position;
+                            this.open_kind_menu(KindTarget::Returns, position, cx);
+                        }),
+                    )
+                    .child(value),
+            )
+            .into_any_element()
+    }
+
+    fn render_kind_menu(
+        &self,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let menu = self.kind_menu.as_ref()?;
+        let target = menu.target;
+        let position = menu.position;
+        let view = cx.entity();
+
+        let mut items: Vec<MenuItem> = Vec::new();
+        if target == KindTarget::Returns {
+            items.push(
+                menu_item(
+                    "script-contract-kind-none",
+                    tr!("script_editor_signature_no_return"),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.clear_contract_return(cx)),
+                )
+                .color(palette.text_faint)
+                .into(),
+            );
+            items.push(menu_divider());
+        }
+        for kind in CONTRACT_KINDS {
+            items.push(
+                menu_item(
+                    SharedString::from(format!("script-contract-kind-{}", kind.contract_name())),
+                    variant_kind_display(kind),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.set_contract_kind(target, kind, cx)
+                    }),
+                )
+                .color(variant_kind_color(kind, palette))
+                .into(),
+            );
+        }
+
+        Some(
+            context_menu(position, palette)
+                .items(items)
+                .on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_kind_menu(cx));
+                })
+                .into_any_element(),
+        )
+    }
+
     fn right_pane(&self, palette: &ForgePalette) -> AnyElement {
         let header = div()
             .w_full()
@@ -2353,20 +2912,7 @@ impl ScriptEditorView {
                 palette,
             ));
 
-        let contract = &record.contract;
-        if !contract.inputs.is_empty() || contract.returns.is_some() {
-            inner = inner.child(details_heading(
-                tr!("script_editor_signature_heading"),
-                true,
-                palette,
-            ));
-            for input in &contract.inputs {
-                inner = inner.child(signature_input_row(input, palette));
-            }
-            if let Some(kind) = contract.returns {
-                inner = inner.child(signature_returns_row(kind, palette));
-            }
-        }
+        inner = inner.child(self.signature_section(palette, cx));
 
         let (runs_value, avg_value): (SharedString, SharedString) = match &self.telemetry {
             Some(t) => (
@@ -2623,6 +3169,7 @@ impl Render for ScriptEditorView {
         };
 
         let row_menu = self.render_row_context_menu(&palette, cx);
+        let kind_menu = self.render_kind_menu(&palette, cx);
 
         div()
             .size_full()
@@ -2632,6 +3179,7 @@ impl Render for ScriptEditorView {
             .child(frame)
             .children(overlay)
             .children(row_menu)
+            .children(kind_menu)
     }
 }
 
@@ -2726,53 +3274,40 @@ fn detail_row(
         )
 }
 
-fn signature_input_row(input: &ScriptInput, palette: &ForgePalette) -> impl IntoElement {
+fn signature_action<F>(
+    id: impl Into<ElementId>,
+    glyph: Icon,
+    tint: Rgba,
+    hover_bg: Rgba,
+    on_click: F,
+) -> impl IntoElement
+where
+    F: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+{
     div()
+        .id(id)
         .flex()
+        .flex_none()
         .items_center()
-        .py(spacing(Spacing::Xxs, Density::Cozy))
-        .font_family(mono_family())
-        .text_size(FONT_XS)
-        .child(
-            div()
-                .text_color(palette.code_var)
-                .child(SharedString::from(input.name.clone())),
-        )
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .justify_end()
-                .text_size(FONT_XXS)
-                .text_color(palette.text_faint)
-                .child(variant_kind_display(input.kind)),
-        )
+        .p(spacing(Spacing::Xxs, Density::Compact))
+        .rounded(radius(Radius::Sm))
+        .cursor_pointer()
+        .hover(move |s| s.bg(hover_bg))
+        .on_click(on_click)
+        .child(icon(glyph, GLYPH_SIGNATURE_ACTION, tint))
 }
 
-fn signature_returns_row(kind: VariantKind, palette: &ForgePalette) -> impl IntoElement {
+fn signature_action_disabled(glyph: Icon, palette: &ForgePalette) -> impl IntoElement {
     div()
         .flex()
+        .flex_none()
         .items_center()
-        .gap(spacing(Spacing::Xs, Density::Cozy))
-        .pt(spacing(Spacing::Xs, Density::Cozy))
-        .border_t(BORDER_THIN)
-        .border_color(palette.surface_overlay)
-        .font_family(mono_family())
-        .text_size(FONT_XS)
-        .child(icon(Icon::ArrowBackUp, GLYPH_RETURNS, palette.text_faint))
-        .child(
-            div()
-                .text_color(palette.text_faint)
-                .child(tr!("script_editor_details_returns")),
-        )
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .justify_end()
-                .text_color(palette.code_str)
-                .child(variant_kind_display(kind)),
-        )
+        .p(spacing(Spacing::Xxs, Density::Compact))
+        .child(icon(
+            glyph,
+            GLYPH_SIGNATURE_ACTION,
+            with_alpha(palette.text_faint, 0.35),
+        ))
 }
 
 fn console_row(line: &ConsoleLine, palette: &ForgePalette) -> impl IntoElement {

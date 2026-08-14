@@ -12,14 +12,15 @@ use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, ScriptRegistry};
 use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
-    MethodDescriptor, RunResult, content_hash, format_script, parse_contract, run_inline,
-    validate_syntax,
+    MethodDescriptor, RunResult, content_hash, format_script, run_inline, validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
     SettingsRepo,
 };
-use forge_types::{Action, ActionId, ArgStack, ScriptId, ScriptInput, Variant, VariantKind};
+use forge_types::{
+    Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
+};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, MouseButton,
     MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
@@ -126,6 +127,7 @@ struct OpenScript {
     id: ScriptId,
     record: ScriptRecord,
     original_body: String,
+    original_contract: ScriptContract,
 }
 
 struct RenameState {
@@ -529,9 +531,10 @@ impl ScriptEditorView {
     }
 
     fn current_dirty(&self, cx: &App) -> bool {
-        self.open
-            .as_ref()
-            .is_some_and(|o| self.code_input.read(cx).content() != o.original_body)
+        self.open.as_ref().is_some_and(|o| {
+            self.code_input.read(cx).content() != o.original_body
+                || o.record.contract != o.original_contract
+        })
     }
 
     fn load_scripts(&mut self, cx: &mut Context<Self>) {
@@ -612,9 +615,8 @@ impl ScriptEditorView {
         cx: &mut Context<Self>,
     ) {
         match result {
-            Ok(mut record) => {
+            Ok(record) => {
                 let body = record.body.clone();
-                record.contract = parse_contract(&body).unwrap_or_default();
                 self.code_input.update(cx, |area, cx| {
                     area.set_content(body.clone(), cx);
                 });
@@ -623,6 +625,7 @@ impl ScriptEditorView {
                 self.open = Some(OpenScript {
                     id,
                     original_body: body,
+                    original_contract: record.contract.clone(),
                     record,
                 });
                 self.load_telemetry(id, cx);
@@ -652,9 +655,11 @@ impl ScriptEditorView {
     }
 
     fn revert_current(&mut self, cx: &mut Context<Self>) {
-        let Some(original) = self.open.as_ref().map(|o| o.original_body.clone()) else {
+        let Some(open) = self.open.as_mut() else {
             return;
         };
+        open.record.contract = open.original_contract.clone();
+        let original = open.original_body.clone();
         self.code_input.update(cx, |area, cx| {
             area.set_content(original.clone(), cx);
         });
@@ -693,9 +698,6 @@ impl ScriptEditorView {
     fn on_code_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.code_input.read(cx).content().to_owned();
         self.recompute_diagnostics(&content, cx);
-        if let Some(open) = self.open.as_mut() {
-            open.record.contract = parse_contract(&content).unwrap_or_default();
-        }
         cx.notify();
     }
 
@@ -707,14 +709,6 @@ impl ScriptEditorView {
             return;
         };
         let body = self.code_input.read(cx).content().to_owned();
-        let contract = match parse_contract(&body) {
-            Ok(c) => c,
-            Err(e) => {
-                self.push_console(LogTag::Err, format!("contract parse error: {e}"));
-                cx.notify();
-                return;
-            }
-        };
         if let Err(e) = validate_syntax(&body) {
             self.push_console(LogTag::Err, format!("syntax error: {e}"));
             self.push_console(LogTag::Warn, tr!("script_editor_save_blocked"));
@@ -725,7 +719,6 @@ impl ScriptEditorView {
         let mut record = record;
         record.body = body.clone();
         record.body_hash = content_hash(&body);
-        record.contract = contract;
         record.last_modified = OffsetDateTime::now_utc();
 
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
@@ -766,6 +759,7 @@ impl ScriptEditorView {
                     && open.id == record.id
                 {
                     open.original_body = record.body.clone();
+                    open.original_contract = record.contract.clone();
                     open.record = record;
                 }
                 self.push_console(LogTag::Ok, "script saved");
@@ -781,12 +775,14 @@ impl ScriptEditorView {
     }
 
     fn run(&mut self, cx: &mut Context<Self>) {
-        let Some((script_id, name)) = self.open.as_ref().map(|o| (o.id, o.record.name.clone()))
+        let Some((script_id, name, contract)) = self
+            .open
+            .as_ref()
+            .map(|o| (o.id, o.record.name.clone(), o.record.contract.clone()))
         else {
             return;
         };
         let body = self.code_input.read(cx).content().to_owned();
-        let contract = parse_contract(&body).unwrap_or_default();
         if contract.inputs.is_empty() {
             self.push_console(LogTag::Run, format!("running {name}"));
             self.console_tab = ConsoleTab::Output;
@@ -930,8 +926,11 @@ impl ScriptEditorView {
             async move {
                 let now = OffsetDateTime::now_utc();
                 let name = format!("script_{}", now.unix_timestamp());
-                let body = "// @return string\n\n\"hello from forge\"".to_owned();
-                let contract = parse_contract(&body).unwrap_or_default();
+                let body = "\"hello from forge\"".to_owned();
+                let contract = ScriptContract {
+                    inputs: Vec::new(),
+                    returns: Some(VariantKind::String),
+                };
                 let record = ScriptRecord {
                     id: ScriptId::new(),
                     name,
@@ -955,9 +954,8 @@ impl ScriptEditorView {
 
     fn apply_new_script(&mut self, result: Result<ScriptRecord, String>, cx: &mut Context<Self>) {
         match result {
-            Ok(mut record) => {
+            Ok(record) => {
                 let body = record.body.clone();
-                record.contract = parse_contract(&body).unwrap_or_default();
                 self.scripts.push(ScriptEntry {
                     id: record.id,
                     name: record.name.clone(),
@@ -974,6 +972,7 @@ impl ScriptEditorView {
                 self.open = Some(OpenScript {
                     id,
                     original_body: body,
+                    original_contract: record.contract.clone(),
                     record,
                 });
                 self.load_telemetry(id, cx);

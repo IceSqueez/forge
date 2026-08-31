@@ -108,7 +108,7 @@ jobs:
 
       - name: Install cargo-wix
         if: matrix.os == 'windows-latest'
-        uses: taiki-e/install-action@v2.85.5
+        uses: taiki-e/install-action@v2.87.0
         with:
           tool: cargo-wix
 
@@ -166,7 +166,7 @@ jobs:
       # ---------- Linux: .deb (Debian/Ubuntu) and .rpm (Fedora/openSUSE) ----------
       - name: Install Linux packaging tools
         if: matrix.os == 'ubuntu-latest'
-        uses: taiki-e/install-action@v2.85.5
+        uses: taiki-e/install-action@v2.87.0
         with:
           tool: cargo-deb,cargo-generate-rpm
 

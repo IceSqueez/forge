@@ -1580,6 +1580,7 @@ integration_control_failed = Команда керування не викона
 integration_quick_action_failed = Швидка дія не виконалася
 integration_open_url_failed = Не вдалося відкрити посилання в браузері
 integration_quick_action_na = Н/Д
+integration_quick_action_not_live = Недоступно в поточному стані
 integration_status_authenticated = Автентифіковано
 integration_token_expires_in = термін токена спливає через { $time }
 integration_viewers_delta = { $delta } за останні { $window }

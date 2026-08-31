@@ -17,7 +17,7 @@ use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px}
 use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::integrations::{KickInstallSeed, YoutubeInstallSeed};
+use crate::integrations::{KickInstallSeed, TwitchInstallSeed, YoutubeInstallSeed};
 use crate::presentation::ActivePresentation;
 
 use device_code::{TwitchDeviceState, TwitchFlowHandle};
@@ -42,6 +42,7 @@ pub struct ConnectFlowLaunch {
     pub bus: Arc<dyn EventPublisher>,
     pub event_bus: Arc<EventBus>,
     pub live_viewers: LiveViewerAggregatorHandle,
+    pub twitch_install_seed: Option<TwitchInstallSeed>,
     pub kick_install_seed: Option<KickInstallSeed>,
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
 }
@@ -54,6 +55,7 @@ pub struct ConnectFlow {
     bus: Arc<dyn EventPublisher>,
     event_bus: Arc<EventBus>,
     live_viewers: LiveViewerAggregatorHandle,
+    twitch_install_seed: Option<TwitchInstallSeed>,
     kick_install_seed: Option<KickInstallSeed>,
     youtube_install_seed: Option<YoutubeInstallSeed>,
     phase: LocalCallbackFlowPhase,
@@ -87,6 +89,7 @@ impl ConnectFlow {
             bus,
             event_bus,
             live_viewers,
+            twitch_install_seed,
             kick_install_seed,
             youtube_install_seed,
         } = launch;
@@ -106,6 +109,7 @@ impl ConnectFlow {
             bus,
             event_bus,
             live_viewers,
+            twitch_install_seed,
             kick_install_seed,
             youtube_install_seed,
             phase: LocalCallbackFlowPhase::Idle,

@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, mono_family, radius, spacing, spinner, tr, with_alpha,
+    icon, mono_family, pulse_dot, radius, spacing, spinner, tr, with_alpha,
 };
 use forge_platform_core::{RateLimiter, TokenBucketRateLimiter};
 use forge_platform_twitch::{
@@ -13,8 +13,8 @@ use forge_platform_twitch::{
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla,
-    Rgba, SharedString, StyledText, div, prelude::*, px,
+    AnyElement, ClipboardItem, Context, FontWeight, HighlightStyle, Hsla, Rgba, SharedString,
+    StyledText, div, prelude::*, px,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -272,6 +272,11 @@ impl ConnectFlow {
         let bus = Arc::clone(&self.bus);
         let credentials = Arc::clone(&self.credentials);
         let live_viewers = self.live_viewers.clone();
+        let lifecycle = self
+            .twitch_install_seed
+            .as_ref()
+            .map(|seed| seed.lifecycle.clone())
+            .unwrap_or_default();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -286,7 +291,6 @@ impl ConnectFlow {
                     Arc::clone(&credentials),
                     config.client_id.clone(),
                 ));
-                let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
                 let chat = forge_platform_twitch::TwitchChat::new(
                     manager,
                     config.client_id.clone(),
@@ -744,16 +748,7 @@ impl ConnectFlow {
             interval = TWITCH_DEVICE_POLL_SECS,
             scopes = scopes.as_str()
         );
-        let pulse = div()
-            .flex_none()
-            .size(px(8.0))
-            .rounded(px(4.0))
-            .bg(accent)
-            .with_animation(
-                SharedString::from("twitch-device-pulse"),
-                Animation::new(Duration::from_millis(1400)).repeat(),
-                |el, delta| el.opacity(1.0 - (delta * 2.0 - 1.0).abs() * 0.6),
-            );
+        let pulse = pulse_dot("twitch-device-pulse", accent, px(8.0));
         div()
             .w_full()
             .flex()

@@ -1,7 +1,8 @@
 use gpui::{
-    App, FontWeight, IntoElement, ParentElement, Pixels, RenderOnce, Rgba, SharedString, Styled,
-    Window, div, px,
+    Animation, AnimationExt, App, ElementId, FontWeight, IntoElement, ParentElement, Pixels,
+    RenderOnce, Rgba, SharedString, Styled, Window, div, px,
 };
+use std::time::Duration;
 
 use crate::palette::ForgePalette;
 use crate::tokens::{FONT_XXS, Radius, body_family, mono_family, radius};
@@ -12,6 +13,8 @@ const BADGE_PAD_H: Pixels = px(6.0);
 const BADGE_RADIUS: Pixels = px(8.0);
 const BADGE_GAP: Pixels = px(4.0);
 const CONNECTION_DOT: Pixels = px(5.0);
+const PULSE_PERIOD: Duration = Duration::from_millis(1400);
+const PULSE_DEPTH: f32 = 0.6;
 
 pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
     div()
@@ -19,6 +22,20 @@ pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
         .size(size)
         .rounded(radius(Radius::Pill))
         .bg(color)
+}
+
+/// Each live instance needs a distinct `id`, or gpui shares one animation clock across them.
+pub fn pulse_dot(id: impl Into<ElementId>, color: Rgba, size: Pixels) -> impl IntoElement {
+    div()
+        .flex_none()
+        .size(size)
+        .rounded(radius(Radius::Pill))
+        .bg(color)
+        .with_animation(
+            id.into(),
+            Animation::new(PULSE_PERIOD).repeat(),
+            |el, delta| el.opacity(1.0 - (delta * 2.0 - 1.0).abs() * PULSE_DEPTH),
+        )
 }
 
 fn badge_frame(background: Rgba, content: impl IntoElement) -> impl IntoElement {

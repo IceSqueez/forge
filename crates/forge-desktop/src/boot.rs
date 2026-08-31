@@ -314,6 +314,7 @@ pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFail
         trigger_evaluator,
         live_viewers,
         builtins: integrations.builtins,
+        twitch_install_seed: integrations.twitch_install_seed,
         kick_install_seed: integrations.kick_install_seed,
         youtube_install_seed: integrations.youtube_install_seed,
         obs_install_seed: integrations.obs_install_seed,

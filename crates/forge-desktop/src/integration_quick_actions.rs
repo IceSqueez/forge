@@ -1,13 +1,14 @@
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    body_family, icon, mono_family, radius, spacing, tooltip_builder, tr, with_alpha,
+    body_family, icon, mono_family, pulse_dot, radius, spacing, tooltip_builder, tr, with_alpha,
 };
-use forge_platform_core::{QuickAction, QuickActionAccent};
-use gpui::{AnyElement, ClickEvent, Context, Rgba, div, prelude::*, px};
+use forge_platform_core::{QuickAction, QuickActionAccent, QuickActionLiveness};
+use gpui::{AnyElement, ClickEvent, Context, Pixels, Rgba, div, prelude::*, px};
 
 use crate::integration_detail::IntegrationDetail;
 
 const GRID_COLUMNS: u16 = 3;
+const LIVE_DOT: Pixels = px(5.0);
 
 impl IntegrationDetail {
     pub(crate) fn quick_actions_card(
@@ -208,8 +209,9 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let locked = action.locked_reason.clone();
-        let disabled = !action.enabled || locked.is_some();
+        let disabled = !action.is_runnable();
         let destructive = action.destructive;
+        let live = action.liveness == QuickActionLiveness::Live;
 
         let (icon_color, label_color, border_color) = if disabled {
             (
@@ -231,7 +233,7 @@ impl IntegrationDetail {
             )
         };
 
-        let content = div()
+        let mut content = div()
             .w_full()
             .flex()
             .items_center()
@@ -251,6 +253,16 @@ impl IntegrationDetail {
                     .text_color(label_color)
                     .child(action.label.clone()),
             );
+        if locked.is_some() {
+            content = content.child(icon(Icon::Lock, FONT_XXS, icon_color));
+        }
+        if live {
+            content = content.child(pulse_dot(
+                ("quick-action-live", idx),
+                palette.random,
+                LIVE_DOT,
+            ));
+        }
 
         let mut btn = div()
             .id(("quick-action", idx))
@@ -264,7 +276,13 @@ impl IntegrationDetail {
             .child(content);
 
         if disabled {
-            let reason = locked.unwrap_or_else(|| tr!("integration_quick_action_na"));
+            let reason = locked.unwrap_or_else(|| {
+                if action.liveness == QuickActionLiveness::Absent {
+                    tr!("integration_quick_action_not_live")
+                } else {
+                    tr!("integration_quick_action_na")
+                }
+            });
             btn = btn.tooltip(tooltip_builder(reason, palette));
         } else {
             let hover_border = if destructive {

@@ -64,6 +64,7 @@ impl BuiltinRegistry {
 pub struct Integrations {
     pub builtins: BuiltinRegistry,
     pub viewer_sources: Vec<Box<dyn LiveViewerSource>>,
+    pub twitch_install_seed: Option<TwitchInstallSeed>,
     pub kick_install_seed: Option<KickInstallSeed>,
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
     pub obs_install_seed: ObsInstallSeed,
@@ -173,6 +174,13 @@ pub struct KickInstallSeed {
     pub rewards: Arc<forge_platform_kick::KickRewards>,
 }
 
+/// Holds the same lifecycle cell the registered Twitch raid sub-actions write into, so a post-boot
+/// sign-in reads what they record without a restart.
+#[derive(Clone)]
+pub struct TwitchInstallSeed {
+    pub lifecycle: forge_platform_twitch::TwitchLifecycle,
+}
+
 /// Holds the same handles the registered YouTube sub-actions resolve through, so a post-boot sign-in reaches them without a restart.
 #[derive(Clone)]
 pub struct YoutubeInstallSeed {
@@ -256,7 +264,8 @@ pub async fn build_integrations(
         }
     };
 
-    insert("twitch", build_twitch(sub_actions, backend, bus).await);
+    let (twitch, twitch_install_seed) = build_twitch(sub_actions, backend, bus).await;
+    insert("twitch", twitch);
     let obs_install_seed = build_obs(sub_actions, backend, bus).await;
     let vtube_install_seed = build_vtube(sub_actions, backend, bus).await;
     let (discord, discord_client) = build_discord(sub_actions, backend, bus);
@@ -282,6 +291,7 @@ pub async fn build_integrations(
     Integrations {
         builtins: BuiltinRegistry::seeded(builtins),
         viewer_sources,
+        twitch_install_seed,
         kick_install_seed,
         youtube_install_seed,
         obs_install_seed,
@@ -405,10 +415,15 @@ async fn build_twitch(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
-) -> Option<BuiltinObject> {
-    let client_id = forge_platform_twitch::client_id()?;
+) -> (Option<BuiltinObject>, Option<TwitchInstallSeed>) {
+    let Some(client_id) = forge_platform_twitch::client_id() else {
+        return (None, None);
+    };
     let creds = creds_of(backend);
     let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
+    let seed = TwitchInstallSeed {
+        lifecycle: lifecycle.clone(),
+    };
 
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
         forge_platform_twitch::HELIX_BUDGET_CAPACITY,
@@ -449,6 +464,7 @@ async fn build_twitch(
             Arc::clone(&creds),
             forge_platform_twitch::SubscriptionTracker::default(),
             Arc::clone(&rate_limiter),
+            lifecycle.clone(),
         ));
     spawn_chat_send_bridge(
         Arc::clone(bus),
@@ -457,10 +473,13 @@ async fn build_twitch(
         EventSource::Twitch,
     );
 
-    let stored = forge_platform_twitch::credentials::load(&*creds)
+    let Some(stored) = forge_platform_twitch::credentials::load(&*creds)
         .await
         .ok()
-        .flatten()?;
+        .flatten()
+    else {
+        return (None, Some(seed));
+    };
 
     let login = (!stored.login.is_empty()).then(|| stored.login.clone());
     let tracker = forge_platform_twitch::SubscriptionTracker::default();
@@ -490,7 +509,7 @@ async fn build_twitch(
         lifecycle,
     );
 
-    Some(twitch_builtin_object(bundle))
+    (Some(twitch_builtin_object(bundle)), Some(seed))
 }
 
 async fn build_obs(

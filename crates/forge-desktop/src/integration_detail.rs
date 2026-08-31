@@ -4,7 +4,7 @@ use forge_components::{
     body_family, confirm_modal, icon, mono_family, overlay, page_frame, platform_hero, radius,
     spacing, status_dot, tr, with_alpha,
 };
-use forge_events::{EventPublisher, EventSource};
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
@@ -31,8 +31,9 @@ use crate::builtin_sections::{SectionRefresh, content_sections, health_grid};
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch, ConnectedBundle};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integrations::{
-    BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, VTubeInstallSeed,
-    YoutubeInstallSeed, kick_builtin_object, twitch_builtin_object, youtube_builtin_object,
+    BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed,
+    VTubeInstallSeed, YoutubeInstallSeed, kick_builtin_object, twitch_builtin_object,
+    youtube_builtin_object,
 };
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
@@ -65,6 +66,7 @@ pub struct IntegrationDetail {
     event_bus: Arc<EventBus>,
     live_viewers: LiveViewerAggregatorHandle,
     builtins: BuiltinRegistry,
+    twitch_install_seed: Option<TwitchInstallSeed>,
     kick_install_seed: Option<KickInstallSeed>,
     youtube_install_seed: Option<YoutubeInstallSeed>,
     obs_install_seed: ObsInstallSeed,
@@ -103,6 +105,16 @@ const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
 const HISTORY_LIMIT: u32 = 50;
+const TWITCH_LIFECYCLE_KINDS: [&str; 8] = [
+    "twitch.channel.poll.begin",
+    "twitch.channel.poll.progress",
+    "twitch.channel.poll.end",
+    "twitch.channel.prediction.begin",
+    "twitch.channel.prediction.progress",
+    "twitch.channel.prediction.lock",
+    "twitch.channel.prediction.end",
+    "twitch.channel.raid",
+];
 
 pub struct ObsSignedOut;
 pub struct VTubeSignedOut;
@@ -126,6 +138,7 @@ impl IntegrationDetail {
         event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
         builtins: BuiltinRegistry,
+        twitch_install_seed: Option<TwitchInstallSeed>,
         kick_install_seed: Option<KickInstallSeed>,
         youtube_install_seed: Option<YoutubeInstallSeed>,
         obs_install_seed: ObsInstallSeed,
@@ -181,8 +194,8 @@ impl IntegrationDetail {
         if is_twitch {
             Self::spawn_eventsub_tally(&event_bus, cx);
         }
-        if is_obs {
-            Self::spawn_obs_connection_watch(&event_bus, cx);
+        if is_twitch || is_obs {
+            Self::spawn_descriptor_reload_watch(&event_bus, cx);
         }
         if is_twitch || matches!(status.id().as_str(), "youtube" | "kick") {
             Self::spawn_viewer_sampler(&live_viewers, cx);
@@ -206,6 +219,7 @@ impl IntegrationDetail {
             event_bus,
             live_viewers,
             builtins,
+            twitch_install_seed,
             kick_install_seed,
             youtube_install_seed,
             obs_install_seed,
@@ -254,6 +268,7 @@ impl IntegrationDetail {
             bus: Arc::clone(&self.bus),
             event_bus: Arc::clone(&self.event_bus),
             live_viewers: self.live_viewers.clone(),
+            twitch_install_seed: self.twitch_install_seed.clone(),
             kick_install_seed: self.kick_install_seed.clone(),
             youtube_install_seed: self.youtube_install_seed.clone(),
         };
@@ -341,16 +356,13 @@ impl IntegrationDetail {
         .detach();
     }
 
-    fn spawn_obs_connection_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+    fn spawn_descriptor_reload_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
         let mut sub = bus.subscribe();
         cx.spawn(async move |this, cx| {
             while let async_bridge::EventBatch::Ready(batch) =
                 async_bridge::recv_event_batch(&mut sub).await
             {
-                let transitioned = batch.iter().any(|e| {
-                    e.source == EventSource::Obs && e.kind.starts_with(OBS_CONNECTION_PREFIX)
-                });
-                if !transitioned {
+                if !batch.iter().any(rebuilds_descriptors) {
                     continue;
                 }
                 if this.update(cx, |this, cx| this.reload(cx)).is_err() {
@@ -593,7 +605,7 @@ impl IntegrationDetail {
         let Some(action) = self.quick_actions.get(idx) else {
             return;
         };
-        if !action.enabled {
+        if !action.is_runnable() {
             return;
         }
         let action = action.clone();
@@ -632,15 +644,18 @@ impl IntegrationDetail {
                     .execute_quick_action(step, builtin_id, label, None)
                     .await
             },
-            move |_detail, result, cx| match result {
-                Ok(()) => cx.push_toast(
-                    ToastKind::Success,
-                    tr!("integration_quick_action_ran", label = toast_label),
-                ),
-                Err(err) => {
-                    tracing::warn!(error = %err, "quick action failed");
-                    cx.push_toast(ToastKind::Error, tr!("integration_quick_action_failed"));
+            move |detail, result, cx| {
+                match result {
+                    Ok(()) => cx.push_toast(
+                        ToastKind::Success,
+                        tr!("integration_quick_action_ran", label = toast_label),
+                    ),
+                    Err(err) => {
+                        tracing::warn!(error = %err, "quick action failed");
+                        cx.push_toast(ToastKind::Error, tr!("integration_quick_action_failed"));
+                    }
                 }
+                detail.reload(cx);
             },
             cx,
         );
@@ -1248,6 +1263,14 @@ impl Render for IntegrationDetail {
             .children(self.quick_action_modal.clone())
             .children(self.obs_settings_modal.clone())
             .children(self.history_modal.clone())
+    }
+}
+
+pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
+    match event.source {
+        EventSource::Obs => event.kind.starts_with(OBS_CONNECTION_PREFIX),
+        EventSource::Twitch => TWITCH_LIFECYCLE_KINDS.contains(&event.kind.as_str()),
+        _ => false,
     }
 }
 

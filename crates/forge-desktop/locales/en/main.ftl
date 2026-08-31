@@ -1564,6 +1564,7 @@ integration_control_failed = Control command failed
 integration_quick_action_failed = Quick action failed
 integration_open_url_failed = Could not open the link in your browser
 integration_quick_action_na = N/A
+integration_quick_action_not_live = Unavailable in current state
 integration_status_authenticated = Authenticated
 integration_token_expires_in = token expires in { $time }
 integration_viewers_delta = { $delta } last { $window }

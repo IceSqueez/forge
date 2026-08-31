@@ -9,7 +9,8 @@ use forge_runtime::{
 use forge_storage::{DataProvider, Language};
 
 use crate::integrations::{
-    BuiltinRegistry, KickInstallSeed, ObsInstallSeed, VTubeInstallSeed, YoutubeInstallSeed,
+    BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed, VTubeInstallSeed,
+    YoutubeInstallSeed,
 };
 use crate::log_tail::LogTail;
 use crate::voice_gate::VoiceGateOwner;
@@ -32,6 +33,8 @@ pub struct RuntimeHandles {
     pub trigger_evaluator: TriggerEvaluatorHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
     pub builtins: BuiltinRegistry,
+    /// `None` when Twitch client credentials are absent.
+    pub twitch_install_seed: Option<TwitchInstallSeed>,
     /// `None` when Kick client credentials are absent.
     pub kick_install_seed: Option<KickInstallSeed>,
     /// `None` when YouTube client credentials are absent.

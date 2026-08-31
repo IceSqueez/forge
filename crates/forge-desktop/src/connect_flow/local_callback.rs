@@ -4,14 +4,14 @@ use std::time::Duration;
 use crate::async_bridge;
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
-    icon, mono_family, radius, spacing, spinner, tr, with_alpha,
+    icon, mono_family, pulse_dot, radius, spacing, spinner, tr, with_alpha,
 };
 use forge_events::EventPublisher;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla,
-    Rgba, SharedString, StyledText, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, FontWeight, HighlightStyle, Hsla, Rgba, SharedString,
+    StyledText, div, prelude::*, px,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -594,16 +594,7 @@ impl ConnectFlow {
             scopes = scopes.as_str()
         );
 
-        let pulse = div()
-            .flex_none()
-            .size(px(8.0))
-            .rounded(px(4.0))
-            .bg(accent)
-            .with_animation(
-                SharedString::from("oauth-progress-pulse"),
-                Animation::new(Duration::from_millis(1400)).repeat(),
-                |el, delta| el.opacity(1.0 - (delta * 2.0 - 1.0).abs() * 0.6),
-            );
+        let pulse = pulse_dot("oauth-progress-pulse", accent, px(8.0));
 
         div()
             .w_full()

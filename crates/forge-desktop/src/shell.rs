@@ -225,6 +225,7 @@ impl AppShell {
                 let action_engine = handles.action_engine.clone();
                 let live_viewers = handles.live_viewers.clone();
                 let builtins = handles.builtins.clone();
+                let twitch_install_seed = handles.twitch_install_seed.clone();
                 let kick_install_seed = handles.kick_install_seed.clone();
                 let youtube_install_seed = handles.youtube_install_seed.clone();
                 let obs_install_seed = handles.obs_install_seed.clone();
@@ -242,6 +243,7 @@ impl AppShell {
                         event_bus,
                         live_viewers,
                         builtins,
+                        twitch_install_seed,
                         kick_install_seed,
                         youtube_install_seed,
                         obs_install_seed,

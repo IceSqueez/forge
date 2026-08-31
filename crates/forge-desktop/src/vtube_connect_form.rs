@@ -2,15 +2,15 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, TextInput, body_family, icon,
-    mono_family, radius, spinner, toggle, tr, with_alpha,
+    mono_family, pulse_dot, radius, spinner, toggle, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, SettingsRepo, get_bool_setting, set_bool_setting};
 use forge_vtube::{PLUGIN_NAME, VTubeClient, VTubeConfig, VTubeProbeResult};
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClickEvent, Context, Entity, EventEmitter, Focusable,
-    FontWeight, Pixels, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Focusable, FontWeight, Pixels, Rgba,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink, EventBatch};
@@ -54,8 +54,6 @@ const ACTIVE_PAD_H: Pixels = px(12.0);
 const ACTIVE_GAP: Pixels = px(10.0);
 const ACTIVE_DOT: Pixels = px(8.0);
 const ACTIVE_TITLE_SIZE: Pixels = px(11.5);
-const PULSE_PERIOD_MS: u64 = 1400;
-const PULSE_DEPTH: f32 = 0.6;
 
 const BUTTON_ROW_GAP: Pixels = px(8.0);
 const BUTTON_PAD_V: Pixels = px(8.0);
@@ -753,17 +751,7 @@ fn strip_frame(palette: &ForgePalette) -> gpui::Div {
 }
 
 fn pulsing_dot(tint: Rgba) -> AnyElement {
-    div()
-        .flex_none()
-        .size(ACTIVE_DOT)
-        .rounded(radius(Radius::Pill))
-        .bg(tint)
-        .with_animation(
-            SharedString::from("vtube-connect-awaiting-pulse"),
-            Animation::new(std::time::Duration::from_millis(PULSE_PERIOD_MS)).repeat(),
-            |el, delta| el.opacity(1.0 - (delta * 2.0 - 1.0).abs() * PULSE_DEPTH),
-        )
-        .into_any_element()
+    pulse_dot("vtube-connect-awaiting-pulse", tint, ACTIVE_DOT).into_any_element()
 }
 
 fn authorization_label(already_authenticated: bool) -> String {

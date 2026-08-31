@@ -29,6 +29,7 @@ pub struct TwitchPlatform {
     credentials_manager: Arc<TwitchCredentialsManager>,
     tracker: SubscriptionTracker,
     rate_limiter: Arc<dyn RateLimiter>,
+    lifecycle: TwitchLifecycle,
     // std::sync::Mutex, not tokio: never held across an `.await`.
     handle: Mutex<Option<TwitchChatHandle>>,
     transport: OnceCell<Arc<dyn HelixTransport>>,
@@ -40,6 +41,7 @@ impl TwitchPlatform {
         creds: Arc<dyn CredentialsRepo>,
         tracker: SubscriptionTracker,
         rate_limiter: Arc<dyn RateLimiter>,
+        lifecycle: TwitchLifecycle,
     ) -> Self {
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
             Arc::clone(&creds),
@@ -63,6 +65,7 @@ impl TwitchPlatform {
             credentials_manager,
             tracker,
             rate_limiter,
+            lifecycle,
             handle: Mutex::new(None),
             transport: OnceCell::new(),
         }
@@ -135,7 +138,7 @@ impl ChatPlatform for TwitchPlatform {
             self.config.user_id.clone(),
             publisher,
             self.tracker.clone(),
-            TwitchLifecycle::new(),
+            self.lifecycle.clone(),
         )
         .start();
         *self.handle.lock().unwrap_or_else(|p| p.into_inner()) = Some(handle);

@@ -1541,15 +1541,13 @@ script_editor_sandbox_enabled = enabled
 script_editor_problems_tab = Problems
 script_editor_console_cleared = Console cleared.
 script_editor_no_problems = No problems.
+script_editor_inert_annotation = This annotation no longer declares anything - inputs are edited in the SIGNATURE panel.
 
 ## Script Editor - run modal
 
 script_editor_health = { $ok }/{ $total } healthy
 script_editor_type_check_passed = Type-check passed
-script_editor_type_check_errors = { $count ->
-    [one] { $count } error
-   *[other] { $count } errors
-}
+script_editor_type_check_failed = Type-check failed
 script_editor_run_modal_title = Run { $name }
 script_editor_run_input_placeholder = Enter { $label } value…
 

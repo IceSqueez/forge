@@ -27,7 +27,7 @@ pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::PlatformId;
 pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;
-pub use script::{AnnotationDiagnostic, ScriptContract, ScriptInput};
+pub use script::{ScriptContract, ScriptInput};
 pub use shared::Shared;
 pub use sub_action::{LogLevel, OutputDevice};
 pub use sub_action_step::{SubActionConfig, SubActionStep};

@@ -1,28 +1,6 @@
-use std::collections::HashSet;
-
-pub use forge_types::AnnotationDiagnostic;
-
-use forge_types::{ArgStack, ScriptContract, ScriptInput, VariantKind};
+use forge_types::{ArgStack, ScriptContract, VariantKind};
 
 use crate::convert::variant_to_dynamic;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ContractParseError {
-    #[error(
-        "invalid type `{type_name}` on line {line}: \
-         must be int/float/bool/string/datetime/array/object"
-    )]
-    UnknownType { line: usize, type_name: String },
-
-    #[error("malformed @input on line {line}: expected `// @input <name>: <type>`")]
-    Malformed { line: usize },
-
-    #[error("@return appears multiple times")]
-    DuplicateReturn,
-
-    #[error("duplicate input name `{name}`")]
-    DuplicateInput { name: String },
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum InputMismatchError {
@@ -37,126 +15,20 @@ pub enum InputMismatchError {
     },
 }
 
-/// Non-failing parallel surface to `parse_contract`: emits one diagnostic per annotation
-/// error instead of returning on first failure.
-pub fn collect_annotation_diagnostics(source: &str) -> Vec<AnnotationDiagnostic> {
-    let mut diagnostics = Vec::new();
-    let mut seen_names: HashSet<String> = HashSet::new();
-    let mut return_seen = false;
-
-    for (line_idx, raw) in source.lines().take(50).enumerate() {
-        let trimmed = raw.trim();
-        if !trimmed.starts_with("//") {
-            continue;
-        }
-        let after_slashes = trimmed.trim_start_matches("//").trim();
-
-        if let Some(rest) = after_slashes.strip_prefix("@input ") {
-            let parts: Vec<&str> = rest.splitn(2, ':').collect();
-            if parts.len() != 2 {
-                diagnostics.push(AnnotationDiagnostic {
-                    line: line_idx,
-                    message: "expected `// @input <name>: <type>`".into(),
-                });
-                continue;
-            }
-            let name = parts[0].trim().to_string();
-            let type_name = parts[1].trim();
-            if name.is_empty() || type_name.is_empty() {
-                diagnostics.push(AnnotationDiagnostic {
-                    line: line_idx,
-                    message: "expected `// @input <name>: <type>`".into(),
-                });
-                continue;
-            }
-            if !seen_names.insert(name.clone()) {
-                diagnostics.push(AnnotationDiagnostic {
-                    line: line_idx,
-                    message: format!("duplicate input name `{name}`"),
-                });
-            } else if VariantKind::from_contract_name(type_name).is_none() {
-                diagnostics.push(AnnotationDiagnostic {
-                    line: line_idx,
-                    message: format!(
-                        "invalid type `{type_name}`: \
-                         must be int/float/bool/string/datetime/array/object"
-                    ),
-                });
-            }
-        } else if let Some(rest) = after_slashes.strip_prefix("@return ") {
-            let type_name = rest.trim();
-            if return_seen {
-                diagnostics.push(AnnotationDiagnostic {
-                    line: line_idx,
-                    message: "@return appears multiple times".into(),
-                });
-            } else {
-                return_seen = true;
-                if VariantKind::from_contract_name(type_name).is_none() {
-                    diagnostics.push(AnnotationDiagnostic {
-                        line: line_idx,
-                        message: format!(
-                            "invalid type `{type_name}`: \
-                             must be int/float/bool/string/datetime/array/object"
-                        ),
-                    });
-                }
-            }
-        }
-    }
-
-    diagnostics
-}
-
-/// Scans first 50 lines only; non-`@`-directive lines silently skipped; Err on unknown type, malformed `@input`, duplicate name, or multiple `@return`.
-pub fn parse_contract(source: &str) -> Result<ScriptContract, ContractParseError> {
-    let mut inputs: Vec<ScriptInput> = Vec::new();
-    let mut returns: Option<VariantKind> = None;
-    let mut seen_names: HashSet<String> = HashSet::new();
-
-    for (line_idx, raw) in source.lines().take(50).enumerate() {
-        let trimmed = raw.trim();
-        if !trimmed.starts_with("//") {
-            continue;
-        }
-        let after_slashes = trimmed.trim_start_matches("//").trim();
-
-        if let Some(rest) = after_slashes.strip_prefix("@input ") {
-            let parts: Vec<&str> = rest.splitn(2, ':').collect();
-            if parts.len() != 2 {
-                return Err(ContractParseError::Malformed { line: line_idx + 1 });
-            }
-            let name = parts[0].trim().to_string();
-            let type_name = parts[1].trim();
-            if name.is_empty() || type_name.is_empty() {
-                return Err(ContractParseError::Malformed { line: line_idx + 1 });
-            }
-            let kind = VariantKind::from_contract_name(type_name).ok_or_else(|| {
-                ContractParseError::UnknownType {
-                    line: line_idx + 1,
-                    type_name: type_name.to_string(),
-                }
-            })?;
-            if !seen_names.insert(name.clone()) {
-                return Err(ContractParseError::DuplicateInput { name });
-            }
-            inputs.push(ScriptInput { name, kind });
-        } else if let Some(rest) = after_slashes.strip_prefix("@return ") {
-            if returns.is_some() {
-                return Err(ContractParseError::DuplicateReturn);
-            }
-            let type_name = rest.trim();
-            let kind = VariantKind::from_contract_name(type_name).ok_or_else(|| {
-                ContractParseError::UnknownType {
-                    line: line_idx + 1,
-                    type_name: type_name.to_string(),
-                }
-            })?;
-            returns = Some(kind);
-        }
-    }
-
-    Ok(ScriptContract { inputs, returns })
+/// Line indices are 0-based.
+pub fn inert_annotation_lines(source: &str) -> Vec<usize> {
+    source
+        .lines()
+        .enumerate()
+        .filter(|(_, raw)| {
+            let trimmed = raw.trim();
+            trimmed.strip_prefix("//").is_some_and(|rest| {
+                let directive = rest.trim_start_matches('/').trim_start();
+                directive.starts_with("@input") || directive.starts_with("@return")
+            })
+        })
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// Err on missing input or type mismatch; empty contract always succeeds and returns an empty `Scope`.

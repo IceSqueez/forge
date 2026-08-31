@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
@@ -10,10 +11,9 @@ use forge_components::{
 };
 use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, ScriptRegistry};
-use forge_script::contract::collect_annotation_diagnostics;
 use forge_script::{
-    MethodDescriptor, RunResult, content_hash, format_script, is_engine_bound_name, run_inline,
-    validate_syntax,
+    MethodDescriptor, RunResult, ScriptError, content_hash, format_script, inert_annotation_lines,
+    is_engine_bound_name, run_inline, validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
@@ -24,7 +24,8 @@ use forge_types::{
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, MouseButton,
-    MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div, prelude::*, px,
+    MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Task, Window, div, prelude::*,
+    px,
 };
 use time::OffsetDateTime;
 
@@ -57,6 +58,8 @@ const FILE_BAR_STATUS_DOT: Pixels = px(6.0);
 
 const GLYPH_SIGNATURE_ACTION: Pixels = px(11.0);
 const SIGNATURE_NAME_MIN_W: Pixels = px(56.0);
+
+const COMPILE_DEBOUNCE: Duration = Duration::from_millis(300);
 
 const CONTRACT_KINDS: [VariantKind; 7] = [
     VariantKind::Int,
@@ -410,8 +413,24 @@ impl RunModal {
     }
 }
 
-/// `None` = type-check passed; `Some(n)` = error count.
-type TypeCheck = Option<u32>;
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProblemLevel {
+    Error,
+    Info,
+}
+
+struct EditorProblem {
+    level: ProblemLevel,
+    text: SharedString,
+}
+
+fn compile_problem(body: &str) -> Option<String> {
+    match validate_syntax(body) {
+        Ok(()) => None,
+        Err(ScriptError::Compile { reason, .. }) => Some(reason),
+        Err(other) => Some(other.to_string()),
+    }
+}
 
 pub struct ScriptEditorView {
     backend: Arc<dyn DataProvider>,
@@ -447,9 +466,10 @@ pub struct ScriptEditorView {
     console: Vec<ConsoleLine>,
     console_tab: ConsoleTab,
     console_collapsed: bool,
-    problems: Vec<SharedString>,
+    problems: Vec<EditorProblem>,
     problem_lines: Vec<usize>,
-    type_check: TypeCheck,
+    compile_error: Option<SharedString>,
+    _compile_check: Option<Task<()>>,
 
     api_docs_open: bool,
     api_search: SearchState,
@@ -543,7 +563,8 @@ impl ScriptEditorView {
             console_collapsed: false,
             problems: Vec::new(),
             problem_lines: Vec::new(),
-            type_check: None,
+            compile_error: None,
+            _compile_check: None,
             api_docs_open: false,
             api_search,
             _api_search_sub: api_search_sub,
@@ -617,20 +638,40 @@ impl ScriptEditorView {
     }
 
     fn recompute_diagnostics(&mut self, body: &str, cx: &mut Context<Self>) {
-        let diags = collect_annotation_diagnostics(body);
-        self.type_check = if diags.is_empty() {
-            None
-        } else {
-            Some(diags.len() as u32)
-        };
-        self.problem_lines = diags.iter().map(|d| d.line).collect();
-        self.problems = diags
-            .into_iter()
-            .map(|d| SharedString::from(format!("Ln {} · {}", d.line + 1, d.message)))
-            .collect();
+        self._compile_check = None;
+        self.compile_error = compile_problem(body).map(SharedString::from);
+        self.refresh_annotations(body, cx);
+    }
+
+    fn refresh_annotations(&mut self, body: &str, cx: &mut Context<Self>) {
+        self.problem_lines = inert_annotation_lines(body);
+        self.rebuild_problems();
+
         let marks = self.problem_lines.clone();
         self.code_input
             .update(cx, |area, cx| area.set_gutter_marks(marks, cx));
+    }
+
+    fn rebuild_problems(&mut self) {
+        let mut problems = Vec::with_capacity(self.problem_lines.len() + 1);
+        if let Some(reason) = &self.compile_error {
+            problems.push(EditorProblem {
+                level: ProblemLevel::Error,
+                text: reason.clone(),
+            });
+        }
+        problems.extend(self.problem_lines.iter().map(|line| {
+            EditorProblem {
+                level: ProblemLevel::Info,
+                text: format!(
+                    "Ln {} · {}",
+                    line + 1,
+                    tr!("script_editor_inert_annotation")
+                )
+                .into(),
+            }
+        }));
+        self.problems = problems;
     }
 
     fn current_dirty(&self, cx: &App) -> bool {
@@ -653,7 +694,7 @@ impl ScriptEditorView {
                         let entries = records
                             .into_iter()
                             .map(|r| ScriptEntry {
-                                status_ok: collect_annotation_diagnostics(&r.body).is_empty(),
+                                status_ok: validate_syntax(&r.body).is_ok(),
                                 enabled: r.enabled,
                                 linked: find_linked_action(&actions, &r.name),
                                 id: r.id,
@@ -802,7 +843,18 @@ impl ScriptEditorView {
 
     fn on_code_changed(&mut self, cx: &mut Context<Self>) {
         let content = self.code_input.read(cx).content().to_owned();
-        self.recompute_diagnostics(&content, cx);
+        self.refresh_annotations(&content, cx);
+        self._compile_check = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(COMPILE_DEBOUNCE).await;
+            let compile_error = cx
+                .background_spawn(async move { compile_problem(&content) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.compile_error = compile_error.map(SharedString::from);
+                this.rebuild_problems();
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
 
@@ -914,32 +966,43 @@ impl ScriptEditorView {
         else {
             return;
         };
+        self.kind_menu = None;
+        self.contract_error = None;
+        self.open_input_editor(index, current, window, cx);
+        cx.notify();
+    }
+
+    fn open_input_editor(
+        &mut self,
+        index: usize,
+        seed: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let palette = cx.palette();
-        let editor = inline_edit(current, palette, FONT_XS, window, cx);
-        let sub = cx.subscribe(
+        let editor = inline_edit(seed, palette, FONT_XS, window, cx);
+        let sub = cx.subscribe_in(
             &editor,
-            |this, _e, event: &InlineEditEvent, cx| match event {
-                InlineEditEvent::Commit(next) => this.commit_input_rename(next.clone(), cx),
+            window,
+            |this, _e, event: &InlineEditEvent, window, cx| match event {
+                InlineEditEvent::Commit(next) => this.commit_input_rename(next.clone(), window, cx),
                 InlineEditEvent::Cancel => this.cancel_input_rename(cx),
             },
         );
-        self.kind_menu = None;
-        self.contract_error = None;
         self.input_rename = Some(InputRename {
             index,
             editor,
             _sub: sub,
         });
-        cx.notify();
     }
 
-    fn commit_input_rename(&mut self, name: String, cx: &mut Context<Self>) {
-        let Some(state) = self.input_rename.take() else {
+    fn commit_input_rename(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(index) = self.input_rename.as_ref().map(|state| state.index) else {
             return;
         };
-        let index = state.index;
         let name = name.trim().to_owned();
         let Some(contract) = self.contract() else {
+            self.input_rename = None;
             cx.notify();
             return;
         };
@@ -960,9 +1023,13 @@ impl ScriptEditorView {
                 {
                     input.name = name;
                 }
+                self.input_rename = None;
                 self.contract_error = None;
             }
-            Err(error) => self.contract_error = Some(error.message(&name).into()),
+            Err(error) => {
+                self.contract_error = Some(error.message(&name).into());
+                self.open_input_editor(index, name, window, cx);
+            }
         }
         cx.notify();
     }
@@ -1026,6 +1093,10 @@ impl ScriptEditorView {
     ) {
         match result {
             Ok((record, reload)) => {
+                let status_ok = validate_syntax(&record.body).is_ok();
+                if let Some(entry) = self.scripts.iter_mut().find(|e| e.id == record.id) {
+                    entry.status_ok = status_ok;
+                }
                 if let Some(open) = self.open.as_mut()
                     && open.id == record.id
                 {
@@ -1230,7 +1301,7 @@ impl ScriptEditorView {
                 self.scripts.push(ScriptEntry {
                     id: record.id,
                     name: record.name.clone(),
-                    status_ok: collect_annotation_diagnostics(&body).is_empty(),
+                    status_ok: validate_syntax(&body).is_ok(),
                     enabled: record.enabled,
                     linked: None,
                 });
@@ -1566,12 +1637,10 @@ impl ScriptEditorView {
             fmt_relative_time(Some(open.record.last_modified))
         );
 
-        let (status_color, status_text): (Rgba, String) = match self.type_check {
-            None => (palette.success, tr!("script_editor_type_check_passed")),
-            Some(n) => (
-                palette.warning,
-                tr!("script_editor_type_check_errors", count = n as i64),
-            ),
+        let (status_color, status_text): (Rgba, String) = if self.compile_error.is_some() {
+            (palette.warning, tr!("script_editor_type_check_failed"))
+        } else {
+            (palette.success, tr!("script_editor_type_check_passed"))
         };
 
         let mut name_row = div()
@@ -2387,13 +2456,21 @@ impl ScriptEditorView {
                 } else {
                     let mut b = body;
                     for problem in &self.problems {
+                        let (glyph, tint) = match problem.level {
+                            ProblemLevel::Error => (Icon::AlertTriangle, palette.warning),
+                            ProblemLevel::Info => (Icon::InfoCircle, palette.info),
+                        };
                         b = b.child(
                             div()
                                 .flex()
                                 .items_center()
                                 .gap(spacing(Spacing::Xs, Density::Cozy))
-                                .child(icon(Icon::AlertTriangle, GLYPH_ACTION, palette.warning))
-                                .child(div().text_color(palette.text_muted).child(problem.clone())),
+                                .child(icon(glyph, GLYPH_ACTION, tint))
+                                .child(
+                                    div()
+                                        .text_color(palette.text_muted)
+                                        .child(problem.text.clone()),
+                                ),
                         );
                     }
                     b

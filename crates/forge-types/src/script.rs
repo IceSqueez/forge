@@ -14,13 +14,6 @@ pub struct ScriptInput {
     pub kind: VariantKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AnnotationDiagnostic {
-    /// 0-indexed line number in the source.
-    pub line: usize,
-    pub message: String,
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

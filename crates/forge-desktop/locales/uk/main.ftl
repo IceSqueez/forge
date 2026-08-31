@@ -1557,17 +1557,13 @@ script_editor_sandbox_enabled = увімкнено
 script_editor_problems_tab = Проблеми
 script_editor_console_cleared = Консоль очищено.
 script_editor_no_problems = Проблем немає.
+script_editor_inert_annotation = Ця анотація більше нічого не оголошує - входи редагуються на панелі СИГНАТУРА.
 
 ## Редактор скриптів - модальне вікно запуску
 
 script_editor_health = { $ok }/{ $total } справні
 script_editor_type_check_passed = Перевірку типів пройдено
-script_editor_type_check_errors = { $count ->
-    [one] { $count } помилка
-    [few] { $count } помилки
-    [many] { $count } помилок
-   *[other] { $count } помилок
-}
+script_editor_type_check_failed = Перевірку типів не пройдено
 script_editor_run_modal_title = Запустити { $name }
 script_editor_run_input_placeholder = Введіть значення { $label }…
 

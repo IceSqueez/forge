@@ -16,9 +16,7 @@ pub mod runner;
 pub use api::{ENGINE_BOUND_NAMES, ForgeApi, SpeakRequester, is_engine_bound_name};
 pub use catalog::{MethodDescriptor, ParamDescriptor, catalog};
 pub use condition::ConditionEvaluator;
-pub use contract::{
-    ContractParseError, InputMismatchError, build_scope_for_contract, parse_contract,
-};
+pub use contract::{InputMismatchError, build_scope_for_contract, inert_annotation_lines};
 pub use engine::{Engine, EngineConfig, load_script_engine_config, validate_syntax};
 pub use error::ScriptError;
 pub use format::format_script;

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use forge_platform_core::{
-    ConnectionState, QuickAction, QuickActionAccent, QuickActions, SectionIcon,
+    ConnectionState, QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_types::{SubActionStep, Variant};
 
@@ -22,6 +22,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("message"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,
@@ -49,6 +50,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("layout-cards"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,
@@ -80,6 +82,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("pencil"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,
@@ -108,6 +111,7 @@ impl QuickActions for DiscordClient {
                 icon: SectionIcon::new("send"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,

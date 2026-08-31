@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use forge_platform_core::{QuickAction, QuickActionAccent, QuickActions, SectionIcon};
+use forge_platform_core::{
+    QuickAction, QuickActionAccent, QuickActionLiveness, QuickActions, SectionIcon,
+};
 use forge_types::{SubActionStep, Variant};
 
 use crate::client::MidiClient;
@@ -24,6 +26,7 @@ impl QuickActions for MidiClient {
                 icon: SectionIcon::new("music"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,
@@ -54,6 +57,7 @@ impl QuickActions for MidiClient {
                 icon: SectionIcon::new("music-off"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,
@@ -84,6 +88,7 @@ impl QuickActions for MidiClient {
                 icon: SectionIcon::new("sliders"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,
@@ -111,6 +116,7 @@ impl QuickActions for MidiClient {
                 icon: SectionIcon::new("code"),
                 enabled,
                 locked_reason: None,
+                liveness: QuickActionLiveness::Unknown,
                 group: None,
                 group_icon: None,
                 group_accent: None,

@@ -14,8 +14,8 @@ use forge_platform_core::{
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
     HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent, QuickActionChoiceOption,
     QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
-    QuickActions, RateLimiter, SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport,
-    ViewerReportStream,
+    QuickActionLiveness, QuickActions, RateLimiter, SectionIcon, SubscriptionRow,
+    SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
 use std::collections::BTreeMap;
 
@@ -725,6 +725,7 @@ fn quick_action(
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason,
+        liveness: QuickActionLiveness::Unknown,
         group: Some(group.to_owned()),
         group_icon: Some(group_icon),
         group_accent: Some(group_accent),

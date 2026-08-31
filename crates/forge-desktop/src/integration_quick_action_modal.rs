@@ -1113,7 +1113,7 @@ async fn fetch_picker_items(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use forge_platform_core::{QuickActionAccent, SectionIcon};
+    use forge_platform_core::{QuickActionAccent, QuickActionLiveness, SectionIcon};
 
     use super::*;
 
@@ -1123,6 +1123,7 @@ mod tests {
             icon: SectionIcon::new("arrows-shuffle"),
             enabled: true,
             locked_reason: None,
+            liveness: QuickActionLiveness::Unknown,
             group: None,
             group_icon: None,
             group_accent: None,

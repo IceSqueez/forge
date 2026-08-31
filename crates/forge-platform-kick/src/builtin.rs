@@ -6,8 +6,8 @@ use forge_platform_core::{
     BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
     ChatPlatform, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
     HealthStream, HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActionAccent,
-    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActions, RateLimiter,
-    SectionIcon, ViewerReport,
+    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
+    QuickActions, RateLimiter, SectionIcon, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
 use forge_types::{SubActionStep, Variant};
@@ -403,6 +403,7 @@ fn quick_action(
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason: None,
+        liveness: QuickActionLiveness::Unknown,
         group: Some(group.to_owned()),
         group_icon: Some(group_icon),
         group_accent: Some(group_accent),

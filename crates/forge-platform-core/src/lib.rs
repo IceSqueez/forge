@@ -19,8 +19,9 @@ pub use builtin::{
     DetailSection, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream,
     HealthValue, HeroBadge, HeroBadgeTone, InfoField, KeyValueRow, ListFooter, PickerKind,
     QuickAction, QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource,
-    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActions, RowAction,
-    SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
+    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
+    QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus,
+    TokenColor, TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{

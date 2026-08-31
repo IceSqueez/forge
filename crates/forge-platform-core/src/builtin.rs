@@ -409,6 +409,17 @@ impl QuickActionField {
     }
 }
 
+/// `Unknown` is fail-open: the action stays enabled and undecorated, so lost lifecycle
+/// bookkeeping never blocks a run the user needs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickActionLiveness {
+    #[default]
+    Unknown,
+    Live,
+    Absent,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QuickAction {
     pub label: String,
@@ -419,6 +430,8 @@ pub struct QuickAction {
     /// disconnected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locked_reason: Option<String>,
+    #[serde(default)]
+    pub liveness: QuickActionLiveness,
     /// Category header the generic renderer groups this action under; `None` falls into a
     /// single untitled section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -440,6 +453,10 @@ pub struct QuickAction {
 }
 
 impl QuickAction {
+    pub fn is_runnable(&self) -> bool {
+        self.enabled && self.liveness != QuickActionLiveness::Absent
+    }
+
     pub fn merge_config(&self, values: &BTreeMap<String, QuickActionFieldValue>) -> SubActionStep {
         let mut step = self.subaction_template.clone();
         for field in &self.fields {
@@ -813,6 +830,7 @@ mod tests {
             icon: SectionIcon::new("play"),
             enabled: false,
             locked_reason: Some("Requires Twitch Affiliate or Partner".to_owned()),
+            liveness: QuickActionLiveness::Unknown,
             group: Some("Raids & ads".to_owned()),
             group_icon: None,
             group_accent: None,
@@ -922,6 +940,7 @@ mod tests {
             icon: SectionIcon::new("x"),
             enabled: true,
             locked_reason: None,
+            liveness: QuickActionLiveness::Unknown,
             group: None,
             group_icon: None,
             group_accent: None,

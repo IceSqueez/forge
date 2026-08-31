@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use forge_platform_core::{
     PickerKind, QuickAction, QuickActionAccent, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActions, SectionIcon,
+    QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon,
 };
 use forge_types::{SubActionStep, Variant};
 
@@ -60,6 +60,7 @@ fn quick_action(
         icon: SectionIcon::new(icon),
         enabled,
         locked_reason: None,
+        liveness: QuickActionLiveness::Unknown,
         group: Some(group.to_owned()),
         group_icon: Some(group_icon),
         group_accent: Some(group_accent),

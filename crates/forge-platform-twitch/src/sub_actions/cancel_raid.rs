@@ -119,16 +119,24 @@ mod tests {
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };
+    use forge_platform_core::QuickActionLiveness;
     use forge_types::ArgStack;
 
     fn runner_with(
         responses: Vec<Result<serde_json::Value, HelixError>>,
     ) -> (Arc<MockTransport>, CancelRaidRunner) {
+        runner_tracking(responses, TwitchLifecycle::new())
+    }
+
+    fn runner_tracking(
+        responses: Vec<Result<serde_json::Value, HelixError>>,
+        lifecycle: TwitchLifecycle,
+    ) -> (Arc<MockTransport>, CancelRaidRunner) {
         let transport = Arc::new(MockTransport::returning_sequence(responses));
         let runner = CancelRaidRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
             Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
-            TwitchLifecycle::new(),
+            lifecycle,
         );
         (transport, runner)
     }
@@ -174,5 +182,41 @@ mod tests {
         assert!(msg.contains("404"), "status must surface: {msg}");
         assert!(!msg.contains(TOKEN_SENTINEL), "token leaked: {msg}");
         assert!(!msg.contains("api.twitch.tv"), "URL leaked: {msg}");
+    }
+
+    #[tokio::test]
+    async fn a_successful_cancel_clears_the_pending_raid() {
+        let lifecycle = TwitchLifecycle::new();
+        lifecycle.raid_started();
+        let (_, runner) = runner_tracking(vec![Ok(serde_json::Value::Null)], lifecycle.clone());
+        let stack = ArgStack::new();
+
+        runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert_eq!(
+            lifecycle.snapshot().raid_in_flight(),
+            QuickActionLiveness::Unknown
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rejected_cancel_leaves_the_pending_raid() {
+        let lifecycle = TwitchLifecycle::new();
+        lifecycle.raid_started();
+        let (_, runner) = runner_tracking(
+            vec![Err(HelixError::Http {
+                status: 404,
+                body: "no raid in progress".to_owned(),
+            })],
+            lifecycle.clone(),
+        );
+        let stack = ArgStack::new();
+
+        runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+
+        assert_eq!(
+            lifecycle.snapshot().raid_in_flight(),
+            QuickActionLiveness::Live
+        );
     }
 }

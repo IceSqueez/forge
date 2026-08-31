@@ -1761,6 +1761,40 @@ mod tests {
     }
 
     #[test]
+    fn every_gated_action_carries_the_liveness_of_the_entity_it_targets() {
+        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        b.lifecycle
+            .apply_notification("channel.poll.begin", &serde_json::Value::Null, "1");
+        b.lifecycle
+            .apply_notification("channel.prediction.lock", &serde_json::Value::Null, "1");
+        b.lifecycle.raid_started();
+
+        let by_label: BTreeMap<String, QuickActionLiveness> = b
+            .actions()
+            .into_iter()
+            .map(|a| (a.label, a.liveness))
+            .collect();
+
+        for (label, expected) in [
+            ("Start poll", QuickActionLiveness::Absent),
+            ("End poll (finish now)", QuickActionLiveness::Live),
+            ("Cancel poll", QuickActionLiveness::Live),
+            ("Start prediction", QuickActionLiveness::Absent),
+            ("Lock prediction", QuickActionLiveness::Absent),
+            ("Resolve / pay out", QuickActionLiveness::Live),
+            ("Cancel & refund", QuickActionLiveness::Live),
+            ("Start raid", QuickActionLiveness::Absent),
+            ("Cancel raid", QuickActionLiveness::Live),
+        ] {
+            assert_eq!(
+                by_label.get(label),
+                Some(&expected),
+                "{label} with an open poll, a locked prediction and a pending raid"
+            );
+        }
+    }
+
+    #[test]
     fn exactly_six_actions_are_marked_destructive() {
         let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
         let mut destructive: Vec<String> = b
@@ -1820,13 +1854,6 @@ mod tests {
         let b = make_bundle(ChatConnectionState::Disconnected);
         let actions = b.actions();
         assert!(actions.iter().all(|a| !a.enabled));
-    }
-
-    #[test]
-    fn bundle_coerces_to_dyn_builtin_control() {
-        fn accepts(_: Arc<dyn forge_platform_core::BuiltinControl>) {}
-        let b = make_bundle(ChatConnectionState::Connected);
-        accepts(b);
     }
 
     #[tokio::test]

@@ -12,19 +12,26 @@ use time::OffsetDateTime;
 
 use super::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::lifecycle::TwitchLifecycle;
 
 const KIND_ID: &str = "twitch.channel.start_raid";
 
 pub struct StartRaidRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
+    lifecycle: TwitchLifecycle,
 }
 
 impl StartRaidRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub fn new(
+        transport: Arc<dyn HelixTransport>,
+        identity: Arc<SelfIdentity>,
+        lifecycle: TwitchLifecycle,
+    ) -> Self {
         Self {
             transport,
             identity,
+            lifecycle,
         }
     }
 
@@ -46,7 +53,11 @@ impl StartRaidRunner {
         let request = HelixRequest::new(HelixMethod::Post, "/helix/raids")
             .query("from_broadcaster_id", self_id)
             .query("to_broadcaster_id", to_broadcaster_id);
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        let outcome = SubActionOutcome::from_result(&self.transport.execute(request).await);
+        if outcome == SubActionOutcome::Success {
+            self.lifecycle.raid_started();
+        }
+        outcome
     }
 }
 
@@ -144,6 +155,7 @@ mod tests {
         let runner = StartRaidRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
             Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            TwitchLifecycle::new(),
         );
         (transport, runner)
     }

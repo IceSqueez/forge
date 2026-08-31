@@ -408,6 +408,7 @@ async fn build_twitch(
 ) -> Option<BuiltinObject> {
     let client_id = forge_platform_twitch::client_id()?;
     let creds = creds_of(backend);
+    let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
 
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
         forge_platform_twitch::HELIX_BUDGET_CAPACITY,
@@ -433,6 +434,7 @@ async fn build_twitch(
         sub_actions,
         transport,
         Arc::clone(&creds),
+        lifecycle.clone(),
     ) {
         eprintln!("forge-desktop: twitch sub-action registration failed: {e}");
     }
@@ -474,6 +476,7 @@ async fn build_twitch(
         config.user_id.clone(),
         publisher(bus),
         tracker.clone(),
+        lifecycle.clone(),
     );
     let handle = chat.start();
     let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
@@ -484,6 +487,7 @@ async fn build_twitch(
         tracker,
         handle,
         rate_limiter,
+        lifecycle,
     );
 
     Some(twitch_builtin_object(bundle))

@@ -109,11 +109,13 @@ pub use update_title::UpdateTitleRunner;
 pub use warn_user::WarnUserRunner;
 
 use crate::helix::HelixTransport;
+use crate::lifecycle::TwitchLifecycle;
 
 pub fn register_twitch_sub_actions(
     reg: &mut SubActionRegistry,
     transport: Arc<dyn HelixTransport>,
     creds: Arc<dyn CredentialsRepo>,
+    lifecycle: TwitchLifecycle,
 ) -> Result<(), RegistryError> {
     let identity = Arc::new(SelfIdentity::new(creds));
     reg.register(Box::new(SendAnnouncementRunner::new(
@@ -203,10 +205,12 @@ pub fn register_twitch_sub_actions(
     reg.register(Box::new(StartRaidRunner::new(
         Arc::clone(&transport),
         Arc::clone(&identity),
+        lifecycle.clone(),
     )))?;
     reg.register(Box::new(CancelRaidRunner::new(
         Arc::clone(&transport),
         Arc::clone(&identity),
+        lifecycle,
     )))?;
     reg.register(Box::new(RunAdRunner::new(
         Arc::clone(&transport),
@@ -468,6 +472,7 @@ mod tests {
             &mut reg,
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
             Arc::new(MockCreds::empty()),
+            TwitchLifecycle::new(),
         )
         .unwrap();
 

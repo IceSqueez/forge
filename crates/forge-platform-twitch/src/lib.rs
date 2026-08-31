@@ -9,6 +9,7 @@ pub mod credentials;
 pub mod credentials_manager;
 mod event_channel;
 pub mod helix;
+mod lifecycle;
 mod payload_fields;
 pub mod sub_actions;
 pub mod subscriptions;
@@ -31,6 +32,7 @@ pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,
     HelixTokenSource, HelixTransport,
 };
+pub use lifecycle::TwitchLifecycle;
 pub use sub_actions::identity::BroadcasterTier;
 pub use sub_actions::register_twitch_sub_actions;
 pub use subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};

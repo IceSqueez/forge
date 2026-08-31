@@ -286,6 +286,7 @@ impl ConnectFlow {
                     Arc::clone(&credentials),
                     config.client_id.clone(),
                 ));
+                let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
                 let chat = forge_platform_twitch::TwitchChat::new(
                     manager,
                     config.client_id.clone(),
@@ -293,6 +294,7 @@ impl ConnectFlow {
                     config.user_id.clone(),
                     Arc::clone(&bus),
                     Arc::clone(&tracker),
+                    lifecycle.clone(),
                 );
                 let handle = chat.start();
                 let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
@@ -307,6 +309,7 @@ impl ConnectFlow {
                     tracker,
                     handle,
                     rate_limiter,
+                    lifecycle,
                 );
                 live_viewers.register(bundle.viewer_source());
                 bundle

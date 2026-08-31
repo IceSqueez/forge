@@ -1,5 +1,6 @@
 use crate::chat::subscriber::{SubscribeError, subscribe_all};
 use crate::credentials_manager::TwitchCredentialsManager;
+use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{
@@ -75,6 +76,7 @@ struct SessionConfig {
     user_id: String,
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
+    lifecycle: TwitchLifecycle,
 }
 
 pub(crate) struct ChatSession {
@@ -91,6 +93,7 @@ impl ChatSession {
         user_id: String,
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
+        lifecycle: TwitchLifecycle,
     ) -> (
         Self,
         watch::Receiver<ChatConnectionState>,
@@ -106,6 +109,7 @@ impl ChatSession {
                 user_id,
                 bus,
                 tracker,
+                lifecycle,
             },
             state_tx,
             shutdown_rx,
@@ -303,6 +307,11 @@ impl ChatSession {
                 if let Some(frame_payload) = &frame.payload
                     && let Some(event_data) = &frame_payload.event
                 {
+                    self.config.lifecycle.apply_notification(
+                        sub_type,
+                        event_data,
+                        &self.config.broadcaster_id,
+                    );
                     match dispatch::route_for(sub_type) {
                         Some(route) => route(self, event_data, frame_msg_id),
                         None => {
@@ -3778,6 +3787,7 @@ mod tests {
             "user".to_string(),
             publisher,
             tracker,
+            TwitchLifecycle::new(),
         );
         session
     }
@@ -6010,6 +6020,7 @@ mod tests {
             "user".to_string(),
             publisher,
             tracker,
+            TwitchLifecycle::new(),
         );
         session
     }

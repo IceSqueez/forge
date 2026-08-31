@@ -15,6 +15,7 @@ use crate::credentials::{CredentialsTokenSource, load};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
 use crate::helix::{HelixHttpTransport, HelixTransport};
+use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 
 const PLATFORM_ID: &str = "twitch";
@@ -134,6 +135,7 @@ impl ChatPlatform for TwitchPlatform {
             self.config.user_id.clone(),
             publisher,
             self.tracker.clone(),
+            TwitchLifecycle::new(),
         )
         .start();
         *self.handle.lock().unwrap_or_else(|p| p.into_inner()) = Some(handle);

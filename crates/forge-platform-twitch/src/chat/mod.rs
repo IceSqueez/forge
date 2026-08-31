@@ -8,6 +8,7 @@ pub use send::{ChatSendError, SentMessageId, send_chat};
 pub use session::ChatConnectionState;
 
 use crate::credentials_manager::TwitchCredentialsManager;
+use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::EventPublisher;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub struct TwitchChat {
     user_id: String,
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
+    lifecycle: TwitchLifecycle,
 }
 
 pub struct TwitchChatHandle {
@@ -35,6 +37,7 @@ impl TwitchChat {
         user_id: String,
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
+        lifecycle: TwitchLifecycle,
     ) -> Self {
         Self {
             manager,
@@ -43,6 +46,7 @@ impl TwitchChat {
             user_id,
             bus,
             tracker,
+            lifecycle,
         }
     }
 
@@ -54,6 +58,7 @@ impl TwitchChat {
             self.user_id,
             self.bus,
             self.tracker,
+            self.lifecycle,
         );
         tokio::spawn(sess.run());
         TwitchChatHandle {

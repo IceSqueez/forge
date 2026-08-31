@@ -10,19 +10,26 @@ use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::lifecycle::TwitchLifecycle;
 
 const KIND_ID: &str = "twitch.channel.cancel_raid";
 
 pub struct CancelRaidRunner {
     transport: Arc<dyn HelixTransport>,
     identity: Arc<SelfIdentity>,
+    lifecycle: TwitchLifecycle,
 }
 
 impl CancelRaidRunner {
-    pub fn new(transport: Arc<dyn HelixTransport>, identity: Arc<SelfIdentity>) -> Self {
+    pub fn new(
+        transport: Arc<dyn HelixTransport>,
+        identity: Arc<SelfIdentity>,
+        lifecycle: TwitchLifecycle,
+    ) -> Self {
         Self {
             transport,
             identity,
+            lifecycle,
         }
     }
 
@@ -33,7 +40,11 @@ impl CancelRaidRunner {
         };
         let request =
             HelixRequest::new(HelixMethod::Delete, "/helix/raids").query("broadcaster_id", self_id);
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        let outcome = SubActionOutcome::from_result(&self.transport.execute(request).await);
+        if outcome == SubActionOutcome::Success {
+            self.lifecycle.raid_canceled();
+        }
+        outcome
     }
 }
 
@@ -117,6 +128,7 @@ mod tests {
         let runner = CancelRaidRunner::new(
             Arc::clone(&transport) as Arc<dyn HelixTransport>,
             Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            TwitchLifecycle::new(),
         );
         (transport, runner)
     }

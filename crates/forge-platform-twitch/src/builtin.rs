@@ -31,6 +31,7 @@ use crate::helix::{
     HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher, HelixTokenSource,
     HelixTransport,
 };
+use crate::lifecycle::{LifecycleSnapshot, TwitchLifecycle};
 use crate::sub_actions::identity::{BroadcasterTier, resolve_broadcaster_tier};
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
@@ -93,9 +94,11 @@ pub struct TwitchIntegrationBundle {
     tier: std::sync::RwLock<BroadcasterTier>,
     token_expires_at: std::sync::RwLock<Option<SystemTime>>,
     connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
+    lifecycle: TwitchLifecycle,
 }
 
 impl TwitchIntegrationBundle {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         login: Option<String>,
         config: ChatSessionConfig,
@@ -104,6 +107,7 @@ impl TwitchIntegrationBundle {
         tracker: SubscriptionTracker,
         handle: TwitchChatHandle,
         rate_limiter: Arc<dyn RateLimiter>,
+        lifecycle: TwitchLifecycle,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
@@ -136,10 +140,14 @@ impl TwitchIntegrationBundle {
             tier: std::sync::RwLock::new(BroadcasterTier::default()),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
+            lifecycle,
         });
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_poll(&bundle, transport);
         Self::spawn_identity_refresh(&bundle);
+        // The session may already have reached Connected before this receiver was cloned, in
+        // which case the state bridge never fires a transition to seed on.
+        Self::spawn_lifecycle_seed(&bundle);
         bundle
     }
 
@@ -203,9 +211,13 @@ impl TwitchIntegrationBundle {
             }
             if !already_connected {
                 Self::spawn_identity_refresh(self);
+                Self::spawn_lifecycle_seed(self);
             }
-        } else if let Ok(mut guard) = self.connected_at.write() {
-            *guard = None;
+        } else {
+            self.lifecycle.forget_phases();
+            if let Ok(mut guard) = self.connected_at.write() {
+                *guard = None;
+            }
         }
     }
 
@@ -213,6 +225,18 @@ impl TwitchIntegrationBundle {
         let bundle = Arc::clone(bundle);
         tokio::spawn(async move {
             bundle.refresh_identity().await;
+        });
+    }
+
+    /// Runs on every entry into `Connected`, so an EventSub reconnect that swallowed an end
+    /// notification converges instead of holding a stale phase.
+    fn spawn_lifecycle_seed(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        tokio::spawn(async move {
+            bundle
+                .lifecycle
+                .seed_from_helix(bundle.transport.as_ref(), &bundle.config.broadcaster_id)
+                .await;
         });
     }
 
@@ -282,6 +306,7 @@ impl TwitchIntegrationBundle {
             self.config.user_id.clone(),
             Arc::clone(&self.bus),
             self.tracker.clone(),
+            self.lifecycle.clone(),
         )
         .start()
     }
@@ -345,6 +370,7 @@ impl TwitchIntegrationBundle {
             tier: std::sync::RwLock::new(tier),
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
+            lifecycle: TwitchLifecycle::new(),
         })
     }
 
@@ -744,12 +770,17 @@ fn quick_action(
     }
 }
 
+fn gated_on(action: QuickAction, liveness: QuickActionLiveness) -> QuickAction {
+    QuickAction { liveness, ..action }
+}
+
 impl QuickActions for TwitchIntegrationBundle {
     fn actions(&self) -> Vec<QuickAction> {
         let connected = self.is_chat_connected();
         let tier_locked = self.tier() == BroadcasterTier::Standard;
         let locked_reason = tier_locked.then(|| TIER_LOCKED_REASON.to_owned());
         let gated = connected && !tier_locked;
+        let live: LifecycleSnapshot = self.lifecycle.snapshot();
 
         vec![
             quick_action(
@@ -812,132 +843,153 @@ impl QuickActions for TwitchIntegrationBundle {
                     "optional",
                 )],
             ),
-            quick_action(
-                "Start poll",
-                "chart-bar",
-                QuickActionAccent::Brand,
-                gated,
-                locked_reason.clone(),
-                "Polls",
-                false,
-                "twitch.poll.start",
-                config([
-                    ("title", blank()),
-                    ("choices", blank()),
-                    ("duration_seconds", Variant::Int(60)),
-                ]),
-                vec![
-                    text_field("title", "Question", "Next game?").required(),
-                    multiline_field(
-                        "choices",
-                        "Choices (one per line)",
-                        "Factorio\nMinecraft\nSatisfactory",
-                    )
-                    .required(),
-                    toggle_field(
-                        "channel_points_voting_enabled",
-                        "Channel Points voting",
-                        false,
-                    ),
-                    int_field("duration_seconds", "Duration (seconds)", 60, 15, 1800),
-                ],
+            gated_on(
+                quick_action(
+                    "Start poll",
+                    "chart-bar",
+                    QuickActionAccent::Brand,
+                    gated,
+                    locked_reason.clone(),
+                    "Polls",
+                    false,
+                    "twitch.poll.start",
+                    config([
+                        ("title", blank()),
+                        ("choices", blank()),
+                        ("duration_seconds", Variant::Int(60)),
+                    ]),
+                    vec![
+                        text_field("title", "Question", "Next game?").required(),
+                        multiline_field(
+                            "choices",
+                            "Choices (one per line)",
+                            "Factorio\nMinecraft\nSatisfactory",
+                        )
+                        .required(),
+                        toggle_field(
+                            "channel_points_voting_enabled",
+                            "Channel Points voting",
+                            false,
+                        ),
+                        int_field("duration_seconds", "Duration (seconds)", 60, 15, 1800),
+                    ],
+                ),
+                live.poll_slot_free(),
             ),
-            quick_action(
-                "End poll (finish now)",
-                "player-stop",
-                QuickActionAccent::Warning,
-                gated,
-                locked_reason.clone(),
-                "Polls",
-                false,
-                "twitch.poll.end",
-                config([
-                    ("poll_id", blank()),
-                    ("status", Variant::String("terminated".to_owned())),
-                ]),
-                Vec::new(),
+            gated_on(
+                quick_action(
+                    "End poll (finish now)",
+                    "player-stop",
+                    QuickActionAccent::Warning,
+                    gated,
+                    locked_reason.clone(),
+                    "Polls",
+                    false,
+                    "twitch.poll.end",
+                    config([
+                        ("poll_id", blank()),
+                        ("status", Variant::String("terminated".to_owned())),
+                    ]),
+                    Vec::new(),
+                ),
+                live.poll_in_flight(),
             ),
-            quick_action(
-                "Cancel poll",
-                "x",
-                QuickActionAccent::Danger,
-                gated,
-                locked_reason.clone(),
-                "Polls",
-                true,
-                "twitch.poll.end",
-                config([
-                    ("poll_id", blank()),
-                    ("status", Variant::String("archived".to_owned())),
-                ]),
-                Vec::new(),
+            gated_on(
+                quick_action(
+                    "Cancel poll",
+                    "x",
+                    QuickActionAccent::Danger,
+                    gated,
+                    locked_reason.clone(),
+                    "Polls",
+                    true,
+                    "twitch.poll.end",
+                    config([
+                        ("poll_id", blank()),
+                        ("status", Variant::String("archived".to_owned())),
+                    ]),
+                    Vec::new(),
+                ),
+                live.poll_in_flight(),
             ),
-            quick_action(
-                "Start prediction",
-                "crystal-ball",
-                QuickActionAccent::AccentPinkLight,
-                gated,
-                locked_reason.clone(),
-                "Predictions",
-                false,
-                "twitch.prediction.start",
-                config([
-                    ("title", blank()),
-                    ("outcomes", blank()),
-                    ("prediction_window_seconds", Variant::Int(120)),
-                ]),
-                vec![
-                    text_field("title", "Title", "Will we beat the boss?").required(),
-                    multiline_field(
-                        "outcomes",
-                        "Outcomes (one per line)",
-                        "Yes, easy\nNo, we die",
-                    )
-                    .required(),
-                    int_field(
-                        "prediction_window_seconds",
-                        "Window (seconds)",
-                        120,
-                        30,
-                        1800,
-                    ),
-                ],
+            gated_on(
+                quick_action(
+                    "Start prediction",
+                    "crystal-ball",
+                    QuickActionAccent::AccentPinkLight,
+                    gated,
+                    locked_reason.clone(),
+                    "Predictions",
+                    false,
+                    "twitch.prediction.start",
+                    config([
+                        ("title", blank()),
+                        ("outcomes", blank()),
+                        ("prediction_window_seconds", Variant::Int(120)),
+                    ]),
+                    vec![
+                        text_field("title", "Title", "Will we beat the boss?").required(),
+                        multiline_field(
+                            "outcomes",
+                            "Outcomes (one per line)",
+                            "Yes, easy\nNo, we die",
+                        )
+                        .required(),
+                        int_field(
+                            "prediction_window_seconds",
+                            "Window (seconds)",
+                            120,
+                            30,
+                            1800,
+                        ),
+                    ],
+                ),
+                live.prediction_slot_free(),
             ),
-            quick_action(
-                "Lock prediction",
-                "lock",
-                QuickActionAccent::Warning,
-                gated,
-                locked_reason.clone(),
-                "Predictions",
-                false,
-                "twitch.prediction.lock",
-                config([("prediction_id", blank())]),
-                Vec::new(),
+            gated_on(
+                quick_action(
+                    "Lock prediction",
+                    "lock",
+                    QuickActionAccent::Warning,
+                    gated,
+                    locked_reason.clone(),
+                    "Predictions",
+                    false,
+                    "twitch.prediction.lock",
+                    config([("prediction_id", blank())]),
+                    Vec::new(),
+                ),
+                live.prediction_lockable(),
             ),
-            quick_action(
-                "Resolve / pay out",
-                "trophy",
-                QuickActionAccent::Success,
-                gated,
-                locked_reason.clone(),
-                "Predictions",
-                false,
-                "twitch.prediction.resolve",
-                config([("prediction_id", blank()), ("winning_outcome_id", blank())]),
-                Vec::new(),
+            gated_on(
+                quick_action(
+                    "Resolve / pay out",
+                    "trophy",
+                    QuickActionAccent::Success,
+                    gated,
+                    locked_reason.clone(),
+                    "Predictions",
+                    false,
+                    "twitch.prediction.resolve",
+                    config([("prediction_id", blank()), ("winning_outcome_id", blank())]),
+                    Vec::new(),
+                ),
+                live.prediction_settleable(),
             ),
-            quick_action(
-                "Cancel & refund",
-                "x",
-                QuickActionAccent::Danger,
-                gated,
-                locked_reason.clone(),
-                "Predictions",
-                true,
-                "twitch.prediction.cancel",
-                config([("prediction_id", blank())]),
-                Vec::new(),
+            gated_on(
+                quick_action(
+                    "Cancel & refund",
+                    "x",
+                    QuickActionAccent::Danger,
+                    gated,
+                    locked_reason.clone(),
+                    "Predictions",
+                    true,
+                    "twitch.prediction.cancel",
+                    config([("prediction_id", blank())]),
+                    Vec::new(),
+                ),
+                live.prediction_settleable(),
             ),
             quick_action(
                 "Send message",
@@ -1137,32 +1189,38 @@ impl QuickActions for TwitchIntegrationBundle {
                 config([("target_user_login", blank())]),
                 vec![text_field("target_user_login", "Username", "@trustedmod").required()],
             ),
-            quick_action(
-                "Start raid",
-                "flag",
-                QuickActionAccent::Bits,
-                connected,
-                None,
-                "Raids & ads",
-                false,
-                "twitch.channel.start_raid",
-                config([("to_broadcaster_login", blank())]),
-                vec![
-                    text_field("to_broadcaster_login", "Raid target", "@factorio_streamer")
-                        .required(),
-                ],
+            gated_on(
+                quick_action(
+                    "Start raid",
+                    "flag",
+                    QuickActionAccent::Bits,
+                    connected,
+                    None,
+                    "Raids & ads",
+                    false,
+                    "twitch.channel.start_raid",
+                    config([("to_broadcaster_login", blank())]),
+                    vec![
+                        text_field("to_broadcaster_login", "Raid target", "@factorio_streamer")
+                            .required(),
+                    ],
+                ),
+                live.raid_slot_free(),
             ),
-            quick_action(
-                "Cancel raid",
-                "flag-off",
-                QuickActionAccent::Danger,
-                connected,
-                None,
-                "Raids & ads",
-                true,
-                "twitch.channel.cancel_raid",
-                BTreeMap::new(),
-                Vec::new(),
+            gated_on(
+                quick_action(
+                    "Cancel raid",
+                    "flag-off",
+                    QuickActionAccent::Danger,
+                    connected,
+                    None,
+                    "Raids & ads",
+                    true,
+                    "twitch.channel.cancel_raid",
+                    BTreeMap::new(),
+                    Vec::new(),
+                ),
+                live.raid_in_flight(),
             ),
             quick_action(
                 "Send shoutout",
@@ -1837,6 +1895,7 @@ mod tests {
             &mut reg,
             Arc::new(MockTransport::returning(Ok(serde_json::Value::Null))),
             Arc::new(MockCreds::empty()),
+            TwitchLifecycle::new(),
         )
         .unwrap();
 

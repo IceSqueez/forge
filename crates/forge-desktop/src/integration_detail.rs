@@ -1359,3 +1359,68 @@ fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {
     }
     platform_of(id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The kinds the Twitch EventSub session actually publishes for the entities the quick
+    /// actions gate on; stated independently of the watch list so dropping one is caught.
+    const PUBLISHED_LIFECYCLE_KINDS: [&str; 8] = [
+        "twitch.channel.poll.begin",
+        "twitch.channel.poll.progress",
+        "twitch.channel.poll.end",
+        "twitch.channel.prediction.begin",
+        "twitch.channel.prediction.progress",
+        "twitch.channel.prediction.lock",
+        "twitch.channel.prediction.end",
+        "twitch.channel.raid",
+    ];
+
+    fn event(source: EventSource, kind: &str) -> Event {
+        Event::new(source, kind, serde_json::Value::Null)
+    }
+
+    #[test]
+    fn obs_connection_and_twitch_lifecycle_events_rebuild_the_descriptors() {
+        let mut cases: Vec<(EventSource, &str)> = vec![
+            (EventSource::Obs, "obs.connection.opened"),
+            (EventSource::Obs, "obs.connection.closed"),
+        ];
+        cases.extend(
+            PUBLISHED_LIFECYCLE_KINDS
+                .iter()
+                .map(|kind| (EventSource::Twitch, *kind)),
+        );
+
+        for (source, kind) in cases {
+            assert!(
+                rebuilds_descriptors(&event(source, kind)),
+                "{source:?} / {kind} must trigger a descriptor rebuild"
+            );
+        }
+    }
+
+    #[test]
+    fn unrelated_kinds_and_mismatched_sources_do_not_rebuild_the_descriptors() {
+        let cases = [
+            (EventSource::Twitch, "twitch.chat.message"),
+            (EventSource::Twitch, "twitch.channel.follow"),
+            (EventSource::Twitch, "twitch.channel.poll"),
+            (EventSource::Twitch, "twitch.channel.raid_received"),
+            (EventSource::Twitch, "obs.connection.opened"),
+            (EventSource::Obs, "twitch.channel.poll.begin"),
+            (EventSource::Obs, "obs.scene.changed"),
+            (EventSource::Obs, "obs.connection"),
+            (EventSource::Core, "twitch.channel.raid"),
+            (EventSource::Kick, "obs.connection.opened"),
+        ];
+
+        for (source, kind) in cases {
+            assert!(
+                !rebuilds_descriptors(&event(source, kind)),
+                "{source:?} / {kind} must not trigger a descriptor rebuild"
+            );
+        }
+    }
+}

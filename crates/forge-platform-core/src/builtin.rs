@@ -953,6 +953,33 @@ mod tests {
     }
 
     #[test]
+    fn an_action_runs_unless_it_is_disabled_or_its_target_entity_is_known_absent() {
+        // Why: `Unknown` must stay runnable - lost lifecycle bookkeeping may never block a
+        // run the user needs, only positively-known absence may.
+        let cases = [
+            (true, QuickActionLiveness::Unknown, true),
+            (true, QuickActionLiveness::Live, true),
+            (true, QuickActionLiveness::Absent, false),
+            (false, QuickActionLiveness::Unknown, false),
+            (false, QuickActionLiveness::Live, false),
+            (false, QuickActionLiveness::Absent, false),
+        ];
+        for (enabled, liveness, expected) in cases {
+            let action = QuickAction {
+                enabled,
+                liveness,
+                ..qa_with(qa_template(BTreeMap::new()), Vec::new())
+            };
+
+            assert_eq!(
+                action.is_runnable(),
+                expected,
+                "enabled={enabled} liveness={liveness:?}"
+            );
+        }
+    }
+
+    #[test]
     fn merge_config_prefers_supplied_value_over_field_default() {
         let action = qa_with(
             qa_template(BTreeMap::new()),

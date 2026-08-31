@@ -116,8 +116,10 @@ impl TwitchLifecycle {
     ) {
         let polls = HelixRequest::new(HelixMethod::Get, POLLS_PATH)
             .query("broadcaster_id", broadcaster_id.to_owned());
-        if let Ok(body) = transport.execute(polls).await {
-            let phase = if has_status(&body, STATUS_ACTIVE) {
+        if let Ok(body) = transport.execute(polls).await
+            && let Some(rows) = entity_rows(&body)
+        {
+            let phase = if rows_have_status(rows, STATUS_ACTIVE) {
                 PollPhase::Active
             } else {
                 PollPhase::Absent
@@ -128,10 +130,12 @@ impl TwitchLifecycle {
 
         let predictions = HelixRequest::new(HelixMethod::Get, PREDICTIONS_PATH)
             .query("broadcaster_id", broadcaster_id.to_owned());
-        if let Ok(body) = transport.execute(predictions).await {
-            let phase = if has_status(&body, STATUS_ACTIVE) {
+        if let Ok(body) = transport.execute(predictions).await
+            && let Some(rows) = entity_rows(&body)
+        {
+            let phase = if rows_have_status(rows, STATUS_ACTIVE) {
                 PredictionPhase::Active
-            } else if has_status(&body, STATUS_LOCKED) {
+            } else if rows_have_status(rows, STATUS_LOCKED) {
                 PredictionPhase::Locked
             } else {
                 PredictionPhase::Absent
@@ -149,13 +153,13 @@ fn raid_is_outgoing(event: &serde_json::Value, self_broadcaster_id: &str) -> boo
         .is_some_and(|from| from == self_broadcaster_id)
 }
 
-fn has_status(body: &serde_json::Value, wanted: &str) -> bool {
-    body.get("data")
-        .and_then(|d| d.as_array())
-        .is_some_and(|rows| {
-            rows.iter()
-                .any(|row| row.get("status").and_then(|s| s.as_str()) == Some(wanted))
-        })
+fn entity_rows(body: &serde_json::Value) -> Option<&Vec<serde_json::Value>> {
+    body.get("data").and_then(|d| d.as_array())
+}
+
+fn rows_have_status(rows: &[serde_json::Value], wanted: &str) -> bool {
+    rows.iter()
+        .any(|row| row.get("status").and_then(|s| s.as_str()) == Some(wanted))
 }
 
 #[derive(Debug, Clone, Copy)]

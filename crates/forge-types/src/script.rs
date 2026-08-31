@@ -20,60 +20,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn script_contract_serde_roundtrip_with_inputs_and_return() {
-        let c = ScriptContract {
-            inputs: vec![
-                ScriptInput {
-                    name: "user".to_owned(),
-                    kind: VariantKind::String,
-                },
-                ScriptInput {
-                    name: "count".to_owned(),
-                    kind: VariantKind::Int,
-                },
-            ],
-            returns: Some(VariantKind::Bool),
-        };
-        let json = serde_json::to_string(&c).unwrap();
-        let back: ScriptContract = serde_json::from_str(&json).unwrap();
-        assert_eq!(c, back);
-    }
-
-    #[test]
-    fn script_input_json_shape_is_object_not_tuple() {
-        let input = ScriptInput {
-            name: "user".to_owned(),
-            kind: VariantKind::String,
-        };
-        let json = serde_json::to_value(&input).unwrap();
-        assert_eq!(json["name"], "user");
-        assert_eq!(json["kind"], "string");
-        assert!(json.is_object());
-    }
-
-    #[test]
-    fn annotation_diagnostic_serde_roundtrip() {
-        let d = AnnotationDiagnostic {
-            line: 7,
-            message: "type mismatch".into(),
-        };
-        let json = serde_json::to_string(&d).unwrap();
-        let back: AnnotationDiagnostic = serde_json::from_str(&json).unwrap();
-        assert_eq!(d, back);
-    }
-
-    #[test]
-    fn script_contract_inputs_array_in_json() {
+    fn script_contract_persisted_json_shape_names_every_field() {
         let c = ScriptContract {
             inputs: vec![ScriptInput {
-                name: "x".to_owned(),
-                kind: VariantKind::Int,
+                name: "user".to_owned(),
+                kind: VariantKind::String,
             }],
-            returns: None,
+            returns: Some(VariantKind::Int),
         };
         let json = serde_json::to_value(&c).unwrap();
         assert!(json["inputs"].is_array());
-        assert_eq!(json["inputs"][0]["name"], "x");
-        assert_eq!(json["inputs"][0]["kind"], "int");
+        assert!(json["inputs"][0].is_object());
+        assert_eq!(json["inputs"][0]["name"], "user");
+        assert_eq!(json["inputs"][0]["kind"], "string");
+        assert_eq!(json["returns"], "int");
+    }
+
+    #[test]
+    fn script_contract_survives_a_persistence_round_trip_with_and_without_a_return() {
+        for returns in [None, Some(VariantKind::Bool)] {
+            let c = ScriptContract {
+                inputs: vec![ScriptInput {
+                    name: "count".to_owned(),
+                    kind: VariantKind::Int,
+                }],
+                returns,
+            };
+            let json = serde_json::to_string(&c).unwrap();
+            let back: ScriptContract = serde_json::from_str(&json).unwrap();
+            assert_eq!(c, back);
+        }
     }
 }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventSource};
+use forge_events::{Event, EventSource, EventsError};
 use forge_registry::{CancelSignal, ChatTriggerFamily, TriggerRegistry, effective_config};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
@@ -67,6 +67,19 @@ impl TriggerEvaluator {
             match self.subscription.recv().await {
                 Ok(event) => self.handle(event).await,
                 Err(_) => break,
+            }
+        }
+        self.drain_backlog().await;
+    }
+
+    /// Events published before the cancel still dispatch; only what arrives after it is dropped.
+    async fn drain_backlog(&mut self) {
+        loop {
+            match self.subscription.try_recv() {
+                Ok(Some(event)) => self.handle(event).await,
+                Ok(None) => return,
+                Err(EventsError::LaggingReceiver) => continue,
+                Err(_) => return,
             }
         }
     }

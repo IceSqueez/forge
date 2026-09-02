@@ -325,7 +325,7 @@ async fn select_and_start(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub(crate) mod tests {
     use forge_events::EventPublisher;
 
@@ -347,7 +347,7 @@ pub(crate) mod tests {
             self.events.lock().unwrap().iter().any(|e| e.kind == kind)
         }
 
-        fn find_kind(&self, kind: &str) -> Option<forge_events::Event> {
+        pub(crate) fn find_kind(&self, kind: &str) -> Option<forge_events::Event> {
             self.events
                 .lock()
                 .unwrap()
@@ -356,7 +356,7 @@ pub(crate) mod tests {
                 .cloned()
         }
 
-        fn count_kind(&self, kind: &str) -> usize {
+        pub(crate) fn count_kind(&self, kind: &str) -> usize {
             self.events
                 .lock()
                 .unwrap()
@@ -398,8 +398,55 @@ pub(crate) mod tests {
         }
     }
 
+    async fn wait_for_kind(publisher: &RecordingPublisher, kind: &str) {
+        for _ in 0..10_000 {
+            if publisher.has_kind(kind) {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("{kind} was never published");
+    }
+
     fn combo(s: &str) -> HotkeyCombo {
         HotkeyCombo::parse(s).unwrap()
+    }
+
+    async fn send_edge(
+        tx: &mpsc::Sender<crate::backend::HotkeyFiredEvent>,
+        id: HotkeyId,
+        c: &HotkeyCombo,
+        edge: crate::backend::HotkeyEdge,
+    ) {
+        tx.send(crate::backend::HotkeyFiredEvent {
+            id,
+            combo: c.clone(),
+            timestamp_us: 0,
+            edge,
+        })
+        .await
+        .unwrap();
+        drain_fired(tx).await;
+    }
+
+    async fn press(
+        tx: &mpsc::Sender<crate::backend::HotkeyFiredEvent>,
+        id: HotkeyId,
+        c: &HotkeyCombo,
+    ) {
+        send_edge(tx, id, c, crate::backend::HotkeyEdge::Press).await;
+    }
+
+    async fn release(
+        tx: &mpsc::Sender<crate::backend::HotkeyFiredEvent>,
+        id: HotkeyId,
+        c: &HotkeyCombo,
+    ) {
+        send_edge(tx, id, c, crate::backend::HotkeyEdge::Release).await;
+    }
+
+    fn released_event(publisher: &RecordingPublisher) -> forge_events::Event {
+        publisher.find_kind("hotkey.global.released").unwrap()
     }
 
     #[tokio::test]
@@ -474,6 +521,7 @@ pub(crate) mod tests {
                 id,
                 combo: c,
                 timestamp_us: 0,
+                edge: crate::backend::HotkeyEdge::Press,
             })
             .await
             .unwrap();
@@ -600,6 +648,7 @@ pub(crate) mod tests {
                 id,
                 combo: c,
                 timestamp_us: 0,
+                edge: crate::backend::HotkeyEdge::Press,
             })
             .await
             .unwrap();
@@ -623,6 +672,7 @@ pub(crate) mod tests {
                 id,
                 combo: c,
                 timestamp_us: 0,
+                edge: crate::backend::HotkeyEdge::Press,
             })
             .await
             .unwrap();
@@ -737,15 +787,21 @@ pub(crate) mod tests {
         let publisher = RecordingPublisher::new();
         let (backend, inject_tx) = MockPortalBackend::new();
         let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
-        let c = combo("Ctrl+F1");
-        let id = client.register(c.clone()).await.unwrap();
 
-        for _ in 0..5 {
+        let mut registered = Vec::new();
+        for name in ["Ctrl+F1", "Ctrl+F2", "Ctrl+F3", "Ctrl+F4", "Ctrl+F5"] {
+            let c = combo(name);
+            let id = client.register(c.clone()).await.unwrap();
+            registered.push((id, c));
+        }
+
+        for (id, c) in &registered {
             inject_tx
                 .send(crate::backend::HotkeyFiredEvent {
-                    id,
+                    id: *id,
                     combo: c.clone(),
                     timestamp_us: 0,
+                    edge: crate::backend::HotkeyEdge::Press,
                 })
                 .await
                 .unwrap();
@@ -753,6 +809,203 @@ pub(crate) mod tests {
         client.disable().await.unwrap();
 
         assert_eq!(publisher.count_kind("hotkey.global.pressed"), 5);
+    }
+
+    #[tokio::test]
+    async fn a_repeat_press_of_a_held_combo_publishes_no_second_press() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        press(&inject_tx, id, &c).await;
+        press(&inject_tx, id, &c).await;
+
+        assert_eq!(publisher.count_kind("hotkey.global.pressed"), 1);
+    }
+
+    #[tokio::test]
+    async fn only_the_press_that_opens_a_hold_records_a_health_trigger() {
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        press(&inject_tx, id, &c).await;
+        press(&inject_tx, id, &c).await;
+        release(&inject_tx, id, &c).await;
+
+        let snap = client.health_state.lock().unwrap();
+        assert_eq!(snap.recent_triggers.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_observed_release_is_caused_by_its_press_and_carries_the_held_duration() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        press(&inject_tx, id, &c).await;
+        let press_id = publisher.find_kind("hotkey.global.pressed").unwrap().id;
+        release(&inject_tx, id, &c).await;
+
+        let ev = released_event(&publisher);
+        assert_eq!(ev.caused_by, Some(press_id));
+        assert_eq!(ev.payload["synthesized"], false);
+        assert_eq!(ev.payload["combo"], "Ctrl+F1");
+        assert!(ev.payload["hold_ms"].as_u64().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_release_with_no_open_hold_publishes_nothing() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        release(&inject_tx, id, &c).await;
+
+        assert!(!publisher.has_kind("hotkey.global.released"));
+    }
+
+    #[tokio::test]
+    async fn a_press_after_a_release_opens_a_new_hold_and_publishes_again() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        press(&inject_tx, id, &c).await;
+        release(&inject_tx, id, &c).await;
+        press(&inject_tx, id, &c).await;
+
+        assert_eq!(publisher.count_kind("hotkey.global.pressed"), 2);
+    }
+
+    #[tokio::test]
+    async fn disabling_the_engine_closes_an_open_hold_with_a_synthesized_release() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new_delivery_gate_only();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+        press(&inject_tx, id, &c).await;
+
+        client.disable().await.unwrap();
+
+        assert_eq!(released_event(&publisher).payload["synthesized"], true);
+    }
+
+    #[tokio::test]
+    async fn unregistering_a_held_combo_closes_its_hold_with_a_synthesized_release() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+        press(&inject_tx, id, &c).await;
+
+        client.unregister(id).await.unwrap();
+
+        assert_eq!(released_event(&publisher).payload["synthesized"], true);
+    }
+
+    #[tokio::test]
+    async fn a_stale_release_arriving_after_an_un_sticking_publishes_no_second_release() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+        press(&inject_tx, id, &c).await;
+
+        client.unregister(id).await.unwrap();
+        release(&inject_tx, id, &c).await;
+
+        assert_eq!(publisher.count_kind("hotkey.global.released"), 1);
+    }
+
+    #[tokio::test]
+    async fn a_backend_restart_notice_closes_an_open_hold_with_a_synthesized_release() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let restart_tx = backend.restart_tx.clone();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+        press(&inject_tx, id, &c).await;
+
+        restart_tx.send(()).await.unwrap();
+        wait_for_kind(&publisher, "hotkey.global.released").await;
+
+        assert_eq!(released_event(&publisher).payload["synthesized"], true);
+    }
+
+    #[tokio::test]
+    async fn supervisor_teardown_closes_an_open_hold_with_a_synthesized_release() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+        press(&inject_tx, id, &c).await;
+
+        drop(inject_tx);
+        wait_for_kind(&publisher, "hotkey.global.released").await;
+
+        assert_eq!(released_event(&publisher).payload["synthesized"], true);
+    }
+
+    #[tokio::test]
+    async fn release_open_holds_closes_an_open_hold_with_a_synthesized_release() {
+        let publisher = RecordingPublisher::new();
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+        press(&inject_tx, id, &c).await;
+
+        client.release_open_holds();
+
+        assert_eq!(released_event(&publisher).payload["synthesized"], true);
+    }
+
+    #[tokio::test]
+    async fn only_a_synthesized_release_stamps_the_health_snapshot() {
+        let (backend, inject_tx) = MockPortalBackend::new();
+        let client = start_supervised(backend, noop_publisher());
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+
+        press(&inject_tx, id, &c).await;
+        release(&inject_tx, id, &c).await;
+        assert!(client.last_synthesized_release().is_none());
+
+        press(&inject_tx, id, &c).await;
+        client.release_open_holds();
+        assert!(client.last_synthesized_release().is_some());
+    }
+
+    #[tokio::test]
+    async fn a_zero_second_hold_ceiling_means_disabled_rather_than_instant_expiry() {
+        // Why: Settings hands the ceiling through as a raw seconds value, and the atomic encodes
+        // "off" as 0. Reading 0 as a zero-length ceiling would close every hold on the next sweep.
+        let client = HotkeyClient::new_for_test(Some(true));
+
+        for (secs, expected) in [
+            (Some(0), None),
+            (None, None),
+            (Some(1), Some(Duration::from_secs(1))),
+            (Some(30), Some(Duration::from_secs(30))),
+        ] {
+            client.set_hold_ceiling(secs);
+            assert_eq!(client.hold_ceiling(), expected, "ceiling for {secs:?}");
+        }
     }
 
     #[tokio::test]

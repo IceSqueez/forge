@@ -384,3 +384,94 @@ fn key_code_to_name(code: u16) -> Option<&'static str> {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    const CTRL: u16 = 29;
+    const F1: u16 = 59;
+    const X: u16 = 45;
+    const AUTO_REPEAT: i32 = 2;
+
+    fn key_event_bytes(code: u16, value: i32) -> [u8; INPUT_EVENT_SIZE] {
+        let mut raw = [0u8; INPUT_EVENT_SIZE];
+        raw[16..18].copy_from_slice(&EV_KEY.to_ne_bytes());
+        raw[18..20].copy_from_slice(&code.to_ne_bytes());
+        raw[20..24].copy_from_slice(&value.to_ne_bytes());
+        raw
+    }
+
+    async fn feed(script: &[(u16, i32)], combos: &[(HotkeyId, &str)]) -> Vec<HotkeyFiredEvent> {
+        let modifier_state = Mutex::new(HashSet::new());
+        let held_keys: HeldKeys = Arc::new(Mutex::new(HashMap::new()));
+        let registered = Arc::new(RwLock::new(
+            combos
+                .iter()
+                .map(|(id, s)| (*id, HotkeyCombo::parse(s).unwrap()))
+                .collect::<HashMap<HotkeyId, HotkeyCombo>>(),
+        ));
+        let (fired_tx, mut fired_rx) = mpsc::channel(16);
+
+        for (code, value) in script {
+            handle_key_event(
+                &key_event_bytes(*code, *value),
+                &modifier_state,
+                &held_keys,
+                &registered,
+                &fired_tx,
+            )
+            .await;
+        }
+
+        drop(fired_tx);
+        let mut fired = Vec::new();
+        while let Some(event) = fired_rx.recv().await {
+            fired.push(event);
+        }
+        fired
+    }
+
+    #[tokio::test]
+    async fn a_key_up_resolves_its_release_from_the_held_map_after_the_modifier_lifted() {
+        let id = HotkeyId(7);
+        let script = [
+            (CTRL, KEY_DOWN),
+            (F1, KEY_DOWN),
+            (CTRL, KEY_UP),
+            (F1, KEY_UP),
+        ];
+
+        let fired = feed(&script, &[(id, "Ctrl+F1")]).await;
+
+        let edges: Vec<(HotkeyId, &str, HotkeyEdge)> = fired
+            .iter()
+            .map(|e| (e.id, e.combo.as_str(), e.edge))
+            .collect();
+        assert_eq!(
+            edges,
+            vec![
+                (id, "Ctrl+F1", HotkeyEdge::Press),
+                (id, "Ctrl+F1", HotkeyEdge::Release),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn no_edge_leaves_the_backend_for_auto_repeat_or_an_unmatched_key_up() {
+        let id = HotkeyId(7);
+        let cases = [
+            (
+                "auto-repeat while the combo is held",
+                vec![(CTRL, KEY_DOWN), (F1, KEY_DOWN), (F1, AUTO_REPEAT)],
+                1,
+            ),
+            ("key-up for a key that never matched", vec![(X, KEY_UP)], 0),
+        ];
+
+        for (case, script, expected) in cases {
+            let fired = feed(&script, &[(id, "Ctrl+F1")]).await;
+            assert_eq!(fired.len(), expected, "wrong edge count for {case}");
+        }
+    }
+}

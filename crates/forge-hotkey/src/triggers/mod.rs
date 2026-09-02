@@ -18,10 +18,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hotkey_pressed_id_present() {
+    fn both_hotkey_edge_trigger_ids_are_present() {
         let mut reg = TriggerRegistry::new();
         register_hotkey_triggers(&mut reg).unwrap();
-        assert!(reg.get("hotkey.global.pressed").is_some());
+        for id in ["hotkey.global.pressed", "hotkey.global.released"] {
+            assert!(reg.get(id).is_some(), "missing trigger: {id}");
+        }
     }
 
     #[test]

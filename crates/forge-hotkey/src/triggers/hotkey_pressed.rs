@@ -186,6 +186,16 @@ mod tests {
                 false,
             ),
             (
+                "the release half of the same hold",
+                BTreeMap::new(),
+                Event::new(
+                    EventSource::Hotkey,
+                    "hotkey.global.released",
+                    json!({ "combo": "Ctrl+F1", "id": 1u32, "hold_ms": 10u64 }),
+                ),
+                false,
+            ),
+            (
                 "hotkey kind forged on another source",
                 BTreeMap::new(),
                 Event::new(
@@ -218,22 +228,12 @@ mod tests {
     }
 
     #[test]
-    fn condition_display_shows_combo() {
-        let cfg = BTreeMap::from([(
-            "combo".to_owned(),
-            Variant::String("Ctrl+Shift+A".to_owned()),
-        )]);
-        assert_eq!(
-            HotkeyPressedDescriptor.condition_display(&cfg),
-            "Ctrl+Shift+A"
-        );
-    }
-
-    #[test]
-    fn condition_display_any_when_no_config() {
-        assert_eq!(
-            HotkeyPressedDescriptor.condition_display(&BTreeMap::new()),
-            "any hotkey"
-        );
+    fn condition_display_falls_back_to_any_hotkey_when_no_combo_is_configured() {
+        for (config, expected) in [
+            (combo_config("Ctrl+Shift+A"), "Ctrl+Shift+A"),
+            (BTreeMap::new(), "any hotkey"),
+        ] {
+            assert_eq!(HotkeyPressedDescriptor.condition_display(&config), expected);
+        }
     }
 }

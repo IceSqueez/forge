@@ -144,3 +144,64 @@ fn now_us() -> u64 {
         .as_micros() as u64
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use forge_events::EventPublisher;
+
+    use super::*;
+    use crate::backend::tests::MockPortalBackend;
+    use crate::client::tests::{RecordingPublisher, start_supervised};
+
+    fn backdate(client: &HotkeyClient, id: HotkeyId, secs: u64) {
+        if secs == 0 {
+            return;
+        }
+        let mut holds = client.holds.lock().unwrap();
+        let hold = holds.get_mut(&id).unwrap();
+        hold.started_at = hold
+            .started_at
+            .checked_sub(Duration::from_secs(secs))
+            .expect("monotonic clock too young to backdate this hold");
+    }
+
+    #[tokio::test]
+    async fn a_hold_is_closed_by_the_ceiling_only_once_it_has_reached_it() {
+        for (age_secs, ceiling_secs, should_close) in [
+            (0, Some(1), false),
+            (1, Some(1), true),
+            (3, Some(1), true),
+            (3, None, false),
+        ] {
+            let publisher = RecordingPublisher::new();
+            let (backend, _tx) = MockPortalBackend::new();
+            let client =
+                start_supervised(backend, Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+            client.set_hold_ceiling(ceiling_secs);
+
+            let id = HotkeyId(1);
+            assert!(open(&client, id, "Ctrl+F1".to_owned(), 0));
+            backdate(&client, id, age_secs);
+
+            close_expired(&client);
+
+            let case = format!("{age_secs}s held against a {ceiling_secs:?}s ceiling");
+            assert_eq!(
+                publisher.has_kind("hotkey.global.released"),
+                should_close,
+                "wrong verdict for {case}"
+            );
+            if should_close {
+                let ev = publisher.find_kind("hotkey.global.released").unwrap();
+                assert_eq!(ev.payload["synthesized"], true, "flag for {case}");
+                assert!(
+                    ev.payload["hold_ms"].as_u64().unwrap() >= age_secs * 1000,
+                    "hold_ms understates {case}"
+                );
+            }
+        }
+    }
+}

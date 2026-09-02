@@ -20,17 +20,17 @@ impl Default for HotkeyConfig {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
     #[test]
-    fn config_serde_roundtrip() {
-        let cfg = HotkeyConfig {
-            app_name: "myapp".to_owned(),
-        };
-        let json = serde_json::to_string(&cfg).unwrap();
-        let back: HotkeyConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.app_name, cfg.app_name);
+    fn the_hold_ceiling_ships_switched_on() {
+        // Why: shipping the ceiling off by default leaves a swallowed key-up holding a
+        // push-to-talk open forever. Flipping this default is a product decision, not a tweak.
+        assert_eq!(
+            HotkeyConfig::default().hold_ceiling_secs,
+            Some(DEFAULT_HOLD_CEILING_SECS)
+        );
+        assert_ne!(DEFAULT_HOLD_CEILING_SECS, 0);
     }
 }

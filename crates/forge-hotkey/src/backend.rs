@@ -85,8 +85,10 @@ pub(crate) mod tests {
         pub(crate) fail_on: Arc<Mutex<HashSet<String>>>,
         pub(crate) register_calls: Arc<AtomicUsize>,
         pub(crate) unregister_calls: Arc<AtomicUsize>,
+        pub(crate) restart_tx: mpsc::Sender<()>,
         gate_only: bool,
         fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
+        restart_rx_slot: Mutex<Option<mpsc::Receiver<()>>>,
     }
 
     impl MockPortalBackend {
@@ -100,13 +102,16 @@ pub(crate) mod tests {
 
         fn with_gate(gate_only: bool) -> (Self, mpsc::Sender<HotkeyFiredEvent>) {
             let (tx, rx) = mpsc::channel(64);
+            let (restart_tx, restart_rx) = mpsc::channel(4);
             let mock = Self {
                 registered: Arc::new(Mutex::new(HashMap::new())),
                 fail_on: Arc::new(Mutex::new(HashSet::new())),
                 register_calls: Arc::new(AtomicUsize::new(0)),
                 unregister_calls: Arc::new(AtomicUsize::new(0)),
+                restart_tx,
                 gate_only,
                 fired_rx_slot: Mutex::new(Some(rx)),
+                restart_rx_slot: Mutex::new(Some(restart_rx)),
             };
             (mock, tx)
         }
@@ -139,6 +144,10 @@ pub(crate) mod tests {
 
         fn delivery_gate_only(&self) -> bool {
             self.gate_only
+        }
+
+        fn restart_rx(&self) -> Option<mpsc::Receiver<()>> {
+            self.restart_rx_slot.lock().unwrap().take()
         }
     }
 

@@ -217,10 +217,6 @@ impl OutputPreset {
             _ => String::new(),
         }
     }
-
-    fn disabled(self) -> bool {
-        false
-    }
 }
 
 fn parse_max_duration(raw: &str) -> Option<u32> {
@@ -329,7 +325,7 @@ impl AddFilterModal {
     }
 
     fn set_output_preset(&mut self, preset: OutputPreset, cx: &mut Context<Self>) {
-        if preset.disabled() || preset == self.output_preset {
+        if preset == self.output_preset {
             return;
         }
         self.output_preset = preset;
@@ -378,7 +374,7 @@ impl AddFilterModal {
     fn is_valid(&self, cx: &App) -> bool {
         match self.stage {
             ModalStage::Skip => !self.param_invalid(cx),
-            ModalStage::Output => !self.output_preset.disabled() && !self.param_invalid(cx),
+            ModalStage::Output => !self.param_invalid(cx),
             ModalStage::Blocklist => !self.blocklist_words.read(cx).content().trim().is_empty(),
             ModalStage::Replace => !self.replace_from.read(cx).content().trim().is_empty(),
         }
@@ -1683,7 +1679,6 @@ impl AddFilterModal {
         let mut list = div().flex().flex_col().gap(px(5.0));
         for preset in OUTPUT_PRESETS {
             let selected = self.output_preset == preset;
-            let disabled = preset.disabled();
             let id = SharedString::from(format!("filt-modal-output-{}", preset.key()));
             list = list.child(
                 radio_row(
@@ -1693,7 +1688,6 @@ impl AddFilterModal {
                     radio_row_label(preset.label(), Some(preset.hint()), selected, palette),
                     palette,
                 )
-                .disabled(disabled)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.set_output_preset(preset, cx)
                 })),

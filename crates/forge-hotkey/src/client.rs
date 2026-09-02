@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -12,6 +12,7 @@ use crate::combo::HotkeyCombo;
 use crate::config::HotkeyConfig;
 use crate::error::HotkeyError;
 use crate::health::{HealthTx, HotkeyHealthSnapshot, make_health_state};
+use crate::hold::{self, HoldMap};
 use crate::supervisor::{self, SupervisorCommand};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
@@ -35,6 +36,9 @@ pub struct HotkeyClient {
     pub(crate) health_tx: HealthTx,
     pub(crate) portal_available: Option<bool>,
     pub(crate) enabled: Arc<AtomicBool>,
+    pub(crate) holds: Mutex<HoldMap>,
+    /// Zero disables the ceiling; any other value is the maximum hold in seconds.
+    hold_ceiling_secs: AtomicU64,
     control_tx: mpsc::Sender<SupervisorCommand>,
 }
 
@@ -47,6 +51,7 @@ impl HotkeyClient {
     ) -> Arc<Self> {
         let (health_tx, health_state) = make_health_state();
         let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
+        let hold_ceiling_secs = AtomicU64::new(config.hold_ceiling_secs.unwrap_or(0));
 
         let client = Arc::new(Self {
             id: BuiltinId::new("hotkey"),
@@ -60,14 +65,17 @@ impl HotkeyClient {
             health_tx,
             portal_available,
             enabled: Arc::new(AtomicBool::new(true)),
+            holds: Mutex::new(HoldMap::new()),
+            hold_ceiling_secs,
             control_tx,
         });
 
         let fired_rx = client.backend.fired_rx();
         if let Some(rx) = fired_rx {
+            let restart_rx = client.backend.restart_rx();
             let c = Arc::clone(&client);
             tokio::spawn(async move {
-                supervisor::run_supervisor(c, rx, control_rx).await;
+                supervisor::run_supervisor(c, rx, restart_rx, control_rx).await;
             });
         }
 
@@ -128,6 +136,8 @@ impl HotkeyClient {
 
         let combo_str = combo.as_str().to_owned();
 
+        hold::close_synthesized(self, id);
+
         if self.os_registration_active() {
             self.backend.unregister(id)?;
         }
@@ -166,6 +176,24 @@ impl HotkeyClient {
         self.enabled.load(Ordering::Relaxed)
     }
 
+    pub fn hold_ceiling(&self) -> Option<Duration> {
+        match self.hold_ceiling_secs.load(Ordering::Relaxed) {
+            0 => None,
+            secs => Some(Duration::from_secs(secs)),
+        }
+    }
+
+    pub fn set_hold_ceiling(&self, secs: Option<u64>) {
+        self.hold_ceiling_secs
+            .store(secs.unwrap_or(0), Ordering::Relaxed);
+    }
+
+    /// Closes every open hold with a synthesized release so a held combo cannot outlive the
+    /// process; call it on app shutdown before the runtime stops draining the bus.
+    pub fn release_open_holds(&self) {
+        hold::close_all_synthesized(self);
+    }
+
     fn os_registration_active(&self) -> bool {
         self.enabled.load(Ordering::Relaxed) || self.backend.delivery_gate_only()
     }
@@ -188,6 +216,13 @@ impl HotkeyClient {
 
     pub fn portal_available(&self) -> Option<bool> {
         self.portal_available
+    }
+
+    pub fn last_synthesized_release(&self) -> Option<time::OffsetDateTime> {
+        self.health_state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .last_synthesized_release_at
     }
 
     #[cfg(test)]
@@ -215,6 +250,10 @@ impl HotkeyClient {
             health_tx,
             portal_available,
             enabled: Arc::new(AtomicBool::new(true)),
+            holds: Mutex::new(HoldMap::new()),
+            hold_ceiling_secs: AtomicU64::new(
+                HotkeyConfig::default().hold_ceiling_secs.unwrap_or(0),
+            ),
             control_tx,
         })
     }

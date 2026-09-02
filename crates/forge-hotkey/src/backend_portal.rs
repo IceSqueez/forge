@@ -7,13 +7,14 @@ use tokio::sync::mpsc;
 use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 
 pub(crate) struct PortalBackend {
     cmd_tx: mpsc::Sender<PortalCmd>,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
+    restart_rx_slot: Mutex<Option<mpsc::Receiver<()>>>,
 }
 
 enum PortalCmd {
@@ -45,6 +46,7 @@ impl PortalBackend {
 
         let (cmd_tx, cmd_rx) = mpsc::channel::<PortalCmd>(64);
         let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(64);
+        let (restart_notice_tx, restart_notice_rx) = mpsc::channel::<()>(4);
 
         tokio::spawn(run_portal_task(
             conn,
@@ -52,11 +54,13 @@ impl PortalBackend {
             app_name.to_owned(),
             cmd_rx,
             fired_tx,
+            restart_notice_tx,
         ));
 
         Ok(Self {
             cmd_tx,
             fired_rx_slot: Mutex::new(Some(fired_rx)),
+            restart_rx_slot: Mutex::new(Some(restart_notice_rx)),
         })
     }
 }
@@ -83,6 +87,13 @@ impl HotkeyBackend for PortalBackend {
 
     fn delivery_gate_only(&self) -> bool {
         true
+    }
+
+    fn restart_rx(&self) -> Option<mpsc::Receiver<()>> {
+        self.restart_rx_slot
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take()
     }
 }
 
@@ -197,24 +208,25 @@ async fn run_portal_task(
     app_name: String,
     mut cmd_rx: mpsc::Receiver<PortalCmd>,
     fired_tx: mpsc::Sender<HotkeyFiredEvent>,
+    restart_notice_tx: mpsc::Sender<()>,
 ) {
     let mut registered: HashMap<HotkeyId, HotkeyCombo> = HashMap::new();
     let mut combo_to_id: HashMap<String, HotkeyId> = HashMap::new();
 
-    let (activated_tx, mut activated_rx) = mpsc::channel::<(String, u64)>(64);
+    let (edge_tx, mut edge_rx) = mpsc::channel::<(String, u64, HotkeyEdge)>(64);
     let (restart_tx, mut restart_rx) = mpsc::channel::<()>(4);
 
     let conn_clone = conn.clone();
     let session_path_clone = session_path.clone();
     let app_name_clone = app_name.clone();
-    let activated_tx_clone = activated_tx.clone();
+    let edge_tx_clone = edge_tx.clone();
     let restart_tx_clone = restart_tx.clone();
 
     tokio::spawn(signal_listener_task(
         conn_clone,
         session_path_clone,
         app_name_clone,
-        activated_tx_clone,
+        edge_tx_clone,
         restart_tx_clone,
     ));
 
@@ -236,7 +248,7 @@ async fn run_portal_task(
                     None => break,
                 }
             }
-            Some((shortcut_id, timestamp)) = activated_rx.recv() => {
+            Some((shortcut_id, timestamp, edge)) = edge_rx.recv() => {
                 if let Some(&id) = combo_to_id.get(&shortcut_id)
                     && let Ok(combo) = HotkeyCombo::parse(&shortcut_id)
                 {
@@ -244,20 +256,22 @@ async fn run_portal_task(
                         id,
                         combo,
                         timestamp_us: timestamp,
+                        edge,
                     }).await;
                 }
             }
             Some(()) = restart_rx.recv() => {
                 tracing::info!("portal daemon restarted - recreating session");
+                let _ = restart_notice_tx.send(()).await;
                 let conn_clone = conn.clone();
                 let app_name_clone = app_name.clone();
-                let activated_tx_clone = activated_tx.clone();
+                let edge_tx_clone = edge_tx.clone();
                 let restart_tx_clone = restart_tx.clone();
                 tokio::spawn(signal_listener_task(
                     conn_clone,
                     session_path.clone(),
                     app_name_clone,
-                    activated_tx_clone,
+                    edge_tx_clone,
                     restart_tx_clone,
                 ));
                 bind_all_shortcuts(&conn, &session_path, &registered).await;
@@ -270,7 +284,7 @@ async fn signal_listener_task(
     conn: Connection,
     _session_path: OwnedObjectPath,
     _app_name: String,
-    activated_tx: mpsc::Sender<(String, u64)>,
+    edge_tx: mpsc::Sender<(String, u64, HotkeyEdge)>,
     restart_tx: mpsc::Sender<()>,
 ) {
     use tokio_stream::StreamExt as TokioStreamExt;
@@ -306,6 +320,14 @@ async fn signal_listener_task(
         }
     };
 
+    let deactivated_stream = match activated_proxy.receive_signal("Deactivated").await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to subscribe to Deactivated signal");
+            return;
+        }
+    };
+
     let name_owner_stream = match dbus_proxy.receive_name_owner_changed().await {
         Ok(s) => s,
         Err(e) => {
@@ -315,16 +337,21 @@ async fn signal_listener_task(
     };
 
     let mut activated_stream = std::pin::pin!(activated_stream);
+    let mut deactivated_stream = std::pin::pin!(deactivated_stream);
     let mut name_owner_stream = std::pin::pin!(name_owner_stream);
 
     loop {
         tokio::select! {
             maybe_msg = TokioStreamExt::next(&mut activated_stream) => {
                 let Some(msg) = maybe_msg else { break };
-                let body: Result<(OwnedObjectPath, String, u64, HashMap<String, OwnedValue>), _> =
-                    msg.body().deserialize();
-                if let Ok((_session, shortcut_id, timestamp, _opts)) = body {
-                    let _ = activated_tx.send((shortcut_id, timestamp)).await;
+                if let Some((shortcut_id, timestamp)) = parse_shortcut_signal(&msg) {
+                    let _ = edge_tx.send((shortcut_id, timestamp, HotkeyEdge::Press)).await;
+                }
+            }
+            maybe_msg = TokioStreamExt::next(&mut deactivated_stream) => {
+                let Some(msg) = maybe_msg else { break };
+                if let Some((shortcut_id, timestamp)) = parse_shortcut_signal(&msg) {
+                    let _ = edge_tx.send((shortcut_id, timestamp, HotkeyEdge::Release)).await;
                 }
             }
             maybe_change = TokioStreamExt::next(&mut name_owner_stream) => {
@@ -339,6 +366,13 @@ async fn signal_listener_task(
             }
         }
     }
+}
+
+fn parse_shortcut_signal(msg: &zbus::Message) -> Option<(String, u64)> {
+    let body: (OwnedObjectPath, String, u64, HashMap<String, OwnedValue>) =
+        msg.body().deserialize().ok()?;
+    let (_session, shortcut_id, timestamp, _opts) = body;
+    Some((shortcut_id, timestamp))
 }
 
 async fn bind_all_shortcuts(

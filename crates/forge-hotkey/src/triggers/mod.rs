@@ -1,11 +1,14 @@
 mod hotkey_pressed;
+mod hotkey_released;
 
 pub use hotkey_pressed::HotkeyPressedDescriptor;
+pub use hotkey_released::HotkeyReleasedDescriptor;
 
 use forge_registry::{RegistryError, TriggerRegistry};
 
 pub fn register_hotkey_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
     reg.register(Box::new(HotkeyPressedDescriptor))?;
+    reg.register(Box::new(HotkeyReleasedDescriptor))?;
     Ok(())
 }
 

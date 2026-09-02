@@ -26,9 +26,14 @@ pub(crate) struct HotkeyHealthSnapshot {
     pub(crate) last_triggered_combo: Option<String>,
     pub(crate) conflict_count: usize,
     pub(crate) recent_triggers: VecDeque<TriggerRecord>,
+    pub(crate) last_synthesized_release_at: Option<OffsetDateTime>,
 }
 
 impl HotkeyHealthSnapshot {
+    pub(crate) fn record_synthesized_release(&mut self) {
+        self.last_synthesized_release_at = Some(OffsetDateTime::now_utc());
+    }
+
     pub(crate) fn record_trigger(&mut self, combo: String) {
         let now = OffsetDateTime::now_utc();
         self.last_triggered_at = Some(now);

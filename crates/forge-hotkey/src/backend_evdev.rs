@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 
@@ -30,6 +30,8 @@ enum EvdevCmd {
     Unregister(HotkeyId),
 }
 
+type HeldKeys = Arc<Mutex<HashMap<u16, (HotkeyId, HotkeyCombo)>>>;
+
 impl EvdevBackend {
     pub(crate) async fn try_new() -> Result<Self, HotkeyError> {
         let devices = discover_input_devices().await?;
@@ -42,13 +44,15 @@ impl EvdevBackend {
         let (cmd_tx, cmd_rx) = mpsc::channel::<EvdevCmd>(64);
         let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(64);
         let modifier_state: Arc<Mutex<HashSet<u16>>> = Arc::new(Mutex::new(HashSet::new()));
+        let held_keys: HeldKeys = Arc::new(Mutex::new(HashMap::new()));
 
         for device_path in devices {
             let modifiers = Arc::clone(&modifier_state);
+            let held = Arc::clone(&held_keys);
             let reg = Arc::clone(&registered);
             let tx = fired_tx.clone();
             tokio::spawn(async move {
-                read_device_events(device_path, modifiers, reg, tx).await;
+                read_device_events(device_path, modifiers, held, reg, tx).await;
             });
         }
 
@@ -138,6 +142,7 @@ fn open_device_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
 async fn read_device_events(
     path: PathBuf,
     modifier_state: Arc<Mutex<HashSet<u16>>>,
+    held_keys: HeldKeys,
     registered: Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
     fired_tx: mpsc::Sender<HotkeyFiredEvent>,
 ) {
@@ -167,7 +172,7 @@ async fn read_device_events(
 
         // chunks_exact guards against acting on a partial trailing chunk.
         for raw in buf[..read].chunks_exact(INPUT_EVENT_SIZE) {
-            handle_key_event(raw, &modifier_state, &registered, &fired_tx).await;
+            handle_key_event(raw, &modifier_state, &held_keys, &registered, &fired_tx).await;
         }
     }
 }
@@ -175,6 +180,7 @@ async fn read_device_events(
 async fn handle_key_event(
     raw: &[u8],
     modifier_state: &Mutex<HashSet<u16>>,
+    held_keys: &HeldKeys,
     registered: &Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
     fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
 ) {
@@ -193,16 +199,70 @@ async fn handle_key_event(
         } else if value == KEY_UP {
             state.remove(&modifier);
         }
-    } else if value == KEY_DOWN
-        && let Some(key_name) = key_code_to_name(code)
-    {
-        let modifiers_held: HashSet<u16> = modifier_state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .clone();
-        let combo_str = build_combo_string(&modifiers_held, key_name);
-        check_and_fire(&combo_str, registered, fired_tx).await;
+    } else if let Some(key_name) = key_code_to_name(code) {
+        if value == KEY_DOWN {
+            let modifiers_held: HashSet<u16> = modifier_state
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            let combo_str = build_combo_string(&modifiers_held, key_name);
+            press_key(code, &combo_str, held_keys, registered, fired_tx).await;
+        } else if value == KEY_UP {
+            release_key(code, held_keys, fired_tx).await;
+        }
     }
+}
+
+async fn press_key(
+    code: u16,
+    combo_str: &str,
+    held_keys: &HeldKeys,
+    registered: &Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
+    fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
+) {
+    let matched = {
+        let guard = registered.read().unwrap_or_else(|p| p.into_inner());
+        guard
+            .iter()
+            .find(|(_, combo)| combo.as_str() == combo_str)
+            .map(|(id, combo)| (*id, combo.clone()))
+    };
+    let Some((id, combo)) = matched else {
+        return;
+    };
+
+    {
+        let mut guard = held_keys.lock().unwrap_or_else(|p| p.into_inner());
+        guard.insert(code, (id, combo.clone()));
+    }
+
+    let _ = fired_tx
+        .send(HotkeyFiredEvent {
+            id,
+            combo,
+            timestamp_us: current_timestamp_us(),
+            edge: HotkeyEdge::Press,
+        })
+        .await;
+}
+
+async fn release_key(code: u16, held_keys: &HeldKeys, fired_tx: &mpsc::Sender<HotkeyFiredEvent>) {
+    let held = {
+        let mut guard = held_keys.lock().unwrap_or_else(|p| p.into_inner());
+        guard.remove(&code)
+    };
+    let Some((id, combo)) = held else {
+        return;
+    };
+
+    let _ = fired_tx
+        .send(HotkeyFiredEvent {
+            id,
+            combo,
+            timestamp_us: current_timestamp_us(),
+            edge: HotkeyEdge::Release,
+        })
+        .await;
 }
 
 fn build_combo_string(modifiers: &HashSet<u16>, key: &str) -> String {
@@ -226,27 +286,6 @@ fn build_combo_string(modifiers: &HashSet<u16>, key: &str) -> String {
     }
     parts.push(key);
     parts.join("+")
-}
-
-async fn check_and_fire(
-    combo_str: &str,
-    registered: &Arc<RwLock<HashMap<HotkeyId, HotkeyCombo>>>,
-    fired_tx: &mpsc::Sender<HotkeyFiredEvent>,
-) {
-    let maybe_event: Option<HotkeyFiredEvent> = {
-        let guard = registered.read().unwrap_or_else(|p| p.into_inner());
-        guard
-            .iter()
-            .find(|(_, combo)| combo.as_str() == combo_str)
-            .map(|(id, combo)| HotkeyFiredEvent {
-                id: *id,
-                combo: combo.clone(),
-                timestamp_us: current_timestamp_us(),
-            })
-    };
-    if let Some(event) = maybe_event {
-        let _ = fired_tx.send(event).await;
-    }
 }
 
 fn current_timestamp_us() -> u64 {
@@ -344,3 +383,4 @@ fn key_code_to_name(code: u16) -> Option<&'static str> {
         _ => None,
     }
 }
+

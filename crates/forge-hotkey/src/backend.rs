@@ -9,10 +9,17 @@ use crate::error::HotkeyError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HotkeyId(pub u32);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HotkeyEdge {
+    Press,
+    Release,
+}
+
 pub(crate) struct HotkeyFiredEvent {
     pub(crate) id: HotkeyId,
     pub(crate) combo: HotkeyCombo,
     pub(crate) timestamp_us: u64,
+    pub(crate) edge: HotkeyEdge,
 }
 
 pub(crate) struct NullBackend {
@@ -55,6 +62,12 @@ pub(crate) trait HotkeyBackend: Send + Sync {
     /// (the portal session stays bound to avoid a re-prompt); the client only gates delivery.
     fn delivery_gate_only(&self) -> bool {
         false
+    }
+
+    /// Signals a re-established backend session, after which any key-up the backend was
+    /// holding is lost; the client closes its open holds on each notice.
+    fn restart_rx(&self) -> Option<mpsc::Receiver<()>> {
+        None
     }
 }
 

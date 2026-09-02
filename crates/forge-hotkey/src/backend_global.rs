@@ -8,7 +8,7 @@ use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use tokio::sync::mpsc;
 
-use crate::backend::{HotkeyBackend, HotkeyFiredEvent, HotkeyId};
+use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
 
@@ -16,6 +16,8 @@ struct Registration {
     hotkey: HotKey,
     caller_id: HotkeyId,
     combo: HotkeyCombo,
+    /// Latched press state; both edges repeat while the combo is held, so only a change emits.
+    held: bool,
 }
 
 type RegistrationMap = Arc<Mutex<HashMap<u32, Registration>>>;
@@ -69,6 +71,7 @@ impl HotkeyBackend for GlobalHotkeyBackend {
                     hotkey,
                     caller_id: id,
                     combo: combo.clone(),
+                    held: false,
                 },
             );
         Ok(())
@@ -104,15 +107,19 @@ async fn poll_global_hotkey_events(
     registrations: RegistrationMap,
 ) {
     loop {
-        if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv()
-            && event.state == HotKeyState::Pressed
-        {
-            let lookup = registrations
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .get(&event.id)
-                .map(|r| (r.caller_id, r.combo.clone()));
-            if let Some((caller_id, combo)) = lookup {
+        if let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+            let pressed = event.state == HotKeyState::Pressed;
+
+            let transition = {
+                let mut guard = registrations.lock().unwrap_or_else(|p| p.into_inner());
+                guard.get_mut(&event.id).and_then(|reg| {
+                    let changed = reg.held != pressed;
+                    reg.held = pressed;
+                    changed.then(|| (reg.caller_id, reg.combo.clone()))
+                })
+            };
+
+            if let Some((caller_id, combo)) = transition {
                 let ev = HotkeyFiredEvent {
                     id: caller_id,
                     combo,
@@ -120,6 +127,11 @@ async fn poll_global_hotkey_events(
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_micros() as u64,
+                    edge: if pressed {
+                        HotkeyEdge::Press
+                    } else {
+                        HotkeyEdge::Release
+                    },
                 };
                 if fired_tx.send(ev).await.is_err() {
                     break;

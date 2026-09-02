@@ -827,6 +827,7 @@ tts_filters_output_emote_meta = перетворити :pog: → "pog"
 tts_filters_output_sanitize = Прибирати повтори пунктуації
 tts_filters_output_sanitize_meta = "!!!" → "!"
 tts_filters_output_max_duration_meta = після { $secs }с
+tts_filters_output_lang_meta = обирати голос за мовою повідомлення
 
 ## TTS Filters - список правил
 

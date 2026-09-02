@@ -822,6 +822,7 @@ tts_filters_output_emote_meta = convert :pog: → "pog"
 tts_filters_output_sanitize = Strip repeated punctuation
 tts_filters_output_sanitize_meta = "!!!" → "!"
 tts_filters_output_max_duration_meta = after { $secs }s
+tts_filters_output_lang_meta = pick voice per message language
 
 ## TTS Filters - rule list
 

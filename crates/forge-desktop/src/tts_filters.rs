@@ -219,7 +219,7 @@ impl OutputPreset {
     }
 
     fn disabled(self) -> bool {
-        matches!(self, OutputPreset::Lang)
+        false
     }
 }
 
@@ -689,6 +689,14 @@ impl TtsFiltersView {
         self.after_change(cx);
     }
 
+    fn clear_output_lang(&mut self, cx: &mut Context<Self>) {
+        if !self.settings.output_language_aware_voice.unwrap_or(false) {
+            return;
+        }
+        self.settings.output_language_aware_voice = None;
+        self.after_change(cx);
+    }
+
     fn set_blocklist_mode(&mut self, mode: BlocklistMode, cx: &mut Context<Self>) {
         self.settings.blocklist_mode = mode;
         for rule in self.rules.iter_mut() {
@@ -830,7 +838,7 @@ impl TtsFiltersView {
             OutputPreset::Emote => this.settings.output_emote_to_word = true,
             OutputPreset::Sanitize => this.settings.output_sanitize_punctuation = true,
             OutputPreset::MaxDur => this.settings.output_max_duration_secs = max_duration,
-            OutputPreset::Lang => {}
+            OutputPreset::Lang => this.settings.output_language_aware_voice = Some(true),
         })
     }
 
@@ -1515,7 +1523,8 @@ impl TtsFiltersView {
         ];
 
         let max_duration = self.settings.output_max_duration_secs;
-        let total = rows.len() + usize::from(max_duration.is_some());
+        let lang_on = self.settings.output_language_aware_voice.unwrap_or(false);
+        let total = rows.len() + usize::from(max_duration.is_some()) + usize::from(lang_on);
         let mut body = div().flex().flex_col();
         let mut i = 0usize;
         for (opt, label, meta, on) in rows {
@@ -1537,16 +1546,33 @@ impl TtsFiltersView {
             ));
         }
         if let Some(secs) = max_duration {
+            i += 1;
             body = body.child(self.stage_row(
                 tr!("tts_filters_preset_output_maxdur").into(),
                 true,
                 Some(tr!("tts_filters_output_max_duration_meta", secs = secs as i64).into()),
                 "filt-out-t-maxdur".into(),
                 "filt-out-x-maxdur".into(),
-                false,
+                i != total,
                 true,
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_max_duration(cx)),
                 cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_max_duration(cx)),
+                palette,
+                density,
+            ));
+        }
+        if lang_on {
+            i += 1;
+            body = body.child(self.stage_row(
+                tr!("tts_filters_preset_output_lang").into(),
+                true,
+                Some(tr!("tts_filters_output_lang_meta").into()),
+                "filt-out-t-lang".into(),
+                "filt-out-x-lang".into(),
+                i != total,
+                true,
+                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_lang(cx)),
+                cx.listener(|this, _: &ClickEvent, _, cx| this.clear_output_lang(cx)),
                 palette,
                 density,
             ));

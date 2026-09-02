@@ -3082,6 +3082,7 @@ name = "forge-voice"
 version = "0.5.0"
 dependencies = [
  "forge-tts-core",
+ "forge-tts-pipeline",
  "rand 0.10.2",
  "serde",
  "serde_json",

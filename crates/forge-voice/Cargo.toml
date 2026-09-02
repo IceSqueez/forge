@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 forge-tts-core = { path = "../forge-tts-core" }
+forge-tts-pipeline = { path = "../forge-tts-pipeline" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

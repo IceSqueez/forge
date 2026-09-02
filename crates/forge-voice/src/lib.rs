@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 pub use forge_tts_core::{EngineId, TtsVoice, VoiceId};
+pub use forge_tts_pipeline::LanguageCode;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AliasId(pub String);
@@ -66,6 +67,23 @@ impl IgnoreProfile {
         !self.excluded_voice_ids.contains(&voice.id)
             && !self.excluded_locales.contains(&voice.locale)
     }
+}
+
+/// A voice with an unreadable or unrecognized locale never matches.
+pub fn voice_speaks_language(voice: &TtsVoice, language: LanguageCode) -> bool {
+    LanguageCode::from_locale(&voice.locale) == Some(language)
+}
+
+pub fn candidate_languages(catalog: &[TtsVoice]) -> Vec<LanguageCode> {
+    let mut languages = Vec::new();
+    for voice in catalog {
+        if let Some(code) = LanguageCode::from_locale(&voice.locale)
+            && !languages.contains(&code)
+        {
+            languages.push(code);
+        }
+    }
+    languages
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

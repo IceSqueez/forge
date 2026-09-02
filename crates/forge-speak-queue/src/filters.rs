@@ -150,6 +150,7 @@ fn output_from_settings(settings: &TtsPipelineSettings) -> OutputConfig {
         emote_to_word: settings.output_emote_to_word,
         sanitize_punctuation: settings.output_sanitize_punctuation,
         max_duration_secs: settings.output_max_duration_secs,
+        language_aware_voice: settings.output_language_aware_voice.unwrap_or(false),
     }
 }
 

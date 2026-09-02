@@ -6,9 +6,11 @@ use std::time::Duration;
 use forge_audio::PcmBuffer;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice, VoiceId};
-use forge_tts_pipeline::PipelineResult;
+use forge_tts_pipeline::{DetectionOutcome, LanguageCode, LanguageDetector, PipelineResult};
 use forge_types::Shared;
-use forge_voice::{AliasState, ResolveResult, VoiceAliasResolver};
+use forge_voice::{
+    AliasState, ResolveResult, VoiceAliasResolver, candidate_languages, voice_speaks_language,
+};
 
 use crate::{
     PipelineConfigHandle, Priority, QueueConfig, QueueDeps, QueuedOrderEntry, RequestId,
@@ -46,11 +48,18 @@ async fn tick_progress(ticker: &mut Option<tokio::time::Interval>) {
     }
 }
 
+struct DetectedLanguage {
+    code: LanguageCode,
+    confidence: f64,
+}
+
 enum SynthOutcome {
     Speak {
         pcm: PcmBuffer,
         voice_id: VoiceId,
         engine_id: EngineId,
+        /// Set only when the guess narrowed the candidate voices.
+        language: Option<DetectedLanguage>,
     },
     Skipped {
         human: String,
@@ -88,6 +97,7 @@ struct SynthTaskDeps {
     pipeline: PipelineConfigHandle,
     registry: Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>,
     voice_catalog: Arc<Vec<TtsVoice>>,
+    detector: Option<Arc<LanguageDetector>>,
 }
 
 async fn run_synthesis(
@@ -126,9 +136,23 @@ async fn run_synthesis(
         }
     };
 
+    let detected = detect_language(
+        &deps,
+        &pipeline_cfg,
+        &context,
+        text_for_pipeline,
+        &text_to_speak,
+    )
+    .await;
+
     let resolve_result = {
         let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
-        resolve_with_overrides(&guard, &req, &deps.voice_catalog)
+        resolve_with_overrides(
+            &guard,
+            &req,
+            &deps.voice_catalog,
+            detected.as_ref().map(|d| d.code),
+        )
     };
 
     let (voice_id, engine_id, pitch, rate) = match resolve_result {
@@ -200,6 +224,7 @@ async fn run_synthesis(
                 pcm,
                 voice_id,
                 engine_id,
+                language: detected,
             },
         },
         Err(e) => SynthTaskResult {
@@ -213,10 +238,62 @@ async fn run_synthesis(
     }
 }
 
+/// `None` unless the guess is confident AND some installed voice serves it - a guess that
+/// no voice can honour must leave resolution against the full catalog, not skip the message.
+async fn detect_language(
+    deps: &SynthTaskDeps,
+    pipeline_cfg: &forge_tts_pipeline::PipelineConfig,
+    context: &forge_tts_pipeline::PipelineContext<'_>,
+    pipeline_input: &str,
+    spoken: &str,
+) -> Option<DetectedLanguage> {
+    if !pipeline_cfg.output.language_aware_voice {
+        return None;
+    }
+    let detector = deps.detector.clone()?;
+    let sample = if pipeline_cfg.output.read_display_name_first {
+        forge_tts_pipeline::process_for_language(pipeline_input, pipeline_cfg, context)?
+    } else {
+        spoken.to_owned()
+    };
+
+    let outcome = match tokio::task::spawn_blocking(move || detector.detect(&sample)).await {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            tracing::warn!(error = %e, "language detection failed");
+            return None;
+        }
+    };
+    let DetectionOutcome::Detected {
+        language,
+        confidence,
+    } = outcome
+    else {
+        return None;
+    };
+
+    deps.voice_catalog
+        .iter()
+        .any(|voice| voice_speaks_language(voice, language))
+        .then_some(DetectedLanguage {
+            code: language,
+            confidence,
+        })
+}
+
+fn scope_to_engine(catalog: &[TtsVoice], engine_id: &EngineId) -> Vec<TtsVoice> {
+    catalog
+        .iter()
+        .filter(|v| &v.engine_id == engine_id)
+        .cloned()
+        .collect()
+}
+
 fn resolve_with_overrides(
     resolver: &VoiceAliasResolver,
     req: &SpeakRequest,
     catalog: &[TtsVoice],
+    language: Option<LanguageCode>,
 ) -> ResolveResult {
     if let Some(voice_id) = &req.voice_override {
         let engine_id = req.engine_override.clone().or_else(|| {
@@ -241,16 +318,26 @@ fn resolve_with_overrides(
         };
     }
 
-    if let Some(engine_id) = &req.engine_override {
+    let language_scoped = language.and_then(|code| {
         let scoped: Vec<TtsVoice> = catalog
             .iter()
-            .filter(|v| &v.engine_id == engine_id)
+            .filter(|v| voice_speaks_language(v, code))
             .cloned()
             .collect();
+        (!scoped.is_empty()).then_some(scoped)
+    });
+    let candidates: &[TtsVoice] = language_scoped.as_deref().unwrap_or(catalog);
+
+    if let Some(engine_id) = &req.engine_override {
+        let mut scoped = scope_to_engine(candidates, engine_id);
+        if scoped.is_empty() {
+            // An inferred language must never empty an explicitly requested engine.
+            scoped = scope_to_engine(catalog, engine_id);
+        }
         return resolver.resolve(&req.viewer_id, &req.viewer_name, &scoped);
     }
 
-    resolver.resolve(&req.viewer_id, &req.viewer_name, catalog)
+    resolver.resolve(&req.viewer_id, &req.viewer_name, candidates)
 }
 
 fn queue_changed_event(
@@ -312,6 +399,8 @@ pub(crate) async fn run_actor(
 
     let (synth_tx, mut synth_rx) = tokio::sync::mpsc::channel::<SynthTaskResult>(8);
     let (catalog_tx, mut catalog_rx) = tokio::sync::mpsc::channel::<Arc<Vec<TtsVoice>>>(1);
+    let (detector_tx, mut detector_rx) =
+        tokio::sync::mpsc::channel::<Option<Arc<LanguageDetector>>>(1);
 
     let voice_catalog = Arc::new(build_voice_catalog(&deps.registry, &deps.disabled_engines).await);
     voices.store_arc(voice_catalog.clone());
@@ -322,10 +411,26 @@ pub(crate) async fn run_actor(
         pipeline: deps.pipeline.clone(),
         registry: deps.registry.clone(),
         voice_catalog: voice_catalog.clone(),
+        detector: None,
     };
+
+    let mut language_aware = deps.pipeline.load().output.language_aware_voice;
+    if language_aware {
+        spawn_detector_rebuild(&voice_catalog, detector_tx.clone());
+    }
 
     loop {
         depth.store(high_queue.len() + normal_queue.len(), Ordering::Relaxed);
+
+        let language_aware_now = deps.pipeline.load().output.language_aware_voice;
+        if language_aware_now != language_aware {
+            language_aware = language_aware_now;
+            if language_aware {
+                spawn_detector_rebuild(&task_deps.voice_catalog, detector_tx.clone());
+            } else {
+                task_deps.detector = None;
+            }
+        }
 
         if active_request_id.is_none()
             && !paused
@@ -352,6 +457,8 @@ pub(crate) async fn run_actor(
                     "queue_len": queue_len,
                     "viewer_name": req.viewer_name,
                     "text": req.text,
+                    "detected_language": null,
+                    "language_confidence": null,
                 }),
                 req.source_event_id,
             );
@@ -362,6 +469,7 @@ pub(crate) async fn run_actor(
                 pipeline: task_deps.pipeline.clone(),
                 registry: task_deps.registry.clone(),
                 voice_catalog: task_deps.voice_catalog.clone(),
+                detector: task_deps.detector.clone(),
             };
             let recent_snapshot: Vec<String> = recent_messages.iter().cloned().collect();
             let window = deps.pipeline.load().skip_rules.window.max(1);
@@ -462,7 +570,15 @@ pub(crate) async fn run_actor(
             result = catalog_rx.recv() => {
                 if let Some(catalog) = result {
                     voices.store_arc(catalog.clone());
+                    if language_aware {
+                        spawn_detector_rebuild(&catalog, detector_tx.clone());
+                    }
                     task_deps.voice_catalog = catalog;
+                }
+            }
+            result = detector_rx.recv() => {
+                if let Some(detector) = result {
+                    task_deps.detector = detector.filter(|_| language_aware);
                 }
             }
             _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
@@ -558,6 +674,7 @@ async fn handle_synth_result(
             mut pcm,
             voice_id,
             engine_id,
+            language,
         } => {
             if let Some(cap_secs) = deps.pipeline.load().output.max_duration_secs {
                 pcm.truncate_to_secs(cap_secs);
@@ -581,6 +698,8 @@ async fn handle_synth_result(
                     "queue_len": queue_len,
                     "viewer_name": result.request.viewer_name,
                     "text": result.request.text,
+                    "detected_language": language.as_ref().map(|l| l.code.to_string()),
+                    "language_confidence": language.as_ref().map(|l| l.confidence),
                 }),
                 result.request.source_event_id,
             );
@@ -734,7 +853,7 @@ fn take_from_queues(
 fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -> (String, u32) {
     let estimated_secs = ((req.text.chars().count() as u32) / 15).max(1);
     let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
-    let preview = match resolve_with_overrides(&guard, req, catalog) {
+    let preview = match resolve_with_overrides(&guard, req, catalog, None) {
         ResolveResult::Speak {
             voice_id,
             engine_id,
@@ -1131,6 +1250,26 @@ fn pop_next(
         }
     }
     req
+}
+
+fn spawn_detector_rebuild(
+    catalog: &[TtsVoice],
+    tx: tokio::sync::mpsc::Sender<Option<Arc<LanguageDetector>>>,
+) {
+    let candidates = candidate_languages(catalog);
+    tokio::spawn(async move {
+        let built =
+            tokio::task::spawn_blocking(move || LanguageDetector::new(&candidates).map(Arc::new))
+                .await;
+        let detector = match built {
+            Ok(detector) => detector,
+            Err(e) => {
+                tracing::warn!(error = %e, "language detector build failed");
+                None
+            }
+        };
+        let _ = tx.send(detector).await;
+    });
 }
 
 fn spawn_catalog_rebuild(
@@ -1636,6 +1775,7 @@ mod tests {
                 pipeline: crate::PipelineConfigHandle::new(cfg),
                 registry: Arc::new(std::sync::RwLock::new(registry)),
                 voice_catalog: Arc::new(vec![voice.clone()]),
+                detector: None,
             };
 
             let mut req = request("nova", "hi LUL", Priority::Normal);

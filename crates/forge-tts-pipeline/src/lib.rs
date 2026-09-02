@@ -116,6 +116,7 @@ pub struct OutputConfig {
     pub emote_to_word: bool,
     pub sanitize_punctuation: bool,
     pub max_duration_secs: Option<u32>,
+    pub language_aware_voice: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -403,14 +404,19 @@ fn sanitize_punctuation(text: &str) -> String {
     result
 }
 
-fn stage_output(text: &str, config: &PipelineConfig, context: &PipelineContext) -> String {
+fn stage_output(
+    text: &str,
+    config: &PipelineConfig,
+    context: &PipelineContext,
+    prepend_display_name: bool,
+) -> String {
     let emote_pass = transform_emotes(text, config);
     let emoji_pass: String = if config.emote_sources.emoji {
         emote_pass.chars().filter(|c| !is_emoji_char(*c)).collect()
     } else {
         emote_pass
     };
-    let named = if config.output.read_display_name_first {
+    let named = if prepend_display_name {
         format!("{} says: {}", context.viewer_name, emoji_pass)
     } else {
         emoji_pass
@@ -432,6 +438,7 @@ fn run_stage(
     text: &str,
     config: &PipelineConfig,
     context: &PipelineContext,
+    prepend_display_name: bool,
 ) -> StageOut {
     match stage {
         StageName::SkipRules => match stage_skip_rules(text, config, context) {
@@ -447,7 +454,9 @@ fn run_stage(
         StageName::TextReplacements => {
             StageOut::Ok(stage_text_replacements(text, &config.replacement_rules))
         }
-        StageName::Output => StageOut::Ok(stage_output(text, config, context)),
+        StageName::Output => {
+            StageOut::Ok(stage_output(text, config, context, prepend_display_name))
+        }
     }
 }
 
@@ -460,9 +469,31 @@ const STAGES: [StageName; 4] = [
 
 /// Never panics; `config` must be pre-validated via `PipelineConfig::new`.
 pub fn process(text: &str, config: &PipelineConfig, context: &PipelineContext) -> PipelineResult {
+    run_stages(text, config, context, config.output.read_display_name_first)
+}
+
+/// The spoken text with the display-name prefix suppressed; `None` when the message is
+/// skipped. A viewer name in front of a 5-word message dominates a language sample.
+pub fn process_for_language(
+    text: &str,
+    config: &PipelineConfig,
+    context: &PipelineContext,
+) -> Option<String> {
+    match run_stages(text, config, context, false) {
+        PipelineResult::Speak(spoken) => Some(spoken),
+        PipelineResult::Skip { .. } => None,
+    }
+}
+
+fn run_stages(
+    text: &str,
+    config: &PipelineConfig,
+    context: &PipelineContext,
+    prepend_display_name: bool,
+) -> PipelineResult {
     let mut current = text.to_owned();
     for stage in STAGES {
-        match run_stage(stage, &current, config, context) {
+        match run_stage(stage, &current, config, context, prepend_display_name) {
             StageOut::Ok(s) => current = s,
             StageOut::Skip(r) => return PipelineResult::Skip { reason: r },
         }
@@ -494,7 +525,13 @@ pub fn preview(
                 },
             )
         } else {
-            match run_stage(name, &input, config, context) {
+            match run_stage(
+                name,
+                &input,
+                config,
+                context,
+                config.output.read_display_name_first,
+            ) {
                 StageOut::Ok(out) => {
                     let action = if out == input {
                         StageAction::PassedThrough

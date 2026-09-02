@@ -15,4 +15,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 regex = { workspace = true }
 once_cell = { workspace = true }
+lingua = { workspace = true }
 tracing = { workspace = true }

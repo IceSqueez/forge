@@ -3,6 +3,10 @@ use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
+mod language;
+
+pub use language::{DetectionOutcome, LanguageCode, LanguageDetector};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineResult {
     Speak(String),

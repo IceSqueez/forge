@@ -485,8 +485,17 @@ mod tests {
         (Arc::new(sub_reg), Arc::new(trig_reg))
     }
 
-    #[tokio::test]
-    async fn matching_custom_event_dispatches_action() {
+    /// One `custom.my_event` trigger instance wired to one logging action on one queue.
+    struct EvaluatorFixture {
+        bus: Arc<EventBus>,
+        registry: Arc<TriggerRegistry>,
+        actions: Arc<dyn ActionRepo>,
+        trigger_instances: Arc<dyn TriggerInstanceRepo>,
+        scheduler: QueueSchedulerHandle,
+        _backend: Arc<SqliteBackend>,
+    }
+
+    async fn fixture(bus: Arc<EventBus>) -> EvaluatorFixture {
         let backend = make_backend().await;
         let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 
@@ -517,9 +526,6 @@ mod tests {
             dp.action_repo(),
         );
 
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let mut sub = bus.subscribe();
-
         let engine = crate::action_engine::spawn_action_engine(
             Arc::clone(&bus),
             dp.action_repo(),
@@ -527,15 +533,50 @@ mod tests {
             sub_reg,
             Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
         );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = spawn_trigger_evaluator(
-            Arc::clone(&bus),
-            trig_reg,
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            sched,
-            Config::default(),
-        );
+        let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+
+        EvaluatorFixture {
+            bus,
+            registry: trig_reg,
+            actions: dp.action_repo(),
+            trigger_instances: dp.trigger_instance_repo(),
+            scheduler,
+            _backend: backend,
+        }
+    }
+
+    impl EvaluatorFixture {
+        fn spawn_evaluator(&self) -> TriggerEvaluatorHandle {
+            spawn_trigger_evaluator(
+                Arc::clone(&self.bus),
+                Arc::clone(&self.registry),
+                Arc::clone(&self.actions),
+                Arc::clone(&self.trigger_instances),
+                self.scheduler.clone(),
+                Config::default(),
+            )
+        }
+
+        /// Builds the evaluator without spawning it, so a test can drive `run` to completion.
+        fn evaluator(&self, subscription: EventSubscription) -> TriggerEvaluator {
+            TriggerEvaluator {
+                bus: Arc::clone(&self.bus),
+                registry: Arc::clone(&self.registry),
+                actions: Arc::clone(&self.actions),
+                trigger_instances: Arc::clone(&self.trigger_instances),
+                scheduler: self.scheduler.clone(),
+                subscription,
+                cooldowns: CooldownMap::new(Config::default().max_cooldown_entries),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn matching_custom_event_dispatches_action() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let mut sub = bus.subscribe();
+        let _handle = fixture.spawn_evaluator();
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(Event::new(
@@ -553,55 +594,10 @@ mod tests {
 
     #[tokio::test]
     async fn non_matching_custom_event_does_not_dispatch() {
-        let backend = make_backend().await;
-        let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
-
-        let q_id = QueueId::new();
-        let a_id = ActionId::new();
-        let queue = Queue {
-            id: q_id,
-            name: "default".into(),
-            description: String::new(),
-            concurrency: 8,
-        };
-        let action = log_action(a_id, q_id);
-        let instance = custom_event_instance("my_event");
-
-        dp.queue_repo().save(&queue).await.unwrap();
-        dp.action_repo().save(&action).await.unwrap();
-        dp.trigger_instance_repo().save(&instance).await.unwrap();
-        backend
-            .insert_action_trigger_instance_for_test(a_id, instance.id, 0)
-            .await
-            .unwrap();
-
-        let (sub_reg, trig_reg) = build_registries(
-            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
-            Arc::clone(&dp) as Arc<dyn SettingsRepo>,
-            dp.trigger_instance_repo(),
-            dp.action_repo(),
-        );
-
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
         let mut sub = bus.subscribe();
-
-        let engine = crate::action_engine::spawn_action_engine(
-            Arc::clone(&bus),
-            dp.action_repo(),
-            dp.history_repo(),
-            sub_reg,
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
-        let _handle = spawn_trigger_evaluator(
-            Arc::clone(&bus),
-            trig_reg,
-            dp.action_repo(),
-            dp.trigger_instance_repo(),
-            sched,
-            Config::default(),
-        );
+        let _handle = fixture.spawn_evaluator();
 
         tokio::time::sleep(Duration::from_millis(10)).await;
         bus.publish(Event::new(
@@ -614,6 +610,59 @@ mod tests {
         assert!(
             !fired,
             "action.done must not fire for non-matching event name"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_dispatches_events_that_reached_the_bus_before_the_cancel() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let mut sub = bus.subscribe();
+        let evaluator = fixture.evaluator(bus.subscribe());
+
+        // A hold's synthesized release is published, and only then does shutdown cancel intake.
+        // The run loop re-reads the flag at the top, so the event is already past the gate.
+        bus.publish(Event::new(
+            EventSource::Server,
+            "custom.my_event",
+            json!({ "user": "alice" }),
+        ));
+        let cancel = CancelSignal::new();
+        cancel.cancel();
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), evaluator.run(cancel)).await;
+        assert!(
+            finished.is_ok(),
+            "run must return once the backlog is drained"
+        );
+
+        let done = collect_kind(&mut sub, "action.done", 30).await;
+        assert!(
+            done.is_some(),
+            "an event published before the cancel must still reach the scheduler"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_returns_when_the_backlog_overflowed_the_subscription() {
+        let bus = EventBus::with_caps(Arc::new(NullEventLogRepo), 2, 64);
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let evaluator = fixture.evaluator(bus.subscribe());
+
+        for _ in 0..8 {
+            bus.publish(Event::new(
+                EventSource::Server,
+                "custom.my_event",
+                json!({}),
+            ));
+        }
+        let cancel = CancelSignal::new();
+        cancel.cancel();
+
+        let finished = tokio::time::timeout(Duration::from_secs(5), evaluator.run(cancel)).await;
+        assert!(
+            finished.is_ok(),
+            "a lagged subscription must advance the cursor, not spin the drain forever"
         );
     }
 

@@ -1966,4 +1966,59 @@ mod tests {
             assert_eq!(capture.target(), expected, "wrong exclusion while {case}");
         }
     }
+
+    /// A grouped hold row plus the instance ids of its press and release halves.
+    fn hold_row(combo: &str) -> (BindingRow, TriggerInstanceId, TriggerInstanceId) {
+        let half = |instance_id| crate::hotkey_bindings::BindingHalf {
+            instance_id,
+            enabled: true,
+            action: None,
+        };
+        let press = TriggerInstanceId::new();
+        let release = TriggerInstanceId::new();
+        let row = BindingRow {
+            key: press,
+            combo: combo.to_owned(),
+            registered: true,
+            press: Some(half(press)),
+            release: Some(half(release)),
+        };
+        (row, press, release)
+    }
+
+    #[test]
+    fn combo_holder_excludes_the_row_by_half_membership_not_by_row_key() {
+        // A hold's row is keyed by its PRESS half, so a key comparison would report the row as
+        // its own conflict while the user edits the RELEASE half - and confirming Replace
+        // deletes both halves of the row being edited.
+        let (row, press, release) = hold_row("Ctrl+F1");
+        let rows = vec![row];
+
+        let cases = [
+            ("editing the press half", Some(press), false),
+            ("editing the release half", Some(release), false),
+            ("adding a new binding", None, true),
+            (
+                "editing an unrelated binding",
+                Some(TriggerInstanceId::new()),
+                true,
+            ),
+        ];
+
+        for (case, target, expect_holder) in cases {
+            assert_eq!(
+                combo_holder(&rows, "Ctrl+F1", target).is_some(),
+                expect_holder,
+                "wrong holder verdict while {case}"
+            );
+        }
+    }
+
+    #[test]
+    fn combo_holder_ignores_rows_bound_to_another_combo() {
+        let (row, _, _) = hold_row("Ctrl+F1");
+        let rows = vec![row];
+
+        assert!(combo_holder(&rows, "Ctrl+F2", None).is_none());
+    }
 }

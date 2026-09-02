@@ -557,16 +557,12 @@ mod tests {
         id
     }
 
-    async fn seed_instance(
-        backend: &Arc<dyn DataProvider>,
-        kind_id: &str,
-        combo: Option<&str>,
-    ) -> TriggerInstanceId {
+    fn instance_literal(kind_id: &str, combo: Option<&str>) -> TriggerInstance {
         let mut overrides = BTreeMap::new();
         if let Some(combo) = combo {
             overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo.to_owned()));
         }
-        let instance = TriggerInstance {
+        TriggerInstance {
             id: TriggerInstanceId::new(),
             kind_id: kind_id.to_owned(),
             name: combo.unwrap_or("no combo").to_owned(),
@@ -577,7 +573,15 @@ mod tests {
             cooldown_secs: 0,
             cooldown_global: true,
             permission_rung: PermissionRung::Everyone,
-        };
+        }
+    }
+
+    async fn seed_instance(
+        backend: &Arc<dyn DataProvider>,
+        kind_id: &str,
+        combo: Option<&str>,
+    ) -> TriggerInstanceId {
+        let instance = instance_literal(kind_id, combo);
         let id = instance.id;
         backend
             .trigger_instance_repo()
@@ -587,11 +591,52 @@ mod tests {
         id
     }
 
+    async fn seed_disabled_instance(
+        backend: &Arc<dyn DataProvider>,
+        kind_id: &str,
+        combo: &str,
+    ) -> TriggerInstanceId {
+        let id = seed_instance(backend, kind_id, Some(combo)).await;
+        backend
+            .trigger_instance_repo()
+            .set_enabled(id, false)
+            .await
+            .unwrap();
+        id
+    }
+
+    fn settings_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn SettingsRepo> {
+        Arc::clone(backend) as Arc<dyn SettingsRepo>
+    }
+
     fn keystroke(modifiers: Modifiers, key: &str) -> Keystroke {
         Keystroke {
             modifiers,
             key: key.to_owned(),
             key_char: None,
+        }
+    }
+
+    fn test_half(action: Option<(ActionId, &str)>) -> BindingHalf {
+        BindingHalf {
+            instance_id: TriggerInstanceId::new(),
+            enabled: true,
+            action: action.map(|(id, name)| (id, name.to_owned())),
+        }
+    }
+
+    fn test_row(press: Option<BindingHalf>, release: Option<BindingHalf>) -> BindingRow {
+        let key = press
+            .as_ref()
+            .or(release.as_ref())
+            .map(|half| half.instance_id)
+            .expect("a row always carries at least one half");
+        BindingRow {
+            key,
+            combo: "Ctrl+F1".to_owned(),
+            registered: true,
+            press,
+            release,
         }
     }
 
@@ -694,18 +739,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_bindings_keeps_only_hotkey_instances_that_carry_a_combo_override() {
+    async fn load_bindings_keeps_both_hotkey_edges_and_drops_everything_else() {
         let backend = provider().await;
         seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F2")).await;
         seed_instance(&backend, HOTKEY_PRESSED_KIND, None).await;
-        seed_instance(&backend, OTHER_KIND, Some("Ctrl+F2")).await;
+        seed_instance(&backend, OTHER_KIND, Some("Ctrl+F3")).await;
 
         let rows = load_bindings(Arc::clone(&backend), Vec::new())
             .await
             .unwrap();
 
         let combos: Vec<&str> = rows.iter().map(|row| row.combo.as_str()).collect();
-        assert_eq!(combos, ["Ctrl+F1"]);
+        assert_eq!(combos, ["Ctrl+F1", "Ctrl+F2"]);
     }
 
     #[tokio::test]
@@ -759,8 +805,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(rows[0].action, Some((action, "Play sound".to_owned())));
-        assert_eq!(rows[1].action, None);
+        assert_eq!(
+            rows[0].primary_action(),
+            Some(&(action, "Play sound".to_owned()))
+        );
+        assert_eq!(rows[1].primary_action(), None);
     }
 
     #[tokio::test]
@@ -876,5 +925,302 @@ mod tests {
             .pop()
             .map(|i| i.id);
         assert_eq!(last, Some(instance));
+    }
+
+    #[test]
+    fn binding_row_shape_drives_the_badge_and_the_free_edge() {
+        let cases = [
+            (
+                "press only",
+                test_row(Some(test_half(None)), None),
+                (false, false, Some(HotkeyEdge::Release)),
+            ),
+            (
+                "release only",
+                test_row(None, Some(test_half(None))),
+                (false, true, Some(HotkeyEdge::Press)),
+            ),
+            (
+                "both halves",
+                test_row(Some(test_half(None)), Some(test_half(None))),
+                (true, false, None),
+            ),
+        ];
+
+        for (case, row, expected) in cases {
+            assert_eq!(
+                (row.is_hold(), row.is_release_edge(), row.free_edge()),
+                expected,
+                "wrong (hold, release-edge, free-edge) for a {case} row"
+            );
+        }
+    }
+
+    #[test]
+    fn binding_row_primary_action_reads_the_press_half_whenever_the_row_has_one() {
+        let start = ActionId::new();
+        let stop = ActionId::new();
+        let cases = [
+            (
+                "a hold reports the press half's action",
+                test_row(
+                    Some(test_half(Some((start, "Start")))),
+                    Some(test_half(Some((stop, "Stop")))),
+                ),
+                Some((start, "Start".to_owned())),
+            ),
+            (
+                "a release-only row reports its own action",
+                test_row(None, Some(test_half(Some((stop, "Stop"))))),
+                Some((stop, "Stop".to_owned())),
+            ),
+            (
+                // Why: the press half is the row's target even when it is unlinked, so a hold
+                // whose start was unbound from the Triggers screen reads as unassigned rather
+                // than silently advertising its stop action as the thing the combo runs.
+                "an unlinked press half is not backfilled from the release half",
+                test_row(Some(test_half(None)), Some(test_half(Some((stop, "Stop"))))),
+                None,
+            ),
+        ];
+
+        for (case, row, expected) in cases {
+            assert_eq!(row.primary_action().cloned(), expected, "wrong when {case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn load_bindings_yields_one_row_per_combo_keyed_by_the_press_half_when_there_is_one() {
+        let backend = provider().await;
+        let hold_press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let hold_release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+        let press_only = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F2")).await;
+        let release_only = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F3")).await;
+
+        let rows = load_bindings(Arc::clone(&backend), Vec::new())
+            .await
+            .unwrap();
+
+        let shape: Vec<(&str, TriggerInstanceId, bool)> = rows
+            .iter()
+            .map(|row| (row.combo.as_str(), row.key, row.is_hold()))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                ("Ctrl+F1", hold_press, true),
+                ("Ctrl+F2", press_only, false),
+                ("Ctrl+F3", release_only, false),
+            ]
+        );
+        assert_eq!(
+            rows[0].half(HotkeyEdge::Release).map(|h| h.instance_id),
+            Some(hold_release),
+            "the release half must stay reachable on the grouped row"
+        );
+    }
+
+    #[tokio::test]
+    async fn load_bindings_reads_a_hold_with_a_disabled_release_half_as_off() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        seed_disabled_instance(&backend, HOTKEY_RELEASED_KIND, "Ctrl+F1").await;
+
+        let rows = load_bindings(Arc::clone(&backend), Vec::new())
+            .await
+            .unwrap();
+
+        assert!(
+            !rows[0].enabled(),
+            "a hold that starts but cannot stop must not read as on"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_stale_combo_instances_prunes_both_edges_of_the_combo() {
+        let backend = provider().await;
+        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+
+        cleanup_stale_combo_instances(&backend, "Ctrl+F1")
+            .await
+            .unwrap();
+
+        let repo = backend.trigger_instance_repo();
+        assert!(repo.get(press).await.unwrap().is_none());
+        assert!(
+            repo.get(release).await.unwrap().is_none(),
+            "the release half must not be orphaned by a combo cleanup"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_combo_edge_drops_only_the_named_edge() {
+        let backend = provider().await;
+        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+
+        remove_combo_edge(&backend, "Ctrl+F1", HotkeyEdge::Press)
+            .await
+            .unwrap();
+
+        let repo = backend.trigger_instance_repo();
+        assert!(repo.get(press).await.unwrap().is_none());
+        assert!(repo.get(release).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn delete_binding_half_leaves_the_partner_half_and_its_action_link() {
+        let backend = provider().await;
+        let start = seed_action(&backend, "Start").await;
+        let stop = seed_action(&backend, "Stop").await;
+        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+        let repo = backend.trigger_instance_repo();
+        repo.link_action(start, press, 0).await.unwrap();
+        repo.link_action(stop, release, 0).await.unwrap();
+
+        delete_binding_half(Arc::clone(&backend), press)
+            .await
+            .unwrap();
+
+        assert!(repo.get(press).await.unwrap().is_none());
+        assert_eq!(repo.actions_using(release).await.unwrap(), [stop]);
+    }
+
+    #[tokio::test]
+    async fn set_binding_enabled_applies_to_every_instance_it_is_given() {
+        let backend = provider().await;
+        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+        let release = seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("Ctrl+F1")).await;
+
+        set_binding_enabled(Arc::clone(&backend), vec![press, release], false)
+            .await
+            .unwrap();
+
+        let repo = backend.trigger_instance_repo();
+        let states: Vec<bool> = vec![
+            repo.get(press).await.unwrap().unwrap().enabled,
+            repo.get(release).await.unwrap().unwrap().enabled,
+        ];
+        assert_eq!(states, [false, false]);
+    }
+
+    #[tokio::test]
+    async fn set_binding_edge_rewrites_the_kind_and_keeps_the_combo_override() {
+        let backend = provider().await;
+        let instance = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("Ctrl+F1")).await;
+
+        set_binding_edge(Arc::clone(&backend), instance, HotkeyEdge::Release)
+            .await
+            .unwrap();
+
+        let stored = backend
+            .trigger_instance_repo()
+            .get(instance)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.kind_id, HOTKEY_RELEASED_KIND);
+        assert_eq!(
+            combo_of(&stored).map(String::as_str),
+            Some("Ctrl+F1"),
+            "moving an edge must not lose the combo the instance matches on"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_binding_edge_reports_an_instance_that_no_longer_exists() {
+        let backend = provider().await;
+
+        let result = set_binding_edge(
+            Arc::clone(&backend),
+            TriggerInstanceId::new(),
+            HotkeyEdge::Release,
+        )
+        .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn load_hold_ceiling_treats_zero_as_off_and_falls_back_to_the_default() {
+        let backend = provider().await;
+        let settings = settings_of(&backend);
+
+        assert_eq!(
+            load_hold_ceiling(settings.as_ref()).await,
+            Some(DEFAULT_HOLD_CEILING_SECS),
+            "a fresh install runs with the ceiling on"
+        );
+
+        let cases = [
+            ("0", None),
+            ("1", Some(1)),
+            ("45", Some(45)),
+            (" 45 ", Some(45)),
+            ("3600", Some(3600)),
+            ("", Some(DEFAULT_HOLD_CEILING_SECS)),
+            ("-1", Some(DEFAULT_HOLD_CEILING_SECS)),
+            ("30s", Some(DEFAULT_HOLD_CEILING_SECS)),
+        ];
+        for (stored, expected) in cases {
+            settings
+                .set_string(HOTKEY_HOLD_CEILING_KEY, stored)
+                .await
+                .unwrap();
+            assert_eq!(
+                load_hold_ceiling(settings.as_ref()).await,
+                expected,
+                "wrong ceiling for stored {stored:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn save_hold_ceiling_round_trips_the_off_state_through_a_stored_zero() {
+        let backend = provider().await;
+        let settings = settings_of(&backend);
+
+        save_hold_ceiling(settings.as_ref(), None).await.unwrap();
+        assert_eq!(load_hold_ceiling(settings.as_ref()).await, None);
+
+        save_hold_ceiling(settings.as_ref(), Some(45))
+            .await
+            .unwrap();
+        assert_eq!(load_hold_ceiling(settings.as_ref()).await, Some(45));
+    }
+
+    #[test]
+    fn binding_instance_leaves_both_edges_without_a_cooldown() {
+        // Why: a cooldown on the release half silently swallows the stop of a hold, so the
+        // combo starts and never stops. The bind path must never seed a non-zero default.
+        for edge in [HotkeyEdge::Press, HotkeyEdge::Release] {
+            assert_eq!(
+                binding_instance("Ctrl+F1".to_owned(), edge).cooldown_secs,
+                0,
+                "a {edge:?} binding must not be rate-limited"
+            );
+        }
+    }
+
+    #[test]
+    fn persisted_hotkey_combos_yields_one_entry_per_combo_across_both_edges() {
+        let instances = [
+            instance_literal(HOTKEY_PRESSED_KIND, Some("Ctrl+F1")),
+            instance_literal(HOTKEY_RELEASED_KIND, Some("Ctrl+F1")),
+            instance_literal(HOTKEY_RELEASED_KIND, Some("Ctrl+F2")),
+            instance_literal(HOTKEY_PRESSED_KIND, None),
+            instance_literal(OTHER_KIND, Some("Ctrl+F3")),
+        ];
+
+        let combos = persisted_hotkey_combos(&instances);
+
+        let listed: Vec<&str> = combos.iter().map(String::as_str).collect();
+        assert_eq!(
+            listed,
+            ["Ctrl+F1", "Ctrl+F2"],
+            "a hold's halves share one OS registration, and a release-only combo still needs one"
+        );
     }
 }

@@ -371,6 +371,12 @@ async fn started_bus_event_emitted_at_dequeue_and_after_synth_with_superset_sche
             ev.payload.get("queue_len").is_some_and(|v| v.is_number()),
             "both emissions share the superset schema key queue_len"
         );
+        for key in ["detected_language", "language_confidence"] {
+            assert!(
+                ev.payload.get(key).is_some_and(|v| v.is_null()),
+                "{key} is part of the superset schema and null while detection is off"
+            );
+        }
         assert_eq!(ev.caused_by, Some(src));
     }
 }

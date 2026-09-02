@@ -480,4 +480,52 @@ mod tests {
             }
         ));
     }
+
+    fn language(code: &str) -> LanguageCode {
+        LanguageCode::from_locale(code).unwrap()
+    }
+
+    #[test]
+    fn voice_speaks_language_compares_primary_subtags_across_engine_locale_shapes() {
+        let uk = language("uk");
+        for locale in ["uk-UA", "uk_ua", "UK", "uk"] {
+            assert!(
+                voice_speaks_language(&make_voice("v", locale), uk),
+                "locale {locale} serves uk"
+            );
+        }
+        assert!(!voice_speaks_language(&make_voice("v", "en-US"), uk));
+    }
+
+    #[test]
+    fn voice_with_an_unreadable_locale_serves_no_language_at_all() {
+        // Why: an unreadable locale must narrow to "never eligible", never to "eligible for
+        // everything" - otherwise a cloud voice with an empty locale hijacks every language.
+        for locale in ["", "und", "0409", "fil-PH"] {
+            let voice = make_voice("mystery", locale);
+            for code in ["uk", "en", "ru"] {
+                assert!(
+                    !voice_speaks_language(&voice, language(code)),
+                    "locale {locale:?} must not claim {code}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn candidate_languages_lists_each_language_once_in_catalog_order() {
+        let catalog = vec![
+            make_voice("a", "en-US"),
+            make_voice("b", "uk-UA"),
+            make_voice("c", "en-GB"),
+            make_voice("d", ""),
+            make_voice("e", "und"),
+            make_voice("f", "ru_RU"),
+        ];
+        let codes: Vec<String> = candidate_languages(&catalog)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(codes, vec!["en", "uk", "ru"]);
+    }
 }

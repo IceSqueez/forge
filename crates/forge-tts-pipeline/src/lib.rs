@@ -899,12 +899,37 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_result_variants() {
-        let speak = PipelineResult::Speak("hi".into());
-        let skip = PipelineResult::Skip {
-            reason: SkipReason::EmptyAfterProcessing,
+    fn process_for_language_drops_the_display_name_prefix_that_process_prepends() {
+        let config = PipelineConfig {
+            output: OutputConfig {
+                read_display_name_first: true,
+                ..OutputConfig::default()
+            },
+            ..PipelineConfig::default()
         };
-        assert!(matches!(speak, PipelineResult::Speak(_)));
-        assert!(matches!(skip, PipelineResult::Skip { .. }));
+        let context = PipelineContext {
+            viewer_name: "koval_dev",
+            recent_messages: &[],
+        };
+        assert_eq!(
+            process("hi chat", &config, &context),
+            PipelineResult::Speak("koval_dev says: hi chat".into())
+        );
+        assert_eq!(
+            process_for_language("hi chat", &config, &context),
+            Some("hi chat".to_owned())
+        );
+    }
+
+    #[test]
+    fn process_for_language_returns_none_when_the_message_is_skipped() {
+        let config = PipelineConfig {
+            skip_rules: SkipRulesConfig {
+                contains_url: true,
+                ..SkipRulesConfig::default()
+            },
+            ..PipelineConfig::default()
+        };
+        assert!(process_for_language("see https://example.com", &config, &ctx()).is_none());
     }
 }

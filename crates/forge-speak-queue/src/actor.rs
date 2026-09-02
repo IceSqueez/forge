@@ -1943,4 +1943,175 @@ mod tests {
             ("empty_after_processing".to_owned(), None),
         );
     }
+
+    fn localized_voice(id: &str, engine: &str, locale: &str) -> TtsVoice {
+        TtsVoice {
+            id: VoiceId(id.into()),
+            name: id.into(),
+            locale: locale.into(),
+            gender: forge_tts_core::VoiceGender::Neutral,
+            engine_id: EngineId(engine.into()),
+            is_neural: false,
+            sample_rate_hint: 22_050,
+        }
+    }
+
+    fn bilingual_catalog() -> Vec<TtsVoice> {
+        vec![
+            localized_voice("alpha-en", "alpha", "en-US"),
+            localized_voice("alpha-uk", "alpha", "uk-UA"),
+            localized_voice("beta-uk", "beta", "uk_UA"),
+        ]
+    }
+
+    fn plain_resolver() -> VoiceAliasResolver {
+        VoiceAliasResolver::new(
+            vec![],
+            AssignmentStrategy::DeterministicByName,
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        )
+    }
+
+    fn spoken_voice(result: ResolveResult) -> String {
+        match result {
+            ResolveResult::Speak { voice_id, .. } => voice_id.0,
+            ResolveResult::Skip { reason } => {
+                panic!("expected a resolved voice, got skip: {reason}")
+            }
+        }
+    }
+
+    fn language(code: &str) -> LanguageCode {
+        LanguageCode::from_locale(code).unwrap()
+    }
+
+    #[test]
+    fn a_detected_language_narrows_resolution_to_voices_that_speak_it() {
+        // Both viewers land on the opposite language unnarrowed, so a narrowing that did
+        // nothing would fail here rather than pass by luck of the deterministic hash.
+        let catalog = bilingual_catalog();
+        for (viewer, code, suffix) in [("zoryana", "uk", "-uk"), ("nova", "en", "-en")] {
+            let req = request(viewer, "message", Priority::Normal);
+            let voice = spoken_voice(resolve_with_overrides(
+                &plain_resolver(),
+                &req,
+                &catalog,
+                Some(language(code)),
+            ));
+            assert!(
+                voice.ends_with(suffix),
+                "{viewer} narrowed to {code} must not keep a {voice} voice"
+            );
+        }
+    }
+
+    #[test]
+    fn a_detected_language_no_voice_speaks_leaves_the_full_catalog_rather_than_skipping() {
+        let catalog = vec![localized_voice("alpha-en", "alpha", "en-US")];
+        let req = request("nova", "привіт", Priority::Normal);
+        assert_eq!(
+            spoken_voice(resolve_with_overrides(
+                &plain_resolver(),
+                &req,
+                &catalog,
+                Some(language("uk")),
+            )),
+            "alpha-en",
+            "an inference must never turn into a no-voices-available skip"
+        );
+    }
+
+    #[test]
+    fn an_explicit_alias_outranks_the_detected_language() {
+        let alias = forge_voice::VoiceAlias {
+            id: forge_voice::AliasId::new(),
+            viewer_id: "nova".into(),
+            viewer_name: "nova".into(),
+            engine_id: EngineId("alpha".into()),
+            voice_id: VoiceId("alpha-en".into()),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state: AliasState::Active,
+        };
+        let resolver = VoiceAliasResolver::new(
+            vec![alias],
+            AssignmentStrategy::DeterministicByName,
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        let req = request("nova", "привіт", Priority::Normal);
+        assert_eq!(
+            spoken_voice(resolve_with_overrides(
+                &resolver,
+                &req,
+                &bilingual_catalog(),
+                Some(language("uk")),
+            )),
+            "alpha-en",
+            "a user instruction outranks an inference"
+        );
+    }
+
+    #[test]
+    fn an_explicit_voice_override_outranks_the_detected_language() {
+        let mut req = request("nova", "привіт", Priority::Normal);
+        req.voice_override = Some(VoiceId("alpha-en".into()));
+        assert_eq!(
+            spoken_voice(resolve_with_overrides(
+                &plain_resolver(),
+                &req,
+                &bilingual_catalog(),
+                Some(language("uk")),
+            )),
+            "alpha-en"
+        );
+    }
+
+    #[test]
+    fn an_engine_override_intersects_with_the_detected_language() {
+        // `mira` resolves to alpha-en across the whole alpha engine, so the uk answer here
+        // can only come from the language narrowing being applied on top of the engine one.
+        let mut req = request("mira", "привіт", Priority::Normal);
+        req.engine_override = Some(EngineId("alpha".into()));
+        assert_eq!(
+            spoken_voice(resolve_with_overrides(
+                &plain_resolver(),
+                &req,
+                &bilingual_catalog(),
+                Some(language("uk")),
+            )),
+            "alpha-uk"
+        );
+    }
+
+    #[test]
+    fn an_empty_language_and_engine_intersection_falls_back_to_the_engine_alone() {
+        let mut req = request("nova", "hello there", Priority::Normal);
+        req.engine_override = Some(EngineId("beta".into()));
+        assert_eq!(
+            spoken_voice(resolve_with_overrides(
+                &plain_resolver(),
+                &req,
+                &bilingual_catalog(),
+                Some(language("en")),
+            )),
+            "beta-uk",
+            "an inference must not empty an explicitly requested engine"
+        );
+    }
+
+    #[test]
+    fn resolution_without_a_detected_language_delegates_to_the_unnarrowed_resolver() {
+        let catalog = bilingual_catalog();
+        let resolver = plain_resolver();
+        for viewer in ["nova", "koval", "zoryana"] {
+            let req = request(viewer, "hello", Priority::Normal);
+            assert_eq!(
+                spoken_voice(resolve_with_overrides(&resolver, &req, &catalog, None)),
+                spoken_voice(resolver.resolve(&req.viewer_id, &req.viewer_name, &catalog)),
+                "viewer {viewer} must keep the pre-language selection"
+            );
+        }
+    }
 }

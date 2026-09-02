@@ -90,6 +90,12 @@ async fn fresh_db_settings_row_has_documented_defaults() {
         s.output_max_duration_secs.is_none(),
         "output_max_duration_secs default is no cap"
     );
+    // Language-aware voice selection ships off, so an upgraded install must behave
+    // identically until the user opts in.
+    assert!(
+        s.output_language_aware_voice.is_none(),
+        "output_language_aware_voice default is off"
+    );
 }
 
 #[tokio::test]
@@ -206,6 +212,24 @@ async fn pipeline_settings_max_duration_round_trips_including_clearing_a_previou
         assert_eq!(
             got.output_max_duration_secs, cap,
             "cap {cap:?} did not survive the round-trip"
+        );
+    }
+}
+
+#[tokio::test]
+async fn pipeline_settings_language_aware_voice_round_trips_through_all_three_states() {
+    let r = repo().await;
+
+    for flag in [Some(true), Some(false), None, Some(true)] {
+        let s = TtsPipelineSettings {
+            output_language_aware_voice: flag,
+            ..TtsPipelineSettings::default()
+        };
+        r.set_pipeline_settings(&s).await.expect("set");
+        let got = r.get_pipeline_settings().await.expect("get");
+        assert_eq!(
+            got.output_language_aware_voice, flag,
+            "flag {flag:?} did not survive the round-trip"
         );
     }
 }

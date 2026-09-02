@@ -123,3 +123,114 @@ impl fmt::Debug for LanguageDetector {
             .finish()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    fn code(locale: &str) -> LanguageCode {
+        LanguageCode::from_locale(locale).unwrap()
+    }
+
+    fn en_uk_ru() -> LanguageDetector {
+        LanguageDetector::new(&[code("en"), code("uk"), code("ru")]).unwrap()
+    }
+
+    #[test]
+    fn from_locale_keeps_the_primary_subtag_lowercased_across_every_shape_engines_emit() {
+        for (locale, expected) in [
+            ("uk-UA", "uk"),
+            ("en_US", "en"),
+            ("en-gb", "en"),
+            ("zh-Hans-CN", "zh"),
+            ("EN", "en"),
+            ("Ru", "ru"),
+            ("ja", "ja"),
+        ] {
+            let parsed = LanguageCode::from_locale(locale)
+                .unwrap_or_else(|| panic!("{locale} must yield a language code"));
+            assert_eq!(parsed.to_string(), expected, "locale {locale}");
+        }
+    }
+
+    #[test]
+    fn from_locale_rejects_anything_without_a_two_letter_primary_subtag() {
+        // Why: `None` is the "does not match" signal for eligibility. An unreadable locale
+        // must never widen into "matches everything", so every shape the engine catalogs
+        // actually emit for an unknown language has to land here.
+        for locale in [
+            "", "und", "0409", "fil-PH", "eng", "e", "e1", "1e", "-", "_US", " en", "en ",
+        ] {
+            assert!(
+                LanguageCode::from_locale(locale).is_none(),
+                "locale {locale:?} must not resolve to a language"
+            );
+        }
+    }
+
+    #[test]
+    fn new_returns_none_unless_two_distinct_compiled_candidates_survive() {
+        for candidates in [
+            vec![],
+            vec![code("en")],
+            vec![code("en"), code("en")],
+            vec![code("de"), code("fr")],
+            vec![code("en"), code("de")],
+        ] {
+            assert!(
+                LanguageDetector::new(&candidates).is_none(),
+                "candidates {candidates:?} leave nothing to discriminate"
+            );
+        }
+    }
+
+    #[test]
+    fn detect_reports_the_language_of_a_confident_message() {
+        let detector = en_uk_ru();
+        for (text, expected) in [
+            ("добрий вечір, як ваші справи сьогодні", "uk"),
+            ("good evening everyone, how is the stream going", "en"),
+            ("добрый вечер, как ваши дела сегодня", "ru"),
+        ] {
+            let DetectionOutcome::Detected {
+                language,
+                confidence,
+            } = detector.detect(text)
+            else {
+                panic!("{text:?} must be detected");
+            };
+            assert_eq!(language.to_string(), expected, "text {text:?}");
+            assert!(
+                confidence >= MINIMUM_CONFIDENCE,
+                "a reported detection must clear the floor, got {confidence}"
+            );
+        }
+    }
+
+    #[test]
+    fn detect_returns_inconclusive_for_text_carrying_no_words() {
+        let detector = en_uk_ru();
+        for text in ["", "   ", "\n\t ", "!!! ???", "🎉🎉🎉"] {
+            assert_eq!(
+                detector.detect(text),
+                DetectionOutcome::Inconclusive,
+                "text {text:?} carries no language signal"
+            );
+        }
+    }
+
+    #[test]
+    fn detect_returns_inconclusive_for_short_tokens_shared_between_candidates() {
+        // Why: these score 0.52-0.61 across the en/uk/ru set. Admitting them would pick a
+        // confidently wrong voice, which is the one failure this feature must not have.
+        let detector = en_uk_ru();
+        for text in ["ок", "да", "го", "круто", "не знаю"] {
+            assert_eq!(
+                detector.detect(text),
+                DetectionOutcome::Inconclusive,
+                "ambiguous token {text:?} must not narrow the voice pool"
+            );
+        }
+    }
+}

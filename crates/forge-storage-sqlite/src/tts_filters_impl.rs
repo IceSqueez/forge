@@ -160,6 +160,7 @@ struct SettingsExtRow {
     skip_custom_regexes: String,
     output_sanitize_punctuation: i64,
     output_max_duration_secs: Option<i64>,
+    output_language_aware_voice: Option<i64>,
 }
 
 fn decode_settings_row(
@@ -208,6 +209,7 @@ fn decode_settings_row(
         skip_custom_regexes,
         output_sanitize_punctuation: ext.output_sanitize_punctuation != 0,
         output_max_duration_secs: ext.output_max_duration_secs.map(|v| v as u32),
+        output_language_aware_voice: ext.output_language_aware_voice.map(|v| v != 0),
     })
 }
 
@@ -275,7 +277,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
         let ext: SettingsExtRow = sqlx::query_as(
             "SELECT skip_prefix, skip_emote_only, skip_mostly_non_latin,
                     skip_custom_regexes, output_sanitize_punctuation,
-                    output_max_duration_secs
+                    output_max_duration_secs, output_language_aware_voice
              FROM tts_pipeline_settings WHERE id = 1",
         )
         .fetch_one(&self.pool)
@@ -309,8 +311,8 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
                  skip_longer_than, longer_than_max_chars, skip_repeat_of_recent,
                  repeat_of_recent_window, output_read_display_name_first, output_emote_to_word,
                  skip_prefix, skip_emote_only, skip_mostly_non_latin, skip_custom_regexes,
-                 output_sanitize_punctuation, output_max_duration_secs)
-             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 output_sanitize_punctuation, output_max_duration_secs, output_language_aware_voice)
+             VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 url_mode                       = excluded.url_mode,
                 max_length                     = excluded.max_length,
@@ -332,7 +334,8 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
                 skip_mostly_non_latin          = excluded.skip_mostly_non_latin,
                 skip_custom_regexes            = excluded.skip_custom_regexes,
                 output_sanitize_punctuation    = excluded.output_sanitize_punctuation,
-                output_max_duration_secs       = excluded.output_max_duration_secs",
+                output_max_duration_secs       = excluded.output_max_duration_secs,
+                output_language_aware_voice    = excluded.output_language_aware_voice",
         )
         .bind(&url_mode_str)
         .bind(settings.max_length.map(|v| v as i64))
@@ -355,6 +358,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
         .bind(&skip_custom_regexes_json)
         .bind(settings.output_sanitize_punctuation as i64)
         .bind(settings.output_max_duration_secs.map(|v| v as i64))
+        .bind(settings.output_language_aware_voice.map(|v| v as i64))
         .execute(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;

@@ -2,20 +2,27 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    OverlayPosition, Radius, Spacing, body_family, confirm_modal, drive_overlay_focus,
-    ghost_button, icon, mono_family, overlay, radius, spacing, tr, with_alpha,
+    InputEvent, OverlayPosition, Radius, Spacing, TextInput, body_family, confirm_modal,
+    drive_overlay_focus, ghost_button, icon, mono_family, overlay, radius, spacing, toggle, tr,
+    with_alpha,
 };
+use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, Keystroke, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FocusHandle, FontWeight, Keystroke, Pixels,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
 use crate::async_bridge;
+use crate::hotkey_bindings::{load_hold_ceiling, save_hold_ceiling};
 use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
+
+const CEILING_MIN_SECS: u64 = 1;
+const CEILING_MAX_SECS: u64 = 3600;
+const CEILING_INPUT_W: Pixels = px(72.0);
 
 struct ShortcutConflict {
     target_id: &'static str,
@@ -26,35 +33,71 @@ struct ShortcutConflict {
 pub struct SettingsShortcutsView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
+    hotkey_client: Option<Arc<HotkeyClient>>,
     overrides: ShortcutOverrides,
     rebinding: Option<&'static str>,
     rebind_error: Option<String>,
     conflict: Option<ShortcutConflict>,
     save_error: Option<String>,
+    hold_ceiling_secs: u64,
+    hold_ceiling_on: bool,
+    hold_ceiling_input: Entity<TextInput>,
+    hold_ceiling_invalid: bool,
+    hold_ceiling_debounce: async_bridge::Debounced,
     capture_sub: Option<Subscription>,
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
+    _subs: Vec<Subscription>,
 }
 
 impl SettingsShortcutsView {
     pub fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
+        hotkey_client: Option<Arc<HotkeyClient>>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let palette = cx.palette();
+        let hold_ceiling_input = cx.new(|cx| {
+            let mut input = TextInput::new(tr!("settings_hold_ceiling_placeholder"), cx)
+                .with_palette(palette)
+                .with_font_size(FONT_SM);
+            input.set_content(DEFAULT_HOLD_CEILING_SECS.to_string(), cx);
+            input
+        });
+        let subs = vec![cx.subscribe(
+            &hold_ceiling_input,
+            |this, _input, event: &InputEvent, cx| match event {
+                InputEvent::Changed(text) | InputEvent::Submitted(text) => {
+                    this.commit_hold_ceiling(text.as_ref(), cx)
+                }
+                InputEvent::Cancelled => {}
+            },
+        )];
+
         let mut view = Self {
             backend,
             rt_handle,
+            hotkey_client,
             overrides: ShortcutOverrides::default(),
             rebinding: None,
             rebind_error: None,
             conflict: None,
             save_error: None,
+            hold_ceiling_secs: DEFAULT_HOLD_CEILING_SECS,
+            hold_ceiling_on: true,
+            hold_ceiling_input,
+            hold_ceiling_invalid: false,
+            hold_ceiling_debounce: async_bridge::Debounced::new(
+                async_bridge::SLIDER_PERSIST_DEBOUNCE,
+            ),
             capture_sub: None,
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
+            _subs: subs,
         };
         view.load(cx);
+        view.load_hold_ceiling(cx);
         view
     }
 
@@ -66,6 +109,73 @@ impl SettingsShortcutsView {
             |this, result, cx| this.apply_loaded(result, cx),
             cx,
         );
+    }
+
+    fn load_hold_ceiling(&mut self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { Ok::<_, String>(load_hold_ceiling(repo.as_ref()).await) },
+            |this, result: Result<Option<u64>, String>, cx| {
+                if let Ok(stored) = result {
+                    this.apply_hold_ceiling(stored, cx);
+                }
+            },
+            cx,
+        );
+    }
+
+    fn apply_hold_ceiling(&mut self, stored: Option<u64>, cx: &mut Context<Self>) {
+        self.hold_ceiling_on = stored.is_some();
+        self.hold_ceiling_secs = stored.unwrap_or(DEFAULT_HOLD_CEILING_SECS);
+        self.hold_ceiling_invalid = false;
+        let text = self.hold_ceiling_secs.to_string();
+        self.hold_ceiling_input.update(cx, |input, cx| {
+            input.set_invalid(false, cx);
+            input.set_content(text, cx);
+        });
+        cx.notify();
+    }
+
+    fn effective_hold_ceiling(&self) -> Option<u64> {
+        self.hold_ceiling_on.then_some(self.hold_ceiling_secs)
+    }
+
+    fn push_hold_ceiling(&mut self, cx: &mut Context<Self>) {
+        let ceiling = self.effective_hold_ceiling();
+        if let Some(client) = &self.hotkey_client {
+            client.set_hold_ceiling(ceiling);
+        }
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        self.hold_ceiling_debounce
+            .schedule(&self.rt_handle, "hotkey hold ceiling", async move {
+                save_hold_ceiling(repo.as_ref(), ceiling).await
+            });
+        cx.notify();
+    }
+
+    fn toggle_hold_ceiling(&mut self, cx: &mut Context<Self>) {
+        self.hold_ceiling_on = !self.hold_ceiling_on;
+        self.push_hold_ceiling(cx);
+    }
+
+    fn commit_hold_ceiling(&mut self, text: &str, cx: &mut Context<Self>) {
+        let parsed = text
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|secs| (CEILING_MIN_SECS..=CEILING_MAX_SECS).contains(secs));
+        self.hold_ceiling_invalid = parsed.is_none();
+        let invalid = self.hold_ceiling_invalid;
+        self.hold_ceiling_input
+            .update(cx, |input, cx| input.set_invalid(invalid, cx));
+        match parsed {
+            Some(secs) => {
+                self.hold_ceiling_secs = secs;
+                self.push_hold_ceiling(cx);
+            }
+            None => cx.notify(),
+        }
     }
 
     fn apply_loaded(
@@ -389,6 +499,94 @@ impl SettingsShortcutsView {
             )
     }
 
+    fn hold_ceiling_section(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let heading = div()
+            .font_family(mono_family())
+            .text_size(FONT_XXS)
+            .text_color(palette.text_faint)
+            .child(tr!("settings_hold_ceiling_section"));
+
+        let mut controls = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density))
+            .child(toggle(self.hold_ceiling_on, palette).on_click(
+                "hotkey-hold-ceiling-toggle",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_hold_ceiling(cx)),
+            ));
+        if self.hold_ceiling_on {
+            controls = controls
+                .child(
+                    div()
+                        .w(CEILING_INPUT_W)
+                        .child(self.hold_ceiling_input.clone()),
+                )
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XS)
+                        .text_color(palette.text_muted)
+                        .child(tr!("settings_hold_ceiling_unit")),
+                );
+        } else {
+            controls = controls.child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_faint)
+                    .child(tr!("settings_hold_ceiling_off")),
+            );
+        }
+
+        let hint = if self.hold_ceiling_invalid {
+            tr!(
+                "settings_hold_ceiling_invalid",
+                min = CEILING_MIN_SECS as i64,
+                max = CEILING_MAX_SECS as i64
+            )
+        } else {
+            tr!("settings_hold_ceiling_hint")
+        };
+        let hint_ink = if self.hold_ceiling_invalid {
+            palette.random
+        } else {
+            palette.text_faint
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(heading)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .w_full()
+                    .child(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_SM)
+                            .text_color(palette.text_primary)
+                            .child(tr!("settings_hold_ceiling_label")),
+                    )
+                    .child(controls),
+            )
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(hint_ink)
+                    .child(hint),
+            )
+    }
+
     fn conflict_overlay(
         &self,
         conflict: &ShortcutConflict,
@@ -467,6 +665,7 @@ impl Render for SettingsShortcutsView {
         body = body
             .child(list)
             .child(self.fixed_section(&palette, density))
+            .child(self.hold_ceiling_section(&palette, density, cx))
             .child(div().child(reset_all));
 
         let mut root = div().relative().size_full().child(body);

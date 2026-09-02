@@ -17,11 +17,13 @@ const GROUP_RADIUS: Pixels = px(7.0);
 const GROUP_PAD: Pixels = px(2.0);
 const SEG_GLYPH_GAP: Pixels = px(5.0);
 const HOVER_ALPHA: f32 = 0.06;
+const DISABLED_OPACITY: f32 = 0.5;
 
 pub struct Segment {
     id: ElementId,
     label: SharedString,
     active: bool,
+    disabled: bool,
     glyph: Option<Icon>,
     on_click: SegClick,
 }
@@ -36,6 +38,7 @@ pub fn segment(
         id: id.into(),
         label: label.into(),
         active,
+        disabled: false,
         glyph: None,
         on_click: Box::new(handler),
     }
@@ -45,6 +48,12 @@ impl Segment {
     #[must_use]
     pub fn icon(mut self, glyph: Icon) -> Self {
         self.glyph = Some(glyph);
+        self
+    }
+
+    #[must_use]
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 }
@@ -61,6 +70,7 @@ pub struct SegmentedControl {
     active_bg: Rgba,
     active_fg: Rgba,
     inactive_fg: Rgba,
+    disabled_fg: Rgba,
     hover_bg: Rgba,
     seg_radius: Pixels,
     seg_pad_x: Pixels,
@@ -82,6 +92,7 @@ pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedCon
         active_bg: palette.brand,
         active_fg: palette.shell,
         inactive_fg: palette.text_secondary,
+        disabled_fg: palette.text_faint,
         hover_bg: with_alpha(palette.border_regular, HOVER_ALPHA),
         seg_radius: SEG_RADIUS,
         seg_pad_x: SEG_PAD_H,
@@ -134,10 +145,10 @@ impl RenderOnce for SegmentedControl {
         };
 
         for seg in self.segments {
-            let fg = if seg.active {
-                self.active_fg
-            } else {
-                self.inactive_fg
+            let fg = match (seg.disabled, seg.active) {
+                (true, _) => self.disabled_fg,
+                (false, true) => self.active_fg,
+                (false, false) => self.inactive_fg,
             };
             let weight = if seg.active {
                 FontWeight::MEDIUM
@@ -145,10 +156,10 @@ impl RenderOnce for SegmentedControl {
                 FontWeight::NORMAL
             };
             let glyph = seg.glyph.map(|glyph| {
-                let tint = if seg.active {
-                    self.glyph_active
-                } else {
-                    self.glyph_idle
+                let tint = match (seg.disabled, seg.active) {
+                    (true, _) => self.disabled_fg,
+                    (false, true) => self.glyph_active,
+                    (false, false) => self.glyph_idle,
                 };
                 icon(glyph, self.seg_fs, tint)
             });
@@ -160,19 +171,22 @@ impl RenderOnce for SegmentedControl {
                 .py(self.seg_pad_y)
                 .px(self.seg_pad_x)
                 .rounded(self.seg_radius)
-                .cursor_pointer()
                 .font_family(body_family())
                 .font_weight(weight)
                 .text_size(self.seg_fs)
                 .text_color(fg)
-                .on_click(seg.on_click)
                 .children(glyph)
                 .child(seg.label);
             if seg.active {
                 chip = chip.bg(self.active_bg);
-            } else {
+            } else if !seg.disabled {
                 let hover = self.hover_bg;
                 chip = chip.hover(move |s| s.bg(hover));
+            }
+            if seg.disabled {
+                chip = chip.opacity(DISABLED_OPACITY);
+            } else {
+                chip = chip.cursor_pointer().on_click(seg.on_click);
             }
             container = container.child(chip);
         }

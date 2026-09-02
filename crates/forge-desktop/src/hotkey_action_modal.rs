@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, ForgePalette, Icon, InputEvent, OverlayPosition, SearchState, TextInput,
     body_family, ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button,
-    secondary_button, tr, with_alpha,
+    secondary_button, segment, segmented, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
@@ -13,7 +13,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::hotkey_bindings::combo_keys;
+use crate::hotkey_bindings::{HotkeyEdge, combo_keys};
 use crate::presentation::ActivePresentation;
 
 const MODAL_W: Pixels = px(520.0);
@@ -58,16 +58,21 @@ const EMPTY_PAD_V: Pixels = px(20.0);
 
 const FOOTER_GAP: Pixels = px(8.0);
 const FOOTER_HINT_FS: Pixels = px(11.0);
+const EDGE_HINT_MT: Pixels = px(6.0);
 
 pub struct ActionModalLaunch {
     pub instance_id: Option<TriggerInstanceId>,
     pub combo: String,
+    pub edge: HotkeyEdge,
+    /// Edge held by the row's other half; offering it would create a duplicate that hides one binding.
+    pub locked_edge: Option<HotkeyEdge>,
     pub linked_action: Option<ActionId>,
 }
 
 pub struct BindingDraft {
     pub instance_id: Option<TriggerInstanceId>,
     pub combo: String,
+    pub edge: HotkeyEdge,
     pub action_id: ActionId,
 }
 
@@ -91,6 +96,8 @@ enum ActionsState {
 pub struct HotkeyActionModal {
     instance_id: Option<TriggerInstanceId>,
     combo: String,
+    edge: HotkeyEdge,
+    locked_edge: Option<HotkeyEdge>,
     capturing: bool,
     filter: SearchState,
     actions: ActionsState,
@@ -111,6 +118,8 @@ impl HotkeyActionModal {
         let ActionModalLaunch {
             instance_id,
             combo,
+            edge,
+            locked_edge,
             linked_action,
         } = launch;
         let palette = cx.palette();
@@ -141,6 +150,8 @@ impl HotkeyActionModal {
         Self {
             instance_id,
             combo,
+            edge,
+            locked_edge,
             capturing: false,
             filter,
             actions: ActionsState::Loading,
@@ -153,6 +164,14 @@ impl HotkeyActionModal {
     pub fn apply_capture(&mut self, combo: String, cx: &mut Context<Self>) {
         self.capturing = false;
         self.combo = combo;
+        cx.notify();
+    }
+
+    pub fn set_edge_lock(&mut self, locked_edge: Option<HotkeyEdge>, cx: &mut Context<Self>) {
+        self.locked_edge = locked_edge;
+        if locked_edge == Some(self.edge) {
+            self.edge = self.edge.opposite();
+        }
         cx.notify();
     }
 
@@ -190,6 +209,14 @@ impl HotkeyActionModal {
         }
     }
 
+    fn select_edge(&mut self, edge: HotkeyEdge, cx: &mut Context<Self>) {
+        if self.locked_edge == Some(edge) || self.edge == edge {
+            return;
+        }
+        self.edge = edge;
+        cx.notify();
+    }
+
     fn select_action(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.selected_action = Some(id);
         cx.notify();
@@ -212,6 +239,7 @@ impl HotkeyActionModal {
         cx.emit(HotkeyActionModalEvent::Save(Box::new(BindingDraft {
             instance_id: self.instance_id,
             combo: self.combo.clone(),
+            edge: self.edge,
             action_id,
         })));
     }
@@ -278,6 +306,64 @@ impl HotkeyActionModal {
                     .child(display)
                     .child(div().flex_none().child(recapture)),
             )
+            .into_any_element()
+    }
+
+    fn edge_hints(&self) -> Vec<String> {
+        let mut hints = Vec::new();
+        match self.locked_edge {
+            Some(HotkeyEdge::Press) => hints.push(tr!("hotkeys_modal_edge_locked_press")),
+            Some(HotkeyEdge::Release) => hints.push(tr!("hotkeys_modal_edge_locked_release")),
+            None => {}
+        }
+        if self.edge == HotkeyEdge::Release {
+            hints.push(tr!("hotkeys_modal_edge_queue_hint"));
+        }
+        hints
+    }
+
+    fn render_edge(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let selector = segmented(
+            vec![
+                segment(
+                    "hotkeys-modal-edge-press",
+                    tr!("hotkeys_modal_edge_press"),
+                    self.edge == HotkeyEdge::Press,
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.select_edge(HotkeyEdge::Press, cx)
+                    }),
+                )
+                .disabled(self.locked_edge == Some(HotkeyEdge::Press)),
+                segment(
+                    "hotkeys-modal-edge-release",
+                    tr!("hotkeys_modal_edge_release"),
+                    self.edge == HotkeyEdge::Release,
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.select_edge(HotkeyEdge::Release, cx)
+                    }),
+                )
+                .disabled(self.locked_edge == Some(HotkeyEdge::Release)),
+            ],
+            palette,
+        );
+
+        let hints = self.edge_hints().into_iter().map(|hint| {
+            div()
+                .mt(EDGE_HINT_MT)
+                .font_family(body_family())
+                .text_size(FOOTER_HINT_FS)
+                .text_color(palette.text_faint)
+                .child(hint)
+        });
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .mb(SIGNAL_MB)
+            .child(section_caption(&tr!("hotkeys_modal_section_edge"), palette))
+            .child(div().flex().items_center().child(selector))
+            .children(hints)
             .into_any_element()
     }
 
@@ -525,6 +611,7 @@ impl Render for HotkeyActionModal {
             .flex()
             .flex_col()
             .child(self.render_combo(&palette, cx))
+            .child(self.render_edge(&palette, cx))
             .child(self.render_actions(&palette, cx));
 
         let (title, subtitle) = if self.instance_id.is_some() {

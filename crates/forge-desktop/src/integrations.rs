@@ -12,7 +12,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
 
-use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, HOTKEY_PRESSED_KIND};
+use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, load_hold_ceiling, persisted_hotkey_combos};
 use crate::midi_screen::MIDI_ENABLED_KEY;
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
@@ -653,12 +653,14 @@ async fn build_hotkey(
     Option<BuiltinObject>,
     Option<Arc<forge_hotkey::HotkeyClient>>,
 ) {
-    let client =
-        forge_hotkey::HotkeyClient::new(forge_hotkey::HotkeyConfig::default(), publisher(bus))
-            .await;
+    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+    let config = forge_hotkey::HotkeyConfig {
+        hold_ceiling_secs: load_hold_ceiling(&*settings).await,
+        ..forge_hotkey::HotkeyConfig::default()
+    };
+    let client = forge_hotkey::HotkeyClient::new(config, publisher(bus)).await;
     reregister_persisted_hotkeys(&client, backend).await;
 
-    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
     if !get_bool_setting(&*settings, HOTKEY_ENABLED_KEY, true).await
         && let Err(e) = client.disable().await
     {
@@ -688,14 +690,8 @@ async fn reregister_persisted_hotkeys(
             return;
         }
     };
-    for instance in instances {
-        if instance.kind_id != HOTKEY_PRESSED_KIND {
-            continue;
-        }
-        let Some(forge_types::Variant::String(combo_str)) = instance.overrides.get("combo") else {
-            continue;
-        };
-        let combo = match forge_hotkey::HotkeyCombo::parse(combo_str) {
+    for combo_str in persisted_hotkey_combos(&instances) {
+        let combo = match forge_hotkey::HotkeyCombo::parse(&combo_str) {
             Ok(combo) => combo,
             Err(e) => {
                 eprintln!(

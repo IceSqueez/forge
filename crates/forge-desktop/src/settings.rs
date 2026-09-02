@@ -213,7 +213,12 @@ impl SettingsView {
             )
         });
         let shortcuts = cx.new(|cx| {
-            SettingsShortcutsView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+            SettingsShortcutsView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                handles.hotkey_client.clone(),
+                cx,
+            )
         });
         let storage = cx.new(|cx| {
             SettingsStorageView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)

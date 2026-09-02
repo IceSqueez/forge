@@ -25,9 +25,10 @@ use crate::hotkey_action_modal::{
     ActionModalLaunch, BindingDraft, HotkeyActionModal, HotkeyActionModalEvent, keycaps,
 };
 use crate::hotkey_bindings::{
-    BindingRow, HOTKEY_ENABLED_KEY, HOTKEY_EVENT_PREFIX, HOTKEY_PRESSED_KIND, conflict_count,
-    delete_binding, do_bind, keystroke_to_combo, load_bindings, rebind_combo, registered_combos,
-    relink_action, set_binding_enabled,
+    BindingRow, HOTKEY_ENABLED_KEY, HOTKEY_EVENT_PREFIX, HOTKEY_PRESSED_KIND, HotkeyEdge,
+    conflict_count, delete_binding, delete_binding_half, do_bind, keystroke_to_combo,
+    load_bindings, rebind_combo, registered_combos, relink_action, set_binding_edge,
+    set_binding_enabled,
 };
 use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
@@ -69,6 +70,7 @@ const ROW_PAD_V: Pixels = px(9.0);
 const ROW_PAD_H: Pixels = px(12.0);
 const ROW_GAP: Pixels = px(10.0);
 const KEYCAPS_MIN_W: Pixels = px(130.0);
+const STOP_TARGET_MAX_W: Pixels = px(180.0);
 const SCOPE_BADGE_FS: Pixels = px(9.0);
 const ARROW_GLYPH: Pixels = px(13.0);
 const ACCENT_DOT: Pixels = px(6.0);
@@ -139,9 +141,17 @@ struct ConflictPrompt {
     app_owner: Option<&'static str>,
 }
 
+#[derive(Clone, Copy)]
+enum DeleteScope {
+    Row,
+    Half(TriggerInstanceId, HotkeyEdge),
+}
+
 struct DeletePrompt {
     combo: String,
     action: Option<String>,
+    paired: bool,
+    scope: DeleteScope,
 }
 
 struct LastFired {
@@ -173,6 +183,7 @@ pub struct HotkeysScreenView {
     shortcuts: ShortcutOverrides,
     conflicts: usize,
     last_fired: Option<LastFired>,
+    last_synthesized: Option<OffsetDateTime>,
     capture: Capture,
     capture_sub: Option<Subscription>,
     conflict: Option<ConflictPrompt>,
@@ -206,6 +217,7 @@ impl HotkeysScreenView {
             bindings: Vec::new(),
             shortcuts: ShortcutOverrides::default(),
             last_fired: None,
+            last_synthesized: None,
             capture: Capture::Off,
             capture_sub: None,
             conflict: None,
@@ -338,6 +350,7 @@ impl HotkeysScreenView {
         }
         self.conflicts = conflict_count(&self.client);
         self.enabled = self.client.is_enabled();
+        self.last_synthesized = self.client.last_synthesized_release();
         cx.notify();
     }
 
@@ -351,7 +364,25 @@ impl HotkeysScreenView {
     }
 
     fn enabled_count(&self) -> usize {
-        self.bindings.iter().filter(|row| row.enabled).count()
+        self.bindings.iter().filter(|row| row.enabled()).count()
+    }
+
+    fn row_by_key(&self, key: TriggerInstanceId) -> Option<&BindingRow> {
+        self.bindings.iter().find(|row| row.key == key)
+    }
+
+    fn row_of_instance(&self, instance_id: TriggerInstanceId) -> Option<&BindingRow> {
+        self.bindings.iter().find(|row| {
+            row.halves()
+                .any(|(_, half)| half.instance_id == instance_id)
+        })
+    }
+
+    /// The edge another half already occupies on that combo, which a new or moved half must not take.
+    fn locked_edge_for(&self, combo: &str) -> Option<HotkeyEdge> {
+        combo_holder(&self.bindings, combo, None)
+            .and_then(|row| row.free_edge())
+            .map(HotkeyEdge::opposite)
     }
 
     fn global_count(&self) -> usize {
@@ -489,11 +520,10 @@ impl HotkeysScreenView {
     fn on_capture_combo(&mut self, combo: String, cx: &mut Context<Self>) {
         let capture = std::mem::replace(&mut self.capture, Capture::Off);
         self.capture_sub = None;
-        let holder = self
-            .bindings
-            .iter()
-            .find(|row| row.combo == combo && Some(row.instance_id) != capture.target())
-            .map(|row| match row.action.as_ref() {
+        let adding = matches!(capture, Capture::Add | Capture::Modal(None));
+        let holder = combo_holder(&self.bindings, &combo, capture.target())
+            .filter(|row| !(adding && row.free_edge().is_some()))
+            .map(|row| match row.primary_action() {
                 Some((_, name)) => name.clone(),
                 None => tr!("hotkeys_conflict_holder_unassigned"),
             });
@@ -514,12 +544,20 @@ impl HotkeysScreenView {
     fn apply_capture(&mut self, capture: Capture, combo: String, cx: &mut Context<Self>) {
         match capture {
             Capture::Off => cx.notify(),
-            Capture::Add => self.open_modal(None, combo, None, cx),
-            Capture::Rebind(id) => self.rebind(id, combo, cx),
-            Capture::Modal(_) => {
+            Capture::Add => self.open_add_modal(combo, cx),
+            Capture::Rebind(key) => self.rebind(key, combo, cx),
+            Capture::Modal(editing) => {
+                let lock = match editing {
+                    Some(_) => None,
+                    None => self.locked_edge_for(&combo),
+                };
                 if let Some(open) = &self.modal {
-                    open.view
-                        .update(cx, |modal, cx| modal.apply_capture(combo, cx));
+                    open.view.update(cx, |modal, cx| {
+                        if editing.is_none() {
+                            modal.set_edge_lock(lock, cx);
+                        }
+                        modal.apply_capture(combo, cx);
+                    });
                 }
                 cx.notify();
             }
@@ -585,16 +623,26 @@ impl HotkeysScreenView {
         cx.notify();
     }
 
+    fn open_add_modal(&mut self, combo: String, cx: &mut Context<Self>) {
+        let locked = self.locked_edge_for(&combo);
+        let edge = locked.map_or(HotkeyEdge::Press, HotkeyEdge::opposite);
+        self.open_modal(None, combo, edge, locked, None, cx);
+    }
+
     fn open_modal(
         &mut self,
         instance_id: Option<TriggerInstanceId>,
         combo: String,
+        edge: HotkeyEdge,
+        locked_edge: Option<HotkeyEdge>,
         linked_action: Option<ActionId>,
         cx: &mut Context<Self>,
     ) {
         let launch = ActionModalLaunch {
             instance_id,
             combo,
+            edge,
+            locked_edge,
             linked_action,
         };
         let action_repo = self.backend.action_repo();
@@ -625,6 +673,7 @@ impl HotkeysScreenView {
                 let draft = BindingDraft {
                     instance_id: draft.instance_id,
                     combo: draft.combo.clone(),
+                    edge: draft.edge,
                     action_id: draft.action_id,
                 };
                 self.close_modal(cx);
@@ -643,77 +692,97 @@ impl HotkeysScreenView {
     fn persist_draft(&mut self, draft: BindingDraft, cx: &mut Context<Self>) {
         let client = Arc::clone(&self.client);
         let backend = Arc::clone(&self.backend);
-        let action_id = draft.action_id;
-        let combo = draft.combo;
-        let Some(instance_id) = draft.instance_id else {
-            self.run_reload(do_bind(client, backend, combo, action_id), cx);
+        let BindingDraft {
+            instance_id,
+            combo,
+            edge,
+            action_id,
+        } = draft;
+        let Some(instance_id) = instance_id else {
+            self.run_reload(do_bind(client, backend, combo, edge, action_id), cx);
             return;
         };
         let previous = self
-            .bindings
-            .iter()
-            .find(|row| row.instance_id == instance_id)
+            .row_of_instance(instance_id)
             .map(|row| row.combo.clone())
             .unwrap_or_else(|| combo.clone());
         self.run_reload(
             async move {
-                rebind_combo(
-                    Arc::clone(&client),
-                    Arc::clone(&backend),
-                    instance_id,
-                    previous,
-                    combo,
-                )
-                .await?;
+                rebind_combo(client, Arc::clone(&backend), previous, combo).await?;
+                set_binding_edge(Arc::clone(&backend), instance_id, edge).await?;
                 relink_action(backend, instance_id, action_id).await
             },
             cx,
         );
     }
 
-    fn rebind(&mut self, instance_id: TriggerInstanceId, combo: String, cx: &mut Context<Self>) {
-        let Some(previous) = self
-            .bindings
-            .iter()
-            .find(|row| row.instance_id == instance_id)
-            .map(|row| row.combo.clone())
-        else {
+    fn rebind(&mut self, key: TriggerInstanceId, combo: String, cx: &mut Context<Self>) {
+        let Some(previous) = self.row_by_key(key).map(|row| row.combo.clone()) else {
             cx.notify();
             return;
         };
         let client = Arc::clone(&self.client);
         let backend = Arc::clone(&self.backend);
-        self.run_reload(
-            rebind_combo(client, backend, instance_id, previous, combo),
-            cx,
-        );
+        self.run_reload(rebind_combo(client, backend, previous, combo), cx);
     }
 
-    fn change_action(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
+    fn edit_half(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
         self.menu_open = None;
-        let Some(row) = self
-            .bindings
-            .iter()
-            .find(|row| row.instance_id == instance_id)
-        else {
+        let Some(row) = self.row_of_instance(instance_id) else {
             cx.notify();
             return;
         };
         let combo = row.combo.clone();
-        let linked = row.action.as_ref().map(|(id, _)| *id);
-        self.open_modal(Some(instance_id), combo, linked, cx);
+        let Some((edge, half)) = row
+            .halves()
+            .find(|(_, half)| half.instance_id == instance_id)
+        else {
+            cx.notify();
+            return;
+        };
+        let linked = half.action.as_ref().map(|(id, _)| *id);
+        let locked = row.free_edge().is_none().then(|| edge.opposite());
+        self.open_modal(Some(instance_id), combo, edge, locked, linked, cx);
     }
 
-    fn prompt_delete(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
+    fn add_half(&mut self, key: TriggerInstanceId, cx: &mut Context<Self>) {
         self.menu_open = None;
-        self.delete_prompt = self
-            .bindings
-            .iter()
-            .find(|row| row.instance_id == instance_id)
-            .map(|row| DeletePrompt {
+        let Some(row) = self.row_by_key(key) else {
+            cx.notify();
+            return;
+        };
+        let Some(edge) = row.free_edge() else {
+            cx.notify();
+            return;
+        };
+        let combo = row.combo.clone();
+        self.open_modal(None, combo, edge, Some(edge.opposite()), None, cx);
+    }
+
+    fn prompt_delete(&mut self, key: TriggerInstanceId, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        self.delete_prompt = self.row_by_key(key).map(|row| DeletePrompt {
+            combo: row.combo.clone(),
+            action: row.primary_action().map(|(_, name)| name.clone()),
+            paired: row.is_hold(),
+            scope: DeleteScope::Row,
+        });
+        cx.notify();
+    }
+
+    fn prompt_delete_half(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
+        self.menu_open = None;
+        self.delete_prompt = self.row_of_instance(instance_id).and_then(|row| {
+            let (edge, half) = row
+                .halves()
+                .find(|(_, half)| half.instance_id == instance_id)?;
+            Some(DeletePrompt {
                 combo: row.combo.clone(),
-                action: row.action.as_ref().map(|(_, name)| name.clone()),
-            });
+                action: half.action.as_ref().map(|(_, name)| name.clone()),
+                paired: false,
+                scope: DeleteScope::Half(instance_id, edge),
+            })
+        });
         cx.notify();
     }
 
@@ -728,7 +797,14 @@ impl HotkeysScreenView {
         };
         let client = Arc::clone(&self.client);
         let backend = Arc::clone(&self.backend);
-        self.run_reload(delete_binding(client, backend, prompt.combo), cx);
+        match prompt.scope {
+            DeleteScope::Row => {
+                self.run_reload(delete_binding(client, backend, prompt.combo), cx);
+            }
+            DeleteScope::Half(instance_id, _) => {
+                self.run_reload(delete_binding_half(backend, instance_id), cx);
+            }
+        }
     }
 
     fn run_reload(
@@ -748,29 +824,40 @@ impl HotkeysScreenView {
         cx.notify();
     }
 
-    fn toggle_binding(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
-        let Some(row) = self
-            .bindings
-            .iter_mut()
-            .find(|row| row.instance_id == instance_id)
-        else {
+    /// Acts on every half: a hold whose press is on and release is off would start and never stop.
+    fn toggle_binding(&mut self, key: TriggerInstanceId, cx: &mut Context<Self>) {
+        let Some(row) = self.bindings.iter_mut().find(|row| row.key == key) else {
             return;
         };
-        let previous = row.enabled;
-        row.enabled = !previous;
-        let enabled = row.enabled;
+        let previous: Vec<(TriggerInstanceId, bool)> = row
+            .halves()
+            .map(|(_, half)| (half.instance_id, half.enabled))
+            .collect();
+        let enabled = !previous.iter().all(|(_, was)| *was);
+        let ids: Vec<TriggerInstanceId> = previous.iter().map(|(id, _)| *id).collect();
+        for half in [row.press.as_mut(), row.release.as_mut()]
+            .into_iter()
+            .flatten()
+        {
+            half.enabled = enabled;
+        }
         let backend = Arc::clone(&self.backend);
         async_bridge::optimistic(
             &self.rt_handle,
             previous,
-            set_binding_enabled(backend, instance_id, enabled),
+            set_binding_enabled(backend, ids, enabled),
             move |this, previous, _message, cx| {
-                if let Some(row) = this
-                    .bindings
-                    .iter_mut()
-                    .find(|row| row.instance_id == instance_id)
-                {
-                    row.enabled = previous;
+                if let Some(row) = this.bindings.iter_mut().find(|row| row.key == key) {
+                    for half in [row.press.as_mut(), row.release.as_mut()]
+                        .into_iter()
+                        .flatten()
+                    {
+                        if let Some((_, was)) =
+                            previous.iter().find(|(id, _)| *id == half.instance_id)
+                        {
+                            half.enabled = *was;
+                        }
+                    }
                 }
                 ErrorSink::Toast.report(tr!("hotkeys_toggle_binding_failed"), cx);
             },
@@ -1208,11 +1295,12 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let instance_id = row.instance_id;
-        if self.capture == Capture::Rebind(instance_id) {
+        let key = row.key;
+        if self.capture == Capture::Rebind(key) {
             return self.render_capture_row(palette, cx);
         }
-        let (target_text, target_ink) = match row.action.as_ref() {
+        let enabled = row.enabled();
+        let (target_text, target_ink) = match row.primary_action() {
             Some((_, name)) => (name.clone(), palette.text_primary),
             None => (tr!("hotkeys_unassigned"), palette.text_faint),
         };
@@ -1221,11 +1309,38 @@ impl HotkeysScreenView {
         } else {
             (tr!("hotkeys_scope_unregistered"), palette.text_faint)
         };
-        let dot_color = if row.action.is_some() {
+        let dot_color = if row.primary_action().is_some() {
             palette.brand
         } else {
             palette.text_faint
         };
+        let edge_badge = if row.is_hold() {
+            Some(badge(
+                palette.surface_overlay,
+                palette.warning,
+                tr!("hotkeys_badge_hold"),
+                false,
+                SCOPE_BADGE_FS,
+            ))
+        } else if row.is_release_edge() {
+            Some(badge(
+                palette.surface_overlay,
+                palette.info,
+                tr!("hotkeys_badge_release_edge"),
+                false,
+                SCOPE_BADGE_FS,
+            ))
+        } else {
+            None
+        };
+        let stop_target = row
+            .is_hold()
+            .then(|| row.half(HotkeyEdge::Release))
+            .flatten()
+            .map(|half| match half.action.as_ref() {
+                Some((_, name)) => tr!("hotkeys_row_stop", action = name.as_str()),
+                None => tr!("hotkeys_row_stop_unassigned"),
+            });
 
         let body = div()
             .w_full()
@@ -1240,7 +1355,7 @@ impl HotkeysScreenView {
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                         if event.click_count() >= 2 {
-                            this.start_capture(Capture::Rebind(instance_id), cx);
+                            this.start_capture(Capture::Rebind(key), cx);
                         }
                     }))
                     .child(keycaps(&row.combo, palette)),
@@ -1255,6 +1370,7 @@ impl HotkeysScreenView {
                 )
                 .flex_none(),
             )
+            .children(edge_badge.map(|badge| badge.flex_none()))
             .child(icon(Icon::ArrowRight, ARROW_GLYPH, palette.text_faint))
             .child(
                 div()
@@ -1273,20 +1389,28 @@ impl HotkeysScreenView {
                     .text_color(target_ink)
                     .child(target_text),
             )
-            .child(toggle(row.enabled, palette).on_click(
+            .children(stop_target.map(|text| {
+                div()
+                    .flex_none()
+                    .max_w(STOP_TARGET_MAX_W)
+                    .truncate()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(text)
+            }))
+            .child(toggle(enabled, palette).on_click(
                 ("hotkeys-row-toggle", index),
-                cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.toggle_binding(instance_id, cx)
-                }),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_binding(key, cx)),
             ))
-            .child(self.render_row_menu(index, instance_id, palette, cx));
+            .child(self.render_row_menu(index, row, palette, cx));
 
         let mut wrapper = div().w_full().child(
             card(body, palette)
                 .padding_xy(ROW_PAD_V, ROW_PAD_H)
                 .full_width(),
         );
-        if !row.enabled {
+        if !enabled {
             wrapper = wrapper.opacity(ROW_OFF_OPACITY);
         }
         wrapper.into_any_element()
@@ -1295,38 +1419,92 @@ impl HotkeysScreenView {
     fn render_row_menu(
         &self,
         index: usize,
-        instance_id: TriggerInstanceId,
+        row: &BindingRow,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let key = RowKey::Global(instance_id);
+        let key = RowKey::Global(row.key);
         let open = self.menu_open == Some(key);
         let view = cx.entity();
-        menu_button(Icon::DotsVertical, open, palette)
-            .placement(MenuPlacement::BottomRight)
-            .open_at(self.menu_click_pos)
-            .items(vec![
+        let paired = row.is_hold();
+        let mut items = Vec::new();
+        for (edge, half) in row.halves() {
+            let instance_id = half.instance_id;
+            let label = match (paired, edge) {
+                (false, _) => tr!("hotkeys_menu_edit"),
+                (true, HotkeyEdge::Press) => tr!("hotkeys_menu_edit_press"),
+                (true, HotkeyEdge::Release) => tr!("hotkeys_menu_edit_release"),
+            };
+            items.push(
                 menu_item(
-                    ("hotkeys-menu-edit", index),
-                    tr!("hotkeys_menu_edit"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.change_action(instance_id, cx)
-                    }),
+                    (
+                        "hotkeys-menu-edit",
+                        index * 2 + usize::from(edge == HotkeyEdge::Release),
+                    ),
+                    label,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.edit_half(instance_id, cx)),
                 )
                 .icon(Icon::Edit)
                 .into(),
-                menu_divider(),
+            );
+        }
+        if let Some(edge) = row.free_edge() {
+            let row_key = row.key;
+            let label = match edge {
+                HotkeyEdge::Press => tr!("hotkeys_menu_add_press"),
+                HotkeyEdge::Release => tr!("hotkeys_menu_add_release"),
+            };
+            items.push(
                 menu_item(
-                    ("hotkeys-menu-delete", index),
-                    tr!("common_delete"),
-                    cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.prompt_delete(instance_id, cx)
-                    }),
+                    ("hotkeys-menu-add-half", index),
+                    label,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.add_half(row_key, cx)),
                 )
-                .icon(Icon::Trash)
-                .color(palette.random)
+                .icon(Icon::Plus)
                 .into(),
-            ])
+            );
+        }
+        if paired {
+            items.push(menu_divider());
+            for (edge, half) in row.halves() {
+                let instance_id = half.instance_id;
+                let label = match edge {
+                    HotkeyEdge::Press => tr!("hotkeys_menu_remove_press"),
+                    HotkeyEdge::Release => tr!("hotkeys_menu_remove_release"),
+                };
+                items.push(
+                    menu_item(
+                        (
+                            "hotkeys-menu-remove-half",
+                            index * 2 + usize::from(edge == HotkeyEdge::Release),
+                        ),
+                        label,
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.prompt_delete_half(instance_id, cx)
+                        }),
+                    )
+                    .icon(Icon::Eraser)
+                    .into(),
+                );
+            }
+        }
+        items.push(menu_divider());
+        let row_key = row.key;
+        items.push(
+            menu_item(
+                ("hotkeys-menu-delete", index),
+                tr!("common_delete"),
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.prompt_delete(row_key, cx)),
+            )
+            .icon(Icon::Trash)
+            .color(palette.random)
+            .into(),
+        );
+
+        menu_button(Icon::DotsVertical, open, palette)
+            .placement(MenuPlacement::BottomRight)
+            .open_at(self.menu_click_pos)
+            .items(items)
             .on_toggle(
                 ("hotkeys-menu-trigger", index),
                 cx.listener(move |this, event: &ClickEvent, _, cx| {
@@ -1433,6 +1611,25 @@ impl HotkeysScreenView {
                 tr!("hotkeys_footer_conflicts", count = self.conflicts as i64),
             )
         };
+        let synthesized = self.last_synthesized.map(|at| {
+            div()
+                .flex()
+                .items_center()
+                .gap(FOOTER_GAP)
+                .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
+                .child(status_dot(palette.warning, FOOTER_DOT))
+                .child(
+                    div()
+                        .font_family(mono_family())
+                        .text_size(FOOTER_FS)
+                        .text_color(palette.warning)
+                        .child(tr!(
+                            "hotkeys_footer_hold_closed",
+                            when = fmt_relative_time(Some(at))
+                        )),
+                )
+        });
+
         div()
             .w_full()
             .mt(FOOTER_MT)
@@ -1454,7 +1651,8 @@ impl HotkeysScreenView {
                         palette,
                     ))
                     .child(footer_text(FOOTER_SEPARATOR.to_owned(), palette))
-                    .child(footer_text(listener, palette)),
+                    .child(footer_text(listener, palette))
+                    .children(synthesized),
             )
             .child(
                 div()
@@ -1473,9 +1671,18 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let message = match prompt.action.as_deref() {
-            Some(action) => tr!("hotkeys_confirm_delete_body", action = action),
-            None => tr!("hotkeys_confirm_delete_body_unassigned"),
+        let message = match (prompt.scope, prompt.action.as_deref()) {
+            (DeleteScope::Half(_, HotkeyEdge::Press), _) => {
+                tr!("hotkeys_confirm_delete_press_half")
+            }
+            (DeleteScope::Half(_, HotkeyEdge::Release), _) => {
+                tr!("hotkeys_confirm_delete_release_half")
+            }
+            (DeleteScope::Row, _) if prompt.paired => tr!("hotkeys_confirm_delete_body_pair"),
+            (DeleteScope::Row, Some(action)) => {
+                tr!("hotkeys_confirm_delete_body", action = action)
+            }
+            (DeleteScope::Row, None) => tr!("hotkeys_confirm_delete_body_unassigned"),
         };
         let card = confirm_modal(
             tr!("hotkeys_confirm_delete_title"),
@@ -1541,6 +1748,20 @@ impl HotkeysScreenView {
             })
             .into_any_element()
     }
+}
+
+/// Excludes the target by half membership, not by row key: a hold's release half is keyed by its press partner.
+fn combo_holder<'a>(
+    rows: &'a [BindingRow],
+    combo: &str,
+    target: Option<TriggerInstanceId>,
+) -> Option<&'a BindingRow> {
+    rows.iter().find(|row| {
+        row.combo == combo
+            && !row
+                .halves()
+                .any(|(_, half)| Some(half.instance_id) == target)
+    })
 }
 
 fn footer_text(text: String, palette: &ForgePalette) -> impl IntoElement {

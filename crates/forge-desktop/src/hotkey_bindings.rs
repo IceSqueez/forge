@@ -1,27 +1,114 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyId};
+use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient, HotkeyCombo, HotkeyId};
 use forge_platform_core::{BuiltinHealth, HealthValue};
-use forge_storage::DataProvider;
+use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use forge_types::{
     ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId, Variant,
 };
 use gpui::Keystroke;
 
 pub const HOTKEY_ENABLED_KEY: &str = "hotkey.enabled";
+pub const HOTKEY_HOLD_CEILING_KEY: &str = "hotkey.hold_ceiling_secs";
 pub const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
+pub const HOTKEY_RELEASED_KIND: &str = "hotkey.global.released";
 pub const HOTKEY_EVENT_PREFIX: &str = "hotkey.";
 
 const COMBO_FIELD: &str = "combo";
 const CONFLICTS_METRIC: &str = "CONFLICTS";
+const CEILING_OFF: u64 = 0;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HotkeyEdge {
+    Press,
+    Release,
+}
+
+impl HotkeyEdge {
+    pub fn kind_id(self) -> &'static str {
+        match self {
+            HotkeyEdge::Press => HOTKEY_PRESSED_KIND,
+            HotkeyEdge::Release => HOTKEY_RELEASED_KIND,
+        }
+    }
+
+    pub fn from_kind(kind_id: &str) -> Option<Self> {
+        match kind_id {
+            HOTKEY_PRESSED_KIND => Some(HotkeyEdge::Press),
+            HOTKEY_RELEASED_KIND => Some(HotkeyEdge::Release),
+            _ => None,
+        }
+    }
+
+    pub fn opposite(self) -> Self {
+        match self {
+            HotkeyEdge::Press => HotkeyEdge::Release,
+            HotkeyEdge::Release => HotkeyEdge::Press,
+        }
+    }
+}
+
+pub struct BindingHalf {
+    pub instance_id: TriggerInstanceId,
+    pub enabled: bool,
+    pub action: Option<(ActionId, String)>,
+}
 
 pub struct BindingRow {
-    pub instance_id: TriggerInstanceId,
+    /// Row identity for menus and capture targets: the press half when the row has one, else the release half.
+    pub key: TriggerInstanceId,
     pub combo: String,
-    pub enabled: bool,
     pub registered: bool,
-    pub action: Option<(ActionId, String)>,
+    pub press: Option<BindingHalf>,
+    pub release: Option<BindingHalf>,
+}
+
+impl BindingRow {
+    pub fn half(&self, edge: HotkeyEdge) -> Option<&BindingHalf> {
+        match edge {
+            HotkeyEdge::Press => self.press.as_ref(),
+            HotkeyEdge::Release => self.release.as_ref(),
+        }
+    }
+
+    pub fn is_hold(&self) -> bool {
+        self.press.is_some() && self.release.is_some()
+    }
+
+    pub fn is_release_edge(&self) -> bool {
+        self.press.is_none() && self.release.is_some()
+    }
+
+    /// Off unless every half the row carries is enabled, so a half-disabled hold reads as stopped.
+    pub fn enabled(&self) -> bool {
+        self.halves().all(|(_, half)| half.enabled)
+    }
+
+    pub fn halves(&self) -> impl Iterator<Item = (HotkeyEdge, &BindingHalf)> {
+        [
+            (HotkeyEdge::Press, self.press.as_ref()),
+            (HotkeyEdge::Release, self.release.as_ref()),
+        ]
+        .into_iter()
+        .filter_map(|(edge, half)| half.map(|half| (edge, half)))
+    }
+
+    pub fn primary_action(&self) -> Option<&(ActionId, String)> {
+        self.press
+            .as_ref()
+            .or(self.release.as_ref())
+            .and_then(|half| half.action.as_ref())
+    }
+
+    /// The edge with no half bound yet; `None` once the combo carries both.
+    pub fn free_edge(&self) -> Option<HotkeyEdge> {
+        match (self.press.is_some(), self.release.is_some()) {
+            (true, false) => Some(HotkeyEdge::Release),
+            (false, true) => Some(HotkeyEdge::Press),
+            _ => None,
+        }
+    }
 }
 
 pub fn combo_keys(combo: &str) -> Vec<&str> {
@@ -91,11 +178,11 @@ pub async fn load_bindings(
     let actions = backend.action_repo();
     let instances = triggers.list_all().await.map_err(|e| e.to_string())?;
 
-    let mut rows = Vec::new();
+    let mut grouped: BTreeMap<String, (Option<BindingHalf>, Option<BindingHalf>)> = BTreeMap::new();
     for instance in instances {
-        if instance.kind_id != HOTKEY_PRESSED_KIND {
+        let Some(edge) = HotkeyEdge::from_kind(&instance.kind_id) else {
             continue;
-        }
+        };
         let Some(combo) = combo_of(&instance).cloned() else {
             continue;
         };
@@ -109,82 +196,154 @@ pub async fn load_bindings(
         {
             action = Some((found.id, found.name));
         }
-        rows.push(BindingRow {
+        let half = BindingHalf {
             instance_id: instance.id,
-            registered: registered.iter().any(|(_, known)| known == &combo),
-            combo,
             enabled: instance.enabled,
             action,
-        });
+        };
+        let slot = grouped.entry(combo).or_default();
+        let target = match edge {
+            HotkeyEdge::Press => &mut slot.0,
+            HotkeyEdge::Release => &mut slot.1,
+        };
+        if target.is_none() {
+            *target = Some(half);
+        }
     }
-    rows.sort_by(|a, b| a.combo.cmp(&b.combo));
+
+    let rows = grouped
+        .into_iter()
+        .filter_map(|(combo, (press, release))| {
+            let key = press.as_ref().or(release.as_ref())?.instance_id;
+            Some(BindingRow {
+                key,
+                registered: registered.iter().any(|(_, known)| known == &combo),
+                combo,
+                press,
+                release,
+            })
+        })
+        .collect();
     Ok(rows)
 }
 
-pub async fn cleanup_stale_combo_instances(
+async fn hotkey_instances_for_combo(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
-) -> Result<(), String> {
+) -> Result<Vec<TriggerInstance>, String> {
     let instances = backend
         .trigger_instance_repo()
         .list_all()
         .await
         .map_err(|e| e.to_string())?;
+    Ok(instances
+        .into_iter()
+        .filter(|instance| HotkeyEdge::from_kind(&instance.kind_id).is_some())
+        .filter(|instance| combo_of(instance).is_some_and(|existing| existing == combo_str))
+        .collect())
+}
 
-    for instance in instances {
-        if instance.kind_id != HOTKEY_PRESSED_KIND {
-            continue;
-        }
-        if combo_of(&instance).is_none_or(|existing| existing != combo_str) {
-            continue;
-        }
-        let action_ids = backend
-            .trigger_instance_repo()
-            .actions_using(instance.id)
-            .await
-            .map_err(|e| e.to_string())?;
-        for aid in action_ids {
-            backend
-                .trigger_instance_repo()
-                .unlink_action(aid, instance.id)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
-        backend
-            .trigger_instance_repo()
-            .delete(instance.id)
+async fn drop_instance(
+    backend: &Arc<dyn DataProvider>,
+    instance_id: TriggerInstanceId,
+) -> Result<(), String> {
+    let repo = backend.trigger_instance_repo();
+    let action_ids = repo
+        .actions_using(instance_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    for aid in action_ids {
+        repo.unlink_action(aid, instance_id)
             .await
             .map_err(|e| e.to_string())?;
     }
+    repo.delete(instance_id)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
 
+/// Prunes both edges of the combo, so removing a binding never orphans its partner half.
+pub async fn cleanup_stale_combo_instances(
+    backend: &Arc<dyn DataProvider>,
+    combo_str: &str,
+) -> Result<(), String> {
+    for instance in hotkey_instances_for_combo(backend, combo_str).await? {
+        drop_instance(backend, instance.id).await?;
+    }
     Ok(())
+}
+
+async fn remove_combo_edge(
+    backend: &Arc<dyn DataProvider>,
+    combo_str: &str,
+    edge: HotkeyEdge,
+) -> Result<(), String> {
+    for instance in hotkey_instances_for_combo(backend, combo_str).await? {
+        if instance.kind_id == edge.kind_id() {
+            drop_instance(backend, instance.id).await?;
+        }
+    }
+    Ok(())
+}
+
+/// A second half re-uses the combo's existing registration; registering it twice is an error.
+async fn ensure_registered(client: &HotkeyClient, combo: HotkeyCombo) -> Result<(), String> {
+    if client
+        .registered_combos()
+        .iter()
+        .any(|(_, known)| known.as_str() == combo.as_str())
+    {
+        return Ok(());
+    }
+    client
+        .register(combo)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+fn binding_instance(combo: String, edge: HotkeyEdge) -> TriggerInstance {
+    let mut overrides = BTreeMap::new();
+    overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo.clone()));
+    TriggerInstance {
+        id: TriggerInstanceId::new(),
+        kind_id: edge.kind_id().to_owned(),
+        name: combo,
+        overrides,
+        enabled: true,
+        user_defined: true,
+        platform_scope: PlatformScope::default(),
+        // A cooldown on the release half would swallow the stop of a hold.
+        cooldown_secs: 0,
+        cooldown_global: true,
+        permission_rung: PermissionRung::Everyone,
+    }
+}
+
+/// One entry per combo across both edges: a hold's halves share a single OS registration.
+pub fn persisted_hotkey_combos(instances: &[TriggerInstance]) -> BTreeSet<String> {
+    instances
+        .iter()
+        .filter(|instance| HotkeyEdge::from_kind(&instance.kind_id).is_some())
+        .filter_map(combo_of)
+        .cloned()
+        .collect()
 }
 
 pub async fn do_bind(
     client: Arc<HotkeyClient>,
     backend: Arc<dyn DataProvider>,
     combo_str: String,
+    edge: HotkeyEdge,
     action_id: ActionId,
 ) -> Result<(), String> {
     let combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
-    client.register(combo).await.map_err(|e| e.to_string())?;
+    ensure_registered(&client, combo).await?;
 
-    cleanup_stale_combo_instances(&backend, &combo_str).await?;
+    remove_combo_edge(&backend, &combo_str, edge).await?;
 
-    let mut overrides = BTreeMap::new();
-    overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo_str.clone()));
-    let instance = TriggerInstance {
-        id: TriggerInstanceId::new(),
-        kind_id: HOTKEY_PRESSED_KIND.to_owned(),
-        name: combo_str,
-        overrides,
-        enabled: true,
-        user_defined: true,
-        platform_scope: PlatformScope::default(),
-        cooldown_secs: 0,
-        cooldown_global: true,
-        permission_rung: PermissionRung::Everyone,
-    };
+    let instance = binding_instance(combo_str, edge);
     backend
         .trigger_instance_repo()
         .save(&instance)
@@ -214,23 +373,33 @@ pub async fn delete_binding(
     cleanup_stale_combo_instances(&backend, &combo_str).await
 }
 
-/// Leaves the OS registration in place: the combo still fires `hotkey.global.pressed`, and the trigger evaluator is what skips a disabled instance.
-pub async fn set_binding_enabled(
+/// Keeps the OS registration, which the surviving partner half still needs.
+pub async fn delete_binding_half(
     backend: Arc<dyn DataProvider>,
     instance_id: TriggerInstanceId,
-    enabled: bool,
 ) -> Result<(), String> {
-    backend
-        .trigger_instance_repo()
-        .set_enabled(instance_id, enabled)
-        .await
-        .map_err(|e| e.to_string())
+    drop_instance(&backend, instance_id).await
 }
 
+/// Leaves the OS registration in place: the combo still fires, and the trigger evaluator is what skips a disabled instance.
+pub async fn set_binding_enabled(
+    backend: Arc<dyn DataProvider>,
+    instance_ids: Vec<TriggerInstanceId>,
+    enabled: bool,
+) -> Result<(), String> {
+    let repo = backend.trigger_instance_repo();
+    for instance_id in instance_ids {
+        repo.set_enabled(instance_id, enabled)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Moves every half of the combo, so rebinding a hold keeps its press and release on one combo.
 pub async fn rebind_combo(
     client: Arc<HotkeyClient>,
     backend: Arc<dyn DataProvider>,
-    instance_id: TriggerInstanceId,
     previous_combo: String,
     combo_str: String,
 ) -> Result<(), String> {
@@ -245,24 +414,71 @@ pub async fn rebind_combo(
     {
         client.unregister(id).await.map_err(|e| e.to_string())?;
     }
-    client.register(combo).await.map_err(|e| e.to_string())?;
+    ensure_registered(&client, combo).await?;
 
     cleanup_stale_combo_instances(&backend, &combo_str).await?;
 
+    let repo = backend.trigger_instance_repo();
+    for source in hotkey_instances_for_combo(&backend, &previous_combo).await? {
+        let mut overrides = source.overrides.clone();
+        overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo_str.clone()));
+        let updated = TriggerInstance {
+            name: combo_str.clone(),
+            overrides,
+            ..source
+        };
+        repo.save(&updated).await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Callers must free the target edge first; two instances of one edge on a combo hide one another.
+pub async fn set_binding_edge(
+    backend: Arc<dyn DataProvider>,
+    instance_id: TriggerInstanceId,
+    edge: HotkeyEdge,
+) -> Result<(), String> {
     let repo = backend.trigger_instance_repo();
     let source = repo
         .get(instance_id)
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "trigger instance not found".to_owned())?;
-    let mut overrides = source.overrides.clone();
-    overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo_str.clone()));
+    if source.kind_id == edge.kind_id() {
+        return Ok(());
+    }
     let updated = TriggerInstance {
-        name: combo_str,
-        overrides,
+        kind_id: edge.kind_id().to_owned(),
         ..source
     };
     repo.save(&updated).await.map_err(|e| e.to_string())
+}
+
+/// `None` is the off state: no ceiling closes a hold the OS never reported releasing.
+pub async fn load_hold_ceiling(repo: &dyn SettingsRepo) -> Option<u64> {
+    match repo.get_string(HOTKEY_HOLD_CEILING_KEY).await {
+        Ok(Some(raw)) => match raw.trim().parse::<u64>() {
+            Ok(CEILING_OFF) => None,
+            Ok(secs) => Some(secs),
+            Err(_) => Some(DEFAULT_HOLD_CEILING_SECS),
+        },
+        Ok(None) => Some(DEFAULT_HOLD_CEILING_SECS),
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to read the hotkey hold ceiling");
+            Some(DEFAULT_HOLD_CEILING_SECS)
+        }
+    }
+}
+
+pub async fn save_hold_ceiling(
+    repo: &dyn SettingsRepo,
+    secs: Option<u64>,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        HOTKEY_HOLD_CEILING_KEY,
+        &secs.unwrap_or(CEILING_OFF).to_string(),
+    )
+    .await
 }
 
 pub async fn relink_action(

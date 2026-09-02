@@ -22,6 +22,7 @@ pub struct ShutdownHandles {
     trigger_evaluator: TriggerEvaluatorHandle,
     server: Option<ServerHandle>,
     speak: Option<SpeakQueueHandle>,
+    hotkey: Option<Arc<forge_hotkey::HotkeyClient>>,
     storage: Arc<dyn DataProvider>,
 }
 
@@ -34,6 +35,7 @@ impl ShutdownHandles {
             trigger_evaluator: handles.trigger_evaluator.clone(),
             server: handles.server.clone(),
             speak: handles.speak.clone(),
+            hotkey: handles.hotkey_client.clone(),
             storage: Arc::clone(&handles.backend),
         }
     }
@@ -43,6 +45,11 @@ impl ShutdownHandles {
     }
 
     async fn sequence(self) {
+        if let Some(hotkey) = &self.hotkey {
+            // The evaluator drains its backlog on cancel, so a release published here still fires.
+            hotkey.release_open_holds();
+        }
+
         tracing::info!("graceful shutdown: stopping intake");
         self.trigger_evaluator.shutdown();
 

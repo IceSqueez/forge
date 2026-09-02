@@ -15,6 +15,7 @@ const BADGE_GAP: Pixels = px(4.0);
 const CONNECTION_DOT: Pixels = px(5.0);
 const PULSE_PERIOD: Duration = Duration::from_millis(1400);
 const PULSE_DEPTH: f32 = 0.6;
+const PULSE_FPS: f32 = 20.0;
 
 pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
     div()
@@ -24,7 +25,8 @@ pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
         .bg(color)
 }
 
-/// Each live instance needs a distinct `id`, or gpui shares one animation clock across them.
+/// Phase comes from the app-wide synced clock, so every live dot pulses together; `id` must still
+/// be distinct per instance because gpui keys the element's animation state by it.
 pub fn pulse_dot(id: impl Into<ElementId>, color: Rgba, size: Pixels) -> impl IntoElement {
     div()
         .flex_none()
@@ -33,7 +35,9 @@ pub fn pulse_dot(id: impl Into<ElementId>, color: Rgba, size: Pixels) -> impl In
         .bg(color)
         .with_animation(
             id.into(),
-            Animation::new(PULSE_PERIOD).repeat(),
+            Animation::new(PULSE_PERIOD)
+                .repeat_synced()
+                .with_max_fps(PULSE_FPS),
             |el, delta| el.opacity(1.0 - (delta * 2.0 - 1.0).abs() * PULSE_DEPTH),
         )
 }

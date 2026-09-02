@@ -6,6 +6,9 @@ use gpui::{
     Styled, Transformation, percentage, svg,
 };
 
+const SPINNER_PERIOD: Duration = Duration::from_millis(1200);
+const SPINNER_FPS: f32 = 30.0;
+
 macro_rules! tabler_icons {
     ($($variant:ident => $file:literal),+ $(,)?) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -399,7 +402,9 @@ pub fn spinner(
         .text_color(color)
         .with_animation(
             id.into(),
-            Animation::new(Duration::from_millis(1200)).repeat(),
+            Animation::new(SPINNER_PERIOD)
+                .repeat()
+                .with_max_fps(SPINNER_FPS),
             |el, delta| el.with_transformation(Transformation::rotate(percentage(delta))),
         )
 }

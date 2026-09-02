@@ -43,7 +43,7 @@ repository = "https://github.com/IceSqueez/forge"
 rust-version = "1.97"
 
 [workspace.dependencies]
-tokio = { version = "1.52", features = ["full"] }
+tokio = { version = "1.53", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 tokio-util = { version = "0.7" }
@@ -84,12 +84,12 @@ base64 = { version = "0.23" }
 subtle = { version = "2.6" }
 arc-swap = { version = "1.9" }
 
-rhai = { version = "1.25", features = ["sync"] }
+rhai = { version = "1.26", features = ["sync"] }
 
 midir = { version = "0.11" }
 
 global-hotkey = { version = "0.8" }
-zbus = { version = "5.17", default-features = false, features = ["async-io"] }
+zbus = { version = "5.19", default-features = false, features = ["async-io"] }
 libc = { version = "0.2" }
 
 reqwest = { version = "0.13", features = [
@@ -131,13 +131,13 @@ block2 = { version = "0.6" }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 
-gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.12.1" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.12.1", features = [
+gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.17.2" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.17.2", features = [
   "font-kit",
   "wayland",
   "x11",
 ] }
-fontdb = "0.23"
+fontdb = "0.24"
 
 rfd = { version = "0.17", default-features = false, features = [
   "xdg-portal",
@@ -150,7 +150,7 @@ arboard = { version = "3.6", default-features = false, features = [
 notify-rust = { version = "4.18" }
 
 cpal = { version = "0.18" }
-rubato = { version = "4.0" }
+rubato = { version = "5.0" }
 regex = { version = "1.13" }
 once_cell = { version = "1.21" }
 symphonia = { version = "0.6", features = ["all-codecs", "all-formats"] }
@@ -161,12 +161,6 @@ fluent = { version = "0.17" }
 fluent-langneg = { version = "0.13" }
 unic-langid = { version = "0.9" }
 sys-locale = { version = "0.3" }
-
-# gpui pins core-foundation to exactly 0.10.0 (macOS target); the crates.io coremidi requires
-# >=0.10.1, and the two cannot share one 0.10.x. This vendored coremidi loosens its requirement
-# to "0.10" so the graph resolves at 0.10.0. macOS-only; drop once gpui relaxes its exact pin.
-[patch.crates-io]
-coremidi = { path = "vendor/coremidi" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

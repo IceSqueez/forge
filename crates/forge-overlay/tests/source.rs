@@ -3,9 +3,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use forge_overlay::BEHAVIOR_FILE;
 use forge_overlay::{
-    BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, OverlayError, RESERVED_DIRECTORY,
-    RUNTIME_ASSET, STYLE_FILE, read_overlay_source, write_overlay_source,
+    CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, OverlayError, RESERVED_DIRECTORY, RUNTIME_ASSET,
+    STYLE_FILE, read_overlay_source, write_overlay_source,
 };
 use tempfile::TempDir;
 

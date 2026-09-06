@@ -134,7 +134,10 @@ impl ChatPlatform for YoutubePlatform {
         let poller_cancel = cancel.clone();
         tokio::spawn(async move {
             if let Err(err) = poller.run(poller_cancel).await {
-                tracing::warn!(error = %err, "youtube chat poller exited");
+                tracing::warn!(
+                    error = %crate::error_shape::redact_platform_error(&err),
+                    "youtube chat poller exited"
+                );
             }
             publish_transition(
                 &exit_state,
@@ -142,6 +145,7 @@ impl ChatPlatform for YoutubePlatform {
                 &exit_events,
                 ConnectionState::Disconnected,
             );
+            tracing::info!("youtube chat polling stopped");
         });
 
         *self.cancel.lock().unwrap_or_else(|p| p.into_inner()) = Some(cancel);
@@ -151,6 +155,7 @@ impl ChatPlatform for YoutubePlatform {
             &self.events,
             ConnectionState::Connected,
         );
+        tracing::info!(channel_id = %self.channel_id, "youtube chat polling started");
         Ok(())
     }
 

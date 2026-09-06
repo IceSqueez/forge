@@ -99,7 +99,10 @@ impl YoutubeChatPoller {
             let token = match (self.access_token_source)().await {
                 Ok(t) => t,
                 Err(e) => {
-                    tracing::warn!("access token source failed during broadcast resolution: {e}");
+                    tracing::warn!(
+                        "access token source failed during broadcast resolution: {}",
+                        crate::error_shape::redact_platform_error(&e)
+                    );
                     tokio::select! {
                         () = tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS)) => {}
                         () = cancel.cancelled() => return Ok(()),
@@ -228,7 +231,10 @@ impl YoutubeChatPoller {
                 let token = match (self.access_token_source)().await {
                     Ok(t) => t,
                     Err(e) => {
-                        tracing::warn!("access token fetch failed during chat poll: {e}");
+                        tracing::warn!(
+                            "access token fetch failed during chat poll: {}",
+                            crate::error_shape::redact_platform_error(&e)
+                        );
                         tokio::select! {
                             () = tokio::time::sleep(floor) => {}
                             () = cancel.cancelled() => return Ok(()),
@@ -297,7 +303,7 @@ impl YoutubeChatPoller {
             .send()
             .await
             .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
+                reason: e.without_url().to_string(),
             })?;
 
         let status = resp.status().as_u16();
@@ -307,7 +313,7 @@ impl YoutubeChatPoller {
         }
 
         let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {
-            reason: e.to_string(),
+            reason: e.without_url().to_string(),
         })?;
 
         let item = body
@@ -359,7 +365,7 @@ impl YoutubeChatPoller {
             .send()
             .await
             .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
+                reason: e.without_url().to_string(),
             })?;
 
         let status = resp.status().as_u16();
@@ -369,7 +375,7 @@ impl YoutubeChatPoller {
         }
 
         let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {
-            reason: e.to_string(),
+            reason: e.without_url().to_string(),
         })?;
 
         let items = body

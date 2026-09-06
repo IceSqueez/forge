@@ -118,7 +118,10 @@ impl SubActionRunner for LookupStreamStatsRunner {
                     kind: KIND_ID.to_owned(),
                     started_at,
                     duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(e.to_string()),
+                    outcome: SubActionOutcome::Failed(format!(
+                        "stream stats lookup failed: {}",
+                        crate::error_shape::redact_platform_error(&e)
+                    )),
                     index: ctx.index,
                 },
                 None,

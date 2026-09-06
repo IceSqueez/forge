@@ -462,22 +462,30 @@ pub fn spawn_trigger_evaluator(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use std::sync::Arc;
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use forge_events::{Event, EventSource};
-    use forge_registry::{SubActionRegistry, TriggerRegistry};
+    use forge_registry::{
+        EventFilter, FormField, KindPlatformContract, SubActionRegistry, TriggerCategory,
+        TriggerRegistry,
+    };
     use forge_storage::{
         ActionRepo, DataProvider, GlobalsRepo, SettingsRepo, TriggerInstanceRepo, UserGlobalsRepo,
     };
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::{
-        Action, ActionId, PlatformId, PlatformScope, Queue, QueueId, SubActionStep,
-        TriggerInstance, TriggerInstanceId,
+        Action, ActionId, ChatSegment, DeclaredVariable, ModerationMarks, PlatformId,
+        PlatformScope, Queue, QueueId, SubActionStep, TriggerInstance, TriggerInstanceId,
+        UserBadge, VariableSchema, VariantKind,
     };
     use serde_json::json;
+    use tracing::field::{Field, Visit};
+    use tracing::span;
+    use tracing::subscriber::Interest;
 
     use super::*;
     use crate::{
@@ -791,42 +799,524 @@ mod tests {
         );
     }
 
-    fn scoped_instance(scope: PlatformScope) -> TriggerInstance {
+    const COMMAND_KIND: &str = "test.chat.command";
+    const PHRASE: &str = "!go";
+    const LINE: &str = "!go secretword";
+    const TAIL: &str = "secretword";
+
+    #[derive(Clone)]
+    struct CapturedLine {
+        target: String,
+        level: Level,
+        fields: BTreeMap<String, String>,
+    }
+
+    impl CapturedLine {
+        fn field(&self, name: &str) -> &str {
+            self.fields
+                .get(name)
+                .map(String::as_str)
+                .unwrap_or_default()
+        }
+
+        fn mentions(&self, needle: &str) -> bool {
+            self.fields.values().any(|value| value.contains(needle))
+        }
+    }
+
+    #[derive(Default)]
+    struct FieldCollector(BTreeMap<String, String>);
+
+    impl Visit for FieldCollector {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            self.0.insert(field.name().to_owned(), format!("{value:?}"));
+        }
+
+        fn record_str(&mut self, field: &Field, value: &str) {
+            self.0.insert(field.name().to_owned(), value.to_owned());
+        }
+    }
+
+    // Why: `register_callsite` answers `sometimes` on purpose: a cached `always` from another
+    // capture running in parallel would hand a TRACE line to a DEBUG-only assertion.
+    struct CaptureSubscriber {
+        lines: Arc<Mutex<Vec<CapturedLine>>>,
+        max: Level,
+    }
+
+    impl tracing::Subscriber for CaptureSubscriber {
+        fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
+            Interest::sometimes()
+        }
+
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() <= self.max
+        }
+
+        fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+            span::Id::from_u64(1)
+        }
+
+        fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+
+        fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut collector = FieldCollector::default();
+            event.record(&mut collector);
+            self.lines.lock().unwrap().push(CapturedLine {
+                target: event.metadata().target().to_owned(),
+                level: *event.metadata().level(),
+                fields: collector.0,
+            });
+        }
+
+        fn enter(&self, _: &span::Id) {}
+
+        fn exit(&self, _: &span::Id) {}
+    }
+
+    // Runs `body` on this thread with everything up to `max` captured. The decision
+    // is driven synchronously precisely so the thread-local subscriber sees it.
+    fn capture(max: Level, body: impl FnOnce()) -> Vec<CapturedLine> {
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        tracing::subscriber::with_default(
+            CaptureSubscriber {
+                lines: Arc::clone(&lines),
+                max,
+            },
+            || {
+                tracing::callsite::rebuild_interest_cache();
+                body();
+            },
+        );
+        lines.lock().unwrap().clone()
+    }
+
+    fn on_target<'a>(lines: &'a [CapturedLine], target: &str) -> Vec<&'a CapturedLine> {
+        lines.iter().filter(|line| line.target == target).collect()
+    }
+
+    fn message_variable(name: &str) -> DeclaredVariable {
+        DeclaredVariable {
+            name: name.to_owned(),
+            kind: VariantKind::String,
+            label: String::new(),
+            synthesis: Some(SynthesisHint::Message),
+        }
+    }
+
+    struct CommandDescriptor {
+        family: Option<ChatTriggerFamily>,
+        matches: bool,
+        schema: Option<VariableSchema>,
+    }
+
+    impl CommandDescriptor {
+        fn command() -> Self {
+            Self {
+                family: Some(ChatTriggerFamily::Command),
+                matches: true,
+                schema: Some(VariableSchema {
+                    variables: vec![message_variable("message_text")],
+                }),
+            }
+        }
+    }
+
+    impl TriggerKindDescriptor for CommandDescriptor {
+        fn id(&self) -> &str {
+            COMMAND_KIND
+        }
+        fn category(&self) -> TriggerCategory {
+            TriggerCategory::Chat
+        }
+        fn label(&self) -> &str {
+            "fake"
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn platform_contract(&self) -> KindPlatformContract {
+            KindPlatformContract::Universal
+        }
+        fn default_config(&self) -> TriggerConfig {
+            let mut config = TriggerConfig::new();
+            config.insert("phrase".to_owned(), Variant::String(PHRASE.to_owned()));
+            config
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+        fn condition_display(&self, _: &TriggerConfig) -> String {
+            String::new()
+        }
+        fn event_filter(&self) -> EventFilter {
+            EventFilter {
+                source: Some(EventSource::Twitch),
+                kind_prefix: Some("test.chat".to_owned()),
+            }
+        }
+        fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+            self.matches
+        }
+        fn build_arg_stack(&self, event: &Event) -> ArgStack {
+            let line = event
+                .payload
+                .get("line")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            ArgStack::new()
+                .set("message_text".to_owned(), Variant::String(line.to_owned()))
+                .set("user".to_owned(), Variant::String("alice".to_owned()))
+        }
+        fn output_schema(&self) -> Option<VariableSchema> {
+            self.schema.clone()
+        }
+        fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
+            self.family
+        }
+    }
+
+    fn chat_payload(author: &str, line: &str, badges: Vec<UserBadge>) -> ChatPayload {
+        ChatPayload {
+            platform_msg_id: "m-1".to_owned(),
+            author: author.to_owned(),
+            author_color: None,
+            segments: vec![ChatSegment::Text {
+                text: line.to_owned(),
+            }],
+            badges,
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
+    }
+
+    fn command_event(line: &str, author: &str, badges: Vec<UserBadge>) -> Event {
+        let chat = chat_payload(author, line, badges);
+        Event::new(
+            EventSource::Twitch,
+            "test.chat.message",
+            json!({
+                "line": line,
+                (ChatPayload::KEY): serde_json::to_value(&chat).unwrap(),
+            }),
+        )
+    }
+
+    fn command_instance(
+        scope: PlatformScope,
+        rung: PermissionRung,
+        cooldown_secs: u32,
+    ) -> TriggerInstance {
         TriggerInstance {
             id: TriggerInstanceId::new(),
-            kind_id: "script.event.custom".to_owned(),
-            name: "scoped".to_owned(),
-            overrides: std::collections::BTreeMap::new(),
+            kind_id: COMMAND_KIND.to_owned(),
+            name: "cmd".to_owned(),
+            overrides: BTreeMap::new(),
             enabled: true,
             user_defined: true,
             platform_scope: scope,
-            cooldown_secs: 0,
+            cooldown_secs,
             cooldown_global: true,
-            permission_rung: forge_types::PermissionRung::Everyone,
+            permission_rung: rung,
+        }
+    }
+
+    // The fixture supplies the repos and scheduler `TriggerEvaluator` needs to exist; only the
+    // registry, the bus and the cooldown map take part in a decision.
+    async fn decide_harness(descriptor: CommandDescriptor) -> (EvaluatorFixture, TriggerEvaluator) {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let mut registry = TriggerRegistry::new();
+        registry.register(Box::new(descriptor)).unwrap();
+        let evaluator = TriggerEvaluator {
+            bus: Arc::clone(&bus),
+            registry: Arc::new(registry),
+            actions: Arc::clone(&fixture.actions),
+            trigger_instances: Arc::clone(&fixture.trigger_instances),
+            scheduler: fixture.scheduler.clone(),
+            subscription: bus.subscribe(),
+            cooldowns: CooldownMap::new(Config::default().max_cooldown_entries),
+        };
+        (fixture, evaluator)
+    }
+
+    #[tokio::test]
+    async fn the_debug_command_summary_reports_the_phrase_viewer_and_argument_metadata() {
+        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+        let event = command_event(LINE, "alice", vec![]);
+
+        let lines = capture(Level::DEBUG, || {
+            evaluator.decide(&instance, &event);
+        });
+
+        let matched = on_target(&lines, DECISION_TARGET)
+            .into_iter()
+            .find(|line| line.field("message") == "command matched")
+            .expect("a matched command must record its DEBUG summary");
+        assert_eq!(matched.field("phrase"), PHRASE);
+        assert_eq!(matched.field("viewer"), identity_digest("alice"));
+        assert_eq!(matched.field("arg_count"), "1");
+        assert_eq!(matched.field("arg_len"), TAIL.chars().count().to_string());
+    }
+
+    #[tokio::test]
+    async fn the_argument_tail_never_reaches_a_debug_field() {
+        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+        let event = command_event(LINE, "alice", vec![]);
+
+        let lines = capture(Level::DEBUG, || {
+            evaluator.decide(&instance, &event);
+        });
+
+        assert!(
+            !lines.iter().any(|line| line.mentions(TAIL)),
+            "DEBUG carries argument metadata only - the tail is the RFC's explicit prohibition"
+        );
+        assert!(
+            on_target(&lines, COMMAND_LINE_TARGET).is_empty(),
+            "the content target must stay silent below TRACE"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_full_command_line_is_raised_only_on_the_command_target_at_trace() {
+        let (_fixture, mut evaluator) = decide_harness(CommandDescriptor::command()).await;
+        let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+        let event = command_event(LINE, "alice", vec![]);
+
+        let lines = capture(Level::TRACE, || {
+            evaluator.decide(&instance, &event);
+        });
+
+        let raised = on_target(&lines, COMMAND_LINE_TARGET);
+        assert_eq!(
+            raised.len(),
+            1,
+            "the content line is single-sited so a bundle without the directive provably lacks it"
+        );
+        assert_eq!(raised[0].level, Level::TRACE);
+        assert_eq!(raised[0].field("line"), LINE);
+        assert!(
+            !on_target(&lines, DECISION_TARGET)
+                .iter()
+                .any(|line| line.mentions(TAIL)),
+            "raising the content target must not spill the tail onto the decision target"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_command_names_its_decision_point_and_stays_content_free() {
+        struct Case {
+            reason: &'static str,
+            matches: bool,
+            scope: PlatformScope,
+            rung: PermissionRung,
+            cooldown_secs: u32,
+            invocations: usize,
+        }
+
+        let kick_only = PlatformScope::only(BTreeSet::from([PlatformId::Kick])).unwrap();
+        for case in [
+            Case {
+                reason: "scope",
+                matches: true,
+                scope: kick_only,
+                rung: PermissionRung::Everyone,
+                cooldown_secs: 0,
+                invocations: 1,
+            },
+            Case {
+                reason: "phrase",
+                matches: false,
+                scope: PlatformScope::Any,
+                rung: PermissionRung::Everyone,
+                cooldown_secs: 0,
+                invocations: 1,
+            },
+            Case {
+                reason: "permission",
+                matches: true,
+                scope: PlatformScope::Any,
+                rung: PermissionRung::Moderator,
+                cooldown_secs: 0,
+                invocations: 1,
+            },
+            Case {
+                reason: "cooldown",
+                matches: true,
+                scope: PlatformScope::Any,
+                rung: PermissionRung::Everyone,
+                cooldown_secs: 30,
+                invocations: 2,
+            },
+        ] {
+            let descriptor = CommandDescriptor {
+                matches: case.matches,
+                ..CommandDescriptor::command()
+            };
+            let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+            let instance = command_instance(case.scope, case.rung, case.cooldown_secs);
+            for _ in 1..case.invocations {
+                evaluator.decide(&instance, &command_event(LINE, "alice", vec![]));
+            }
+
+            let event = command_event(LINE, "alice", vec![]);
+            let lines = capture(Level::DEBUG, || {
+                evaluator.decide(&instance, &event);
+            });
+
+            let refusal = on_target(&lines, DECISION_TARGET)
+                .into_iter()
+                .find(|line| line.field("message") == "command trigger did not fire")
+                .unwrap_or_else(|| panic!("no decision line for a {} refusal", case.reason));
+            assert_eq!(refusal.field("reason"), case.reason);
+            assert_eq!(refusal.field("kind"), COMMAND_KIND);
+            assert!(
+                !lines.iter().any(|line| line.mentions(TAIL)),
+                "the \"my command didn't fire\" trail is served content-free ({})",
+                case.reason
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_trigger_outside_the_command_family_records_no_decision_line() {
+        for family in [Some(ChatTriggerFamily::Message), None] {
+            let descriptor = CommandDescriptor {
+                family,
+                matches: false,
+                ..CommandDescriptor::command()
+            };
+            let (_fixture, mut evaluator) = decide_harness(descriptor).await;
+            let instance = command_instance(PlatformScope::Any, PermissionRung::Everyone, 0);
+            let event = command_event(LINE, "alice", vec![]);
+
+            let lines = capture(Level::TRACE, || {
+                evaluator.decide(&instance, &event);
+            });
+
+            assert!(
+                lines.iter().all(
+                    |line| line.target != DECISION_TARGET && line.target != COMMAND_LINE_TARGET
+                ),
+                "the carve-out is scoped by the match verdict, so {family:?} must stay silent"
+            );
         }
     }
 
     #[test]
-    fn any_scope_matches_every_source() {
-        let instance = scoped_instance(PlatformScope::Any);
-        for src in [EventSource::Twitch, EventSource::Core, EventSource::YouTube] {
-            let event = Event::new(src, "x", json!({}));
-            assert!(scope_matches(&instance, &event), "Any failed for {src:?}");
+    fn matched_line_takes_the_first_message_hint_when_the_schema_declares_two() {
+        // Why: kick's command descriptor declares `content` (the whole line) and then `args`,
+        // both hinted Message. First-wins is what keeps the logged line whole.
+        let descriptor = CommandDescriptor {
+            schema: Some(VariableSchema {
+                variables: vec![message_variable("content"), message_variable("args")],
+            }),
+            ..CommandDescriptor::command()
+        };
+        let args = ArgStack::new()
+            .set("content".to_owned(), Variant::String(LINE.to_owned()))
+            .set("args".to_owned(), Variant::String(TAIL.to_owned()));
+
+        assert_eq!(matched_line(&descriptor, &args), LINE);
+    }
+
+    #[test]
+    fn matched_line_is_empty_when_no_declared_message_variable_supplies_a_string() {
+        let username_only = VariableSchema {
+            variables: vec![DeclaredVariable {
+                name: "user".to_owned(),
+                kind: VariantKind::String,
+                label: String::new(),
+                synthesis: Some(SynthesisHint::Username),
+            }],
+        };
+        let args = ArgStack::new()
+            .set("user".to_owned(), Variant::String("alice".to_owned()))
+            .set("count".to_owned(), Variant::Int(3));
+
+        for (label, schema) in [
+            ("no output schema", None),
+            ("no message hint declared", Some(username_only)),
+            (
+                "hinted variable absent from the stack",
+                Some(VariableSchema {
+                    variables: vec![message_variable("message_text")],
+                }),
+            ),
+            (
+                "hinted variable is not a string",
+                Some(VariableSchema {
+                    variables: vec![message_variable("count")],
+                }),
+            ),
+        ] {
+            let descriptor = CommandDescriptor {
+                schema,
+                ..CommandDescriptor::command()
+            };
+            assert_eq!(matched_line(&descriptor, &args), "", "{label}");
         }
     }
 
     #[test]
-    fn only_scope_matches_listed_and_rejects_others() {
-        let mut set = std::collections::BTreeSet::new();
-        set.insert(PlatformId::Twitch);
-        set.insert(PlatformId::YouTube);
-        let instance = scoped_instance(PlatformScope::only(set).unwrap());
-
-        for src in [EventSource::Twitch, EventSource::YouTube] {
-            assert!(scope_matches(&instance, &Event::new(src, "x", json!({}))));
+    fn argument_tail_drops_a_phrase_length_prefix_then_the_leading_space() {
+        for (line, phrase, expected) in [
+            ("!go now", "!go", "now"),
+            ("!go   two  words", "!go", "two  words"),
+            ("!go", "!go", ""),
+            ("!go", "!go-longer-than-the-line", ""),
+            ("!go now", "", "!go now"),
+            ("", "!go", ""),
+        ] {
+            assert_eq!(
+                argument_tail(line, phrase),
+                expected,
+                "{line:?} / {phrase:?}"
+            );
         }
-        for src in [EventSource::Kick, EventSource::Core] {
-            assert!(!scope_matches(&instance, &Event::new(src, "x", json!({}))));
+    }
+
+    #[test]
+    fn argument_tail_cuts_a_multibyte_phrase_on_a_character_boundary() {
+        // A byte-count prefix would land inside the trailing Cyrillic character and panic.
+        assert_eq!(argument_tail("!привіт світ", "!привіт"), "світ");
+        assert_eq!(argument_tail("!привіт", "!привіт"), "");
+    }
+
+    #[test]
+    fn viewer_digest_matches_the_bridge_digest_for_the_same_author() {
+        // Why: R1's correlation property. One salt per run keeps a viewer joinable across the
+        // bus bridge's trail and the evaluator's; a second salt would silently break it.
+        let event = command_event(LINE, "alice", vec![]);
+        assert_eq!(viewer_digest(&event), Some(identity_digest("alice")));
+    }
+
+    #[test]
+    fn viewer_digest_is_absent_without_a_usable_chat_author() {
+        for (label, payload) in [
+            ("no chat envelope", json!({ "line": LINE })),
+            ("malformed chat envelope", json!({ (ChatPayload::KEY): 42 })),
+            (
+                "empty author",
+                json!({
+                    (ChatPayload::KEY): serde_json::to_value(chat_payload("", LINE, vec![])).unwrap(),
+                }),
+            ),
+        ] {
+            let event = Event::new(EventSource::Twitch, "test.chat.message", payload);
+            assert!(viewer_digest(&event).is_none(), "{label}");
         }
     }
 }

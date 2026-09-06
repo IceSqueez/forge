@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::redaction::RedactedText;
+
 const MAX_COLLECTION_LEN: usize = 10_000;
 const MAX_DEPTH: u8 = 32;
 
@@ -153,7 +155,7 @@ impl fmt::Debug for Variant {
             Self::Int(v) => write!(f, "Variant::Int({v})"),
             Self::Float(v) => write!(f, "Variant::Float({v})"),
             Self::Bool(v) => write!(f, "Variant::Bool({v})"),
-            Self::String(v) => write!(f, "Variant::String({v:?})"),
+            Self::String(v) => write!(f, "Variant::String({:?})", RedactedText::new(v)),
             Self::Datetime(v) => write!(f, "Variant::Datetime({v})"),
             Self::Array(v) => write!(f, "Variant::Array([{} items])", v.len()),
             Self::Object(v) => write!(f, "Variant::Object({{{} keys}})", v.len()),

@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use time::OffsetDateTime;
 
 use crate::EventId;
+use crate::redaction::{Redacted, RedactedText};
 
 /// Attached under `Event::payload["_chat"]`; the `_` prefix is reserved for forge-internal keys (ArgStack keys never start with `_`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatPayload {
     pub platform_msg_id: String,
     pub author: String,
@@ -15,6 +17,21 @@ pub struct ChatPayload {
     pub event_detail: Option<ChatEventDetail>,
     #[serde(default)]
     pub moderation: ModerationMarks,
+}
+
+impl fmt::Debug for ChatPayload {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChatPayload")
+            .field("platform_msg_id", &self.platform_msg_id)
+            .field("author", &Redacted)
+            .field("author_color", &self.author_color)
+            .field("segments", &self.segments)
+            .field("badges", &self.badges)
+            .field("is_event", &self.is_event)
+            .field("event_detail", &self.event_detail)
+            .field("moderation", &self.moderation)
+            .finish()
+    }
 }
 
 impl ChatPayload {
@@ -44,7 +61,7 @@ impl ChatModerationPayload {
     pub const KEY: &'static str = "_chat_mod";
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatModerationAction {
     DeleteMessage { message_id: String },
@@ -52,10 +69,36 @@ pub enum ChatModerationAction {
     ClearChat,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl fmt::Debug for ChatModerationAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DeleteMessage { message_id } => f
+                .debug_struct("DeleteMessage")
+                .field("message_id", message_id)
+                .finish(),
+            Self::RemoveUser { timeout, .. } => f
+                .debug_struct("RemoveUser")
+                .field("user_name", &Redacted)
+                .field("timeout", timeout)
+                .finish(),
+            Self::ClearChat => f.write_str("ClearChat"),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatReply {
     pub parent_author: String,
     pub parent_text: String,
+}
+
+impl fmt::Debug for ChatReply {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChatReply")
+            .field("parent_author", &Redacted)
+            .field("parent_text", &RedactedText::new(&self.parent_text))
+            .finish()
+    }
 }
 
 impl ChatReply {
@@ -70,7 +113,7 @@ pub enum ChatSource {
     Kick,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct UnifiedChatRow {
     pub id: String,
     pub event_id: EventId,
@@ -84,6 +127,24 @@ pub struct UnifiedChatRow {
     pub is_event: bool,
     pub event_detail: Option<ChatEventDetail>,
     pub moderation: ModerationMarks,
+}
+
+impl fmt::Debug for UnifiedChatRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UnifiedChatRow")
+            .field("id", &self.id)
+            .field("event_id", &self.event_id)
+            .field("source", &self.source)
+            .field("received_at", &self.received_at)
+            .field("author", &Redacted)
+            .field("author_color", &self.author_color)
+            .field("body_segments", &self.body_segments)
+            .field("badges", &self.badges)
+            .field("is_event", &self.is_event)
+            .field("event_detail", &self.event_detail)
+            .field("moderation", &self.moderation)
+            .finish()
+    }
 }
 
 impl UnifiedChatRow {
@@ -104,13 +165,38 @@ impl UnifiedChatRow {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChatSegment {
     Text { text: String },
     Emote { id: String, name: String },
     Link { url: String, display: String },
     Mention { username: String },
+}
+
+impl fmt::Debug for ChatSegment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text { text } => f
+                .debug_struct("Text")
+                .field("text", &RedactedText::new(text))
+                .finish(),
+            Self::Emote { id, name } => f
+                .debug_struct("Emote")
+                .field("id", id)
+                .field("name", name)
+                .finish(),
+            Self::Link { url, display } => f
+                .debug_struct("Link")
+                .field("url", &RedactedText::new(url))
+                .field("display", &RedactedText::new(display))
+                .finish(),
+            Self::Mention { .. } => f
+                .debug_struct("Mention")
+                .field("username", &Redacted)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -138,7 +224,7 @@ pub struct ModerationMarks {
     pub banned: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatEventDetail {
     Subscription {
@@ -165,6 +251,49 @@ pub enum ChatEventDetail {
         months: u32,
         message: Option<String>,
     },
+}
+
+impl fmt::Debug for ChatEventDetail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let redacted = |message: &Option<String>| message.as_deref().map(RedactedText::new);
+        match self {
+            Self::Subscription {
+                tier,
+                months,
+                message,
+            } => f
+                .debug_struct("Subscription")
+                .field("tier", tier)
+                .field("months", months)
+                .field("message", &redacted(message))
+                .finish(),
+            Self::Raid { viewer_count } => f
+                .debug_struct("Raid")
+                .field("viewer_count", viewer_count)
+                .finish(),
+            Self::Cheer { bits, message } => f
+                .debug_struct("Cheer")
+                .field("bits", bits)
+                .field("message", &redacted(message))
+                .finish(),
+            Self::SuperChat {
+                amount_micros,
+                currency,
+                message,
+            } => f
+                .debug_struct("SuperChat")
+                .field("amount_micros", amount_micros)
+                .field("currency", currency)
+                .field("message", &redacted(message))
+                .finish(),
+            Self::NewMember { level } => f.debug_struct("NewMember").field("level", level).finish(),
+            Self::MemberMilestone { months, message } => f
+                .debug_struct("MemberMilestone")
+                .field("months", months)
+                .field("message", &redacted(message))
+                .finish(),
+        }
+    }
 }
 
 #[cfg(test)]

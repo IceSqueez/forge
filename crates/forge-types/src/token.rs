@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::redaction::Redacted;
+
 macro_rules! define_redacted_token {
     ($(#[$attr:meta])* $name:ident) => {
         $(#[$attr])*
@@ -20,7 +22,7 @@ macro_rules! define_redacted_token {
 
         impl fmt::Debug for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(concat!(stringify!($name), "(<redacted>)"))
+                write!(f, "{}({:?})", stringify!($name), Redacted)
             }
         }
     };

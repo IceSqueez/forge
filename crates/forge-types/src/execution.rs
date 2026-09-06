@@ -1,7 +1,9 @@
 use crate::ids::{ActionId, EventId};
+use crate::redaction::RedactedText;
 use crate::variant::Variant;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 use time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,7 +29,7 @@ impl SubActionOutcome {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubActionTelemetry {
     pub index: usize,
     pub kind: String,
@@ -39,6 +41,34 @@ pub struct SubActionTelemetry {
     pub args_in: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub produced: BTreeMap<String, String>,
+}
+
+struct RedactedValues<'a>(&'a BTreeMap<String, String>);
+
+impl fmt::Debug for RedactedValues<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(
+                self.0
+                    .iter()
+                    .map(|(key, value)| (key, RedactedText::new(value))),
+            )
+            .finish()
+    }
+}
+
+impl fmt::Debug for SubActionTelemetry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SubActionTelemetry")
+            .field("index", &self.index)
+            .field("kind", &self.kind)
+            .field("started_at", &self.started_at)
+            .field("duration_ms", &self.duration_ms)
+            .field("outcome", &self.outcome)
+            .field("args_in", &RedactedValues(&self.args_in))
+            .field("produced", &RedactedValues(&self.produced))
+            .finish()
+    }
 }
 
 /// Trims, peels one enclosing `%...%` pair, then trims again; charset-agnostic so dotted names (`time.formatted`) survive verbatim.

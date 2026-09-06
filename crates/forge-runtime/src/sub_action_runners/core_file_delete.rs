@@ -119,28 +119,56 @@ mod tests {
         );
     }
 
+    // Why: the failure text no longer quotes the path, so interpolation is observable only
+    // through WHICH arm the resolved path lands on. Each row is built so the un-interpolated
+    // template would land on a different arm than the interpolated one.
     #[tokio::test]
-    async fn delete_resolves_scope_token_and_leaves_unknown_token_verbatim() {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "path".to_owned(),
-            Variant::String("%dir%/%unset_global%.txt".to_owned()),
-        );
+    async fn delete_failure_names_the_arm_the_path_landed_on_and_never_the_path() {
+        // (template, scope binding, expected arm, path material that must not appear)
+        let rows = [
+            // A literal `%dir%` is a legal file name, so only a real substitution can turn this
+            // template into the parent traversal the sandbox refuses.
+            (
+                "%dir%/file.txt",
+                Some(("dir", "..")),
+                "parent dir traversal forbidden",
+                "file.txt",
+            ),
+            // `%unset_global%` has no scope entry. Left verbatim it is one legal component and
+            // the delete reaches the filesystem; a globals fallthrough would blank it, leaving
+            // the empty path the sandbox refuses instead.
+            (
+                "%unset_global%",
+                None,
+                "core.file.delete: file not found",
+                "unset_global",
+            ),
+        ];
 
-        let stack = ArgStack::new().set("dir".to_owned(), Variant::String("sub".to_owned()));
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        let outcome = CoreFileDeleteRunner.execute(&cfg, &ctx).await.0.outcome;
+        for (template, binding, expected_arm, path_material) in rows {
+            let mut cfg = SubActionConfig::new();
+            cfg.insert("path".to_owned(), Variant::String(template.to_owned()));
 
-        let SubActionOutcome::Failed(msg) = outcome else {
-            panic!("expected file-not-found failure, got {outcome:?}");
-        };
-        assert!(
-            msg.contains("sub/"),
-            "scope token was not interpolated: {msg}"
-        );
-        assert!(
-            msg.contains("%unset_global%"),
-            "unknown token must stay verbatim (no globals fallthrough): {msg}"
-        );
+            let stack = match binding {
+                Some((key, value)) => {
+                    ArgStack::new().set(key.to_owned(), Variant::String(value.to_owned()))
+                }
+                None => ArgStack::new(),
+            };
+            let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+            let outcome = CoreFileDeleteRunner.execute(&cfg, &ctx).await.0.outcome;
+
+            let SubActionOutcome::Failed(msg) = outcome else {
+                panic!("expected a failure for {template:?}, got {outcome:?}");
+            };
+            assert!(
+                msg.contains(expected_arm),
+                "{template:?} took the wrong arm: {msg}"
+            );
+            assert!(
+                !msg.contains(path_material),
+                "{template:?} leaked path material: {msg}"
+            );
+        }
     }
 }

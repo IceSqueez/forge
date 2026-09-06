@@ -94,7 +94,7 @@ impl SubActionRunner for CoreActionCancelRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_registry::CancelSignal;
@@ -166,16 +166,23 @@ mod tests {
 
     #[tokio::test]
     async fn unparseable_action_id_fails_and_cancels_nothing() {
+        const SENTINEL: &str = "not-a-ulid-a-viewer-typed-this";
         let registry = Arc::new(ActionCancelRegistry::new());
         let untouched = CancelSignal::new();
         registry.register(ActionId::new(), untouched.clone());
 
-        let outcome = run_with(Arc::clone(&registry), &cfg("not-a-ulid"), &ArgStack::new()).await;
+        let outcome = run_with(Arc::clone(&registry), &cfg(SENTINEL), &ArgStack::new()).await;
 
+        let SubActionOutcome::Failed(msg) = &outcome else {
+            panic!("expected a Failed outcome, got {outcome:?}");
+        };
         assert!(
-            matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("invalid action_id")),
-            "expected a Failed carrying the bad id, got {outcome:?}"
+            msg.contains("invalid action_id"),
+            "the failure must name the field it could not parse: {msg}"
         );
+        // An id that failed to parse is whatever text was interpolated in, so the run history
+        // may not be handed the value.
+        assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
         assert!(
             !untouched.is_cancelled(),
             "a parse failure must bail before cancelling anything"

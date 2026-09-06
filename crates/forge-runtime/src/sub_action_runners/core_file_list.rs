@@ -195,6 +195,7 @@ async fn collect_entries(
 }
 
 #[cfg(test)]
+#[allow(clippy::panic)]
 mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
@@ -227,5 +228,31 @@ mod tests {
             produced.is_none(),
             "a rejected path must not produce a scope stack"
         );
+    }
+
+    #[tokio::test]
+    async fn missing_directory_failure_names_the_arm_and_never_the_path() {
+        const SENTINEL: &str = "no-such-dir-a-viewer-typed-this";
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("path".to_owned(), Variant::String(SENTINEL.to_owned()));
+        cfg.insert(
+            "into_var".to_owned(),
+            Variant::String("file.entries".to_owned()),
+        );
+
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+        let (telemetry, produced) = CoreFileListRunner.execute(&cfg, &ctx).await;
+
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            panic!("expected a failure, got {:?}", telemetry.outcome);
+        };
+        assert!(
+            msg.contains("directory not found"),
+            "wrong arm for a missing directory: {msg}"
+        );
+        // The path is interpolated, so it may carry viewer text into the run history.
+        assert!(!msg.contains(SENTINEL), "echoed the path: {msg}");
+        assert!(produced.is_none());
     }
 }

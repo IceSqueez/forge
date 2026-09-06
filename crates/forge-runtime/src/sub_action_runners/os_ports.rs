@@ -104,6 +104,37 @@ impl UrlOpenPort for SystemUrlOpenPort {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::{OsPortError, SystemUrlOpenPort, UrlOpenPort};
+
+    // Why: an interior NUL makes every launcher candidate fail inside std's argument encoding,
+    // which happens before any process is forked - the only way to reach the error arm without
+    // handing a real URL to a real browser.
+    #[test]
+    fn url_open_failure_text_carries_only_the_error_kind() {
+        let url = "https://leak-host.example/watch?access_token=QUERY-SECRET\0".to_owned();
+
+        let err = SystemUrlOpenPort.open(url).unwrap_err();
+
+        let OsPortError::Failed(msg) = err else {
+            panic!("expected a Failed launcher error, got {err:?}");
+        };
+        assert!(
+            !msg.contains("leak-host.example"),
+            "leaked target host: {msg}"
+        );
+        assert!(!msg.contains("QUERY-SECRET"), "leaked query token: {msg}");
+        // The launcher io::Error's own Display renders the spawned command line, whose argument
+        // is the URL, so nothing but the kind may reach the text.
+        assert_eq!(
+            msg,
+            format!("launcher failed: {}", std::io::ErrorKind::InvalidInput)
+        );
+    }
+}
+
+#[cfg(test)]
 #[allow(clippy::unwrap_used)]
 pub(crate) mod test_ports {
     use std::sync::Mutex;

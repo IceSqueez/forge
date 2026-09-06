@@ -96,7 +96,7 @@ fn is_browser_scheme(url: &str) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::sub_action_runners::os_ports::test_ports::{
@@ -154,12 +154,19 @@ mod tests {
             "ftp://host/resource",
             "JAVASCRIPT:alert(1)", // uppercase dangerous scheme must stay rejected
             "  file:///etc/passwd", // leading whitespace must not enable a bypass
+            "ftp://host/r?access_token=QUERY-SECRET", // a rejected URL may still carry a secret
         ] {
             let port = Arc::new(RecordingUrlOpenPort::new());
             let outcome = run(Arc::clone(&port), ArgStack::new(), url).await;
+
+            let SubActionOutcome::Failed(msg) = outcome else {
+                panic!("expected reject for {url}, got {outcome:?}");
+            };
+            // The rejected URL reaches the run history, so the reason may name the rule but
+            // never the target, its path or its query.
             assert!(
-                matches!(outcome, SubActionOutcome::Failed(_)),
-                "expected reject for {url}"
+                !msg.contains(url.trim()),
+                "the rejection echoed {url}: {msg}"
             );
             assert_eq!(port.call_count(), 0, "opener MUST NOT be called for {url}");
         }

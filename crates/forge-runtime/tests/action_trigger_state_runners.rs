@@ -423,32 +423,88 @@ async fn trigger_enable_and_disable_on_unknown_id_are_noop_success() {
     }
 }
 
-#[tokio::test]
-async fn action_enable_fails_and_persists_nothing_for_unparseable_id() {
+/// A runner ready to run plus a reader for the writes it must not have made.
+type ParseFailureCase = (
+    Box<dyn SubActionRunner>,
+    SubActionConfig,
+    Box<dyn Fn() -> usize>,
+);
+
+fn action_case(
+    build: fn(Arc<dyn ActionRepo>) -> Box<dyn SubActionRunner>,
+    id: &str,
+) -> ParseFailureCase {
     let repo = Arc::new(MockActionRepo::new());
-
-    let runner = CoreActionEnableRunner::new(as_action_repo(&repo));
-    let outcome = run(&runner, &action_cfg("not-a-ulid")).await;
-
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("invalid action_id")),
-        "got {outcome:?}"
-    );
-    assert_eq!(repo.write_count(), 0);
+    let runner = build(as_action_repo(&repo));
+    (runner, action_cfg(id), Box::new(move || repo.write_count()))
 }
 
-#[tokio::test]
-async fn trigger_toggle_fails_and_persists_nothing_for_unparseable_id() {
+fn trigger_case(
+    build: fn(Arc<dyn TriggerInstanceRepo>) -> Box<dyn SubActionRunner>,
+    id: &str,
+) -> ParseFailureCase {
     let repo = Arc::new(MockTriggerInstanceRepo::new());
+    let runner = build(as_trigger_repo(&repo));
+    (
+        runner,
+        trigger_cfg(id),
+        Box::new(move || repo.write_count()),
+    )
+}
 
-    let runner = CoreTriggerToggleRunner::new(as_trigger_repo(&repo));
-    let outcome = run(&runner, &trigger_cfg("not-a-ulid")).await;
+// Why: an id that failed to parse is not an id, it is whatever text the trigger interpolated in -
+// most plausibly viewer content when the step wires `%message%` into the field - so the failure
+// text the run history shows may name the field but never the value.
+#[tokio::test]
+async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
+    const SENTINEL: &str = "not-a-ulid-a-viewer-typed-this";
 
-    assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("invalid trigger_instance_id")),
-        "got {outcome:?}"
-    );
-    assert_eq!(repo.write_count(), 0);
+    let cases: [(&str, &str, ParseFailureCase); 6] = [
+        (
+            "core.action.enable",
+            "invalid action_id",
+            action_case(|r| Box::new(CoreActionEnableRunner::new(r)), SENTINEL),
+        ),
+        (
+            "core.action.disable",
+            "invalid action_id",
+            action_case(|r| Box::new(CoreActionDisableRunner::new(r)), SENTINEL),
+        ),
+        (
+            "core.action.toggle",
+            "invalid action_id",
+            action_case(|r| Box::new(CoreActionToggleRunner::new(r)), SENTINEL),
+        ),
+        (
+            "core.trigger.enable",
+            "invalid trigger_instance_id",
+            trigger_case(|r| Box::new(CoreTriggerEnableRunner::new(r)), SENTINEL),
+        ),
+        (
+            "core.trigger.disable",
+            "invalid trigger_instance_id",
+            trigger_case(|r| Box::new(CoreTriggerDisableRunner::new(r)), SENTINEL),
+        ),
+        (
+            "core.trigger.toggle",
+            "invalid trigger_instance_id",
+            trigger_case(|r| Box::new(CoreTriggerToggleRunner::new(r)), SENTINEL),
+        ),
+    ];
+
+    for (kind, expected_field, (runner, config, writes)) in cases {
+        let outcome = run(&*runner, &config).await;
+
+        let SubActionOutcome::Failed(msg) = outcome else {
+            panic!("{kind} accepted an unparseable id: {outcome:?}");
+        };
+        assert!(
+            msg.contains(expected_field),
+            "{kind} must name the field it could not parse: {msg}"
+        );
+        assert!(!msg.contains(SENTINEL), "{kind} echoed the value: {msg}");
+        assert_eq!(writes(), 0, "{kind} persisted after a parse failure");
+    }
 }
 
 #[tokio::test]

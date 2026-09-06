@@ -398,16 +398,23 @@ async fn unknown_action_id_fails_without_running_a_child_chain() {
 
 #[tokio::test]
 async fn unparseable_action_id_fails_without_running_a_child_chain() {
+    const SENTINEL: &str = "not-a-ulid-a-viewer-typed-this";
     let repo = std::sync::Arc::new(MockActionRepo::new());
 
     let runner = CoreActionRunRunner::new(repo);
     let executor = MockChainExecutor::completing();
-    let outcome = run(&runner, &cfg("not-a-ulid"), &ArgStack::new(), &executor).await;
+    let outcome = run(&runner, &cfg(SENTINEL), &ArgStack::new(), &executor).await;
 
+    let SubActionOutcome::Failed(msg) = outcome else {
+        panic!("an unparseable action_id must fail, got {outcome:?}");
+    };
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("invalid action_id")),
-        "got {outcome:?}",
+        msg.contains("invalid action_id"),
+        "the failure must name the field it could not parse: {msg}"
     );
+    // An id that failed to parse is whatever text was interpolated in, so the run history may
+    // not be handed the value.
+    assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
     assert_eq!(executor.call_count(), 0);
 }
 

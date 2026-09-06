@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -290,6 +290,7 @@ async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
 
 #[tokio::test]
 async fn unparseable_trigger_instance_id_fails() {
+    const SENTINEL: &str = "not-an-instance-id-a-viewer-typed-this";
     let backend = backend().await;
     let runner = CoreTestFireTriggerRunner::new(
         backend.trigger_instance_repo(),
@@ -297,12 +298,18 @@ async fn unparseable_trigger_instance_id_fails() {
         SchedulerCell::new(),
     );
 
-    let outcome = run_outcome(&runner, &fire_cfg("not-an-instance-id", BTreeMap::new())).await;
+    let outcome = run_outcome(&runner, &fire_cfg(SENTINEL, BTreeMap::new())).await;
 
+    let SubActionOutcome::Failed(msg) = outcome else {
+        panic!("an unparseable trigger_instance_id must fail before any lookup, got {outcome:?}");
+    };
     assert!(
-        matches!(&outcome, SubActionOutcome::Failed(m) if m.contains("invalid trigger_instance_id")),
-        "an unparseable trigger_instance_id must fail before any lookup, got {outcome:?}"
+        msg.contains("invalid trigger_instance_id"),
+        "the failure must name the field it could not parse: {msg}"
     );
+    // An id that failed to parse is whatever text was interpolated in, so the run history may
+    // not be handed the value.
+    assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
 }
 
 #[tokio::test]

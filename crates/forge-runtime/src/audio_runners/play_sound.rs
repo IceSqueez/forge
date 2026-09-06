@@ -94,7 +94,7 @@ impl SubActionRunner for PlaySoundRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use async_trait::async_trait;
     use forge_types::{ClipId, EventId, OutputDevice, SubActionOutcome};
@@ -168,16 +168,19 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_clip_id_returns_failed() {
+        const SENTINEL: &str = "not-a-ulid-a-viewer-typed-this";
         let runner = PlaySoundRunner::new(Arc::new(OkPlayer));
         let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "clip_id".to_owned(),
-            Variant::String("not-a-ulid".to_owned()),
-        );
+        cfg.insert("clip_id".to_owned(), Variant::String(SENTINEL.to_owned()));
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
         let (telemetry, _) = runner.execute(&cfg, &ctx).await;
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
+
+        let SubActionOutcome::Failed(msg) = telemetry.outcome else {
+            panic!("expected Failed, got {:?}", telemetry.outcome);
+        };
+        // The field is interpolated, so an id that failed to parse is whatever text arrived.
+        assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
     }
 
     #[tokio::test]

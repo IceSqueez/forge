@@ -95,12 +95,6 @@ fn is_handle_key(key: &str) -> bool {
     HANDLE_KEYS.contains(&key)
 }
 
-/// The one opted-in string: the payload convention defines `reason` as a stable snake_case token,
-/// with human prose living in a sibling `detail` the projection still redacts.
-fn is_disclosed_key(key: &str) -> bool {
-    key == "reason"
-}
-
 struct Projection<'a>(&'a Value);
 
 impl fmt::Display for Projection<'_> {
@@ -127,9 +121,9 @@ fn write_value(
 
 fn write_string(f: &mut fmt::Formatter<'_>, value: &str, key: Option<&str>) -> fmt::Result {
     match key {
-        Some(k) if (is_opaque_id_key(k) || is_disclosed_key(k)) && is_token(value) => {
-            f.write_str(value)
-        }
+        // `reason` is deliberately NOT disclosed: on moderation events it carries a moderator's
+        // free text about a viewer, and a one-word slur passes any token-shape test.
+        Some(k) if is_opaque_id_key(k) && is_token(value) => f.write_str(value),
         Some(k) if is_handle_key(k) => write!(f, "<redacted digest={}>", identity_digest(value)),
         _ => write!(f, "{:?}", RedactedText::new(value)),
     }

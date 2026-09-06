@@ -115,10 +115,19 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
         .with_writer(crate::log_scrub::scrubbed(std::io::stdout));
     let log_tail = LogTail::new();
 
+    const RETAINED_LOG_FILES: usize = 14;
+
     let log_dir = paths::data_dir().join("logs");
-    let (file_layer, guard) = match std::fs::create_dir_all(&log_dir) {
-        Ok(()) => {
-            let appender = tracing_appender::rolling::daily(&log_dir, "forge.log");
+    let appender = std::fs::create_dir_all(&log_dir).ok().and_then(|()| {
+        tracing_appender::rolling::Builder::new()
+            .rotation(tracing_appender::rolling::Rotation::DAILY)
+            .filename_prefix("forge.log")
+            .max_log_files(RETAINED_LOG_FILES)
+            .build(&log_dir)
+            .ok()
+    });
+    let (file_layer, guard) = match appender {
+        Some(appender) => {
             let (writer, guard) = tracing_appender::non_blocking(appender);
             let layer = fmt::layer()
                 .with_writer(crate::log_scrub::scrubbed(writer))
@@ -126,7 +135,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
                 .with_target(true);
             (Some(layer), Some(guard))
         }
-        Err(_) => (None, None),
+        None => (None, None),
     };
 
     tracing_subscriber::registry()
@@ -139,7 +148,9 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
     if guard.is_some() {
         tracing::info!(path = %log_dir.display(), "file logging enabled");
     } else {
-        tracing::warn!("file logging disabled: could not create log directory");
+        tracing::warn!(
+            "file logging disabled: could not create log directory or init rolling appender"
+        );
     }
     (guard, log_tail)
 }

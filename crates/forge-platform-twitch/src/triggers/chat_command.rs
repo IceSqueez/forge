@@ -201,6 +201,22 @@ mod tests {
     }
 
     #[test]
+    fn output_schema_declares_message_text_as_its_first_message_hinted_variable() {
+        // Why: the runtime's chat-command carve-out resolves the matched line by taking the FIRST
+        // Message-hinted variable in this schema. Nothing else pins that order, so a reordered or
+        // re-hinted schema would silently change which value commands parse their arguments from.
+        let schema = ChatCommandDescriptor.output_schema().unwrap();
+
+        let first_message_hinted = schema
+            .variables
+            .iter()
+            .find(|v| v.synthesis == Some(forge_types::SynthesisHint::Message))
+            .map(|v| v.name.as_str());
+
+        assert_eq!(first_message_hinted, Some("message_text"));
+    }
+
+    #[test]
     fn build_arg_stack_includes_base_chat_args() {
         let stack = ChatCommandDescriptor.build_arg_stack(&chat_event("!quote hello"));
         assert_eq!(

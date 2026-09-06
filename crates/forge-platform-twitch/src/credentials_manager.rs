@@ -475,6 +475,116 @@ mod tests {
         );
     }
 
+    const BODY_SENTINEL: &str = "REFRESH_BODY_SENTINEL_p3k";
+
+    /// Drives one failing refresh against a mock token endpoint whose body carries the sentinel,
+    /// capturing everything from TRACE up so no tier can hide a leak.
+    fn failing_refresh(status: u16) -> (PlatformError, Vec<crate::log_capture::CapturedLine>) {
+        crate::log_capture::capture_blocking(tracing::Level::TRACE, async move {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/token"))
+                .respond_with(ResponseTemplate::new(status).set_body_json(json!({
+                    "error": "invalid_grant",
+                    "error_description": BODY_SENTINEL,
+                })))
+                .mount(&server)
+                .await;
+
+            let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+            let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+            mgr.refresh(&OAuthToken::new("existing_access"))
+                .await
+                .unwrap_err()
+        })
+    }
+
+    #[test]
+    fn token_refresh_failure_never_logs_the_endpoint_response_body() {
+        for status in [400, 503] {
+            let (err, lines) = failing_refresh(status);
+            if let PlatformError::Http { body, .. } = &err {
+                assert!(
+                    body.contains(BODY_SENTINEL),
+                    "fixture must reproduce the leak vector: the error itself carries the body"
+                );
+            }
+
+            let forge_lines = crate::log_capture::forge_lines(&lines);
+            assert!(
+                !forge_lines.is_empty(),
+                "HTTP {status}: the refresh path must have logged something to inspect"
+            );
+            for line in forge_lines {
+                assert!(
+                    !line.mentions(BODY_SENTINEL),
+                    "HTTP {status}: token-endpoint response body reached a {} line: {:?}",
+                    line.level,
+                    line.fields
+                );
+            }
+        }
+    }
+
+    type WarnExpectation = fn(&crate::log_capture::CapturedLine) -> bool;
+
+    #[test]
+    fn token_refresh_failure_warns_with_the_shape_of_its_branch() {
+        // Why: the two branches must stay distinguishable to an operator - a reauth needs the
+        // sign-in banner, an upstream 5xx needs a retry - and neither may widen past the shape.
+        let cases: Vec<(u16, WarnExpectation)> = vec![
+            (400, |line| {
+                line.message().contains("re-authorization required")
+                    && line.field("status").is_none()
+            }),
+            (503, |line| line.field("status") == Some("503")),
+        ];
+
+        for (status, is_expected) in cases {
+            let (_, lines) = failing_refresh(status);
+            let warns: Vec<_> = crate::log_capture::forge_lines(&lines)
+                .into_iter()
+                .filter(|line| line.level == tracing::Level::WARN)
+                .collect();
+
+            assert!(
+                warns.iter().any(|line| is_expected(line)),
+                "HTTP {status}: no WARN line reported the expected branch shape; got {:?}",
+                warns.iter().map(|l| &l.fields).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn token_source_error_reports_the_refresh_shape_without_the_endpoint_body() {
+        // Why: this string is not only logged - it reaches sub-action failure text and run
+        // history, so `PlatformError`'s `HTTP {status}: {body}` Display must not be forwarded.
+        use crate::helix::HelixTokenSource;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(503).set_body_json(json!({
+                "message": BODY_SENTINEL,
+            })))
+            .mount(&server)
+            .await;
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+
+        let rendered = mgr.access_token().await.unwrap_err().to_string();
+
+        assert!(
+            !rendered.contains(BODY_SENTINEL),
+            "token-endpoint response body reached the HelixError string: {rendered}"
+        );
+        assert!(
+            rendered.contains("HTTP 503"),
+            "the upstream status must survive so an operator can tell a 5xx from a network drop; \
+             got: {rendered}"
+        );
+    }
+
     #[tokio::test]
     async fn helix_token_source_returns_reauth_required_when_no_credential() {
         use crate::helix::HelixTokenSource;

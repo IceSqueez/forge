@@ -87,7 +87,7 @@ pub async fn send_chat(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use async_trait::async_trait;
@@ -217,6 +217,44 @@ mod tests {
         let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
 
         assert!(matches!(err, ChatSendError::Http(_)));
+    }
+
+    fn send_debug_line(message: &str) -> crate::log_capture::CapturedLine {
+        let transport = MockTransport::returning(Ok(sent_fixture()));
+        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::DEBUG, async {
+            send_chat(&transport, "100", "200", message).await
+        });
+        assert!(result.is_ok(), "fixture send must succeed");
+        crate::log_capture::forge_lines(&lines)
+            .into_iter()
+            .find(|line| line.message() == "sending chat message to helix")
+            .cloned()
+            .expect("the send path must emit its DEBUG line")
+    }
+
+    #[test]
+    fn chat_send_debug_line_omits_the_message_text() {
+        const MESSAGE_SENTINEL: &str = "CHAT_TEXT_SENTINEL_w4q";
+
+        let line = send_debug_line(&format!("!quote {MESSAGE_SENTINEL}"));
+
+        assert!(
+            !line.mentions(MESSAGE_SENTINEL),
+            "viewer message text must never reach a log field; got: {:?}",
+            line.fields
+        );
+    }
+
+    #[test]
+    fn chat_send_debug_line_counts_characters_not_bytes() {
+        // Cyrillic is 2 bytes per char: a byte count would report 20 for these 10 chars.
+        let line = send_debug_line(&"я".repeat(10));
+
+        assert_eq!(
+            line.field("chars"),
+            Some("10"),
+            "the length field must be the character count the limit is enforced on"
+        );
     }
 
     #[tokio::test]

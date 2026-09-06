@@ -3826,6 +3826,43 @@ mod tests {
     }
 
     #[test]
+    fn websocket_url_error_is_reported_without_the_connect_url() {
+        // Why: a server-issued reconnect URL carries session-scoped query material, and
+        // `UrlError::UnableToConnect` renders the URL it was handed.
+        const SESSION_URL: &str =
+            "wss://eventsub.wss.twitch.tv/ws?reconnect_token=SESSION_SCOPED_SENTINEL_j7x";
+        let err = tokio_tungstenite::tungstenite::Error::Url(
+            tokio_tungstenite::tungstenite::error::UrlError::UnableToConnect(
+                SESSION_URL.to_owned(),
+            ),
+        );
+        assert!(
+            err.to_string().contains(SESSION_URL),
+            "fixture must reproduce the leak the mapper exists to prevent; \
+             tungstenite Display changed: {err}"
+        );
+
+        let reason = ws_error_reason(&err);
+
+        assert!(
+            !reason.contains("SESSION_SCOPED_SENTINEL_j7x"),
+            "url-error reason must not carry the connect URL; got: {reason}"
+        );
+    }
+
+    #[test]
+    fn non_url_websocket_error_keeps_its_diagnostic_detail() {
+        let err = tokio_tungstenite::tungstenite::Error::Utf8("bad frame at byte 12".to_owned());
+
+        let reason = ws_error_reason(&err);
+
+        assert!(
+            reason.contains("bad frame at byte 12"),
+            "non-url variants must pass Display through so operators keep the detail; got: {reason}"
+        );
+    }
+
+    #[test]
     fn ws_frame_deserializes_session_welcome() {
         let raw = r#"{"metadata":{"message_type":"session_welcome","message_id":"abc"},"payload":{"session":{"id":"sess-123","reconnect_url":null}}}"#;
         let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
@@ -6105,6 +6142,156 @@ mod tests {
         ) -> Result<(), forge_storage::StorageError> {
             Ok(())
         }
+    }
+
+    const TOKEN_BODY_SENTINEL: &str = "SESSION_TOKEN_BODY_SENTINEL_m2";
+
+    /// A credential inside the refresh buffer, so `session_welcome` drives a real refresh.
+    struct NearExpiryCreds;
+
+    #[async_trait::async_trait]
+    impl forge_storage::CredentialsRepo for NearExpiryCreds {
+        async fn store(
+            &self,
+            _: &forge_storage::CredentialId,
+            _: &str,
+        ) -> Result<(), forge_storage::StorageError> {
+            Ok(())
+        }
+
+        async fn load(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<Option<String>, forge_storage::StorageError> {
+            let expires_at_unix = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64 + 60)
+                .unwrap_or(0);
+            Ok(Some(
+                serde_json::json!({
+                    "access_token": "stale_access",
+                    "refresh_token": "stale_refresh",
+                    "user_id": "user_1",
+                    "login": "streamer",
+                    "expires_at_unix": expires_at_unix,
+                })
+                .to_string(),
+            ))
+        }
+
+        async fn delete(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<bool, forge_storage::StorageError> {
+            Ok(false)
+        }
+
+        async fn list_ids(
+            &self,
+        ) -> Result<Vec<forge_storage::CredentialId>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<Option<time::OffsetDateTime>, forge_storage::StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(
+            &self,
+            _: &forge_storage::CredentialId,
+        ) -> Result<(), forge_storage::StorageError> {
+            Ok(())
+        }
+    }
+
+    /// Drives `session_welcome` against a token endpoint that answers 503 with a sentinel body,
+    /// capturing from TRACE up so no tier can hide a leak.
+    fn session_welcome_over_failing_token_endpoint()
+    -> (FrameAction, Vec<crate::log_capture::CapturedLine>) {
+        crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let server = wiremock::MockServer::start().await;
+            wiremock::Mock::given(wiremock::matchers::method("POST"))
+                .and(wiremock::matchers::path("/token"))
+                .respond_with(wiremock::ResponseTemplate::new(503).set_body_json(
+                    serde_json::json!({
+                        "message": TOKEN_BODY_SENTINEL,
+                    }),
+                ))
+                .mount(&server)
+                .await;
+
+            let manager = Arc::new(TwitchCredentialsManager::with_endpoint(
+                Arc::new(NearExpiryCreds),
+                "client".to_owned(),
+                format!("{}/token", server.uri()),
+            ));
+            let bus = Arc::new(PlatformEventChannel::new());
+            let publisher: Arc<dyn EventPublisher> = bus.clone();
+            let (mut session, _state_rx, _shutdown_tx) = ChatSession::new(
+                manager,
+                "client".to_owned(),
+                "bcast".to_owned(),
+                "user".to_owned(),
+                publisher,
+                crate::subscriptions::SubscriptionTracker::default(),
+                TwitchLifecycle::new(),
+            );
+
+            let mut session_id = None;
+            session
+                .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
+                .await
+        })
+    }
+
+    #[test]
+    fn session_welcome_token_failure_never_logs_the_endpoint_response_body() {
+        let (action, lines) = session_welcome_over_failing_token_endpoint();
+        assert!(
+            matches!(action, FrameAction::Disconnect),
+            "a non-reauth token error must disconnect for backoff retry"
+        );
+
+        let forge_lines = crate::log_capture::forge_lines(&lines);
+        assert!(
+            !forge_lines.is_empty(),
+            "the session_welcome path must have logged something to inspect"
+        );
+        for line in forge_lines {
+            assert!(
+                !line.mentions(TOKEN_BODY_SENTINEL),
+                "token-endpoint response body reached a {} line: {:?}",
+                line.level,
+                line.fields
+            );
+        }
+    }
+
+    #[test]
+    fn session_welcome_token_failure_warns_with_the_upstream_status() {
+        let (_, lines) = session_welcome_over_failing_token_endpoint();
+
+        // Why: scoped to this module's target on purpose - `perform_refresh` logs its own
+        // `status = 503` WARN one frame down, and an unscoped search would pass on that line
+        // alone while the session arm still rendered the whole error.
+        let session_warns: Vec<_> = crate::log_capture::forge_lines(&lines)
+            .into_iter()
+            .filter(|line| {
+                line.level == tracing::Level::WARN && line.target.ends_with("chat::session")
+            })
+            .collect();
+
+        assert!(
+            session_warns
+                .iter()
+                .any(|line| line.field("status") == Some("503")),
+            "the disconnect WARN must report the upstream status so a 5xx is distinguishable \
+             from a network drop; got {:?}",
+            session_warns.iter().map(|l| &l.fields).collect::<Vec<_>>()
+        );
     }
 
     #[tokio::test]

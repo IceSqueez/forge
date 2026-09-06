@@ -10,6 +10,8 @@ pub mod credentials_manager;
 mod event_channel;
 pub mod helix;
 mod lifecycle;
+#[cfg(test)]
+mod log_capture;
 mod payload_fields;
 pub mod sub_actions;
 pub mod subscriptions;

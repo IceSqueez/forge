@@ -26,6 +26,7 @@ open = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 futures-core = { workspace = true }

@@ -15,6 +15,7 @@ pub mod config;
 mod cooldown;
 pub mod dashboard;
 mod egress;
+pub mod event_log_bridge;
 pub mod live_viewers;
 pub mod overlay_service;
 pub mod queue_scheduler;
@@ -38,6 +39,7 @@ pub use chat_moderation_stream::chat_moderation_stream;
 pub use chat_stream::chat_stream;
 pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
+pub use event_log_bridge::spawn_event_log_bridge;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use overlay_service::{
     MaterializePass, OverlayConnectListener, OverlayFrameSink, OverlayServiceCell,

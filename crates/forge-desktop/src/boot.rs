@@ -12,7 +12,7 @@ use forge_runtime::{
     OverlayFrameSink, OverlayServiceCell, OverlayServiceHandle, QueueScheduler, SchedulerCell,
     ScriptRegistry, SoundPlayer, SpeakDispatcher, register_audio_sub_actions,
     register_core_sub_actions, register_core_triggers, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_chat_moderation_persistence,
+    spawn_chat_history_persistence, spawn_chat_moderation_persistence, spawn_event_log_bridge,
     spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
@@ -154,6 +154,7 @@ pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFail
 
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
+    spawn_event_log_bridge(Arc::clone(&bus));
     spawn_chat_history_persistence(
         Arc::clone(&bus),
         backend.chat_history_repo(),

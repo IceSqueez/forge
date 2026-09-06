@@ -152,7 +152,14 @@ impl crate::helix::HelixTokenSource for TwitchCredentialsManager {
         self.get_valid_access_token().await.map_err(|e| match e {
             PlatformError::ReauthRequired { .. } => crate::helix::HelixError::ReauthRequired,
             PlatformError::Io(io) => crate::helix::HelixError::Credentials(io.to_string()),
-            other => crate::helix::HelixError::Credentials(other.to_string()),
+            // Display of `Http` carries the token endpoint's response body, and this string reaches sub-action error text and run history.
+            PlatformError::Http { status, .. } => crate::helix::HelixError::Credentials(format!(
+                "twitch token refresh failed: HTTP {status}"
+            )),
+            PlatformError::Network { reason } => crate::helix::HelixError::Credentials(format!(
+                "twitch token refresh failed: {reason}"
+            )),
+            _ => crate::helix::HelixError::Credentials("twitch token refresh failed".to_owned()),
         })
     }
 }

@@ -256,7 +256,22 @@ impl ChatSession {
                         return FrameAction::ReauthRequired;
                     }
                     Err(e) => {
-                        warn!(error = %e, "chat token fetch failed; treating as disconnect");
+                        // Display of `Http` carries the token endpoint's response body; report the shape only.
+                        match &e {
+                            PlatformError::Http { status, .. } => {
+                                warn!(
+                                    status = *status,
+                                    "chat token fetch failed; treating as disconnect"
+                                );
+                            }
+                            PlatformError::Network { reason } => {
+                                warn!(
+                                    error = %reason,
+                                    "chat token fetch failed; treating as disconnect"
+                                );
+                            }
+                            _ => warn!("chat token fetch failed; treating as disconnect"),
+                        }
                         return FrameAction::Disconnect;
                     }
                 };
@@ -3720,8 +3735,7 @@ fn attach_chat_reply_payload(forge_payload: &mut serde_json::Value, reply: ChatR
     }
 }
 
-/// `UrlError` renders the connect URL, and a server-issued reconnect URL carries
-/// session-scoped query material that must never reach a log line.
+// Why: `UrlError` renders the connect URL, and a server-issued reconnect URL carries session-scoped query material.
 fn ws_error_reason(e: &tokio_tungstenite::tungstenite::Error) -> String {
     match e {
         tokio_tungstenite::tungstenite::Error::Url(_) => "websocket url rejected".to_owned(),

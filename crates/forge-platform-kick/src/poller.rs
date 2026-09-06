@@ -693,4 +693,89 @@ mod tests {
             "resolved ids b and c must be pruned, leaving only the live pending id"
         );
     }
+
+    const BODY_SENTINEL: &str = "kick_poll_body_sentinel";
+
+    /// A poll that keeps failing repeats its rendering every interval, so the body must go while
+    /// the operator-facing diagnostic stays.
+    #[test]
+    fn poll_failure_drops_the_response_body_and_keeps_the_diagnostic() {
+        let cases: [(PlatformError, &str); 4] = [
+            (
+                PlatformError::Http {
+                    status: 500,
+                    body: format!("<html>{BODY_SENTINEL}</html>"),
+                },
+                "HTTP 500",
+            ),
+            (
+                PlatformError::Network {
+                    reason: "error sending request".to_owned(),
+                },
+                "error sending request",
+            ),
+            (
+                PlatformError::Auth {
+                    reason: "channel token rejected (401)".to_owned(),
+                },
+                "channel token rejected (401)",
+            ),
+            (
+                PlatformError::RateLimited {
+                    retry_after_secs: 30,
+                },
+                "30",
+            ),
+        ];
+
+        for (error, must_keep) in cases {
+            let rendered = poll_failure(&error);
+            assert!(
+                !rendered.contains(BODY_SENTINEL),
+                "response body leaked into {rendered:?}"
+            );
+            assert!(
+                rendered.contains(must_keep),
+                "lost diagnostic {must_keep:?} in {rendered:?}"
+            );
+        }
+    }
+
+    /// Guards the call site rather than the renderer: a plain `%error` here would put the whole
+    /// body back on the wire even with `poll_failure` intact.
+    #[test]
+    fn a_failing_channel_poll_logs_no_byte_of_the_response_body() {
+        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/channels"))
+                .respond_with(
+                    ResponseTemplate::new(500).set_body_string(format!("<html>{BODY_SENTINEL}")),
+                )
+                .mount(&server)
+                .await;
+
+            let channel = channel_on(&server);
+            let (tx, _rx) = mpsc::channel(4);
+            let mut last = None;
+            poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last).await
+        });
+
+        assert!(result.is_ok(), "a failed poll must not stop the loop");
+        let forge_lines = crate::log_capture::forge_lines(&lines);
+        assert!(
+            forge_lines
+                .iter()
+                .any(|line| line.message() == "kick channel poll failed"),
+            "the failure must still be reported: {forge_lines:?}"
+        );
+        for line in forge_lines {
+            assert!(
+                !line.mentions(BODY_SENTINEL),
+                "response body reached a {} line: {:?}",
+                line.level,
+                line.fields
+            );
+        }
+    }
 }

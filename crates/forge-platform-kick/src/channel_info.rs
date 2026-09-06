@@ -124,7 +124,7 @@ struct LivestreamField {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use wiremock::matchers::{method, path};
@@ -207,5 +207,78 @@ mod tests {
         let info = fetcher.fetch().await.unwrap();
         assert!(!info.is_live);
         assert_eq!(info.viewer_count, 0);
+    }
+
+    /// The challenge layer answers with an HTML page, and the body travels into sub-action error
+    /// text and run history - so the cut must land on a char boundary rather than a byte offset.
+    #[test]
+    fn bounded_body_cuts_at_the_char_limit_without_splitting_a_char() {
+        let cases = [
+            "short".to_owned(),
+            "a".repeat(ERROR_BODY_LIMIT),
+            "a".repeat(ERROR_BODY_LIMIT + 1),
+            "\u{1f600}".repeat(ERROR_BODY_LIMIT * 2),
+            "\u{456}".repeat(ERROR_BODY_LIMIT - 1),
+        ];
+
+        for body in cases {
+            let expected_chars = body.chars().count().min(ERROR_BODY_LIMIT);
+            let bounded = bounded_body(body.clone());
+            assert_eq!(
+                bounded.chars().count(),
+                expected_chars,
+                "wrong length for a {}-char body",
+                body.chars().count()
+            );
+            assert!(body.starts_with(&bounded), "cut changed the body prefix");
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_bounds_a_challenge_page_body_on_an_error_status() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/blocked_slug"))
+            .respond_with(
+                ResponseTemplate::new(403)
+                    .set_body_string(format!("<html>{}</html>", "x".repeat(5_000))),
+            )
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let fetcher =
+            ChannelInfoFetcher::with_endpoint("blocked_slug".to_owned(), http, server.uri());
+        let err = fetcher.fetch().await.unwrap_err();
+        let KickError::Http { status, body } = err else {
+            panic!("expected an Http error, got {err:?}");
+        };
+        assert_eq!(status, 403);
+        assert_eq!(body.chars().count(), ERROR_BODY_LIMIT);
+    }
+
+    /// Invariant #7: the request URL carries no secret here, but the same rendering is reused for
+    /// token-bearing calls - `without_url` is the guarantee under test.
+    #[tokio::test]
+    async fn transport_failure_reason_omits_the_request_url() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let endpoint = format!("http://127.0.0.1:{port}");
+
+        let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(1))
+            .build()
+            .unwrap();
+        let fetcher = ChannelInfoFetcher::with_endpoint("some_slug".to_owned(), http, endpoint);
+        let err = fetcher.fetch().await.unwrap_err();
+        let KickError::ChannelInfoUnavailable { reason, .. } = err else {
+            panic!("expected ChannelInfoUnavailable, got {err:?}");
+        };
+        assert!(!reason.contains("127.0.0.1"), "url leaked into {reason:?}");
+        assert!(
+            !reason.contains(&port.to_string()),
+            "url leaked into {reason:?}"
+        );
     }
 }

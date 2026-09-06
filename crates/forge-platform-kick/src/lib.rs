@@ -11,6 +11,8 @@ pub mod credentials;
 pub mod credentials_manager;
 pub mod error;
 mod event_channel;
+#[cfg(test)]
+mod log_capture;
 pub mod moderation;
 mod normalize;
 mod payload_fields;

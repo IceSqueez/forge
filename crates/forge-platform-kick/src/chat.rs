@@ -605,4 +605,133 @@ mod tests {
         assert!(event.payload.get("badges").is_none());
         assert!(event.payload["sender"].get("badges").is_none());
     }
+
+    /// Pusher has shipped `data` both ways and types `code` both ways; the log line must keep
+    /// showing the code across that drift rather than falling back to a raw-frame dump.
+    #[test]
+    fn pusher_error_code_survives_every_observed_data_and_code_shape() {
+        let cases = [
+            (serde_json::json!({ "code": 4004 }), Some(4004)),
+            (serde_json::json!({ "code": "4004" }), Some(4004)),
+            (serde_json::json!(r#"{"code":4009}"#), Some(4009)),
+            (serde_json::json!(r#"{"code":"4009"}"#), Some(4009)),
+            (serde_json::json!({ "message": "over quota" }), None),
+            (serde_json::json!({ "code": serde_json::Value::Null }), None),
+            (serde_json::json!({ "code": { "value": 4004 } }), None),
+            (serde_json::json!("not json at all"), None),
+            (serde_json::Value::Null, None),
+        ];
+
+        for (data, expected) in cases {
+            assert_eq!(pusher_error_code(&data), expected, "for data {data}");
+        }
+    }
+
+    fn pusher_error_warnings(raw: &str) -> Vec<crate::log_capture::CapturedLine> {
+        let (health, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let (tx, _rx) = mpsc::channel(8);
+            handle_ws_text(raw, &tx).await
+        });
+        assert!(
+            health == WsFrameHealth::Error,
+            "frame must report unhealthy"
+        );
+        crate::log_capture::forge_lines(&lines)
+            .into_iter()
+            .filter(|line| line.level == tracing::Level::WARN)
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn pusher_error_warning_reports_only_the_code_and_the_frame_length() {
+        let raw = r#"{"event":"pusher:error","data":"{\"code\":4009,\"message\":\"rejected\"}"}"#;
+        let warns = pusher_error_warnings(raw);
+
+        assert_eq!(warns.len(), 1, "expected one warn line, got {warns:?}");
+        let line = &warns[0];
+        assert_eq!(line.message(), "kick chat pusher error frame");
+        assert_eq!(line.field("code"), Some("4009"));
+        assert_eq!(
+            line.field("frame_len"),
+            Some(raw.len().to_string().as_str())
+        );
+        assert_eq!(line.field_names(), vec!["code", "frame_len", "message"]);
+    }
+
+    /// A Pusher rejection echoes back the payload that caused it, so no byte of the frame may
+    /// reach a log field - with or without a parseable code.
+    #[test]
+    fn pusher_error_warning_never_echoes_the_frame_payload() {
+        const SENTINEL: &str = "s3cret-chat-line";
+        let frames = [
+            format!(
+                r#"{{"event":"pusher:error","data":"{{\"code\":4009,\"message\":\"{SENTINEL}\"}}"}}"#
+            ),
+            format!(r#"{{"event":"pusher:error","data":{{"message":"{SENTINEL}"}}}}"#),
+        ];
+
+        for raw in frames {
+            let warns = pusher_error_warnings(&raw);
+            assert_eq!(warns.len(), 1, "expected one warn line for {raw}");
+            assert!(
+                !warns[0].mentions(SENTINEL),
+                "frame payload leaked into {:?}",
+                warns[0].fields
+            );
+        }
+    }
+
+    #[test]
+    fn channel_info_failure_drops_the_response_body_and_the_slug() {
+        const SENTINEL: &str = "somechannel";
+        let cases: [(KickError, Option<&str>); 5] = [
+            (
+                KickError::Http {
+                    status: 403,
+                    body: format!("<html>blocked {SENTINEL}</html>"),
+                },
+                Some("HTTP 403"),
+            ),
+            (
+                KickError::ChannelInfoUnavailable {
+                    slug: SENTINEL.to_owned(),
+                    reason: "error sending request".to_owned(),
+                },
+                Some("error sending request"),
+            ),
+            (
+                KickError::ChatroomIdNotFound {
+                    slug: SENTINEL.to_owned(),
+                },
+                None,
+            ),
+            (
+                KickError::Network {
+                    reason: "connection reset".to_owned(),
+                },
+                Some("connection reset"),
+            ),
+            (
+                KickError::WebSocket {
+                    reason: "handshake failed".to_owned(),
+                },
+                Some("handshake failed"),
+            ),
+        ];
+
+        for (error, must_keep) in cases {
+            let rendered = channel_info_failure(&error);
+            assert!(
+                !rendered.contains(SENTINEL),
+                "leaked sentinel in {rendered:?}"
+            );
+            if let Some(needle) = must_keep {
+                assert!(
+                    rendered.contains(needle),
+                    "lost diagnostic {needle:?} in {rendered:?}"
+                );
+            }
+        }
+    }
 }

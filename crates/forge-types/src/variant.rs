@@ -760,4 +760,39 @@ mod tests {
             assert_eq!(display_scalar(&value), expected, "value {value:?}");
         }
     }
+
+    #[test]
+    fn debug_renders_the_string_arm_as_a_length_and_leaves_the_other_arms_verbatim() {
+        let mut obj = BTreeMap::new();
+        obj.insert("k".to_owned(), Variant::String("SENTINEL_BODY".into()));
+        let cases: Vec<(Variant, &str)> = vec![
+            (Variant::Int(42), "Variant::Int(42)"),
+            (Variant::float(1.25).unwrap(), "Variant::Float(1.25)"),
+            (Variant::Bool(true), "Variant::Bool(true)"),
+            (
+                Variant::String("SENTINEL_BODY".into()),
+                "Variant::String(<redacted len=13>)",
+            ),
+            (
+                Variant::Array(vec![Variant::String("SENTINEL_BODY".into())]),
+                "Variant::Array([1 items])",
+            ),
+            (Variant::Object(obj), "Variant::Object({1 keys})"),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(format!("{value:?}"), expected);
+        }
+
+        let datetime = format!("{:?}", Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH));
+        assert!(datetime.contains("1970-01-01"), "{datetime}");
+    }
+
+    /// Why: redaction is a `Debug`-only layer - interpolation reads `Display`, so narrowing that
+    /// path would silently blank out every `%var%` substitution in a user's action.
+    #[test]
+    fn string_arm_is_a_length_in_debug_but_verbatim_in_display() {
+        let value = Variant::String("SENTINEL_BODY".into());
+        assert_eq!(value.to_string(), "SENTINEL_BODY");
+        assert!(!format!("{value:?}").contains("SENTINEL_BODY"));
+    }
 }

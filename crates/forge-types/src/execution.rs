@@ -468,6 +468,52 @@ mod tests {
         }
     }
 
+    fn telemetry_carrying_interpolated_text() -> SubActionTelemetry {
+        SubActionTelemetry {
+            index: 0,
+            kind: "SendChat".to_string(),
+            started_at: OffsetDateTime::UNIX_EPOCH,
+            duration_ms: 5,
+            outcome: SubActionOutcome::Success,
+            args_in: BTreeMap::from([("message".to_string(), "SENTINEL_BODY".to_string())]),
+            produced: BTreeMap::from([("reply".to_string(), "SENTINEL_REPLY".to_string())]),
+        }
+    }
+
+    #[test]
+    fn sub_action_telemetry_debug_keeps_argument_keys_and_redacts_their_values() {
+        let dbg = format!("{:?}", telemetry_carrying_interpolated_text());
+
+        for verbatim in ["message", "reply", "SendChat", "duration_ms: 5"] {
+            assert!(dbg.contains(verbatim), "{verbatim:?} missing from {dbg}");
+        }
+        for planted in ["SENTINEL_BODY", "SENTINEL_REPLY"] {
+            assert!(!dbg.contains(planted), "{planted} leaked into {dbg}");
+        }
+        assert!(dbg.contains("<redacted len=13>"), "args_in value: {dbg}");
+        assert!(dbg.contains("<redacted len=14>"), "produced value: {dbg}");
+    }
+
+    #[test]
+    fn sub_action_telemetry_roundtrips_with_populated_argument_maps() {
+        let telemetry = telemetry_carrying_interpolated_text();
+        let json = serde_json::to_string(&telemetry).unwrap();
+        let back: SubActionTelemetry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, telemetry);
+    }
+
+    /// Why: the redaction layer is `Debug`-only - `%var%` interpolation and the run-history preview
+    /// must keep rendering what actually ran, or every action silently sends blanked text.
+    #[test]
+    fn debug_redaction_does_not_reach_the_display_paths() {
+        let stack = stack_with(&[("body", Variant::String("SENTINEL_BODY".to_string()))]);
+        assert_eq!(stack.interpolate("say %body%"), "say SENTINEL_BODY");
+        assert_eq!(
+            variant_preview(&Variant::String("SENTINEL_BODY".to_string())),
+            "\"SENTINEL_BODY\""
+        );
+    }
+
     #[test]
     fn variant_preview_summarizes_arrays_by_kind_and_length() {
         assert_eq!(

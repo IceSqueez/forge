@@ -318,17 +318,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn chat_payload_roundtrips_minimal() {
-        let payload = minimal_payload("abc123");
-        let json = to_string(&payload).unwrap();
-        let back: ChatPayload = from_str(&json).unwrap();
-        assert_eq!(back, payload);
-    }
-
-    #[test]
-    fn chat_payload_roundtrips_full() {
-        let payload = ChatPayload {
+    fn full_payload() -> ChatPayload {
+        ChatPayload {
             platform_msg_id: "full-msg".to_string(),
             author: "streamer".to_string(),
             author_color: Some("#FF0000".to_string()),
@@ -353,10 +344,16 @@ mod tests {
                 timed_out: false,
                 banned: false,
             },
-        };
-        let json = to_string(&payload).unwrap();
-        let back: ChatPayload = from_str(&json).unwrap();
-        assert_eq!(back, payload);
+        }
+    }
+
+    #[test]
+    fn chat_payload_roundtrips_from_empty_to_fully_populated() {
+        for payload in [minimal_payload("abc123"), full_payload()] {
+            let json = to_string(&payload).unwrap();
+            let back: ChatPayload = from_str(&json).unwrap();
+            assert_eq!(back, payload);
+        }
     }
 
     #[test]
@@ -433,30 +430,39 @@ mod tests {
     }
 
     #[test]
-    fn segment_text_roundtrips_via_serde() {
-        let json = r#"{"type":"text","text":"hi"}"#;
-        let seg: ChatSegment = from_str(json).unwrap();
-        assert_eq!(
-            seg,
-            ChatSegment::Text {
-                text: "hi".to_string()
-            }
-        );
-        assert_eq!(to_string(&seg).unwrap(), json);
-    }
-
-    #[test]
-    fn segment_emote_roundtrips() {
-        let json = r#"{"type":"emote","id":"123","name":"KEKW"}"#;
-        let seg: ChatSegment = from_str(json).unwrap();
-        assert_eq!(
-            seg,
-            ChatSegment::Emote {
-                id: "123".to_string(),
-                name: "KEKW".to_string(),
-            }
-        );
-        assert_eq!(to_string(&seg).unwrap(), json);
+    fn segment_wire_format_roundtrips_for_every_arm() {
+        let cases = [
+            (
+                ChatSegment::Text {
+                    text: "hi".to_string(),
+                },
+                r#"{"type":"text","text":"hi"}"#,
+            ),
+            (
+                ChatSegment::Emote {
+                    id: "123".to_string(),
+                    name: "KEKW".to_string(),
+                },
+                r#"{"type":"emote","id":"123","name":"KEKW"}"#,
+            ),
+            (
+                ChatSegment::Link {
+                    url: "https://example.test/a".to_string(),
+                    display: "example.test".to_string(),
+                },
+                r#"{"type":"link","url":"https://example.test/a","display":"example.test"}"#,
+            ),
+            (
+                ChatSegment::Mention {
+                    username: "foo".to_string(),
+                },
+                r#"{"type":"mention","username":"foo"}"#,
+            ),
+        ];
+        for (segment, json) in cases {
+            assert_eq!(to_string(&segment).unwrap(), json);
+            assert_eq!(from_str::<ChatSegment>(json).unwrap(), segment);
+        }
     }
 
     #[test]
@@ -521,6 +527,242 @@ mod tests {
             let back: ChatModerationPayload = serde_json::from_value(stored.clone()).unwrap();
             assert_eq!(back.action, action, "round-trip for {action:?}");
         }
+    }
+
+    const AUTHOR: &str = "SENTINEL_AUTHOR";
+    const BODY: &str = "SENTINEL_BODY";
+
+    fn payload_with_planted_content() -> ChatPayload {
+        ChatPayload {
+            platform_msg_id: "msg-42".to_string(),
+            author: AUTHOR.to_string(),
+            author_color: None,
+            segments: vec![
+                ChatSegment::Text {
+                    text: BODY.to_string(),
+                },
+                ChatSegment::Emote {
+                    id: "emote-7".to_string(),
+                    name: "KEKW".to_string(),
+                },
+            ],
+            badges: vec![UserBadge::Moderator],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
+    }
+
+    fn row_with_planted_content() -> UnifiedChatRow {
+        let mut row = make_row(vec![
+            ChatSegment::Text {
+                text: BODY.to_string(),
+            },
+            ChatSegment::Emote {
+                id: "emote-7".to_string(),
+                name: "KEKW".to_string(),
+            },
+        ]);
+        row.author = AUTHOR.to_string();
+        row
+    }
+
+    #[test]
+    fn chat_payload_debug_hides_the_author_and_its_nested_segment_text() {
+        let rendered = format!("{:?}", payload_with_planted_content());
+        assert!(!rendered.contains("SENTINEL"), "{rendered}");
+        assert!(rendered.contains("author: <redacted>"), "{rendered}");
+        assert!(rendered.contains("text: <redacted len=13>"), "{rendered}");
+    }
+
+    #[test]
+    fn chat_segment_debug_hides_authored_text_and_mentioned_identity() {
+        let cases = [
+            (
+                ChatSegment::Text {
+                    text: BODY.to_string(),
+                },
+                "Text { text: <redacted len=13> }",
+            ),
+            (
+                ChatSegment::Link {
+                    url: format!("https://example.test/{BODY}"),
+                    display: BODY.to_string(),
+                },
+                "Link { url: <redacted len=34>, display: <redacted len=13> }",
+            ),
+            (
+                ChatSegment::Mention {
+                    username: AUTHOR.to_string(),
+                },
+                "Mention { username: <redacted> }",
+            ),
+        ];
+        for (segment, expected) in cases {
+            assert_eq!(format!("{segment:?}"), expected);
+        }
+    }
+
+    #[test]
+    fn chat_event_detail_debug_hides_the_message_of_every_carrying_variant() {
+        let cases = [
+            (
+                ChatEventDetail::Subscription {
+                    tier: 2,
+                    months: Some(7),
+                    message: Some(BODY.to_string()),
+                },
+                "Subscription { tier: 2, months: Some(7), message: Some(<redacted len=13>) }",
+            ),
+            (
+                ChatEventDetail::Cheer {
+                    bits: 500,
+                    message: Some(BODY.to_string()),
+                },
+                "Cheer { bits: 500, message: Some(<redacted len=13>) }",
+            ),
+            (
+                ChatEventDetail::SuperChat {
+                    amount_micros: 5_000_000,
+                    currency: "USD".to_string(),
+                    message: Some(BODY.to_string()),
+                },
+                "SuperChat { amount_micros: 5000000, currency: \"USD\", message: Some(<redacted len=13>) }",
+            ),
+            (
+                ChatEventDetail::MemberMilestone {
+                    months: 12,
+                    message: Some(BODY.to_string()),
+                },
+                "MemberMilestone { months: 12, message: Some(<redacted len=13>) }",
+            ),
+        ];
+        for (detail, expected) in cases {
+            assert_eq!(format!("{detail:?}"), expected);
+        }
+    }
+
+    #[test]
+    fn chat_event_detail_debug_distinguishes_an_absent_message_from_an_empty_one() {
+        assert!(
+            format!(
+                "{:?}",
+                ChatEventDetail::Cheer {
+                    bits: 1,
+                    message: None
+                }
+            )
+            .contains("message: None")
+        );
+        assert!(
+            format!(
+                "{:?}",
+                ChatEventDetail::Cheer {
+                    bits: 1,
+                    message: Some(String::new())
+                }
+            )
+            .contains("message: Some(<redacted len=0>)")
+        );
+    }
+
+    #[test]
+    fn chat_reply_debug_hides_the_parent_author_and_parent_text() {
+        let reply = ChatReply {
+            parent_author: AUTHOR.to_string(),
+            parent_text: BODY.to_string(),
+        };
+        assert_eq!(
+            format!("{reply:?}"),
+            "ChatReply { parent_author: <redacted>, parent_text: <redacted len=13> }"
+        );
+    }
+
+    #[test]
+    fn unified_chat_row_debug_hides_the_author_and_its_body_text() {
+        let rendered = format!("{:?}", row_with_planted_content());
+        assert!(!rendered.contains("SENTINEL"), "{rendered}");
+        assert!(rendered.contains("author: <redacted>"), "{rendered}");
+        assert!(rendered.contains("text: <redacted len=13>"), "{rendered}");
+    }
+
+    #[test]
+    fn chat_moderation_action_debug_hides_the_removed_user_name() {
+        let rendered = format!(
+            "{:?}",
+            ChatModerationAction::RemoveUser {
+                user_name: AUTHOR.to_string(),
+                timeout: true,
+            }
+        );
+        assert_eq!(
+            rendered,
+            "RemoveUser { user_name: <redacted>, timeout: true }"
+        );
+    }
+
+    /// Why: these are opaque ids and platform-catalog values, not viewer prose - a later, broader
+    /// redaction sweep that swallowed them would leave a maintainer unable to correlate a report.
+    #[test]
+    fn chat_debug_keeps_ids_and_platform_catalog_values_verbatim() {
+        let cases: Vec<(&str, String, Vec<&str>)> = vec![
+            (
+                "ChatPayload",
+                format!("{:?}", payload_with_planted_content()),
+                vec!["msg-42", "emote-7", "KEKW", "Moderator"],
+            ),
+            (
+                "UnifiedChatRow",
+                format!("{:?}", row_with_planted_content()),
+                vec!["test-id", "Twitch", "emote-7", "KEKW"],
+            ),
+            (
+                "ChatModerationAction::DeleteMessage",
+                format!(
+                    "{:?}",
+                    ChatModerationAction::DeleteMessage {
+                        message_id: "m1".to_string()
+                    }
+                ),
+                vec!["m1"],
+            ),
+            (
+                "ChatEventDetail::Raid",
+                format!("{:?}", ChatEventDetail::Raid { viewer_count: 128 }),
+                vec!["128"],
+            ),
+        ];
+        for (label, rendered, expected) in cases {
+            for fragment in expected {
+                assert!(
+                    rendered.contains(fragment),
+                    "{label} dropped {fragment:?}: {rendered}"
+                );
+            }
+        }
+    }
+
+    /// Why: redaction is a `Debug`-only layer - `display_text` feeds the chat view, so narrowing it
+    /// would blank every message on screen.
+    #[test]
+    fn unified_chat_row_display_text_still_exposes_authored_text() {
+        let row = row_with_planted_content();
+        assert_eq!(row.display_text(), BODY);
+        assert!(!format!("{row:?}").contains(BODY));
+    }
+
+    #[test]
+    fn chat_reply_and_unified_chat_row_survive_a_serde_roundtrip() {
+        let reply = ChatReply {
+            parent_author: "streamer".to_string(),
+            parent_text: "original message".to_string(),
+        };
+        let back: ChatReply = from_str(&to_string(&reply).unwrap()).unwrap();
+        assert_eq!(back, reply);
+
+        let row_json = to_string(&row_with_planted_content()).unwrap();
+        let back: UnifiedChatRow = from_str(&row_json).unwrap();
+        assert_eq!(to_string(&back).unwrap(), row_json);
     }
 
     #[test]

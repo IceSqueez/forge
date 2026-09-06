@@ -36,20 +36,18 @@ define_redacted_token!(RefreshToken);
 mod tests {
     use super::*;
 
+    /// Why: downstream crates assert on the exact `Name(<redacted>)` spelling; routing the macro
+    /// through the shared `Redacted` placeholder must leave it byte-identical.
     #[test]
-    fn oauth_token_debug_is_redacted() {
-        let tok = OAuthToken::new("super_secret_value");
-        let dbg = format!("{tok:?}");
-        assert!(!dbg.contains("super_secret_value"));
-        assert!(dbg.contains("<redacted>"));
-    }
-
-    #[test]
-    fn refresh_token_debug_is_redacted() {
-        let tok = RefreshToken::new("another_secret");
-        let dbg = format!("{tok:?}");
-        assert!(!dbg.contains("another_secret"));
-        assert!(dbg.contains("<redacted>"));
+    fn token_debug_renders_the_type_name_wrapping_the_bare_marker() {
+        assert_eq!(
+            format!("{:?}", OAuthToken::new("SENTINEL_SECRET")),
+            "OAuthToken(<redacted>)"
+        );
+        assert_eq!(
+            format!("{:?}", RefreshToken::new("SENTINEL_SECRET")),
+            "RefreshToken(<redacted>)"
+        );
     }
 
     #[test]

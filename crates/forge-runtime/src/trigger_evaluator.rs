@@ -876,10 +876,55 @@ mod tests {
         fn exit(&self, _: &span::Id) {}
     }
 
+    // Why: the callsite interest cache is process-global while a capture subscriber is
+    // thread-local. Ordinary tests in this binary reach the same production callsites with no
+    // subscriber installed, which registers those callsites as `Interest::never()` - and `never`
+    // short-circuits the event before `enabled()` is ever consulted, so a capture running in
+    // parallel silently records nothing. This floor is installed once as the process-wide global
+    // default and answers `sometimes` for every callsite, so the union can never collapse to
+    // `never` and every event reaches whatever thread-local subscriber `with_default` installed.
+    // It captures nothing itself.
+    struct InterestFloor;
+
+    impl tracing::Subscriber for InterestFloor {
+        fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
+            Interest::sometimes()
+        }
+
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            false
+        }
+
+        fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+            span::Id::from_u64(1)
+        }
+
+        fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+
+        fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+
+        fn event(&self, _: &tracing::Event<'_>) {}
+
+        fn enter(&self, _: &span::Id) {}
+
+        fn exit(&self, _: &span::Id) {}
+    }
+
+    fn install_interest_floor() {
+        static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        INSTALLED.get_or_init(|| {
+            // A binary that already set a global default keeps it; the rebuild below still
+            // clears any `never` cached before this point.
+            let _ = tracing::subscriber::set_global_default(InterestFloor);
+            tracing::callsite::rebuild_interest_cache();
+        });
+    }
+
     // Runs `body` on this thread with everything up to `max` captured. The decision
     // is driven synchronously precisely so the thread-local subscriber sees it.
     fn capture(max: Level, body: impl FnOnce()) -> Vec<CapturedLine> {
         let lines = Arc::new(Mutex::new(Vec::new()));
+        install_interest_floor();
         tracing::subscriber::with_default(
             CaptureSubscriber {
                 lines: Arc::clone(&lines),

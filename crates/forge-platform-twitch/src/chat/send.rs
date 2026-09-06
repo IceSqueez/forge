@@ -87,7 +87,7 @@ pub async fn send_chat(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use async_trait::async_trait;
@@ -229,7 +229,14 @@ mod tests {
             .into_iter()
             .find(|line| line.message() == "sending chat message to helix")
             .cloned()
-            .expect("the send path must emit its DEBUG line")
+            // A capture that received nothing at all is a harness failure, not a missing log
+            // line; reporting the total tells the two apart on sight.
+            .unwrap_or_else(|| {
+                panic!(
+                    "the send path emitted no DEBUG line; the capture saw {} events in total",
+                    lines.len()
+                )
+            })
     }
 
     #[test]

@@ -3,18 +3,27 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource, EventsError};
-use forge_registry::{CancelSignal, ChatTriggerFamily, TriggerRegistry, effective_config};
+use forge_registry::{
+    CancelSignal, ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
+};
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
-    ArgStack, ChatPayload, EventId, PermissionRung, TriggerConfig, TriggerInstance,
+    ArgStack, ChatPayload, EventId, PermissionRung, SynthesisHint, TriggerConfig, TriggerInstance,
     TriggerInstanceId, Variant,
 };
 use serde::Deserialize;
 use serde_json::json;
-use tracing::warn;
+use tracing::{Level, debug, enabled, trace, warn};
 
 use crate::cooldown::CooldownMap;
+use crate::event_log_bridge::identity_digest;
 use crate::{Config, EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
+
+/// Sibling of `forge::event`, so a reproduction can raise the evaluator's decisions alone.
+const DECISION_TARGET: &str = "forge::trigger";
+
+/// The one target carrying viewer-authored text; TRACE-only, so it is raised on its own or not at all.
+const COMMAND_LINE_TARGET: &str = "forge::command";
 
 #[derive(Clone)]
 pub struct TriggerEvaluatorHandle {
@@ -183,19 +192,23 @@ impl TriggerEvaluator {
             return None;
         }
 
+        let chat_family = descriptor.chat_trigger_family();
+        let is_command = chat_family == Some(ChatTriggerFamily::Command);
+
         if !scope_matches(instance, event) {
+            log_rejected(instance, event, is_command, Rejection::Scope);
             return None;
         }
 
         let effective = effective_config(&descriptor.default_config(), &instance.overrides);
         if !descriptor.matches_trigger(&effective, event) {
+            log_rejected(instance, event, is_command, Rejection::Phrase);
             return None;
         }
 
         let args = descriptor.build_arg_stack(event);
-        let chat_family = descriptor.chat_trigger_family();
 
-        if chat_family == Some(ChatTriggerFamily::Command) {
+        if is_command {
             self.bus.publish(Event::caused_by(
                 EventSource::Core,
                 "command.matched",
@@ -205,6 +218,7 @@ impl TriggerEvaluator {
                 }),
                 event.id,
             ));
+            log_command_match(instance, event, descriptor, &effective, &args);
         }
 
         if chat_family.is_some() {
@@ -218,12 +232,14 @@ impl TriggerEvaluator {
                         resolved,
                     },
                 );
+                log_rejected(instance, event, is_command, Rejection::Permission);
                 return None;
             }
         }
 
         if let Some(remaining) = self.cooldown_remaining(instance, &args, event.id) {
             self.publish_blocked(instance, event.id, BlockReason::Cooldown { remaining });
+            log_rejected(instance, event, is_command, Rejection::Cooldown);
             return None;
         }
 
@@ -258,6 +274,115 @@ impl TriggerEvaluator {
         let window = Duration::from_secs(instance.cooldown_secs as u64);
         self.cooldowns.remaining_or_stamp(key, window, event_id)
     }
+}
+
+enum Rejection {
+    Scope,
+    Phrase,
+    Permission,
+    Cooldown,
+}
+
+impl Rejection {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Scope => "scope",
+            Self::Phrase => "phrase",
+            Self::Permission => "permission",
+            Self::Cooldown => "cooldown",
+        }
+    }
+}
+
+fn log_rejected(instance: &TriggerInstance, event: &Event, is_command: bool, reason: Rejection) {
+    if !is_command {
+        return;
+    }
+    debug!(
+        target: DECISION_TARGET,
+        event = %event.id,
+        instance = %instance.id,
+        kind = %instance.kind_id,
+        reason = reason.as_str(),
+        "command trigger did not fire"
+    );
+}
+
+/// The match verdict is the carve-out's gate: everything here is reached only once the evaluator
+/// has decided this message is an invocation of the broadcaster's own configured phrase.
+fn log_command_match(
+    instance: &TriggerInstance,
+    event: &Event,
+    descriptor: &dyn TriggerKindDescriptor,
+    effective: &TriggerConfig,
+    args: &ArgStack,
+) {
+    let debug_wanted = enabled!(target: DECISION_TARGET, Level::DEBUG);
+    let line_wanted = enabled!(target: COMMAND_LINE_TARGET, Level::TRACE);
+    if !debug_wanted && !line_wanted {
+        return;
+    }
+
+    let phrase = command_phrase(effective);
+    let line = matched_line(descriptor, args);
+
+    if debug_wanted {
+        let tail = argument_tail(&line, &phrase);
+        let viewer = viewer_digest(event);
+        debug!(
+            target: DECISION_TARGET,
+            event = %event.id,
+            instance = %instance.id,
+            kind = %instance.kind_id,
+            phrase = %phrase,
+            viewer = viewer.as_deref(),
+            arg_count = tail.split_whitespace().count(),
+            arg_len = tail.chars().count(),
+            "command matched"
+        );
+    }
+
+    if line_wanted {
+        trace!(
+            target: COMMAND_LINE_TARGET,
+            event = %event.id,
+            instance = %instance.id,
+            line = %line,
+            "matched command line"
+        );
+    }
+}
+
+/// The descriptor declares which of its arg-stack variables carries the message, so the evaluator
+/// reads the matched line without knowing any platform's payload shape.
+fn matched_line(descriptor: &dyn TriggerKindDescriptor, args: &ArgStack) -> String {
+    descriptor
+        .output_schema()
+        .into_iter()
+        .flat_map(|schema| schema.variables)
+        .find(|variable| variable.synthesis == Some(SynthesisHint::Message))
+        .and_then(|variable| match args.get(&variable.name) {
+            Some(Variant::String(s)) => Some(s.clone()),
+            _ => None,
+        })
+        .unwrap_or_default()
+}
+
+fn argument_tail<'a>(line: &'a str, phrase: &str) -> &'a str {
+    let offset = line
+        .char_indices()
+        .nth(phrase.chars().count())
+        .map_or(line.len(), |(index, _)| index);
+    line[offset..].trim_start()
+}
+
+fn viewer_digest(event: &Event) -> Option<String> {
+    event
+        .payload
+        .get(ChatPayload::KEY)
+        .and_then(|v| ChatPayload::deserialize(v).ok())
+        .filter(|chat| !chat.author.is_empty())
+        .map(|chat| identity_digest(&chat.author))
 }
 
 enum BlockReason {

@@ -71,7 +71,7 @@ fn salt() -> &'static [u8; 32] {
     SALT.get_or_init(rand::random)
 }
 
-fn identity_digest(handle: &str) -> String {
+pub(crate) fn identity_digest(handle: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(salt());
     hasher.update(handle.as_bytes());

@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use forge_storage::DEFAULT_DIAGNOSTIC_LOG_LEVEL;
+use forge_storage::{DEFAULT_DIAGNOSTIC_LOG_LEVEL, log_level_as_str};
 use forge_types::LogLevel;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::registry::Registry;
@@ -10,7 +10,7 @@ use tracing_subscriber::reload;
 static HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::new();
 static ENV_OVERRIDDEN: AtomicBool = AtomicBool::new(false);
 
-/// Decoder chatter, not level policy: demoted at every selectable level.
+/// Decoder chatter, not level policy: capped at the quieter of `warn` and the selected level.
 const SYMPHONIA_TARGETS: &[&str] = &[
     "symphonia_core",
     "symphonia_common",
@@ -37,22 +37,18 @@ pub const SELECTABLE: [LogLevel; 5] = [
     LogLevel::Error,
 ];
 
-fn directive_word(level: &LogLevel) -> &'static str {
-    match level {
-        LogLevel::Trace => "trace",
-        LogLevel::Debug => "debug",
-        LogLevel::Info => "info",
-        LogLevel::Warn => "warn",
-        LogLevel::Error => "error",
-    }
-}
-
 fn filter_for(level: &LogLevel) -> EnvFilter {
-    let mut directives = String::from(directive_word(level));
+    let word = log_level_as_str(level);
+    let demotion = match level {
+        LogLevel::Warn | LogLevel::Error => word,
+        _ => "warn",
+    };
+    let mut directives = String::from(word);
     for target in SYMPHONIA_TARGETS {
         directives.push(',');
         directives.push_str(target);
-        directives.push_str("=warn");
+        directives.push('=');
+        directives.push_str(demotion);
     }
     EnvFilter::new(directives)
 }

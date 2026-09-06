@@ -459,13 +459,7 @@ impl Render for SettingsDiagnosticsView {
 }
 
 fn level_key(level: &LogLevel) -> &'static str {
-    match level {
-        LogLevel::Trace => "trace",
-        LogLevel::Debug => "debug",
-        LogLevel::Info => "info",
-        LogLevel::Warn => "warn",
-        LogLevel::Error => "error",
-    }
+    forge_storage::log_level_as_str(level)
 }
 
 fn level_label_key(level: &LogLevel) -> &'static str {

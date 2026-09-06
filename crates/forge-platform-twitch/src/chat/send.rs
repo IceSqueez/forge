@@ -1,6 +1,7 @@
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
 use serde::Deserialize;
 use thiserror::Error;
+use tracing::debug;
 
 const SEND_CHAT_PATH: &str = "/helix/chat/messages";
 const MAX_MESSAGE_LEN: usize = 500;
@@ -52,9 +53,15 @@ pub async fn send_chat(
     message: &str,
 ) -> Result<SentMessageId, ChatSendError> {
     // Twitch limit is by character count, not bytes; multibyte chars (e.g. Cyrillic) must pass.
-    if message.chars().count() > MAX_MESSAGE_LEN {
+    let chars = message.chars().count();
+    if chars > MAX_MESSAGE_LEN {
         return Err(ChatSendError::MessageTooLong);
     }
+
+    debug!(
+        broadcaster_id,
+        sender_id, chars, "sending chat message to helix"
+    );
 
     let body = serde_json::json!({
         "broadcaster_id": broadcaster_id,

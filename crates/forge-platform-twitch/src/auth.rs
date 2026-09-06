@@ -4,6 +4,7 @@ use forge_platform_core::{AuthFlow, PlatformError};
 use forge_types::OAuthToken;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
+use tracing::{debug, info, trace};
 use twitch_api::HelixClient;
 use twitch_api::twitch_oauth2::{AccessToken, ClientId, TwitchToken, UserToken};
 
@@ -186,6 +187,12 @@ impl TwitchAuthFlow {
         self.device_code = Some(parsed.device_code);
         self.poll_interval = Duration::from_secs(parsed.interval.max(1));
         self.expires_at = Some(expires_at);
+        info!(
+            scopes = TWITCH_BROADCASTER_SCOPES.len(),
+            expires_in_secs = parsed.expires_in,
+            poll_interval_secs = self.poll_interval.as_secs(),
+            "twitch device authorization started"
+        );
         Ok(DeviceCodeInfo {
             user_code: parsed.user_code,
             verification_uri: parsed.verification_uri,
@@ -224,15 +231,23 @@ impl TwitchAuthFlow {
                 _ = tokio::time::sleep(self.poll_interval) => {}
             }
             match self.poll_token(&device_code).await? {
-                DevicePollOutcome::Pending => continue,
+                DevicePollOutcome::Pending => {
+                    trace!("twitch device authorization still pending");
+                    continue;
+                }
                 DevicePollOutcome::SlowDown => {
                     self.poll_interval += SLOW_DOWN_INCREMENT;
+                    debug!(
+                        poll_interval_secs = self.poll_interval.as_secs(),
+                        "twitch asked us to slow the device-code polling"
+                    );
                     continue;
                 }
                 DevicePollOutcome::Granted(response) => break response,
             }
         };
 
+        info!("twitch device authorization granted; validating token");
         self.finish(token_response).await
     }
 

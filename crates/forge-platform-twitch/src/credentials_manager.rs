@@ -8,6 +8,7 @@ use forge_platform_core::auth::{
 };
 use forge_storage::{CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
+use tracing::{debug, info, warn};
 
 use crate::auth::TWITCH_TOKEN_ENDPOINT;
 use crate::credentials::{StoredCredential, load, store_credential};
@@ -55,9 +56,14 @@ impl TwitchCredentialsManager {
         if !near_expiry(&cred) {
             return Ok(cred.access_token);
         }
+        debug!(
+            buffer_secs = REFRESH_BUFFER_SECS,
+            "twitch access token inside the refresh buffer; renewing"
+        );
         let _guard = self.refresh_guard.lock().await;
         let cred = self.load().await?.ok_or_else(reauth_err)?;
         if !near_expiry(&cred) {
+            debug!("twitch token already renewed by a concurrent refresh");
             return Ok(cred.access_token);
         }
         let refresh_token = cred.refresh_token.clone().ok_or_else(reauth_err)?;
@@ -74,6 +80,7 @@ impl TwitchCredentialsManager {
         let _guard = self.refresh_guard.lock().await;
         let existing = self.load().await?.ok_or_else(reauth_err)?;
         if existing.access_token.expose() != failed_access_token.expose() {
+            debug!("twitch token already rotated by a concurrent refresh; reusing it");
             return Ok(existing);
         }
         let refresh_token = existing.refresh_token.clone().ok_or_else(reauth_err)?;
@@ -86,7 +93,30 @@ impl TwitchCredentialsManager {
         refresh_token: &OAuthToken,
         existing: StoredCredential,
     ) -> Result<StoredCredential, PlatformError> {
-        let parsed = self.refresher.refresh(refresh_token.expose()).await?;
+        let parsed = match self.refresher.refresh(refresh_token.expose()).await {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                // Display of `Http` carries the endpoint's response body; report the shape only.
+                match &e {
+                    PlatformError::ReauthRequired { .. } => {
+                        warn!("twitch token refresh rejected; re-authorization required");
+                    }
+                    PlatformError::Http { status, .. } => {
+                        warn!(status = *status, "twitch token refresh failed");
+                    }
+                    PlatformError::Network { reason } => {
+                        warn!(error = %reason, "twitch token refresh failed");
+                    }
+                    _ => warn!("twitch token refresh failed"),
+                }
+                return Err(e);
+            }
+        };
+        info!(
+            expires_in_secs = ?parsed.expires_in,
+            rotated_refresh_token = parsed.refresh_token.is_some(),
+            "twitch access token refreshed"
+        );
 
         let renewed = StoredCredential {
             access_token: OAuthToken::new(parsed.access_token),

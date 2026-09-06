@@ -5,7 +5,7 @@ use futures_util::stream::{self, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::warn;
+use tracing::{debug, warn};
 
 const EVENTSUB_BASE_URL: &str = "https://api.twitch.tv";
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
@@ -497,14 +497,27 @@ pub(crate) async fn subscribe_all_with_base_url(
         })
         .collect();
 
+    debug!(
+        topics = TOPICS.len(),
+        concurrency = SUBSCRIBE_CONCURRENCY,
+        "requesting eventsub subscriptions"
+    );
+
     let mut outcomes = stream::iter(pending).buffer_unordered(SUBSCRIBE_CONCURRENCY);
 
     let mut scope_missing = false;
+    let mut rejected = 0usize;
     while let Some(outcome) = outcomes.next().await {
         if let Err(SubscribeError::ScopeMissing) = outcome {
             scope_missing = true;
+            rejected += 1;
         }
     }
+
+    debug!(
+        topics = TOPICS.len(),
+        rejected, "eventsub subscription pass complete"
+    );
 
     if scope_missing {
         return Err(SubscribeError::ScopeMissing);

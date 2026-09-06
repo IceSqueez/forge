@@ -6,6 +6,7 @@ use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{RateLimiter, acquire_or_wait};
 use forge_types::OAuthToken;
 use thiserror::Error;
+use tracing::{debug, warn};
 
 const HELIX_BASE_URL: &str = "https://api.twitch.tv";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -182,12 +183,22 @@ impl HelixHttpTransport {
             builder = builder.json(body);
         }
 
-        let resp = tokio::time::timeout(REQUEST_TIMEOUT, builder.send())
-            .await
-            .map_err(|_| HelixError::Transport("request timed out".to_owned()))?
-            .map_err(|e| HelixError::Transport(e.without_url().to_string()))?;
+        let resp = match tokio::time::timeout(REQUEST_TIMEOUT, builder.send()).await {
+            Err(_) => {
+                warn!(path = %request.path, timeout_secs = REQUEST_TIMEOUT.as_secs(), "helix request timed out");
+                return Err(HelixError::Transport("request timed out".to_owned()));
+            }
+            Ok(Err(e)) => {
+                // `without_url` first: the raw Display carries the request URL and its query.
+                let reason = e.without_url().to_string();
+                warn!(path = %request.path, error = %reason, "helix transport error");
+                return Err(HelixError::Transport(reason));
+            }
+            Ok(Ok(resp)) => resp,
+        };
 
         let status = resp.status().as_u16();
+        debug!(method = ?request.method, path = %request.path, status, "helix response");
         if !resp.status().is_success() {
             let retry_after = extract_retry_after(&resp);
             let body_text = resp.text().await.unwrap_or_default();
@@ -198,6 +209,7 @@ impl HelixHttpTransport {
             if status == 429 {
                 // Feeds the shared bucket so every transport sharing this limiter backs off.
                 let cooldown = retry_after.unwrap_or(DEFAULT_RETRY_AFTER_SECS);
+                warn!(path = %request.path, cooldown_secs = cooldown, "helix rate limited; backing off");
                 self.rate_limiter
                     .observe_remote_throttle(Duration::from_secs(cooldown))
                     .await;
@@ -228,6 +240,7 @@ impl HelixTransport for HelixHttpTransport {
             Err(HelixError::ReauthRequired) => match &self.refresher {
                 // A second 401 after a successful refresh is terminal - a rejected token cannot loop.
                 Some(refresher) => {
+                    debug!(path = %request.path, "helix rejected the token; refreshing once and retrying");
                     let fresh = refresher.refresh(&token).await?;
                     self.attempt(&request, &fresh).await
                 }

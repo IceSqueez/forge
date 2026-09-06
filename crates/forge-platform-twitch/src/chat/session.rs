@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tokio::sync::{oneshot, watch};
 use tokio::time::{Duration, Instant, sleep_until};
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use super::dispatch;
 use super::payload;
@@ -143,7 +143,7 @@ impl ChatSession {
                 }
                 SessionOutcome::Disconnected => {}
                 SessionOutcome::ReauthRequired => {
-                    warn!(
+                    error!(
                         "twitch chat session stopped: re-authorization required (rejected \
                          refresh or missing scope); sign in again from the banner"
                     );
@@ -151,7 +151,13 @@ impl ChatSession {
                 }
             }
 
-            tokio::time::sleep(backoff.next_delay()).await;
+            let delay = backoff.next_delay();
+            info!(
+                attempt,
+                retry_in_ms = delay.as_millis() as u64,
+                "twitch chat session ended; reconnecting after backoff"
+            );
+            tokio::time::sleep(delay).await;
 
             if self.is_shutdown_requested() {
                 break;
@@ -160,16 +166,20 @@ impl ChatSession {
 
         self.set_state(ChatConnectionState::Disconnected);
         self.publish_connection_event();
+        info!("twitch chat stopped");
     }
 
     async fn run_session(&mut self, url: &str) -> SessionOutcome {
+        debug!("opening eventsub websocket");
         let ws_stream = match tokio_tungstenite::connect_async(url).await {
             Ok((ws, _)) => ws,
             Err(e) => {
-                warn!(error = %e, "WebSocket connect failed");
+                warn!(error = %ws_error_reason(&e), "WebSocket connect failed");
                 return SessionOutcome::Disconnected;
             }
         };
+
+        debug!("eventsub websocket open; awaiting session_welcome");
 
         let mut ws_stream = ws_stream;
         let mut session_id: Option<String> = None;
@@ -186,7 +196,7 @@ impl ChatSession {
                     match msg {
                         None => return SessionOutcome::Disconnected,
                         Some(Err(e)) => {
-                            warn!(error = %e, "WebSocket read error");
+                            warn!(error = %ws_error_reason(&e), "WebSocket read error");
                             return SessionOutcome::Disconnected;
                         }
                         Some(Ok(Message::Text(text))) => {
@@ -203,7 +213,7 @@ impl ChatSession {
                             }
                         }
                         Some(Ok(Message::Close(_))) => {
-                            info!("server sent close frame");
+                            debug!("server sent close frame");
                             return SessionOutcome::Disconnected;
                         }
                         Some(Ok(_)) => {}
@@ -280,7 +290,7 @@ impl ChatSession {
             }
 
             "session_keepalive" => {
-                debug!("keepalive received");
+                trace!("keepalive received");
             }
 
             "session_reconnect" => {
@@ -291,7 +301,7 @@ impl ChatSession {
                     .and_then(|s| s.reconnect_url.clone());
                 match new_url {
                     Some(new_url) => {
-                        info!(url = %new_url, "server-initiated reconnect");
+                        info!("server-initiated reconnect requested");
                         return FrameAction::Reconnect(new_url);
                     }
                     None => {
@@ -358,10 +368,14 @@ impl ChatSession {
             .to_owned();
         let roles = extract_roles_from_badges(event_data.get("badges"));
         let badges = roles.clone();
+        let broadcaster_id = event_data
+            .get("broadcaster_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
 
-        info!(
-            channel = %channel,
-            user_login = %user_login,
+        debug!(
+            broadcaster_id = %broadcaster_id,
+            user_id = %user_id,
             "chat message received"
         );
 
@@ -388,10 +402,6 @@ impl ChatSession {
                 serde_json::json!({ (chat_fields::CHEER_BITS): bits });
         }
 
-        let broadcaster_id = event_data
-            .get("broadcaster_user_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
         let source_id = event_data
             .get("source_broadcaster_user_id")
             .and_then(|v| v.as_str())
@@ -470,7 +480,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(user_login = %user_login, "subscriber event received");
+        debug!(user_id = %user_id, "subscriber event received");
 
         let chat_payload = payload::build_subscribe_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
@@ -535,7 +545,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(user_login = %user_login, cumulative_months = cumulative_months, "resub event received");
+        debug!(user_id = %user_id, cumulative_months, "resub event received");
 
         let chat_payload = payload::build_resubscribe_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
@@ -589,7 +599,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(gifter_login = %gifter_login, "gift sub event received");
+        debug!(gifter_id = %gifter_id, "gift sub event received");
 
         let chat_payload = payload::build_gift_sub_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
@@ -642,7 +652,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(user_login = %user_login, bits = bits, "cheer event received");
+        debug!(user_id = %user_id, bits, "cheer event received");
 
         let chat_payload = payload::build_cheer_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
@@ -707,7 +717,7 @@ impl ChatSession {
             "sent"
         };
 
-        info!(from_login = %from_login, viewer_count = viewer_count, direction, "raid event received");
+        debug!(from_broadcaster_id = %from_id, viewer_count, direction, "raid event received");
 
         let chat_payload = payload::build_raid_chat_payload(event_data, frame_msg_id);
         let mut forge_payload = serde_json::json!({
@@ -797,7 +807,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, reward_title = %reward_title, "channel point reward redemption received");
+        debug!(user_id = %user_id, reward_id = %reward_id, "channel point reward redemption received");
 
         let forge_payload = serde_json::json!({
             (channel_points_fields::REDEMPTION): {
@@ -853,7 +863,7 @@ impl ChatSession {
             .to_owned();
 
         // channel.chat.message_delete carries no deleted text or moderator identity.
-        info!(target_user_login = %target_user_login, message_id = %message_id, "chat message deleted");
+        debug!(target_user_id = %target_user_id, message_id = %message_id, "chat message deleted");
 
         let mut forge_payload = serde_json::json!({
             (chat_mod_fields::MESSAGE_ID): message_id,
@@ -892,7 +902,7 @@ impl ChatSession {
             .to_owned();
 
         // channel.chat.clear carries no moderator identity.
-        info!(broadcaster_login = %broadcaster_login, "chat cleared");
+        debug!(broadcaster_id = %broadcaster_id, "chat cleared");
 
         let mut forge_payload = serde_json::json!({
             (chat_mod_fields::BROADCASTER): {
@@ -931,7 +941,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "follow event received");
+        debug!(user_id = %user_id, "follow event received");
 
         let forge_payload = serde_json::json!({
             (follow_fields::FOLLOWED_AT): followed_at,
@@ -980,7 +990,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(broadcaster_login = %broadcaster_login, "stream online event received");
+        debug!(broadcaster_id = %broadcaster_id, "stream online event received");
 
         let forge_payload = serde_json::json!({
             (stream_fields::STREAM): {
@@ -1017,7 +1027,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(broadcaster_login = %broadcaster_login, "stream offline event received");
+        debug!(broadcaster_id = %broadcaster_id, "stream offline event received");
 
         let forge_payload = serde_json::json!({
             (stream_fields::BROADCASTER): {
@@ -1067,7 +1077,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(level = level, total = total, "hype train began");
+        debug!(hype_id = %id, level, total, "hype train began");
 
         let forge_payload = serde_json::json!({
             (hype_train_fields::HYPE): {
@@ -1112,7 +1122,7 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        info!(level = level, progress = progress, "hype train progressed");
+        debug!(hype_id = %id, level, progress, "hype train progressed");
 
         let forge_payload = serde_json::json!({
             (hype_train_fields::HYPE): {
@@ -1160,7 +1170,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(level = level, total = total, "hype train ended");
+        debug!(hype_id = %id, level, total, "hype train ended");
 
         let forge_payload = serde_json::json!({
             (hype_train_fields::HYPE): {
@@ -1231,7 +1241,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, amount_cents = amount_cents, "charity donation received");
+        debug!(user_id = %user_id, amount_cents, "charity donation received");
 
         let forge_payload = serde_json::json!({
             (charity_fields::CHARITY): {
@@ -1262,7 +1272,6 @@ impl ChatSession {
         _frame_msg_id: &str,
     ) {
         let forge_payload = build_charity_lifecycle_payload(event_data);
-        info!("charity campaign started");
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
             "twitch.channel.charity_campaign.start",
@@ -1276,7 +1285,6 @@ impl ChatSession {
         _frame_msg_id: &str,
     ) {
         let forge_payload = build_charity_lifecycle_payload(event_data);
-        info!("charity campaign progress update received");
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
             "twitch.channel.charity_campaign.progress",
@@ -1290,7 +1298,6 @@ impl ChatSession {
         _frame_msg_id: &str,
     ) {
         let forge_payload = build_charity_lifecycle_payload(event_data);
-        info!("charity campaign stopped");
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
             "twitch.channel.charity_campaign.stop",
@@ -1349,9 +1356,9 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(
-            user_login = %user_login,
-            is_permanent = is_permanent,
+        debug!(
+            user_id = %user_id,
+            is_permanent,
             "ban event received"
         );
 
@@ -1418,7 +1425,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "unban event received");
+        debug!(user_id = %user_id, "unban event received");
 
         let forge_payload = serde_json::json!({
             (moderation_fields::USER): {
@@ -1461,7 +1468,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "moderator added");
+        debug!(user_id = %user_id, "moderator added");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1497,7 +1504,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "moderator removed");
+        debug!(user_id = %user_id, "moderator removed");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1533,7 +1540,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "vip added");
+        debug!(user_id = %user_id, "vip added");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1569,7 +1576,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "vip removed");
+        debug!(user_id = %user_id, "vip removed");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1615,7 +1622,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "unban request created");
+        debug!(user_id = %user_id, request_id = %request_id, "unban request created");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1683,7 +1690,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, status = %status, "unban request resolved");
+        debug!(user_id = %user_id, request_id = %request_id, status = %status, "unban request resolved");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1732,7 +1739,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(moderator_login = %moderator_login, "shield mode started");
+        debug!(moderator_id = %moderator_id, "shield mode started");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1774,7 +1781,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(moderator_login = %moderator_login, "shield mode ended");
+        debug!(moderator_id = %moderator_id, "shield mode ended");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1820,7 +1827,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(to_broadcaster_login = %to_login, viewer_count, "shoutout sent");
+        debug!(to_broadcaster_id = %to_id, viewer_count, "shoutout sent");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1867,7 +1874,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(from_broadcaster_login = %from_login, viewer_count, "shoutout received");
+        debug!(from_broadcaster_id = %from_id, viewer_count, "shoutout received");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1916,7 +1923,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, low_trust_status = %low_trust_status, "suspicious user message");
+        debug!(user_id = %user_id, low_trust_status = %low_trust_status, "suspicious user message");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -1954,7 +1961,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "warning acknowledged");
+        debug!(user_id = %user_id, "warning acknowledged");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2015,7 +2022,7 @@ impl ChatSession {
             .cloned()
             .unwrap_or_default();
 
-        info!(user_login = %user_login, moderator_login = %moderator_login, "warning sent");
+        debug!(user_id = %user_id, moderator_id = %moderator_id, "warning sent");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2065,7 +2072,7 @@ impl ChatSession {
 
         let choices = extract_poll_choices(event_data);
 
-        info!(poll_id = %poll_id, title = %title, "poll began");
+        debug!(poll_id = %poll_id, choices = choices.len(), "poll began");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2100,7 +2107,7 @@ impl ChatSession {
 
         let choices = extract_poll_choices(event_data);
 
-        info!(poll_id = %poll_id, title = %title, "poll progress");
+        debug!(poll_id = %poll_id, "poll progress");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2143,7 +2150,7 @@ impl ChatSession {
 
         let choices = extract_poll_choices(event_data);
 
-        info!(poll_id = %poll_id, status = %status, "poll ended");
+        debug!(poll_id = %poll_id, status = %status, "poll ended");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2188,7 +2195,7 @@ impl ChatSession {
 
         let outcomes = extract_prediction_outcomes(event_data);
 
-        info!(prediction_id = %prediction_id, title = %title, "prediction began");
+        debug!(prediction_id = %prediction_id, outcomes = outcomes.len(), "prediction began");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2223,7 +2230,7 @@ impl ChatSession {
 
         let outcomes = extract_prediction_outcomes(event_data);
 
-        info!(prediction_id = %prediction_id, title = %title, "prediction progress");
+        debug!(prediction_id = %prediction_id, "prediction progress");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2259,7 +2266,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(prediction_id = %prediction_id, title = %title, "prediction locked");
+        debug!(prediction_id = %prediction_id, "prediction locked");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2305,7 +2312,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(prediction_id = %prediction_id, status = %status, "prediction ended");
+        debug!(prediction_id = %prediction_id, status = %status, "prediction ended");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2356,7 +2363,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(goal_id = %goal_id, goal_type = %goal_type, "goal begun");
+        debug!(goal_id = %goal_id, goal_type = %goal_type, "goal begun");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2398,7 +2405,7 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        info!(goal_id = %goal_id, current_amount = current_amount, "goal progress");
+        debug!(goal_id = %goal_id, current_amount, "goal progress");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2447,7 +2454,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(goal_id = %goal_id, is_achieved = is_achieved, "goal ended");
+        debug!(goal_id = %goal_id, is_achieved, "goal ended");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2491,7 +2498,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(reward_id = %reward_id, title = %title, "channel point reward added");
+        debug!(reward_id = %reward_id, "channel point reward added");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2534,7 +2541,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(reward_id = %reward_id, title = %title, "channel point reward updated");
+        debug!(reward_id = %reward_id, "channel point reward updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2577,7 +2584,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(reward_id = %reward_id, title = %title, "channel point reward removed");
+        debug!(reward_id = %reward_id, "channel point reward removed");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2652,7 +2659,7 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        info!(user_login = %user_login, status = %status, "channel point redemption updated");
+        debug!(user_id = %user_id, reward_id = %reward_id, status = %status, "channel point redemption updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2733,7 +2740,7 @@ impl ChatSession {
             .to_owned();
         let terms_found = blocked_terms_found(event_data);
 
-        info!(user_login = %user_login, reason = %reason, category = %category, level, "automod hold received");
+        debug!(user_id = %user_id, reason = %reason, category = %category, level, "automod hold received");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2793,7 +2800,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(
+        debug!(
             emote_mode,
             follower_mode, slow_mode, subscriber_mode, unique_chat_mode, "chat settings updated"
         );
@@ -2831,7 +2838,7 @@ impl ChatSession {
             .unwrap_or("")
             .to_owned();
 
-        info!(session_id = %session_id, "guest star session began");
+        debug!(session_id = %session_id, "guest star session began");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2866,7 +2873,7 @@ impl ChatSession {
             .unwrap_or("")
             .to_owned();
 
-        info!(session_id = %session_id, "guest star session ended");
+        debug!(session_id = %session_id, "guest star session ended");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2904,7 +2911,7 @@ impl ChatSession {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        info!(slot_count, group_layout = %group_layout, "guest star settings updated");
+        debug!(slot_count, group_layout = %group_layout, "guest star settings updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -2968,9 +2975,9 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        info!(
+        debug!(
             session_id = %session_id,
-            guest_user_login = %guest_user_login,
+            guest_user_id = %guest_user_id,
             state = %state,
             "guest star guest update"
         );
@@ -3022,7 +3029,7 @@ impl ChatSession {
             .to_owned();
         let overall_level = event_data.get("overall_level").and_then(|v| v.as_i64());
 
-        info!(moderator_login = %moderator_login, "automod settings updated");
+        debug!(moderator_id = %moderator_id, "automod settings updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3069,7 +3076,7 @@ impl ChatSession {
             .cloned()
             .unwrap_or_default();
 
-        info!(moderator_login = %moderator_login, action = %action, "automod terms updated");
+        debug!(moderator_id = %moderator_id, action = %action, "automod terms updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3155,7 +3162,7 @@ impl ChatSession {
             .unwrap_or(0);
         let terms_found = blocked_terms_found(event_data);
 
-        info!(user_login = %user_login, status = %status, reason = %reason, category = %category, "automod message updated");
+        debug!(user_id = %user_id, status = %status, reason = %reason, category = %category, "automod message updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3214,7 +3221,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(session_id = %session_id, host_login = %host_login, "shared chat session began");
+        debug!(session_id = %session_id, host_id = %host_id, "shared chat session began");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3256,7 +3263,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(session_id = %session_id, host_login = %host_login, "shared chat session updated");
+        debug!(session_id = %session_id, host_id = %host_id, "shared chat session updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3298,7 +3305,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(session_id = %session_id, host_login = %host_login, "shared chat session ended");
+        debug!(session_id = %session_id, host_id = %host_id, "shared chat session ended");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3340,7 +3347,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(title = %title, category_name = %category_name, "channel update event received");
+        debug!(category_id = %category_id, "channel update event received");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3380,7 +3387,10 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(duration_seconds, requester_login = %requester_login, "ad break begin event received");
+        debug!(
+            duration_seconds,
+            is_automatic, "ad break begin event received"
+        );
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3440,7 +3450,7 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        info!(user_login = %user_login, reward_type = %reward_type, "automatic channel point reward redeemed");
+        debug!(user_id = %user_id, reward_type = %reward_type, "automatic channel point reward redeemed");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3495,7 +3505,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %from_user_login, "whisper received");
+        debug!(from_user_id = %from_user_id, "whisper received");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3541,7 +3551,7 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        info!(user_login = %user_login, "user profile updated");
+        debug!(user_id = %user_id, "user profile updated");
 
         self.config.bus.publish(Event::new(
             EventSource::Twitch,
@@ -3707,6 +3717,15 @@ fn attach_chat_reply_payload(forge_payload: &mut serde_json::Value, reply: ChatR
         Err(e) => {
             warn!(error = %e, "failed to serialize ChatReply; _chat_reply key omitted");
         }
+    }
+}
+
+/// `UrlError` renders the connect URL, and a server-issued reconnect URL carries
+/// session-scoped query material that must never reach a log line.
+fn ws_error_reason(e: &tokio_tungstenite::tungstenite::Error) -> String {
+    match e {
+        tokio_tungstenite::tungstenite::Error::Url(_) => "websocket url rejected".to_owned(),
+        other => other.to_string(),
     }
 }
 

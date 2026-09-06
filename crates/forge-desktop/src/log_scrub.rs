@@ -23,9 +23,23 @@ const VENDOR_KEY: &str = r"(?x)
       | (?:AKIA|ASIA)[0-9A-Z]{16}
     )";
 
-const URL_QUERY: &str = r#"([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s"'<>?]*)\?[^\s"'<>]*"#;
+const URL_QUERY: &str = r#"([a-zA-Z][a-zA-Z0-9+.\-]*://[^\s"'<>?]*)\?[^\s"'<>]+"#;
 
-const CREDENTIAL_ASSIGNMENT: &str = r#"(?i)\b(access_token|refresh_token|client_secret|id_token|api[_\-]?key|apikey|authorization|token|secret|password|passwd|pwd)\b((?:\x1b\[[0-9;]*m)*\s*[:=]\s*(?:\x1b\[[0-9;]*m)*)"?[A-Za-z0-9._\-~+/]{6,}={0,2}"?"#;
+const CREDENTIAL_ASSIGNMENT: &str = r#"(?xi)
+    (
+        (?: (?:\x1b\[[0-9;]*m)+ | \b )
+        (?:
+            access_token | refresh_token | client_secret | id_token
+          | api[_\-]?key | apikey | authorization | token | secret
+          | password | passwd | pwd
+        )
+        \b
+    )
+    (
+        (?:\x1b\[[0-9;]*m)* "? \s* [:=] \s* (?:\x1b\[[0-9;]*m)*
+    )
+    "? [A-Za-z0-9._\-~+/]{6,} ={0,2} "?
+"#;
 
 const HOME_DIR_UNIX: &str = r#"(?:/home/|/Users/)[^/\\\s:"',;)\]}]+"#;
 

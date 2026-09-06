@@ -146,6 +146,19 @@ struct RunLoopContext {
     state_tx: watch::Sender<ConnectionState>,
 }
 
+// Why: `Http` Display carries the channel endpoint's response body, and the slug-bearing
+// variants render the channel name.
+fn channel_info_failure(err: &KickError) -> String {
+    match err {
+        KickError::Http { status, .. } => format!("HTTP {status}"),
+        KickError::Network { reason } | KickError::WebSocket { reason } => reason.clone(),
+        KickError::ChannelInfoUnavailable { reason, .. } => {
+            format!("channel info request failed: {reason}")
+        }
+        KickError::ChatroomIdNotFound { .. } => "chatroom id missing".to_owned(),
+    }
+}
+
 async fn run_loop(
     mut ws_stream: tokio_tungstenite::WebSocketStream<
         tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
@@ -170,6 +183,7 @@ async fn run_loop(
     // subscription_succeeded is a Pusher internal frame we silently ignore, so WS-open +
     // subscribe-sent is treated as Connected; there is no better signal.
     let _ = state_tx.send(ConnectionState::Connected);
+    info!(chatroom_id, "kick chat connected");
 
     let mut ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
 
@@ -232,7 +246,10 @@ async fn run_loop(
         let new_chatroom_id = match fetcher.fetch().await {
             Ok(info) => info.chatroom_id,
             Err(e) => {
-                warn!(error = %e, "channel info fetch failed on reconnect");
+                warn!(
+                    error = %channel_info_failure(&e),
+                    "channel info fetch failed on reconnect"
+                );
                 tokio::time::sleep(backoff.next_delay()).await;
                 continue;
             }
@@ -250,6 +267,7 @@ async fn run_loop(
         }
 
         let _ = state_tx.send(ConnectionState::Connected);
+        debug!(chatroom_id = new_chatroom_id, "kick chat reconnected");
         ping_deadline = tokio::time::Instant::now() + PING_INTERVAL;
 
         let mut session_healthy = false;
@@ -317,7 +335,12 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHea
     let event_name = frame.event.as_str();
 
     if event_name == "pusher:error" {
-        warn!(frame = %raw, "kick chat pusher error frame");
+        // Why: the raw frame is unbounded third-party text; a chat-channel rejection can echo
+        // the message that caused it.
+        match pusher_error_code(&frame.data) {
+            Some(code) => warn!(code, frame_len = raw.len(), "kick chat pusher error frame"),
+            None => warn!(frame_len = raw.len(), "kick chat pusher error frame"),
+        }
         return WsFrameHealth::Error;
     }
 
@@ -347,6 +370,20 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHea
         debug!("kick chat event receiver dropped");
     }
     WsFrameHealth::Healthy
+}
+
+/// Pusher sends `data` either as an object or as a JSON-encoded string; both carry `code`.
+fn pusher_error_code(data: &serde_json::Value) -> Option<i64> {
+    let decoded;
+    let body = match data.as_str() {
+        Some(text) => {
+            decoded = serde_json::from_str::<serde_json::Value>(text).ok()?;
+            &decoded
+        }
+        None => data,
+    };
+    let code = body.get("code")?;
+    code.as_i64().or_else(|| code.as_str()?.parse().ok())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

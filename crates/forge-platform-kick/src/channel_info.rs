@@ -5,6 +5,7 @@ use tracing::debug;
 use crate::error::KickError;
 
 const CHANNEL_API_BASE: &str = "https://kick.com/api/v2/channels";
+const ERROR_BODY_LIMIT: usize = 200;
 const USER_AGENT: &str = concat!(
     "forge/",
     env!("CARGO_PKG_VERSION"),
@@ -57,13 +58,16 @@ impl ChannelInfoFetcher {
             .await
             .map_err(|e| KickError::ChannelInfoUnavailable {
                 slug: self.slug.clone(),
-                reason: e.to_string(),
+                reason: e.without_url().to_string(),
             })?;
 
         let status = response.status().as_u16();
         if !(200..300).contains(&status) {
             let body = response.text().await.unwrap_or_default();
-            return Err(KickError::Http { status, body });
+            return Err(KickError::Http {
+                status,
+                body: bounded_body(body),
+            });
         }
 
         let body: ChannelResponse =
@@ -72,7 +76,7 @@ impl ChannelInfoFetcher {
                 .await
                 .map_err(|e| KickError::ChannelInfoUnavailable {
                     slug: self.slug.clone(),
-                    reason: format!("failed to parse channel response: {e}"),
+                    reason: format!("failed to parse channel response: {}", e.without_url()),
                 })?;
 
         let chatroom_id = body.chatroom.as_ref().and_then(|c| c.id).ok_or_else(|| {
@@ -84,19 +88,22 @@ impl ChannelInfoFetcher {
         let viewer_count = body.livestream.as_ref().map_or(0, |l| l.viewer_count);
         let is_live = body.livestream.is_some();
 
-        debug!(
-            slug = %self.slug,
-            chatroom_id,
-            viewer_count,
-            is_live,
-            "channel info fetched"
-        );
+        debug!(chatroom_id, viewer_count, is_live, "channel info fetched");
 
         Ok(KickChannelInfo {
             chatroom_id,
             viewer_count,
             is_live,
         })
+    }
+}
+
+// Why: this endpoint sits behind a challenge layer that answers errors with a full HTML page,
+// and the body reaches sub-action error text and run history.
+fn bounded_body(body: String) -> String {
+    match body.char_indices().nth(ERROR_BODY_LIMIT) {
+        Some((end, _)) => body[..end].to_owned(),
+        None => body,
     }
 }
 

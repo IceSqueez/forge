@@ -106,6 +106,16 @@ fn redemption_payload(record: &RedemptionRecord) -> serde_json::Value {
     })
 }
 
+// Why: `Http` Display carries the API response body, and a poll that keeps failing repeats it
+// every interval.
+fn poll_failure(error: &PlatformError) -> String {
+    match error {
+        PlatformError::Http { status, .. } => format!("HTTP {status}"),
+        PlatformError::Network { reason } => reason.clone(),
+        other => other.to_string(),
+    }
+}
+
 async fn resolve_token(token_source: &TokenSource) -> Option<String> {
     token_source().await.ok()
 }
@@ -135,7 +145,7 @@ async fn poll_channel(
     let snapshot = match channel.get_channel(&token).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            warn!(%error, "kick channel poll failed");
+            warn!(error = %poll_failure(&error), "kick channel poll failed");
             return Ok(());
         }
     };
@@ -182,7 +192,7 @@ async fn poll_redemptions(
     let records = match rewards.list_pending_redemptions(&token).await {
         Ok(records) => records,
         Err(error) => {
-            warn!(%error, "kick redemption poll failed");
+            warn!(error = %poll_failure(&error), "kick redemption poll failed");
             return Ok(());
         }
     };

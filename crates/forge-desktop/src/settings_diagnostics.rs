@@ -1,10 +1,17 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
     ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Spacing,
-    ToastKind, body_family, card, confirm_modal, drive_overlay_focus, ghost_button_with_icon, icon,
-    mono_family, overlay, spacing, tr,
+    ToastKind, body_family, card, confirm_modal, drive_overlay_focus, field_hint,
+    ghost_button_with_icon, icon, mono_family, overlay, segment, segmented, setting_row, spacing,
+    tr,
 };
+use forge_storage::{
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
+    set_diagnostic_log_level,
+};
+use forge_types::LogLevel;
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, FontWeight, Pixels, Rgba, ScrollHandle,
     SharedString, Window, div, prelude::*, px,
@@ -23,11 +30,15 @@ const TAIL_LINE_HEIGHT: Pixels = px(20.0);
 const LEVEL_COLUMN: Pixels = px(38.0);
 const FOLLOW_SLACK: Pixels = px(24.0);
 const BUNDLE_FILE_NAME: &str = "forge-diagnostics.txt";
+const NOTE_GLYPH: Pixels = px(14.0);
 
 pub struct SettingsDiagnosticsView {
     tail: LogTail,
+    backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
     lines: Vec<LogLine>,
+    level: LogLevel,
+    env_overridden: bool,
     scroll: ScrollHandle,
     active: bool,
     clear_pending: bool,
@@ -36,18 +47,70 @@ pub struct SettingsDiagnosticsView {
 }
 
 impl SettingsDiagnosticsView {
-    pub fn new(tail: LogTail, rt_handle: tokio::runtime::Handle, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        tail: LogTail,
+        backend: Arc<dyn DataProvider>,
+        rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self::spawn_refresher(cx);
-        Self {
+        let mut view = Self {
             tail,
+            backend,
             rt_handle,
             lines: Vec::new(),
+            level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
+            env_overridden: crate::log_level::env_overridden(),
             scroll: ScrollHandle::new(),
             active: false,
             clear_pending: false,
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
+        };
+        view.load_level(cx);
+        view
+    }
+
+    fn load_level(&mut self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                diagnostic_log_level(repo.as_ref())
+                    .await
+                    .map_err(|e| e.to_string())
+            },
+            |this, result, cx| {
+                match result {
+                    Ok(level) => this.level = level,
+                    Err(message) => {
+                        tracing::warn!(error = %message, "could not read the diagnostics log level");
+                    }
+                }
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn select_level(&mut self, level: LogLevel, cx: &mut Context<Self>) {
+        if self.env_overridden || self.level == level {
+            return;
         }
+        self.level = level.clone();
+        if !crate::log_level::apply(&level) {
+            cx.push_toast(
+                ToastKind::Error,
+                tr!("settings_diagnostics_level_apply_failed"),
+            );
+        }
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        self.rt_handle.spawn(async move {
+            if let Err(e) = set_diagnostic_log_level(repo.as_ref(), &level).await {
+                tracing::warn!(error = %e, "could not persist the diagnostics log level");
+            }
+        });
+        cx.notify();
     }
 
     pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
@@ -251,6 +314,54 @@ impl SettingsDiagnosticsView {
             )
     }
 
+    fn level_card(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let segments = crate::log_level::SELECTABLE
+            .iter()
+            .map(|level| {
+                let choice = level.clone();
+                segment(
+                    SharedString::from(format!("settings-diagnostics-level-{}", level_key(level))),
+                    tr!(level_label_key(level)),
+                    self.level == *level,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.select_level(choice.clone(), cx)
+                    }),
+                )
+                .disabled(self.env_overridden)
+            })
+            .collect();
+
+        let hint = if self.env_overridden {
+            tr!("settings_diagnostics_level_env_locked")
+        } else {
+            tr!("settings_diagnostics_level_hint")
+        };
+
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(setting_row(
+                tr!("settings_diagnostics_level_label"),
+                Some(hint.into()),
+                segmented(segments, palette),
+                palette,
+                density,
+            ))
+            .child(note_row(
+                tr!("settings_diagnostics_level_env_hatch"),
+                palette,
+                density,
+            ));
+
+        card(body, palette).full_width()
+    }
+
     fn tail_body(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         let pad = spacing(Spacing::Sm, density);
         if self.lines.is_empty() {
@@ -331,6 +442,7 @@ impl Render for SettingsDiagnosticsView {
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .child(self.header(&palette, density))
+            .child(self.level_card(&palette, density, cx))
             .child(self.actions(&palette, density, cx))
             .child(
                 card(self.tail_body(&palette, density), &palette)
@@ -344,6 +456,43 @@ impl Render for SettingsDiagnosticsView {
             .child(body)
             .children(self.clear_overlay(&palette, cx))
     }
+}
+
+fn level_key(level: &LogLevel) -> &'static str {
+    match level {
+        LogLevel::Trace => "trace",
+        LogLevel::Debug => "debug",
+        LogLevel::Info => "info",
+        LogLevel::Warn => "warn",
+        LogLevel::Error => "error",
+    }
+}
+
+fn level_label_key(level: &LogLevel) -> &'static str {
+    match level {
+        LogLevel::Trace => "settings_diagnostics_level_trace",
+        LogLevel::Debug => "settings_diagnostics_level_debug",
+        LogLevel::Info => "settings_diagnostics_level_info",
+        LogLevel::Warn => "settings_diagnostics_level_warn",
+        LogLevel::Error => "settings_diagnostics_level_error",
+    }
+}
+
+fn note_row(
+    text: impl Into<SharedString>,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_start()
+        .gap(spacing(Spacing::Xxs, density))
+        .child(
+            div()
+                .flex_none()
+                .child(icon(Icon::InfoCircle, NOTE_GLYPH, palette.info)),
+        )
+        .child(field_hint(text.into(), palette))
 }
 
 fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl IntoElement {

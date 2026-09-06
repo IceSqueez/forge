@@ -96,6 +96,24 @@ async fn load_fonts_from_storage() -> (Option<String>, Option<String>) {
     (body, mono)
 }
 
+/// Everything logged before this point is captured at the boot level; the view documents the
+/// environment variable as the way to raise a boot-time reproduction.
+async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
+    if crate::log_level::env_overridden() {
+        return;
+    }
+    match forge_storage::diagnostic_log_level(repo).await {
+        Ok(level) => {
+            if crate::log_level::apply(&level) {
+                tracing::info!(?level, "log level applied from settings");
+            } else {
+                tracing::warn!("log filter is not reloadable; keeping the boot level");
+            }
+        }
+        Err(e) => tracing::warn!(error = %e, "could not read the persisted log level"),
+    }
+}
+
 /// Must run within the tokio runtime: the engine/scheduler/evaluator spawn tasks internally.
 pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFailure> {
     let db_path = default_db_path();
@@ -124,6 +142,8 @@ pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFail
     };
 
     let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+    apply_persisted_log_level(settings_repo.as_ref()).await;
+
     let (startup_language, persist) =
         crate::i18n::resolve_startup_language(Arc::clone(&settings_repo)).await;
     if let Some(detected) = persist

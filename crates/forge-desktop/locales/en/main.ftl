@@ -170,6 +170,16 @@ settings_diagnostics_cleared = Logs cleared
 settings_diagnostics_clear_failed = Could not clear logs: { $error }
 settings_diagnostics_exported = Diagnostic bundle saved to { $path }
 settings_diagnostics_export_failed = Could not export diagnostic bundle: { $error }
+settings_diagnostics_level_label = Log level
+settings_diagnostics_level_hint = Applies right away, no restart. Debug and trace grow the log fast on a busy stream.
+settings_diagnostics_level_env_locked = The RUST_LOG environment variable is in charge for this run, so the level cannot be changed here.
+settings_diagnostics_level_env_hatch = Logging starts at the default level until settings load, so the first moments of a launch are never captured at a raised level. To catch a startup bug, launch Forge with RUST_LOG=debug (or trace) set in the environment.
+settings_diagnostics_level_apply_failed = Could not switch the log level for this run.
+settings_diagnostics_level_trace = Trace
+settings_diagnostics_level_debug = Debug
+settings_diagnostics_level_info = Info
+settings_diagnostics_level_warn = Warn
+settings_diagnostics_level_error = Error
 
 ## Settings → Version pane
 

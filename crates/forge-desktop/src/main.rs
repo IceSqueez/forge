@@ -99,38 +99,16 @@ use crate::log_tail::LogTail;
 use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 
-fn default_env_filter(
-    _: tracing_subscriber::filter::FromEnvError,
-) -> tracing_subscriber::EnvFilter {
-    const SYMPHONIA_TARGETS: &[&str] = &[
-        "symphonia_core",
-        "symphonia_common",
-        "symphonia_metadata",
-        "symphonia_bundle_flac",
-        "symphonia_bundle_mp3",
-        "symphonia_codec_aac",
-        "symphonia_codec_adpcm",
-        "symphonia_codec_alac",
-        "symphonia_codec_pcm",
-        "symphonia_codec_vorbis",
-        "symphonia_format_caf",
-        "symphonia_format_isomp4",
-        "symphonia_format_mkv",
-        "symphonia_format_ogg",
-        "symphonia_format_riff",
-    ];
-    let mut directives = String::from("info");
-    for target in SYMPHONIA_TARGETS {
-        directives.push_str(&format!(",{target}=warn"));
-    }
-    tracing_subscriber::EnvFilter::new(directives)
-}
-
 fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTail) {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(default_env_filter);
-    let filter_layer = crate::log_level::reloadable(env_filter);
+    // A rejected `RUST_LOG` counts as absent: the level the process actually runs at came from
+    // the default, so the persisted one still gets to drive.
+    let (env_filter, env_overridden) = match EnvFilter::try_from_default_env() {
+        Ok(filter) => (filter, true),
+        Err(_) => (crate::log_level::default_filter(), false),
+    };
+    let filter_layer = crate::log_level::reloadable(env_filter, env_overridden);
     let console_layer = fmt::layer()
         .with_target(false)
         .with_writer(crate::log_scrub::scrubbed(std::io::stdout));

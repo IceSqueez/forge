@@ -224,7 +224,12 @@ impl SettingsView {
             SettingsStorageView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });
         let diagnostics = cx.new(|cx| {
-            SettingsDiagnosticsView::new(handles.log_tail.clone(), handles.rt_handle.clone(), cx)
+            SettingsDiagnosticsView::new(
+                handles.log_tail.clone(),
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                cx,
+            )
         });
         Self {
             section: SettingsSection::Appearance,

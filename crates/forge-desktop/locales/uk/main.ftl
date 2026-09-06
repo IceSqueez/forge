@@ -170,6 +170,16 @@ settings_diagnostics_cleared = Журнали очищено
 settings_diagnostics_clear_failed = Не вдалося очистити журнали: { $error }
 settings_diagnostics_exported = Діагностичний пакет збережено до { $path }
 settings_diagnostics_export_failed = Не вдалося експортувати діагностичний пакет: { $error }
+settings_diagnostics_level_label = Рівень журналювання
+settings_diagnostics_level_hint = Застосовується одразу, без перезапуску. Debug і trace швидко нарощують журнал на активному стрімі.
+settings_diagnostics_level_env_locked = Цим запуском керує змінна середовища RUST_LOG, тож рівень тут змінити не можна.
+settings_diagnostics_level_env_hatch = До завантаження налаштувань журналювання йде на типовому рівні, тож перші миті запуску ніколи не потраплять у журнал на підвищеному рівні. Щоб зловити помилку старту, запусти Forge зі змінною середовища RUST_LOG=debug (або trace).
+settings_diagnostics_level_apply_failed = Не вдалося перемкнути рівень журналювання для цього запуску.
+settings_diagnostics_level_trace = Trace
+settings_diagnostics_level_debug = Debug
+settings_diagnostics_level_info = Info
+settings_diagnostics_level_warn = Warn
+settings_diagnostics_level_error = Error
 
 ## Налаштування → панель версії
 

@@ -295,7 +295,12 @@ impl Variant {
 
     /// Depth ≤ 32, element count ≤ 10_000, null rejected, strings never auto-promoted.
     pub fn from_json(value: serde_json::Value) -> Result<Self, VariantError> {
-        from_json_inner(value, 0)
+        from_json_inner(value, 0, JsonForm::Tagged)
+    }
+
+    /// Strict inverse of [`Variant::to_plain_json`]: a `{"type","value"}` object stays an object, null is an error, and RFC3339 strings stay [`Variant::String`] for the caller to parse.
+    pub fn from_plain_json(value: serde_json::Value) -> Result<Self, VariantError> {
+        from_json_inner(value, 0, JsonForm::Plain)
     }
 
     pub fn to_json(&self) -> serde_json::Value {
@@ -326,7 +331,17 @@ impl Variant {
     }
 }
 
-fn from_json_inner(value: serde_json::Value, depth: u8) -> Result<Variant, VariantError> {
+#[derive(Clone, Copy, PartialEq)]
+enum JsonForm {
+    Tagged,
+    Plain,
+}
+
+fn from_json_inner(
+    value: serde_json::Value,
+    depth: u8,
+    form: JsonForm,
+) -> Result<Variant, VariantError> {
     if depth > MAX_DEPTH {
         return Err(VariantError::JsonConversion(
             "depth limit exceeded".to_owned(),
@@ -360,7 +375,7 @@ fn from_json_inner(value: serde_json::Value, depth: u8) -> Result<Variant, Varia
             }
             let items = arr
                 .into_iter()
-                .map(|v| from_json_inner(v, depth + 1))
+                .map(|v| from_json_inner(v, depth + 1, form))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Variant::Array(items))
         }
@@ -372,10 +387,10 @@ fn from_json_inner(value: serde_json::Value, depth: u8) -> Result<Variant, Varia
                 ));
             }
 
-            let has_type_key = map.contains_key("type");
-            let has_value_key = map.contains_key("value");
+            let is_tagged_pair =
+                map.len() == 2 && map.contains_key("type") && map.contains_key("value");
 
-            if has_type_key && has_value_key && map.len() == 2 {
+            if form == JsonForm::Tagged && is_tagged_pair {
                 let json_obj = serde_json::Value::Object(map);
                 return serde_json::from_value::<Variant>(json_obj)
                     .map_err(|e| VariantError::JsonConversion(e.to_string()));
@@ -383,7 +398,7 @@ fn from_json_inner(value: serde_json::Value, depth: u8) -> Result<Variant, Varia
 
             let entries = map
                 .into_iter()
-                .map(|(k, v)| from_json_inner(v, depth + 1).map(|vv| (k, vv)))
+                .map(|(k, v)| from_json_inner(v, depth + 1, form).map(|vv| (k, vv)))
                 .collect::<Result<BTreeMap<_, _>, _>>()?;
             Ok(Variant::Object(entries))
         }

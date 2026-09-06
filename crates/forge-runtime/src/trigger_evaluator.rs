@@ -23,7 +23,7 @@ use crate::{Config, EventBus, EventSubscription, QueueSchedulerHandle, Scheduler
 const DECISION_TARGET: &str = "forge::trigger";
 
 /// The one target carrying viewer-authored text; TRACE-only, so it is raised on its own or not at all.
-const COMMAND_LINE_TARGET: &str = "forge::command";
+pub const COMMAND_LINE_TARGET: &str = "forge::command";
 
 #[derive(Clone)]
 pub struct TriggerEvaluatorHandle {

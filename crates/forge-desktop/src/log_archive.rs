@@ -23,22 +23,64 @@ pub fn files(dir: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(paths)
 }
 
-pub fn bundle(dir: &Path) -> Result<String, String> {
-    let mut out = format!(
-        "forge {}\nos: {}\narch: {}\n",
-        env!("CARGO_PKG_VERSION"),
-        std::env::consts::OS,
-        std::env::consts::ARCH,
-    );
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Corpus {
+    pub text: String,
+    /// Log bytes the budget could not carry; the newest bytes are the ones kept.
+    pub elided_bytes: u64,
+    pub files_kept: usize,
+}
 
-    for path in files(dir)? {
-        out.push_str(&format!("\n---- {} ----\n", path.display()));
-        match fs::read_to_string(&path) {
-            Ok(text) => out.push_str(&text),
-            Err(e) => out.push_str(&format!("<unreadable: {e}>\n")),
+/// Fills `budget` from the newest file backwards, so a corpus far larger than the budget is never
+/// held in memory whole.
+pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, String> {
+    let mut remaining = budget;
+    let mut elided_bytes = 0u64;
+    let mut blocks: Vec<String> = Vec::new();
+
+    for path in files(dir)?.iter().rev() {
+        let body = match fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => format!("<unreadable: {e}>\n"),
+        };
+        let header = format!("\n---- {} ----\n", path.display());
+
+        if remaining <= header.len() {
+            elided_bytes += body.len() as u64;
+            continue;
+        }
+
+        let room = remaining - header.len();
+        if body.len() <= room {
+            remaining -= header.len() + body.len();
+            blocks.push(header + body.as_str());
+        } else {
+            let start = line_start_at_or_after(&body, body.len() - room);
+            elided_bytes += start as u64;
+            remaining = 0;
+            blocks.push(header + &body[start..]);
         }
     }
-    Ok(out)
+
+    blocks.reverse();
+    Ok(Corpus {
+        files_kept: blocks.len(),
+        text: blocks.concat(),
+        elided_bytes,
+    })
+}
+
+/// Keeps the tail whole-line and on a character boundary, so a truncated corpus never opens
+/// mid-record or mid-codepoint.
+fn line_start_at_or_after(text: &str, from: usize) -> usize {
+    let mut idx = from.min(text.len());
+    while idx < text.len() && !text.is_char_boundary(idx) {
+        idx += 1;
+    }
+    match text[idx..].find('\n') {
+        Some(offset) => idx + offset + 1,
+        None => text.len(),
+    }
 }
 
 pub fn clear(dir: &Path) -> Result<(), String> {
@@ -170,7 +212,7 @@ mod tests {
         dir.write("forge.log.2026-01-05", b"oldest-marker");
         dir.write("other.txt", b"unrelated-marker");
 
-        let out = bundle(dir.path()).expect("bundle");
+        let out = corpus(dir.path(), usize::MAX).expect("corpus").text;
         let at = |needle: &str| {
             out.find(needle)
                 .unwrap_or_else(|| panic!("missing {needle}"))
@@ -194,7 +236,9 @@ mod tests {
         dir.write("forge.log.2026-01-05", &[0xff, 0xfe, 0x00, 0xff]);
         dir.write("forge.log.2026-08-01", b"still-included");
 
-        let out = bundle(dir.path()).expect("an unreadable file must not fail the whole bundle");
+        let out = corpus(dir.path(), usize::MAX)
+            .expect("an unreadable file must not fail the whole bundle")
+            .text;
 
         assert!(out.contains("<unreadable:"), "no inline marker:\n{out}");
         assert!(
@@ -208,8 +252,9 @@ mod tests {
         let dir = ScratchDir::new("bundle_missing");
 
         assert_eq!(
-            bundle(&dir.absent_child()).expect("a missing log directory is not an error"),
-            bundle(dir.path()).expect("bundle of an empty directory"),
+            corpus(&dir.absent_child(), usize::MAX)
+                .expect("a missing log directory is not an error"),
+            corpus(dir.path(), usize::MAX).expect("corpus of an empty directory"),
         );
     }
 

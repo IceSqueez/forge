@@ -227,6 +227,7 @@ impl SettingsView {
             SettingsDiagnosticsView::new(
                 handles.log_tail.clone(),
                 Arc::clone(&handles.backend),
+                handles.builtins.clone(),
                 handles.rt_handle.clone(),
                 cx,
             )

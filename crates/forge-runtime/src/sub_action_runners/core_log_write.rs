@@ -6,6 +6,10 @@ use forge_registry::{
 use forge_types::{ArgStack, LogLevel, SubActionConfig, SubActionTelemetry, Variant};
 use tracing::{debug, error, info, trace, warn};
 
+/// Attributes script-authored text to its own target, so the diagnostic bundle can section off
+/// the lines forge did not choose and count them before the user publishes the file.
+pub const SCRIPT_LOG_TARGET: &str = "forge::action";
+
 pub struct CoreLogWriteRunner;
 
 #[async_trait]
@@ -73,11 +77,11 @@ impl SubActionRunner for CoreLogWriteRunner {
         let message = ctx.arg_stack.interpolate(message_template);
 
         match level {
-            LogLevel::Trace => trace!(target: "forge::action", message = message.as_str()),
-            LogLevel::Debug => debug!(target: "forge::action", message = message.as_str()),
-            LogLevel::Info => info!(target: "forge::action", message = message.as_str()),
-            LogLevel::Warn => warn!(target: "forge::action", message = message.as_str()),
-            LogLevel::Error => error!(target: "forge::action", message = message.as_str()),
+            LogLevel::Trace => trace!(target: SCRIPT_LOG_TARGET, message = message.as_str()),
+            LogLevel::Debug => debug!(target: SCRIPT_LOG_TARGET, message = message.as_str()),
+            LogLevel::Info => info!(target: SCRIPT_LOG_TARGET, message = message.as_str()),
+            LogLevel::Warn => warn!(target: SCRIPT_LOG_TARGET, message = message.as_str()),
+            LogLevel::Error => error!(target: SCRIPT_LOG_TARGET, message = message.as_str()),
         }
 
         (timer.success(), None)

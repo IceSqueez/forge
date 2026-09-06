@@ -2,16 +2,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, OverlayPosition, Spacing,
-    ToastKind, body_family, card, confirm_modal, drive_overlay_focus, field_hint,
-    ghost_button_with_icon, icon, mono_family, overlay, segment, segmented, setting_row, spacing,
-    tr,
+    ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize,
+    OverlayPosition, Spacing, ToastKind, body_family, card, confirm_modal, drive_overlay_focus,
+    field_hint, ghost_button, ghost_button_with_icon, icon, modal, mono_family, overlay,
+    primary_button, segment, segmented, setting_row, spacing, tr,
 };
 use forge_storage::{
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level,
+    DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level, disclosure,
     set_diagnostic_log_level,
 };
 use forge_types::LogLevel;
+use forge_types::redaction::STAMP;
+use forge_types::run_disclosure::DisclosedRun;
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, FontWeight, Pixels, Rgba, ScrollHandle,
     SharedString, Window, div, prelude::*, px,
@@ -19,6 +21,8 @@ use gpui::{
 use tracing::Level;
 
 use crate::async_bridge;
+use crate::diagnostic_bundle::{self, Bundle, BundleInput, RUN_HISTORY_LIMIT};
+use crate::integrations::BuiltinRegistry;
 use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
 use crate::presentation::ActivePresentation;
@@ -31,10 +35,13 @@ const LEVEL_COLUMN: Pixels = px(38.0);
 const FOLLOW_SLACK: Pixels = px(24.0);
 const BUNDLE_FILE_NAME: &str = "forge-diagnostics.txt";
 const NOTE_GLYPH: Pixels = px(14.0);
+const PREVIEW_GLYPH: Pixels = px(15.0);
+const PREVIEW_WIDTH: Pixels = px(600.0);
 
 pub struct SettingsDiagnosticsView {
     tail: LogTail,
     backend: Arc<dyn DataProvider>,
+    builtins: BuiltinRegistry,
     rt_handle: tokio::runtime::Handle,
     lines: Vec<LogLine>,
     level: LogLevel,
@@ -42,6 +49,9 @@ pub struct SettingsDiagnosticsView {
     scroll: ScrollHandle,
     active: bool,
     clear_pending: bool,
+    preparing_export: bool,
+    /// Assembled and held here so the preview describes the exact bytes the confirm then writes.
+    pending_export: Option<Bundle>,
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
 }
@@ -50,6 +60,7 @@ impl SettingsDiagnosticsView {
     pub fn new(
         tail: LogTail,
         backend: Arc<dyn DataProvider>,
+        builtins: BuiltinRegistry,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -57,6 +68,7 @@ impl SettingsDiagnosticsView {
         let mut view = Self {
             tail,
             backend,
+            builtins,
             rt_handle,
             lines: Vec::new(),
             level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
@@ -64,6 +76,8 @@ impl SettingsDiagnosticsView {
             scroll: ScrollHandle::new(),
             active: false,
             clear_pending: false,
+            preparing_export: false,
+            pending_export: None,
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
         };
@@ -162,8 +176,67 @@ impl SettingsDiagnosticsView {
         cx.reveal_path(&Self::log_dir());
     }
 
-    fn export_bundle(&mut self, cx: &mut Context<Self>) {
-        let dir = Self::log_dir();
+    /// Assembles first and shows the statement second: the preview can then quote real counts
+    /// from the bytes that will be written, rather than describing a file that does not exist yet.
+    fn prepare_export(&mut self, cx: &mut Context<Self>) {
+        if self.preparing_export || self.pending_export.is_some() {
+            return;
+        }
+        self.preparing_export = true;
+
+        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let history = self.backend.history_repo();
+        let integrations = diagnostic_bundle::integration_facts(&self.builtins);
+        let log_dir = Self::log_dir();
+        let level = self.level.clone();
+        let env_overridden = self.env_overridden;
+
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let stored = settings.load_all().await.map_err(|e| e.to_string())?;
+                let runs = history
+                    .recent(RUN_HISTORY_LIMIT)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let input = BundleInput {
+                    log_dir,
+                    level,
+                    env_overridden,
+                    integrations,
+                    config: disclosure::render_all(&stored),
+                    runs: runs.iter().map(DisclosedRun::from).collect(),
+                };
+                tokio::task::spawn_blocking(move || diagnostic_bundle::assemble(&input))
+                    .await
+                    .map_err(|e| e.to_string())?
+            },
+            |this, result: Result<Bundle, String>, cx| {
+                this.preparing_export = false;
+                match result {
+                    Ok(bundle) => this.pending_export = Some(bundle),
+                    Err(e) => cx.push_toast(
+                        ToastKind::Error,
+                        tr!("settings_diagnostics_export_failed", error = e.as_str()),
+                    ),
+                }
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn cancel_export(&mut self, cx: &mut Context<Self>) {
+        self.pending_export = None;
+        cx.notify();
+    }
+
+    fn write_export(&mut self, cx: &mut Context<Self>) {
+        let Some(bundle) = self.pending_export.take() else {
+            return;
+        };
+        let text = bundle.text;
         async_bridge::spawn_dialog(
             &self.rt_handle,
             async move {
@@ -173,10 +246,7 @@ impl SettingsDiagnosticsView {
                 };
                 let path = async_bridge::save_file(Some(filter), Some(BUNDLE_FILE_NAME.to_owned()))
                     .await?;
-                let bundle = tokio::task::spawn_blocking(move || log_archive::bundle(&dir))
-                    .await
-                    .map_err(|e| e.to_string())??;
-                tokio::fs::write(&path, bundle)
+                tokio::fs::write(&path, text)
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok(path)
@@ -199,6 +269,7 @@ impl SettingsDiagnosticsView {
             },
             cx,
         );
+        cx.notify();
     }
 
     fn request_clear(&mut self, cx: &mut Context<Self>) {
@@ -294,9 +365,10 @@ impl SettingsDiagnosticsView {
                     palette,
                 )
                 .density(density)
+                .disabled(self.preparing_export)
                 .on_click(
                     "settings-diagnostics-export",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.export_bundle(cx)),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.prepare_export(cx)),
                 ),
             )
             .child(
@@ -357,6 +429,11 @@ impl SettingsDiagnosticsView {
                 tr!("settings_diagnostics_level_env_hatch"),
                 palette,
                 density,
+            ))
+            .child(note_row(
+                tr!("settings_diagnostics_level_targets"),
+                palette,
+                density,
             ));
 
         card(body, palette).full_width()
@@ -387,6 +464,77 @@ impl SettingsDiagnosticsView {
             list = list.child(log_row(line, palette, density));
         }
         list.into_any_element()
+    }
+
+    fn export_overlay(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let bundle = self.pending_export.as_ref()?;
+
+        let mut body = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Sm, density))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_SM)
+                    .text_color(palette.text_primary)
+                    .child(tr!("settings_diagnostics_export_preview_lead")),
+            );
+        for note in export_statement(bundle, &self.level) {
+            body = body.child(statement_row(note, palette, density));
+        }
+
+        let footer = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                ghost_button(tr!("common_cancel"), palette)
+                    .density(density)
+                    .on_click(
+                        "settings-diagnostics-export-cancel",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_export(cx)),
+                    ),
+            )
+            .child(
+                primary_button(tr!("settings_diagnostics_export_preview_confirm"), palette)
+                    .density(density)
+                    .on_click(
+                        "settings-diagnostics-export-confirm",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.write_export(cx)),
+                    ),
+            );
+
+        let card = modal(
+            tr!("settings_diagnostics_export_preview_title"),
+            body,
+            palette,
+        )
+        .header_icon(Icon::Download, palette.brand)
+        .size(ModalSize::Lg)
+        .width(PREVIEW_WIDTH)
+        .footer(footer)
+        .on_close(
+            "settings-diagnostics-export-close",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_export(cx)),
+        );
+
+        let weak = cx.entity().downgrade();
+        Some(
+            overlay(card, palette)
+                .position(OverlayPosition::Center)
+                .dismiss_on_escape(&self.overlay_focus)
+                .on_dismiss("settings-diagnostics-export-dismiss", move |_window, cx| {
+                    let _ = weak.update(cx, |this, cx| this.cancel_export(cx));
+                })
+                .into_any_element(),
+        )
     }
 
     fn clear_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -430,7 +578,7 @@ impl Render for SettingsDiagnosticsView {
         let density = cx.density();
 
         drive_overlay_focus(
-            self.clear_pending,
+            self.clear_pending || self.pending_export.is_some(),
             &self.overlay_focus,
             &mut self.focus_restore,
             window,
@@ -455,7 +603,107 @@ impl Render for SettingsDiagnosticsView {
             .flex_col()
             .child(body)
             .children(self.clear_overlay(&palette, cx))
+            .children(self.export_overlay(&palette, density, cx))
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StatementTone {
+    Plain,
+    Alert,
+}
+
+struct Statement {
+    text: SharedString,
+    tone: StatementTone,
+}
+
+fn plain(text: impl Into<SharedString>) -> Statement {
+    Statement {
+        text: text.into(),
+        tone: StatementTone::Plain,
+    }
+}
+
+fn alert(text: impl Into<SharedString>) -> Statement {
+    Statement {
+        text: text.into(),
+        tone: StatementTone::Alert,
+    }
+}
+
+fn kib(bytes: u64) -> i64 {
+    bytes.div_ceil(1024) as i64
+}
+
+/// The command target is TRACE-only and single-sited, so a non-zero count is proof the bundle
+/// carries full command lines even when the level has since been lowered.
+fn export_statement(bundle: &Bundle, level: &LogLevel) -> Vec<Statement> {
+    let mut notes = vec![
+        plain(tr!(
+            "settings_diagnostics_export_preview_includes",
+            runs = i64::from(RUN_HISTORY_LIMIT)
+        )),
+        plain(tr!(
+            "settings_diagnostics_export_preview_excludes",
+            stamp = STAMP
+        )),
+        plain(tr!("settings_diagnostics_export_preview_lengths")),
+    ];
+
+    notes.push(if bundle.script_lines == 0 {
+        plain(tr!("settings_diagnostics_export_preview_script_none"))
+    } else {
+        alert(tr!(
+            "settings_diagnostics_export_preview_script",
+            count = bundle.script_lines as i64
+        ))
+    });
+
+    if bundle.command_lines > 0 {
+        notes.push(alert(tr!(
+            "settings_diagnostics_export_preview_trace",
+            count = bundle.command_lines as i64
+        )));
+    } else if *level == LogLevel::Trace {
+        notes.push(alert(tr!("settings_diagnostics_export_preview_trace_none")));
+    }
+
+    notes.push(plain(tr!(
+        "settings_diagnostics_export_preview_size",
+        size = kib(bundle.text.len() as u64)
+    )));
+    if bundle.elided_bytes > 0 {
+        notes.push(plain(tr!(
+            "settings_diagnostics_export_preview_elided",
+            size = kib(bundle.elided_bytes)
+        )));
+    }
+    notes
+}
+
+fn statement_row(
+    note: Statement,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement + use<> {
+    let (glyph, tint, text_color) = match note.tone {
+        StatementTone::Plain => (Icon::Check, palette.text_faint, palette.text_secondary),
+        StatementTone::Alert => (Icon::AlertTriangle, palette.warning, palette.text_primary),
+    };
+    div()
+        .flex()
+        .items_start()
+        .gap(spacing(Spacing::Xs, density))
+        .child(div().flex_none().child(icon(glyph, PREVIEW_GLYPH, tint)))
+        .child(
+            div()
+                .flex_1()
+                .font_family(body_family())
+                .text_size(FONT_XS)
+                .text_color(text_color)
+                .child(note.text),
+        )
 }
 
 fn level_key(level: &LogLevel) -> &'static str {

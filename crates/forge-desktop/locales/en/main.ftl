@@ -174,7 +174,20 @@ settings_diagnostics_level_label = Log level
 settings_diagnostics_level_hint = Applies right away, no restart. Debug and trace grow the log fast on a busy stream.
 settings_diagnostics_level_env_locked = The RUST_LOG environment variable is in charge for this run, so the level cannot be changed here.
 settings_diagnostics_level_env_hatch = Logging starts at the default level until settings load, so the first moments of a launch are never captured at a raised level. To catch a startup bug, launch Forge with RUST_LOG=debug (or trace) set in the environment.
+settings_diagnostics_level_targets = A trace reproduction stays readable if you raise one component instead of everything: RUST_LOG=info,forge::event=debug for the event trail, forge::trigger=debug for why a trigger did or did not fire, forge::command=trace for the full matched command line including what viewers typed.
 settings_diagnostics_level_apply_failed = Could not switch the log level for this run.
+settings_diagnostics_export_preview_title = Read this before you export
+settings_diagnostics_export_preview_lead = This file is built to be attached to a public issue. Open it and read it before you post it anywhere.
+settings_diagnostics_export_preview_includes = It contains the Forge version, your OS and architecture, which integrations are installed and whether they are connected, your settings, the last { $runs } action runs, and the log itself.
+settings_diagnostics_export_preview_excludes = It withholds access tokens and keys, account and channel names, endpoints and file paths, and chat messages. Withheld values read as { $stamp } - that is deliberate, not a truncated read.
+settings_diagnostics_export_preview_lengths = Settings and action runs carry lengths and kinds instead of values, so nothing that was typed can be read back out of them.
+settings_diagnostics_export_preview_script = { $count } lines in this file were written by the log step in your own actions and scripts. Forge did not choose that text - it sits in its own section so you can read it.
+settings_diagnostics_export_preview_script_none = No lines in this file came from the log step in your own actions and scripts.
+settings_diagnostics_export_preview_trace = Trace logging was active: this file contains { $count } full command lines, including everything viewers typed as arguments to your commands. Read them before you publish it.
+settings_diagnostics_export_preview_trace_none = The log level is trace. No command has matched yet, but at trace every matched command is written to the log in full, including everything viewers type as arguments.
+settings_diagnostics_export_preview_size = About { $size } KB.
+settings_diagnostics_export_preview_elided = { $size } KB of older log lines did not fit the size limit and were left out; the newest lines were kept.
+settings_diagnostics_export_preview_confirm = Choose a file and export
 settings_diagnostics_level_trace = Trace
 settings_diagnostics_level_debug = Debug
 settings_diagnostics_level_info = Info

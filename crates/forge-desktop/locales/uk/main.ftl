@@ -174,7 +174,20 @@ settings_diagnostics_level_label = Рівень журналювання
 settings_diagnostics_level_hint = Застосовується одразу, без перезапуску. Debug і trace швидко нарощують журнал на активному стрімі.
 settings_diagnostics_level_env_locked = Цим запуском керує змінна середовища RUST_LOG, тож рівень тут змінити не можна.
 settings_diagnostics_level_env_hatch = До завантаження налаштувань журналювання йде на типовому рівні, тож перші миті запуску ніколи не потраплять у журнал на підвищеному рівні. Щоб зловити помилку старту, запусти Forge зі змінною середовища RUST_LOG=debug (або trace).
+settings_diagnostics_level_targets = Відтворення на trace лишиться читабельним, якщо підняти рівень одному компоненту, а не всьому: RUST_LOG=info,forge::event=debug для ланцюжка подій, forge::trigger=debug щоб побачити, чому тригер спрацював або ні, forge::command=trace для повного рядка команди разом з тим, що набрали глядачі.
 settings_diagnostics_level_apply_failed = Не вдалося перемкнути рівень журналювання для цього запуску.
+settings_diagnostics_export_preview_title = Прочитай це перед експортом
+settings_diagnostics_export_preview_lead = Цей файл створено, щоб прикріпити його до публічного issue. Відкрий і прочитай його, перш ніж десь публікувати.
+settings_diagnostics_export_preview_includes = У ньому є версія Forge, твоя ОС і архітектура, які інтеграції встановлено та чи вони підключені, твої налаштування, останні { $runs } запусків дій і сам журнал.
+settings_diagnostics_export_preview_excludes = У ньому немає токенів і ключів доступу, назв акаунтів і каналів, адрес та шляхів до файлів, а також повідомлень з чату. Приховані значення виглядають як { $stamp } - це навмисно, а не обрізане читання.
+settings_diagnostics_export_preview_lengths = Налаштування та запуски дій несуть довжини і типи замість значень, тож із них неможливо відновити те, що було набрано.
+settings_diagnostics_export_preview_script = { $count } рядків у цьому файлі написав крок журналювання у твоїх власних діях і скриптах. Forge не обирав цей текст - він винесений в окремий розділ, щоб ти міг його прочитати.
+settings_diagnostics_export_preview_script_none = У цьому файлі немає рядків від кроку журналювання з твоїх власних дій і скриптів.
+settings_diagnostics_export_preview_trace = Журналювання йшло на рівні trace: у цьому файлі є { $count } повних рядків команд разом з усім, що глядачі набрали як аргументи до твоїх команд. Прочитай їх перед публікацією.
+settings_diagnostics_export_preview_trace_none = Рівень журналювання - trace. Жодна команда ще не збіглася, але на trace кожна збіжна команда потрапляє в журнал повністю, разом з усім, що глядачі набирають як аргументи.
+settings_diagnostics_export_preview_size = Приблизно { $size } КБ.
+settings_diagnostics_export_preview_elided = { $size } КБ старіших рядків журналу не вмістилися в обмеження розміру і не потрапили у файл; збережено найновіші рядки.
+settings_diagnostics_export_preview_confirm = Обрати файл і експортувати
 settings_diagnostics_level_trace = Trace
 settings_diagnostics_level_debug = Debug
 settings_diagnostics_level_info = Info

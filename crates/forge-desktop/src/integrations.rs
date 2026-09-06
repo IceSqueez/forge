@@ -49,6 +49,11 @@ impl BuiltinRegistry {
         guard.get(id).cloned()
     }
 
+    pub fn snapshot(&self) -> Vec<BuiltinObject> {
+        let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
+        guard.values().cloned().collect()
+    }
+
     pub fn install(&self, object: BuiltinObject) {
         let id = object.status.id().clone();
         let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());

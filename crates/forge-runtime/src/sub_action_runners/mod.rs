@@ -95,7 +95,7 @@ pub use core_globals_increment::CoreGlobalsIncrementRunner;
 pub use core_globals_set::CoreGlobalsSetRunner;
 pub use core_globals_toggle::CoreGlobalsToggleRunner;
 pub use core_http::CoreHttpRunner;
-pub use core_log_write::CoreLogWriteRunner;
+pub use core_log_write::{CoreLogWriteRunner, SCRIPT_LOG_TARGET};
 pub use core_logic_break_loop::CoreLogicBreakLoopRunner;
 pub use core_logic_continue_loop::CoreLogicContinueLoopRunner;
 pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;

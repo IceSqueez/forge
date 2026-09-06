@@ -3505,3 +3505,202 @@ fn api_fn_row(entry: &MethodDescriptor, palette: &ForgePalette) -> impl IntoElem
     }
     row
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    const ALL_KINDS: [VariantKind; 7] = [
+        VariantKind::Int,
+        VariantKind::Float,
+        VariantKind::Bool,
+        VariantKind::String,
+        VariantKind::Datetime,
+        VariantKind::Array,
+        VariantKind::Object,
+    ];
+
+    fn parse(kind: VariantKind, raw: &str) -> Result<Variant, String> {
+        parse_input_to_variant("amount", kind, raw)
+    }
+
+    #[test]
+    fn every_declared_kind_accepts_a_well_formed_value() {
+        let mut object = BTreeMap::new();
+        object.insert("key".to_owned(), Variant::String("value".into()));
+
+        for (kind, raw, expected) in [
+            (VariantKind::Int, " 42 ", Variant::Int(42)),
+            (VariantKind::Int, "-7", Variant::Int(-7)),
+            (VariantKind::Float, " 1.5", Variant::float(1.5).unwrap()),
+            (VariantKind::Bool, "true", Variant::Bool(true)),
+            (VariantKind::Bool, " false ", Variant::Bool(false)),
+            (
+                VariantKind::Array,
+                " [12, 13, 14] ",
+                Variant::Array(vec![Variant::Int(12), Variant::Int(13), Variant::Int(14)]),
+            ),
+            (VariantKind::Array, "[]", Variant::Array(vec![])),
+            (
+                VariantKind::Object,
+                r#"{"key": "value"}"#,
+                Variant::Object(object.clone()),
+            ),
+            (VariantKind::Object, "{}", Variant::Object(BTreeMap::new())),
+            (
+                VariantKind::Datetime,
+                " 1970-01-01T00:00:00Z ",
+                Variant::Datetime(OffsetDateTime::UNIX_EPOCH),
+            ),
+        ] {
+            assert_eq!(
+                parse(kind, raw).unwrap(),
+                expected,
+                "{kind:?} input {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_string_input_is_taken_verbatim_while_every_other_kind_is_trimmed() {
+        assert_eq!(
+            parse(VariantKind::String, "  padded  ").unwrap(),
+            Variant::String("  padded  ".into()),
+            "a script may well want the whitespace it was handed"
+        );
+    }
+
+    #[test]
+    fn every_declared_kind_names_the_field_when_it_rejects_input() {
+        for (kind, raw) in [
+            (VariantKind::Int, ""),
+            (VariantKind::Int, "1.5"),
+            (VariantKind::Int, "9223372036854775808"),
+            (VariantKind::Float, "1,5"),
+            (VariantKind::Float, ""),
+            (VariantKind::Bool, "TRUE"),
+            (VariantKind::Bool, "1"),
+            (VariantKind::Array, "[1,"),
+            (VariantKind::Array, "12"),
+            (VariantKind::Array, "[1, 2] trailing"),
+            (VariantKind::Object, "not json"),
+            (VariantKind::Object, "[1, 2]"),
+            (VariantKind::Datetime, ""),
+            (VariantKind::Datetime, "2026-01-31"),
+            (VariantKind::Datetime, "18:04:00Z"),
+            (VariantKind::Datetime, "2026-01-31T18:04:00"),
+        ] {
+            let err = parse(kind, raw).unwrap_err();
+            assert!(
+                err.contains("`amount`"),
+                "{kind:?} input {raw:?} must tell the user which field failed: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_float_input_that_parses_but_is_not_finite_is_rejected() {
+        for raw in ["NaN", "inf", "-inf"] {
+            let err = parse(VariantKind::Float, raw).unwrap_err();
+            assert!(
+                err.contains("invalid float"),
+                "input {raw:?} must not reach a script as a non-finite float: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn well_formed_json_of_the_wrong_kind_is_rejected_with_the_example_for_the_declared_kind() {
+        for (kind, raw, shape, example) in [
+            (
+                VariantKind::Array,
+                r#"{"key": "value"}"#,
+                "a JSON array",
+                ARRAY_INPUT_EXAMPLE,
+            ),
+            (
+                VariantKind::Object,
+                "[12, 13, 14]",
+                "a JSON object",
+                OBJECT_INPUT_EXAMPLE,
+            ),
+        ] {
+            let err = parse(kind, raw).unwrap_err();
+            assert!(err.contains(shape), "{kind:?} input {raw}: {err}");
+            assert!(
+                err.contains(example),
+                "{kind:?} input {raw} must show the syntax it wants: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_variant_rejection_inside_a_json_input_is_reported_instead_of_the_syntax_example() {
+        let err = parse(VariantKind::Array, "[1, null]").unwrap_err();
+
+        assert!(
+            err.contains("null is not a supported Variant value"),
+            "the value, not the syntax, is what the user has to fix: {err}"
+        );
+        assert!(
+            !err.contains(ARRAY_INPUT_EXAMPLE),
+            "a well-formed array is not a syntax problem: {err}"
+        );
+    }
+
+    #[test]
+    fn a_tagged_looking_object_input_stays_an_object_rather_than_decoding_to_its_tag() {
+        let parsed = parse(VariantKind::Object, r#"{"type": "int", "value": 7}"#).unwrap();
+
+        assert_eq!(
+            parsed.as_object().unwrap().len(),
+            2,
+            "a script asking for an object gets the two keys the user typed: {parsed:?}"
+        );
+    }
+
+    #[test]
+    fn the_spellings_rfc3339_tolerates_all_land_on_the_same_instant() {
+        for raw in [
+            "1970-01-01T00:00:00Z",
+            "1970-01-01t00:00:00z",
+            "1970-01-01 00:00:00Z",
+            "1970-01-01T00:00:00.000Z",
+        ] {
+            let parsed = parse(VariantKind::Datetime, raw).unwrap();
+            assert_eq!(
+                parsed.as_datetime().map(|dt| dt.unix_timestamp()),
+                Some(0),
+                "input {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_offset_timestamp_is_read_as_the_instant_it_names() {
+        let parsed = parse(VariantKind::Datetime, "1970-01-01T02:00:00+02:00").unwrap();
+
+        assert_eq!(
+            parsed.as_datetime().map(|dt| dt.unix_timestamp()),
+            Some(0),
+            "the offset shifts the instant, it is not decoration: {parsed:?}"
+        );
+    }
+
+    #[test]
+    fn the_syntax_example_offered_for_a_kind_parses_back_into_that_kind() {
+        for kind in ALL_KINDS {
+            let Some(example) = input_syntax_example(kind) else {
+                continue;
+            };
+            let parsed = parse(kind, example).unwrap();
+            assert_eq!(
+                VariantKind::from_variant(&parsed),
+                kind,
+                "the placeholder teaches {example}, which must be valid input"
+            );
+        }
+    }
+}

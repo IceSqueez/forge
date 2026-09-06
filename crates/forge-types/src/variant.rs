@@ -411,6 +411,32 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    const ALL_KINDS: [VariantKind; 7] = [
+        VariantKind::Int,
+        VariantKind::Float,
+        VariantKind::Bool,
+        VariantKind::String,
+        VariantKind::Datetime,
+        VariantKind::Array,
+        VariantKind::Object,
+    ];
+
+    fn nested_arrays(depth: u8) -> serde_json::Value {
+        let mut value = json!("leaf");
+        for _ in 0..depth {
+            value = json!([value]);
+        }
+        value
+    }
+
+    fn array_of(len: usize) -> serde_json::Value {
+        serde_json::Value::Array((0..len).map(|i| json!(i)).collect())
+    }
+
+    fn object_of(len: usize) -> serde_json::Value {
+        serde_json::Value::Object((0..len).map(|i| (i.to_string(), json!(i))).collect())
+    }
+
     #[test]
     fn float_rejects_nan() {
         assert!(matches!(
@@ -498,39 +524,158 @@ mod tests {
     }
 
     #[test]
-    fn from_json_enforces_array_size_limit() {
-        let big_array: Vec<serde_json::Value> =
-            (0..=MAX_COLLECTION_LEN).map(|i| json!(i)).collect();
-        let result = Variant::from_json(serde_json::Value::Array(big_array));
-        assert!(
-            matches!(result, Err(VariantError::JsonConversion(_))),
-            "array exceeding limit must fail"
-        );
-    }
-
-    #[test]
-    fn from_json_enforces_object_size_limit() {
-        let big_object: serde_json::Map<std::string::String, serde_json::Value> = (0
-            ..=MAX_COLLECTION_LEN)
-            .map(|i| (i.to_string(), json!(i)))
-            .collect();
-        let result = Variant::from_json(serde_json::Value::Object(big_object));
-        assert!(
-            matches!(result, Err(VariantError::JsonConversion(_))),
-            "object exceeding limit must fail"
-        );
-    }
-
-    #[test]
-    fn from_json_enforces_depth_limit() {
-        let mut nested: serde_json::Value = json!("leaf");
-        for _ in 0..=MAX_DEPTH {
-            nested = json!([nested]);
+    fn from_json_rejects_a_value_one_past_the_depth_and_size_limits() {
+        for (label, value) in [
+            ("depth", nested_arrays(MAX_DEPTH + 1)),
+            ("array length", array_of(MAX_COLLECTION_LEN + 1)),
+            ("object keys", object_of(MAX_COLLECTION_LEN + 1)),
+        ] {
+            assert!(
+                matches!(
+                    Variant::from_json(value),
+                    Err(VariantError::JsonConversion(_))
+                ),
+                "{label} over the limit must fail"
+            );
         }
-        let result = Variant::from_json(nested);
+    }
+
+    #[test]
+    fn from_json_accepts_a_value_sitting_exactly_on_the_depth_and_size_limits() {
+        for (label, value) in [
+            ("depth", nested_arrays(MAX_DEPTH)),
+            ("array length", array_of(MAX_COLLECTION_LEN)),
+            ("object keys", object_of(MAX_COLLECTION_LEN)),
+        ] {
+            assert!(
+                Variant::from_json(value).is_ok(),
+                "{label} at the limit must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn from_plain_json_enforces_the_same_depth_and_size_limits_as_the_tagged_form() {
+        for (label, value) in [
+            ("depth", nested_arrays(MAX_DEPTH + 1)),
+            ("array length", array_of(MAX_COLLECTION_LEN + 1)),
+            ("object keys", object_of(MAX_COLLECTION_LEN + 1)),
+        ] {
+            assert!(
+                matches!(
+                    Variant::from_plain_json(value),
+                    Err(VariantError::JsonConversion(_))
+                ),
+                "{label} over the limit must fail in the plain form too"
+            );
+        }
+    }
+
+    #[test]
+    fn from_plain_json_keeps_a_type_value_pair_as_a_plain_object() {
+        let tagged = json!({ "type": "int", "value": 7 });
+
+        assert_eq!(
+            Variant::from_json(tagged.clone()).unwrap(),
+            Variant::Int(7),
+            "the tagged form is the wire encoding from_json decodes"
+        );
+
+        let plain = Variant::from_plain_json(tagged).unwrap();
+        let map = plain.as_object().unwrap();
+        assert_eq!(map.get("type"), Some(&Variant::String("int".into())));
+        assert_eq!(map.get("value"), Some(&Variant::Int(7)));
+    }
+
+    #[test]
+    fn from_plain_json_keeps_a_type_value_pair_plain_below_the_top_level() {
+        let value = json!({
+            "payload": [{ "type": "datetime", "value": "1970-01-01T00:00:00Z" }]
+        });
+
+        let parsed = Variant::from_plain_json(value).unwrap();
+        let inner = &parsed.as_object().unwrap()["payload"].as_array().unwrap()[0];
+
         assert!(
-            matches!(result, Err(VariantError::JsonConversion(_))),
-            "depth exceeding limit must fail"
+            inner.is_object(),
+            "the plain form must not decode a tag it meets at depth: {inner:?}"
+        );
+    }
+
+    #[test]
+    fn from_plain_json_rejects_null_wherever_it_appears() {
+        for value in [json!(null), json!([1, null]), json!({ "a": { "b": null } })] {
+            assert!(
+                matches!(
+                    Variant::from_plain_json(value.clone()),
+                    Err(VariantError::NullNotSupported)
+                ),
+                "value {value}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_plain_json_reads_whole_numbers_as_int_and_everything_else_as_float() {
+        for (raw, expected) in [
+            ("0", Variant::Int(0)),
+            ("-3", Variant::Int(-3)),
+            ("9223372036854775807", Variant::Int(i64::MAX)),
+            ("-9223372036854775808", Variant::Int(i64::MIN)),
+            ("1.0", Variant::float(1.0).unwrap()),
+            ("-0.5", Variant::float(-0.5).unwrap()),
+            ("1e3", Variant::float(1000.0).unwrap()),
+            (
+                "9223372036854775808",
+                Variant::float(9223372036854775808.0).unwrap(),
+            ),
+        ] {
+            let value: serde_json::Value = serde_json::from_str(raw).unwrap();
+            assert_eq!(
+                Variant::from_plain_json(value).unwrap(),
+                expected,
+                "input {raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_value_without_a_datetime_survives_a_plain_json_round_trip() {
+        let mut tagged_looking = BTreeMap::new();
+        tagged_looking.insert("type".to_owned(), Variant::String("int".into()));
+        tagged_looking.insert("value".to_owned(), Variant::Int(7));
+
+        let mut root = BTreeMap::new();
+        root.insert("count".to_owned(), Variant::Int(-1));
+        root.insert("ratio".to_owned(), Variant::float(0.25).unwrap());
+        root.insert(
+            "label".to_owned(),
+            Variant::String("1970-01-01T00:00:00Z".into()),
+        );
+        root.insert(
+            "nested".to_owned(),
+            Variant::Array(vec![
+                Variant::Bool(false),
+                Variant::Object(tagged_looking),
+                Variant::Array(vec![]),
+            ]),
+        );
+        let original = Variant::Object(root);
+
+        assert_eq!(
+            Variant::from_plain_json(original.to_plain_json()).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn a_datetime_comes_back_from_a_plain_json_round_trip_as_its_rfc3339_string() {
+        let original = Variant::Datetime(time::OffsetDateTime::UNIX_EPOCH);
+
+        assert_eq!(
+            Variant::from_plain_json(original.to_plain_json()).unwrap(),
+            Variant::String("1970-01-01T00:00:00Z".into()),
+            "plain JSON carries no type tag, so the caller has to re-parse timestamps itself"
         );
     }
 
@@ -551,49 +696,23 @@ mod tests {
     }
 
     #[test]
-    fn variant_kind_from_contract_name_valid_lowercase() {
-        assert_eq!(
-            VariantKind::from_contract_name("int"),
-            Some(VariantKind::Int)
-        );
-        assert_eq!(
-            VariantKind::from_contract_name("float"),
-            Some(VariantKind::Float)
-        );
-        assert_eq!(
-            VariantKind::from_contract_name("bool"),
-            Some(VariantKind::Bool)
-        );
-        assert_eq!(
-            VariantKind::from_contract_name("string"),
-            Some(VariantKind::String)
-        );
-        assert_eq!(
-            VariantKind::from_contract_name("datetime"),
-            Some(VariantKind::Datetime)
-        );
-        assert_eq!(
-            VariantKind::from_contract_name("array"),
-            Some(VariantKind::Array)
-        );
-        assert_eq!(
-            VariantKind::from_contract_name("object"),
-            Some(VariantKind::Object)
-        );
+    fn variant_kind_round_trips_through_its_contract_name() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                VariantKind::from_contract_name(kind.contract_name()),
+                Some(kind),
+                "kind {kind:?}"
+            );
+        }
     }
 
     #[test]
-    fn variant_kind_from_contract_name_uppercase_rejected() {
-        assert_eq!(VariantKind::from_contract_name("INT"), None);
-        assert_eq!(VariantKind::from_contract_name("Float"), None);
-        assert_eq!(VariantKind::from_contract_name("BOOL"), None);
-    }
-
-    #[test]
-    fn variant_kind_from_contract_name_unknown_rejected() {
-        assert_eq!(VariantKind::from_contract_name("binary"), None);
-        assert_eq!(VariantKind::from_contract_name(""), None);
-        assert_eq!(VariantKind::from_contract_name("number"), None);
+    fn variant_kind_from_contract_name_rejects_non_canonical_names() {
+        for name in [
+            "INT", "Float", "BOOL", "binary", "number", "", " int", "int ",
+        ] {
+            assert_eq!(VariantKind::from_contract_name(name), None, "name {name:?}");
+        }
     }
 
     #[test]

@@ -543,3 +543,32 @@ fn level_color(level: Level, palette: &ForgePalette) -> Rgba {
         palette.text_muted
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::level_label_key;
+    use crate::log_level::SELECTABLE;
+
+    // Why: these keys reach `tr!` through a function call, so the literal scan in
+    // `tests/i18n_parity.rs` cannot see them - nothing else would catch a level label that
+    // renders as a raw key in the picker.
+    #[test]
+    fn every_level_label_key_is_defined_in_both_catalogs() {
+        for locale in ["en", "uk"] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("locales")
+                .join(locale)
+                .join("main.ftl");
+            let catalog = std::fs::read_to_string(&path).unwrap();
+            for level in SELECTABLE {
+                let key = level_label_key(&level);
+                let definition = format!("{key} = ");
+                assert!(
+                    catalog.lines().any(|line| line.starts_with(&definition)),
+                    "{locale}/main.ftl is missing {key}",
+                );
+            }
+        }
+    }
+}

@@ -614,10 +614,13 @@ mod tests {
     use std::sync::Mutex;
 
     use async_trait::async_trait;
+    use forge_types::LogLevel;
     use serde::{Deserialize, Serialize};
 
     use super::{
-        Density, Language, SettingsRepo, StorageError, get_json_setting, set_json_setting,
+        DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, Language, SettingsRepo, StorageError,
+        diagnostic_log_level, get_json_setting, reserved_keys, set_diagnostic_log_level,
+        set_json_setting,
     };
 
     fn _trait_is_dyn_safe(_: &dyn super::SettingsRepo) {}
@@ -718,6 +721,69 @@ mod tests {
         for bad in ["Cozy", "COMPACT", "dense", "", " cozy"] {
             let err = bad.parse::<Density>().unwrap_err();
             assert_eq!(err.0, bad);
+        }
+    }
+
+    // Why: the stored spelling is a persistence contract, not a formatting detail - respelling
+    // any of the five orphans every value already written under the old spelling, so each one
+    // is pinned here on purpose.
+    #[tokio::test]
+    async fn diagnostic_log_level_persists_each_level_under_its_canonical_lowercase_spelling() {
+        let repo = MapRepo::default();
+        for (level, spelling) in [
+            (LogLevel::Trace, "trace"),
+            (LogLevel::Debug, "debug"),
+            (LogLevel::Info, "info"),
+            (LogLevel::Warn, "warn"),
+            (LogLevel::Error, "error"),
+        ] {
+            set_diagnostic_log_level(&repo, &level).await.unwrap();
+            let stored = repo
+                .get_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL)
+                .await
+                .unwrap();
+            assert_eq!(stored.as_deref(), Some(spelling));
+            assert_eq!(diagnostic_log_level(&repo).await.unwrap(), level);
+        }
+    }
+
+    #[tokio::test]
+    async fn diagnostic_log_level_yields_the_default_when_absent_or_undecodable() {
+        let repo = MapRepo::default();
+        assert_eq!(
+            diagnostic_log_level(&repo).await.unwrap(),
+            DEFAULT_DIAGNOSTIC_LOG_LEVEL,
+        );
+
+        for stored in ["", "   ", "verbose", "warning", "traces", "5", "info,debug"] {
+            repo.set_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL, stored)
+                .await
+                .unwrap();
+            assert_eq!(
+                diagnostic_log_level(&repo).await.unwrap(),
+                DEFAULT_DIAGNOSTIC_LOG_LEVEL,
+                "expected the default for {stored:?}",
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn diagnostic_log_level_decodes_padded_and_mixed_case_spellings() {
+        let repo = MapRepo::default();
+        for (stored, expected) in [
+            (" trace ", LogLevel::Trace),
+            ("DEBUG", LogLevel::Debug),
+            ("\twarn\n", LogLevel::Warn),
+            ("eRrOr", LogLevel::Error),
+        ] {
+            repo.set_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL, stored)
+                .await
+                .unwrap();
+            assert_eq!(
+                diagnostic_log_level(&repo).await.unwrap(),
+                expected,
+                "for {stored:?}",
+            );
         }
     }
 }

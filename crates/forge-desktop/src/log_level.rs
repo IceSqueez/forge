@@ -79,3 +79,42 @@ pub fn apply(level: &LogLevel) -> bool {
         .get()
         .is_some_and(|handle| handle.reload(filter_for(level)).is_ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use forge_types::LogLevel;
+
+    use super::{SYMPHONIA_TARGETS, filter_for};
+
+    // Why: two failure modes in one comparison. The directives are joined by hand and handed to
+    // `EnvFilter::new`, which drops any directive it cannot parse without reporting it - a lost
+    // separator, a stray character or a word the parser rejects would leave the demotions, or
+    // the level itself, quietly absent and the process running at a level nobody chose. And the
+    // demotion word is capped at the quieter of `warn` and the selected level, so at the two
+    // quiet tiers it must follow the level down: an uncapped `=warn` would let decoder chatter
+    // outrank forge's own suppressed records, which is the noise the demotion exists to remove.
+    // Comparing the whole parsed set catches a dropped directive and an unintended extra alike.
+    #[test]
+    fn every_selectable_level_composes_into_that_level_plus_capped_decoder_demotions() {
+        for (level, word, demotion) in [
+            (LogLevel::Trace, "trace", "warn"),
+            (LogLevel::Debug, "debug", "warn"),
+            (LogLevel::Info, "info", "warn"),
+            (LogLevel::Warn, "warn", "warn"),
+            (LogLevel::Error, "error", "error"),
+        ] {
+            let mut expected: BTreeSet<String> = SYMPHONIA_TARGETS
+                .iter()
+                .map(|target| format!("{target}={demotion}"))
+                .collect();
+            expected.insert(word.to_owned());
+
+            let rendered = filter_for(&level).to_string();
+            let parsed: BTreeSet<String> = rendered.split(',').map(str::to_owned).collect();
+
+            assert_eq!(parsed, expected, "unexpected filter for {level:?}");
+        }
+    }
+}

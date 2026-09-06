@@ -339,4 +339,64 @@ mod tests {
         }
         assert_eq!(states, ["connecting", "connected", "disconnected"]);
     }
+
+    fn info_lifecycle_lines(
+        lines: &[crate::log_capture::CapturedLine],
+    ) -> Vec<&crate::log_capture::CapturedLine> {
+        crate::log_capture::forge_lines(lines)
+            .into_iter()
+            .filter(|line| line.level == tracing::Level::INFO)
+            .collect()
+    }
+
+    #[test]
+    fn connect_logs_a_started_line_identifying_the_channel_and_nothing_else() {
+        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::INFO, async {
+            platform().connect().await
+        });
+        result.unwrap();
+
+        let captured = info_lifecycle_lines(&lines);
+        assert_eq!(
+            captured.len(),
+            1,
+            "connect must log exactly one INFO lifecycle line, got {captured:?}"
+        );
+        let started = captured.first().unwrap();
+        assert_eq!(started.field("channel_id"), Some("UCtest"));
+        assert_eq!(
+            started.field_names(),
+            ["channel_id", "message"],
+            "the lifecycle line must carry the channel id and nothing else - any extra field \
+             here is an unreviewed value on an INFO-level record: {started:?}"
+        );
+    }
+
+    // Why: an unpaired lifecycle line is the failure mode operators hit - a `stopped` that never
+    // arrives leaves the log claiming the poller is still running long after it exited.
+    #[test]
+    fn a_connect_disconnect_cycle_logs_the_started_line_then_the_stopped_line() {
+        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::INFO, async {
+            let p = platform();
+            p.connect().await.unwrap();
+            p.disconnect().await.unwrap();
+            // The poller task is spawned but unpolled until block_on yields; cancellation is
+            // already set, so it observes it on its first poll and returns without any await.
+            tokio::task::yield_now().await;
+        });
+
+        let messages: Vec<&str> = info_lifecycle_lines(&lines)
+            .iter()
+            .map(|line| line.message())
+            .collect();
+        assert_eq!(
+            messages.len(),
+            2,
+            "expected a started/stopped pair, got {messages:?}"
+        );
+        assert!(
+            messages[0].contains("started") && messages[1].contains("stopped"),
+            "the pair must be ordered started-then-stopped, got {messages:?}"
+        );
+    }
 }

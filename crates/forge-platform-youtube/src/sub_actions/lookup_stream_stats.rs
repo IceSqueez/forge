@@ -148,6 +148,7 @@ mod tests {
     use crate::quota_state::QuotaState;
 
     const TOKEN_SENTINEL: &str = "yt-stats-runner-token";
+    const BODY_SENTINEL: &str = "yt-stats-response-body-sentinel";
 
     struct NoopPublisher;
     impl EventPublisher for NoopPublisher {
@@ -231,12 +232,14 @@ mod tests {
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
+    // Why: this text is persisted to run history, not only to the log, so a leaked API error
+    // body outlives the session it was produced in.
     #[tokio::test]
-    async fn fetch_error_maps_to_failed_without_leaking_token_or_url() {
+    async fn fetch_error_maps_to_failed_without_leaking_token_url_or_response_body() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/videos"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(BODY_SENTINEL))
             .mount(&server)
             .await;
 
@@ -250,5 +253,10 @@ mod tests {
         };
         assert!(!msg.contains(TOKEN_SENTINEL), "leaked token: {msg}");
         assert!(!msg.contains(&server.uri()), "leaked url: {msg}");
+        assert!(!msg.contains(BODY_SENTINEL), "leaked response body: {msg}");
+        assert!(
+            msg.contains("500"),
+            "the status must survive so the failure stays diagnosable: {msg}"
+        );
     }
 }

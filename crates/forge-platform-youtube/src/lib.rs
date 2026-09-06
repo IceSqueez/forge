@@ -11,6 +11,8 @@ pub mod credentials_manager;
 pub(crate) mod error_shape;
 mod event_channel;
 pub mod live_chat_id;
+#[cfg(test)]
+mod log_capture;
 pub mod moderation;
 mod payload_fields;
 pub mod quota_state;

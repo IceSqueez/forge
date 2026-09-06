@@ -2176,4 +2176,82 @@ mod tests {
             "an uninterrupted live session must emit online once, got {events:?}"
         );
     }
+
+    /// Marks the request URL so a leak is identifiable regardless of the host and port.
+    const URL_SENTINEL: &str = "yt-url-leak-probe";
+
+    fn poller_at(api_base: String) -> YoutubeChatPoller {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            make_quota(),
+        )
+        .with_api_base(api_base)
+    }
+
+    // `ChatMessagesResponse` is not `Debug`, so the Ok arm cannot go through `unwrap_err`.
+    fn network_reason<T>(result: Result<T, PlatformError>) -> String {
+        match result {
+            Err(PlatformError::Network { reason }) => reason,
+            Err(other) => panic!("expected PlatformError::Network, got {other:?}"),
+            Ok(_) => panic!("expected the fetch to fail"),
+        }
+    }
+
+    /// Both fetches are hit: they build their URLs independently, so a missing `without_url()`
+    /// on either one is a separate leak.
+    async fn network_reasons_from_both_fetches(poller: &YoutubeChatPoller) -> [String; 2] {
+        [
+            network_reason(poller.fetch_live_chat_id("tok").await),
+            network_reason(poller.fetch_chat_messages("tok", "lc-1", None).await),
+        ]
+    }
+
+    #[tokio::test]
+    async fn refused_connection_reports_a_network_reason_stripped_of_the_request_url() {
+        // Port 1 is never bound, so the refusal is immediate and needs no ephemeral-port race.
+        let host = "127.0.0.1:1";
+        let poller = poller_at(format!("http://{host}/{URL_SENTINEL}"));
+
+        for reason in network_reasons_from_both_fetches(&poller).await {
+            assert!(
+                !reason.contains(URL_SENTINEL),
+                "request path leaked into the error: {reason:?}"
+            );
+            assert!(
+                !reason.contains(host),
+                "request host leaked into the error: {reason:?}"
+            );
+            assert!(
+                !reason.is_empty(),
+                "the transport failure must still be described: {reason:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn undecodable_body_reports_a_network_reason_stripped_of_the_request_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("<html>not json</html>"))
+            .mount(&server)
+            .await;
+
+        let poller = poller_at(format!("{}/{URL_SENTINEL}", server.uri()));
+
+        for reason in network_reasons_from_both_fetches(&poller).await {
+            assert!(
+                !reason.contains(URL_SENTINEL),
+                "request path leaked into the decode error: {reason:?}"
+            );
+            assert!(
+                !reason.contains(&server.uri()),
+                "request url leaked into the decode error: {reason:?}"
+            );
+        }
+    }
 }

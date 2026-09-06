@@ -69,7 +69,7 @@ impl<S: Subscriber> Layer<S> for LogTailLayer {
             at: OffsetDateTime::now_utc(),
             level: *metadata.level(),
             target: metadata.target(),
-            message,
+            message: crate::log_scrub::scrub(&message).into_owned(),
         });
     }
 }

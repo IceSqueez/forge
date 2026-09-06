@@ -32,6 +32,8 @@ mod integration_quick_action_modal;
 mod integration_quick_actions;
 mod integrations;
 mod log_archive;
+mod log_level;
+mod log_scrub;
 mod log_tail;
 mod midi_mapping_modal;
 mod midi_screen;
@@ -128,7 +130,10 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(default_env_filter);
-    let console_layer = fmt::layer().with_target(false);
+    let filter_layer = crate::log_level::reloadable(env_filter);
+    let console_layer = fmt::layer()
+        .with_target(false)
+        .with_writer(crate::log_scrub::scrubbed(std::io::stdout));
     let log_tail = LogTail::new();
 
     let log_dir = paths::data_dir().join("logs");
@@ -137,7 +142,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
             let appender = tracing_appender::rolling::daily(&log_dir, "forge.log");
             let (writer, guard) = tracing_appender::non_blocking(appender);
             let layer = fmt::layer()
-                .with_writer(writer)
+                .with_writer(crate::log_scrub::scrubbed(writer))
                 .with_ansi(false)
                 .with_target(true);
             (Some(layer), Some(guard))
@@ -146,7 +151,7 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
     };
 
     tracing_subscriber::registry()
-        .with(env_filter)
+        .with(filter_layer)
         .with(console_layer)
         .with(file_layer)
         .with(log_tail.layer())

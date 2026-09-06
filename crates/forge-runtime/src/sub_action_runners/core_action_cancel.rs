@@ -31,9 +31,7 @@ impl CoreActionCancelRunner {
         }
 
         let Ok(action_id) = resolved.parse::<ActionId>() else {
-            return SubActionOutcome::Failed(format!(
-                "core.action.cancel: invalid action_id '{resolved}'"
-            ));
+            return SubActionOutcome::Failed("core.action.cancel: invalid action_id".to_owned());
         };
         self.cancel_registry.cancel(action_id);
         SubActionOutcome::Success

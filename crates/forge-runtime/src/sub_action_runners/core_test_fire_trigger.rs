@@ -36,9 +36,9 @@ impl CoreTestFireTriggerRunner {
         let raw_id = config.str("trigger_instance_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(raw_id);
         let Ok(instance_id) = resolved.parse::<TriggerInstanceId>() else {
-            return SubActionOutcome::Failed(format!(
-                "core.test.fire_trigger: invalid trigger_instance_id '{resolved}'"
-            ));
+            return SubActionOutcome::Failed(
+                "core.test.fire_trigger: invalid trigger_instance_id".to_owned(),
+            );
         };
 
         let trigger_kind = match self.trigger_instances.get(instance_id).await {

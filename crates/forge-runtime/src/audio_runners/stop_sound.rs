@@ -85,7 +85,9 @@ impl SubActionRunner for StopSoundRunner {
             let parse_result: Result<ClipId, _> =
                 serde_json::from_str(&format!("\"{interpolated}\""));
             match parse_result {
-                Err(_) => SubActionOutcome::Failed(format!("invalid clip_id: {interpolated}")),
+                Err(_) => {
+                    SubActionOutcome::Failed("soundboard.sound.stop: invalid clip_id".to_owned())
+                }
                 Ok(clip_id) => match self.sound_player.stop(clip_id).await {
                     Ok(()) => SubActionOutcome::Success,
                     Err(e) => SubActionOutcome::Failed(e.to_string()),

@@ -23,9 +23,9 @@ impl CoreTriggerEnableRunner {
         let raw = config.str("trigger_instance_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(raw);
         let Ok(instance_id) = resolved.parse::<TriggerInstanceId>() else {
-            return SubActionOutcome::Failed(format!(
-                "core.trigger.enable: invalid trigger_instance_id '{resolved}'"
-            ));
+            return SubActionOutcome::Failed(
+                "core.trigger.enable: invalid trigger_instance_id".to_owned(),
+            );
         };
         match self.trigger_instances.set_enabled(instance_id, true).await {
             Ok(()) => SubActionOutcome::Success,

@@ -3,12 +3,10 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_types::{ArgStack, LogLevel, SubActionConfig, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, LogLevel, SCRIPT_LOG_TARGET, SubActionConfig, SubActionTelemetry, Variant,
+};
 use tracing::{debug, error, info, trace, warn};
-
-/// Attributes script-authored text to its own target, so the diagnostic bundle can section off
-/// the lines forge did not choose and count them before the user publishes the file.
-pub const SCRIPT_LOG_TARGET: &str = "forge::action";
 
 pub struct CoreLogWriteRunner;
 

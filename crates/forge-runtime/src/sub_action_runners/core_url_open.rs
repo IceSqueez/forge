@@ -80,7 +80,7 @@ impl SubActionRunner for CoreUrlOpenRunner {
                 Err(e) => SubActionOutcome::Failed(e.to_string()),
             }
         } else {
-            SubActionOutcome::Failed(format!("rejected non-http(s) URL: {url}"))
+            SubActionOutcome::Failed("core.url.open: rejected a non-http(s) URL".to_owned())
         };
 
         (timer.finish(outcome), None)

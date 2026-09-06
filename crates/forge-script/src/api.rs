@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
-use forge_types::{EventId, ScriptId, Variant};
+use forge_types::{EventId, SCRIPT_LOG_TARGET, ScriptId, Variant};
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
 
@@ -88,7 +88,7 @@ impl ForgeApi {
         root.set_native_fn(
             "log",
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
-                tracing::info!(caused_by = %caused_by, message = %msg);
+                tracing::info!(target: SCRIPT_LOG_TARGET, caused_by = %caused_by, message = %msg);
                 log_pub.publish(script_log_event(
                     "info",
                     msg.as_str(),
@@ -103,7 +103,7 @@ impl ForgeApi {
         root.set_native_fn(
             "warn",
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
-                tracing::warn!(caused_by = %caused_by, message = %msg);
+                tracing::warn!(target: SCRIPT_LOG_TARGET, caused_by = %caused_by, message = %msg);
                 warn_pub.publish(script_log_event(
                     "warn",
                     msg.as_str(),
@@ -119,7 +119,7 @@ impl ForgeApi {
         root.set_native_fn(
             "error",
             move |msg: ImmutableString| -> Result<(), Box<EvalAltResult>> {
-                tracing::error!(caused_by = %caused_by, message = %msg);
+                tracing::error!(target: SCRIPT_LOG_TARGET, caused_by = %caused_by, message = %msg);
                 error_counter.fetch_add(1, Ordering::Relaxed);
                 error_pub.publish(script_log_event(
                     "error",

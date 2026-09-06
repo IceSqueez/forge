@@ -78,7 +78,7 @@ impl SubActionRunner for CoreFileDeleteRunner {
                     if ignore_missing {
                         SubActionOutcome::Success
                     } else {
-                        SubActionOutcome::Failed(format!("file not found: {interpolated_path}"))
+                        SubActionOutcome::Failed("core.file.delete: file not found".to_owned())
                     }
                 }
                 Err(e) => SubActionOutcome::Failed(format!("delete failed: {e}")),

@@ -23,9 +23,7 @@ impl CoreActionEnableRunner {
         let raw = config.str("action_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(raw);
         let Ok(action_id) = resolved.parse::<ActionId>() else {
-            return SubActionOutcome::Failed(format!(
-                "core.action.enable: invalid action_id '{resolved}'"
-            ));
+            return SubActionOutcome::Failed("core.action.enable: invalid action_id".to_owned());
         };
         match self.actions.get(action_id).await {
             Ok(Some(mut action)) => {

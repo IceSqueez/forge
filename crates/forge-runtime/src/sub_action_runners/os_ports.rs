@@ -97,7 +97,9 @@ pub struct SystemUrlOpenPort;
 
 impl UrlOpenPort for SystemUrlOpenPort {
     fn open(&self, url: String) -> Result<(), OsPortError> {
-        open::that_detached(url).map_err(|e| OsPortError::Failed(e.to_string()))
+        // Why: open 5.4's launcher error Display renders the spawned `Command`, whose arguments are the target URL and any query material in it.
+        open::that_detached(url)
+            .map_err(|e| OsPortError::Failed(format!("launcher failed: {}", e.kind())))
     }
 }
 

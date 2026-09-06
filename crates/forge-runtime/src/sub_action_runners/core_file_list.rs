@@ -121,11 +121,11 @@ impl SubActionRunner for CoreFileListRunner {
             ),
             Ok(abs_path) => match tokio::fs::metadata(&abs_path).await {
                 Err(_) => (
-                    SubActionOutcome::Failed(format!("directory not found: {interpolated_path}")),
+                    SubActionOutcome::Failed("core.file.list: directory not found".to_owned()),
                     None,
                 ),
                 Ok(meta) if !meta.is_dir() => (
-                    SubActionOutcome::Failed(format!("not a directory: {interpolated_path}")),
+                    SubActionOutcome::Failed("core.file.list: path is not a directory".to_owned()),
                     None,
                 ),
                 Ok(_) => {

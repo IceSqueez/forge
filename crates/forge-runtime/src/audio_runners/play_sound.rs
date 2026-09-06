@@ -83,7 +83,7 @@ impl SubActionRunner for PlaySoundRunner {
         let parse_result: Result<ClipId, _> = serde_json::from_str(&format!("\"{interpolated}\""));
 
         let outcome = match parse_result {
-            Err(_) => SubActionOutcome::Failed(format!("invalid clip_id: {interpolated}")),
+            Err(_) => SubActionOutcome::Failed("soundboard.sound.play: invalid clip_id".to_owned()),
             Ok(clip_id) => {
                 SubActionOutcome::from_result(&self.sound_player.play(clip_id, None).await)
             }

@@ -795,7 +795,7 @@ fn level_color(level: Level, palette: &ForgePalette) -> Rgba {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::level_label_key;
+    use super::{Bundle, LogLevel, StatementTone, export_statement, level_label_key};
     use crate::log_level::SELECTABLE;
 
     // Why: these keys reach `tr!` through a function call, so the literal scan in
@@ -818,5 +818,110 @@ mod tests {
                 );
             }
         }
+    }
+
+    const TRACE_NOTE: &str = "settings_diagnostics_export_preview_trace";
+    const TRACE_NONE_NOTE: &str = "settings_diagnostics_export_preview_trace_none";
+    const SCRIPT_NOTE: &str = "settings_diagnostics_export_preview_script";
+    const SCRIPT_NONE_NOTE: &str = "settings_diagnostics_export_preview_script_none";
+    const ELIDED_NOTE: &str = "settings_diagnostics_export_preview_elided";
+
+    fn bundle(script_lines: usize, command_lines: usize, elided_bytes: u64) -> Bundle {
+        Bundle {
+            text: "x".repeat(2048),
+            script_lines,
+            command_lines,
+            elided_bytes,
+        }
+    }
+
+    /// No locale bundle is installed in a unit test, so `tr!` yields the key itself - which is
+    /// exactly the identity of the note being asserted.
+    fn notes(bundle: &Bundle, level: &LogLevel) -> Vec<(String, bool)> {
+        export_statement(bundle, level)
+            .into_iter()
+            .map(|note| (note.text.to_string(), note.tone == StatementTone::Alert))
+            .collect()
+    }
+
+    fn note_keys(bundle: &Bundle, level: &LogLevel) -> Vec<String> {
+        notes(bundle, level)
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect()
+    }
+
+    /// Why: O4 - the command-line warning is the one thing the reporter must see before
+    /// publishing, and the bundle can carry command lines the level has since stopped producing.
+    /// Keying the warning off the live level instead of the count would silently drop it.
+    #[test]
+    fn the_command_line_warning_follows_the_bundle_contents_not_the_active_level() {
+        for level in SELECTABLE {
+            assert!(
+                note_keys(&bundle(0, 3, 0), &level).contains(&TRACE_NOTE.to_owned()),
+                "a bundle carrying command lines must warn at level {level:?}",
+            );
+            assert!(
+                !note_keys(&bundle(0, 0, 0), &level).contains(&TRACE_NOTE.to_owned()),
+                "a bundle with no command lines must not claim it carries them at {level:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_trace_level_bundle_with_no_matched_command_still_explains_what_trace_records() {
+        assert!(
+            note_keys(&bundle(0, 0, 0), &LogLevel::Trace).contains(&TRACE_NONE_NOTE.to_owned()),
+        );
+
+        for level in SELECTABLE.into_iter().filter(|l| *l != LogLevel::Trace) {
+            assert!(
+                !note_keys(&bundle(0, 0, 0), &level).contains(&TRACE_NONE_NOTE.to_owned()),
+                "level {level:?} must not explain trace behaviour it is not running at",
+            );
+        }
+        assert!(
+            !note_keys(&bundle(0, 2, 0), &LogLevel::Trace).contains(&TRACE_NONE_NOTE.to_owned()),
+            "the no-match wording must give way to the real count",
+        );
+    }
+
+    #[test]
+    fn the_command_line_warning_is_an_alert_and_the_no_match_explanation_is_too() {
+        for (bundle, key) in [
+            (bundle(0, 1, 0), TRACE_NOTE),
+            (bundle(0, 0, 0), TRACE_NONE_NOTE),
+        ] {
+            let alerted = notes(&bundle, &LogLevel::Trace)
+                .into_iter()
+                .find(|(note, _)| note == key)
+                .map(|(_, alert)| alert);
+            assert_eq!(alerted, Some(true), "{key} must be styled as an alert");
+        }
+    }
+
+    #[test]
+    fn the_script_note_switches_on_the_script_line_count() {
+        for (count, expected, other, alert) in [
+            (0usize, SCRIPT_NONE_NOTE, SCRIPT_NOTE, false),
+            (1, SCRIPT_NOTE, SCRIPT_NONE_NOTE, true),
+            (900, SCRIPT_NOTE, SCRIPT_NONE_NOTE, true),
+        ] {
+            let notes = notes(&bundle(count, 0, 0), &LogLevel::Info);
+            assert!(
+                notes.contains(&(expected.to_owned(), alert)),
+                "{count} script lines must state {expected} as alert={alert}: {notes:?}",
+            );
+            assert!(
+                !notes.iter().any(|(key, _)| key == other),
+                "{count} script lines must not also state {other}",
+            );
+        }
+    }
+
+    #[test]
+    fn the_elided_note_appears_only_when_bytes_were_left_out() {
+        assert!(!note_keys(&bundle(0, 0, 0), &LogLevel::Info).contains(&ELIDED_NOTE.to_owned()));
+        assert!(note_keys(&bundle(0, 0, 1), &LogLevel::Info).contains(&ELIDED_NOTE.to_owned()));
     }
 }

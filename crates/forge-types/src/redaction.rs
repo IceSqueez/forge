@@ -45,6 +45,24 @@ mod tests {
         );
     }
 
+    /// Why: the bundle header promises a reader that anything opening with `STAMP` was withheld
+    /// on purpose. That promise only holds while every placeholder rendering starts with it, so a
+    /// new placeholder shape that drifts off the stamp must fail here rather than in a bug report.
+    #[test]
+    fn every_placeholder_rendering_opens_with_the_shared_stamp() {
+        for rendering in [
+            MARKER.to_owned(),
+            format!("{Redacted:?}"),
+            format!("{:?}", RedactedText::new("")),
+            format!("{:?}", RedactedText::new("Привіт")),
+        ] {
+            assert!(
+                rendering.starts_with(STAMP),
+                "{rendering:?} does not open with {STAMP:?}",
+            );
+        }
+    }
+
     #[test]
     fn redacted_text_length_counts_characters_not_bytes() {
         for (input, chars) in [
@@ -60,15 +78,5 @@ mod tests {
                 "input {input:?}"
             );
         }
-    }
-
-    /// Why: a byte count would report a Cyrillic message as twice its real size, which reads as a
-    /// different message than the one the viewer sent.
-    #[test]
-    fn redacted_text_length_of_a_multibyte_string_is_not_its_byte_length() {
-        assert_ne!(
-            format!("{:?}", RedactedText::new("Привіт")),
-            format!("<redacted len={}>", "Привіт".len()),
-        );
     }
 }

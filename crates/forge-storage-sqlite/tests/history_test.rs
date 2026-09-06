@@ -372,6 +372,75 @@ async fn recent_for_builtin_returns_empty_for_unknown_builtin() {
     assert!(records.is_empty());
 }
 
+/// Distinct `started_at` values on purpose: the ordering has no tie-break, so equal timestamps
+/// would make the expected order arbitrary.
+async fn seed_mixed_runs(backend: &SqliteBackend) -> ActionId {
+    let repo = backend.history_repo();
+    let triggered = ActionId::new();
+
+    repo.save(&make_quick_ctx_at(
+        ActionId::new(),
+        "twitch",
+        "oldest",
+        fixed_instant(10),
+    ))
+    .await
+    .expect("save quick run");
+    repo.save(&make_ctx_at(triggered, EventId::new(), fixed_instant(20)))
+        .await
+        .expect("save trigger run");
+    repo.save(&make_quick_ctx_at(
+        ActionId::new(),
+        "obs",
+        "newest",
+        fixed_instant(30),
+    ))
+    .await
+    .expect("save quick run");
+
+    triggered
+}
+
+#[tokio::test]
+async fn recent_interleaves_action_and_builtin_runs_newest_first() {
+    let backend = setup().await;
+    seed_mixed_runs(&backend).await;
+
+    let records = backend.history_repo().recent(100).await.expect("recent");
+
+    assert_eq!(
+        run_labels(&records),
+        vec!["obs/newest", "trigger", "twitch/oldest"],
+        "a builtin run and an action run share one newest-first ordering"
+    );
+}
+
+#[tokio::test]
+async fn recent_limit_keeps_the_newest_rows_and_zero_keeps_none() {
+    let backend = setup().await;
+    seed_mixed_runs(&backend).await;
+
+    for (limit, expected) in [
+        (0u32, vec![]),
+        (1, vec!["obs/newest"]),
+        (2, vec!["obs/newest", "trigger"]),
+        (3, vec!["obs/newest", "trigger", "twitch/oldest"]),
+        (u32::MAX, vec!["obs/newest", "trigger", "twitch/oldest"]),
+    ] {
+        let records = backend.history_repo().recent(limit).await.expect("recent");
+        assert_eq!(run_labels(&records), expected, "limit {limit} of 3 rows");
+    }
+}
+
+#[tokio::test]
+async fn recent_returns_empty_when_nothing_has_run() {
+    let backend = setup().await;
+
+    let records = backend.history_repo().recent(25).await.expect("recent");
+
+    assert!(records.is_empty());
+}
+
 #[tokio::test]
 async fn stats_summary_omits_actions_whose_only_runs_are_quick_actions() {
     let backend = setup().await;

@@ -208,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn bundle_attributes_each_log_file_to_its_name_oldest_first() {
+    fn corpus_attributes_each_log_file_to_its_name_oldest_first() {
         let dir = ScratchDir::new("bundle");
         dir.write("forge.log.2026-08-01", b"newest-marker");
         dir.write("forge.log.2026-01-05", b"oldest-marker");
@@ -228,18 +228,38 @@ mod tests {
         );
         assert!(
             !out.contains("unrelated-marker"),
-            "a non-log file must not be pulled into the bundle:\n{out}",
+            "a non-log file must not be pulled into the corpus:\n{out}",
+        );
+    }
+
+    /// Why: R4 - no literal names in the bundle, and the export statement promises the reporter
+    /// that file paths are withheld. The log directory sits under the OS account's data dir, so
+    /// an absolute path in a section header publishes the account name to a public issue.
+    #[test]
+    fn corpus_names_each_file_without_disclosing_the_directory_holding_it() {
+        let dir = ScratchDir::new("nova_the_broadcaster");
+        dir.write("forge.log.2026-08-01", b"body\n");
+
+        let out = corpus(dir.path(), usize::MAX).expect("corpus").text;
+
+        assert!(
+            out.contains("forge.log.2026-08-01"),
+            "the file name still attributes its lines:\n{out}",
+        );
+        assert!(
+            !out.contains("nova_the_broadcaster"),
+            "the enclosing directory reached the corpus:\n{out}",
         );
     }
 
     #[test]
-    fn bundle_marks_an_unreadable_file_inline_and_keeps_the_remaining_ones() {
+    fn corpus_marks_an_unreadable_file_inline_and_keeps_the_remaining_ones() {
         let dir = ScratchDir::new("unreadable");
         dir.write("forge.log.2026-01-05", &[0xff, 0xfe, 0x00, 0xff]);
         dir.write("forge.log.2026-08-01", b"still-included");
 
         let out = corpus(dir.path(), usize::MAX)
-            .expect("an unreadable file must not fail the whole bundle")
+            .expect("an unreadable file must not fail the whole corpus")
             .text;
 
         assert!(out.contains("<unreadable:"), "no inline marker:\n{out}");
@@ -250,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn bundle_of_a_missing_directory_matches_the_bundle_of_an_empty_one() {
+    fn corpus_of_a_missing_directory_matches_the_corpus_of_an_empty_one() {
         let dir = ScratchDir::new("bundle_missing");
 
         assert_eq!(
@@ -258,6 +278,73 @@ mod tests {
                 .expect("a missing log directory is not an error"),
             corpus(dir.path(), usize::MAX).expect("corpus of an empty directory"),
         );
+    }
+
+    /// The header framing is produced by `corpus` itself; measuring it from an unbudgeted run
+    /// keeps the fixture from restating the production format.
+    fn framing_len(dir: &ScratchDir, bodies: usize) -> usize {
+        corpus(dir.path(), usize::MAX).expect("corpus").text.len() - bodies
+    }
+
+    #[test]
+    fn corpus_fills_the_budget_from_the_newest_file_backwards() {
+        let dir = ScratchDir::new("budget_newest");
+        let old = "old-line\n";
+        let new = "new-line\n";
+        dir.write("forge.log.2026-01-05", old.as_bytes());
+        dir.write("forge.log.2026-08-01", new.as_bytes());
+        let framing = framing_len(&dir, old.len() + new.len());
+
+        // Room for both headers and the newest body, one byte short of the oldest body.
+        let out = corpus(dir.path(), framing + new.len()).expect("corpus");
+
+        assert!(
+            out.text.contains("new-line"),
+            "newest body dropped:\n{out:?}"
+        );
+        assert!(
+            !out.text.contains("old-line"),
+            "the oldest body must be the one left out:\n{out:?}",
+        );
+        assert_eq!(out.files_kept, 1);
+        assert_eq!(out.elided_bytes, old.len() as u64);
+    }
+
+    /// Why: the corpus is cut by byte budget, and a Cyrillic or emoji log line straddles the cut.
+    /// Slicing at the raw offset would panic; the tail must resume at the next whole line.
+    #[test]
+    fn corpus_cuts_a_partial_file_on_a_line_start_past_a_multibyte_character() {
+        let dir = ScratchDir::new("budget_multibyte");
+        let body = "a\nПривіт\nz\n";
+        dir.write("forge.log.2026-08-01", body.as_bytes());
+        let framing = framing_len(&dir, body.len());
+
+        // Leaves room for 12 of the 17 body bytes, so the cut lands inside `р`.
+        let out = corpus(dir.path(), framing + 12).expect("corpus");
+
+        assert!(out.text.ends_with("z\n"), "tail lost:\n{out:?}");
+        assert!(
+            !out.text.contains('П') && !out.text.contains('и'),
+            "a partially-cut line survived:\n{out:?}",
+        );
+        assert_eq!(
+            out.elided_bytes,
+            (body.len() - "z\n".len()) as u64,
+            "elided bytes must count everything before the surviving line",
+        );
+        assert_eq!(out.files_kept, 1);
+    }
+
+    #[test]
+    fn corpus_of_a_budget_too_small_for_any_framing_keeps_no_file() {
+        let dir = ScratchDir::new("budget_zero");
+        dir.write("forge.log.2026-08-01", b"body\n");
+
+        let out = corpus(dir.path(), 0).expect("corpus");
+
+        assert_eq!(out.text, "");
+        assert_eq!(out.files_kept, 0);
+        assert_eq!(out.elided_bytes, 5);
     }
 
     #[test]

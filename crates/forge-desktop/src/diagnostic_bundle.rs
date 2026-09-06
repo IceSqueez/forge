@@ -392,3 +392,265 @@ fn stamp_time(at: OffsetDateTime) -> String {
         at.second(),
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use forge_platform_core::{
+        BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
+        DetailSection, HeaderAction, HealthMetric, HealthStream, QuickAction, QuickActions,
+    };
+
+    use super::*;
+    use crate::integrations::BuiltinObject;
+
+    /// A value no field of the bundle may pass through.
+    const SECRET: &str = "nova_the_broadcaster";
+
+    fn line(level: &str, target: &str, message: &str) -> String {
+        format!("2026-09-06T20:55:20.123456Z {level} {target}: {message}")
+    }
+
+    #[test]
+    fn target_of_reads_the_third_field_so_a_message_quoting_a_target_is_not_one() {
+        for (input, expected) in [
+            (
+                line(" INFO", SCRIPT_LOG_TARGET, "message=\"hi\""),
+                Some(SCRIPT_LOG_TARGET),
+            ),
+            (
+                // A message that names a target must not be attributed to it.
+                line(" INFO", "forge_desktop", "saw forge::action: in the text"),
+                Some("forge_desktop"),
+            ),
+            (
+                line(" WARN", "no_colon_here", "x").replace("no_colon_here:", "no_colon_here"),
+                None,
+            ),
+            ("two fields".to_owned(), None),
+            (String::new(), None),
+        ] {
+            assert_eq!(target_of(&input), expected, "line {input:?}");
+        }
+    }
+
+    #[test]
+    fn split_script_lines_moves_only_script_target_lines_out_of_the_corpus() {
+        let corpus = [
+            line(" INFO", "forge_desktop", "boot"),
+            line(" INFO", SCRIPT_LOG_TARGET, "message=\"from my action\""),
+            line("TRACE", COMMAND_LINE_TARGET, "line=\"!so someone\""),
+            line(" WARN", SCRIPT_LOG_TARGET, "message=\"second\""),
+        ]
+        .join("\n");
+
+        let (script, rest) = split_script_lines(&corpus);
+
+        assert_eq!(script.lines().count(), 2);
+        assert!(
+            script
+                .lines()
+                .all(|l| target_of(l) == Some(SCRIPT_LOG_TARGET))
+        );
+        assert_eq!(rest.lines().count(), 2);
+        assert!(
+            !rest.contains("from my action") && !rest.contains("second"),
+            "a script line stayed behind in the corpus:\n{rest}",
+        );
+    }
+
+    #[test]
+    fn keep_newest_lines_leaves_text_that_already_fits_untouched() {
+        let text = "one\ntwo\n".to_owned();
+
+        for budget in [text.len(), text.len() + 1, usize::MAX] {
+            assert_eq!(
+                keep_newest_lines(text.clone(), budget),
+                (text.clone(), 0),
+                "budget {budget}",
+            );
+        }
+    }
+
+    #[test]
+    fn keep_newest_lines_drops_whole_leading_lines_and_reports_their_bytes() {
+        let text = "oldest\nmiddle\nnewest\n".to_owned();
+
+        let (kept, elided) = keep_newest_lines(text, 8);
+
+        assert_eq!(kept, "newest\n");
+        assert_eq!(elided, "oldest\nmiddle\n".len() as u64);
+    }
+
+    /// Why: the user-script section is cut at a byte budget, and a script logging Ukrainian or
+    /// emoji puts a multi-byte character across the cut. Slicing at the raw byte offset is a
+    /// panic, and the release profile aborts on panic - the export must survive this input.
+    #[test]
+    fn keep_newest_lines_does_not_cut_inside_a_multibyte_character() {
+        let text = "a\nПривіт\nz\n".to_owned();
+
+        let (kept, elided) = keep_newest_lines(text, 12);
+
+        assert_eq!(kept, "z\n");
+        assert_eq!(elided, "a\nПривіт\n".len() as u64);
+    }
+
+    #[test]
+    fn health_shape_lets_no_metric_text_through() {
+        for (value, expected) in [
+            (
+                HealthValue::Status {
+                    label: SECRET.to_owned(),
+                    active: true,
+                    detail: Some(SECRET.to_owned()),
+                },
+                "status(active=true)",
+            ),
+            (
+                HealthValue::Text {
+                    primary: SECRET.to_owned(),
+                    secondary: Some(SECRET.to_owned()),
+                },
+                "text",
+            ),
+            (
+                HealthValue::Pair {
+                    left: SECRET.to_owned(),
+                    right: SECRET.to_owned(),
+                },
+                "pair",
+            ),
+            (
+                HealthValue::Ratio {
+                    used: 3,
+                    total: 800,
+                    reset_hint: Some(SECRET.to_owned()),
+                },
+                "ratio(3/800)",
+            ),
+        ] {
+            assert_eq!(health_shape(&value), expected);
+        }
+    }
+
+    struct ProbeBuiltin {
+        id: BuiltinId,
+    }
+
+    impl ProbeBuiltin {
+        fn object(id: &str) -> BuiltinObject {
+            let probe = Arc::new(Self {
+                id: BuiltinId::new(id),
+            });
+            BuiltinObject {
+                icon: forge_platform_core::SectionIcon::new("bug"),
+                status: probe.clone(),
+                health: probe.clone(),
+                content: probe.clone(),
+                quick: probe,
+                control: None,
+                obs_client: None,
+            }
+        }
+    }
+
+    impl BuiltinStatus for ProbeBuiltin {
+        fn id(&self) -> &BuiltinId {
+            &self.id
+        }
+        fn display_name(&self) -> &str {
+            SECRET
+        }
+        fn version(&self) -> Option<&str> {
+            Some("5.6.1")
+        }
+        fn connection(&self) -> ConnectionState {
+            ConnectionState::Connected
+        }
+        fn uptime(&self) -> Option<Duration> {
+            Some(Duration::from_secs(90))
+        }
+        fn endpoint(&self) -> Option<&str> {
+            Some(SECRET)
+        }
+        fn capability_flags(&self) -> CapabilityFlags {
+            CapabilityFlags {
+                limited: false,
+                label: Some(SECRET.to_owned()),
+            }
+        }
+        fn header_actions(&self) -> Vec<HeaderAction> {
+            Vec::new()
+        }
+        fn hero_name(&self) -> Option<&str> {
+            Some(SECRET)
+        }
+    }
+
+    impl BuiltinHealth for ProbeBuiltin {
+        fn metrics(&self) -> [HealthMetric; 4] {
+            std::array::from_fn(|i| HealthMetric {
+                label: format!("metric{i}"),
+                value: HealthValue::Text {
+                    primary: SECRET.to_owned(),
+                    secondary: None,
+                },
+            })
+        }
+        fn stream(&self) -> HealthStream {
+            Box::pin(futures_util::stream::empty())
+        }
+    }
+
+    impl BuiltinContent for ProbeBuiltin {
+        fn sections(&self) -> Vec<DetailSection> {
+            Vec::new()
+        }
+    }
+
+    impl QuickActions for ProbeBuiltin {
+        fn actions(&self) -> Vec<QuickAction> {
+            Vec::new()
+        }
+    }
+
+    /// Why: R4 - the integrations section is state only. An endpoint, an account name or a health
+    /// metric's text must reach the bundle as a shape, never as itself.
+    #[test]
+    fn integration_facts_expose_an_endpoint_as_presence_and_never_its_value() {
+        let registry = BuiltinRegistry::default();
+        registry.install(ProbeBuiltin::object("probe"));
+
+        let facts = integration_facts(&registry);
+
+        let fact = facts.first().expect("one installed builtin");
+        assert!(fact.endpoint_present, "presence itself is disclosed");
+        assert_eq!(fact.id, "probe");
+        assert_eq!(fact.connection, "Connected");
+        assert_eq!(fact.uptime_secs, Some(90));
+        for (label, shape) in &fact.health {
+            assert!(
+                !label.contains(SECRET) && !shape.contains(SECRET),
+                "health metric {label}={shape} leaked the probe value",
+            );
+        }
+    }
+
+    #[test]
+    fn integration_facts_are_ordered_by_id_so_two_bundles_diff_cleanly() {
+        let registry = BuiltinRegistry::default();
+        for id in ["vtube", "discord", "obs"] {
+            registry.install(ProbeBuiltin::object(id));
+        }
+
+        let ids: Vec<String> = integration_facts(&registry)
+            .into_iter()
+            .map(|fact| fact.id)
+            .collect();
+
+        assert_eq!(ids, vec!["discord", "obs", "vtube"]);
+    }
+}

@@ -720,13 +720,12 @@ mod tests {
     use forge_types::LogLevel;
     use serde::{Deserialize, Serialize};
 
+    use super::disclosure::{self, SettingDisclosure};
     use super::{
         DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, Language, SettingsRepo, StorageError,
         diagnostic_log_level, get_json_setting, reserved_keys, set_diagnostic_log_level,
         set_json_setting,
     };
-
-    fn _trait_is_dyn_safe(_: &dyn super::SettingsRepo) {}
 
     #[derive(Default)]
     struct MapRepo {
@@ -888,5 +887,149 @@ mod tests {
                 "for {stored:?}",
             );
         }
+    }
+
+    /// A value no disclosure rendering may ever pass through.
+    const SECRET: &str = "nova_the_broadcaster";
+
+    /// Why: default-deny is the whole safety property of the vocabulary - a key added tomorrow,
+    /// or a key whose classification is deleted, must cost a missing diagnostic and not a leak.
+    #[test]
+    fn an_unclassified_key_is_withheld_and_renders_nothing() {
+        for key in [
+            "",
+            "twitch.account_login",
+            "some.key.invented.tomorrow",
+            "theme.extra",
+            // One character short of the engine-params prefix, so the `starts_with` arm misses it.
+            "tts.engine_params",
+        ] {
+            assert_eq!(
+                disclosure::class_of(key),
+                SettingDisclosure::Withheld,
+                "key {key:?}",
+            );
+            assert_eq!(disclosure::render(key, SECRET), None, "key {key:?}");
+        }
+    }
+
+    /// Why: R4 - no account, channel, host or path value appears anywhere in the bundle. Moving
+    /// any key on this list into the verbatim arm publishes it, so the class is pinned per key.
+    #[test]
+    fn keys_that_can_name_a_host_a_path_or_a_device_are_never_verbatim() {
+        for (key, expected) in [
+            (
+                reserved_keys::SERVER_OVERLAY_ROOT,
+                SettingDisclosure::Presence,
+            ),
+            (
+                reserved_keys::SERVER_BIND_ADDRESS,
+                SettingDisclosure::Presence,
+            ),
+            (
+                reserved_keys::AUDIO_OUTPUT_DEVICE_ID,
+                SettingDisclosure::Presence,
+            ),
+            (
+                reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID,
+                SettingDisclosure::Presence,
+            ),
+            (
+                reserved_keys::SOUNDBOARD_OUTPUT_DEVICE,
+                SettingDisclosure::Presence,
+            ),
+            (reserved_keys::FONT_BODY, SettingDisclosure::Presence),
+            (reserved_keys::FONT_MONO, SettingDisclosure::Presence),
+            (
+                reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
+                SettingDisclosure::Kind,
+            ),
+            (
+                reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+                SettingDisclosure::Kind,
+            ),
+        ] {
+            assert_eq!(disclosure::class_of(key), expected, "key {key}");
+            assert!(
+                !disclosure::render(key, SECRET).is_some_and(|shown| shown.contains(SECRET)),
+                "key {key} disclosed its value",
+            );
+        }
+    }
+
+    #[test]
+    fn an_operational_setting_is_disclosed_verbatim() {
+        for (key, value) in [
+            (reserved_keys::DIAGNOSTICS_LOG_LEVEL, "trace"),
+            (reserved_keys::SERVER_PORT, "8080"),
+            (reserved_keys::SERVER_ENABLED, "true"),
+            ("tts.engine_params.piper.speed", "1.25"),
+        ] {
+            assert_eq!(disclosure::class_of(key), SettingDisclosure::Verbatim);
+            assert_eq!(
+                disclosure::render(key, value).as_deref(),
+                Some(value),
+                "key {key}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_kind_key_discloses_only_the_container_shape() {
+        for (value, expected) in [
+            (r#"["a.com","b.com"]"#, "list(2)"),
+            ("[]", "list(0)"),
+            (r#"{"a":1,"b":2}"#, "map(2)"),
+            ("{}", "map(0)"),
+            // Not a container: falls back to a stamped character count, not the text.
+            (SECRET, "<redacted len=20>"),
+            ("Привіт", "<redacted len=6>"),
+            ("", "<redacted len=0>"),
+        ] {
+            assert_eq!(
+                disclosure::render(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, value).as_deref(),
+                Some(expected),
+                "value {value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_presence_key_discloses_only_whether_a_value_exists() {
+        for (value, expected) in [("", "unset"), (" ", "set"), (SECRET, "set")] {
+            assert_eq!(
+                disclosure::render(reserved_keys::SERVER_OVERLAY_ROOT, value).as_deref(),
+                Some(expected),
+                "value {value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn render_all_drops_withheld_keys_and_orders_the_rest_by_key() {
+        let stored: HashMap<String, String> = [
+            (reserved_keys::SERVER_PORT, "8080"),
+            (reserved_keys::DIAGNOSTICS_LOG_LEVEL, "debug"),
+            (reserved_keys::SERVER_OVERLAY_ROOT, "/home/nova/overlays"),
+            ("twitch.account_login", SECRET),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        .collect();
+
+        let shown = disclosure::render_all(&stored);
+
+        assert_eq!(
+            shown.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec![
+                "diagnostics.log_level",
+                "server.overlay_root",
+                "server.port"
+            ],
+        );
+        assert!(
+            !shown.values().any(|v| v.contains("nova")),
+            "a withheld key or a path value survived: {shown:?}",
+        );
     }
 }

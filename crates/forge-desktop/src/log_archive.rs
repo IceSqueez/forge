@@ -43,7 +43,9 @@ pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, String> {
             Ok(text) => text,
             Err(e) => format!("<unreadable: {e}>\n"),
         };
-        let header = format!("\n---- {} ----\n", path.display());
+        // The name alone attributes the lines; the directory above it is the OS account's.
+        let name = path.file_name().unwrap_or(path.as_os_str());
+        let header = format!("\n---- {} ----\n", name.to_string_lossy());
 
         if remaining <= header.len() {
             elided_bytes += body.len() as u64;
@@ -72,7 +74,7 @@ pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, String> {
 
 /// Keeps the tail whole-line and on a character boundary, so a truncated corpus never opens
 /// mid-record or mid-codepoint.
-fn line_start_at_or_after(text: &str, from: usize) -> usize {
+pub fn line_start_at_or_after(text: &str, from: usize) -> usize {
     let mut idx = from.min(text.len());
     while idx < text.len() && !text.is_char_boundary(idx) {
         idx += 1;

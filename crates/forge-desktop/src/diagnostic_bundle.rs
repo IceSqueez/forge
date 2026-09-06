@@ -121,7 +121,7 @@ pub fn assemble(input: &BundleInput) -> Result<Bundle, String> {
     let (script, script_elided) = keep_newest_lines(script, SCRIPT_SECTION_BUDGET);
 
     write_script_section(&mut out, &script, script_lines, script_elided);
-    write_corpus_section(&mut out, &rest, &corpus, script_elided);
+    write_corpus_section(&mut out, &rest, &corpus);
 
     Ok(Bundle {
         text: out,
@@ -160,11 +160,7 @@ fn keep_newest_lines(text: String, budget: usize) -> (String, u64) {
     if text.len() <= budget {
         return (text, 0);
     }
-    let from = text.len() - budget;
-    let start = match text[from..].find('\n') {
-        Some(offset) => from + offset + 1,
-        None => text.len(),
-    };
+    let start = log_archive::line_start_at_or_after(&text, text.len() - budget);
     (text[start..].to_owned(), start as u64)
 }
 
@@ -365,18 +361,12 @@ fn write_script_section(out: &mut String, script: &str, total_lines: usize, elid
     out.push_str(script);
 }
 
-fn write_corpus_section(
-    out: &mut String,
-    rest: &str,
-    corpus: &log_archive::Corpus,
-    script_elided: u64,
-) {
-    let elided = corpus.elided_bytes + script_elided;
+fn write_corpus_section(out: &mut String, rest: &str, corpus: &log_archive::Corpus) {
     section(
         out,
         &format!(
             "log ({} files, {} older bytes left out)",
-            corpus.files_kept, elided
+            corpus.files_kept, corpus.elided_bytes
         ),
     );
     out.push_str("(script log lines were lifted into the section above)\n");

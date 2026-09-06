@@ -3,6 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use async_trait::async_trait;
+use forge_types::LogLevel;
 use forge_voice::SynthesisDefaults;
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +51,7 @@ pub mod reserved_keys {
     pub const SOUNDBOARD_OUTPUT_DEVICE: &str = "soundboard.output_device";
     pub const SOUNDBOARD_MASTER_VOLUME: &str = "soundboard.master_volume";
     pub const SOUNDBOARD_ALSO_HEADPHONES: &str = "soundboard.also_headphones";
+    pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -553,6 +555,56 @@ pub async fn set_soundboard_also_headphones(
     enabled: bool,
 ) -> Result<(), StorageError> {
     set_bool_setting(repo, reserved_keys::SOUNDBOARD_ALSO_HEADPHONES, enabled).await
+}
+
+pub const DEFAULT_DIAGNOSTIC_LOG_LEVEL: LogLevel = LogLevel::Info;
+
+const DIAGNOSTIC_LOG_LEVELS: [LogLevel; 5] = [
+    LogLevel::Trace,
+    LogLevel::Debug,
+    LogLevel::Info,
+    LogLevel::Warn,
+    LogLevel::Error,
+];
+
+/// Stable on-disk spelling: changing one orphans every value already persisted under it.
+pub fn log_level_as_str(level: &LogLevel) -> &'static str {
+    match level {
+        LogLevel::Trace => "trace",
+        LogLevel::Debug => "debug",
+        LogLevel::Info => "info",
+        LogLevel::Warn => "warn",
+        LogLevel::Error => "error",
+    }
+}
+
+fn decode_log_level(raw: &str) -> Option<LogLevel> {
+    let raw = raw.trim();
+    DIAGNOSTIC_LOG_LEVELS
+        .into_iter()
+        .find(|level| raw.eq_ignore_ascii_case(log_level_as_str(level)))
+}
+
+/// An unreadable stored spelling yields the default; a diagnostics setting never blocks boot.
+pub async fn diagnostic_log_level(repo: &dyn SettingsRepo) -> Result<LogLevel, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL)
+        .await?;
+    Ok(raw
+        .as_deref()
+        .and_then(decode_log_level)
+        .unwrap_or(DEFAULT_DIAGNOSTIC_LOG_LEVEL))
+}
+
+pub async fn set_diagnostic_log_level(
+    repo: &dyn SettingsRepo,
+    level: &LogLevel,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::DIAGNOSTICS_LOG_LEVEL,
+        log_level_as_str(level),
+    )
+    .await
 }
 
 #[cfg(test)]

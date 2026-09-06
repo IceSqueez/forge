@@ -26,6 +26,12 @@ pub trait HistoryRepo: Send + Sync {
         builtin_id: &str,
         limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError>;
+    /// Newest-first across every action and builtin; the empty default exists so hand-written
+    /// doubles keep compiling, and every persistent backend must override it.
+    async fn recent(&self, limit: u32) -> Result<Vec<ExecutionContext>, StorageError> {
+        let _ = limit;
+        Ok(Vec::new())
+    }
     /// Only includes actions with at least one trigger-run entry; quick action runs are excluded.
     async fn stats_summary(
         &self,

@@ -20,6 +20,18 @@ fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
     (dt.unix_timestamp_nanos() / 1_000_000) as i64
 }
 
+fn decode_contexts(rows: Vec<(String,)>) -> Result<Vec<ExecutionContext>, StorageError> {
+    rows.into_iter()
+        .map(|(ctx_json,)| {
+            serde_json::from_str::<ExecutionContext>(&ctx_json).map_err(|e| {
+                StorageError::from(SqliteStorageError::Decode(format!(
+                    "invalid ExecutionContext json: {e}"
+                )))
+            })
+        })
+        .collect()
+}
+
 pub struct SqliteHistoryRepo {
     pool: sqlx::SqlitePool,
 }
@@ -88,15 +100,7 @@ impl HistoryRepo for SqliteHistoryRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        rows.into_iter()
-            .map(|(ctx_json,)| {
-                serde_json::from_str::<ExecutionContext>(&ctx_json).map_err(|e| {
-                    StorageError::from(SqliteStorageError::Decode(format!(
-                        "invalid ExecutionContext json: {e}"
-                    )))
-                })
-            })
-            .collect()
+        decode_contexts(rows)
     }
 
     async fn recent_for_builtin(
@@ -117,15 +121,21 @@ impl HistoryRepo for SqliteHistoryRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        rows.into_iter()
-            .map(|(ctx_json,)| {
-                serde_json::from_str::<ExecutionContext>(&ctx_json).map_err(|e| {
-                    StorageError::from(SqliteStorageError::Decode(format!(
-                        "invalid ExecutionContext json: {e}"
-                    )))
-                })
-            })
-            .collect()
+        decode_contexts(rows)
+    }
+
+    async fn recent(&self, limit: u32) -> Result<Vec<ExecutionContext>, StorageError> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT context FROM action_history
+             ORDER BY started_at DESC
+             LIMIT ?",
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        decode_contexts(rows)
     }
 
     async fn stats_summary(

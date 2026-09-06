@@ -7,6 +7,7 @@ pub mod platform;
 pub mod platform_scope;
 pub mod queue;
 pub mod redaction;
+pub mod run_disclosure;
 pub mod script;
 pub mod shared;
 pub mod sub_action;
@@ -28,7 +29,11 @@ pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::PlatformId;
 pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;
-pub use redaction::{Redacted, RedactedText};
+pub use redaction::{MARKER, Redacted, RedactedText, STAMP};
+pub use run_disclosure::{
+    DisclosedOutcome, DisclosedRun, DisclosedStep, DisclosedStepOutcome, DisclosedTrigger,
+    DisclosedValue,
+};
 pub use script::{ScriptContract, ScriptInput};
 pub use shared::Shared;
 pub use sub_action::{LogLevel, OutputDevice};

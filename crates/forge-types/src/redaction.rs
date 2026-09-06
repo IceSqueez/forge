@@ -1,6 +1,9 @@
 use std::fmt;
 
-/// Every redacted rendering opens with this stamp, so a reader can tell a placeholder from a bug.
+/// The prefix every redacted rendering opens with; leak assertions and the bundle header match on this, not on `MARKER`.
+pub const STAMP: &str = "<redacted";
+
+/// The whole-value form, which withholds the size as well; length-bearing renderings only share `STAMP`.
 pub const MARKER: &str = "<redacted>";
 
 pub struct Redacted;
@@ -22,7 +25,7 @@ impl RedactedText {
 
 impl fmt::Debug for RedactedText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<redacted len={}>", self.0)
+        write!(f, "{STAMP} len={}>", self.0)
     }
 }
 

@@ -91,6 +91,7 @@ pub fn normalize_var_name(raw: &str) -> Option<String> {
     }
 }
 
+/// Renders interpolated content verbatim, so it is never sound for the diagnostic bundle - that path takes `DisclosedRun`.
 pub fn variant_preview(value: &Variant) -> String {
     const MAX_CHARS: usize = 800;
     let rendered = match value {

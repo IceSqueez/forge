@@ -54,6 +54,109 @@ pub mod reserved_keys {
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
 }
 
+/// How each settings key may appear in the publicly-attachable diagnostic bundle.
+pub mod disclosure {
+    use std::collections::{BTreeMap, HashMap};
+
+    use forge_types::redaction::STAMP;
+
+    use super::reserved_keys;
+
+    /// A key with no entry in `class_of` is `Withheld`, so a key added tomorrow costs a diagnostic, never a leak.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SettingDisclosure {
+        Verbatim,
+        Kind,
+        Presence,
+        Withheld,
+    }
+
+    /// `Verbatim` is reserved for values that cannot name a person, a channel, a host or a path.
+    pub fn class_of(key: &str) -> SettingDisclosure {
+        use SettingDisclosure::{Kind, Presence, Verbatim, Withheld};
+
+        if key.starts_with(reserved_keys::TTS_ENGINE_PARAMS_PREFIX) {
+            return Verbatim;
+        }
+
+        match key {
+            reserved_keys::THEME
+            | reserved_keys::DENSITY
+            | reserved_keys::LANGUAGE
+            | reserved_keys::DIAGNOSTICS_LOG_LEVEL
+            | reserved_keys::EVENT_LOG_RETENTION_DAYS
+            | reserved_keys::SERVER_ENABLED
+            | reserved_keys::SERVER_PORT
+            | reserved_keys::SERVER_LAN_BIND_ENABLED
+            | reserved_keys::SERVER_AUTH_REQUIRED_FOR_READS
+            | reserved_keys::SERVER_HTTP_OVERLAY_REQUIRE_TOKEN
+            | reserved_keys::SERVER_OVERLAY_CORS_ANY_ORIGIN
+            | reserved_keys::SCRIPT_HTTP_MAX_CALLS
+            | reserved_keys::SCRIPT_HTTP_TIMEOUT_MS
+            | reserved_keys::SCRIPT_HTTP_ALLOW_LOCAL
+            | reserved_keys::SCRIPT_HTTP_MAX_RESPONSE_BYTES
+            | reserved_keys::SCRIPT_OP_LIMIT
+            | reserved_keys::SCRIPT_TIMEOUT_MS
+            | reserved_keys::CORE_HTTP_ALLOW_LOCAL
+            | reserved_keys::AUDIO_VOICE_GATE_ENABLED
+            | reserved_keys::AUDIO_VOICE_GATE_THRESHOLD
+            | reserved_keys::AUDIO_VOICE_GATE_HOLD_MS
+            | reserved_keys::CHAT_HISTORY_STORE_LIMIT
+            | reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT
+            | reserved_keys::TTS_DISABLED_ENGINES
+            | reserved_keys::TTS_SYNTHESIS_DEFAULTS
+            | reserved_keys::TTS_MASTER_VOLUME
+            | reserved_keys::SOUNDBOARD_ENABLED
+            | reserved_keys::SOUNDBOARD_MASTER_VOLUME
+            | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES => Verbatim,
+
+            reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS
+            | reserved_keys::SERVER_ADDITIONAL_ORIGINS
+            | reserved_keys::KEYBOARD_SHORTCUTS
+            | reserved_keys::PICKER_FAVORITES_SUB_ACTIONS
+            | reserved_keys::PICKER_FAVORITES_TRIGGERS => Kind,
+
+            reserved_keys::SERVER_BIND_ADDRESS
+            | reserved_keys::SERVER_OVERLAY_ROOT
+            | reserved_keys::FONT_BODY
+            | reserved_keys::FONT_MONO
+            | reserved_keys::AUDIO_OUTPUT_DEVICE_ID
+            | reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID
+            | reserved_keys::SOUNDBOARD_OUTPUT_DEVICE => Presence,
+
+            _ => Withheld,
+        }
+    }
+
+    /// `None` keeps the key out of the bundle entirely.
+    pub fn render(key: &str, value: &str) -> Option<String> {
+        match class_of(key) {
+            SettingDisclosure::Verbatim => Some(value.to_owned()),
+            SettingDisclosure::Kind => Some(shape_of(value)),
+            SettingDisclosure::Presence => {
+                Some(if value.is_empty() { "unset" } else { "set" }.to_owned())
+            }
+            SettingDisclosure::Withheld => None,
+        }
+    }
+
+    /// Ordered by key so two bundles from the same install diff cleanly.
+    pub fn render_all(stored: &HashMap<String, String>) -> BTreeMap<String, String> {
+        stored
+            .iter()
+            .filter_map(|(key, value)| render(key, value).map(|shown| (key.clone(), shown)))
+            .collect()
+    }
+
+    fn shape_of(value: &str) -> String {
+        match serde_json::from_str::<serde_json::Value>(value) {
+            Ok(serde_json::Value::Array(items)) => format!("list({})", items.len()),
+            Ok(serde_json::Value::Object(fields)) => format!("map({})", fields.len()),
+            _ => format!("{STAMP} len={}>", value.chars().count()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {

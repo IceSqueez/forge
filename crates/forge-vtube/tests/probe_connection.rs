@@ -163,10 +163,11 @@ async fn a_peer_that_answers_with_non_json_text_is_rejected_without_panicking() 
 // probe's timeout would hide the cause and stall the setup screen for the full five seconds.
 #[tokio::test]
 async fn a_refused_port_reports_the_connect_failure_rather_than_waiting_out_the_timeout() {
-    let (listener, port) = bind_loopback().await;
-    drop(listener);
-
-    let error = expect_error(probe_connection("127.0.0.1", port).await);
+    // Why: binding an ephemeral port and dropping it races the sibling tests in this binary -
+    // one of them can be handed the just-freed port before the probe dials it, and the probe
+    // then times out against a live peer instead of being refused. Port 1 is outside every
+    // platform's ephemeral range and needs root to bind, so the refusal is deterministic.
+    let error = expect_error(probe_connection("127.0.0.1", 1).await);
 
     assert!(
         matches!(error, VTubeError::Connect(_)),

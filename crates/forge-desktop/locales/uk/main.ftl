@@ -1574,6 +1574,7 @@ script_editor_type_check_passed = Перевірку типів пройдено
 script_editor_type_check_failed = Перевірку типів не пройдено
 script_editor_run_modal_title = Запустити { $name }
 script_editor_run_input_placeholder = Введіть значення { $label }…
+script_editor_run_input_placeholder_example = Введіть значення { $label }, напр. { $example }
 
 ## Action telemetry - stat column headers
 

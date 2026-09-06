@@ -1558,6 +1558,7 @@ script_editor_type_check_passed = Type-check passed
 script_editor_type_check_failed = Type-check failed
 script_editor_run_modal_title = Run { $name }
 script_editor_run_input_placeholder = Enter { $label } value…
+script_editor_run_input_placeholder_example = Enter { $label } value, e.g. { $example }
 
 ## Action telemetry - stat column headers
 

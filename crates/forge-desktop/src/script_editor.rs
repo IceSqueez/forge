@@ -28,6 +28,7 @@ use gpui::{
     px,
 };
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
 use crate::globals::variant_kind_color;
@@ -87,6 +88,36 @@ fn format_run_stats(duration_ms: f64, error_count: usize) -> String {
     format!("executed in {duration_ms:.2}ms · {error_count} errors")
 }
 
+const ARRAY_INPUT_EXAMPLE: &str = "[12, 13, 14]";
+const OBJECT_INPUT_EXAMPLE: &str = r#"{"key": "value"}"#;
+const DATETIME_INPUT_EXAMPLE: &str = "2026-01-31T18:04:00Z";
+
+fn input_syntax_example(kind: VariantKind) -> Option<&'static str> {
+    match kind {
+        VariantKind::Array => Some(ARRAY_INPUT_EXAMPLE),
+        VariantKind::Object => Some(OBJECT_INPUT_EXAMPLE),
+        VariantKind::Datetime => Some(DATETIME_INPUT_EXAMPLE),
+        VariantKind::Int | VariantKind::Float | VariantKind::Bool | VariantKind::String => None,
+    }
+}
+
+fn parse_json_input(
+    name: &str,
+    raw: &str,
+    expected: VariantKind,
+    shape: &str,
+    example: &str,
+) -> Result<Variant, String> {
+    let shape_error = || format!("`{name}` must be {shape}, e.g. `{example}`");
+    let value = serde_json::from_str::<serde_json::Value>(raw.trim()).map_err(|_| shape_error())?;
+    let variant = Variant::from_plain_json(value).map_err(|e| format!("`{name}`: {e}"))?;
+    if VariantKind::from_variant(&variant) == expected {
+        Ok(variant)
+    } else {
+        Err(shape_error())
+    }
+}
+
 fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Variant, String> {
     match kind {
         VariantKind::Int => raw
@@ -105,9 +136,25 @@ fn parse_input_to_variant(name: &str, kind: VariantKind, raw: &str) -> Result<Va
             _ => Err(format!("`{name}` must be `true` or `false`")),
         },
         VariantKind::String => Ok(Variant::String(raw.to_owned())),
-        other => Err(format!(
-            "`{name}`: {other:?} inputs not supported in this run modal"
-        )),
+        VariantKind::Array => parse_json_input(
+            name,
+            raw,
+            VariantKind::Array,
+            "a JSON array",
+            ARRAY_INPUT_EXAMPLE,
+        ),
+        VariantKind::Object => parse_json_input(
+            name,
+            raw,
+            VariantKind::Object,
+            "a JSON object",
+            OBJECT_INPUT_EXAMPLE,
+        ),
+        VariantKind::Datetime => OffsetDateTime::parse(raw.trim(), &Rfc3339)
+            .map(Variant::Datetime)
+            .map_err(|_| {
+                format!("`{name}` must be an RFC3339 timestamp, e.g. `{DATETIME_INPUT_EXAMPLE}`")
+            }),
     }
 }
 
@@ -351,10 +398,17 @@ impl RunModal {
         cx: &mut Context<Self>,
     ) -> RunInput {
         let label = kind.label().to_lowercase();
-        let placeholder = tr!(
-            "script_editor_run_input_placeholder",
-            label = label.as_str()
-        );
+        let placeholder = match input_syntax_example(kind) {
+            Some(example) => tr!(
+                "script_editor_run_input_placeholder_example",
+                label = label.as_str(),
+                example = example
+            ),
+            None => tr!(
+                "script_editor_run_input_placeholder",
+                label = label.as_str()
+            ),
+        };
         let input = cx.new(|cx| {
             TextInput::new(placeholder, cx)
                 .with_palette(palette)

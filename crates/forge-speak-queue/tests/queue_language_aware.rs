@@ -136,16 +136,27 @@ async fn speak_and_settle(
     }
 }
 
-/// The detector is rebuilt off the utterance path, so the first message after start can land
-/// before it is ready and legitimately reports no language. Repeat until one lands.
+/// Why: the detector is rebuilt off the utterance path - a `spawn_blocking` build that preloads
+/// language models plus a channel hop back into the actor - and the flag is only re-read when the
+/// actor next wakes, which is the probe itself. Utterances that win that race legitimately resolve
+/// against the full catalog and report no language, so the wait has to be a wall-clock budget
+/// rather than a fixed number of tries: the build takes as long as the runner takes.
+const DETECTOR_READY_BUDGET_MS: u64 = 15_000;
+
+/// Probe with fresh utterances until one carries a detection. Only the report is awaited - what
+/// the detection then resolves to stays an exact assertion at the call site.
 async fn narrowed_voice_for(
     handle: &SpeakQueueHandle,
     stream: &mut SpeakEventStream,
     events: &Arc<std::sync::Mutex<Vec<Event>>>,
     text: &str,
 ) -> (String, String, f64) {
-    for _ in 0..5 {
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(DETECTOR_READY_BUDGET_MS);
+    let mut probes = 0_u32;
+    loop {
         speak_and_settle(handle, stream, request("nova", text)).await;
+        probes += 1;
         let found = events
             .lock()
             .unwrap()
@@ -162,8 +173,14 @@ async fn narrowed_voice_for(
         if let Some(found) = found {
             return found;
         }
+        if std::time::Instant::now() >= deadline {
+            panic!(
+                "no speak.started for {text:?} ever reported a detected language \
+                 ({probes} probes over {DETECTOR_READY_BUDGET_MS}ms)"
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("no speak.started for {text:?} ever reported a detected language");
 }
 
 #[tokio::test]
@@ -201,6 +218,9 @@ async fn toggling_the_preset_on_and_back_off_starts_and_stops_reporting_a_langua
     let (lang, _, _) = narrowed_voice_for(&handle, &mut stream, &events, UKRAINIAN).await;
     assert_eq!(lang, "uk", "flipping the preset on must build a detector");
 
+    // Why: the off direction takes no budget and must never get one. The actor drops the detector
+    // at the top of the same loop iteration that pops this request, and a rebuild still in flight
+    // is discarded against the flag - so a language reported here is a bug, not late teardown.
     pipeline.swap(config_with(false));
     speak_and_settle(&handle, &mut stream, request("nova", ENGLISH)).await;
     assert!(

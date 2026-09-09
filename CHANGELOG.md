@@ -1,7 +1,106 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-09-09
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump taiki-e/install-action from 2 to 2.85.5 (#52)
+- *(deps)* Bump gpui_platform from v1.12.1 to v1.14.2 (#56)
+- *(deps)* Bump open from 5.4.0 to 5.4.1 (#57)
+- *(deps)* Bump base64 from 0.23.0 to 0.23.1 (#58)
+- *(deps)* Bump time from 0.3.54 to 0.3.55 (#59)
+- *(deps)* Bump gpui from v1.12.1 to v1.14.2 (#60)
+- *(deps)* Bump taiki-e/install-action from 2.85.5 to 2.87.0 (#63)
+- *(deps)* Bump gpui to v1.17.2 and drop vendored coremidi
+- *(deps)* Bump taiki-e/install-action from 2.87.0 to 2.87.5 (#64)
+- *(deps)* Bump gpui_platform from v1.17.2 to v1.18.1 (#65)
+- *(deps)* Bump gpui from v1.17.2 to v1.18.1 (#66)
+
+### ⚡ Performance
+- *(ui)* Cap repeat animation frame rates and sync pulse dots
+
+### 🐛 Bug Fixes
+- *(kick)* Carry pusher identity badges in the unified chat envelope
+- *(core)* Record one trigger decision per chat event and instance
+- *(twitch)* Keep seeded phases when helix returns an unreadable body
+- *(runtime)* Drain buffered events before the trigger evaluator exits
+- *(scripts)* Name the offending field in non-finite float errors
+- *(diagnostics)* Scrub colored, quoted and rescrubbed credential lines
+- *(diagnostics)* Cap the decoder demotion at the selected log level
+- *(core)* Stop disclosing the moderation reason in the event trail
+- *(twitch)* Report token-refresh failure shape instead of the response body
+- *(youtube)* Sanitize error text in chat poller and lookup sub-actions
+- *(diagnostics)* Keep bundle slicing on char bounds and drop log paths
+- *(core)* Drop interpolated values from sub-action failure text
+
+### 🚀 Features
+- *(core)* Resolve chat badges into an ordered permission ladder
+- *(storage)* Persist a permission rung on every trigger instance
+- *(core)* Declare chat-sourced trigger kinds on the descriptor
+- *(core)* Gate chat triggers on permission rung before cooldown
+- *(core)* Bound the cooldown map with pruning and a capacity cap
+- *(ui)* Edit the permission rung on chat trigger instances
+- *(ui)* Show the permission rung suffix on action editor trigger cards
+- *(script)* Accept caller contracts and expose engine reserved names
+- *(scripts)* Edit the script contract in the signature panel
+- *(scripts)* Gate script health on rhai compilation
+- *(platforms)* Carry entity liveness on quick action descriptors
+- *(twitch)* Track poll, prediction and raid liveness for quick actions
+- *(ui)* Show live availability on quick action cards
+- *(hotkey)* Emit release edges for held global hotkeys
+- *(hotkeys)* Bind press and release halves with a hold ceiling
+- *(storage)* Persist the language-aware voice toggle
+- *(tts)* Detect message language among installed voice locales
+- *(tts)* Match voices to a detected language by locale
+- *(tts)* Narrow voice resolution to the detected message language
+- *(tts)* Let the language preset be enabled from the filters modal
+- *(core)* Convert plain JSON values into variants
+- *(scripts)* Accept array, object and datetime test-run inputs
+- *(diagnostics)* Scrub secrets from logs behind a reloadable filter
+- *(core)* Redact viewer text and identity from debug rendering
+- *(storage)* Persist the diagnostics log level setting
+- *(diagnostics)* Switch the log level live from settings
+- *(core)* Mirror every bus event into the debug log trail
+- *(core)* Log evaluator verdicts and gate command text at trace
+- *(twitch)* Retier logs by frequency and strip identity from fields
+- *(kick)* Log connection lifecycle and strip bodies from error trails
+- *(diagnostics)* Add disclosure vocabularies for the export bundle
+- *(storage)* Read the newest runs across all actions and builtins
+- *(diagnostics)* Export a sectioned bundle with a disclosure preview
+- *(diagnostics)* Retain fourteen daily log files at rotation
+
+### 🚜 Refactor
+- *(scripts)* Source the contract from the persisted record
+- *(tts)* Drop the dead output preset disabled shim
+
+### 🧪 Testing
+- *(triggers)* Cover permission rung gating cooldown bounds and kick badges
+- *(triggers)* Pin one trigger decision per chat event and instance
+- *(script)* Cover inert annotation line detection
+- *(twitch)* Cover poll, prediction and raid liveness tracking
+- *(platforms)* Cover quick action runnability and descriptor reload gating
+- *(hotkey)* Cover hold machinery, un-sticking and the release trigger
+- *(hotkeys)* Cover binding pair grouping, edge conflicts and the hold ceiling
+- *(runtime)* Cover trigger evaluator backlog drain on shutdown
+- *(tts)* Cover language detection, locale matching and voice narrowing
+- *(overlay)* Gate the unix-only symlink import to unix builds
+- *(scripts)* Cover plain-json variants and test-run modal inputs
+- *(diagnostics)* Cover the log scrubber vocabulary and line buffering
+- *(core)* Cover debug redaction of chat, variant and telemetry types
+- *(diagnostics)* Cover the persisted log level and filter composition
+- *(core)* Cover the event log projection's redaction contract
+- *(core)* Cover evaluator decision logging and the command carve-out
+- *(twitch)* Pin log hygiene on ws errors, chat send and token refresh
+- *(vtube)* Dial a non-ephemeral port so the refused-connect probe cannot race
+- *(kick)* Pin log hygiene on pusher errors, channel info and polls
+- *(youtube)* Pin error-text redaction in poller, lookups and logs
+- *(runtime)* Floor callsite interest so log captures cannot miss
+- *(diagnostics)* Cover disclosure vocabularies, history and the bundle
+- *(core)* Pin shape-only failure text and the script log target
+
 ## [0.5.0] - 2026-08-03
+### ⚙️ Miscellaneous Tasks
+- Release
+
 ### 🐛 Bug Fixes
 - *(obs)* Reject empty name strings at config validation time
 - *(obs)* Trim whitespace when validating get_input_settings source
@@ -16,6 +115,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(storage)* Note stats summary excludes quick action runs
+- *(release)* Release v0.5.0
 
 ### 🚀 Features
 - *(server)* Mark replayed events in the WS push envelope

@@ -21,6 +21,7 @@ pub(crate) enum Request<'a> {
     GetEvents {
         limit: u32,
     },
+    GetInfo,
     DoAction {
         action_id: String,
         args: &'a Map<String, Value>,
@@ -38,6 +39,7 @@ impl Request<'_> {
             Self::Auth { .. } => "auth",
             Self::Subscribe { .. } => "subscribe",
             Self::GetEvents { .. } => "getEvents",
+            Self::GetInfo => "getInfo",
             Self::DoAction { .. } => "doAction",
             Self::SetGlobal { .. } => "setGlobal",
         }
@@ -48,6 +50,7 @@ impl Request<'_> {
             Self::Auth { token } => json!({ "token": token }),
             Self::Subscribe { events } => json!({ "events": events }),
             Self::GetEvents { limit } => json!({ "limit": limit }),
+            Self::GetInfo => json!({}),
             Self::DoAction { action_id, args } => json!({ "actionId": action_id, "args": args }),
             Self::SetGlobal {
                 name,

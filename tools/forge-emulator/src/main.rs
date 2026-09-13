@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use forge_emulator::EmulatorError;
@@ -13,12 +13,12 @@ use forge_emulator::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, HyprlandProbe, LaunchOptions,
     LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
-use forge_emulator::run::{
-    ActionReport, RunOptions, ScenarioOutcome, ScenarioVerdict, StepStatus, Verdict, run_scenario,
-};
+use forge_emulator::report::{RunContext, RunReport, write_report};
+use forge_emulator::run::{RunOptions, ScenarioVerdict, run_scenario};
 use forge_emulator::scenario::load_scenario;
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
 use forge_events::Event;
+use time::OffsetDateTime;
 use tokio::io::AsyncReadExt;
 
 const TOKEN_VARIABLE: &str = "FORGE_EMULATOR_TOKEN";
@@ -291,18 +291,37 @@ async fn run(args: RunArgs) -> Result<ExitCode, EmulatorError> {
     eprintln!("forge-emulator: run root {}", run_root.display());
     let options = RunOptions {
         emulator: own_executable()?,
-        forge: ForgeCommand::binary(args.forge),
-        run_root,
-        log_directives: args.log,
+        forge: ForgeCommand::binary(args.forge.clone()),
+        run_root: run_root.clone(),
+        log_directives: args.log.clone(),
         guard: HyprlandProbe::system(),
         live: LivePaths::discover()?,
         max_attempts: args.attempts,
         shutdown_grace: SHUTDOWN_GRACE,
     };
+    let started_at = OffsetDateTime::now_utc();
+    let started = Instant::now();
     let outcome = run_scenario(&scenario, options, stop_requested()).await?;
-    print_summary(&mut std::io::stdout(), &outcome).map_err(|e| EmulatorError::Output {
+    let context = RunContext {
+        scenario_file: absolute(&args.file),
+        forge_binary: absolute(&args.forge),
+        log_directives: args.log,
+        run_root: run_root.clone(),
+        started_at,
+        duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+    };
+    let report = RunReport::new(context, &scenario, &outcome)?;
+    let output_error = |e: std::io::Error| EmulatorError::Output {
         reason: e.to_string(),
-    })?;
+    };
+    let mut out = std::io::stdout();
+    writeln!(out, "{}", report.verdict_line())
+        .and_then(|()| out.flush())
+        .map_err(output_error)?;
+    let files = write_report(&report, &run_root)?;
+    writeln!(out, "report: {}", files.markdown.display())
+        .and_then(|()| out.flush())
+        .map_err(output_error)?;
     Ok(match outcome.verdict {
         ScenarioVerdict::Passed => ExitCode::SUCCESS,
         ScenarioVerdict::Failed => ExitCode::from(SCENARIO_FAILED),
@@ -310,50 +329,8 @@ async fn run(args: RunArgs) -> Result<ExitCode, EmulatorError> {
     })
 }
 
-fn print_summary(out: &mut impl Write, outcome: &ScenarioOutcome) -> std::io::Result<()> {
-    let verdict = match outcome.verdict {
-        ScenarioVerdict::Passed => "passed",
-        ScenarioVerdict::Failed => "FAILED",
-        ScenarioVerdict::Interrupted => "interrupted",
-    };
-    writeln!(out, "scenario `{}`: {verdict}", outcome.name)?;
-    for step in &outcome.steps {
-        let status = match step.status {
-            StepStatus::Passed => "passed",
-            StepStatus::Failed => "FAILED",
-            StepStatus::Interrupted => "interrupted",
-            StepStatus::NotRun => "not run",
-        };
-        writeln!(out, "  step {} {}: {status}", step.index, step.keyword)?;
-        if let Some(ActionReport::Failed { reason, .. }) = &step.action {
-            writeln!(out, "    action failed: {reason}")?;
-        }
-        for expectation in &step.expectations {
-            if let Verdict::Failed(cause) = &expectation.verdict {
-                writeln!(
-                    out,
-                    "    expect[{}] {}: {cause}",
-                    expectation.index, expectation.keyword
-                )?;
-            }
-        }
-    }
-    if let Some(forge) = &outcome.forge {
-        if forge.exited_during_run {
-            writeln!(out, "  forge exited on its own before teardown")?;
-        }
-        let exit = forge
-            .exit
-            .as_ref()
-            .map_or_else(|| "unknown".to_owned(), |exit| exit.status.clone());
-        writeln!(
-            out,
-            "forge: pid {}, exit {exit}, logs {}",
-            forge.pid,
-            forge.log_dir.display()
-        )?;
-    }
-    out.flush()
+fn absolute(path: &std::path::Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_owned())
 }
 
 async fn print_until_stopped(

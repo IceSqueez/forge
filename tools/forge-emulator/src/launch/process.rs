@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -22,7 +23,7 @@ const ATTEMPT_CEILING: Duration = Duration::from_secs(2);
 const OUTPUT_DRAIN_DEADLINE: Duration = Duration::from_secs(2);
 const KILL_REAP_DEADLINE: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForgeExit {
     pub status: String,
     pub code: Option<i32>,

@@ -297,6 +297,49 @@ async fn do_action_answer_without_an_execution_id_is_an_unexpected_response() {
 }
 
 #[tokio::test]
+async fn forge_version_asks_get_info_and_yields_the_reported_version() {
+    let mut forge = FakeForge::start().await;
+    let (client, _events) = forge.connect(DEADLINE).await;
+
+    let (outcome, request) = tokio::join!(client.forge_version(), async {
+        let request = forge.next_request().await;
+        forge.send(ok_response(
+            &request,
+            json!({ "version": "0.5.1", "uptime_seconds": 3, "connected_clients": [] }),
+        ));
+        request
+    });
+
+    assert_eq!(outcome.expect("version answered"), "0.5.1");
+    let decoded: WsEnvelope<WsRequest> = serde_json::from_value(request).unwrap();
+    assert!(matches!(decoded.inner, WsRequest::GetInfo), "{decoded:?}");
+}
+
+#[tokio::test]
+async fn forge_version_answer_without_a_version_string_is_an_unexpected_response() {
+    for body in [json!({ "uptime_seconds": 3 }), json!({ "version": 5 })] {
+        let mut forge = FakeForge::start().await;
+        let (client, _events) = forge.connect(DEADLINE).await;
+
+        let (outcome, ()) = tokio::join!(client.forge_version(), async {
+            let request = forge.next_request().await;
+            forge.send(ok_response(&request, body.clone()));
+        });
+
+        assert!(
+            matches!(
+                outcome,
+                Err(EmulatorError::UnexpectedResponse {
+                    request: "getInfo",
+                    ..
+                })
+            ),
+            "body {body}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn set_global_request_decodes_as_the_servers_set_global() {
     let mut forge = FakeForge::start().await;
     let (client, _events) = forge.connect(DEADLINE).await;

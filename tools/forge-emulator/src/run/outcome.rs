@@ -3,9 +3,11 @@ use std::path::PathBuf;
 
 use forge_events::Event;
 use forge_types::{ActionId, EventId};
+use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
 
 use super::log_record::LogRecord;
+use crate::fixture::Redactions;
 use crate::launch::ForgeExit;
 use crate::twitch::{RecordedRequest, RecordedSession, RecordedSubscription};
 
@@ -30,23 +32,27 @@ impl RunClock {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScenarioVerdict {
     Passed,
     Failed,
     Interrupted,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScenarioOutcome {
     pub name: String,
     pub verdict: ScenarioVerdict,
     pub steps: Vec<StepOutcome>,
     /// `None` when the run was interrupted before forge was ready.
     pub forge: Option<ForgeEvidence>,
+    #[serde(skip)]
+    pub redactions: Redactions,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StepStatus {
     Passed,
     Failed,
@@ -55,10 +61,10 @@ pub enum StepStatus {
 }
 
 /// Times are milliseconds on the run clock.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepOutcome {
     pub index: usize,
-    pub keyword: &'static str,
+    pub keyword: String,
     pub status: StepStatus,
     pub started_ms: Option<u64>,
     /// When the stimulus was delivered or the wait satisfied; every deadline counts from here.
@@ -67,7 +73,8 @@ pub struct StepOutcome {
     pub expectations: Vec<ExpectationOutcome>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ActionReport {
     Done(ActionDetail),
     Failed {
@@ -76,7 +83,8 @@ pub enum ActionReport {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ActionDetail {
     ForgeReady {
         attempts: u32,
@@ -104,17 +112,18 @@ pub enum ActionDetail {
     GlobalSet,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectationOutcome {
     pub index: usize,
-    pub keyword: &'static str,
+    pub keyword: String,
     pub verdict: Verdict,
     pub deadline_ms: Option<u64>,
     pub evaluated_ms: Option<u64>,
     pub evidence: Evidence,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Verdict {
     Passed,
     Failed(FailureCause),
@@ -122,7 +131,8 @@ pub enum Verdict {
     NotEvaluated,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FailureCause {
     NotObserved {
         needed: u32,
@@ -226,7 +236,8 @@ impl fmt::Display for FailureCause {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Evidence {
     None,
     Events(EventEvidence),
@@ -235,32 +246,33 @@ pub enum Evidence {
     Log(LogEvidence),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JournaledEvent {
     pub arrived_ms: u64,
     pub event: Event,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NearMiss {
     pub event: JournaledEvent,
     /// `source` or the JSON pointers whose matcher failed.
     pub mismatched: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GapKind {
     Dropped(u64),
     Undecodable { frame: String, reason: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Gap {
     pub arrived_ms: u64,
     pub kind: GapKind,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EventEvidence {
     /// Matches inside the window; `samples` keeps the first few.
     pub matched: usize,
@@ -271,7 +283,7 @@ pub struct EventEvidence {
     pub gaps: Vec<Gap>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CausationEvidence {
     pub effect: Option<JournaledEvent>,
     pub cause: Option<JournaledEvent>,
@@ -279,14 +291,14 @@ pub struct CausationEvidence {
     pub chain: Vec<JournaledEvent>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LedgerExcerpt {
     pub requests: Vec<RecordedRequest>,
     pub subscriptions: Vec<RecordedSubscription>,
     pub sessions: Vec<RecordedSession>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LogEvidence {
     pub matched: Option<LogRecord>,
     /// Lines on the expected target whose fields differ.
@@ -294,12 +306,14 @@ pub struct LogEvidence {
     pub files: Vec<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForgeEvidence {
     pub run_root: PathBuf,
     pub data_dir: PathBuf,
     pub log_dir: PathBuf,
     pub pid: u32,
+    /// As forge's server reports it; `None` when it would not say.
+    pub version: Option<String>,
     pub attempts: u32,
     pub exited_during_run: bool,
     pub exit: Option<ForgeExit>,

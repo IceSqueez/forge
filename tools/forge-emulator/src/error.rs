@@ -46,6 +46,9 @@ pub enum EmulatorError {
     #[error("writing output failed: {reason}")]
     Output { reason: String },
 
+    #[error("scenario report {} could not be written: {reason}", path.display())]
+    ReportWrite { path: PathBuf, reason: String },
+
     #[error("refusing to seed: {variable} must name the fixture directory")]
     DataDirUnset { variable: &'static str },
 

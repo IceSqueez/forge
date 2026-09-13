@@ -100,7 +100,7 @@ async fn run_step(
         Err(failure) => {
             return StepOutcome {
                 index,
-                keyword: step.action.keyword(),
+                keyword: step.action.keyword().to_owned(),
                 status: StepStatus::Failed,
                 started_ms: Some(clock.millis(started)),
                 acted_ms: None,
@@ -133,7 +133,7 @@ async fn run_step(
     };
     StepOutcome {
         index,
-        keyword: step.action.keyword(),
+        keyword: step.action.keyword().to_owned(),
         status,
         started_ms: Some(clock.millis(started)),
         acted_ms: Some(clock.millis(acted)),
@@ -211,7 +211,7 @@ impl ExpectationContext<'_, '_> {
         };
         ExpectationOutcome {
             index,
-            keyword: expectation.keyword(),
+            keyword: expectation.keyword().to_owned(),
             verdict,
             deadline_ms: deadline.map(|at| clock.millis(at)),
             evaluated_ms: Some(clock.millis(Instant::now())),
@@ -244,7 +244,7 @@ fn unevaluated(step: &Step) -> Vec<ExpectationOutcome> {
         .enumerate()
         .map(|(index, expectation)| ExpectationOutcome {
             index,
-            keyword: expectation.keyword(),
+            keyword: expectation.keyword().to_owned(),
             verdict: Verdict::NotEvaluated,
             deadline_ms: None,
             evaluated_ms: None,
@@ -256,7 +256,7 @@ fn unevaluated(step: &Step) -> Vec<ExpectationOutcome> {
 pub(crate) fn not_run(index: usize, step: &Step) -> StepOutcome {
     StepOutcome {
         index,
-        keyword: step.action.keyword(),
+        keyword: step.action.keyword().to_owned(),
         status: StepStatus::NotRun,
         started_ms: None,
         acted_ms: None,

@@ -14,6 +14,7 @@ use super::session::{Session, execute_steps, interrupted, not_run};
 use super::steps::ActionIndex;
 use crate::EmulatorError;
 use crate::control::EventFilter;
+use crate::fixture::Redactions;
 use crate::launch::{
     ForgeCommand, HyprlandProbe, LaunchOptions, LaunchedForge, LivePaths, OutputStream,
     launch_forge,
@@ -114,6 +115,7 @@ pub async fn run_scenario(
         shut_down_fake(fake).await;
         return Err(e);
     }
+    let version = client.forge_version().await.ok();
     let (journal, feeder) = Journal::follow(events);
     let actions = ActionIndex::from_seed(&seed);
     let log_dir = process.log_dir();
@@ -151,6 +153,7 @@ pub async fn run_scenario(
         log_tail: newest_lines(&log_dir, EVIDENCE_TAIL_LINES),
         log_dir,
         pid,
+        version,
         attempts,
         exited_during_run,
         exit,
@@ -163,6 +166,7 @@ pub async fn run_scenario(
         verdict: verdict(&steps, exited_during_run),
         steps,
         forge: Some(forge),
+        redactions: Redactions::for_run(&scenario.fixture, Some(&seed)),
     })
 }
 
@@ -226,6 +230,7 @@ fn interrupted_before_ready(scenario: &Scenario) -> ScenarioOutcome {
         verdict: ScenarioVerdict::Interrupted,
         steps,
         forge: None,
+        redactions: Redactions::for_run(&scenario.fixture, None),
     }
 }
 
@@ -240,7 +245,7 @@ mod tests {
     fn step(status: StepStatus) -> StepOutcome {
         StepOutcome {
             index: 0,
-            keyword: "pause",
+            keyword: "pause".to_owned(),
             status,
             started_ms: None,
             acted_ms: None,

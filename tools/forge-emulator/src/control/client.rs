@@ -127,6 +127,19 @@ impl ControlClient {
             .collect()
     }
 
+    pub async fn forge_version(&self) -> Result<String, EmulatorError> {
+        let request = Request::GetInfo;
+        let method = request.method();
+        let mut body = self.call(request).await?;
+        match body.remove("version") {
+            Some(Value::String(version)) => Ok(version),
+            _ => Err(EmulatorError::UnexpectedResponse {
+                request: method,
+                reason: "no `version` string".to_owned(),
+            }),
+        }
+    }
+
     /// Yields the execution id forge publishes as the cause of the run's `action.start`.
     pub async fn do_action(
         &self,

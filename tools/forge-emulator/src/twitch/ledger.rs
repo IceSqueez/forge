@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CredentialCheck {
     Accepted,
     MissingBearer,
@@ -9,7 +11,7 @@ pub enum CredentialCheck {
     WrongClientId,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecordedRequest {
     pub method: String,
     pub path: String,
@@ -24,7 +26,7 @@ pub struct RecordedRequest {
 }
 
 /// One row per session holding the subscription: a reconnect copies rows under the same id.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecordedSubscription {
     pub id: String,
     pub session_id: String,
@@ -34,7 +36,7 @@ pub struct RecordedSubscription {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordedSession {
     pub id: String,
     pub reconnected_from: Option<String>,

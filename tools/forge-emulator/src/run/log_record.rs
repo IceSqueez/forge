@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 /// One line of forge's file log, split into what a scenario may match on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogRecord {
     pub file: PathBuf,
     pub level: String,

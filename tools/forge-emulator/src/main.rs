@@ -6,7 +6,9 @@ use forge_emulator::EmulatorError;
 use forge_emulator::control::{
     ClientTimeouts, ControlClient, ControlEndpoint, EventFilter, Observation,
 };
+use forge_emulator::fixture::{Fixture, seed_forge_environment};
 use forge_events::Event;
+use tokio::io::AsyncReadExt;
 
 const TOKEN_VARIABLE: &str = "FORGE_EMULATOR_TOKEN";
 
@@ -33,6 +35,9 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         history: u32,
     },
+    /// Seed the empty directory named by FORGE_DATA_DIR from a JSON fixture on stdin, then print
+    /// the seed report (including the server bearer token) as one JSON line.
+    Seed,
 }
 
 #[tokio::main]
@@ -44,6 +49,7 @@ async fn main() -> ExitCode {
             port,
             history,
         } => watch(&host, port, history).await,
+        Command::Seed => seed().await,
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
@@ -90,6 +96,27 @@ async fn watch(host: &str, port: u16, history: u32) -> Result<(), EmulatorError>
             },
         }
     }
+}
+
+async fn seed() -> Result<(), EmulatorError> {
+    let mut input = Vec::new();
+    tokio::io::stdin()
+        .read_to_end(&mut input)
+        .await
+        .map_err(|e| EmulatorError::InvalidFixture {
+            reason: e.to_string(),
+        })?;
+    let fixture: Fixture =
+        serde_json::from_slice(&input).map_err(|e| EmulatorError::InvalidFixture {
+            reason: e.to_string(),
+        })?;
+    let report = seed_forge_environment(&fixture).await?;
+    let output_error = |reason: String| EmulatorError::Output { reason };
+    let line = serde_json::to_string(&report).map_err(|e| output_error(e.to_string()))?;
+    let mut out = std::io::stdout();
+    writeln!(out, "{line}")
+        .and_then(|()| out.flush())
+        .map_err(|e| output_error(e.to_string()))
 }
 
 fn print_event(out: &mut impl Write, event: &Event) -> Result<(), EmulatorError> {

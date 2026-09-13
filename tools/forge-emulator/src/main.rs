@@ -13,6 +13,9 @@ use forge_emulator::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, HyprlandProbe, LaunchOptions,
     LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
+use forge_emulator::run::{
+    ActionReport, RunOptions, ScenarioOutcome, ScenarioVerdict, StepStatus, Verdict, run_scenario,
+};
 use forge_emulator::scenario::load_scenario;
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
 use forge_events::Event;
@@ -21,6 +24,8 @@ use tokio::io::AsyncReadExt;
 const TOKEN_VARIABLE: &str = "FORGE_EMULATOR_TOKEN";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 const EXIT_TAIL_LINES: usize = 20;
+const SCENARIO_FAILED: u8 = 12;
+const INTERRUPTED: u8 = 130;
 
 #[derive(Parser)]
 #[command(
@@ -80,6 +85,24 @@ enum Command {
 enum ScenarioCommand {
     /// Validate a scenario file without launching anything.
     Check { file: PathBuf },
+    /// Run a scenario against a freshly seeded forge. Opens a forge window; refuses while a game
+    /// may be running. Exits 0 when every step passed, 12 when the scenario failed, 130 when
+    /// interrupted, and with a launch or harness code otherwise.
+    Run {
+        file: PathBuf,
+        /// The built forge binary.
+        #[arg(long)]
+        forge: PathBuf,
+        /// Parent of the per-attempt fixture directories; a new temp directory when omitted.
+        #[arg(long)]
+        run_root: Option<PathBuf>,
+        /// forge's RUST_LOG filter; log_line expectations only see the targets it enables.
+        #[arg(long, default_value = DEFAULT_LOG_DIRECTIVES)]
+        log: String,
+        /// Relaunches allowed when forge loses the race for its seeded server port.
+        #[arg(long, default_value_t = 3)]
+        attempts: u32,
+    },
 }
 
 #[tokio::main]
@@ -90,8 +113,10 @@ async fn main() -> ExitCode {
             host,
             port,
             history,
-        } => watch(&host, port, history).await,
-        Command::Seed => seed().await,
+        } => watch(&host, port, history)
+            .await
+            .map(|()| ExitCode::SUCCESS),
+        Command::Seed => seed().await.map(|()| ExitCode::SUCCESS),
         Command::Launch {
             forge,
             fixture,
@@ -99,23 +124,41 @@ async fn main() -> ExitCode {
             log,
             ready_timeout_secs,
             attempts,
+        } => launch(LaunchArgs {
+            forge,
+            fixture,
+            run_root,
+            log,
+            ready_timeout: Duration::from_secs(ready_timeout_secs),
+            attempts,
+        })
+        .await
+        .map(|()| ExitCode::SUCCESS),
+        Command::Scenario {
+            command: ScenarioCommand::Check { file },
+        } => check_scenario(&file).map(|()| ExitCode::SUCCESS),
+        Command::Scenario {
+            command:
+                ScenarioCommand::Run {
+                    file,
+                    forge,
+                    run_root,
+                    log,
+                    attempts,
+                },
         } => {
-            launch(LaunchArgs {
+            run(RunArgs {
+                file,
                 forge,
-                fixture,
                 run_root,
                 log,
-                ready_timeout: Duration::from_secs(ready_timeout_secs),
                 attempts,
             })
             .await
         }
-        Command::Scenario {
-            command: ScenarioCommand::Check { file },
-        } => check_scenario(&file),
     };
     match outcome {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(e) => {
             eprintln!("forge-emulator: {e}");
             ExitCode::from(exit_code(&e))
@@ -153,17 +196,8 @@ async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
         None => Fixture::chat_command_mvp(),
     };
     fixture.validate()?;
-    let run_root = match args.run_root {
-        Some(root) => root,
-        None => std::env::temp_dir().join(format!("forge-emulator-{}", unique_suffix())),
-    };
-    std::fs::create_dir_all(&run_root).map_err(|e| EmulatorError::DataDir {
-        path: run_root.clone(),
-        reason: e.to_string(),
-    })?;
-    let emulator = std::env::current_exe().map_err(|e| EmulatorError::InvalidLaunch {
-        reason: format!("own executable path: {e}"),
-    })?;
+    let run_root = prepare_run_root(args.run_root)?;
+    let emulator = own_executable()?;
     let fake = match &fixture.twitch {
         Some(account) => Some(FakeTwitch::start(FakeTwitchConfig::for_account(account)).await?),
         None => None,
@@ -223,6 +257,103 @@ async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
         fake.shutdown().await;
     }
     outcome
+}
+
+fn prepare_run_root(requested: Option<PathBuf>) -> Result<PathBuf, EmulatorError> {
+    let run_root = match requested {
+        Some(root) => root,
+        None => std::env::temp_dir().join(format!("forge-emulator-{}", unique_suffix())),
+    };
+    std::fs::create_dir_all(&run_root).map_err(|e| EmulatorError::DataDir {
+        path: run_root.clone(),
+        reason: e.to_string(),
+    })?;
+    Ok(run_root)
+}
+
+fn own_executable() -> Result<PathBuf, EmulatorError> {
+    std::env::current_exe().map_err(|e| EmulatorError::InvalidLaunch {
+        reason: format!("own executable path: {e}"),
+    })
+}
+
+struct RunArgs {
+    file: PathBuf,
+    forge: PathBuf,
+    run_root: Option<PathBuf>,
+    log: String,
+    attempts: u32,
+}
+
+async fn run(args: RunArgs) -> Result<ExitCode, EmulatorError> {
+    let scenario = load_scenario(&args.file)?;
+    let run_root = prepare_run_root(args.run_root)?;
+    eprintln!("forge-emulator: run root {}", run_root.display());
+    let options = RunOptions {
+        emulator: own_executable()?,
+        forge: ForgeCommand::binary(args.forge),
+        run_root,
+        log_directives: args.log,
+        guard: HyprlandProbe::system(),
+        live: LivePaths::discover()?,
+        max_attempts: args.attempts,
+        shutdown_grace: SHUTDOWN_GRACE,
+    };
+    let outcome = run_scenario(&scenario, options, stop_requested()).await?;
+    print_summary(&mut std::io::stdout(), &outcome).map_err(|e| EmulatorError::Output {
+        reason: e.to_string(),
+    })?;
+    Ok(match outcome.verdict {
+        ScenarioVerdict::Passed => ExitCode::SUCCESS,
+        ScenarioVerdict::Failed => ExitCode::from(SCENARIO_FAILED),
+        ScenarioVerdict::Interrupted => ExitCode::from(INTERRUPTED),
+    })
+}
+
+fn print_summary(out: &mut impl Write, outcome: &ScenarioOutcome) -> std::io::Result<()> {
+    let verdict = match outcome.verdict {
+        ScenarioVerdict::Passed => "passed",
+        ScenarioVerdict::Failed => "FAILED",
+        ScenarioVerdict::Interrupted => "interrupted",
+    };
+    writeln!(out, "scenario `{}`: {verdict}", outcome.name)?;
+    for step in &outcome.steps {
+        let status = match step.status {
+            StepStatus::Passed => "passed",
+            StepStatus::Failed => "FAILED",
+            StepStatus::Interrupted => "interrupted",
+            StepStatus::NotRun => "not run",
+        };
+        writeln!(out, "  step {} {}: {status}", step.index, step.keyword)?;
+        if let Some(ActionReport::Failed { reason, .. }) = &step.action {
+            writeln!(out, "    action failed: {reason}")?;
+        }
+        for expectation in &step.expectations {
+            if let Verdict::Failed(cause) = &expectation.verdict {
+                writeln!(
+                    out,
+                    "    expect[{}] {}: {cause}",
+                    expectation.index, expectation.keyword
+                )?;
+            }
+        }
+    }
+    if let Some(forge) = &outcome.forge {
+        if forge.exited_during_run {
+            writeln!(out, "  forge exited on its own before teardown")?;
+        }
+        let exit = forge
+            .exit
+            .as_ref()
+            .map_or_else(|| "unknown".to_owned(), |exit| exit.status.clone());
+        writeln!(
+            out,
+            "forge: pid {}, exit {exit}, logs {}",
+            forge.pid,
+            forge.log_dir.display()
+        )?;
+    }
+    out.flush()
 }
 
 async fn print_until_stopped(

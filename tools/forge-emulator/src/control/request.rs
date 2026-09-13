@@ -1,6 +1,6 @@
 use forge_events::EventSource;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 /// `None` on either axis subscribes to every value of that axis.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -12,9 +12,24 @@ pub struct EventFilter {
 }
 
 pub(crate) enum Request<'a> {
-    Auth { token: &'a str },
-    Subscribe { events: &'a [EventFilter] },
-    GetEvents { limit: u32 },
+    Auth {
+        token: &'a str,
+    },
+    Subscribe {
+        events: &'a [EventFilter],
+    },
+    GetEvents {
+        limit: u32,
+    },
+    DoAction {
+        action_id: String,
+        args: &'a Map<String, Value>,
+    },
+    SetGlobal {
+        name: &'a str,
+        value: &'a Value,
+        persisted: bool,
+    },
 }
 
 impl Request<'_> {
@@ -23,6 +38,8 @@ impl Request<'_> {
             Self::Auth { .. } => "auth",
             Self::Subscribe { .. } => "subscribe",
             Self::GetEvents { .. } => "getEvents",
+            Self::DoAction { .. } => "doAction",
+            Self::SetGlobal { .. } => "setGlobal",
         }
     }
 
@@ -31,6 +48,12 @@ impl Request<'_> {
             Self::Auth { token } => json!({ "token": token }),
             Self::Subscribe { events } => json!({ "events": events }),
             Self::GetEvents { limit } => json!({ "limit": limit }),
+            Self::DoAction { action_id, args } => json!({ "actionId": action_id, "args": args }),
+            Self::SetGlobal {
+                name,
+                value,
+                persisted,
+            } => json!({ "name": name, "value": value, "persisted": persisted }),
         };
         if let Value::Object(fields) = &mut frame {
             fields.insert("id".to_owned(), Value::String(id.to_owned()));

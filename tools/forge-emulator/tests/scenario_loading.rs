@@ -224,3 +224,35 @@ fn check_command_exit_code_names_the_failure_class() {
         );
     }
 }
+
+#[test]
+fn run_command_refuses_a_bad_scenario_file_before_launching_anything() {
+    let dir = tempfile::tempdir().unwrap();
+    let invalid = dir.path().join("invalid.json");
+    std::fs::write(&invalid, VALID.replace(r#""name": "n""#, r#""name": """#)).unwrap();
+    let run_root = dir.path().join("run");
+
+    for (file, code) in [(dir.path().join("absent.json"), 9), (invalid, 11)] {
+        let output = Command::new(EMULATOR)
+            .args(["scenario", "run"])
+            .arg(&file)
+            .arg("--forge")
+            .arg(dir.path().join("no-forge-here"))
+            .arg("--run-root")
+            .arg(&run_root)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{}: {}",
+            file.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !run_root.exists(),
+            "{}: a run root was prepared",
+            file.display()
+        );
+    }
+}

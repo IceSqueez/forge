@@ -56,3 +56,4 @@ forge-registry = { path = "../../crates/forge-registry" }
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }
+tokio = { version = "1.53", features = ["test-util"] }

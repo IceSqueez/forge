@@ -160,6 +160,7 @@ async fn seed_chat_command(
 
     Ok(SeededCommand {
         phrase: command.phrase.clone(),
+        action_name: action.name,
         action_id: action.id,
         trigger_instance_id: instance.id,
     })

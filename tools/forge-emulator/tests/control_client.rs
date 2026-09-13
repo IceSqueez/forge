@@ -7,8 +7,10 @@ use forge_emulator::control::{
     ClientTimeouts, ControlClient, ControlEndpoint, EventFilter, EventStream, Observation,
 };
 use forge_events::{Event, EventSource};
+use forge_server::protocol::{WsEnvelope, WsRequest};
+use forge_types::ActionId;
 use futures_util::{SinkExt, StreamExt};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use time::format_description::well_known::Rfc3339;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
@@ -235,6 +237,83 @@ async fn subscribe_sends_filters_in_the_server_wire_shape() {
     assert_eq!(
         request["events"],
         json!([{ "source": "you_tube", "type": "youtube.chat.message" }, {}])
+    );
+}
+
+#[tokio::test]
+async fn do_action_request_decodes_as_the_servers_do_action_and_yields_the_execution_id() {
+    let mut forge = FakeForge::start().await;
+    let (client, _events) = forge.connect(DEADLINE).await;
+    let action = ActionId::new();
+    let args = json!({ "user": "лісоруб", "count": 3 })
+        .as_object()
+        .cloned()
+        .unwrap();
+
+    let (outcome, request) = tokio::join!(client.do_action(action, &args), async {
+        let request = forge.next_request().await;
+        forge.send(ok_response(
+            &request,
+            json!({ "ok": true, "execution_id": "01K4ZEXECUTION" }),
+        ));
+        request
+    });
+
+    assert_eq!(outcome.expect("action accepted"), "01K4ZEXECUTION");
+    let decoded: WsEnvelope<WsRequest> = serde_json::from_value(request).unwrap();
+    assert!(
+        matches!(&decoded.inner, WsRequest::DoAction { action_id, args: sent }
+            if *action_id == action.to_string() && sent == &Value::Object(args.clone())),
+        "{decoded:?}"
+    );
+}
+
+#[tokio::test]
+async fn do_action_answer_without_an_execution_id_is_an_unexpected_response() {
+    for body in [
+        json!({ "ok": true }),
+        json!({ "ok": true, "execution_id": 7 }),
+    ] {
+        let mut forge = FakeForge::start().await;
+        let (client, _events) = forge.connect(DEADLINE).await;
+        let no_args = Map::new();
+
+        let (outcome, ()) = tokio::join!(client.do_action(ActionId::new(), &no_args), async {
+            let request = forge.next_request().await;
+            forge.send(ok_response(&request, body.clone()));
+        });
+
+        assert!(
+            matches!(
+                outcome,
+                Err(EmulatorError::UnexpectedResponse {
+                    request: "doAction",
+                    ..
+                })
+            ),
+            "body {body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn set_global_request_decodes_as_the_servers_set_global() {
+    let mut forge = FakeForge::start().await;
+    let (client, _events) = forge.connect(DEADLINE).await;
+    let value = json!({ "streak": [1, 2.5, "три"] });
+
+    let (outcome, request) = tokio::join!(client.set_global("mood", &value, true), async {
+        let request = forge.next_request().await;
+        forge.send(ok_response(&request, json!({ "ok": true })));
+        request
+    });
+
+    outcome.expect("global accepted");
+    let decoded: WsEnvelope<WsRequest> = serde_json::from_value(request).unwrap();
+    assert!(
+        matches!(&decoded.inner, WsRequest::SetGlobal { name, value: sent, persisted: true }
+            if name == "mood" && sent == &value),
+        "{decoded:?}"
     );
 }
 

@@ -111,6 +111,11 @@ impl ForgeProcess {
         &self.data_dir
     }
 
+    /// False once forge has exited, reaped or not.
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.as_mut().map(Child::try_wait), Some(Ok(None)))
+    }
+
     /// forge is ready once a control connection on `port` authenticates with `token`.
     pub async fn wait_ready(
         &mut self,

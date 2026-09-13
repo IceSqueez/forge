@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use forge_events::Event;
+use forge_types::ActionId;
 use futures_util::{Sink, SinkExt, Stream, StreamExt};
 use serde_json::{Map, Value};
 use tokio::sync::{mpsc, oneshot};
@@ -124,6 +125,42 @@ impl ControlClient {
             .into_iter()
             .map(|entry| decode_history_entry(entry).map_err(|e| unexpected(e.to_string())))
             .collect()
+    }
+
+    /// Yields the execution id forge publishes as the cause of the run's `action.start`.
+    pub async fn do_action(
+        &self,
+        action: ActionId,
+        args: &Map<String, Value>,
+    ) -> Result<String, EmulatorError> {
+        let request = Request::DoAction {
+            action_id: action.to_string(),
+            args,
+        };
+        let method = request.method();
+        let mut body = self.call(request).await?;
+        match body.remove("execution_id") {
+            Some(Value::String(execution_id)) => Ok(execution_id),
+            _ => Err(EmulatorError::UnexpectedResponse {
+                request: method,
+                reason: "no `execution_id` string".to_owned(),
+            }),
+        }
+    }
+
+    pub async fn set_global(
+        &self,
+        name: &str,
+        value: &Value,
+        persisted: bool,
+    ) -> Result<(), EmulatorError> {
+        self.call(Request::SetGlobal {
+            name,
+            value,
+            persisted,
+        })
+        .await
+        .map(drop)
     }
 
     async fn call(&self, request: Request<'_>) -> Result<Map<String, Value>, EmulatorError> {

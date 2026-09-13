@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 
 use super::event::decode_push;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Observation {
     Event(Event),
     /// The server's per-client buffer overflowed and this many events were never delivered.

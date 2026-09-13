@@ -38,6 +38,7 @@ pub struct SeededTwitch {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeededCommand {
     pub phrase: String,
+    pub action_name: String,
     pub action_id: ActionId,
     pub trigger_instance_id: TriggerInstanceId,
 }

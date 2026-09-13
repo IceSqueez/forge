@@ -35,6 +35,7 @@ forge-server = { path = "../../crates/forge-server" }
 forge-storage = { path = "../../crates/forge-storage" }
 forge-storage-sqlite = { path = "../../crates/forge-storage-sqlite" }
 forge-types = { path = "../../crates/forge-types" }
+axum = { version = "0.8" }
 clap = { version = "4.6", features = ["derive"] }
 futures-util = { version = "0.3" }
 rand = { version = "0.10" }
@@ -46,6 +47,8 @@ tokio = { version = "1.53", features = ["io-std", "io-util", "macros", "net", "p
 tokio-tungstenite = { version = "0.30" }
 
 [dev-dependencies]
+async-trait = { version = "0.1" }
 forge-registry = { path = "../../crates/forge-registry" }
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }

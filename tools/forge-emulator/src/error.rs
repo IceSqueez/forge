@@ -67,4 +67,19 @@ pub enum EmulatorError {
 
     #[error("seeder process failed: {reason}")]
     SeederProcess { reason: String },
+
+    #[error("fake platform could not listen on loopback: {reason}")]
+    FakeBind { reason: String },
+
+    #[error("invalid fake platform configuration: {reason}")]
+    InvalidFakeConfig { reason: String },
+
+    #[error("no live EventSub session holds a `{subscription_type}` subscription")]
+    NotSubscribed { subscription_type: String },
+
+    #[error("no live EventSub session is connected")]
+    NoLiveSession,
+
+    #[error("timed out waiting for {what}")]
+    WaitTimeout { what: String },
 }

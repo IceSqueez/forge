@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::endpoints::EndpointRefusal;
+
 #[derive(Debug, Error)]
 pub enum PlatformError {
     #[error("network failure: {reason}")]
@@ -36,6 +38,12 @@ pub enum PlatformError {
 
     #[error("local I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("endpoint override {variable} refused: {reason}")]
+    EndpointOverrideRefused {
+        variable: &'static str,
+        reason: EndpointRefusal,
+    },
 }
 
 #[cfg(test)]

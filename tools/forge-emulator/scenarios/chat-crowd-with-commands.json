@@ -1,0 +1,60 @@
+{
+  "name": "chat crowd with a share of commands",
+  "purpose": "Forty viewers chat twice each while eight of them also send a command; every command matches exactly once and plain chatter runs nothing.",
+  "fixture": {
+    "twitch": {},
+    "chat_commands": [
+      { "phrase": "!ping", "action_name": "Ping" },
+      { "phrase": "!dice", "action_name": "Dice" }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "crowd": {
+          "viewers": 40,
+          "chatter": ["hello from {login}", "gg number {n}", "what a play"],
+          "chatter_per_viewer": 2,
+          "command_senders": 8,
+          "commands": ["!ping", "!dice"]
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "twitch",
+            "kind": "chat.message",
+            "count": { "exactly": 88 },
+            "within_ms": 30000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "command.matched",
+            "count": { "exactly": 8 },
+            "within_ms": 30000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Dice" } },
+            "count": { "exactly": 4 },
+            "within_ms": 30000
+          }
+        },
+        { "event_absent": { "kind": "trigger.blocked", "window_ms": 2000 } },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

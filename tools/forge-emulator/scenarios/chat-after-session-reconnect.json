@@ -1,0 +1,70 @@
+{
+  "name": "chat still flows after an EventSub session reconnect",
+  "purpose": "After Twitch asks forge to move to a new EventSub socket, a chat command sent afterwards is still delivered, matched, and runs its action.",
+  "fixture": {
+    "twitch": {},
+    "chat_commands": [
+      { "phrase": "!ping", "action_name": "Ping" }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } },
+      "expect": [
+        {
+          "twitch_request_count": {
+            "method": "POST",
+            "path": "/helix/eventsub/subscriptions",
+            "min": 1
+          }
+        }
+      ]
+    },
+    {
+      "do": { "session_reconnect": { "within_ms": 15000 } },
+      "expect": [
+        {
+          "twitch_subscription": { "type": "channel.chat.message", "within_ms": 5000 }
+        }
+      ]
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": {
+            "user_id": "200000043",
+            "login": "bob",
+            "badges": ["moderator", { "subscriber": { "months": 3 } }]
+          },
+          "text": "!ping after reconnect"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat",
+            "source": "twitch",
+            "kind": "chat.message",
+            "payload": { "/message": { "equals": "!ping after reconnect" } },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Ping" } },
+            "within_ms": 10000
+          }
+        },
+        { "caused_by": { "effect": "started", "cause": "chat" } },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

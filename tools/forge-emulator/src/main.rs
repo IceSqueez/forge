@@ -13,6 +13,7 @@ use forge_emulator::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, HyprlandProbe, LaunchOptions,
     LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
+use forge_emulator::scenario::load_scenario;
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
 use forge_events::Event;
 use tokio::io::AsyncReadExt;
@@ -68,6 +69,17 @@ enum Command {
         #[arg(long, default_value_t = 3)]
         attempts: u32,
     },
+    /// Work with scenario files.
+    Scenario {
+        #[command(subcommand)]
+        command: ScenarioCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ScenarioCommand {
+    /// Validate a scenario file without launching anything.
+    Check { file: PathBuf },
 }
 
 #[tokio::main]
@@ -98,6 +110,9 @@ async fn main() -> ExitCode {
             })
             .await
         }
+        Command::Scenario {
+            command: ScenarioCommand::Check { file },
+        } => check_scenario(&file),
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
@@ -116,6 +131,9 @@ fn exit_code(error: &EmulatorError) -> u8 {
         EmulatorError::EndpointOverrideRefused { .. } => 6,
         EmulatorError::ServerPortTaken { .. } => 7,
         EmulatorError::ReadinessTimeout { .. } => 8,
+        EmulatorError::ScenarioUnreadable { .. } => 9,
+        EmulatorError::ScenarioSyntax { .. } => 10,
+        EmulatorError::ScenarioInvalid { .. } => 11,
         _ => 1,
     }
 }
@@ -259,6 +277,23 @@ async fn stop_requested() {
         }
     }
     let _ = tokio::signal::ctrl_c().await;
+}
+
+fn check_scenario(file: &std::path::Path) -> Result<(), EmulatorError> {
+    let scenario = load_scenario(file)?;
+    let output_error = |e: std::io::Error| EmulatorError::Output {
+        reason: e.to_string(),
+    };
+    let mut out = std::io::stdout();
+    writeln!(
+        out,
+        "{}: ok, `{}` with {} step(s)",
+        file.display(),
+        scenario.name,
+        scenario.steps.len()
+    )
+    .and_then(|()| out.flush())
+    .map_err(output_error)
 }
 
 fn read_fixture(path: &std::path::Path) -> Result<Fixture, EmulatorError> {

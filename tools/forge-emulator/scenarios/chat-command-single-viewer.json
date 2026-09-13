@@ -1,0 +1,73 @@
+{
+  "name": "single viewer runs a chat command",
+  "purpose": "One Twitch chat message that starts with a command phrase runs that command's action, and both the command match and the action start trace back to the chat message.",
+  "fixture": {
+    "twitch": {},
+    "chat_commands": [
+      { "phrase": "!ping", "action_name": "Ping" }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": { "user_id": "200000042", "login": "alice" },
+          "text": "!ping"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat",
+            "source": "twitch",
+            "kind": "chat.message",
+            "payload": {
+              "/message": { "equals": "!ping" },
+              "/user/login": { "equals": "alice" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "matched",
+            "source": "core",
+            "kind": "command.matched",
+            "payload": { "/command": { "equals": "!ping" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Ping" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "matched", "cause": "chat" } },
+        { "caused_by": { "effect": "started", "cause": "chat" } },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } },
+        { "event_absent": { "kind": "trigger.blocked", "window_ms": 1000 } },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

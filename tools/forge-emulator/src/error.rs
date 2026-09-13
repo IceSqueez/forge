@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+use crate::scenario::ScenarioProblem;
+
 #[derive(Debug, Error)]
 pub enum EmulatorError {
     #[error("control host `{host}` is not a loopback address")]
@@ -125,4 +127,28 @@ pub enum EmulatorError {
 
     #[error("forge teardown failed: {reason}")]
     ForgeTeardown { reason: String },
+
+    #[error("cannot read scenario {}: {reason}", path.display())]
+    ScenarioUnreadable { path: PathBuf, reason: String },
+
+    #[error("{}:{line}:{column}: {reason}", path.display())]
+    ScenarioSyntax {
+        path: PathBuf,
+        line: usize,
+        column: usize,
+        reason: String,
+    },
+
+    #[error("{}: invalid scenario{}", path.display(), listed(problems))]
+    ScenarioInvalid {
+        path: PathBuf,
+        problems: Vec<ScenarioProblem>,
+    },
+}
+
+fn listed(problems: &[ScenarioProblem]) -> String {
+    problems
+        .iter()
+        .map(|problem| format!("\n  {problem}"))
+        .collect()
 }

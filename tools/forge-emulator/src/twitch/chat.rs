@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::config::FakeTwitchConfig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ViewerBadge {
     Broadcaster,
     Moderator,

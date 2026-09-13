@@ -756,20 +756,6 @@ mod tests {
         assert_eq!(condition["broadcaster_user_id"], "BROADCASTER");
     }
 
-    #[tokio::test]
-    async fn subscribe_network_error_strips_url() {
-        let client = reqwest::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(1))
-            .build()
-            .unwrap();
-        let err = client
-            .post("https://192.0.2.1/helix/eventsub/subscriptions")
-            .send()
-            .await
-            .unwrap_err();
-        assert!(!err.without_url().to_string().contains("192.0.2.1"));
-    }
-
     use super::{
         EVENTSUB_PATH, SubStatus, SubscribeError, SubscriptionTracker, subscribe_all_with_base_url,
     };

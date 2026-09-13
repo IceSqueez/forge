@@ -998,3 +998,98 @@ fn step_card(n: u8, circle_bg: Rgba, circle_fg: Rgba, palette: &ForgePalette) ->
         .bg(palette.elevated)
         .child(circle)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::connect_flow::ConnectFlowLaunch;
+    use forge_runtime::{EventBus, NullEventLogRepo, spawn_live_viewer_aggregator};
+    use forge_storage::{CredentialId, StorageError};
+    use forge_types::PlatformId;
+
+    struct NoCredentials;
+
+    #[async_trait::async_trait]
+    impl CredentialsRepo for NoCredentials {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<time::OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    #[gpui::test]
+    fn authorized_sign_in_without_an_install_seed_fails_with_credentials_missing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        // Why: nobody drives this runtime, so a regression that proceeds without the seed queues
+        // its chat dial but never runs it; and a non-Twitch launch keeps `ConnectFlow::new` from
+        // opening a real device-code request.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _runtime_context = runtime.enter();
+        let event_bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let launch = ConnectFlowLaunch {
+            platform: PlatformId::YouTube,
+            display_name: "YouTube".to_owned(),
+            rt_handle: runtime.handle().clone(),
+            credentials: Arc::new(NoCredentials),
+            bus: event_bus.clone(),
+            event_bus,
+            live_viewers: spawn_live_viewer_aggregator(),
+            twitch_install_seed: None,
+            kick_install_seed: None,
+            youtube_install_seed: None,
+        };
+        let flow = cx.new(|cx| ConnectFlow::new(launch, cx));
+        let outcome = TwitchAuthOutcome {
+            user_info: UserInfo {
+                id: "1234".to_owned(),
+                login: "streamer".to_owned(),
+                display_name: "Streamer".to_owned(),
+                broadcaster_type: forge_platform_twitch::BroadcasterTier::Standard,
+            },
+            client_id: "client".to_owned(),
+        };
+
+        let (phase, error) = flow.update(cx, |this, cx| {
+            this.twitch_device = Some(TwitchDeviceState::starting());
+            this.install_twitch_outcome(outcome, cx);
+            let dev = this.twitch_device.as_ref().unwrap();
+            (dev.phase, dev.error.clone())
+        });
+
+        assert_eq!(
+            (phase, error),
+            (
+                TwitchDevicePhase::Failed,
+                Some(tr!("auth_error_credentials_missing_twitch").to_string())
+            ),
+            "a sign-in with no install seed must fail visibly instead of building a bundle"
+        );
+    }
+}

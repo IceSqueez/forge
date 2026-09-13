@@ -330,10 +330,12 @@ pub fn register_twitch_sub_actions(
 #[allow(clippy::unwrap_used)]
 pub(crate) mod test_support {
     use std::collections::VecDeque;
+    use std::ffi::OsString;
     use std::sync::Mutex;
 
     use async_trait::async_trait;
     use forge_events::{Event, EventPublisher};
+    use forge_platform_core::{EndpointSurface, PlatformEndpoints};
     use forge_registry::RunContext;
     use forge_storage::{CredentialId, CredentialsRepo, StorageError};
     use forge_types::{ArgStack, EventId};
@@ -455,6 +457,36 @@ pub(crate) mod test_support {
 
     pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
         RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
+    }
+
+    pub(crate) fn endpoints_with(overrides: &[(EndpointSurface, &str)]) -> PlatformEndpoints {
+        PlatformEndpoints::resolve(|variable| {
+            overrides
+                .iter()
+                .find(|(surface, _)| surface.env_var() == variable)
+                .map(|(_, url)| OsString::from(*url))
+        })
+        .unwrap()
+    }
+
+    /// Every Twitch surface aimed at a loopback port nothing listens on, so a test that strays
+    /// onto the network fails fast instead of reaching the real services.
+    pub(crate) fn unreachable_twitch_endpoints() -> PlatformEndpoints {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        endpoints_with(&[
+            (
+                EndpointSurface::TwitchApi,
+                &format!("http://127.0.0.1:{port}"),
+            ),
+            (
+                EndpointSurface::TwitchEventSubSocket,
+                &format!("ws://127.0.0.1:{port}"),
+            ),
+        ])
     }
 }
 

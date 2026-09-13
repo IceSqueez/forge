@@ -3819,22 +3819,16 @@ mod tests {
     use super::*;
 
     fn make_session(bus: &Arc<PlatformEventChannel>) -> ChatSession {
-        let manager = Arc::new(TwitchCredentialsManager::new(
-            Arc::new(MockCreds::with_identity()),
-            "client".to_string(),
-        ));
-        let tracker = crate::subscriptions::SubscriptionTracker::default();
-        let publisher: Arc<dyn EventPublisher> = bus.clone();
-        let (session, _, _) = ChatSession::new(
-            manager,
-            "client".to_string(),
-            "bcast".to_string(),
-            "user".to_string(),
-            publisher,
-            tracker,
-            TwitchLifecycle::new(),
-        );
-        session
+        session_over_creds(bus, Arc::new(MockCreds::with_identity()))
+    }
+
+    fn session_config(endpoints: PlatformEndpoints) -> ChatSessionConfig {
+        ChatSessionConfig {
+            client_id: "client".to_owned(),
+            broadcaster_id: "bcast".to_owned(),
+            user_id: "user".to_owned(),
+            endpoints,
+        }
     }
 
     #[test]
@@ -6087,24 +6081,38 @@ mod tests {
     }
 
     const SESSION_WELCOME_FRAME: &str = r#"{"metadata":{"message_type":"session_welcome","message_id":"abc"},"payload":{"session":{"id":"sess-123","reconnect_url":null}}}"#;
+    const EVENTSUB_SUBSCRIPTIONS_PATH: &str = "/helix/eventsub/subscriptions";
 
     fn session_over_creds(
         bus: &Arc<PlatformEventChannel>,
         repo: Arc<dyn forge_storage::CredentialsRepo>,
     ) -> ChatSession {
-        let manager = Arc::new(TwitchCredentialsManager::new(repo, "client".to_string()));
-        let tracker = crate::subscriptions::SubscriptionTracker::default();
-        let publisher: Arc<dyn EventPublisher> = bus.clone();
-        let (session, _state_rx, _shutdown_tx) = ChatSession::new(
-            manager,
-            "client".to_string(),
-            "bcast".to_string(),
-            "user".to_string(),
-            publisher,
-            tracker,
-            TwitchLifecycle::new(),
+        let (session, _state_rx, _shutdown_tx) = session_with(
+            bus,
+            repo,
+            crate::sub_actions::test_support::unreachable_twitch_endpoints(),
         );
         session
+    }
+
+    fn session_with(
+        bus: &Arc<PlatformEventChannel>,
+        repo: Arc<dyn forge_storage::CredentialsRepo>,
+        endpoints: PlatformEndpoints,
+    ) -> (
+        ChatSession,
+        watch::Receiver<ChatConnectionState>,
+        oneshot::Sender<()>,
+    ) {
+        let manager = Arc::new(TwitchCredentialsManager::new(repo, "client".to_owned()));
+        let publisher: Arc<dyn EventPublisher> = bus.clone();
+        ChatSession::new(
+            manager,
+            session_config(endpoints),
+            publisher,
+            crate::subscriptions::SubscriptionTracker::default(),
+            TwitchLifecycle::new(),
+        )
     }
 
     struct FailingCreds;
@@ -6234,6 +6242,12 @@ mod tests {
                 ))
                 .mount(&server)
                 .await;
+            wiremock::Mock::given(wiremock::matchers::method("POST"))
+                .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
+                .respond_with(wiremock::ResponseTemplate::new(500))
+                .expect(0)
+                .mount(&server)
+                .await;
 
             let manager = Arc::new(TwitchCredentialsManager::with_endpoint(
                 Arc::new(NearExpiryCreds),
@@ -6242,11 +6256,13 @@ mod tests {
             ));
             let bus = Arc::new(PlatformEventChannel::new());
             let publisher: Arc<dyn EventPublisher> = bus.clone();
+            let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
+                EndpointSurface::TwitchApi,
+                &server.uri(),
+            )]);
             let (mut session, _state_rx, _shutdown_tx) = ChatSession::new(
                 manager,
-                "client".to_owned(),
-                "bcast".to_owned(),
-                "user".to_owned(),
+                session_config(endpoints),
                 publisher,
                 crate::subscriptions::SubscriptionTracker::default(),
                 TwitchLifecycle::new(),
@@ -6343,6 +6359,128 @@ mod tests {
         assert!(
             matches!(action, FrameAction::Disconnect),
             "a non-reauth token error must disconnect for backoff retry, not route to reauth"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_welcome_creates_eventsub_subscriptions_on_the_twitch_api_override() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
+            .respond_with(
+                wiremock::ResponseTemplate::new(202).set_body_json(serde_json::json!({
+                    "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
+                })),
+            )
+            .mount(&server)
+            .await;
+        let bus = Arc::new(PlatformEventChannel::new());
+        let endpoints = crate::sub_actions::test_support::endpoints_with(&[
+            (EndpointSurface::TwitchApi, &server.uri()),
+            (EndpointSurface::TwitchEventSubSocket, "ws://127.0.0.1:1"),
+        ]);
+        let (mut session, _state_rx, _shutdown_tx) =
+            session_with(&bus, Arc::new(MockCreds::with_identity()), endpoints);
+
+        let mut session_id = None;
+        session
+            .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
+            .await;
+
+        let requests = server.received_requests().await.unwrap();
+        assert!(
+            requests.iter().any(|request| {
+                request.url.path() == EVENTSUB_SUBSCRIPTIONS_PATH
+                    && serde_json::from_slice::<serde_json::Value>(&request.body).is_ok_and(
+                        |body| body["transport"]["session_id"].as_str() == Some("sess-123"),
+                    )
+            }),
+            "subscription creation for the welcomed session must reach the TwitchApi override; \
+             got {} request(s)",
+            requests.len()
+        );
+    }
+
+    struct LoopbackSocket {
+        listener: tokio::net::TcpListener,
+        url: String,
+    }
+
+    impl LoopbackSocket {
+        async fn bind() -> Self {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("ws://{}", listener.local_addr().unwrap());
+            Self { listener, url }
+        }
+
+        /// Completes one WebSocket handshake, sends `frames`, then holds the socket open.
+        fn serve_once(self, frames: Vec<String>) -> oneshot::Receiver<()> {
+            let (accepted_tx, accepted_rx) = oneshot::channel();
+            tokio::spawn(async move {
+                use futures_util::SinkExt;
+                let (stream, _) = self.listener.accept().await.unwrap();
+                let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+                let _ = accepted_tx.send(());
+                for frame in frames {
+                    if ws.send(Message::Text(frame.into())).await.is_err() {
+                        return;
+                    }
+                }
+                while ws.next().await.is_some() {}
+            });
+            accepted_rx
+        }
+    }
+
+    fn spawn_session_dialing(
+        socket_url: &str,
+    ) -> (tokio::task::JoinHandle<()>, oneshot::Sender<()>) {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let endpoints = crate::sub_actions::test_support::endpoints_with(&[
+            (EndpointSurface::TwitchApi, "http://127.0.0.1:1"),
+            (EndpointSurface::TwitchEventSubSocket, socket_url),
+        ]);
+        let (session, _state_rx, shutdown_tx) =
+            session_with(&bus, Arc::new(MockCreds::with_identity()), endpoints);
+        (tokio::spawn(session.run()), shutdown_tx)
+    }
+
+    #[tokio::test]
+    async fn run_dials_the_eventsub_socket_override_first() {
+        let socket = LoopbackSocket::bind().await;
+        let url = socket.url.clone();
+        let accepted = socket.serve_once(Vec::new());
+
+        let (task, _shutdown_tx) = spawn_session_dialing(&url);
+        let dialed = tokio::time::timeout(Duration::from_secs(5), accepted).await;
+        task.abort();
+
+        assert!(
+            matches!(dialed, Ok(Ok(()))),
+            "the initial dial must open the TwitchEventSubSocket override"
+        );
+    }
+
+    #[tokio::test]
+    async fn server_supplied_reconnect_url_replaces_the_socket_override() {
+        let initial = LoopbackSocket::bind().await;
+        let initial_url = initial.url.clone();
+        let reconnect_target = LoopbackSocket::bind().await;
+        let reconnect_frame = serde_json::json!({
+            "metadata": { "message_type": "session_reconnect", "message_id": "r-1" },
+            "payload": { "session": { "id": "sess-1", "reconnect_url": reconnect_target.url } }
+        })
+        .to_string();
+        let _initial_accepted = initial.serve_once(vec![reconnect_frame]);
+        let reconnected = reconnect_target.serve_once(Vec::new());
+
+        let (task, _shutdown_tx) = spawn_session_dialing(&initial_url);
+        let dialed = tokio::time::timeout(Duration::from_secs(5), reconnected).await;
+        task.abort();
+
+        assert!(
+            matches!(dialed, Ok(Ok(()))),
+            "session_reconnect must dial the server-supplied reconnect_url, not the override again"
         );
     }
 }

@@ -354,6 +354,7 @@ impl TwitchIntegrationBundle {
                 client_id: "test-client".to_owned(),
                 broadcaster_id: "1".to_owned(),
                 user_id: "1".to_owned(),
+                endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
             },
             bus: Arc::new(crate::event_channel::PlatformEventChannel::new()),
             creds,

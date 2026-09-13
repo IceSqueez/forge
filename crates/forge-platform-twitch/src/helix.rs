@@ -455,6 +455,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn new_sends_requests_to_the_twitch_api_endpoint_override() {
+        let server = MockServer::start().await;
+        let payload = serde_json::json!({"data": [{"id": "override-hit"}]});
+        Mock::given(method("GET"))
+            .and(path("/helix/users"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(payload.clone()))
+            .mount(&server)
+            .await;
+        let endpoints = crate::sub_actions::test_support::endpoints_with(&[(
+            EndpointSurface::TwitchApi,
+            &server.uri(),
+        )]);
+        let publisher: Arc<dyn EventPublisher> = Arc::new(PlatformEventChannel::new());
+        let t = HelixHttpTransport::new(
+            &endpoints,
+            Arc::new(GrantLimiter),
+            publisher,
+            CLIENT_ID.to_owned(),
+            Arc::new(StaticTokenSource),
+        );
+
+        let value = t
+            .execute(HelixRequest::new(HelixMethod::Get, "/helix/users"))
+            .await
+            .unwrap();
+
+        assert_eq!(value, payload);
+    }
+
+    #[tokio::test]
     async fn execute_returns_null_for_empty_success_body() {
         let server = MockServer::start().await;
         Mock::given(method("DELETE"))

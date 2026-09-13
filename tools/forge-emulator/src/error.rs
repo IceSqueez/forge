@@ -82,4 +82,47 @@ pub enum EmulatorError {
 
     #[error("timed out waiting for {what}")]
     WaitTimeout { what: String },
+
+    #[error("refusing to launch forge: a fullscreen window or a running game is open ({windows})")]
+    GameInProgress { windows: String },
+
+    #[error(
+        "refusing to launch forge: Hyprland state is unreadable, so a fullscreen game cannot be ruled out: {reason}"
+    )]
+    GameStateUnreadable { reason: String },
+
+    #[error("refusing to launch forge: {} overlaps the live forge data directory", path.display())]
+    LiveDataDir { path: PathBuf },
+
+    #[error("refusing to launch forge: {} would stand in for the real home directory", path.display())]
+    LiveHome { path: PathBuf },
+
+    #[error("invalid launch: {reason}")]
+    InvalidLaunch { reason: String },
+
+    #[error("forge could not be started: {reason}")]
+    ForgeSpawn { reason: String },
+
+    #[error("forge exited ({status}); stderr tail: {stderr_tail}; stdout tail: {stdout_tail}")]
+    ForgeExited {
+        status: String,
+        code: Option<i32>,
+        stderr_tail: String,
+        stdout_tail: String,
+    },
+
+    #[error("forge refused its endpoint overrides and exited: {line}")]
+    EndpointOverrideRefused { line: String },
+
+    #[error("forge could not bind its seeded server port after {attempts} attempt(s)")]
+    ServerPortTaken { attempts: u32 },
+
+    #[error("forge did not authenticate a control connection within {}s; stderr tail: {stderr_tail}", waited.as_secs_f32())]
+    ReadinessTimeout {
+        waited: std::time::Duration,
+        stderr_tail: String,
+    },
+
+    #[error("forge teardown failed: {reason}")]
+    ForgeTeardown { reason: String },
 }

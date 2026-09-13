@@ -272,11 +272,17 @@ impl ConnectFlow {
         let bus = Arc::clone(&self.bus);
         let credentials = Arc::clone(&self.credentials);
         let live_viewers = self.live_viewers.clone();
-        let lifecycle = self
-            .twitch_install_seed
-            .as_ref()
-            .map(|seed| seed.lifecycle.clone())
-            .unwrap_or_default();
+        let Some(seed) = self.twitch_install_seed.clone() else {
+            tracing::error!("twitch install seed absent at sign-in; client id was missing at boot");
+            if let Some(dev) = &mut self.twitch_device {
+                dev.phase = TwitchDevicePhase::Failed;
+                dev.error = Some(tr!("auth_error_credentials_missing_twitch").to_string());
+            }
+            cx.notify();
+            return;
+        };
+        let lifecycle = seed.lifecycle;
+        let endpoints = seed.endpoints;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -286,6 +292,7 @@ impl ConnectFlow {
                     client_id: outcome.client_id,
                     broadcaster_id: outcome.user_info.id.clone(),
                     user_id: outcome.user_info.id,
+                    endpoints,
                 };
                 let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
                     Arc::clone(&credentials),
@@ -293,9 +300,7 @@ impl ConnectFlow {
                 ));
                 let chat = forge_platform_twitch::TwitchChat::new(
                     manager,
-                    config.client_id.clone(),
-                    config.broadcaster_id.clone(),
-                    config.user_id.clone(),
+                    config.clone(),
                     Arc::clone(&bus),
                     Arc::clone(&tracker),
                     lifecycle.clone(),

@@ -5,8 +5,8 @@ use std::time::Duration;
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
     BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId, BuiltinStatus, ChatPlatform,
-    LiveViewerSource, PlatformError, QuickActions, RateLimitOutcome, RateLimiter, SectionIcon,
-    TokenBucketRateLimiter,
+    LiveViewerSource, PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome,
+    RateLimiter, SectionIcon, TokenBucketRateLimiter,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
@@ -184,6 +184,7 @@ pub struct KickInstallSeed {
 #[derive(Clone)]
 pub struct TwitchInstallSeed {
     pub lifecycle: forge_platform_twitch::TwitchLifecycle,
+    pub endpoints: PlatformEndpoints,
 }
 
 /// Holds the same handles the registered YouTube sub-actions resolve through, so a post-boot sign-in reaches them without a restart.
@@ -257,6 +258,7 @@ pub async fn build_integrations(
     triggers: &mut TriggerRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
+    endpoints: &PlatformEndpoints,
 ) -> Integrations {
     register_platform_triggers(triggers);
 
@@ -269,7 +271,7 @@ pub async fn build_integrations(
         }
     };
 
-    let (twitch, twitch_install_seed) = build_twitch(sub_actions, backend, bus).await;
+    let (twitch, twitch_install_seed) = build_twitch(sub_actions, backend, bus, endpoints).await;
     insert("twitch", twitch);
     let obs_install_seed = build_obs(sub_actions, backend, bus).await;
     let vtube_install_seed = build_vtube(sub_actions, backend, bus).await;
@@ -420,6 +422,7 @@ async fn build_twitch(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
+    endpoints: &PlatformEndpoints,
 ) -> (Option<BuiltinObject>, Option<TwitchInstallSeed>) {
     let Some(client_id) = forge_platform_twitch::client_id() else {
         return (None, None);
@@ -428,6 +431,7 @@ async fn build_twitch(
     let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
     let seed = TwitchInstallSeed {
         lifecycle: lifecycle.clone(),
+        endpoints: endpoints.clone(),
     };
 
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
@@ -441,6 +445,7 @@ async fn build_twitch(
     let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
         Arc::new(
             forge_platform_twitch::HelixHttpTransport::new(
+                endpoints,
                 Arc::clone(&rate_limiter),
                 publisher(bus),
                 client_id.clone(),
@@ -465,6 +470,7 @@ async fn build_twitch(
                 client_id: client_id.clone(),
                 broadcaster_id: String::new(),
                 user_id: String::new(),
+                endpoints: endpoints.clone(),
             },
             Arc::clone(&creds),
             forge_platform_twitch::SubscriptionTracker::default(),
@@ -492,12 +498,11 @@ async fn build_twitch(
         client_id,
         broadcaster_id: stored.user_id.clone(),
         user_id: stored.user_id,
+        endpoints: endpoints.clone(),
     };
     let chat = forge_platform_twitch::TwitchChat::new(
         Arc::clone(&manager),
-        config.client_id.clone(),
-        config.broadcaster_id.clone(),
-        config.user_id.clone(),
+        config.clone(),
         publisher(bus),
         tracker.clone(),
         lifecycle.clone(),

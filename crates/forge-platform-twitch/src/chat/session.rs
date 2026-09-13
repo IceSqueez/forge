@@ -1,10 +1,12 @@
-use crate::chat::subscriber::{SubscribeError, subscribe_all};
+use crate::builtin::ChatSessionConfig;
+use crate::chat::subscriber::{SubscribeError, subscribe_all_with_base_url};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{
-    Backoff, ConnectionState, PlatformError, connection_state_changed_event,
+    Backoff, ConnectionState, EndpointSurface, PlatformEndpoints, PlatformError,
+    connection_state_changed_event,
 };
 use forge_types::{ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply};
 use futures_util::StreamExt;
@@ -47,7 +49,6 @@ use crate::payload_fields::vip as vip_fields;
 use crate::payload_fields::warning as warning_fields;
 use crate::payload_fields::whisper as whisper_fields;
 
-const EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws";
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +75,7 @@ struct SessionConfig {
     client_id: String,
     broadcaster_id: String,
     user_id: String,
+    endpoints: PlatformEndpoints,
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
     lifecycle: TwitchLifecycle,
@@ -88,9 +90,7 @@ pub(crate) struct ChatSession {
 impl ChatSession {
     pub(crate) fn new(
         manager: Arc<TwitchCredentialsManager>,
-        client_id: String,
-        broadcaster_id: String,
-        user_id: String,
+        config: ChatSessionConfig,
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
         lifecycle: TwitchLifecycle,
@@ -101,12 +101,19 @@ impl ChatSession {
     ) {
         let (state_tx, state_rx) = watch::channel(ChatConnectionState::Connecting);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let ChatSessionConfig {
+            client_id,
+            broadcaster_id,
+            user_id,
+            endpoints,
+        } = config;
         let session = Self {
             config: SessionConfig {
                 manager,
                 client_id,
                 broadcaster_id,
                 user_id,
+                endpoints,
                 bus,
                 tracker,
                 lifecycle,
@@ -119,7 +126,11 @@ impl ChatSession {
 
     pub(crate) async fn run(mut self) {
         let mut backoff = Backoff::default();
-        let mut url = EVENTSUB_WS_URL.to_owned();
+        let mut url = self
+            .config
+            .endpoints
+            .base_url(EndpointSurface::TwitchEventSubSocket)
+            .to_owned();
 
         loop {
             let attempt = backoff.attempt();
@@ -276,7 +287,8 @@ impl ChatSession {
                     }
                 };
 
-                match subscribe_all(
+                match subscribe_all_with_base_url(
+                    self.config.endpoints.base_url(EndpointSurface::TwitchApi),
                     &token,
                     &self.config.client_id,
                     &id,

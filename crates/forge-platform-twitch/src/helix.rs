@@ -3,12 +3,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_platform_core::{RateLimiter, acquire_or_wait};
+use forge_platform_core::{EndpointSurface, PlatformEndpoints, RateLimiter, acquire_or_wait};
 use forge_types::OAuthToken;
 use thiserror::Error;
 use tracing::{debug, warn};
 
-const HELIX_BASE_URL: &str = "https://api.twitch.tv";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 /// Used when a 429 omits `Retry-After`; a conservative default back-off.
@@ -98,13 +97,14 @@ pub struct HelixHttpTransport {
 
 impl HelixHttpTransport {
     pub fn new(
+        endpoints: &PlatformEndpoints,
         rate_limiter: Arc<dyn RateLimiter>,
         bus: Arc<dyn EventPublisher>,
         client_id: String,
         tokens: Arc<dyn HelixTokenSource>,
     ) -> Self {
         Self::with_base_url(
-            HELIX_BASE_URL.to_owned(),
+            endpoints.base_url(EndpointSurface::TwitchApi).to_owned(),
             rate_limiter,
             bus,
             client_id,

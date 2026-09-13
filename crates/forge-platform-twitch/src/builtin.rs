@@ -12,10 +12,10 @@ use forge_platform_core::TokenBucketRateLimiter;
 use forge_platform_core::{
     BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
     DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
-    HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent, QuickActionChoiceOption,
-    QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
-    QuickActionLiveness, QuickActions, RateLimiter, SectionIcon, SubscriptionRow,
-    SubscriptionStatus, ViewerReport, ViewerReportStream,
+    HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction, QuickActionAccent,
+    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
+    QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter, SectionIcon,
+    SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
 use std::collections::BTreeMap;
 
@@ -69,10 +69,12 @@ impl LiveViewerSource for TwitchViewerSource {
     }
 }
 
+#[derive(Clone)]
 pub struct ChatSessionConfig {
     pub client_id: String,
     pub broadcaster_id: String,
     pub user_id: String,
+    pub endpoints: PlatformEndpoints,
 }
 
 pub struct TwitchIntegrationBundle {
@@ -159,6 +161,7 @@ impl TwitchIntegrationBundle {
     ) -> Arc<dyn HelixTransport> {
         Arc::new(
             HelixHttpTransport::new(
+                &config.endpoints,
                 rate_limiter,
                 Arc::clone(bus),
                 config.client_id.clone(),
@@ -301,9 +304,7 @@ impl TwitchIntegrationBundle {
     pub(crate) fn spawn_chat(&self) -> TwitchChatHandle {
         TwitchChat::new(
             Arc::clone(&self.credentials_manager),
-            self.config.client_id.clone(),
-            self.config.broadcaster_id.clone(),
-            self.config.user_id.clone(),
+            self.config.clone(),
             Arc::clone(&self.bus),
             self.tracker.clone(),
             self.lifecycle.clone(),

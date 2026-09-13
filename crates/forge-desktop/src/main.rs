@@ -158,6 +158,15 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
 fn main() {
     let (log_guard, log_tail) = init_tracing();
 
+    let endpoints = match forge_platform_core::PlatformEndpoints::from_env() {
+        Ok(endpoints) => endpoints,
+        Err(err) => {
+            tracing::error!(error = %err, "platform endpoint override refused; exiting");
+            drop(log_guard);
+            std::process::exit(1);
+        }
+    };
+
     let _instance_lock = match instance_lock::acquire(&paths::data_dir()) {
         instance_lock::LockOutcome::Acquired(lock) => Some(lock),
         instance_lock::LockOutcome::AlreadyRunning => {
@@ -234,9 +243,15 @@ fn main() {
 
             let rt_handle_for_root = rt_handle.clone();
             let log_tail_for_root = log_tail.clone();
+            let endpoints_for_root = endpoints.clone();
             let window = match cx.open_window(options, move |_window, cx| {
                 cx.new(|cx| {
-                    RootView::new(rt_handle_for_root.clone(), log_tail_for_root.clone(), cx)
+                    RootView::new(
+                        rt_handle_for_root.clone(),
+                        log_tail_for_root.clone(),
+                        endpoints_for_root.clone(),
+                        cx,
+                    )
                 })
             }) {
                 Ok(window) => window,
@@ -251,6 +266,12 @@ fn main() {
                 .update(cx, |root, _window, _cx| root.set_window(window))
                 .ok();
 
-            run_boot(rt_handle.clone(), log_tail.clone(), window, cx);
+            run_boot(
+                rt_handle.clone(),
+                log_tail.clone(),
+                endpoints.clone(),
+                window,
+                cx,
+            );
         });
 }

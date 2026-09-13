@@ -7,7 +7,6 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, warn};
 
-const EVENTSUB_BASE_URL: &str = "https://api.twitch.tv";
 const EVENTSUB_PATH: &str = "/helix/eventsub/subscriptions";
 const SUBSCRIBE_CONCURRENCY: usize = 10;
 
@@ -428,28 +427,6 @@ struct SubscribeCtx {
     user_id: String,
     bus: Arc<dyn EventPublisher>,
     base_url: String,
-}
-
-pub(crate) async fn subscribe_all(
-    token: &OAuthToken,
-    client_id: &str,
-    session_id: &str,
-    broadcaster_id: &str,
-    user_id: &str,
-    bus: &Arc<dyn EventPublisher>,
-    tracker: &SubscriptionTracker,
-) -> Result<(), SubscribeError> {
-    subscribe_all_with_base_url(
-        EVENTSUB_BASE_URL,
-        token,
-        client_id,
-        session_id,
-        broadcaster_id,
-        user_id,
-        bus,
-        tracker,
-    )
-    .await
 }
 
 #[allow(clippy::too_many_arguments)]

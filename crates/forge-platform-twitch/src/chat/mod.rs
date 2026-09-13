@@ -7,6 +7,7 @@ mod subscriber;
 pub use send::{ChatSendError, SentMessageId, send_chat};
 pub use session::ChatConnectionState;
 
+use crate::builtin::ChatSessionConfig;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
@@ -16,9 +17,7 @@ use tokio::sync::{oneshot, watch};
 
 pub struct TwitchChat {
     manager: Arc<TwitchCredentialsManager>,
-    client_id: String,
-    broadcaster_id: String,
-    user_id: String,
+    config: ChatSessionConfig,
     bus: Arc<dyn EventPublisher>,
     tracker: SubscriptionTracker,
     lifecycle: TwitchLifecycle,
@@ -32,18 +31,14 @@ pub struct TwitchChatHandle {
 impl TwitchChat {
     pub fn new(
         manager: Arc<TwitchCredentialsManager>,
-        client_id: String,
-        broadcaster_id: String,
-        user_id: String,
+        config: ChatSessionConfig,
         bus: Arc<dyn EventPublisher>,
         tracker: SubscriptionTracker,
         lifecycle: TwitchLifecycle,
     ) -> Self {
         Self {
             manager,
-            client_id,
-            broadcaster_id,
-            user_id,
+            config,
             bus,
             tracker,
             lifecycle,
@@ -53,9 +48,7 @@ impl TwitchChat {
     pub fn start(self) -> TwitchChatHandle {
         let (sess, state_rx, shutdown_tx) = session::ChatSession::new(
             self.manager,
-            self.client_id,
-            self.broadcaster_id,
-            self.user_id,
+            self.config,
             self.bus,
             self.tracker,
             self.lifecycle,

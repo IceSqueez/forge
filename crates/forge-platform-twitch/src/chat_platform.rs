@@ -76,6 +76,7 @@ impl TwitchPlatform {
             .get_or_try_init(|| async {
                 let publisher: Arc<dyn EventPublisher> = self.events.clone();
                 let transport: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
+                    &self.config.endpoints,
                     Arc::clone(&self.rate_limiter),
                     publisher,
                     self.config.client_id.clone(),
@@ -133,9 +134,7 @@ impl ChatPlatform for TwitchPlatform {
         let publisher: Arc<dyn EventPublisher> = self.events.clone();
         let handle = TwitchChat::new(
             Arc::clone(&self.credentials_manager),
-            self.config.client_id.clone(),
-            self.config.broadcaster_id.clone(),
-            self.config.user_id.clone(),
+            self.config.clone(),
             publisher,
             self.tracker.clone(),
             self.lifecycle.clone(),

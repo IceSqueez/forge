@@ -5,7 +5,7 @@ use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, body_family, card, icon,
     mono_family, primary_button, radius, spacing, tr,
 };
-use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
 use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle};
 use forge_types::{ChatModerationAction, ChatModerationPayload};
 use futures_util::StreamExt as _;
@@ -45,6 +45,7 @@ pub struct RootView {
     state: BootState,
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
+    endpoints: PlatformEndpoints,
     window: Option<WindowHandle<RootView>>,
 }
 
@@ -52,6 +53,7 @@ impl RootView {
     pub fn new(
         rt_handle: tokio::runtime::Handle,
         log_tail: LogTail,
+        endpoints: PlatformEndpoints,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
@@ -60,6 +62,7 @@ impl RootView {
             state: BootState::Booting,
             rt_handle,
             log_tail,
+            endpoints,
             window: None,
         }
     }
@@ -82,15 +85,17 @@ impl RootView {
         };
         let rt_handle = self.rt_handle.clone();
         let log_tail = self.log_tail.clone();
+        let endpoints = self.endpoints.clone();
         self.state = BootState::Booting;
         cx.notify();
-        run_boot(rt_handle, log_tail, window, cx);
+        run_boot(rt_handle, log_tail, endpoints, window, cx);
     }
 }
 
 pub fn run_boot(
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
+    endpoints: PlatformEndpoints,
     window: WindowHandle<RootView>,
     cx: &mut App,
 ) {
@@ -106,7 +111,7 @@ pub fn run_boot(
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
     rt_handle.spawn(async move {
-        let _ = result_tx.send(build_runtime(log_tail).await);
+        let _ = result_tx.send(build_runtime(log_tail, endpoints).await);
     });
 
     cx.spawn(async move |cx| {

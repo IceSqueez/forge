@@ -5,7 +5,7 @@ use std::time::Duration;
 use forge_components::{Density, ThemeId};
 use forge_events::EventPublisher;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
-use forge_platform_core::paths;
+use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Config, EventBus, OverlayConnectListener,
@@ -115,7 +115,10 @@ async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
 }
 
 /// Must run within the tokio runtime: the engine/scheduler/evaluator spawn tasks internally.
-pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFailure> {
+pub async fn build_runtime(
+    log_tail: LogTail,
+    endpoints: PlatformEndpoints,
+) -> Result<RuntimeHandles, BootFailure> {
     let db_path = default_db_path();
     if let Some(parent) = db_path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
@@ -238,8 +241,14 @@ pub async fn build_runtime(log_tail: LogTail) -> Result<RuntimeHandles, BootFail
         eprintln!("forge-desktop: core trigger registration failed: {e}");
     }
 
-    let integrations =
-        build_integrations(&mut sub_action_reg, &mut trigger_reg, &backend, &bus).await;
+    let integrations = build_integrations(
+        &mut sub_action_reg,
+        &mut trigger_reg,
+        &backend,
+        &bus,
+        &endpoints,
+    )
+    .await;
 
     let sub_action_registry = Arc::new(sub_action_reg);
     let trigger_registry = Arc::new(trigger_reg);

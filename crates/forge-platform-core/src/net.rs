@@ -41,6 +41,7 @@ mod tests {
     fn private_loopback_and_special_addresses_are_blocked() {
         let blocked = [
             "127.0.0.1",
+            "127.255.255.254",
             "::1",
             "10.0.0.1",
             "172.16.0.1",

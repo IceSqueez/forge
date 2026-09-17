@@ -11,12 +11,15 @@ use forge_platform_core::{
 use forge_types::{ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply};
 use futures_util::StreamExt;
 use serde::Deserialize;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{oneshot, watch};
 use tokio::time::{Duration, Instant, sleep_until};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, trace, warn};
 
+use super::dedup::MessageIdWindow;
 use super::dispatch;
 use super::payload;
 use crate::payload_fields::ad_break as ad_break_fields;
@@ -50,6 +53,16 @@ use crate::payload_fields::warning as warning_fields;
 use crate::payload_fields::whisper as whisper_fields;
 
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+// Twitch drops the predecessor 30s after issuing a reconnect URL, so the successor dial must
+// give up early enough to fall back to the predecessor and the ordinary backoff path.
+const SUCCESSOR_TIMEOUT: Duration = Duration::from_secs(15);
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+
+type EventSubSocket =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+type SuccessorDial = Pin<Box<dyn Future<Output = Result<(EventSubSocket, String), String>> + Send>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatConnectionState {
@@ -85,6 +98,7 @@ pub(crate) struct ChatSession {
     config: SessionConfig,
     state_tx: watch::Sender<ChatConnectionState>,
     shutdown_rx: oneshot::Receiver<()>,
+    seen_messages: MessageIdWindow,
 }
 
 impl ChatSession {
@@ -120,13 +134,14 @@ impl ChatSession {
             },
             state_tx,
             shutdown_rx,
+            seen_messages: MessageIdWindow::default(),
         };
         (session, state_rx, shutdown_tx)
     }
 
     pub(crate) async fn run(mut self) {
         let mut backoff = Backoff::default();
-        let mut url = self
+        let url = self
             .config
             .endpoints
             .base_url(EndpointSurface::TwitchEventSubSocket)
@@ -147,11 +162,6 @@ impl ChatSession {
             let outcome = self.run_session(&url).await;
 
             match outcome {
-                SessionOutcome::Reconnect(new_url) => {
-                    url = new_url;
-                    backoff.reset();
-                    continue;
-                }
                 SessionOutcome::Disconnected => {}
                 SessionOutcome::ReauthRequired => {
                     error!(
@@ -182,40 +192,66 @@ impl ChatSession {
 
     async fn run_session(&mut self, url: &str) -> SessionOutcome {
         debug!("opening eventsub websocket");
-        let ws_stream = match tokio_tungstenite::connect_async(url).await {
-            Ok((ws, _)) => ws,
-            Err(e) => {
-                warn!(error = %ws_error_reason(&e), "WebSocket connect failed");
+        let mut live = match connect_socket(url).await {
+            Ok(socket) => Some(socket),
+            Err(reason) => {
+                warn!(error = %reason, "WebSocket connect failed");
                 return SessionOutcome::Disconnected;
             }
         };
 
         debug!("eventsub websocket open; awaiting session_welcome");
 
-        let mut ws_stream = ws_stream;
         let mut session_id: Option<String> = None;
+        let mut successor: Option<SuccessorDial> = None;
         let mut keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
 
         loop {
             tokio::select! {
-                _ = sleep_until(keepalive_deadline) => {
-                    warn!("keepalive timeout; treating as disconnect");
-                    return SessionOutcome::Disconnected;
+                _ = sleep_until(keepalive_deadline), if live.is_some() => {
+                    if successor.is_none() {
+                        warn!("keepalive timeout; treating as disconnect");
+                        return SessionOutcome::Disconnected;
+                    }
+                    debug!("predecessor socket went silent while the successor connects");
+                    live = None;
                 }
 
-                msg = ws_stream.next() => {
-                    match msg {
-                        None => return SessionOutcome::Disconnected,
-                        Some(Err(e)) => {
-                            warn!(error = %ws_error_reason(&e), "WebSocket read error");
-                            return SessionOutcome::Disconnected;
+                dialed = await_successor(&mut successor) => {
+                    successor = None;
+                    match dialed {
+                        Ok((socket, new_session_id)) => {
+                            let previous = session_id.replace(new_session_id);
+                            debug!(
+                                from_session = previous.as_deref().unwrap_or_default(),
+                                "moved to the successor eventsub session"
+                            );
+                            if let Some(predecessor) = live.replace(socket) {
+                                close_in_background(predecessor);
+                            }
+                            keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
                         }
+                        Err(reason) => {
+                            warn!(error = %reason, "successor eventsub connection failed");
+                            if live.is_none() {
+                                return SessionOutcome::Disconnected;
+                            }
+                        }
+                    }
+                }
+
+                msg = next_message(&mut live) => {
+                    match msg {
                         Some(Ok(Message::Text(text))) => {
                             keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
                             match self.handle_frame(&text, &mut session_id).await {
                                 FrameAction::Continue => {}
                                 FrameAction::Reconnect(new_url) => {
-                                    return SessionOutcome::Reconnect(new_url);
+                                    if successor.is_some() {
+                                        debug!("successor already dialing; repeated reconnect ignored");
+                                    } else {
+                                        successor = Some(Box::pin(dial_successor(new_url)));
+                                    }
                                 }
                                 FrameAction::Disconnect => return SessionOutcome::Disconnected,
                                 FrameAction::ReauthRequired => {
@@ -223,9 +259,19 @@ impl ChatSession {
                                 }
                             }
                         }
-                        Some(Ok(Message::Close(_))) => {
-                            debug!("server sent close frame");
-                            return SessionOutcome::Disconnected;
+                        Some(Err(e)) => {
+                            warn!(error = %ws_error_reason(&e), "WebSocket read error");
+                            if successor.is_none() {
+                                return SessionOutcome::Disconnected;
+                            }
+                            live = None;
+                        }
+                        Some(Ok(Message::Close(_))) | None => {
+                            debug!("eventsub socket closed");
+                            if successor.is_none() {
+                                return SessionOutcome::Disconnected;
+                            }
+                            live = None;
                         }
                         Some(Ok(_)) => {}
                     }
@@ -341,6 +387,10 @@ impl ChatSession {
             "notification" => {
                 let sub_type = frame.metadata.subscription_type.as_deref().unwrap_or("");
                 let frame_msg_id = frame.metadata.message_id.as_str();
+                if self.seen_messages.is_duplicate(frame_msg_id) {
+                    debug!(subscription_type = %sub_type, "duplicate notification dropped");
+                    return FrameAction::Continue;
+                }
                 if let Some(frame_payload) = &frame.payload
                     && let Some(event_data) = &frame_payload.event
                 {
@@ -3767,8 +3817,74 @@ fn extract_roles_from_badges(badges: Option<&serde_json::Value>) -> Vec<String> 
         .unwrap_or_default()
 }
 
+async fn connect_socket(url: &str) -> Result<EventSubSocket, String> {
+    match tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(url)).await {
+        Ok(Ok((socket, _))) => Ok(socket),
+        Ok(Err(e)) => Err(ws_error_reason(&e)),
+        Err(_) => Err("connect timed out".to_owned()),
+    }
+}
+
+async fn next_message(
+    socket: &mut Option<EventSubSocket>,
+) -> Option<Result<Message, tokio_tungstenite::tungstenite::Error>> {
+    match socket {
+        Some(socket) => socket.next().await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn await_successor(
+    dial: &mut Option<SuccessorDial>,
+) -> Result<(EventSubSocket, String), String> {
+    match dial {
+        Some(dial) => dial.await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn dial_successor(url: String) -> Result<(EventSubSocket, String), String> {
+    match tokio::time::timeout(SUCCESSOR_TIMEOUT, welcome_on_successor(url)).await {
+        Ok(welcomed) => welcomed,
+        Err(_) => Err("timed out before session_welcome".to_owned()),
+    }
+}
+
+/// The successor inherits the predecessor's subscriptions, so its welcome is consumed here
+/// rather than routed to the frame handler that runs a subscription pass.
+async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), String> {
+    let mut socket = connect_socket(&url).await?;
+
+    while let Some(frame) = socket.next().await {
+        let Message::Text(text) = frame.map_err(|e| ws_error_reason(&e))? else {
+            continue;
+        };
+        let Ok(parsed) = serde_json::from_str::<WsFrame>(&text) else {
+            continue;
+        };
+        if parsed.metadata.message_type != "session_welcome" {
+            debug!(
+                message_type = %parsed.metadata.message_type,
+                "successor socket frame ahead of session_welcome"
+            );
+            continue;
+        }
+        return match parsed.payload.and_then(|payload| payload.session) {
+            Some(session) => Ok((socket, session.id)),
+            None => Err("session_welcome missing session.id".to_owned()),
+        };
+    }
+
+    Err("closed before session_welcome".to_owned())
+}
+
+fn close_in_background(mut socket: EventSubSocket) {
+    tokio::spawn(async move {
+        let _ = tokio::time::timeout(CLOSE_TIMEOUT, socket.close(None)).await;
+    });
+}
+
 enum SessionOutcome {
-    Reconnect(String),
     Disconnected,
     ReauthRequired,
 }

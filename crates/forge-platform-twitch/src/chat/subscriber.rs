@@ -16,6 +16,13 @@ pub(crate) enum SubscribeError {
     ScopeMissing,
 }
 
+enum TopicOutcome {
+    Active,
+    AlreadyExists,
+    Failed,
+    ScopeRejected,
+}
+
 #[derive(Debug, Deserialize)]
 struct SubscribeResponse {
     data: Vec<SubscriptionData>,
@@ -482,21 +489,25 @@ pub(crate) async fn subscribe_all_with_base_url(
 
     let mut outcomes = stream::iter(pending).buffer_unordered(SUBSCRIBE_CONCURRENCY);
 
-    let mut scope_missing = false;
-    let mut rejected = 0usize;
+    let mut active = 0usize;
+    let mut already_exists = 0usize;
+    let mut failed = 0usize;
+    let mut scope_rejected = 0usize;
     while let Some(outcome) = outcomes.next().await {
-        if let Err(SubscribeError::ScopeMissing) = outcome {
-            scope_missing = true;
-            rejected += 1;
+        match outcome {
+            TopicOutcome::Active => active += 1,
+            TopicOutcome::AlreadyExists => already_exists += 1,
+            TopicOutcome::Failed => failed += 1,
+            TopicOutcome::ScopeRejected => scope_rejected += 1,
         }
     }
 
     debug!(
         topics = TOPICS.len(),
-        rejected, "eventsub subscription pass complete"
+        active, already_exists, failed, scope_rejected, "eventsub subscription pass complete"
     );
 
-    if scope_missing {
+    if scope_rejected > 0 {
         return Err(SubscribeError::ScopeMissing);
     }
 
@@ -508,7 +519,7 @@ async fn subscribe_one(
     tracker: SubscriptionTracker,
     index: usize,
     topic: &TopicSpec,
-) -> Result<(), SubscribeError> {
+) -> TopicOutcome {
     let condition = (topic.condition_fn)(&ctx.broadcaster_id, &ctx.user_id);
     let body = serde_json::json!({
         "type": topic.kind,
@@ -536,7 +547,7 @@ async fn subscribe_one(
             let reason = e.without_url().to_string();
             warn!(kind = topic.kind, error = %reason, "eventsub subscription network error");
             set_tracker_status(&tracker, index, SubStatus::Failed(reason));
-            Ok(())
+            TopicOutcome::Failed
         }
         Ok(resp) => {
             let status = resp.status().as_u16();
@@ -558,7 +569,7 @@ async fn subscribe_one(
                     }),
                 ));
                 set_tracker_status(&tracker, index, SubStatus::Failed(reason.to_owned()));
-                return Err(SubscribeError::ScopeMissing);
+                return TopicOutcome::ScopeRejected;
             }
 
             if !resp.status().is_success() {
@@ -581,8 +592,18 @@ async fn subscribe_one(
                         "retry_after_secs": retry_after,
                     }),
                 ));
-                set_tracker_status(&tracker, index, SubStatus::Failed(format!("HTTP {status}")));
-                return Ok(());
+                // A 409 names a subscription bound to another session; websocket subscriptions are
+                // disabled when their session ends, so it delivers nothing to this one.
+                let (reason, outcome) = if status == 409 {
+                    (
+                        "already exists on another session".to_owned(),
+                        TopicOutcome::AlreadyExists,
+                    )
+                } else {
+                    (format!("HTTP {status}"), TopicOutcome::Failed)
+                };
+                set_tracker_status(&tracker, index, SubStatus::Failed(reason));
+                return outcome;
             }
 
             let body_text = resp.text().await.unwrap_or_default();
@@ -604,14 +625,15 @@ async fn subscribe_one(
                     rec.status = SubStatus::Active;
                     rec.subscription_id = Some(sub_id);
                 }
+                TopicOutcome::Active
             } else {
                 set_tracker_status(
                     &tracker,
                     index,
                     SubStatus::Failed("unreadable response".to_owned()),
                 );
+                TopicOutcome::Failed
             }
-            Ok(())
         }
     }
 }

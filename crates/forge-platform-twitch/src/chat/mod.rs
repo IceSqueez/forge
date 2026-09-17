@@ -1,3 +1,4 @@
+mod dedup;
 mod dispatch;
 pub(crate) mod payload;
 mod send;

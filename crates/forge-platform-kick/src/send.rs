@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
+use forge_platform_core::{DEFAULT_RETRY_AFTER_SECS, PlatformError, RateLimiter, acquire_or_wait};
 use reqwest::StatusCode;
-
-use crate::DEFAULT_RETRY_AFTER_SECS;
 
 const SEND_ENDPOINT: &str = "https://api.kick.com/public/v1/chat";
 const DELETE_BASE: &str = "https://api.kick.com/public/v1/chat";

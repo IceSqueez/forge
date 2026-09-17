@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
-use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
+use forge_platform_core::{DEFAULT_RETRY_AFTER_SECS, PlatformError, RateLimiter, acquire_or_wait};
 use reqwest::StatusCode;
 use serde::Deserialize;
-
-use crate::DEFAULT_RETRY_AFTER_SECS;
 
 const CATEGORIES_ENDPOINT: &str = "https://api.kick.com/public/v1/categories";
 const MAX_MATCHES: usize = 10;

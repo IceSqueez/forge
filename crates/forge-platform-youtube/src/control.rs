@@ -1,12 +1,10 @@
 use async_trait::async_trait;
 use forge_platform_core::{
-    BuiltinControl, ChatPlatform, ConnectionState, ControlFailure, ControlOutcome, PlatformError,
+    BuiltinControl, ChatPlatform, ConnectionState, ControlFailure, ControlOutcome,
+    HTTP_UNAUTHORIZED, PlatformError,
 };
-use reqwest::StatusCode;
 
 use crate::builtin::YoutubeIntegrationBundle;
-
-const HTTP_UNAUTHORIZED: u16 = StatusCode::UNAUTHORIZED.as_u16();
 
 #[async_trait]
 impl BuiltinControl for YoutubeIntegrationBundle {

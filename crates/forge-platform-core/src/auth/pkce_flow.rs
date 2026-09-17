@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::error::PlatformError;
@@ -26,11 +27,13 @@ pub enum ReauthPolicy {
 }
 
 impl ReauthPolicy {
-    fn requires_reauth(self, status: u16, body: &str) -> bool {
+    fn requires_reauth(self, status: StatusCode, body: &str) -> bool {
         match self {
-            ReauthPolicy::AnyClientError => status == 400 || status == 401,
+            ReauthPolicy::AnyClientError => {
+                status == StatusCode::BAD_REQUEST || status == StatusCode::UNAUTHORIZED
+            }
             ReauthPolicy::InvalidGrantOn400 => {
-                status == 400
+                status == StatusCode::BAD_REQUEST
                     && serde_json::from_str::<serde_json::Value>(body)
                         .ok()
                         .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_owned))
@@ -162,15 +165,18 @@ impl PkceRefresher {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if status != 200 {
+        let status = response.status();
+        if status != StatusCode::OK {
             let body = response.text().await.unwrap_or_default();
             if self.config.reauth_policy.requires_reauth(status, &body) {
                 return Err(PlatformError::ReauthRequired {
                     platform: self.config.platform.clone(),
                 });
             }
-            return Err(PlatformError::Http { status, body });
+            return Err(PlatformError::Http {
+                status: status.as_u16(),
+                body,
+            });
         }
 
         let body = response.text().await.map_err(|e| PlatformError::Network {
@@ -224,10 +230,13 @@ async fn post_token_request(
             reason: e.without_url().to_string(),
         })?;
 
-    let status = resp.status().as_u16();
-    if status != 200 {
+    let status = resp.status();
+    if status != StatusCode::OK {
         let body = resp.text().await.unwrap_or_default();
-        return Err(PlatformError::Http { status, body });
+        return Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        });
     }
     let body = resp.text().await.map_err(|e| PlatformError::Network {
         reason: e.without_url().to_string(),

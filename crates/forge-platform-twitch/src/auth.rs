@@ -2,6 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{AuthFlow, PlatformError};
 use forge_types::OAuthToken;
+use reqwest::StatusCode;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, trace};
@@ -179,8 +180,11 @@ impl TwitchAuthFlow {
             ("scopes", scopes.as_str()),
         ];
         let (status, body) = post_form(&self.http, &self.device_endpoint, &form).await?;
-        if status != 200 {
-            return Err(PlatformError::Http { status, body });
+        if status != StatusCode::OK {
+            return Err(PlatformError::Http {
+                status: status.as_u16(),
+                body,
+            });
         }
         let parsed: DeviceCodeResponse = serde_json::from_str(&body)?;
         let expires_at = SystemTime::now() + Duration::from_secs(parsed.expires_in);
@@ -258,7 +262,7 @@ impl TwitchAuthFlow {
             ("grant_type", DEVICE_GRANT_TYPE),
         ];
         let (status, body) = post_form(&self.http, &self.token_endpoint, &form).await?;
-        if status == 200 {
+        if status == StatusCode::OK {
             let parsed: DeviceTokenResponse = serde_json::from_str(&body)?;
             return Ok(DevicePollOutcome::Granted(parsed));
         }
@@ -276,7 +280,7 @@ impl TwitchAuthFlow {
                 reason: "authorization denied by user".into(),
             }),
             _ => Err(PlatformError::Http {
-                status,
+                status: status.as_u16(),
                 body: message,
             }),
         }
@@ -323,7 +327,7 @@ async fn post_form(
     http: &reqwest::Client,
     url: &str,
     form: &[(&str, &str)],
-) -> Result<(u16, String), PlatformError> {
+) -> Result<(StatusCode, String), PlatformError> {
     let resp = tokio::time::timeout(REQUEST_TIMEOUT, http.post(url).form(form).send())
         .await
         .map_err(|_| PlatformError::Network {
@@ -332,7 +336,7 @@ async fn post_form(
         .map_err(|e| PlatformError::Network {
             reason: e.without_url().to_string(),
         })?;
-    let status = resp.status().as_u16();
+    let status = resp.status();
     let body = tokio::time::timeout(REQUEST_TIMEOUT, resp.text())
         .await
         .map_err(|_| PlatformError::Network {

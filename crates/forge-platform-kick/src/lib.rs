@@ -42,6 +42,3 @@ pub use sub_actions::{
     LookupUserRunner, RejectRedemptionRunner, SendMessageRunner, TimeoutUserRunner,
     UnbanUserRunner, UpdateInfoRunner, UpdateRewardRunner, register_kick_sub_actions,
 };
-
-pub(crate) const DEFAULT_RETRY_AFTER_SECS: u32 = 30;
-pub(crate) const NON_HTTP_STATUS: u16 = 0;

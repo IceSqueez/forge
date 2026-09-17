@@ -2,6 +2,9 @@ use thiserror::Error;
 
 use crate::endpoints::EndpointRefusal;
 
+pub const NON_HTTP_STATUS: u16 = 0;
+pub const HTTP_UNAUTHORIZED: u16 = reqwest::StatusCode::UNAUTHORIZED.as_u16();
+
 #[derive(Debug, Error)]
 pub enum PlatformError {
     #[error("network failure: {reason}")]

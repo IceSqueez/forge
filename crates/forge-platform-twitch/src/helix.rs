@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, RateLimiter, acquire_or_wait};
 use forge_types::OAuthToken;
+use reqwest::StatusCode;
 use thiserror::Error;
 use tracing::{debug, warn};
 
@@ -197,16 +198,17 @@ impl HelixHttpTransport {
             Ok(Ok(resp)) => resp,
         };
 
-        let status = resp.status().as_u16();
+        let status_code = resp.status();
+        let status = status_code.as_u16();
         debug!(method = ?request.method, path = %request.path, status, "helix response");
-        if !resp.status().is_success() {
+        if !status_code.is_success() {
             let retry_after = extract_retry_after(&resp);
             let body_text = resp.text().await.unwrap_or_default();
             self.publish_request_fail(&request.path, status, &body_text, retry_after);
-            if status == 401 {
+            if status_code == StatusCode::UNAUTHORIZED {
                 return Err(HelixError::ReauthRequired);
             }
-            if status == 429 {
+            if status_code == StatusCode::TOO_MANY_REQUESTS {
                 // Feeds the shared bucket so every transport sharing this limiter backs off.
                 let cooldown = retry_after.unwrap_or(DEFAULT_RETRY_AFTER_SECS);
                 warn!(path = %request.path, cooldown_secs = cooldown, "helix rate limited; backing off");

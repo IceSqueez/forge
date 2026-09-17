@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventStream};
 use forge_platform_core::{
-    AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformError, RateLimiter,
+    AuthFlow, ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities, PlatformError,
+    RateLimiter,
 };
 use forge_storage::CredentialsRepo;
 use tokio::sync::OnceCell;
@@ -193,6 +194,9 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
             body: err.to_string(),
         },
         // The inner string is already URL/token-stripped by HelixError.
-        ChatSendError::Http(body) => PlatformError::Http { status: 0, body },
+        ChatSendError::Http(body) => PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body,
+        },
     }
 }

@@ -30,11 +30,11 @@ pub use chat::{
     connection_state_changed_event,
 };
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
-pub use error::PlatformError;
+pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::is_private_or_special;
 pub use poll::DedupSet;
 pub use rate_limit::{
-    MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome, RateLimitUsage, RateLimiter,
-    TokenBucketRateLimiter, acquire_or_wait,
+    DEFAULT_RETRY_AFTER_SECS, MAX_ACQUIRE_ATTEMPTS, MAX_THROTTLE_WAIT, RateLimitOutcome,
+    RateLimitUsage, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
 };

@@ -6725,7 +6725,6 @@ mod tests {
         .to_string()
     }
 
-    /// A `session_reconnect` forge cannot act on, which it answers by ending the session.
     fn reconnect_frame_without_url() -> String {
         serde_json::json!({
             "metadata": { "message_type": "session_reconnect", "message_id": "reconnect-no-url" },
@@ -6799,7 +6798,6 @@ mod tests {
         kinds
     }
 
-    /// The chat messages published up to and including the one carrying `last`.
     async fn chat_texts_until(events: &mut EventStream, last: &str) -> Vec<String> {
         let mut texts = Vec::new();
         let arrived = tokio::time::timeout(FAKE_WAIT, async {

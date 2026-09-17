@@ -27,7 +27,7 @@
           "event": {
             "name": "chat",
             "source": "twitch",
-            "kind": "chat.message",
+            "kind": "twitch.channel.chat.message",
             "payload": {
               "/message": { "equals": "!ping" },
               "/user/login": { "equals": "alice" }

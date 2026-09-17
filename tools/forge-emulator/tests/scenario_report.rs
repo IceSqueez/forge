@@ -449,7 +449,7 @@ fn event_stream_failures_spell_out_counts_near_misses_and_gaps() {
             }),
             title: "Unexpected `trigger.blocked` after chat message \"!ping\"",
             expected: "forge publishes no `trigger.blocked` within 2s",
-            actual: "forge published 1 event matching `trigger.blocked` within 2s",
+            actual: "forge published at least 1 event matching `trigger.blocked` within 2s",
             details: vec!["they arrived at +900 ms"],
         },
         Case {

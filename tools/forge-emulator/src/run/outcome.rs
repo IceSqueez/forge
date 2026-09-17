@@ -192,7 +192,7 @@ impl fmt::Display for FailureCause {
             Self::Present { observed } => {
                 write!(
                     f,
-                    "observed {observed} event(s) that were expected to be absent"
+                    "observed at least {observed} event(s) that were expected to be absent"
                 )
             }
             Self::StreamGap {

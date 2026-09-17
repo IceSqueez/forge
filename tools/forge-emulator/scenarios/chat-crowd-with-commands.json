@@ -30,9 +30,9 @@
         {
           "event": {
             "source": "twitch",
-            "kind": "chat.message",
+            "kind": "twitch.channel.chat.message",
             "count": { "exactly": 88 },
-            "within_ms": 30000
+            "within_ms": 5000
           }
         },
         {
@@ -40,7 +40,7 @@
             "source": "core",
             "kind": "command.matched",
             "count": { "exactly": 8 },
-            "within_ms": 30000
+            "within_ms": 5000
           }
         },
         {
@@ -49,7 +49,7 @@
             "kind": "action.start",
             "payload": { "/action_name": { "equals": "Dice" } },
             "count": { "exactly": 4 },
-            "within_ms": 30000
+            "within_ms": 5000
           }
         },
         { "event_absent": { "kind": "trigger.blocked", "window_ms": 2000 } },

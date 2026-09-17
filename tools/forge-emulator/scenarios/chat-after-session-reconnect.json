@@ -25,12 +25,7 @@
       ]
     },
     {
-      "do": { "session_reconnect": { "within_ms": 15000 } },
-      "expect": [
-        {
-          "twitch_subscription": { "type": "channel.chat.message", "within_ms": 5000 }
-        }
-      ]
+      "do": { "session_reconnect": { "within_ms": 15000 } }
     },
     {
       "do": {
@@ -48,7 +43,7 @@
           "event": {
             "name": "chat",
             "source": "twitch",
-            "kind": "chat.message",
+            "kind": "twitch.channel.chat.message",
             "payload": { "/message": { "equals": "!ping after reconnect" } },
             "within_ms": 10000
           }

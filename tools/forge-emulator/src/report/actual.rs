@@ -73,8 +73,9 @@ pub(crate) fn actual(
             Actual { summary, details }
         }
         (FailureCause::Present { observed }, Expectation::EventAbsent(absent)) => {
+            // The absence wait stops at the first match, so the count is a floor, not a total.
             let summary = format!(
-                "forge published {} matching {} within {}",
+                "forge published at least {} matching {} within {}",
                 plural(*observed as u64, "event"),
                 code(&absent.kind),
                 span_ms(absent.window_ms)

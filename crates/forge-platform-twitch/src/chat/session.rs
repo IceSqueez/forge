@@ -6850,15 +6850,70 @@ mod tests {
         reported.expect("the session must report a retry after its socket drops")
     }
 
+    async fn connection_states_until(
+        events: &mut EventStream,
+        last: ConnectionState,
+    ) -> Vec<ConnectionState> {
+        let mut states = Vec::new();
+        let arrived = tokio::time::timeout(FAKE_WAIT, async {
+            loop {
+                let event = events.recv().await.expect("the bus must stay open");
+                if event.kind != CONNECTION_STATE_CHANGED_KIND {
+                    continue;
+                }
+                let state: ConnectionState = serde_json::from_value(event.payload["state"].clone())
+                    .expect("a connection-state event must carry a known state");
+                states.push(state);
+                if state == last {
+                    return;
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            arrived.is_ok(),
+            "the session never reported {last:?}; saw {states:?}"
+        );
+        states
+    }
+
+    fn subscription_accepted() -> wiremock::ResponseTemplate {
+        wiremock::ResponseTemplate::new(reqwest::StatusCode::ACCEPTED.as_u16()).set_body_json(
+            serde_json::json!({
+                "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
+            }),
+        )
+    }
+
     async fn eventsub_api() -> wiremock::MockServer {
         let server = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::method("POST"))
             .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
-            .respond_with(
-                wiremock::ResponseTemplate::new(202).set_body_json(serde_json::json!({
-                    "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
-                })),
-            )
+            .respond_with(subscription_accepted())
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn eventsub_api_accepting_only(live_kinds: &[&str]) -> wiremock::MockServer {
+        let server = wiremock::MockServer::start().await;
+        for kind in live_kinds {
+            wiremock::Mock::given(wiremock::matchers::method("POST"))
+                .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
+                .and(wiremock::matchers::body_string_contains(format!(
+                    r#""type":"{kind}""#
+                )))
+                .respond_with(subscription_accepted())
+                .with_priority(1)
+                .mount(&server)
+                .await;
+        }
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
+            .respond_with(wiremock::ResponseTemplate::new(
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+            ))
             .mount(&server)
             .await;
         server
@@ -7159,6 +7214,62 @@ mod tests {
             1,
             "a session that welcomed and subscribed proves the endpoint healthy, so the drop \
              after it must retry from the same attempt as the very first drop"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_welcome_whose_every_topic_fails_never_reports_connected() {
+        let api = eventsub_api_accepting_only(&[]).await;
+        let mut base = FakeEventSub::bind().await;
+        let session = spawn_session(&base.url, &api.uri());
+        let mut events = session.bus.subscribe();
+        let welcomed = base.accept().await;
+
+        welcomed.send(welcome_frame("sess-1"));
+
+        let states = connection_states_until(&mut events, ConnectionState::Reconnecting).await;
+        assert!(
+            !states.contains(&ConnectionState::Connected),
+            "a socket holding no subscription receives nothing but keepalives, so claiming \
+             Connected would light the health dot on a dead session; saw {states:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn consecutive_welcomes_whose_topics_all_fail_keep_growing_the_retry_count() {
+        let api = eventsub_api_accepting_only(&[]).await;
+        let mut base = FakeEventSub::bind().await;
+        let mut session = spawn_session(&base.url, &api.uri());
+
+        let first = base.accept().await;
+        first.send(welcome_frame("sess-1"));
+        assert_eq!(next_retry_attempt(&mut session.state).await, 1);
+
+        let second = base.accept().await;
+        second.send(welcome_frame("sess-2"));
+        assert_eq!(
+            next_retry_attempt(&mut session.state).await,
+            2,
+            "a welcome that subscribed to nothing is no proof of a healthy endpoint, so the \
+             retry count must keep climbing instead of restarting"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_welcome_leaving_one_topic_live_among_failures_still_connects() {
+        let api = eventsub_api_accepting_only(&["channel.chat.message"]).await;
+        let mut base = FakeEventSub::bind().await;
+        let session = spawn_session(&base.url, &api.uri());
+        let mut events = session.bus.subscribe();
+        let welcomed = base.accept().await;
+
+        welcomed.send(welcome_frame("sess-1"));
+
+        let states = connection_states_until(&mut events, ConnectionState::Connected).await;
+        assert!(
+            !states.contains(&ConnectionState::Reconnecting),
+            "one live topic is a healthy session, so it must connect without being retired and \
+             redialled first; saw {states:?}"
         );
     }
 

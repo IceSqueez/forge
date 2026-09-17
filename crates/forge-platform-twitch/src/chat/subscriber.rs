@@ -794,7 +794,8 @@ mod tests {
     }
 
     use super::{
-        EVENTSUB_PATH, SubStatus, SubscribeError, SubscriptionTracker, subscribe_all_with_base_url,
+        EVENTSUB_PATH, StatusCode, SubStatus, SubscribeError, SubscribePass, SubscriptionTracker,
+        subscribe_all_with_base_url,
     };
     use forge_events::EventPublisher;
     use forge_types::OAuthToken;
@@ -806,19 +807,21 @@ mod tests {
         Mock::given(method("POST"))
             .and(path(EVENTSUB_PATH))
             .and(body_string_contains(format!(r#""type":"{kind}""#)))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{ "id": id, "type": kind, "condition": {} }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(serde_json::json!({
+                    "data": [{ "id": id, "type": kind, "condition": {} }]
+                })),
+            )
             .with_priority(1)
             .mount(server)
             .await;
     }
 
-    async fn mount_status(server: &MockServer, kind: &str, status: u16) {
+    async fn mount_status(server: &MockServer, kind: &str, status: StatusCode) {
         Mock::given(method("POST"))
             .and(path(EVENTSUB_PATH))
             .and(body_string_contains(format!(r#""type":"{kind}""#)))
-            .respond_with(ResponseTemplate::new(status).set_body_string("rejected"))
+            .respond_with(ResponseTemplate::new(status.as_u16()).set_body_string("rejected"))
             .with_priority(1)
             .mount(server)
             .await;
@@ -827,9 +830,11 @@ mod tests {
     async fn mount_catch_all_success(server: &MockServer) {
         Mock::given(method("POST"))
             .and(path(EVENTSUB_PATH))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": [{ "id": "sub-generic", "type": "generic", "condition": {} }]
-            })))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::OK.as_u16()).set_body_json(serde_json::json!({
+                    "data": [{ "id": "sub-generic", "type": "generic", "condition": {} }]
+                })),
+            )
             .mount(server)
             .await;
     }
@@ -837,11 +842,15 @@ mod tests {
     async fn mount_catch_all_conflict(server: &MockServer) {
         Mock::given(method("POST"))
             .and(path(EVENTSUB_PATH))
-            .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
-                "error": "Conflict",
-                "message": "subscription already exists",
-                "status": 409,
-            })))
+            .respond_with(
+                ResponseTemplate::new(StatusCode::CONFLICT.as_u16()).set_body_json(
+                    serde_json::json!({
+                        "error": "Conflict",
+                        "message": "subscription already exists",
+                        "status": StatusCode::CONFLICT.as_u16(),
+                    }),
+                ),
+            )
             .mount(server)
             .await;
     }
@@ -849,7 +858,7 @@ mod tests {
     async fn run_subscribe(
         server: &MockServer,
         tracker: &SubscriptionTracker,
-    ) -> Result<(), SubscribeError> {
+    ) -> Result<SubscribePass, SubscribeError> {
         let bus: Arc<dyn EventPublisher> =
             Arc::new(crate::event_channel::PlatformEventChannel::new());
         subscribe_all_with_base_url(
@@ -877,9 +886,9 @@ mod tests {
         mount_success(&server, "channel.chat.message", "sub-chat").await;
         mount_success(&server, "channel.follow", "sub-follow").await;
         mount_success(&server, "channel.cheer", "sub-cheer").await;
-        mount_status(&server, "channel.ban", 401).await;
-        mount_status(&server, "channel.subscribe", 403).await;
-        mount_status(&server, "stream.online", 500).await;
+        mount_status(&server, "channel.ban", StatusCode::UNAUTHORIZED).await;
+        mount_status(&server, "channel.subscribe", StatusCode::FORBIDDEN).await;
+        mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
         mount_catch_all_success(&server).await;
 
         let tracker = crate::subscriptions::SubscriptionTracker::default();
@@ -922,16 +931,17 @@ mod tests {
     async fn non_scope_failures_stay_non_fatal_with_correct_per_record_status() {
         let server = MockServer::start().await;
         mount_success(&server, "channel.chat.message", "sub-chat").await;
-        mount_status(&server, "stream.online", 500).await;
-        mount_status(&server, "channel.cheer", 500).await;
+        mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
+        mount_status(&server, "channel.cheer", StatusCode::INTERNAL_SERVER_ERROR).await;
         mount_catch_all_success(&server).await;
 
         let tracker = crate::subscriptions::SubscriptionTracker::default();
         let result = run_subscribe(&server, &tracker).await;
 
         assert!(
-            matches!(result, Ok(())),
-            "500s without any scope rejection must not fail the whole subscribe pass"
+            matches!(&result, Ok(pass) if pass.any_live()),
+            "500s without any scope rejection must neither fail the pass nor cost it the topics \
+             that did subscribe"
         );
 
         let (chat_status, chat_id) = record_status(&tracker, "channel.chat.message");
@@ -959,8 +969,9 @@ mod tests {
         let result = run_subscribe(&server, &tracker).await;
 
         assert!(
-            matches!(result, Ok(())),
-            "a conflict is not a scope rejection and must not fail the pass"
+            matches!(&result, Ok(pass) if !pass.any_live()),
+            "a conflict is not a scope rejection, so the pass succeeds - but nothing it claimed \
+             delivers on this socket, so the pass is not live either"
         );
         assert_eq!(
             record_status(&tracker, "channel.chat.message").0,
@@ -975,14 +986,14 @@ mod tests {
         let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::DEBUG, async {
             let server = MockServer::start().await;
             mount_success(&server, "channel.chat.message", "sub-chat").await;
-            mount_status(&server, "stream.online", 500).await;
+            mount_status(&server, "stream.online", StatusCode::INTERNAL_SERVER_ERROR).await;
             mount_catch_all_conflict(&server).await;
 
             let tracker = crate::subscriptions::SubscriptionTracker::default();
             run_subscribe(&server, &tracker).await
         });
 
-        assert!(matches!(result, Ok(())));
+        assert!(matches!(&result, Ok(pass) if pass.any_live()));
         let summary = crate::log_capture::forge_lines(&lines)
             .into_iter()
             .find(|line| line.message() == "eventsub subscription pass complete")

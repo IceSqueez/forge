@@ -9,7 +9,6 @@ pub(super) struct MessageIdWindow {
 }
 
 impl MessageIdWindow {
-    /// Reports and records in one step; an empty id is never a duplicate.
     pub(super) fn is_duplicate(&mut self, message_id: &str) -> bool {
         if message_id.is_empty() {
             return false;

@@ -2,6 +2,7 @@ use crate::subscriptions::{SubStatus, SubscriptionRecord, SubscriptionTracker};
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_types::OAuthToken;
 use futures_util::stream::{self, StreamExt};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use std::sync::Arc;
 use thiserror::Error;
@@ -550,10 +551,11 @@ async fn subscribe_one(
             TopicOutcome::Failed
         }
         Ok(resp) => {
-            let status = resp.status().as_u16();
+            let status_code = resp.status();
+            let status = status_code.as_u16();
 
-            if status == 401 || status == 403 {
-                let reason = if status == 401 {
+            if status_code == StatusCode::UNAUTHORIZED || status_code == StatusCode::FORBIDDEN {
+                let reason = if status_code == StatusCode::UNAUTHORIZED {
                     "unauthorized"
                 } else {
                     "missing scope"
@@ -572,7 +574,7 @@ async fn subscribe_one(
                 return TopicOutcome::ScopeRejected;
             }
 
-            if !resp.status().is_success() {
+            if !status_code.is_success() {
                 let retry_after = extract_retry_after(&resp);
                 let body_text = resp.text().await.unwrap_or_default();
                 let body_snippet: String = body_text.chars().take(200).collect();
@@ -592,9 +594,7 @@ async fn subscribe_one(
                         "retry_after_secs": retry_after,
                     }),
                 ));
-                // A 409 names a subscription bound to another session; websocket subscriptions are
-                // disabled when their session ends, so it delivers nothing to this one.
-                let (reason, outcome) = if status == 409 {
+                let (reason, outcome) = if status_code == StatusCode::CONFLICT {
                     (
                         "already exists on another session".to_owned(),
                         TopicOutcome::AlreadyExists,

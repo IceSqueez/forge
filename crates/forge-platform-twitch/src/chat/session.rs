@@ -54,8 +54,6 @@ use crate::payload_fields::whisper as whisper_fields;
 
 const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-// Twitch drops the predecessor 30s after issuing a reconnect URL, so the successor dial must
-// give up early enough to fall back to the predecessor and the ordinary backoff path.
 const SUCCESSOR_TIMEOUT: Duration = Duration::from_secs(15);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -3850,8 +3848,6 @@ async fn dial_successor(url: String) -> Result<(EventSubSocket, String), String>
     }
 }
 
-/// The successor inherits the predecessor's subscriptions, so its welcome is consumed here
-/// rather than routed to the frame handler that runs a subscription pass.
 async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), String> {
     let mut socket = connect_socket(&url).await?;
 

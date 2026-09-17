@@ -5,6 +5,7 @@ use forge_platform_core::auth::{
 };
 use forge_platform_core::{AuthFlow, PlatformError};
 use forge_types::OAuthToken;
+use reqwest::StatusCode;
 use serde::Deserialize;
 
 pub const GOOGLE_AUTHORIZE_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -176,10 +177,13 @@ impl GoogleAuthFlow {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if status != 200 {
+        let status = response.status();
+        if status != StatusCode::OK {
             let body = response.text().await.unwrap_or_default();
-            return Err(PlatformError::Http { status, body });
+            return Err(PlatformError::Http {
+                status: status.as_u16(),
+                body,
+            });
         }
 
         let channels: ChannelsListResponse =
@@ -192,7 +196,7 @@ impl GoogleAuthFlow {
             .into_iter()
             .next()
             .ok_or_else(|| PlatformError::Http {
-                status: 200,
+                status: StatusCode::OK.as_u16(),
                 body: "no channel found".to_owned(),
             })?;
 

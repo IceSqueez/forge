@@ -4,8 +4,10 @@ use std::sync::Arc;
 use forge_platform_core::PlatformError;
 use forge_types::Variant;
 use futures::future::BoxFuture;
+use reqwest::StatusCode;
 use tokio::sync::Mutex;
 
+use crate::DEFAULT_RETRY_AFTER_SECS;
 use crate::quota_state::{QuotaState, today_pacific};
 
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
@@ -63,8 +65,8 @@ impl YoutubeChannelLookup {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = resp.status().as_u16();
-        if status != 200 {
+        let status = resp.status();
+        if status != StatusCode::OK {
             return Err(self.map_failure(resp).await);
         }
 
@@ -77,7 +79,7 @@ impl YoutubeChannelLookup {
             .and_then(|v| v.as_array())
             .and_then(|arr| arr.first())
             .ok_or_else(|| PlatformError::Http {
-                status: 404,
+                status: StatusCode::NOT_FOUND.as_u16(),
                 body: format!("channel not found: {identifier}"),
             })?;
 
@@ -112,27 +114,30 @@ impl YoutubeChannelLookup {
     }
 
     async fn map_failure(&self, resp: reqwest::Response) -> PlatformError {
-        let status = resp.status().as_u16();
+        let status = resp.status();
         let retry_after_secs = resp
             .headers()
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(30);
+            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
         let body_text = resp.text().await.unwrap_or_default();
 
         match status {
-            429 => PlatformError::RateLimited { retry_after_secs },
-            403 if body_text.contains("quotaExceeded") => PlatformError::QuotaExhausted,
-            403 if body_text.contains("insufficientPermissions")
-                || body_text.contains("operationNotSupported") =>
+            StatusCode::TOO_MANY_REQUESTS => PlatformError::RateLimited { retry_after_secs },
+            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
+                PlatformError::QuotaExhausted
+            }
+            StatusCode::FORBIDDEN
+                if body_text.contains("insufficientPermissions")
+                    || body_text.contains("operationNotSupported") =>
             {
                 PlatformError::Auth {
                     reason: "channel lookup scope missing".to_owned(),
                 }
             }
             _ => PlatformError::Http {
-                status,
+                status: status.as_u16(),
                 body: body_text,
             },
         }

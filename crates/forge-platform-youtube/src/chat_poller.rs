@@ -5,6 +5,7 @@ use forge_events::{Event, EventSource};
 use forge_platform_core::{DedupSet, PlatformError};
 use forge_types::{ChatEventDetail, ChatPayload, ChatSegment, ModerationMarks, UserBadge};
 use futures::future::BoxFuture;
+use reqwest::StatusCode;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
@@ -23,6 +24,7 @@ const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
 const BROADCAST_CADENCE_SECS: u64 = 60;
 const DEDUP_WINDOW_SIZE: usize = 500;
+const CHAT_MESSAGES_PAGE_SIZE: &str = "200";
 
 struct ChatMessagesResponse {
     items: Vec<serde_json::Value>,
@@ -306,10 +308,13 @@ impl YoutubeChatPoller {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = resp.status().as_u16();
-        if status != 200 {
+        let status = resp.status();
+        if status != StatusCode::OK {
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlatformError::Http { status, body });
+            return Err(PlatformError::Http {
+                status: status.as_u16(),
+                body,
+            });
         }
 
         let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {
@@ -351,7 +356,7 @@ impl YoutubeChatPoller {
         let mut query: Vec<(&str, String)> = vec![
             ("liveChatId", live_chat_id.to_owned()),
             ("part", "snippet,authorDetails".to_owned()),
-            ("maxResults", "200".to_owned()),
+            ("maxResults", CHAT_MESSAGES_PAGE_SIZE.to_owned()),
         ];
         if let Some(pt) = page_token {
             query.push(("pageToken", pt.to_owned()));
@@ -368,10 +373,13 @@ impl YoutubeChatPoller {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = resp.status().as_u16();
-        if status != 200 {
+        let status = resp.status();
+        if status != StatusCode::OK {
             let body = resp.text().await.unwrap_or_default();
-            return Err(PlatformError::Http { status, body });
+            return Err(PlatformError::Http {
+                status: status.as_u16(),
+                body,
+            });
         }
 
         let body: serde_json::Value = resp.json().await.map_err(|e| PlatformError::Network {

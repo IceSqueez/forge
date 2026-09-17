@@ -50,3 +50,5 @@ pub use sub_actions::{
 };
 pub use thumbnail::YoutubeThumbnail;
 pub use viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
+
+pub(crate) const DEFAULT_RETRY_AFTER_SECS: u32 = 30;

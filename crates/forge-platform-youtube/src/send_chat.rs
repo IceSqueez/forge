@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use forge_platform_core::PlatformError;
 use futures::future::BoxFuture;
+use reqwest::StatusCode;
 use tokio::sync::Mutex;
 
+use crate::DEFAULT_RETRY_AFTER_SECS;
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::quota_state::{QuotaState, today_pacific};
 
@@ -66,8 +68,8 @@ impl YoutubeSendChat {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = resp.status().as_u16();
-        if status == 200 || status == 204 {
+        let status = resp.status();
+        if status == StatusCode::OK || status == StatusCode::NO_CONTENT {
             return Ok(());
         }
 
@@ -76,22 +78,25 @@ impl YoutubeSendChat {
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(30);
+            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
         let body_text = resp.text().await.unwrap_or_default();
 
         match status {
-            429 => Err(PlatformError::RateLimited { retry_after_secs }),
-            403 if body_text.contains("quotaExceeded") => Err(PlatformError::QuotaExhausted),
-            403 if body_text.contains("insufficientPermissions")
-                || body_text.contains("operationNotSupported") =>
+            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
+                Err(PlatformError::QuotaExhausted)
+            }
+            StatusCode::FORBIDDEN
+                if body_text.contains("insufficientPermissions")
+                    || body_text.contains("operationNotSupported") =>
             {
                 Err(PlatformError::Auth {
                     reason: "chat write scope missing".to_owned(),
                 })
             }
             _ => Err(PlatformError::Http {
-                status,
+                status: status.as_u16(),
                 body: body_text,
             }),
         }
@@ -134,8 +139,8 @@ impl YoutubeSendChat {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = resp.status().as_u16();
-        if status == 200 || status == 201 {
+        let status = resp.status();
+        if status == StatusCode::OK || status == StatusCode::CREATED {
             return Ok(());
         }
 
@@ -144,17 +149,19 @@ impl YoutubeSendChat {
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(30);
+            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
         let body_text = resp.text().await.unwrap_or_default();
 
         match status {
-            429 => Err(PlatformError::RateLimited { retry_after_secs }),
-            403 if body_text.contains("operationNotSupported") => Err(PlatformError::Auth {
-                reason: "chat write scope missing".to_owned(),
-            }),
+            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+            StatusCode::FORBIDDEN if body_text.contains("operationNotSupported") => {
+                Err(PlatformError::Auth {
+                    reason: "chat write scope missing".to_owned(),
+                })
+            }
             _ => Err(PlatformError::Http {
-                status,
+                status: status.as_u16(),
                 body: body_text,
             }),
         }
@@ -212,8 +219,8 @@ impl YoutubeSendChat {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = resp.status().as_u16();
-        if status == 200 || status == 201 {
+        let status = resp.status();
+        if status == StatusCode::OK || status == StatusCode::CREATED {
             return Ok(());
         }
 
@@ -222,22 +229,25 @@ impl YoutubeSendChat {
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(30);
+            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
         let body_text = resp.text().await.unwrap_or_default();
 
         match status {
-            429 => Err(PlatformError::RateLimited { retry_after_secs }),
-            403 if body_text.contains("quotaExceeded") => Err(PlatformError::QuotaExhausted),
-            403 if body_text.contains("operationNotSupported")
-                || body_text.contains("insufficientPermissions") =>
+            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+            StatusCode::FORBIDDEN if body_text.contains("quotaExceeded") => {
+                Err(PlatformError::QuotaExhausted)
+            }
+            StatusCode::FORBIDDEN
+                if body_text.contains("operationNotSupported")
+                    || body_text.contains("insufficientPermissions") =>
             {
                 Err(PlatformError::Auth {
                     reason: "chat write scope missing".to_owned(),
                 })
             }
             _ => Err(PlatformError::Http {
-                status,
+                status: status.as_u16(),
                 body: body_text,
             }),
         }

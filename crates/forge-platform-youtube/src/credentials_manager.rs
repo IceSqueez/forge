@@ -4,6 +4,7 @@ use std::time::UNIX_EPOCH;
 use forge_platform_core::PlatformError;
 use forge_platform_core::auth::{PkceRefresher, REFRESH_BUFFER_SECS};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use reqwest::StatusCode;
 use time::{Duration, OffsetDateTime};
 
 use crate::auth::{ChannelsListResponse, GoogleAuthFlow, YoutubeAuthBundle};
@@ -147,7 +148,7 @@ impl YoutubeCredentialsManager {
         let Ok(Ok(resp)) = tokio::time::timeout(CHANNELS_FETCH_TIMEOUT, request).await else {
             return Ok(creds);
         };
-        if resp.status().as_u16() != 200 {
+        if resp.status() != StatusCode::OK {
             return Ok(creds);
         }
         let Ok(parsed) = resp.json::<ChannelsListResponse>().await else {

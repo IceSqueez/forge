@@ -6,6 +6,7 @@ use forge_platform_core::{
     ViewerReport, ViewerReportStream,
 };
 use futures::future::BoxFuture;
+use reqwest::StatusCode;
 use tokio::sync::{Mutex, watch};
 use tokio_stream::wrappers::WatchStream;
 
@@ -134,7 +135,7 @@ impl YoutubeViewerPoll {
             }
         };
 
-        if resp.status().as_u16() != 200 {
+        if resp.status() != StatusCode::OK {
             return None;
         }
 

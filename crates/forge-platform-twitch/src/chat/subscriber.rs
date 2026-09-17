@@ -24,6 +24,19 @@ enum TopicOutcome {
     ScopeRejected,
 }
 
+#[derive(Default)]
+pub(crate) struct SubscribePass {
+    active: usize,
+    already_exists: usize,
+    failed: usize,
+}
+
+impl SubscribePass {
+    pub(crate) fn any_live(&self) -> bool {
+        self.active > 0
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct SubscribeResponse {
     data: Vec<SubscriptionData>,
@@ -447,7 +460,7 @@ pub(crate) async fn subscribe_all_with_base_url(
     user_id: &str,
     bus: &Arc<dyn EventPublisher>,
     tracker: &SubscriptionTracker,
-) -> Result<(), SubscribeError> {
+) -> Result<SubscribePass, SubscribeError> {
     {
         let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
         records.clear();
@@ -490,29 +503,31 @@ pub(crate) async fn subscribe_all_with_base_url(
 
     let mut outcomes = stream::iter(pending).buffer_unordered(SUBSCRIBE_CONCURRENCY);
 
-    let mut active = 0usize;
-    let mut already_exists = 0usize;
-    let mut failed = 0usize;
+    let mut pass = SubscribePass::default();
     let mut scope_rejected = 0usize;
     while let Some(outcome) = outcomes.next().await {
         match outcome {
-            TopicOutcome::Active => active += 1,
-            TopicOutcome::AlreadyExists => already_exists += 1,
-            TopicOutcome::Failed => failed += 1,
+            TopicOutcome::Active => pass.active += 1,
+            TopicOutcome::AlreadyExists => pass.already_exists += 1,
+            TopicOutcome::Failed => pass.failed += 1,
             TopicOutcome::ScopeRejected => scope_rejected += 1,
         }
     }
 
     debug!(
         topics = TOPICS.len(),
-        active, already_exists, failed, scope_rejected, "eventsub subscription pass complete"
+        active = pass.active,
+        already_exists = pass.already_exists,
+        failed = pass.failed,
+        scope_rejected,
+        "eventsub subscription pass complete"
     );
 
     if scope_rejected > 0 {
         return Err(SubscribeError::ScopeMissing);
     }
 
-    Ok(())
+    Ok(pass)
 }
 
 async fn subscribe_one(

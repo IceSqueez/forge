@@ -229,12 +229,15 @@ impl ChatSession {
                                 close_in_background(predecessor);
                                 match unfinished {
                                     Some(FrameAction::Disconnect) => {
+                                        close_in_background(socket);
                                         return SessionOutcome::Disconnected;
                                     }
                                     Some(FrameAction::ReauthRequired) => {
+                                        close_in_background(socket);
                                         return SessionOutcome::ReauthRequired;
                                     }
-                                    _ => {}
+                                    Some(FrameAction::Continue | FrameAction::Reconnect(_))
+                                    | None => {}
                                 }
                             }
                             let previous = session_id.replace(new_session_id);
@@ -385,11 +388,15 @@ impl ChatSession {
                 )
                 .await
                 {
-                    Ok(_) => {
+                    Ok(pass) if pass.any_live() => {
                         self.backoff.reset();
                         self.set_state(ChatConnectionState::Connected);
                         self.publish_connection_event();
                         info!(broadcaster_id = %self.config.broadcaster_id, "chat connected");
+                    }
+                    Ok(_) => {
+                        warn!("no eventsub subscription became active; treating as disconnect");
+                        return FrameAction::Disconnect;
                     }
                     Err(SubscribeError::ScopeMissing) => {
                         warn!("chat subscription rejected: scope missing (reauth required)");

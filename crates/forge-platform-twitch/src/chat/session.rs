@@ -6725,6 +6725,15 @@ mod tests {
         .to_string()
     }
 
+    /// A `session_reconnect` forge cannot act on, which it answers by ending the session.
+    fn reconnect_frame_without_url() -> String {
+        serde_json::json!({
+            "metadata": { "message_type": "session_reconnect", "message_id": "reconnect-no-url" },
+            "payload": { "session": { "id": "sess-1", "reconnect_url": null } },
+        })
+        .to_string()
+    }
+
     fn chat_frame(message_id: &str, text: &str) -> String {
         serde_json::json!({
             "metadata": {
@@ -6788,6 +6797,52 @@ mod tests {
             "the chat message {text:?} never arrived; saw {kinds:?}"
         );
         kinds
+    }
+
+    /// The chat messages published up to and including the one carrying `last`.
+    async fn chat_texts_until(events: &mut EventStream, last: &str) -> Vec<String> {
+        let mut texts = Vec::new();
+        let arrived = tokio::time::timeout(FAKE_WAIT, async {
+            loop {
+                let event = events.recv().await.expect("the bus must stay open");
+                if event.kind != CHAT_MESSAGE_KIND {
+                    continue;
+                }
+                let text = event.payload["message"]
+                    .as_str()
+                    .expect("a chat event must carry its message text")
+                    .to_owned();
+                let awaited = text == last;
+                texts.push(text);
+                if awaited {
+                    return;
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            arrived.is_ok(),
+            "the chat message {last:?} never arrived; saw {texts:?}"
+        );
+        texts
+    }
+
+    async fn next_retry_attempt(state: &mut watch::Receiver<ChatConnectionState>) -> u8 {
+        let reported = tokio::time::timeout(FAKE_WAIT, async {
+            loop {
+                state
+                    .changed()
+                    .await
+                    .expect("the session task must outlive the state it reports");
+                if let ChatConnectionState::Reconnecting { attempt } = *state.borrow_and_update() {
+                    return attempt;
+                }
+            }
+        })
+        .await;
+
+        reported.expect("the session must report a retry after its socket drops")
     }
 
     async fn eventsub_api() -> wiremock::MockServer {
@@ -7069,6 +7124,101 @@ mod tests {
         assert!(
             !live.session.state.has_changed().unwrap(),
             "the switchover must not blip the connection state"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_that_subscribed_restarts_the_retry_count_for_the_next_drop() {
+        // Why: the backoff used to live on the run loop with no reset, so roughly eight drops
+        // over a process lifetime pinned every later retry at the one-minute cap.
+        let mut live = live_session().await;
+
+        live.predecessor.close();
+        assert_eq!(
+            next_retry_attempt(&mut live.session.state).await,
+            1,
+            "the first dial owns `Connecting`, so the drop after it retries as attempt one"
+        );
+
+        let second = live.base.accept().await;
+        second.send(welcome_frame("sess-2"));
+        second.send(chat_frame("second", "on the second session"));
+        assert_eq!(
+            next_chat_text(&mut live.events).await,
+            "on the second session"
+        );
+
+        second.close();
+        assert_eq!(
+            next_retry_attempt(&mut live.session.state).await,
+            1,
+            "a session that welcomed and subscribed proves the endpoint healthy, so the drop \
+             after it must retry from the same attempt as the very first drop"
+        );
+    }
+
+    // Why: `select!` picks at random among its ready arms, so a single buffered frame would
+    // reach the drain only half the time; eight make the drain the path under test while the
+    // assertion stays true whichever arm wins.
+    const BUFFERED_OVERLAP_FRAMES: usize = 8;
+
+    #[tokio::test]
+    async fn frames_buffered_on_the_predecessor_publish_exactly_once_across_the_switchover() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+        let buffered: Vec<String> = (0..BUFFERED_OVERLAP_FRAMES)
+            .map(|n| format!("buffered {n}"))
+            .collect();
+
+        for (n, text) in buffered.iter().enumerate() {
+            live.predecessor
+                .send(chat_frame(&format!("buffered-{n}"), text));
+        }
+        successor.send(welcome_frame("sess-2"));
+        successor.send(chat_frame("buffered-0", &buffered[0]));
+        successor.send(chat_frame("after", "on the successor"));
+
+        let expected: Vec<String> = buffered
+            .iter()
+            .cloned()
+            .chain(std::iter::once("on the successor".to_owned()))
+            .collect();
+        assert_eq!(
+            chat_texts_until(&mut live.events, "on the successor").await,
+            expected,
+            "frames the predecessor delivered before the successor welcomed must survive the \
+             switchover, and Twitch's resend of one of them on the successor must not repeat it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_disconnect_buffered_on_the_predecessor_still_ends_the_session() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+
+        let ahead: Vec<String> = (0..BUFFERED_OVERLAP_FRAMES)
+            .map(|n| format!("ahead {n}"))
+            .collect();
+
+        for (n, text) in ahead.iter().enumerate() {
+            live.predecessor
+                .send(chat_frame(&format!("ahead-{n}"), text));
+        }
+        live.predecessor.send(reconnect_frame_without_url());
+        successor.send(welcome_frame("sess-2"));
+
+        let fresh = live.base.accept().await;
+        fresh.send(welcome_frame("sess-3"));
+        fresh.send(chat_frame("fresh", "the replacement session"));
+
+        let expected: Vec<String> = ahead
+            .iter()
+            .cloned()
+            .chain(std::iter::once("the replacement session".to_owned()))
+            .collect();
+        assert_eq!(
+            chat_texts_until(&mut live.events, "the replacement session").await,
+            expected,
+            "a disconnect the predecessor buffered must end the session rather than retire with \
+             the socket that carried it, and the frames queued ahead of it must publish first"
         );
     }
 }

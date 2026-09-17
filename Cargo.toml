@@ -131,8 +131,8 @@ block2 = { version = "0.6" }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 
-gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.17.2" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.17.2", features = [
+gpui = { git = "https://github.com/zed-industries/zed", tag = "v1.20.2" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", tag = "v1.20.2", features = [
   "font-kit",
   "wayland",
   "x11",

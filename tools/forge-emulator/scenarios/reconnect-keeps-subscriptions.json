@@ -1,0 +1,32 @@
+{
+  "name": "a session reconnect does not re-create subscriptions",
+  "purpose": "Twitch sends the reconnect URL with the old connection's subscriptions already attached, so moving to the successor socket must not issue a second subscription pass and must not fail any request.",
+  "fixture": {
+    "twitch": {},
+    "chat_commands": [
+      { "phrase": "!ping", "action_name": "Ping" }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": { "session_reconnect": { "within_ms": 15000 } },
+      "expect": [
+        {
+          "event_absent": {
+            "source": "twitch",
+            "kind": "request.fail",
+            "payload": { "/endpoint": { "equals": "/helix/eventsub/subscriptions" } },
+            "window_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -9,7 +9,7 @@ use forge_platform_core::{
     connection_state_changed_event,
 };
 use forge_types::{ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply};
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use serde::Deserialize;
 use std::future::Future;
 use std::pin::Pin;
@@ -56,6 +56,7 @@ const KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SUCCESSOR_TIMEOUT: Duration = Duration::from_secs(15);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+const PREDECESSOR_DRAIN_LIMIT: usize = 256;
 
 type EventSubSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -97,6 +98,7 @@ pub(crate) struct ChatSession {
     state_tx: watch::Sender<ChatConnectionState>,
     shutdown_rx: oneshot::Receiver<()>,
     seen_messages: MessageIdWindow,
+    backoff: Backoff,
 }
 
 impl ChatSession {
@@ -133,12 +135,12 @@ impl ChatSession {
             state_tx,
             shutdown_rx,
             seen_messages: MessageIdWindow::default(),
+            backoff: Backoff::default(),
         };
         (session, state_rx, shutdown_tx)
     }
 
     pub(crate) async fn run(mut self) {
-        let mut backoff = Backoff::default();
         let url = self
             .config
             .endpoints
@@ -146,7 +148,7 @@ impl ChatSession {
             .to_owned();
 
         loop {
-            let attempt = backoff.attempt();
+            let attempt = self.backoff.attempt();
             self.set_state(if attempt == 0 {
                 ChatConnectionState::Connecting
             } else {
@@ -170,9 +172,10 @@ impl ChatSession {
                 }
             }
 
-            let delay = backoff.next_delay();
+            let retry_attempt = self.backoff.attempt();
+            let delay = self.backoff.next_delay();
             info!(
-                attempt,
+                attempt = retry_attempt,
                 retry_in_ms = delay.as_millis() as u64,
                 "twitch chat session ended; reconnecting after backoff"
             );
@@ -219,14 +222,27 @@ impl ChatSession {
                     successor = None;
                     match dialed {
                         Ok((socket, new_session_id)) => {
+                            if let Some(mut predecessor) = live.take() {
+                                let unfinished = self
+                                    .drain_predecessor(&mut predecessor, &mut session_id)
+                                    .await;
+                                close_in_background(predecessor);
+                                match unfinished {
+                                    Some(FrameAction::Disconnect) => {
+                                        return SessionOutcome::Disconnected;
+                                    }
+                                    Some(FrameAction::ReauthRequired) => {
+                                        return SessionOutcome::ReauthRequired;
+                                    }
+                                    _ => {}
+                                }
+                            }
                             let previous = session_id.replace(new_session_id);
                             debug!(
                                 from_session = previous.as_deref().unwrap_or_default(),
                                 "moved to the successor eventsub session"
                             );
-                            if let Some(predecessor) = live.replace(socket) {
-                                close_in_background(predecessor);
-                            }
+                            live = Some(socket);
                             keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
                         }
                         Err(reason) => {
@@ -276,6 +292,32 @@ impl ChatSession {
                 }
             }
         }
+    }
+
+    async fn drain_predecessor(
+        &mut self,
+        predecessor: &mut EventSubSocket,
+        session_id: &mut Option<String>,
+    ) -> Option<FrameAction> {
+        for _ in 0..PREDECESSOR_DRAIN_LIMIT {
+            let buffered = predecessor.next().now_or_never().flatten()?;
+            match buffered {
+                Ok(Message::Text(text)) => match self.handle_frame(&text, session_id).await {
+                    FrameAction::Continue => {}
+                    unfinished => return Some(unfinished),
+                },
+                Ok(_) => {}
+                Err(e) => {
+                    debug!(
+                        error = %ws_error_reason(&e),
+                        "predecessor read error while draining its buffered frames"
+                    );
+                    return None;
+                }
+            }
+        }
+        debug!("predecessor drain limit reached; remaining buffered frames dropped");
+        None
     }
 
     async fn handle_frame(&mut self, text: &str, session_id: &mut Option<String>) -> FrameAction {
@@ -344,6 +386,7 @@ impl ChatSession {
                 .await
                 {
                     Ok(_) => {
+                        self.backoff.reset();
                         self.set_state(ChatConnectionState::Connected);
                         self.publish_connection_event();
                         info!(broadcaster_id = %self.config.broadcaster_id, "chat connected");

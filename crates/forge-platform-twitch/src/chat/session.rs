@@ -3929,8 +3929,10 @@ mod tests {
 
     use crate::event_channel::PlatformEventChannel;
     use crate::sub_actions::test_support::MockCreds;
-    use forge_events::EventSource;
+    use forge_events::{EventSource, EventStream};
+    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
     use forge_types::{ChatEventDetail, ChatPayload, ChatSegment};
+    use tokio::sync::mpsc;
 
     use super::*;
 
@@ -6517,86 +6519,517 @@ mod tests {
         );
     }
 
-    struct LoopbackSocket {
-        listener: tokio::net::TcpListener,
-        url: String,
+    const FAKE_WAIT: Duration = Duration::from_secs(5);
+    const CHAT_MESSAGE_KIND: &str = "twitch.channel.chat.message";
+
+    enum PeerCommand {
+        Text(String),
+        Close,
     }
 
-    impl LoopbackSocket {
+    /// One accepted EventSub connection: it sends frames when the test says so and reports the
+    /// moment forge closed its end.
+    struct Peer {
+        commands: mpsc::UnboundedSender<PeerCommand>,
+        closed: oneshot::Receiver<()>,
+    }
+
+    impl Peer {
+        fn send(&self, frame: String) {
+            self.commands
+                .send(PeerCommand::Text(frame))
+                .expect("the fake socket must outlive the frames the test sends");
+        }
+
+        fn close(&self) {
+            let _ = self.commands.send(PeerCommand::Close);
+        }
+
+        fn closed_by_forge(&mut self) -> bool {
+            self.closed.try_recv().is_ok()
+        }
+
+        async fn wait_closed_by_forge(&mut self) -> bool {
+            tokio::time::timeout(FAKE_WAIT, &mut self.closed)
+                .await
+                .is_ok_and(|closed| closed.is_ok())
+        }
+    }
+
+    /// A loopback EventSub endpoint that hands every accepted connection back to the test.
+    struct FakeEventSub {
+        url: String,
+        peers: mpsc::UnboundedReceiver<Peer>,
+    }
+
+    impl FakeEventSub {
         async fn bind() -> Self {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("ws://{}", listener.local_addr().unwrap());
-            Self { listener, url }
-        }
-
-        /// Completes one WebSocket handshake, sends `frames`, then holds the socket open.
-        fn serve_once(self, frames: Vec<String>) -> oneshot::Receiver<()> {
-            let (accepted_tx, accepted_rx) = oneshot::channel();
+            let (peer_tx, peers) = mpsc::unbounded_channel();
             tokio::spawn(async move {
-                use futures_util::SinkExt;
-                let (stream, _) = self.listener.accept().await.unwrap();
-                let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-                let _ = accepted_tx.send(());
-                for frame in frames {
-                    if ws.send(Message::Text(frame.into())).await.is_err() {
+                while let Ok((stream, _)) = listener.accept().await {
+                    let Ok(socket) = tokio_tungstenite::accept_async(stream).await else {
+                        continue;
+                    };
+                    let (commands, command_rx) = mpsc::unbounded_channel();
+                    let (closed_tx, closed) = oneshot::channel();
+                    if peer_tx.send(Peer { commands, closed }).is_err() {
                         return;
                     }
+                    tokio::spawn(serve_peer(socket, command_rx, closed_tx));
                 }
-                while ws.next().await.is_some() {}
             });
-            accepted_rx
+            Self { url, peers }
+        }
+
+        async fn accept(&mut self) -> Peer {
+            tokio::time::timeout(FAKE_WAIT, self.peers.recv())
+                .await
+                .expect("forge must dial this socket")
+                .expect("the accept loop must outlive the test")
+        }
+
+        fn no_dial_pending(&mut self) -> bool {
+            matches!(self.peers.try_recv(), Err(mpsc::error::TryRecvError::Empty))
         }
     }
 
-    fn spawn_session_dialing(
-        socket_url: &str,
-    ) -> (tokio::task::JoinHandle<()>, oneshot::Sender<()>) {
+    async fn serve_peer(
+        socket: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+        mut commands: mpsc::UnboundedReceiver<PeerCommand>,
+        closed: oneshot::Sender<()>,
+    ) {
+        use futures_util::SinkExt;
+        let mut closed = Some(closed);
+        let (mut sink, mut source) = socket.split();
+        loop {
+            tokio::select! {
+                command = commands.recv() => match command {
+                    Some(PeerCommand::Text(frame)) => {
+                        if sink.send(Message::Text(frame.into())).await.is_err() {
+                            return;
+                        }
+                    }
+                    Some(PeerCommand::Close) | None => {
+                        let _ = sink.close().await;
+                        return;
+                    }
+                },
+                frame = source.next() => match frame {
+                    Some(Ok(Message::Close(_))) | None => {
+                        if let Some(closed) = closed.take() {
+                            let _ = closed.send(());
+                        }
+                        return;
+                    }
+                    Some(Err(_)) => return,
+                    Some(Ok(_)) => {}
+                },
+            }
+        }
+    }
+
+    /// An address nothing listens on, so a dial at it is refused rather than routed.
+    fn unreachable_ws_url() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        format!("ws://{addr}")
+    }
+
+    struct RunningSession {
+        bus: Arc<PlatformEventChannel>,
+        state: watch::Receiver<ChatConnectionState>,
+        task: tokio::task::JoinHandle<()>,
+        _shutdown: oneshot::Sender<()>,
+    }
+
+    impl Drop for RunningSession {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    fn spawn_session(socket_url: &str, api_url: &str) -> RunningSession {
         let bus = Arc::new(PlatformEventChannel::new());
         let endpoints = crate::sub_actions::test_support::endpoints_with(&[
-            (EndpointSurface::TwitchApi, "http://127.0.0.1:1"),
+            (EndpointSurface::TwitchApi, api_url),
             (EndpointSurface::TwitchEventSubSocket, socket_url),
         ]);
-        let (session, _state_rx, shutdown_tx) =
+        let (session, state, shutdown) =
             session_with(&bus, Arc::new(MockCreds::with_identity()), endpoints);
-        (tokio::spawn(session.run()), shutdown_tx)
+        RunningSession {
+            bus,
+            state,
+            task: tokio::spawn(session.run()),
+            _shutdown: shutdown,
+        }
+    }
+
+    fn welcome_frame(session_id: &str) -> String {
+        serde_json::json!({
+            "metadata": {
+                "message_type": "session_welcome",
+                "message_id": format!("welcome-{session_id}"),
+            },
+            "payload": { "session": { "id": session_id, "reconnect_url": null } },
+        })
+        .to_string()
+    }
+
+    fn reconnect_frame(reconnect_url: &str) -> String {
+        serde_json::json!({
+            "metadata": { "message_type": "session_reconnect", "message_id": "reconnect" },
+            "payload": { "session": { "id": "sess-1", "reconnect_url": reconnect_url } },
+        })
+        .to_string()
+    }
+
+    fn chat_frame(message_id: &str, text: &str) -> String {
+        serde_json::json!({
+            "metadata": {
+                "message_type": "notification",
+                "message_id": message_id,
+                "subscription_type": "channel.chat.message",
+            },
+            "payload": { "event": {
+                "broadcaster_user_login": "streamer",
+                "chatter_user_id": "42",
+                "chatter_user_login": "viewer",
+                "message": { "text": text },
+            }},
+        })
+        .to_string()
+    }
+
+    async fn next_event(events: &mut EventStream, kind: &str) -> Event {
+        let found = tokio::time::timeout(FAKE_WAIT, async {
+            loop {
+                let event = events.recv().await.expect("the bus must stay open");
+                if event.kind == kind {
+                    return event;
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            found.is_ok(),
+            "no {kind} event arrived within {FAKE_WAIT:?}"
+        );
+        found.expect("asserted just above")
+    }
+
+    async fn next_chat_text(events: &mut EventStream) -> String {
+        next_event(events, CHAT_MESSAGE_KIND).await.payload["message"]
+            .as_str()
+            .expect("a chat event must carry its message text")
+            .to_owned()
+    }
+
+    /// The kinds of every event published up to and including the chat message carrying `text`.
+    async fn kinds_until_chat(events: &mut EventStream, text: &str) -> Vec<String> {
+        let mut kinds = Vec::new();
+        let arrived = tokio::time::timeout(FAKE_WAIT, async {
+            loop {
+                let event = events.recv().await.expect("the bus must stay open");
+                let awaited = event.kind == CHAT_MESSAGE_KIND
+                    && event.payload["message"].as_str() == Some(text);
+                kinds.push(event.kind);
+                if awaited {
+                    return;
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            arrived.is_ok(),
+            "the chat message {text:?} never arrived; saw {kinds:?}"
+        );
+        kinds
+    }
+
+    async fn eventsub_api() -> wiremock::MockServer {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path(EVENTSUB_SUBSCRIPTIONS_PATH))
+            .respond_with(
+                wiremock::ResponseTemplate::new(202).set_body_json(serde_json::json!({
+                    "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
+                })),
+            )
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn subscription_posts(server: &wiremock::MockServer) -> usize {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|request| request.url.path() == EVENTSUB_SUBSCRIPTIONS_PATH)
+            .count()
+    }
+
+    struct Live {
+        api: wiremock::MockServer,
+        base: FakeEventSub,
+        session: RunningSession,
+        events: EventStream,
+        predecessor: Peer,
+    }
+
+    /// A session welcomed on the base socket with its first subscription pass finished: the chat
+    /// frame is the barrier that proves `handle_frame` returned before the test drives anything.
+    async fn live_session() -> Live {
+        let api = eventsub_api().await;
+        let mut base = FakeEventSub::bind().await;
+        let session = spawn_session(&base.url, &api.uri());
+        let mut events = session.bus.subscribe();
+        let predecessor = base.accept().await;
+
+        predecessor.send(welcome_frame("sess-1"));
+        predecessor.send(chat_frame("first", "before any reconnect"));
+        assert_eq!(
+            next_chat_text(&mut events).await,
+            "before any reconnect",
+            "the first session must be delivering chat before a test drives a reconnect"
+        );
+
+        Live {
+            api,
+            base,
+            session,
+            events,
+            predecessor,
+        }
+    }
+
+    /// `live_session` plus a `session_reconnect`: the successor is dialled but has not welcomed.
+    async fn overlapping_session() -> (Live, FakeEventSub, Peer) {
+        let live = live_session().await;
+        let mut successor_socket = FakeEventSub::bind().await;
+
+        live.predecessor
+            .send(reconnect_frame(&successor_socket.url));
+        let successor = successor_socket.accept().await;
+
+        (live, successor_socket, successor)
     }
 
     #[tokio::test]
-    async fn run_dials_the_eventsub_socket_override_first() {
-        let socket = LoopbackSocket::bind().await;
-        let url = socket.url.clone();
-        let accepted = socket.serve_once(Vec::new());
+    async fn a_successor_session_runs_no_second_subscription_pass() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+        let first_pass = subscription_posts(&live.api).await;
+        assert!(first_pass > 0, "the first session must have subscribed");
 
-        let (task, _shutdown_tx) = spawn_session_dialing(&url);
-        let dialed = tokio::time::timeout(Duration::from_secs(5), accepted).await;
-        task.abort();
+        successor.send(welcome_frame("sess-2"));
+        successor.send(chat_frame("after", "on the successor"));
+        assert_eq!(next_chat_text(&mut live.events).await, "on the successor");
 
-        assert!(
-            matches!(dialed, Ok(Ok(()))),
-            "the initial dial must open the TwitchEventSubSocket override"
+        assert_eq!(
+            subscription_posts(&live.api).await,
+            first_pass,
+            "the successor inherits the predecessor's subscriptions, so a second pass is only \
+             one HTTP 409 per topic"
         );
     }
 
     #[tokio::test]
-    async fn server_supplied_reconnect_url_replaces_the_socket_override() {
-        let initial = LoopbackSocket::bind().await;
-        let initial_url = initial.url.clone();
-        let reconnect_target = LoopbackSocket::bind().await;
-        let reconnect_frame = serde_json::json!({
-            "metadata": { "message_type": "session_reconnect", "message_id": "r-1" },
-            "payload": { "session": { "id": "sess-1", "reconnect_url": reconnect_target.url } }
-        })
-        .to_string();
-        let _initial_accepted = initial.serve_once(vec![reconnect_frame]);
-        let reconnected = reconnect_target.serve_once(Vec::new());
+    async fn the_predecessor_keeps_delivering_until_the_successor_welcomes() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
 
-        let (task, _shutdown_tx) = spawn_session_dialing(&initial_url);
-        let dialed = tokio::time::timeout(Duration::from_secs(5), reconnected).await;
-        task.abort();
+        live.predecessor
+            .send(chat_frame("overlap", "sent during the overlap"));
+        assert_eq!(
+            next_chat_text(&mut live.events).await,
+            "sent during the overlap",
+            "a notification the predecessor sends before the successor welcomes must publish"
+        );
+        assert!(
+            !live.predecessor.closed_by_forge(),
+            "the predecessor must stay open while the successor has not welcomed"
+        );
+
+        successor.send(welcome_frame("sess-2"));
 
         assert!(
-            matches!(dialed, Ok(Ok(()))),
-            "session_reconnect must dial the server-supplied reconnect_url, not the override again"
+            live.predecessor.wait_closed_by_forge().await,
+            "the predecessor must be closed once the successor welcomes"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_notification_repeated_across_the_switchover_is_published_once() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+        live.predecessor.send(chat_frame("dup", "delivered twice"));
+        assert_eq!(next_chat_text(&mut live.events).await, "delivered twice");
+
+        successor.send(welcome_frame("sess-2"));
+        successor.send(chat_frame("dup", "delivered twice"));
+        successor.send(chat_frame("next", "the one after"));
+
+        assert_eq!(
+            next_chat_text(&mut live.events).await,
+            "the one after",
+            "the resend the overlap duplicates must not publish a second chat event"
+        );
+    }
+
+    enum SuccessorFailure {
+        DialRefused,
+        ClosedBeforeWelcome,
+    }
+
+    #[tokio::test]
+    async fn a_failed_successor_falls_back_to_the_predecessor_and_then_to_a_fresh_session() {
+        for failure in [
+            SuccessorFailure::DialRefused,
+            SuccessorFailure::ClosedBeforeWelcome,
+        ] {
+            let mut live = live_session().await;
+            match failure {
+                SuccessorFailure::DialRefused => {
+                    live.predecessor
+                        .send(reconnect_frame(&unreachable_ws_url()));
+                }
+                SuccessorFailure::ClosedBeforeWelcome => {
+                    let mut successor_socket = FakeEventSub::bind().await;
+                    live.predecessor
+                        .send(reconnect_frame(&successor_socket.url));
+                    successor_socket.accept().await.close();
+                }
+            }
+
+            live.predecessor.send(chat_frame(
+                "after-failure",
+                "the predecessor still delivers",
+            ));
+            assert_eq!(
+                next_chat_text(&mut live.events).await,
+                "the predecessor still delivers",
+                "a successor that never welcomes must not end the session"
+            );
+
+            live.predecessor.close();
+
+            let fresh = live.base.accept().await;
+            fresh.send(welcome_frame("sess-2"));
+            fresh.send(chat_frame("fresh", "the replacement session"));
+            assert_eq!(
+                next_chat_text(&mut live.events).await,
+                "the replacement session",
+                "losing the predecessor after a failed successor must return to the ordinary \
+                 disconnect path"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn the_session_after_a_reconnect_redials_the_base_url_and_resubscribes() {
+        // Why: the reconnect URL is one-shot. A run loop that kept it as the dial target spent
+        // every later retry on a URL Twitch had already retired.
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+        successor.send(welcome_frame("sess-2"));
+        successor.send(chat_frame("after", "on the successor"));
+        assert_eq!(next_chat_text(&mut live.events).await, "on the successor");
+        let posts_before = subscription_posts(&live.api).await;
+
+        successor.close();
+
+        let fresh = live.base.accept().await;
+        fresh.send(welcome_frame("sess-3"));
+        fresh.send(chat_frame("fresh", "the replacement session"));
+        assert_eq!(
+            next_chat_text(&mut live.events).await,
+            "the replacement session"
+        );
+        assert!(
+            subscription_posts(&live.api).await > posts_before,
+            "a session Twitch did not hand the subscriptions to must run a full pass"
+        );
+    }
+
+    #[test]
+    fn a_failed_successor_dial_never_logs_the_reconnect_url() {
+        // Why: the reconnect URL carries a session-scoped token and is handed straight to the
+        // dial, where `UrlError::UnableToConnect` renders whatever URL it was given.
+        const RECONNECT_TOKEN: &str = "RECONNECT_TOKEN_SENTINEL_q4";
+        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let mut live = live_session().await;
+            let dead = unreachable_ws_url();
+            live.predecessor.send(reconnect_frame(&format!(
+                "{dead}/?reconnect_token={RECONNECT_TOKEN}"
+            )));
+            live.predecessor.close();
+            // Why: losing the predecessor only ends the session once the successor dial has
+            // resolved, so the fresh dial is the barrier that the failure was already logged.
+            live.base.accept().await;
+        });
+
+        let forge_lines = crate::log_capture::forge_lines(&lines);
+        assert!(
+            forge_lines
+                .iter()
+                .any(|line| line.message() == "successor eventsub connection failed"),
+            "the fixture must have driven the failing dial it exists to inspect"
+        );
+        for line in forge_lines {
+            assert!(
+                !line.mentions(RECONNECT_TOKEN),
+                "the reconnect URL reached a {} line: {:?}",
+                line.level,
+                line.fields
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_repeated_reconnect_while_the_successor_dials_is_ignored() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+        let mut second_socket = FakeEventSub::bind().await;
+
+        live.predecessor.send(reconnect_frame(&second_socket.url));
+        successor.send(welcome_frame("sess-2"));
+        successor.send(chat_frame("after", "on the first successor"));
+
+        assert_eq!(
+            next_chat_text(&mut live.events).await,
+            "on the first successor",
+            "the dial already in flight must stay the one the session adopts"
+        );
+        assert!(
+            second_socket.no_dial_pending(),
+            "a reconnect arriving while a successor dials must not open a second connection"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_server_initiated_reconnect_never_leaves_the_connected_state() {
+        let (mut live, _successor_socket, successor) = overlapping_session().await;
+        assert_eq!(
+            *live.session.state.borrow_and_update(),
+            ChatConnectionState::Connected
+        );
+
+        successor.send(welcome_frame("sess-2"));
+        successor.send(chat_frame("after", "on the successor"));
+        let kinds = kinds_until_chat(&mut live.events, "on the successor").await;
+
+        assert!(
+            !kinds
+                .iter()
+                .any(|kind| kind == CONNECTION_STATE_CHANGED_KIND),
+            "moving to the successor is invisible to a connected viewer, so it must publish no \
+             connection-state event; saw {kinds:?}"
+        );
+        assert!(
+            !live.session.state.has_changed().unwrap(),
+            "the switchover must not blip the connection state"
         );
     }
 }

@@ -653,7 +653,7 @@ fn extract_retry_after(resp: &reqwest::Response) -> Option<u64> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::{TOPICS, display_kind};
 
@@ -819,6 +819,18 @@ mod tests {
             .await;
     }
 
+    async fn mount_catch_all_conflict(server: &MockServer) {
+        Mock::given(method("POST"))
+            .and(path(EVENTSUB_PATH))
+            .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+                "error": "Conflict",
+                "message": "subscription already exists",
+                "status": 409,
+            })))
+            .mount(server)
+            .await;
+    }
+
     async fn run_subscribe(
         server: &MockServer,
         tracker: &SubscriptionTracker,
@@ -918,5 +930,64 @@ mod tests {
                 "{kind} must record HTTP 500 without aborting the pass"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_conflict_records_the_other_session_as_owner_rather_than_a_bare_status() {
+        // Why: the conflicting subscription belongs to a session that is not ours, and Twitch
+        // disables a session's subscriptions when it ends - so it delivers nothing here and the
+        // health surface must not read Active.
+        let server = MockServer::start().await;
+        mount_catch_all_conflict(&server).await;
+
+        let tracker = crate::subscriptions::SubscriptionTracker::default();
+        let result = run_subscribe(&server, &tracker).await;
+
+        assert!(
+            matches!(result, Ok(())),
+            "a conflict is not a scope rejection and must not fail the pass"
+        );
+        assert_eq!(
+            record_status(&tracker, "channel.chat.message").0,
+            SubStatus::Failed("already exists on another session".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_pass_summary_counts_every_outcome_class_apart() {
+        // Why: the one line about the pass used to report `rejected=0` while every topic was
+        // refused, which read as a healthy connect in the log.
+        let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::DEBUG, async {
+            let server = MockServer::start().await;
+            mount_success(&server, "channel.chat.message", "sub-chat").await;
+            mount_status(&server, "stream.online", 500).await;
+            mount_catch_all_conflict(&server).await;
+
+            let tracker = crate::subscriptions::SubscriptionTracker::default();
+            run_subscribe(&server, &tracker).await
+        });
+
+        assert!(matches!(result, Ok(())));
+        let summary = crate::log_capture::forge_lines(&lines)
+            .into_iter()
+            .find(|line| line.message() == "eventsub subscription pass complete")
+            .expect("the pass must log its summary");
+        let counted = |name: &str| summary.field(name).unwrap_or_default().to_owned();
+        assert_eq!(
+            (
+                counted("active"),
+                counted("failed"),
+                counted("scope_rejected"),
+                counted("already_exists"),
+            ),
+            (
+                "1".to_owned(),
+                "1".to_owned(),
+                "0".to_owned(),
+                (TOPICS.len() - 2).to_string(),
+            ),
+            "got {:?}",
+            summary.fields
+        );
     }
 }

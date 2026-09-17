@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
+use reqwest::StatusCode;
 use serde::Deserialize;
+
+use crate::DEFAULT_RETRY_AFTER_SECS;
 
 const CATEGORIES_ENDPOINT: &str = "https://api.kick.com/public/v1/categories";
 const MAX_MATCHES: usize = 10;
@@ -65,8 +68,8 @@ impl KickCategories {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if !(200..300).contains(&status) {
+        let status = response.status();
+        if !status.is_success() {
             return map_categories_error(status, response).await;
         }
 
@@ -92,7 +95,7 @@ impl KickCategories {
 }
 
 async fn map_categories_error<T>(
-    status: u16,
+    status: StatusCode,
     response: reqwest::Response,
 ) -> Result<T, PlatformError> {
     let retry_after_secs = response
@@ -100,16 +103,19 @@ async fn map_categories_error<T>(
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(30);
+        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
     let body = response.text().await.unwrap_or_default();
 
     match status {
-        401 => Err(PlatformError::Auth {
+        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
             reason: "categories token rejected (401)".to_owned(),
         }),
-        429 => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http { status, body }),
+        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+        _ => Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        }),
     }
 }
 

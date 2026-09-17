@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
+use reqwest::StatusCode;
+
+use crate::DEFAULT_RETRY_AFTER_SECS;
 
 const SEND_ENDPOINT: &str = "https://api.kick.com/public/v1/chat";
 const DELETE_BASE: &str = "https://api.kick.com/public/v1/chat";
@@ -62,8 +65,8 @@ impl KickSendChat {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if status == 200 || status == 201 {
+        let status = response.status();
+        if status == StatusCode::OK || status == StatusCode::CREATED {
             return Ok(());
         }
 
@@ -72,16 +75,19 @@ impl KickSendChat {
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(30);
+            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
         let body = response.text().await.unwrap_or_default();
 
         match status {
-            401 => Err(PlatformError::Auth {
+            StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
                 reason: "send-chat token rejected (401)".to_owned(),
             }),
-            429 => Err(PlatformError::RateLimited { retry_after_secs }),
-            _ => Err(PlatformError::Http { status, body }),
+            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+            _ => Err(PlatformError::Http {
+                status: status.as_u16(),
+                body,
+            }),
         }
     }
 
@@ -99,8 +105,8 @@ impl KickSendChat {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if status == 204 {
+        let status = response.status();
+        if status == StatusCode::NO_CONTENT {
             return Ok(());
         }
 
@@ -109,19 +115,22 @@ impl KickSendChat {
             .get("retry-after")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(30);
+            .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
         let body = response.text().await.unwrap_or_default();
 
         match status {
-            401 => Err(PlatformError::Auth {
+            StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
                 reason: "delete-chat-message token rejected (401)".to_owned(),
             }),
-            403 => Err(PlatformError::Auth {
+            StatusCode::FORBIDDEN => Err(PlatformError::Auth {
                 reason: "delete-chat-message forbidden (403); check moderation:chat_message:manage scope".to_owned(),
             }),
-            429 => Err(PlatformError::RateLimited { retry_after_secs }),
-            _ => Err(PlatformError::Http { status, body }),
+            StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+            _ => Err(PlatformError::Http {
+                status: status.as_u16(),
+                body,
+            }),
         }
     }
 }

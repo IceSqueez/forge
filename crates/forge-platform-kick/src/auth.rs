@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use forge_platform_core::auth::{CALLBACK_PATH, PkceClientConfig, PkceFlow};
 use forge_platform_core::{AuthFlow, PlatformError};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use time::OffsetDateTime;
 
@@ -152,10 +153,13 @@ async fn fetch_user_info(
             reason: e.without_url().to_string(),
         })?;
 
-    let status = resp.status().as_u16();
-    if status != 200 {
+    let status = resp.status();
+    if status != StatusCode::OK {
         let body = resp.text().await.unwrap_or_default();
-        return Err(PlatformError::Http { status, body });
+        return Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        });
     }
 
     let parsed = resp
@@ -170,7 +174,7 @@ async fn fetch_user_info(
         .into_iter()
         .next()
         .ok_or_else(|| PlatformError::Http {
-            status: 200,
+            status: StatusCode::OK.as_u16(),
             body: "users endpoint returned empty data array".to_owned(),
         })
 }

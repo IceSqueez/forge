@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
+use reqwest::StatusCode;
+
+use crate::DEFAULT_RETRY_AFTER_SECS;
 
 const BANS_ENDPOINT: &str = "https://api.kick.com/public/v1/moderation/bans";
 
@@ -108,8 +111,9 @@ impl KickModeration {
 }
 
 async fn map_moderation_response(response: reqwest::Response) -> Result<(), PlatformError> {
-    let status = response.status().as_u16();
-    if status == 200 || status == 201 || status == 204 {
+    let status = response.status();
+    if status == StatusCode::OK || status == StatusCode::CREATED || status == StatusCode::NO_CONTENT
+    {
         return Ok(());
     }
 
@@ -118,19 +122,22 @@ async fn map_moderation_response(response: reqwest::Response) -> Result<(), Plat
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(30);
+        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
     let body = response.text().await.unwrap_or_default();
 
     match status {
-        401 => Err(PlatformError::Auth {
+        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
             reason: "moderation token rejected (401)".to_owned(),
         }),
-        403 => Err(PlatformError::Auth {
+        StatusCode::FORBIDDEN => Err(PlatformError::Auth {
             reason: "moderation forbidden (403); check moderation:ban scope".to_owned(),
         }),
-        429 => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http { status, body }),
+        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+        _ => Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        }),
     }
 }
 

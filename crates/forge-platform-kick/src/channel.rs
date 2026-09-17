@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+
+use crate::{DEFAULT_RETRY_AFTER_SECS, NON_HTTP_STATUS};
 
 const CHANNELS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels";
 
@@ -145,8 +148,8 @@ impl KickChannel {
             reason: e.without_url().to_string(),
         })?;
 
-        let status = response.status().as_u16();
-        if !(200..300).contains(&status) {
+        let status = response.status();
+        if !status.is_success() {
             return map_channel_error(status, response).await;
         }
 
@@ -160,7 +163,7 @@ impl KickChannel {
             .into_iter()
             .next()
             .ok_or_else(|| PlatformError::Http {
-                status: 0,
+                status: NON_HTTP_STATUS,
                 body: "channels GET returned no data".to_owned(),
             })?;
 
@@ -182,8 +185,8 @@ impl KickChannel {
 }
 
 async fn map_channel_response(response: reqwest::Response) -> Result<(), PlatformError> {
-    let status = response.status().as_u16();
-    if (200..300).contains(&status) {
+    let status = response.status();
+    if status.is_success() {
         return Ok(());
     }
 
@@ -191,7 +194,7 @@ async fn map_channel_response(response: reqwest::Response) -> Result<(), Platfor
 }
 
 async fn map_channel_error<T>(
-    status: u16,
+    status: StatusCode,
     response: reqwest::Response,
 ) -> Result<T, PlatformError> {
     let retry_after_secs = response
@@ -199,20 +202,26 @@ async fn map_channel_error<T>(
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(30);
+        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
     let body = response.text().await.unwrap_or_default();
 
     match status {
-        401 => Err(PlatformError::Auth {
+        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
             reason: "channel token rejected (401)".to_owned(),
         }),
-        403 => Err(PlatformError::Auth {
+        StatusCode::FORBIDDEN => Err(PlatformError::Auth {
             reason: "channel forbidden (403); check channel scope".to_owned(),
         }),
-        400 | 422 => Err(PlatformError::Http { status, body }),
-        429 => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http { status, body }),
+        StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        }),
+        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+        _ => Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        }),
     }
 }
 

@@ -2,8 +2,11 @@ use async_trait::async_trait;
 use forge_platform_core::{
     BuiltinControl, ChatPlatform, ConnectionState, ControlFailure, ControlOutcome, PlatformError,
 };
+use reqwest::StatusCode;
 
 use crate::builtin::KickIntegrationBundle;
+
+const HTTP_UNAUTHORIZED: u16 = StatusCode::UNAUTHORIZED.as_u16();
 
 #[async_trait]
 impl BuiltinControl for KickIntegrationBundle {
@@ -50,7 +53,10 @@ impl BuiltinControl for KickIntegrationBundle {
         {
             Ok(_) => Ok(()),
             Err(PlatformError::ReauthRequired { .. }) => Err(ControlFailure::Unauthorized),
-            Err(PlatformError::Http { status: 401, .. }) => Err(ControlFailure::Unauthorized),
+            Err(PlatformError::Http {
+                status: HTTP_UNAUTHORIZED,
+                ..
+            }) => Err(ControlFailure::Unauthorized),
             Err(PlatformError::Auth { .. }) => Err(ControlFailure::Unauthorized),
             Err(_) => Err(ControlFailure::Transport),
         }

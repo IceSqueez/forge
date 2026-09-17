@@ -61,11 +61,11 @@ impl ChannelInfoFetcher {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if !(200..300).contains(&status) {
+        let status = response.status();
+        if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             return Err(KickError::Http {
-                status,
+                status: status.as_u16(),
                 body: bounded_body(body),
             });
         }

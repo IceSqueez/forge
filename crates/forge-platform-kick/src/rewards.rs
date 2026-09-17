@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use forge_platform_core::{PlatformError, RateLimiter, acquire_or_wait};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+
+use crate::{DEFAULT_RETRY_AFTER_SECS, NON_HTTP_STATUS};
 
 const REWARDS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels/rewards";
 const MAX_REDEMPTION_BATCH: usize = 25;
@@ -171,8 +174,8 @@ impl KickRewards {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if (200..300).contains(&status) {
+        let status = response.status();
+        if status.is_success() {
             let created_id = response
                 .json::<CreateResponse>()
                 .await
@@ -215,8 +218,8 @@ impl KickRewards {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if (200..300).contains(&status) {
+        let status = response.status();
+        if status.is_success() {
             return Ok(());
         }
 
@@ -237,8 +240,8 @@ impl KickRewards {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if (200..300).contains(&status) {
+        let status = response.status();
+        if status.is_success() {
             return Ok(());
         }
 
@@ -252,13 +255,13 @@ impl KickRewards {
     ) -> Result<(), PlatformError> {
         if ids.is_empty() {
             return Err(PlatformError::Http {
-                status: 0,
+                status: NON_HTTP_STATUS,
                 body: "accept_redemptions: ids list is empty".to_owned(),
             });
         }
         if ids.len() > MAX_REDEMPTION_BATCH {
             return Err(PlatformError::Http {
-                status: 0,
+                status: NON_HTTP_STATUS,
                 body: format!(
                     "accept_redemptions: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
                     ids.len()
@@ -281,8 +284,8 @@ impl KickRewards {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if (200..300).contains(&status) {
+        let status = response.status();
+        if status.is_success() {
             return Ok(());
         }
 
@@ -296,13 +299,13 @@ impl KickRewards {
     ) -> Result<(), PlatformError> {
         if ids.is_empty() {
             return Err(PlatformError::Http {
-                status: 0,
+                status: NON_HTTP_STATUS,
                 body: "reject_redemptions: ids list is empty".to_owned(),
             });
         }
         if ids.len() > MAX_REDEMPTION_BATCH {
             return Err(PlatformError::Http {
-                status: 0,
+                status: NON_HTTP_STATUS,
                 body: format!(
                     "reject_redemptions: {} ids exceeds the maximum of {MAX_REDEMPTION_BATCH}",
                     ids.len()
@@ -325,8 +328,8 @@ impl KickRewards {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if (200..300).contains(&status) {
+        let status = response.status();
+        if status.is_success() {
             return Ok(());
         }
 
@@ -350,8 +353,8 @@ impl KickRewards {
                 reason: e.without_url().to_string(),
             })?;
 
-        let status = response.status().as_u16();
-        if !(200..300).contains(&status) {
+        let status = response.status();
+        if !status.is_success() {
             return map_rewards_error(status, response).await;
         }
 
@@ -380,7 +383,7 @@ impl KickRewards {
 }
 
 async fn map_rewards_error<T>(
-    status: u16,
+    status: StatusCode,
     response: reqwest::Response,
 ) -> Result<T, PlatformError> {
     let retry_after_secs = response
@@ -388,22 +391,28 @@ async fn map_rewards_error<T>(
         .get("retry-after")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(30);
+        .unwrap_or(DEFAULT_RETRY_AFTER_SECS);
 
     let body = response.text().await.unwrap_or_default();
 
     match status {
-        401 => Err(PlatformError::Auth {
+        StatusCode::UNAUTHORIZED => Err(PlatformError::Auth {
             reason: "rewards token rejected (401)".to_owned(),
         }),
-        403 => Err(PlatformError::Auth {
+        StatusCode::FORBIDDEN => Err(PlatformError::Auth {
             reason:
                 "rewards forbidden (403); check channel:rewards:write scope or reward ownership"
                     .to_owned(),
         }),
-        400 | 422 => Err(PlatformError::Http { status, body }),
-        429 => Err(PlatformError::RateLimited { retry_after_secs }),
-        _ => Err(PlatformError::Http { status, body }),
+        StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        }),
+        StatusCode::TOO_MANY_REQUESTS => Err(PlatformError::RateLimited { retry_after_secs }),
+        _ => Err(PlatformError::Http {
+            status: status.as_u16(),
+            body,
+        }),
     }
 }
 

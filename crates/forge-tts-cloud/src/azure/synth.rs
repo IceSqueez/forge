@@ -1,7 +1,8 @@
 use forge_audio::PcmBuffer;
 use forge_tts_core::{SynthesisRequest, VoiceId};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 
+use crate::azure::SAMPLE_RATE_HZ;
 use crate::azure::error::AzureError;
 
 fn xml_escape(text: &str) -> String {
@@ -63,21 +64,23 @@ fn build_ssml(req: &SynthesisRequest) -> String {
 }
 
 fn classify_error(
-    status: u16,
+    status: StatusCode,
     retry_after_secs: u64,
     body: &str,
     voice_id: &VoiceId,
 ) -> AzureError {
     match status {
-        401 | 403 => AzureError::Unauthorized("invalid API key".into()),
-        400 if body.to_ascii_lowercase().contains("voice") => {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            AzureError::Unauthorized("invalid API key".into())
+        }
+        StatusCode::BAD_REQUEST if body.to_ascii_lowercase().contains("voice") => {
             AzureError::VoiceNotFound(voice_id.clone())
         }
-        429 if body.contains("quota") || body.contains("characters") => {
+        StatusCode::TOO_MANY_REQUESTS if body.contains("quota") || body.contains("characters") => {
             AzureError::QuotaExceeded(body.to_string())
         }
-        429 => AzureError::RateLimited { retry_after_secs },
-        _ => AzureError::Http(format!("HTTP {status}: {body}")),
+        StatusCode::TOO_MANY_REQUESTS => AzureError::RateLimited { retry_after_secs },
+        _ => AzureError::Http(format!("HTTP {}: {body}", status.as_u16())),
     }
 }
 
@@ -103,7 +106,6 @@ pub(super) async fn synthesize(
         .map_err(|e| AzureError::Http(e.to_string()))?;
 
     let status = resp.status();
-    let status_code = status.as_u16();
 
     if status.is_success() {
         let bytes = resp
@@ -114,7 +116,7 @@ pub(super) async fn synthesize(
             .chunks_exact(2)
             .map(|c| i16::from_le_bytes([c[0], c[1]]))
             .collect();
-        Ok(PcmBuffer::new(samples, 24_000, 1))
+        Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
     } else {
         let retry_after_secs = resp
             .headers()
@@ -124,7 +126,7 @@ pub(super) async fn synthesize(
             .unwrap_or(0);
         let body_text = resp.text().await.unwrap_or_default();
         Err(classify_error(
-            status_code,
+            status,
             retry_after_secs,
             &body_text,
             &req.voice_id,
@@ -148,10 +150,16 @@ pub(super) async fn probe_connection(
         .await
         .map_err(|e| AzureError::Http(e.to_string()))?;
 
-    match resp.status().as_u16() {
-        200..=299 => Ok(()),
-        401 | 403 => Err(AzureError::Unauthorized("invalid API key".into())),
-        s => Err(AzureError::Http(format!("unexpected status {s}"))),
+    let status = resp.status();
+    if status.is_success() {
+        Ok(())
+    } else if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        Err(AzureError::Unauthorized("invalid API key".into()))
+    } else {
+        Err(AzureError::Http(format!(
+            "unexpected status {}",
+            status.as_u16()
+        )))
     }
 }
 

@@ -16,6 +16,8 @@ use crate::credentials::PollyCredentials;
 use crate::policy::{RetryConfig, SynthesisRateLimiter, retry_synthesize};
 use error::PollyError;
 
+pub(crate) const SAMPLE_RATE_HZ: u32 = 16_000;
+
 impl From<PollyError> for TtsError {
     fn from(e: PollyError) -> Self {
         let engine_id = EngineId("polly".into());

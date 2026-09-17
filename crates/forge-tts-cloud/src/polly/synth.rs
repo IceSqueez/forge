@@ -1,9 +1,10 @@
 use forge_audio::PcmBuffer;
 use forge_tts_core::{SynthesisRequest, VoiceId};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde_json::json;
 
 use crate::credentials::PollyCredentials;
+use crate::polly::SAMPLE_RATE_HZ;
 use crate::polly::error::PollyError;
 use crate::polly::signer;
 
@@ -35,7 +36,7 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
             "TextType": "ssml",
             "VoiceId": req.voice_id.0,
             "OutputFormat": "pcm",
-            "SampleRate": "16000",
+            "SampleRate": SAMPLE_RATE_HZ.to_string(),
             "Engine": "neural"
         });
         return (body.to_string(), true);
@@ -67,7 +68,7 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
             "TextType": "ssml",
             "VoiceId": req.voice_id.0,
             "OutputFormat": "pcm",
-            "SampleRate": "16000",
+            "SampleRate": SAMPLE_RATE_HZ.to_string(),
             "Engine": "neural"
         });
         (body.to_string(), true)
@@ -77,7 +78,7 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
             "TextType": "text",
             "VoiceId": req.voice_id.0,
             "OutputFormat": "pcm",
-            "SampleRate": "16000",
+            "SampleRate": SAMPLE_RATE_HZ.to_string(),
             "Engine": "neural"
         });
         (body.to_string(), false)
@@ -85,22 +86,22 @@ pub(super) fn build_polly_body(req: &SynthesisRequest) -> (String, bool) {
 }
 
 fn classify_error(
-    status: u16,
+    status: StatusCode,
     retry_after_secs: u64,
     body: &str,
     voice_id: &VoiceId,
 ) -> PollyError {
     match status {
-        // Polly returns 403 (not 401) for invalid credentials.
-        403 => PollyError::Unauthorized("invalid credentials".into()),
-        400 if body.to_ascii_lowercase().contains("voice") => {
+        // Polly returns FORBIDDEN (not UNAUTHORIZED) for invalid credentials.
+        StatusCode::FORBIDDEN => PollyError::Unauthorized("invalid credentials".into()),
+        StatusCode::BAD_REQUEST if body.to_ascii_lowercase().contains("voice") => {
             PollyError::VoiceNotFound(voice_id.0.clone())
         }
-        429 if body.contains("quota") || body.contains("characters") => {
+        StatusCode::TOO_MANY_REQUESTS if body.contains("quota") || body.contains("characters") => {
             PollyError::QuotaExceeded(body.to_string())
         }
-        429 => PollyError::RateLimited { retry_after_secs },
-        _ => PollyError::Http(format!("HTTP {status}: {body}")),
+        StatusCode::TOO_MANY_REQUESTS => PollyError::RateLimited { retry_after_secs },
+        _ => PollyError::Http(format!("HTTP {}: {body}", status.as_u16())),
     }
 }
 
@@ -127,7 +128,6 @@ pub(super) async fn synthesize(
         .map_err(|e| PollyError::Http(e.to_string()))?;
 
     let status = resp.status();
-    let status_code = status.as_u16();
 
     if status.is_success() {
         let bytes = resp
@@ -138,7 +138,7 @@ pub(super) async fn synthesize(
             .chunks_exact(2)
             .map(|c| i16::from_le_bytes([c[0], c[1]]))
             .collect();
-        Ok(PcmBuffer::new(samples, 16_000, 1))
+        Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
     } else {
         let retry_after_secs = resp
             .headers()
@@ -148,7 +148,7 @@ pub(super) async fn synthesize(
             .unwrap_or(0);
         let body_text = resp.text().await.unwrap_or_default();
         Err(classify_error(
-            status_code,
+            status,
             retry_after_secs,
             &body_text,
             &req.voice_id,
@@ -172,10 +172,16 @@ pub(super) async fn probe_connection(
         .await
         .map_err(|e| PollyError::Http(e.to_string()))?;
 
-    match resp.status().as_u16() {
-        200..=299 => Ok(()),
-        403 => Err(PollyError::Unauthorized("invalid credentials".into())),
-        s => Err(PollyError::Http(format!("unexpected status {s}"))),
+    let status = resp.status();
+    if status.is_success() {
+        Ok(())
+    } else if status == StatusCode::FORBIDDEN {
+        Err(PollyError::Unauthorized("invalid credentials".into()))
+    } else {
+        Err(PollyError::Http(format!(
+            "unexpected status {}",
+            status.as_u16()
+        )))
     }
 }
 

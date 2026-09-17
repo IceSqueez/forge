@@ -1,6 +1,6 @@
 use forge_audio::PcmBuffer;
 use forge_tts_core::{SynthesisRequest, VoiceId};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde_json::json;
 
 use crate::openai::error::OpenAiError;
@@ -19,18 +19,18 @@ fn map_speed(rate_multiplier: f32) -> f64 {
     f64::from(rate_multiplier.clamp(0.25, 4.0))
 }
 
-fn classify_error(status: u16, retry_after_secs: u64, body: &str) -> OpenAiError {
+fn classify_error(status: StatusCode, retry_after_secs: u64, body: &str) -> OpenAiError {
     match status {
-        401 => OpenAiError::Unauthorized("invalid API key".into()),
-        402 => OpenAiError::QuotaExceeded(body.to_string()),
-        429 => {
+        StatusCode::UNAUTHORIZED => OpenAiError::Unauthorized("invalid API key".into()),
+        StatusCode::PAYMENT_REQUIRED => OpenAiError::QuotaExceeded(body.to_string()),
+        StatusCode::TOO_MANY_REQUESTS => {
             if body.contains("insufficient_quota") || body.contains("billing") {
                 OpenAiError::QuotaExceeded(body.to_string())
             } else {
                 OpenAiError::RateLimited { retry_after_secs }
             }
         }
-        _ => OpenAiError::Http(format!("HTTP {status}: {body}")),
+        _ => OpenAiError::Http(format!("HTTP {}: {body}", status.as_u16())),
     }
 }
 
@@ -67,9 +67,9 @@ pub(super) async fn synthesize(
         .await
         .map_err(|e| OpenAiError::Http(e.to_string()))?;
 
-    let status = resp.status().as_u16();
+    let status = resp.status();
 
-    if (200..300).contains(&(status as usize)) {
+    if status.is_success() {
         let bytes = resp
             .bytes()
             .await
@@ -101,10 +101,16 @@ pub(super) async fn probe_connection(
         .await
         .map_err(|e| OpenAiError::Http(e.to_string()))?;
 
-    match resp.status().as_u16() {
-        200..=299 => Ok(()),
-        401 => Err(OpenAiError::Unauthorized("invalid API key".into())),
-        s => Err(OpenAiError::Http(format!("unexpected status {s}"))),
+    let status = resp.status();
+    if status.is_success() {
+        Ok(())
+    } else if status == StatusCode::UNAUTHORIZED {
+        Err(OpenAiError::Unauthorized("invalid API key".into()))
+    } else {
+        Err(OpenAiError::Http(format!(
+            "unexpected status {}",
+            status.as_u16()
+        )))
     }
 }
 

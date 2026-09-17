@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
+use crate::elevenlabs::SAMPLE_RATE_HZ;
 use crate::elevenlabs::error::ElevenLabsError;
 
 #[derive(Deserialize)]
@@ -40,13 +41,16 @@ pub(super) async fn fetch_voices(
         .await
         .map_err(|e| ElevenLabsError::Http(e.to_string()))?;
 
-    match resp.status().as_u16() {
-        401 | 403 => return Err(ElevenLabsError::Unauthorized("invalid API key".into())),
-        200..=299 => {}
-        s => {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ElevenLabsError::Http(format!("HTTP {s}: {body}")));
-        }
+    let status = resp.status();
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        return Err(ElevenLabsError::Unauthorized("invalid API key".into()));
+    }
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(ElevenLabsError::Http(format!(
+            "HTTP {}: {body}",
+            status.as_u16()
+        )));
     }
 
     let list: VoiceList = resp
@@ -68,7 +72,7 @@ pub(super) async fn fetch_voices(
                 gender,
                 engine_id: engine_id.clone(),
                 is_neural: true,
-                sample_rate_hint: 24_000,
+                sample_rate_hint: SAMPLE_RATE_HZ,
             }
         })
         .collect())

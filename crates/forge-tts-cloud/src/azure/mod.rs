@@ -15,6 +15,8 @@ use crate::credentials::AzureCredentials;
 use crate::policy::{RetryConfig, SynthesisRateLimiter, retry_synthesize};
 use error::AzureError;
 
+pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
+
 impl From<AzureError> for TtsError {
     fn from(e: AzureError) -> Self {
         let engine_id = EngineId("azure".into());

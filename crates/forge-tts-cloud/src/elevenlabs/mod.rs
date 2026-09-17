@@ -42,6 +42,7 @@ static CAPABILITIES: EngineCapabilities = EngineCapabilities {
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.elevenlabs.io";
+pub(crate) const SAMPLE_RATE_HZ: u32 = 24_000;
 
 pub struct ElevenLabsEngine {
     id: EngineId,

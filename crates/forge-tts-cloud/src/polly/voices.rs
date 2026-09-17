@@ -1,8 +1,9 @@
 use forge_tts_core::{EngineId, TtsVoice, VoiceGender, VoiceId};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 
 use crate::credentials::PollyCredentials;
+use crate::polly::SAMPLE_RATE_HZ;
 use crate::polly::error::PollyError;
 use crate::polly::signer;
 
@@ -48,13 +49,16 @@ pub(super) async fn fetch_voices(
         .await
         .map_err(|e| PollyError::Http(e.to_string()))?;
 
-    match resp.status().as_u16() {
-        403 => return Err(PollyError::Unauthorized("invalid credentials".into())),
-        200..=299 => {}
-        s => {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(PollyError::Http(format!("HTTP {s}: {body}")));
-        }
+    let status = resp.status();
+    if status == StatusCode::FORBIDDEN {
+        return Err(PollyError::Unauthorized("invalid credentials".into()));
+    }
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(PollyError::Http(format!(
+            "HTTP {}: {body}",
+            status.as_u16()
+        )));
     }
 
     let list: PollyVoiceList = resp
@@ -73,7 +77,7 @@ pub(super) async fn fetch_voices(
             gender: gender_from_str(&v.gender),
             engine_id: engine_id.clone(),
             is_neural: true,
-            sample_rate_hint: 16_000,
+            sample_rate_hint: SAMPLE_RATE_HZ,
         })
         .collect())
 }

@@ -1969,6 +1969,75 @@ mod tests {
     }
 
     #[test]
+    fn scan_overlay_root_puts_directories_first_and_flags_only_those_with_an_entry_document() {
+        const PAGE: &[u8] = b"<!doctype html>";
+        const NOTE: &[u8] = b"notes";
+        let root = tempfile::tempdir().expect("tempdir");
+        let hosted = root.path().join("alerts");
+        let plain = root.path().join("Assets");
+        std::fs::create_dir(&hosted).expect("hosted dir");
+        std::fs::create_dir(&plain).expect("plain dir");
+        std::fs::create_dir(root.path().join(RESERVED_DIRECTORY)).expect("reserved dir");
+        std::fs::write(hosted.join(MARKUP_FILE), PAGE).expect("entry document");
+        std::fs::write(hosted.join("alerts.js"), b"").expect("sibling asset");
+        std::fs::write(plain.join("style.css"), b"").expect("plain asset");
+        std::fs::write(root.path().join("legacy.html"), PAGE).expect("loose page");
+        std::fs::write(root.path().join("Notes.txt"), NOTE).expect("loose file");
+
+        let listing = runtime().block_on(scan_overlay_root(root.path()));
+
+        let listed: Vec<(&str, OwnedOverlayKind, u32, u64)> = listing
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.name.as_str(),
+                    entry.kind,
+                    entry.child_count,
+                    entry.size_bytes,
+                )
+            })
+            .collect();
+        assert_eq!(
+            listed,
+            vec![
+                ("alerts", OwnedOverlayKind::Dir { overlay: true }, 2, 0),
+                ("Assets", OwnedOverlayKind::Dir { overlay: false }, 1, 0),
+                (
+                    RESERVED_DIRECTORY,
+                    OwnedOverlayKind::Dir { overlay: false },
+                    0,
+                    0
+                ),
+                (
+                    "legacy.html",
+                    OwnedOverlayKind::File { html: true },
+                    0,
+                    PAGE.len() as u64
+                ),
+                (
+                    "Notes.txt",
+                    OwnedOverlayKind::File { html: false },
+                    0,
+                    NOTE.len() as u64
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn scan_overlay_root_yields_an_empty_listing_for_a_root_it_cannot_read() {
+        let root = tempfile::tempdir().expect("tempdir");
+
+        let listing = runtime().block_on(scan_overlay_root(&root.path().join("not-created")));
+
+        assert!(
+            listing.entries.is_empty(),
+            "a missing overlay root must degrade to an empty picker, not break the poll"
+        );
+    }
+
+    #[test]
     fn is_html_path_accepts_html_and_htm_in_any_case() {
         for name in ["a.html", "a.htm", "a.HTML", "a.Htm"] {
             assert!(is_html_path(std::path::Path::new(name)), "{name}");

@@ -57,20 +57,69 @@ pub fn overlay_file_url(origin: &str, file_name: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 
+    const ROUTABLE_HOST: &str = "192.168.1.5";
+
     #[test]
-    fn overlay_origin_rewrites_a_wildcard_bind_to_a_host_a_browser_can_dial() {
-        for (bind, expected) in [
-            ("127.0.0.1:9515", "http://127.0.0.1:9515"),
-            ("192.168.1.5:9515", "http://192.168.1.5:9515"),
-            ("[::1]:9515", "http://[::1]:9515"),
-            ("0.0.0.0:9515", "http://127.0.0.1:9515"),
-            ("[::]:9515", "http://127.0.0.1:9515"),
+    fn overlay_origin_substitutes_the_routable_host_for_a_wildcard_bind_only() {
+        for (bind, routable_host, expected) in [
+            (
+                "0.0.0.0:9515",
+                Some(ROUTABLE_HOST),
+                "http://192.168.1.5:9515",
+            ),
+            ("[::]:9515", Some(ROUTABLE_HOST), "http://192.168.1.5:9515"),
+            ("0.0.0.0:9515", None, "http://127.0.0.1:9515"),
+            ("[::]:9515", None, "http://127.0.0.1:9515"),
+            (
+                "192.168.1.9:9515",
+                Some(ROUTABLE_HOST),
+                "http://192.168.1.9:9515",
+            ),
+            (
+                "127.0.0.1:9515",
+                Some(ROUTABLE_HOST),
+                "http://127.0.0.1:9515",
+            ),
+            ("[::1]:9515", Some(ROUTABLE_HOST), "http://[::1]:9515"),
         ] {
-            assert_eq!(overlay_origin(bind), expected, "bind {bind}");
+            assert_eq!(
+                overlay_origin(bind, routable_host),
+                expected,
+                "bind {bind} with routable host {routable_host:?}"
+            );
         }
+    }
+
+    #[test]
+    fn resolve_routable_host_declines_a_bind_that_already_names_a_dialable_host() {
+        for bind in [
+            "127.0.0.1:9515",
+            "192.168.1.9:9515",
+            "[::1]:9515",
+            "[fe80::1%eth0]:9515",
+            "0.0.0.1:9515",
+        ] {
+            assert!(resolve_routable_host(bind).is_none(), "bind {bind}");
+        }
+    }
+
+    #[test]
+    fn a_resolved_routable_host_is_a_bare_address_another_machine_could_dial() {
+        let Some(host) = resolve_routable_host("0.0.0.0:9515") else {
+            return;
+        };
+
+        let address: IpAddr = host
+            .parse()
+            .expect("a routable host goes into a URL verbatim, so it must be a bare address");
+        assert!(
+            !address.is_loopback() && !address.is_unspecified(),
+            "host {host} is reachable from this machine only"
+        );
     }
 
     #[test]
@@ -86,13 +135,18 @@ mod tests {
     }
 
     #[test]
-    fn the_copied_url_addresses_the_overlay_directory_with_a_trailing_slash() {
-        let url = overlay_page_url(&overlay_origin("0.0.0.0:9515"), "alerts");
+    fn a_page_url_trails_a_slash_under_the_same_route_a_file_url_serves_without_one() {
+        let origin = overlay_origin("0.0.0.0:9515", Some(ROUTABLE_HOST));
 
-        assert_eq!(url, "http://127.0.0.1:9515/overlays/alerts/");
-        assert!(
-            url.ends_with('/'),
-            "without the trailing slash a browser source requests a file, not the entry document: {url}"
+        assert_eq!(
+            overlay_page_url(&origin, "alerts"),
+            "http://192.168.1.5:9515/overlays/alerts/",
+            "without the trailing slash a browser source requests a file, not the entry document"
+        );
+        assert_eq!(
+            overlay_file_url(&origin, "alerts.html"),
+            "http://192.168.1.5:9515/overlays/alerts.html",
+            "a trailing slash on a file would redirect a browser source to a directory listing"
         );
     }
 }

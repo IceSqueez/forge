@@ -1682,6 +1682,235 @@ fn event_source_label(source: EventSource) -> &'static str {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use forge_overlay::RESERVED_DIRECTORY;
+    use forge_server::BandwidthSnapshot;
+    use forge_storage::StorageError;
+    use gpui::{Entity, TestAppContext};
+
+    const WILDCARD_BIND: &str = "0.0.0.0:9515";
+    const ROUTABLE_HOST: &str = "192.168.1.5";
+    const OVERLAY_DIR: &str = "alerts";
+    const PLAIN_DIR: &str = "assets";
+    const LOOSE_PAGE: &str = "legacy.html";
+
+    struct NoCredentials;
+
+    #[async_trait::async_trait]
+    impl CredentialsRepo for NoCredentials {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<time::OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("current-thread runtime")
+    }
+
+    fn serverless_console(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> Entity<ServerConsoleView> {
+        cx.new(|cx| ServerConsoleView::new(None, rt.handle().clone(), Arc::new(NoCredentials), cx))
+    }
+
+    fn dir_entry(name: &str, overlay: bool) -> OwnedOverlayEntry {
+        OwnedOverlayEntry {
+            name: name.to_owned(),
+            kind: OwnedOverlayKind::Dir { overlay },
+            size_bytes: 0,
+            child_count: 1,
+        }
+    }
+
+    fn file_entry(name: &str) -> OwnedOverlayEntry {
+        OwnedOverlayEntry {
+            name: name.to_owned(),
+            kind: OwnedOverlayKind::File {
+                html: is_html_path(std::path::Path::new(name)),
+            },
+            size_bytes: 512,
+            child_count: 0,
+        }
+    }
+
+    fn index_of(entries: &[OwnedOverlayEntry], name: &str) -> usize {
+        entries
+            .iter()
+            .position(|entry| entry.name == name)
+            .expect("fixture entry")
+    }
+
+    fn serve(view: &mut ServerConsoleView, entries: Vec<OwnedOverlayEntry>) {
+        view.running = true;
+        view.bind_address = Some(WILDCARD_BIND.to_owned());
+        view.routable_host = Some(ROUTABLE_HOST.to_owned());
+        view.overlay_entries = entries;
+    }
+
+    fn listing_poll(entries: Vec<OwnedOverlayEntry>) -> ServerPoll {
+        ServerPoll {
+            snapshot: ServerSnapshot {
+                uptime_seconds: 0,
+                connected_clients: Vec::new(),
+                bandwidth: BandwidthSnapshot {
+                    outbound_bytes_per_second: 0,
+                    outbound_bytes_total: 0,
+                    peak_outbound_bytes_per_second: 0,
+                },
+                aggregate_events_per_second: 0.0,
+                http_requests_total: 0,
+                events_out_total: 0,
+                dropped_events_total: 0,
+            },
+            bind_address: WILDCARD_BIND.to_owned(),
+            routable_host: Some(ROUTABLE_HOST.to_owned()),
+            overlay: Some(OverlayListing {
+                root: "/overlays".to_owned(),
+                entries,
+            }),
+        }
+    }
+
+    #[gpui::test]
+    fn the_default_browser_source_is_an_overlay_directory_ahead_of_a_loose_page(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let url = view.update(cx, |this, _| {
+            serve(
+                this,
+                vec![
+                    dir_entry(PLAIN_DIR, false),
+                    dir_entry(OVERLAY_DIR, true),
+                    file_entry(LOOSE_PAGE),
+                ],
+            );
+            this.browser_source_url()
+        });
+
+        assert_eq!(
+            url.as_deref(),
+            Some("http://192.168.1.5:9515/overlays/alerts/")
+        );
+    }
+
+    #[gpui::test]
+    fn a_picked_file_replaces_the_default_directory_and_is_addressed_without_a_slash(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let url = view.update(cx, |this, cx| {
+            let entries = vec![dir_entry(OVERLAY_DIR, true), file_entry(LOOSE_PAGE)];
+            let picked = index_of(&entries, LOOSE_PAGE);
+            serve(this, entries);
+            this.select_overlay_entry(picked, cx);
+            this.browser_source_url()
+        });
+
+        assert_eq!(
+            url.as_deref(),
+            Some("http://192.168.1.5:9515/overlays/legacy.html")
+        );
+    }
+
+    #[gpui::test]
+    fn a_directory_without_an_entry_document_cannot_become_the_browser_source(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        for unhostable in [PLAIN_DIR, RESERVED_DIRECTORY] {
+            let url = view.update(cx, |this, cx| {
+                let entries = vec![dir_entry(unhostable, false), dir_entry(OVERLAY_DIR, true)];
+                let picked = index_of(&entries, unhostable);
+                serve(this, entries);
+                this.select_overlay_entry(picked, cx);
+                this.browser_source_url()
+            });
+
+            assert_eq!(
+                url.as_deref(),
+                Some("http://192.168.1.5:9515/overlays/alerts/"),
+                "directory {unhostable}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_selection_pointing_past_a_refreshed_listing_is_dropped(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        let selected = view.update(cx, |this, cx| {
+            let entries = vec![
+                dir_entry(OVERLAY_DIR, true),
+                file_entry(LOOSE_PAGE),
+                file_entry("spare.html"),
+            ];
+            let picked = index_of(&entries, "spare.html");
+            serve(this, entries);
+            this.select_overlay_entry(picked, cx);
+            this.apply_poll(listing_poll(vec![dir_entry(OVERLAY_DIR, true)]));
+            this.selected_overlay_entry
+        });
+
+        assert_eq!(selected, None);
+    }
+
+    #[gpui::test]
+    fn no_browser_source_url_is_offered_until_the_server_hosts_something(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        for (running, entries, case) in [
+            (false, vec![dir_entry(OVERLAY_DIR, true)], "server stopped"),
+            (true, Vec::new(), "overlay root empty"),
+            (
+                true,
+                vec![dir_entry(PLAIN_DIR, false)],
+                "nothing hostable in the overlay root",
+            ),
+        ] {
+            let url = view.update(cx, |this, _| {
+                serve(this, entries);
+                this.running = running;
+                this.browser_source_url()
+            });
+
+            assert_eq!(url, None, "{case}");
+        }
+    }
 
     fn snapshot_client(
         identification: &str,

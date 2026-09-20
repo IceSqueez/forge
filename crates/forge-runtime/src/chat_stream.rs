@@ -96,7 +96,7 @@ mod tests {
     use std::time::Duration;
 
     use forge_events::{Event, EventSource};
-    use forge_types::{ChatSegment, ModerationMarks};
+    use forge_types::{ChatModerationAction, ChatModerationPayload, ChatSegment, ModerationMarks};
     use tokio::time::timeout;
     use tokio_stream::StreamExt as _;
 
@@ -215,16 +215,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chat_stream_drops_oldest_when_500_ids_seen() {
+    async fn chat_stream_readmits_an_id_evicted_from_the_dedup_window() {
         let bus = null_bus();
         let stream = chat_stream(Arc::clone(&bus));
         tokio::pin!(stream);
 
-        for i in 0..501u32 {
+        let past_window = DEDUP_WINDOW + 1;
+        for i in 0..past_window {
             bus.publish(chat_event(EventSource::Twitch, &format!("id-{i}")));
         }
 
-        for _ in 0..501 {
+        for _ in 0..past_window {
             timeout(Duration::from_millis(500), stream.next())
                 .await
                 .unwrap()
@@ -237,5 +238,65 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.id, "id-0");
+    }
+
+    const LAG_CHANNEL_CAP: usize = 16;
+    const LAG_RING_CAP: usize = 64;
+    const LAG_BURST: usize = LAG_CHANNEL_CAP * 2;
+    const AFTER_GAP_MSG_ID: &str = "after-the-gap";
+
+    type UnitStream = std::pin::Pin<Box<dyn Stream<Item = ()> + Send>>;
+    type StreamLagCase = (&'static str, fn(Arc<EventBus>) -> UnitStream, fn() -> Event);
+
+    fn moderation_event(source: EventSource) -> Event {
+        let payload = ChatModerationPayload {
+            action: ChatModerationAction::ClearChat,
+        };
+        Event::new(
+            source,
+            "chat.moderation",
+            serde_json::json!({
+                (ChatModerationPayload::KEY): serde_json::to_value(&payload).unwrap(),
+            }),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_bus_lag_skips_the_gap_without_ending_either_chat_stream() {
+        let cases: [StreamLagCase; 2] = [
+            (
+                "chat",
+                |bus| Box::pin(chat_stream(bus).map(|_| ())),
+                || chat_event(EventSource::Twitch, AFTER_GAP_MSG_ID),
+            ),
+            (
+                "moderation",
+                |bus| Box::pin(crate::chat_moderation_stream(bus).map(|_| ())),
+                || moderation_event(EventSource::Twitch),
+            ),
+        ];
+
+        for (label, build, after_gap) in cases {
+            let bus =
+                EventBus::with_caps(Arc::new(NullEventLogRepo), LAG_CHANNEL_CAP, LAG_RING_CAP);
+            let stream = build(Arc::clone(&bus));
+            tokio::pin!(stream);
+
+            for i in 0..LAG_BURST {
+                bus.publish(Event::new(
+                    EventSource::Core,
+                    "core.filler",
+                    serde_json::json!({ "i": i }),
+                ));
+            }
+            bus.publish(after_gap());
+
+            let item = timeout(Duration::from_millis(200), stream.next()).await;
+            assert_eq!(
+                item.ok().flatten(),
+                Some(()),
+                "{label} stream must skip the gap and keep yielding"
+            );
+        }
     }
 }

@@ -67,6 +67,7 @@ impl SettingsVoiceGateView {
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         owner: Arc<VoiceGateOwner>,
+        initial_active: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -107,7 +108,7 @@ impl SettingsVoiceGateView {
             picker_open: false,
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
-            active: false,
+            active: initial_active,
             ticking: false,
             devices_gen: async_bridge::Generation::default(),
             threshold_debounce: async_bridge::Debounced::new(async_bridge::SLIDER_PERSIST_DEBOUNCE),
@@ -115,6 +116,10 @@ impl SettingsVoiceGateView {
             _subs: subs,
         };
         view.load(false, cx);
+        if initial_active {
+            view.read_gate(cx);
+            view.ensure_ticker(cx);
+        }
         view
     }
 

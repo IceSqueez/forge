@@ -1326,6 +1326,8 @@ server_status_listening = Listening · { $clients ->
   }
 server_status_stopped = Stopped
 server_not_running = Not running
+server_console_disabled_hint = Server is switched off
+server_console_disabled_hint_link = Enable in Settings -> WebSocket
 server_bind_address = BIND ADDRESS
 server_bind_address_loading = Reading address…
 server_bearer_token = BEARER TOKEN

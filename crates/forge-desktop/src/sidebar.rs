@@ -478,7 +478,7 @@ impl Render for SidebarNav {
         let settings = self.section_leaf(
             Icon::Settings,
             NavText::Key("nav_item_settings"),
-            Screen::Settings,
+            Screen::Settings(None),
             &palette,
             cx,
         );

@@ -1335,6 +1335,8 @@ server_status_listening = Слухає · { $clients ->
   }
 server_status_stopped = Зупинено
 server_not_running = Не запущено
+server_console_disabled_hint = Сервер вимкнено
+server_console_disabled_hint_link = Увімкнути в Налаштуваннях -> WebSocket
 server_bind_address = АДРЕСА ПРИВ'ЯЗКИ
 server_bind_address_loading = Читаємо адресу…
 server_bearer_token = BEARER-ТОКЕН

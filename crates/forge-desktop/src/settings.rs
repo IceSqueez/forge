@@ -194,12 +194,18 @@ struct FontPicker {
 const FONT_DEFAULT_ID: &str = "__forge_default_font__";
 
 impl SettingsView {
-    pub fn new(handles: Arc<RuntimeHandles>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        handles: Arc<RuntimeHandles>,
+        preselect: Option<SettingsSection>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let section = preselect.unwrap_or(SettingsSection::Appearance);
         let audio = cx.new(|cx| {
             SettingsAudioView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
                 Arc::clone(&handles.voice_gate),
+                section == SettingsSection::Audio,
                 cx,
             )
         });
@@ -232,11 +238,12 @@ impl SettingsView {
                 Arc::clone(&handles.backend),
                 handles.builtins.clone(),
                 handles.rt_handle.clone(),
+                section == SettingsSection::Diagnostics,
                 cx,
             )
         });
         Self {
-            section: SettingsSection::Appearance,
+            section,
             handles,
             language: cx.global::<ActiveLanguage>().0,
             audio,

@@ -62,6 +62,7 @@ impl SettingsDiagnosticsView {
         backend: Arc<dyn DataProvider>,
         builtins: BuiltinRegistry,
         rt_handle: tokio::runtime::Handle,
+        initial_active: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         Self::spawn_refresher(cx);
@@ -74,7 +75,7 @@ impl SettingsDiagnosticsView {
             level: DEFAULT_DIAGNOSTIC_LOG_LEVEL,
             env_overridden: crate::log_level::env_overridden(),
             scroll: ScrollHandle::new(),
-            active: false,
+            active: initial_active,
             clear_pending: false,
             preparing_export: false,
             pending_export: None,
@@ -82,6 +83,9 @@ impl SettingsDiagnosticsView {
             focus_restore: None,
         };
         view.load_level(cx);
+        if initial_active {
+            view.refresh(cx);
+        }
         view
     }
 

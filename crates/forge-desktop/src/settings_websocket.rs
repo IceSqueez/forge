@@ -19,6 +19,7 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::presentation::ActivePresentation;
+use crate::server_restart::restart_ignoring_disabled;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 const LAN_PHRASE: &str = "expose to LAN";
@@ -29,6 +30,8 @@ const DEFAULT_PORT: u16 = 8081;
 const DEFAULT_OVERLAY_HINT: &str = "~/.local/share/forge/overlays";
 const ORIGINS_PERSIST_CONTEXT: &str = "websocket additional origins";
 const ORIGINS_AREA_HEIGHT: Pixels = px(72.0);
+const PORT_COLUMN_MIN_W: Pixels = px(140.0);
+const TOKEN_COLUMN_MIN_W: Pixels = px(230.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BindChoice {
@@ -343,7 +346,7 @@ impl SettingsWebSocketView {
                     .map_err(|e| e.to_string())?;
                 if let Some(handle) = server {
                     if value {
-                        handle.restart().await.map_err(|e| e.to_string())?;
+                        restart_ignoring_disabled(&handle).await?;
                     } else {
                         handle.stop().await.map_err(|e| e.to_string())?;
                     }
@@ -366,7 +369,7 @@ impl SettingsWebSocketView {
         self.restart_queued = false;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { handle.restart().await.map_err(|e| e.to_string()) },
+            async move { restart_ignoring_disabled(&handle).await },
             |this, result: Result<(), String>, cx| this.finish_restart(result, cx),
             cx,
         );
@@ -612,7 +615,7 @@ impl SettingsWebSocketView {
                 .await
                 .map_err(|e| e.to_string())?;
             if let Some(handle) = server {
-                handle.restart().await.map_err(|e| e.to_string())?;
+                restart_ignoring_disabled(&handle).await?;
             }
             Ok::<(), String>(())
         });
@@ -1261,10 +1264,13 @@ impl Render for SettingsWebSocketView {
             .w_full()
             .flex()
             .flex_row()
+            .flex_wrap()
             .items_start()
             .gap(spacing(Spacing::Md, density))
-            .child(weighted(1.0, self.port_column(&palette, density)))
-            .child(weighted(1.6, self.token_column(&palette, density, cx)));
+            .child(weighted(1.0, self.port_column(&palette, density)).min_w(PORT_COLUMN_MIN_W))
+            .child(
+                weighted(1.6, self.token_column(&palette, density, cx)).min_w(TOKEN_COLUMN_MIN_W),
+            );
 
         let mut root = div()
             .flex()

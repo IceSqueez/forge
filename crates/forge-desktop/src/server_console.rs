@@ -12,11 +12,13 @@ use std::time::Duration;
 
 use forge_events::EventSource;
 use forge_overlay::MARKUP_FILE;
-use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSnapshot};
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_server::{
+    ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSettings, ServerSnapshot,
+};
+use forge_storage::{CredentialId, CredentialsRepo, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, ElementId, FontWeight, Pixels, Rgba, SharedString,
-    UniformListScrollHandle, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Div, ElementId, EventEmitter, FontWeight, Pixels, Rgba,
+    SharedString, UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -24,6 +26,10 @@ use crate::overlay_url::{
     extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
 };
 use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
+use crate::server_restart::restart_ignoring_disabled;
+use crate::settings::SettingsSection;
+use crate::sidebar::NavRequested;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
@@ -135,10 +141,13 @@ pub struct ServerConsoleView {
     server: Option<ServerHandle>,
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
+    settings: Arc<dyn SettingsRepo>,
     running: bool,
+    enabled: bool,
     restarting: bool,
     bind_address: Option<String>,
     routable_host: Option<String>,
+    routable_host_resolved_for: Option<String>,
     bearer_token: String,
     token_revealed: bool,
     connected_clients: Vec<OwnedClientRow>,
@@ -158,6 +167,7 @@ impl ServerConsoleView {
         server: Option<ServerHandle>,
         rt_handle: tokio::runtime::Handle,
         credentials: Arc<dyn CredentialsRepo>,
+        settings: Arc<dyn SettingsRepo>,
         cx: &mut Context<Self>,
     ) -> Self {
         let running = server
@@ -167,10 +177,13 @@ impl ServerConsoleView {
             server,
             rt_handle,
             credentials,
+            settings,
             running,
+            enabled: true,
             restarting: false,
             bind_address: None,
             routable_host: None,
+            routable_host_resolved_for: None,
             bearer_token: String::new(),
             token_revealed: false,
             connected_clients: Vec::new(),
@@ -184,6 +197,7 @@ impl ServerConsoleView {
             pending_disconnect: Confirm::default(),
         };
         view.fetch_token(cx);
+        view.fetch_enabled(cx);
         if view.server.is_some() {
             view.start_run_state_bridge(cx);
             view.start_poll(cx);
@@ -201,7 +215,7 @@ impl ServerConsoleView {
         self.restarting = true;
         async_bridge::run_async(
             &self.rt_handle,
-            async move { handle.restart().await.map_err(|e| e.to_string()) },
+            async move { restart_ignoring_disabled(&handle).await },
             |this, result: Result<(), String>, cx| {
                 this.restarting = false;
                 if let Err(message) = result {
@@ -232,6 +246,53 @@ impl ServerConsoleView {
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
             )
             .into_any_element()
+    }
+
+    fn open_websocket_settings(&mut self, cx: &mut Context<Self>) {
+        cx.emit(NavRequested(Screen::Settings(Some(
+            SettingsSection::WebSocket,
+        ))));
+    }
+
+    fn switched_off_hint_visible(&self) -> bool {
+        !self.enabled
+    }
+
+    fn disabled_hint(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.switched_off_hint_visible() {
+            return None;
+        }
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xxs, density))
+                .child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child(tr!("server_console_disabled_hint")),
+                )
+                .child(
+                    div()
+                        .id("srv-open-ws-settings")
+                        .cursor_pointer()
+                        .font_family(body_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.info)
+                        .child(tr!("server_console_disabled_hint_link"))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.open_websocket_settings(cx)
+                        })),
+                )
+                .into_any_element(),
+        )
     }
 
     fn is_running(&self) -> bool {
@@ -293,6 +354,40 @@ impl ServerConsoleView {
         );
     }
 
+    fn fetch_enabled(&self, cx: &mut Context<Self>) {
+        let settings = Arc::clone(&self.settings);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                ServerSettings::load(settings.as_ref())
+                    .await
+                    .map(|loaded| loaded.enabled)
+                    .unwrap_or(true)
+            },
+            |this, enabled: bool, cx| {
+                this.enabled = enabled;
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn resolve_routable_host_for(&mut self, bind_address: String, cx: &mut Context<Self>) {
+        self.routable_host_resolved_for = Some(bind_address.clone());
+        let target = bind_address.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { resolve_routable_host(&bind_address) },
+            move |this, routable_host: Option<String>, cx| {
+                if this.routable_host_resolved_for.as_deref() == Some(target.as_str()) {
+                    this.routable_host = routable_host;
+                    cx.notify();
+                }
+            },
+            cx,
+        );
+    }
+
     fn start_poll(&self, cx: &mut Context<Self>) {
         let Some(handle) = self.server.clone() else {
             return;
@@ -308,7 +403,6 @@ impl ServerConsoleView {
                 rt_handle.spawn(async move {
                     let snapshot = handle.snapshot().await;
                     let bind_address = handle.bind_addr().await.to_string();
-                    let routable_host = resolve_routable_host(&bind_address);
                     let overlay = if want_overlay {
                         let root = handle.overlay_root().await;
                         Some(scan_overlay_root(root.as_ref()).await)
@@ -318,14 +412,15 @@ impl ServerConsoleView {
                     let _ = tx.send(ServerPoll {
                         snapshot,
                         bind_address,
-                        routable_host,
                         overlay,
                     });
                 });
                 if let Ok(poll) = rx.await
                     && this
                         .update(cx, |this, cx| {
-                            this.apply_poll(poll);
+                            if let Some(bind_address) = this.apply_poll(poll) {
+                                this.resolve_routable_host_for(bind_address, cx);
+                            }
                             cx.notify();
                         })
                         .is_err()
@@ -338,9 +433,10 @@ impl ServerConsoleView {
         .detach();
     }
 
-    fn apply_poll(&mut self, poll: ServerPoll) {
-        self.bind_address = Some(poll.bind_address);
-        self.routable_host = poll.routable_host;
+    fn apply_poll(&mut self, poll: ServerPoll) -> Option<String> {
+        let needs_resolve =
+            self.routable_host_resolved_for.as_deref() != Some(poll.bind_address.as_str());
+        self.bind_address = Some(poll.bind_address.clone());
 
         if self.running {
             let snapshot = &poll.snapshot;
@@ -376,6 +472,8 @@ impl ServerConsoleView {
                 self.selected_overlay_entry = None;
             }
         }
+
+        needs_resolve.then_some(poll.bind_address)
     }
 
     fn browser_source_entry(&self) -> Option<&OwnedOverlayEntry> {
@@ -1344,6 +1442,8 @@ impl ServerConsoleView {
     }
 }
 
+impl EventEmitter<NavRequested> for ServerConsoleView {}
+
 impl Render for ServerConsoleView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
@@ -1402,6 +1502,7 @@ impl Render for ServerConsoleView {
                 .flex()
                 .items_center()
                 .gap(spacing(Spacing::Xs, density))
+                .children(self.disabled_hint(&palette, density, cx))
                 .child(self.restart_control(&palette, cx))
                 .child(self.breadcrumb_status(&palette)),
         )
@@ -1586,7 +1687,6 @@ fn mask_token(token: &str) -> String {
 struct ServerPoll {
     snapshot: ServerSnapshot,
     bind_address: String,
-    routable_host: Option<String>,
     overlay: Option<OverlayListing>,
 }
 

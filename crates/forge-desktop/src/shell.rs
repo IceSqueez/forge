@@ -270,9 +270,11 @@ impl AppShell {
                 .detach();
                 detail.into()
             }
-            Screen::Settings => {
+            Screen::Settings(preselect) => {
                 let handles = Arc::clone(handles);
-                cx.new(|cx| SettingsView::new(handles, cx)).into()
+                let preselect = *preselect;
+                cx.new(|cx| SettingsView::new(handles, preselect, cx))
+                    .into()
             }
             Screen::Queues => {
                 let queue_health = topics.queue_health.clone();
@@ -338,8 +340,15 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let credentials: Arc<dyn CredentialsRepo> =
                     Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
-                cx.new(|cx| ServerConsoleView::new(server, rt_handle, credentials, cx))
-                    .into()
+                let settings: Arc<dyn SettingsRepo> =
+                    Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+                let console = cx
+                    .new(|cx| ServerConsoleView::new(server, rt_handle, credentials, settings, cx));
+                cx.subscribe(&console, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                console.into()
             }
             Screen::Actions(preselect) => {
                 let preselect = *preselect;
@@ -561,7 +570,7 @@ impl AppShell {
     }
 
     fn go_settings(&mut self, _: &GoSettings, _: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Screen::Settings, cx);
+        self.navigate(Screen::Settings(None), cx);
     }
 
     fn toast_host(&self, cx: &App) -> Option<AnyElement> {

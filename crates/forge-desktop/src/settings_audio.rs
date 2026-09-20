@@ -60,6 +60,7 @@ impl SettingsAudioView {
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         voice_gate_owner: Arc<VoiceGateOwner>,
+        initial_active: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         let voice_gate = cx.new(|cx| {
@@ -67,6 +68,7 @@ impl SettingsAudioView {
                 Arc::clone(&backend),
                 rt_handle.clone(),
                 voice_gate_owner,
+                initial_active,
                 cx,
             )
         });

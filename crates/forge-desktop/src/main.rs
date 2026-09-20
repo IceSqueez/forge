@@ -57,6 +57,7 @@ mod runtime_status;
 mod screen;
 mod script_editor;
 mod server_console;
+mod server_restart;
 mod settings;
 mod settings_audio;
 mod settings_diagnostics;

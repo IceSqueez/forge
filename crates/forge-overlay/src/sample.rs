@@ -18,14 +18,17 @@ enum Family {
     Plain,
 }
 
-/// Mirrors the real payload shape of the kind's family, entities nested exactly as a live
-/// event nests them, so a test renders what a real fire renders instead of a friendlier lie.
+/// Chat/resub/cheer families mirror the flat variable names the matching trigger's
+/// `output_schema` declares (so a stored `%token%` resolves the same way it would against a
+/// live `ArgStack`); the rest still mirror the raw wire payload shape.
 pub fn sample_payload(event_kind: &str) -> Value {
     match family(event_kind) {
         Family::ChatMessage => json!({
+            "message_text": "first time here, hi!",
+            "user_login": "pixel_pal",
+            "user_id": "104857392",
             "channel": SAMPLE_CHANNEL,
-            "user": viewer(),
-            "message": "first time here, hi!",
+            "user_color": "#f38ba8",
         }),
         Family::Follow => json!({
             "user": viewer(),
@@ -37,12 +40,12 @@ pub fn sample_payload(event_kind: &str) -> Value {
             "is_gift": false,
         }),
         Family::Resubscribe => json!({
-            "user": viewer(),
-            "tier": "1000",
-            "cumulative_months": 7,
-            "streak_months": 3,
-            "message": "love the content",
-            "share_streak": true,
+            "user_login": "pixel_pal",
+            "user_id": "104857392",
+            "sub_tier": "1000",
+            "sub_cumulative_months": 7,
+            "sub_streak_months": 3,
+            "sub_message": "love the content",
         }),
         Family::GiftSubscription => json!({
             "tier": "1000",
@@ -51,10 +54,11 @@ pub fn sample_payload(event_kind: &str) -> Value {
             "recipient": { "id": null, "login": null, "display_name": null },
         }),
         Family::Cheer => json!({
-            "user": viewer(),
-            "bits": 500,
-            "message": "take my bits",
-            "is_anonymous": false,
+            "bits_amount": 500,
+            "cheer_message": "take my bits",
+            "cheer_is_anonymous": false,
+            "user_login": "pixel_pal",
+            "user_id": "104857392",
         }),
         Family::Raid => json!({
             "direction": "incoming",
@@ -94,6 +98,12 @@ fn sample_args(event_kind: &str) -> ArgStack {
 }
 
 fn family(event_kind: &str) -> Family {
+    match event_kind {
+        "overlay.alert" => return Family::Resubscribe,
+        "overlay.ticker" => return Family::Cheer,
+        "overlay.chat" => return Family::ChatMessage,
+        _ => {}
+    }
     if event_kind.contains("chat.message") {
         Family::ChatMessage
     } else if event_kind.contains("follow") {

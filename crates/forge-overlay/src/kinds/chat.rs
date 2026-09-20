@@ -40,13 +40,10 @@ impl OverlayKindDescriptor for ChatOverlayKind {
 
     fn default_config(&self) -> OverlayConfig {
         let mut defaults = config::shared_style_defaults("sky", "Inter", "bottom", "slide-up");
-        defaults.insert(
-            config::AUTHOR.to_owned(),
-            config::text("%user.display_name%"),
-        );
+        defaults.insert(config::AUTHOR.to_owned(), config::text("%user_login%"));
         defaults.insert(config::AUTHOR_COLOR.to_owned(), config::text("#89dceb"));
         defaults.insert(config::BADGES.to_owned(), config::text(""));
-        defaults.insert(config::MESSAGE.to_owned(), config::text("%message%"));
+        defaults.insert(config::MESSAGE.to_owned(), config::text("%message_text%"));
         defaults
     }
 

@@ -42,9 +42,12 @@ impl OverlayKindDescriptor for TickerOverlayKind {
         let mut defaults = config::shared_defaults("yellow", "Bebas Neue", "bottom", "slide-left");
         defaults.insert(
             config::HEADLINE.to_owned(),
-            config::text("Latest cheer: %bits% bits"),
+            config::text("Latest cheer: %bits_amount% bits"),
         );
-        defaults.insert(config::SUBLINE.to_owned(), config::text("\"%message%\""));
+        defaults.insert(
+            config::SUBLINE.to_owned(),
+            config::text("\"%cheer_message%\""),
+        );
         defaults.insert(config::DURATION.to_owned(), forge_types::Variant::Int(8));
         defaults
     }

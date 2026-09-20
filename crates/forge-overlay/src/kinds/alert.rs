@@ -46,7 +46,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         );
         defaults.insert(
             config::SUBLINE.to_owned(),
-            config::text("%cumulative_months% months subscribed"),
+            config::text("%sub_cumulative_months% months subscribed"),
         );
         defaults.insert(config::DURATION.to_owned(), forge_types::Variant::Int(5));
         defaults

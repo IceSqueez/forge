@@ -2,9 +2,9 @@ use forge_components::breadcrumb::BreadcrumbCrumb;
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, OverlayPosition, PlatformKind, Radius, Spacing, body_family, card, column,
-    confirm_modal, data_table, empty_state, fmt_bytes, fmt_number, fmt_uptime_short, header_status,
-    icon, metric_card, mono_family, overlay, page_frame, platform_color, radius, spacing,
-    sparkline, status_dot, tooltip_builder, tr, virtual_table,
+    confirm_modal, data_table, empty_state, fmt_bytes, fmt_number, fmt_uptime_short,
+    ghost_button_with_icon, header_status, icon, metric_card, mono_family, overlay, page_frame,
+    platform_color, radius, spacing, sparkline, status_dot, tooltip_builder, tr, virtual_table,
 };
 use std::ffi::OsStr;
 use std::sync::Arc;
@@ -128,6 +128,7 @@ pub struct ServerConsoleView {
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
     running: bool,
+    restarting: bool,
     bind_address: Option<String>,
     routable_host: Option<String>,
     bearer_token: String,
@@ -159,6 +160,7 @@ impl ServerConsoleView {
             rt_handle,
             credentials,
             running,
+            restarting: false,
             bind_address: None,
             routable_host: None,
             bearer_token: String::new(),
@@ -179,6 +181,45 @@ impl ServerConsoleView {
             view.start_poll(cx);
         }
         view
+    }
+
+    fn restart_server(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.server.clone() else {
+            return;
+        };
+        if self.restarting {
+            return;
+        }
+        self.restarting = true;
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { handle.restart().await.map_err(|e| e.to_string()) },
+            |this, result: Result<(), String>, cx| {
+                this.restarting = false;
+                if let Err(message) = result {
+                    tracing::warn!(error = %message, "failed to restart websocket server");
+                    ErrorSink::Toast.report(message, cx);
+                }
+                cx.notify();
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn restart_control(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let label = if self.restarting {
+            tr!("server_btn_restarting")
+        } else {
+            tr!("server_btn_restart")
+        };
+        ghost_button_with_icon(Icon::Refresh, label, palette)
+            .disabled(self.restarting || self.server.is_none())
+            .on_click(
+                "srv-restart",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
+            )
+            .into_any_element()
     }
 
     fn is_running(&self) -> bool {
@@ -1337,7 +1378,14 @@ impl Render for ServerConsoleView {
             ],
             &palette,
         )
-        .header_right(self.breadcrumb_status(&palette))
+        .header_right(
+            div()
+                .flex()
+                .items_center()
+                .gap(spacing(Spacing::Xs, density))
+                .child(self.restart_control(&palette, cx))
+                .child(self.breadcrumb_status(&palette)),
+        )
         .body(
             div()
                 .flex_1()

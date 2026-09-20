@@ -331,6 +331,13 @@ impl OverlaysView {
             ),
             TestFirePhase::Landed {
                 delivered: false, ..
+            } if self.server_running => (
+                Icon::AlertTriangle,
+                palette.warning,
+                tr!("overlays_test_no_browser_source"),
+            ),
+            TestFirePhase::Landed {
+                delivered: false, ..
             } => (
                 Icon::AlertTriangle,
                 palette.warning,

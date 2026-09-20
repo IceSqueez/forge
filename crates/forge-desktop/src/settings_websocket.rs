@@ -13,8 +13,8 @@ use forge_runtime::OverlayServiceHandle;
 use forge_server::{ServerHandle, ServerSettings};
 use forge_storage::{CredentialId, CredentialsRepo, DataProvider, SettingsRepo};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, Pixels, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px, relative,
+    AnyElement, App, ClickEvent, Context, Div, Entity, Focusable, FontWeight, Pixels, Rgba,
+    SharedString, Subscription, Window, div, prelude::*, px, relative,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -65,12 +65,13 @@ pub struct SettingsWebSocketView {
     loading: bool,
     save_state: SaveState,
     restarting: bool,
+    restart_queued: bool,
     running: bool,
     origins_error: Option<SharedString>,
-    origins_need_restart: bool,
 
     port_input: Entity<TextInput>,
     origins_input: Entity<TextArea>,
+    origins_blur: Option<Subscription>,
     lan_modal: Option<Entity<TypeToConfirm>>,
     lan_sub: Option<Subscription>,
     _subs: Vec<Subscription>,
@@ -135,11 +136,12 @@ impl SettingsWebSocketView {
             loading: false,
             save_state: SaveState::default(),
             restarting: false,
+            restart_queued: false,
             running,
             origins_error: None,
-            origins_need_restart: false,
             port_input,
             origins_input,
+            origins_blur: None,
             lan_modal: None,
             lan_sub: None,
             _subs: subs,
@@ -212,7 +214,6 @@ impl SettingsWebSocketView {
                 self.origins_input
                     .update(cx, |i, cx| i.set_content(joined, cx));
                 self.origins_error = None;
-                self.origins_need_restart = false;
                 self.save_state = SaveState::Saved;
             }
             Err(message) => {
@@ -244,7 +245,7 @@ impl SettingsWebSocketView {
         );
     }
 
-    fn apply_persist(
+    fn persist_and_reload(
         &mut self,
         fut: impl Future<Output = Result<(), String>> + Send + 'static,
         cx: &mut Context<Self>,
@@ -253,21 +254,53 @@ impl SettingsWebSocketView {
         async_bridge::run_async(
             &self.rt_handle,
             fut,
-            |this, result, cx| this.apply_save_result(result, cx),
+            |this, result: Result<(), String>, cx| this.apply_persist_outcome(result, cx),
             cx,
         );
         cx.notify();
     }
 
-    fn apply_save_result(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn persist_toggle_and_reload(
+        &mut self,
+        prev: bool,
+        set: fn(&mut Self, bool),
+        fut: impl Future<Output = Result<(), String>> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.save_state = SaveState::Saving;
+        async_bridge::run_async(
+            &self.rt_handle,
+            fut,
+            move |this, result: Result<(), String>, cx| {
+                if result.is_err() {
+                    set(this, prev);
+                }
+                this.apply_persist_outcome(result, cx);
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn apply_persist_outcome(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
         match result {
-            Ok(()) => self.save_state = SaveState::Saved,
+            Ok(()) => {
+                self.save_state = SaveState::Saved;
+                self.reload_running_server(cx);
+            }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to save websocket settings");
                 self.save_state = SaveState::Error(message.into());
             }
         }
         cx.notify();
+    }
+
+    fn reload_running_server(&mut self, cx: &mut Context<Self>) {
+        if !self.running && !self.restarting {
+            return;
+        }
+        self.restart_server(cx);
     }
 
     fn persist_bool(
@@ -324,26 +357,44 @@ impl SettingsWebSocketView {
             return;
         };
         if self.restarting {
+            self.restart_queued = true;
             return;
         }
         self.restarting = true;
+        self.restart_queued = false;
         async_bridge::run_async(
             &self.rt_handle,
             async move { handle.restart().await.map_err(|e| e.to_string()) },
-            |this, result: Result<(), String>, cx| {
-                this.restarting = false;
-                match result {
-                    Ok(()) => this.origins_need_restart = false,
-                    Err(message) => {
-                        tracing::warn!(error = %message, "failed to restart websocket server");
-                        this.save_state = SaveState::Error(message.into());
-                    }
-                }
-                cx.notify();
-            },
+            |this, result: Result<(), String>, cx| this.finish_restart(result, cx),
             cx,
         );
         cx.notify();
+    }
+
+    fn finish_restart(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+        self.restarting = false;
+        if let Err(message) = result {
+            tracing::warn!(error = %message, "failed to restart websocket server");
+            self.save_state = SaveState::Error(message.into());
+        }
+        cx.notify();
+        if std::mem::take(&mut self.restart_queued) {
+            self.restart_server(cx);
+        }
+    }
+
+    fn restart_button(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
+        let label = if self.restarting {
+            tr!("server_btn_restarting")
+        } else {
+            tr!("server_btn_restart")
+        };
+        ghost_button_with_icon(Icon::Refresh, label, palette)
+            .disabled(self.restarting || self.server.is_none())
+            .on_click(
+                "settings-ws-restart",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
+            )
     }
 
     fn lifecycle_controls(
@@ -352,24 +403,20 @@ impl SettingsWebSocketView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let label = if self.restarting {
-            tr!("server_btn_restarting")
-        } else {
-            tr!("server_btn_restart")
-        };
-        let restart = ghost_button_with_icon(Icon::Refresh, label, palette)
-            .disabled(self.restarting || self.server.is_none() || !self.enable_server)
-            .on_click(
-                "settings-ws-restart",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
-            );
-
         let mut row = div()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density));
 
-        if self.enable_server && !self.running {
+        if self.restarting {
+            row = row.child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.warning)
+                    .child(tr!("server_btn_restarting")),
+            );
+        } else if self.enable_server && !self.running {
             row = row.child(
                 div()
                     .font_family(body_family())
@@ -379,18 +426,17 @@ impl SettingsWebSocketView {
             );
         }
 
-        row.child(restart)
-            .child(toggle(self.enable_server, palette).on_click(
-                "settings-ws-enable",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enable(cx)),
-            ))
+        row.child(toggle(self.enable_server, palette).on_click(
+            "settings-ws-enable",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_enable(cx)),
+        ))
     }
 
     fn select_localhost(&mut self, cx: &mut Context<Self>) {
         self.bind_choice = BindChoice::Localhost;
         self.close_lan_modal();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.apply_persist(
+        self.persist_and_reload(
             async move {
                 ServerSettings::save_bind_address(repo.as_ref(), LOCALHOST_ADDR)
                     .await
@@ -439,7 +485,7 @@ impl SettingsWebSocketView {
         self.bind_choice = BindChoice::Lan;
         self.close_lan_modal();
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.apply_persist(
+        self.persist_and_reload(
             async move {
                 ServerSettings::save_bind_address(repo.as_ref(), LAN_ADDR)
                     .await
@@ -470,7 +516,7 @@ impl SettingsWebSocketView {
             Some(port) => {
                 self.port = port;
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.apply_persist(
+                self.persist_and_reload(
                     async move {
                         ServerSettings::save_port(repo.as_ref(), port)
                             .await
@@ -486,6 +532,16 @@ impl SettingsWebSocketView {
                 cx.notify();
             }
         }
+    }
+
+    fn attach_origins_blur(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.origins_blur.is_some() {
+            return;
+        }
+        let handle = self.origins_input.focus_handle(cx);
+        self.origins_blur = Some(cx.on_blur(&handle, window, |this, _window, cx| {
+            this.commit_origins(cx);
+        }));
     }
 
     fn clear_origins_error(&mut self, cx: &mut Context<Self>) {
@@ -505,14 +561,15 @@ impl SettingsWebSocketView {
                 self.origins_error = None;
                 self.origins_input
                     .update(cx, |i, cx| i.set_invalid(false, cx));
-                if origins != self.additional_origins {
-                    self.origins_need_restart = true;
-                }
-                self.additional_origins = origins.clone();
                 self.origins_input
                     .update(cx, |i, cx| i.set_content(origins.join("\n"), cx));
+                if origins == self.additional_origins {
+                    cx.notify();
+                    return;
+                }
+                self.additional_origins = origins.clone();
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.apply_persist(
+                self.persist_and_reload(
                     async move {
                         ServerSettings::save_additional_origins(repo.as_ref(), &origins)
                             .await
@@ -552,7 +609,7 @@ impl SettingsWebSocketView {
         let value = !prev;
         self.cors_any_origin = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        self.persist_bool(
+        self.persist_toggle_and_reload(
             prev,
             |this, v| this.cors_any_origin = v,
             async move {
@@ -582,7 +639,7 @@ impl SettingsWebSocketView {
         self.overlay_root = Some(path_str.clone());
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
         let overlays = self.overlays.clone();
-        self.apply_persist(
+        self.persist_and_reload(
             async move {
                 ServerSettings::save_overlay_root(repo.as_ref(), &path_str)
                     .await
@@ -629,7 +686,12 @@ impl SettingsWebSocketView {
         );
     }
 
-    fn header_row(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
+    fn header_row(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         div()
             .w_full()
             .flex()
@@ -645,6 +707,7 @@ impl SettingsWebSocketView {
                     .child(tr!("settings_ws_title")),
             )
             .child(div().flex_1())
+            .child(self.restart_button(palette, cx))
             .child(save_indicator(&self.save_state, palette))
     }
 
@@ -654,7 +717,7 @@ impl SettingsWebSocketView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let mut section = div()
+        div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
@@ -664,18 +727,7 @@ impl SettingsWebSocketView {
                 palette,
             ))
             .child(self.bind_card(BindChoice::Localhost, palette, density, cx))
-            .child(self.bind_card(BindChoice::Lan, palette, density, cx));
-
-        if self.bind_choice == BindChoice::Lan {
-            section = section.child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.warning)
-                    .child(tr!("settings_ws_bind_lan_restart_warning")),
-            );
-        }
-        section
+            .child(self.bind_card(BindChoice::Lan, palette, density, cx))
     }
 
     fn bind_card(
@@ -824,14 +876,6 @@ impl SettingsWebSocketView {
                             .text_color(palette.random)
                             .child(rejected.clone()),
                     ),
-            );
-        } else if self.origins_need_restart {
-            footer = footer.child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.warning)
-                    .child(tr!("settings_ws_origins_restart_warning")),
             );
         }
 
@@ -1153,7 +1197,8 @@ impl SettingsWebSocketView {
 }
 
 impl Render for SettingsWebSocketView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.attach_origins_blur(window, cx);
         let palette = cx.palette();
         let density = cx.density();
 
@@ -1170,7 +1215,7 @@ impl Render for SettingsWebSocketView {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Md, density))
-            .child(self.header_row(&palette, density))
+            .child(self.header_row(&palette, density, cx))
             .child(
                 div()
                     .font_family(body_family())

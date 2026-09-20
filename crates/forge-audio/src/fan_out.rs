@@ -81,21 +81,51 @@ impl AudioSink for FanOutSink {
             .collect();
 
         let mut started = Vec::new();
-        let mut reasons = Vec::new();
+        let mut start_reasons: Vec<Option<String>> = Vec::with_capacity(self.sinks.len());
         for result in futures::future::join_all(futures).await {
             match result {
-                Ok(playback) => started.push(playback),
-                Err(e) => reasons.push(e.to_string()),
+                Ok(playback) => {
+                    started.push(playback);
+                    start_reasons.push(None);
+                }
+                Err(e) => start_reasons.push(Some(e.to_string())),
             }
         }
 
         if started.is_empty() {
-            return Err(route_failure(reasons));
+            return Err(route_failure(start_reasons.into_iter().flatten().collect()));
         }
-        warn_failed_routes(&reasons);
+        warn_failed_routes(start_reasons.iter().filter_map(Option::as_deref));
 
         let handle = PlaybackHandle::merge(started.iter().map(ControlledPlayback::handle));
-        let completion = async move { settle(futures::future::join_all(started).await) };
+        let completion = async move {
+            let mut outcomes = futures::future::join_all(started).await.into_iter();
+            let verdicts: Vec<(bool, Result<(), String>)> = start_reasons
+                .into_iter()
+                .map(|slot| match slot {
+                    Some(reason) => (false, Err(reason)),
+                    None => (
+                        true,
+                        outcomes.next().unwrap_or(Ok(())).map_err(|e| e.to_string()),
+                    ),
+                })
+                .collect();
+
+            if verdicts.iter().any(|(_, verdict)| verdict.is_ok()) {
+                let settled_failures = verdicts.iter().filter_map(|(is_settled, verdict)| {
+                    is_settled.then(|| verdict.as_ref().err()).flatten()
+                });
+                warn_failed_routes(settled_failures.map(String::as_str));
+                Ok(())
+            } else {
+                Err(route_failure(
+                    verdicts
+                        .into_iter()
+                        .filter_map(|(_, verdict)| verdict.err())
+                        .collect(),
+                ))
+            }
+        };
         Ok(ControlledPlayback::merged(handle, Box::pin(completion)))
     }
 }
@@ -115,14 +145,14 @@ fn settle(outcomes: Vec<Result<(), AudioError>>) -> Result<(), AudioError> {
     }
 
     if played {
-        warn_failed_routes(&reasons);
+        warn_failed_routes(reasons.iter().map(String::as_str));
         Ok(())
     } else {
         Err(route_failure(reasons))
     }
 }
 
-fn warn_failed_routes(reasons: &[String]) {
+fn warn_failed_routes<'a>(reasons: impl IntoIterator<Item = &'a str>) {
     for reason in reasons {
         tracing::warn!(error = %reason, "audio route failed; playback continues on the surviving routes");
     }

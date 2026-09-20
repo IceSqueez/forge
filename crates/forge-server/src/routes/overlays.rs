@@ -210,6 +210,9 @@ mod tests {
         }
     }
 
+    const FIXTURE_BIND_ADDR: &str = "127.0.0.1:9515";
+    const FOREIGN_ORIGIN: &str = "https://evil.example";
+
     async fn make_overlay_server(
         overlay_root: std::path::PathBuf,
         overlay_cors_any_origin: bool,
@@ -242,7 +245,7 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
             Arc::new(forge_runtime::ActionCancelRegistry::new()),
         ));
-        let bind_addr: SocketAddr = "127.0.0.1:9515".parse().expect("addr");
+        let bind_addr: SocketAddr = FIXTURE_BIND_ADDR.parse().expect("addr");
         let state = AppState {
             auth,
             bus,
@@ -456,52 +459,99 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test]
-    async fn serve_overlay_returns_cors_star_when_any_origin_true() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        tokio::fs::write(dir.path().join("widget.js"), b"console.log('hi')")
+    const WIDGET_FILE: &str = "widget.js";
+    const ANY_ORIGIN_WILDCARD: &str = "*";
+
+    async fn overlay_response_headers<F>(
+        any_origin: bool,
+        origin_for: F,
+    ) -> (SocketAddr, reqwest::header::HeaderMap)
+    where
+        F: FnOnce(SocketAddr) -> Option<String>,
+    {
+        let dir = qa_tempdir();
+        tokio::fs::write(dir.path().join(WIDGET_FILE), b"console.log('hi')")
             .await
             .expect("write");
-
         let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), true, MemCreds::new()).await;
+            make_overlay_server(dir.path().to_path_buf(), any_origin, MemCreds::new()).await;
 
-        let resp = reqwest::get(format!("http://{}/overlays/widget.js", addr))
-            .await
-            .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
-        let cors = resp
-            .headers()
-            .get("access-control-allow-origin")
-            .expect("cors header");
-        assert_eq!(cors.to_str().unwrap(), "*");
+        let mut request =
+            reqwest::Client::new().get(format!("http://{addr}/overlays/{WIDGET_FILE}"));
+        if let Some(origin) = origin_for(addr) {
+            request = request.header(reqwest::header::ORIGIN, origin);
+        }
+        let response = request.send().await.expect("request");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let headers = response.headers().clone();
 
         handle.abort();
+        (addr, headers)
+    }
+
+    fn header_text(
+        headers: &reqwest::header::HeaderMap,
+        name: reqwest::header::HeaderName,
+    ) -> String {
+        headers
+            .get(&name)
+            .expect("response carries the header under test")
+            .to_str()
+            .expect("header value is ascii")
+            .to_owned()
+    }
+
+    fn allowed_origin(headers: &reqwest::header::HeaderMap) -> String {
+        header_text(headers, reqwest::header::ACCESS_CONTROL_ALLOW_ORIGIN)
     }
 
     #[tokio::test]
-    async fn serve_overlay_returns_cors_bind_addr_when_any_origin_false() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        tokio::fs::write(dir.path().join("widget.js"), b"console.log('hi')")
-            .await
-            .expect("write");
+    async fn serve_overlay_returns_cors_star_when_any_origin_true() {
+        let (_, headers) = overlay_response_headers(true, |_| None).await;
 
-        let (handle, addr) =
-            make_overlay_server(dir.path().to_path_buf(), false, MemCreds::new()).await;
+        assert_eq!(allowed_origin(&headers), ANY_ORIGIN_WILDCARD);
+    }
 
-        let resp = reqwest::get(format!("http://{}/overlays/widget.js", addr))
-            .await
-            .expect("request");
-        assert_eq!(resp.status().as_u16(), 200);
-        let cors = resp
-            .headers()
-            .get("access-control-allow-origin")
-            .expect("cors header");
-        let cors_str = cors.to_str().unwrap();
-        assert_ne!(cors_str, "*");
-        assert!(cors_str.starts_with("http://127.0.0.1"));
+    #[tokio::test]
+    async fn serve_overlay_echoes_an_origin_the_handshake_rule_accepts() {
+        let (addr, headers) =
+            overlay_response_headers(false, |addr| Some(format!("http://{addr}"))).await;
 
-        handle.abort();
+        assert_eq!(allowed_origin(&headers), format!("http://{addr}"));
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_never_echoes_an_origin_the_handshake_rule_rejects() {
+        let (_, headers) =
+            overlay_response_headers(false, |_| Some(FOREIGN_ORIGIN.to_owned())).await;
+
+        assert_eq!(
+            allowed_origin(&headers),
+            format!("http://{FIXTURE_BIND_ADDR}")
+        );
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_falls_back_to_the_bind_authority_when_no_origin_is_present() {
+        let (_, headers) = overlay_response_headers(false, |_| None).await;
+
+        assert_eq!(
+            allowed_origin(&headers),
+            format!("http://{FIXTURE_BIND_ADDR}")
+        );
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_marks_the_answer_as_varying_on_origin_in_either_cors_mode() {
+        for any_origin in [true, false] {
+            let (_, headers) = overlay_response_headers(any_origin, |_| None).await;
+
+            assert!(
+                header_text(&headers, reqwest::header::VARY)
+                    .eq_ignore_ascii_case(reqwest::header::ORIGIN.as_str()),
+                "any_origin={any_origin}"
+            );
+        }
     }
 
     async fn make_root(base: &std::path::Path) -> std::path::PathBuf {

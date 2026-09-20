@@ -108,32 +108,30 @@ mod tests {
     }
 
     fn allowlist_for_tests() -> HashSet<String> {
-        build_allowed_origins(
-            bind("127.0.0.1:8080"),
-            &["https://overlay.example.com".to_owned()],
-        )
+        build_allowed_origins(bind(ALLOWLIST_BIND), &[EXTRA_ORIGIN.to_owned()])
     }
 
-    #[test]
-    fn a_loopback_bind_derives_exactly_the_six_scheme_host_origins() {
-        for raw in ["127.0.0.1:8080", "127.0.0.5:8080"] {
-            assert_eq!(
-                build_allowed_origins(bind(raw), &[]),
-                six_loopback_origins(8080),
-                "bind {raw}"
-            );
-        }
+    fn accepts(origin: &str, host: &str) -> bool {
+        accepts_origin(&allowlist_for_tests(), Some(origin), Some(host))
     }
 
+    const ALLOWLIST_BIND: &str = "127.0.0.1:8080";
+    const ALLOWLIST_PORT: u16 = 8080;
+    const EXTRA_ORIGIN: &str = "https://overlay.example.com";
+    const LAN_AUTHORITY: &str = "192.168.1.4:8081";
+
     #[test]
-    fn a_non_loopback_bind_also_allows_the_literal_bound_address() {
-        for raw in ["0.0.0.0:8080", "192.0.2.10:8080", "[2001:db8::1]:8080"] {
-            let mut expected = six_loopback_origins(8080);
-            expected.insert(format!("http://{raw}"));
-            expected.insert(format!("https://{raw}"));
+    fn a_bind_derives_exactly_the_six_loopback_origins_whatever_address_it_holds() {
+        for raw in [
+            ALLOWLIST_BIND,
+            "127.0.0.5:8080",
+            "0.0.0.0:8080",
+            "192.0.2.10:8080",
+            "[2001:db8::1]:8080",
+        ] {
             assert_eq!(
                 build_allowed_origins(bind(raw), &[]),
-                expected,
+                six_loopback_origins(ALLOWLIST_PORT),
                 "bind {raw}"
             );
         }
@@ -212,5 +210,121 @@ mod tests {
                 "expected reject for {origin:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_page_dialled_at_an_address_literal_authority_is_accepted_as_same_origin() {
+        for (origin, host) in [
+            ("http://192.168.1.4:8081", LAN_AUTHORITY),
+            ("https://192.168.1.4:8081", LAN_AUTHORITY),
+            ("http://[2001:db8::4]:8081", "[2001:db8::4]:8081"),
+            (
+                "http://[::ffff:192.168.1.4]:8081",
+                "[::ffff:192.168.1.4]:8081",
+            ),
+            ("http://10.0.0.5:9000", "10.0.0.5:9000"),
+            ("http://localhost:9000", "localhost:9000"),
+            ("http://192.168.1.4", "192.168.1.4"),
+        ] {
+            assert!(
+                accepts(origin, host),
+                "expected accept for origin {origin:?} host {host:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_that_is_a_name_never_takes_the_same_origin_shortcut() {
+        for authority in [
+            "evil.example:8081",
+            "forge.local:8081",
+            "1.2.3.4.evil:8081",
+            "192.168.1.4.evil.example:8081",
+            "192.168.1.4.:8081",
+            "localhost.evil.example:8081",
+        ] {
+            let origin = format!("http://{authority}");
+            assert!(
+                !accepts(&origin, authority),
+                "a self-consistent name authority {authority:?} is the DNS-rebinding shape"
+            );
+        }
+    }
+
+    #[test]
+    fn an_origin_whose_authority_is_not_byte_equal_to_the_host_is_rejected() {
+        for origin in [
+            "https://evil.example",
+            "http://evil.example:8081",
+            "http://192.168.1.4:9999",
+            "http://192.168.1.5:8081",
+            "http://192.168.1.4",
+            "http://192.168.1.4:8081/",
+            "http://192.168.1.4:8081/overlays/alerts",
+            "http://192.168.1.4:8081?q=1",
+            "http://user@192.168.1.4:8081",
+            "http://user:pass@192.168.1.4:8081",
+            "ws://192.168.1.4:8081",
+            "file://192.168.1.4:8081",
+            "//192.168.1.4:8081",
+            "192.168.1.4:8081",
+            "null",
+            "",
+        ] {
+            assert!(
+                !accepts(origin, LAN_AUTHORITY),
+                "expected reject for origin {origin:?} against host {LAN_AUTHORITY:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_that_is_not_a_usable_address_literal_takes_no_shortcut() {
+        for host in [
+            "2001:db8::4",
+            "::1",
+            "[fe80::1%eth0]:8081",
+            "[fe80::1%25eth0]:8081",
+            "[2001:db8::4]x:8081",
+            "[2001:db8::4",
+            "[]:8081",
+            "010.0.0.1:8081",
+            "3232235780:8081",
+            "0xc0a80104:8081",
+            "",
+        ] {
+            let origin = format!("http://{host}");
+            assert!(
+                !accepts(&origin, host),
+                "host {host:?} must not pass the address-literal gate"
+            );
+        }
+    }
+
+    #[test]
+    fn the_shortcut_needs_a_host_while_an_absent_origin_stays_accepted() {
+        let allowed = allowlist_for_tests();
+
+        assert!(!accepts_origin(
+            &allowed,
+            Some("http://192.168.1.4:8081"),
+            None
+        ));
+        assert!(accepts_origin(&allowed, None, Some(LAN_AUTHORITY)));
+        assert!(accepts_origin(&allowed, None, None));
+    }
+
+    #[test]
+    fn letter_case_and_surrounding_whitespace_do_not_change_the_same_origin_decision() {
+        assert!(accepts(
+            "  HTTP://192.168.1.4:8081  ",
+            "\t192.168.1.4:8081\n"
+        ));
+        assert!(accepts("HTTPS://[2001:DB8::4]:8081", "[2001:db8::4]:8081"));
+    }
+
+    #[test]
+    fn a_configured_additional_origin_is_accepted_although_its_host_is_a_name() {
+        assert!(accepts(EXTRA_ORIGIN, "overlay.example.com"));
     }
 }

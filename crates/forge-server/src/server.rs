@@ -541,19 +541,65 @@ mod tests {
         tokio_tungstenite::connect_async(request).await.map(|_| ())
     }
 
-    async fn refused_ws_handshake(
+    // Why: tungstenite takes the connect target from the URI and the `Host` line from the header
+    // map, so the socket stays on loopback while the request presents a LAN-style authority.
+    async fn ws_handshake_presenting_host(
         addr: std::net::SocketAddr,
         origin: &str,
+        host: &str,
+    ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let mut request = format!("ws://{addr}/ws/v1/")
+            .into_client_request()
+            .expect("client request");
+        let headers = request.headers_mut();
+        headers.insert(
+            axum::http::header::HOST,
+            host.parse().expect("host header value"),
+        );
+        headers.insert(
+            axum::http::header::ORIGIN,
+            origin.parse().expect("origin header value"),
+        );
+        tokio_tungstenite::connect_async(request).await.map(|_| ())
+    }
+
+    fn as_http_refusal(
+        error: tokio_tungstenite::tungstenite::Error,
     ) -> tokio_tungstenite::tungstenite::http::Response<Option<Vec<u8>>> {
-        let error = ws_handshake(addr, Some(origin))
-            .await
-            .expect_err("handshake must be refused");
         match error {
             tokio_tungstenite::tungstenite::Error::Http(response) => Some(*response),
             _ => None,
         }
         .expect("refusal must arrive as an HTTP response, not a transport error")
     }
+
+    async fn refused_ws_handshake(
+        addr: std::net::SocketAddr,
+        origin: &str,
+    ) -> tokio_tungstenite::tungstenite::http::Response<Option<Vec<u8>>> {
+        as_http_refusal(
+            ws_handshake(addr, Some(origin))
+                .await
+                .expect_err("handshake must be refused"),
+        )
+    }
+
+    fn origin_rejection_code(
+        response: &tokio_tungstenite::tungstenite::http::Response<Option<Vec<u8>>>,
+    ) -> String {
+        let body = response.body().as_deref().expect("rejection body");
+        let json: serde_json::Value = serde_json::from_slice(body).expect("json body");
+        json["error"]["code"]
+            .as_str()
+            .expect("error code")
+            .to_owned()
+    }
+
+    const LAN_AUTHORITY: &str = "192.168.1.4:8081";
+    const REBINDING_AUTHORITY: &str = "evil.example:8081";
+    const ORIGIN_NOT_ALLOWED: &str = "ORIGIN_NOT_ALLOWED";
 
     #[tokio::test]
     async fn ws_handshake_without_an_origin_header_is_accepted() {
@@ -609,10 +655,42 @@ mod tests {
 
         let response = refused_ws_handshake(addr, "https://evil.example.com").await;
 
-        assert_eq!(response.status().as_u16(), 403);
-        let body = response.body().as_deref().expect("rejection body");
-        let json: serde_json::Value = serde_json::from_slice(body).expect("json body");
-        assert_eq!(json["error"]["code"], "ORIGIN_NOT_ALLOWED");
+        assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+        assert_eq!(origin_rejection_code(&response), ORIGIN_NOT_ALLOWED);
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn ws_handshake_from_a_page_served_at_the_requested_lan_address_is_accepted() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+
+        assert!(
+            ws_handshake_presenting_host(addr, &format!("http://{LAN_AUTHORITY}"), LAN_AUTHORITY)
+                .await
+                .is_ok(),
+            "a browser source dialling the machine's LAN address must upgrade without configuration"
+        );
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn ws_handshake_from_a_self_consistent_name_authority_is_refused_as_rebinding() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+
+        let response = as_http_refusal(
+            ws_handshake_presenting_host(
+                addr,
+                &format!("http://{REBINDING_AUTHORITY}"),
+                REBINDING_AUTHORITY,
+            )
+            .await
+            .expect_err("a rebound name must not complete the handshake"),
+        );
+
+        assert_eq!(response.status(), axum::http::StatusCode::FORBIDDEN);
+        assert_eq!(origin_rejection_code(&response), ORIGIN_NOT_ALLOWED);
 
         handle.abort();
     }

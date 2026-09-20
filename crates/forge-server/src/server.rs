@@ -253,10 +253,11 @@ mod tests {
     };
     use time::OffsetDateTime;
     use tokio::net::TcpListener;
+    use tracing::Level;
 
     use super::{
         AppState, AuthState, BusAdapter, ServerConfig, ServerHandle, serve_on, start_server,
-        validate_lan_bind,
+        stopped_server, validate_lan_bind,
     };
     use crate::ServerError;
     use crate::bus_adapter::{ClientFilterSet, EventFilter, WsFrame};
@@ -504,10 +505,11 @@ mod tests {
         port
     }
 
-    async fn start_on_an_ephemeral_port(
+    fn loopback_config(
         settings: Arc<MapSettings>,
+        port: u16,
         additional_origins: Vec<String>,
-    ) -> (ServerHandle, std::net::SocketAddr) {
+    ) -> ServerConfig {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let dp: Arc<dyn DataProvider> = test_dp();
         let action_engine = Arc::new(spawn_action_engine(
@@ -527,13 +529,43 @@ mod tests {
             dp.overlay_repo(),
             action_engine,
         );
-        config.bind_addr = "127.0.0.1:0".parse().expect("addr");
+        config.bind_addr = format!("127.0.0.1:{port}").parse().expect("addr");
         config.overlay_root = std::path::PathBuf::from("/tmp/forge-test-overlays");
         config.additional_origins = additional_origins;
+        config
+    }
 
+    async fn start_on_an_ephemeral_port(
+        settings: Arc<MapSettings>,
+        additional_origins: Vec<String>,
+    ) -> (ServerHandle, std::net::SocketAddr) {
+        let config = loopback_config(settings, EPHEMERAL_PORT, additional_origins);
         let handle = start_server(config).await.expect("start");
         let addr = handle.bind_addr().await;
         (handle, addr)
+    }
+
+    async fn stopped_awaiting_a_port(settings: Arc<MapSettings>) -> (ServerHandle, u16) {
+        let port = reserve_a_free_port().await;
+        crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, port)
+            .await
+            .expect("save port");
+        let config = loopback_config(settings, port, Vec::new());
+        let handle = stopped_server(config).await.expect("stopped handle");
+        (handle, port)
+    }
+
+    async fn info_status(port: u16) -> u16 {
+        reqwest::Client::new()
+            .get(format!("http://127.0.0.1:{port}/api/v1/info"))
+            .send()
+            .await
+            .expect("HTTP request")
+            .status()
+            .as_u16()
     }
 
     async fn ws_handshake(
@@ -613,6 +645,13 @@ mod tests {
     const LAN_AUTHORITY: &str = "192.168.1.4:8081";
     const REBINDING_AUTHORITY: &str = "evil.example:8081";
     const ORIGIN_NOT_ALLOWED: &str = "ORIGIN_NOT_ALLOWED";
+    const LOOPBACK: &str = "127.0.0.1";
+    const EPHEMERAL_PORT: u16 = 0;
+    /// Mirrors the drain budget `ServerHandle::stop` allows a listener before it gives up.
+    const DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+    /// A request head with no terminating empty line: hyper has read it, so the connection is
+    /// busy rather than idle and graceful shutdown waits on it instead of closing it.
+    const UNFINISHED_REQUEST_HEAD: &[u8] = b"GET /api/v1/info HTTP/1.1\r\nHost: localhost\r\n";
 
     #[tokio::test]
     async fn ws_handshake_without_an_origin_header_is_accepted() {
@@ -1116,6 +1155,116 @@ mod tests {
         handle.stop().await.expect("stop after restart");
     }
 
+    // Why: virtual time keeps the five-second drain budget out of the wall clock while the
+    // loopback sockets stay real - a loopback write is delivered before the clock can advance.
+    #[tokio::test(start_paused = true)]
+    async fn a_listener_outliving_a_restart_cannot_report_the_new_one_stopped() {
+        use tokio::io::AsyncWriteExt;
+
+        let settings = MapSettings::new();
+        let (handle, boot_addr) =
+            start_on_an_ephemeral_port(Arc::clone(&settings), Vec::new()).await;
+        let new_port = reserve_a_free_port().await;
+        crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
+            .await
+            .expect("save addr");
+        crate::config::ServerSettings::save_port(&*settings, new_port)
+            .await
+            .expect("save port");
+
+        let mut lingering = tokio::net::TcpStream::connect(boot_addr)
+            .await
+            .expect("connect");
+        lingering
+            .write_all(UNFINISHED_REQUEST_HEAD)
+            .await
+            .expect("write");
+        lingering.flush().await.expect("flush");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let started = tokio::time::Instant::now();
+        handle.restart().await.expect("restart");
+        assert!(
+            started.elapsed() >= DRAIN_BUDGET,
+            "the lingering connection must outlast the drain or this proves nothing"
+        );
+
+        let mut run_state = handle.run_state();
+        assert!(
+            *run_state.borrow_and_update(),
+            "the restarted listener is serving and must report running"
+        );
+
+        drop(lingering);
+
+        assert!(
+            tokio::time::timeout(DRAIN_BUDGET, run_state.changed())
+                .await
+                .is_err(),
+            "the previous listener finishing reported the live server stopped"
+        );
+
+        handle.stop().await.expect("stop after restart");
+    }
+
+    #[tokio::test]
+    async fn a_stopped_handle_serves_nothing_until_a_restart_brings_it_up() {
+        let (handle, port) = stopped_awaiting_a_port(MapSettings::new()).await;
+        let mut run_state = handle.run_state();
+
+        assert!(
+            !*run_state.borrow_and_update(),
+            "a handle built without a listener must not report running"
+        );
+        assert!(
+            tokio::net::TcpStream::connect(format!("{LOOPBACK}:{port}"))
+                .await
+                .is_err(),
+            "nothing may accept on the configured port before the restart"
+        );
+
+        handle.restart().await.expect("restart");
+
+        assert!(*run_state.borrow_and_update());
+        assert_eq!(handle.bind_addr().await.port(), port);
+        assert_eq!(info_status(port).await, reqwest::StatusCode::OK);
+
+        handle.stop().await.expect("stop after restart");
+    }
+
+    #[tokio::test]
+    async fn stopping_a_handle_that_never_listened_is_an_ok_no_op() {
+        let (handle, _port) = stopped_awaiting_a_port(MapSettings::new()).await;
+
+        handle
+            .stop()
+            .await
+            .expect("stop must not fail with no listener");
+
+        assert!(!*handle.run_state().borrow());
+    }
+
+    #[tokio::test]
+    async fn a_restart_onto_a_taken_port_reports_bind_and_stays_stopped() {
+        let settings = MapSettings::new();
+        let (handle, port) = stopped_awaiting_a_port(Arc::clone(&settings)).await;
+        let squatter = TcpListener::bind(format!("{LOOPBACK}:{port}"))
+            .await
+            .expect("squatter bind");
+
+        let err = handle
+            .restart()
+            .await
+            .expect_err("a port already held must refuse");
+
+        assert!(matches!(err, ServerError::Bind { .. }));
+        assert!(
+            !*handle.run_state().borrow(),
+            "a refused bind must leave the handle stopped, not half started"
+        );
+        drop(squatter);
+    }
+
     #[tokio::test]
     async fn validate_lan_bind_rejects_unspecified_without_flag() {
         let creds = MemCreds::with_token("tok");
@@ -1134,5 +1283,207 @@ mod tests {
             .await
             .expect_err("must refuse");
         assert!(matches!(err, ServerError::NoTokenForLanBind { .. }));
+    }
+
+    #[test]
+    fn a_refused_handshake_logs_one_warning_and_withholds_a_malformed_origin() {
+        const WELL_FORMED: &str = "https://evil.example.com";
+
+        for (case, origin, logged_verbatim) in [
+            ("a bare scheme and authority", WELL_FORMED, true),
+            (
+                "userinfo in the authority",
+                "http://user:pass@evil.example",
+                false,
+            ),
+            (
+                "a path past the authority",
+                "http://evil.example/overlays/a",
+                false,
+            ),
+            ("a scheme the rule never allows", "ws://evil.example", false),
+        ] {
+            let (port, lines) = log_capture::capture_blocking(Level::WARN, async move {
+                let (handle, addr) =
+                    start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+                refused_ws_handshake(addr, origin).await;
+                handle.abort();
+                addr.port()
+            });
+
+            let warnings = log_capture::forge_warnings(&lines);
+            assert_eq!(warnings.len(), 1, "{case}: one refusal, one warning");
+            let warning = warnings[0];
+            assert_eq!(
+                warning.field("host"),
+                Some(format!("127.0.0.1:{port}").as_str()),
+                "{case}: the warning names the authority the page dialled"
+            );
+            if logged_verbatim {
+                assert_eq!(
+                    warning.field("origin"),
+                    Some(origin),
+                    "{case}: a well formed origin is what the user pastes into Settings"
+                );
+            } else {
+                assert!(
+                    !lines.iter().any(|line| line.mentions("evil.example")),
+                    "{case}: the refusal put attacker-controlled text in the log"
+                );
+            }
+        }
+    }
+
+    /// Thread-local tracing capture; the runtime shares the capturing thread so spawned
+    /// connection tasks reach the subscriber, which is why callers are plain `#[test]` fns.
+    mod log_capture {
+        use std::collections::BTreeMap;
+        use std::future::Future;
+        use std::sync::{Arc, Mutex, OnceLock};
+
+        use tracing::Level;
+        use tracing::field::{Field, Visit};
+        use tracing::span;
+        use tracing::subscriber::Interest;
+
+        pub(super) struct CapturedLine {
+            target: String,
+            level: Level,
+            fields: BTreeMap<String, String>,
+        }
+
+        impl CapturedLine {
+            pub(super) fn field(&self, name: &str) -> Option<&str> {
+                self.fields.get(name).map(String::as_str)
+            }
+
+            pub(super) fn mentions(&self, needle: &str) -> bool {
+                self.fields.values().any(|value| value.contains(needle))
+            }
+        }
+
+        #[derive(Default)]
+        struct FieldCollector(BTreeMap<String, String>);
+
+        impl Visit for FieldCollector {
+            fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+                self.0.insert(field.name().to_owned(), format!("{value:?}"));
+            }
+
+            fn record_str(&mut self, field: &Field, value: &str) {
+                self.0.insert(field.name().to_owned(), value.to_owned());
+            }
+        }
+
+        // Why: the callsite interest cache is process-global while a capture subscriber is
+        // thread-local. Other tests in this binary reach the same callsites with no subscriber
+        // installed, which caches `Interest::never()` - and `never` short-circuits the event
+        // before `enabled()` is consulted, so a capture running in parallel records nothing.
+        // This floor is installed once as the process-wide global default and answers
+        // `sometimes` for every callsite. It captures nothing itself.
+        struct InterestFloor;
+
+        impl tracing::Subscriber for InterestFloor {
+            fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
+                Interest::sometimes()
+            }
+
+            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+                false
+            }
+
+            fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+                span::Id::from_u64(1)
+            }
+
+            fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+
+            fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+
+            fn event(&self, _: &tracing::Event<'_>) {}
+
+            fn enter(&self, _: &span::Id) {}
+
+            fn exit(&self, _: &span::Id) {}
+        }
+
+        fn install_interest_floor() {
+            static INSTALLED: OnceLock<()> = OnceLock::new();
+            INSTALLED.get_or_init(|| {
+                let _ = tracing::subscriber::set_global_default(InterestFloor);
+                tracing::callsite::rebuild_interest_cache();
+            });
+        }
+
+        // Why: `register_callsite` answers `sometimes` on purpose - a cached `always` from
+        // another capture running in parallel would hand a TRACE line to a WARN-only assertion.
+        struct CaptureSubscriber {
+            lines: Arc<Mutex<Vec<CapturedLine>>>,
+            max: Level,
+        }
+
+        impl tracing::Subscriber for CaptureSubscriber {
+            fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
+                Interest::sometimes()
+            }
+
+            fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+                *metadata.level() <= self.max
+            }
+
+            fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
+                span::Id::from_u64(1)
+            }
+
+            fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
+
+            fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
+
+            fn event(&self, event: &tracing::Event<'_>) {
+                let mut collector = FieldCollector::default();
+                event.record(&mut collector);
+                self.lines
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(CapturedLine {
+                        target: event.metadata().target().to_owned(),
+                        level: *event.metadata().level(),
+                        fields: collector.0,
+                    });
+            }
+
+            fn enter(&self, _: &span::Id) {}
+
+            fn exit(&self, _: &span::Id) {}
+        }
+
+        pub(super) fn capture_blocking<F: Future>(
+            max: Level,
+            future: F,
+        ) -> (F::Output, Vec<CapturedLine>) {
+            let lines = Arc::new(Mutex::new(Vec::new()));
+            let subscriber = CaptureSubscriber {
+                lines: Arc::clone(&lines),
+                max,
+            };
+            install_interest_floor();
+            let output = tracing::subscriber::with_default(subscriber, || {
+                tracing::callsite::rebuild_interest_cache();
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("current-thread runtime must build");
+                runtime.block_on(future)
+            });
+            let captured = std::mem::take(&mut *lines.lock().unwrap_or_else(|e| e.into_inner()));
+            (output, captured)
+        }
+
+        pub(super) fn forge_warnings(lines: &[CapturedLine]) -> Vec<&CapturedLine> {
+            lines
+                .iter()
+                .filter(|line| line.target.starts_with("forge_") && line.level == Level::WARN)
+                .collect()
+        }
     }
 }

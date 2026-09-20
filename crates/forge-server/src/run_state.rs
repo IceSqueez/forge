@@ -55,3 +55,80 @@ impl RunState {
         self.current.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RUNNING: bool = true;
+    const STOPPED: bool = false;
+
+    #[derive(Clone, Copy)]
+    enum Step {
+        Claim,
+        Stop,
+        ReportRunning(usize),
+        ReportStopped(usize),
+    }
+
+    fn replay(initial: bool, script: &[Step]) -> bool {
+        let (tx, rx) = watch::channel(initial);
+        let state = RunState::new(tx);
+        let mut claimed: Vec<Generation> = Vec::new();
+        for step in script {
+            match *step {
+                Step::Claim => claimed.push(state.claim()),
+                Step::Stop => state.stop(),
+                Step::ReportRunning(nth) => state.report_running(claimed[nth]),
+                Step::ReportStopped(nth) => state.report_stopped(claimed[nth]),
+            }
+        }
+        *rx.borrow()
+    }
+
+    #[test]
+    fn only_the_newest_claim_may_move_the_run_state() {
+        use Step::{Claim, ReportRunning, ReportStopped, Stop};
+
+        for (case, initial, script, expected) in [
+            (
+                "the newest claim reports running",
+                STOPPED,
+                &[Claim, ReportRunning(0)][..],
+                RUNNING,
+            ),
+            (
+                "the newest claim reports stopped",
+                RUNNING,
+                &[Claim, ReportStopped(0)][..],
+                STOPPED,
+            ),
+            (
+                "a superseded claim cannot report stopped",
+                RUNNING,
+                &[Claim, ReportRunning(0), Claim, ReportStopped(0)][..],
+                RUNNING,
+            ),
+            (
+                "a superseded claim cannot report running",
+                STOPPED,
+                &[Claim, Claim, ReportRunning(0)][..],
+                STOPPED,
+            ),
+            (
+                "an explicit stop supersedes the claim that was live when it ran",
+                RUNNING,
+                &[Claim, ReportRunning(0), Stop, ReportRunning(0)][..],
+                STOPPED,
+            ),
+            (
+                "a claim taken after a stop reports again",
+                RUNNING,
+                &[Claim, Stop, Claim, ReportRunning(1)][..],
+                RUNNING,
+            ),
+        ] {
+            assert_eq!(replay(initial, script), expected, "{case}");
+        }
+    }
+}

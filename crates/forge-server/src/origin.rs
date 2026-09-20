@@ -248,6 +248,8 @@ mod tests {
             ("http://10.0.0.5:9000", "10.0.0.5:9000"),
             ("http://localhost:9000", "localhost:9000"),
             ("http://192.168.1.4", "192.168.1.4"),
+            ("http://192.168.1.4:0", "192.168.1.4:0"),
+            ("http://192.168.1.4:65535", "192.168.1.4:65535"),
         ] {
             assert!(
                 accepts(origin, host),
@@ -320,6 +322,70 @@ mod tests {
             assert!(
                 !accepts(&origin, host),
                 "host {host:?} must not pass the address-literal gate"
+            );
+        }
+    }
+
+    #[test]
+    fn a_port_segment_that_is_not_a_plain_u16_takes_no_shortcut() {
+        for host in [
+            "192.168.1.4:8081.evil.example",
+            "localhost:8081.evil.example",
+            "192.168.1.4:8081@evil",
+            "192.168.1.4:",
+            "192.168.1.4:-1",
+            "192.168.1.4:+8081",
+            "192.168.1.4:65536",
+            "192.168.1.4:80 81",
+            "192.168.1.4:8081\u{660}",
+            "localhost:x",
+            "[2001:db8::4]:80x",
+            "[2001:db8::4]:",
+            "[2001:db8::4]:65536",
+        ] {
+            let origin = format!("http://{host}");
+            assert!(
+                !accepts(&origin, host),
+                "host {host:?} carries no dialable port and must not reach the shortcut"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_scheme_and_authority_is_the_only_shape_worth_logging_verbatim() {
+        for well_formed in [
+            "http://192.168.1.4:8081",
+            "https://overlay.example.com",
+            "http://localhost",
+            "http://[::1]:9515",
+            "HTTP://Overlay.Example.COM",
+            "  https://dash.test:3000  ",
+        ] {
+            assert!(
+                is_well_formed_origin(well_formed),
+                "expected well formed: {well_formed:?}"
+            );
+        }
+
+        for malformed in [
+            "http://192.168.1.4:8081/overlays/alerts",
+            "http://192.168.1.4:8081/",
+            "http://192.168.1.4:8081?q=1",
+            "http://192.168.1.4:8081#frag",
+            "http://user:pass@192.168.1.4:8081",
+            "http://",
+            "https://",
+            "ws://192.168.1.4:8081",
+            "file://192.168.1.4:8081",
+            "//192.168.1.4:8081",
+            "https:/dash.test",
+            "httpx://dash.test",
+            "null",
+            "",
+        ] {
+            assert!(
+                !is_well_formed_origin(malformed),
+                "expected malformed: {malformed:?}"
             );
         }
     }

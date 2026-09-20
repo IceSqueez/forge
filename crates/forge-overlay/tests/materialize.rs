@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use forge_overlay::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OverlayConfig, OverlayError, OverlayInstance,
-    OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE, ensure_shared_directory,
-    materialize_overlay, register_builtin_kinds, remove_overlay_directory,
+    OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, SAMPLE_FILE, STYLE_FILE,
+    ensure_shared_directory, materialize_overlay, register_builtin_kinds, remove_overlay_directory,
 };
 use forge_types::Variant;
 use tempfile::TempDir;
@@ -77,6 +77,7 @@ fn generated_page() -> Vec<String> {
         STYLE_FILE.to_owned(),
         BEHAVIOR_FILE.to_owned(),
         CONFIG_FILE.to_owned(),
+        SAMPLE_FILE.to_owned(),
     ])
 }
 
@@ -163,13 +164,15 @@ fn an_overridden_file_survives_every_regeneration_byte_for_byte() {
 }
 
 #[test]
-fn the_config_document_is_rewritten_even_when_every_source_file_is_overridden() {
+fn the_generated_documents_are_rewritten_even_when_every_source_file_is_overridden() {
     let home = TempDir::new().unwrap();
     let root = unborn_root(&home);
     let reg = registry();
 
     let first = materialize_overlay(&root, &instance(&[]), &reg).expect("first materialize");
-    fs::write(first.directory.join(CONFIG_FILE), "stale document").unwrap();
+    for name in [CONFIG_FILE, SAMPLE_FILE] {
+        fs::write(first.directory.join(name), "stale document").unwrap();
+    }
     for name in [MARKUP_FILE, STYLE_FILE, BEHAVIOR_FILE] {
         fs::write(first.directory.join(name), format!("user body for {name}")).unwrap();
     }
@@ -183,14 +186,16 @@ fn the_config_document_is_rewritten_even_when_every_source_file_is_overridden() 
 
     assert_eq!(
         report.written,
-        vec![CONFIG_FILE.to_owned()],
-        "the config document is data and can never be user owned"
+        vec![CONFIG_FILE.to_owned(), SAMPLE_FILE.to_owned()],
+        "a generated document is data and can never be user owned"
     );
-    assert_ne!(
-        fs::read_to_string(first.directory.join(CONFIG_FILE)).unwrap(),
-        "stale document",
-        "a fully overridden overlay still needs fresh configuration"
-    );
+    for name in [CONFIG_FILE, SAMPLE_FILE] {
+        assert_ne!(
+            fs::read_to_string(first.directory.join(name)).unwrap(),
+            "stale document",
+            "a fully overridden overlay still needs a fresh {name}"
+        );
+    }
     for name in [MARKUP_FILE, STYLE_FILE, BEHAVIOR_FILE] {
         assert_eq!(
             fs::read_to_string(first.directory.join(name)).unwrap(),
@@ -228,6 +233,7 @@ fn override_names_outside_the_overridable_set_are_ignored() {
         &root,
         &instance(&[
             CONFIG_FILE,
+            SAMPLE_FILE,
             "overlay.CSS",
             "../../etc/passwd",
             "styles.css",

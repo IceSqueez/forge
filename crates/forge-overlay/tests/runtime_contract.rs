@@ -3,12 +3,37 @@
 use std::collections::BTreeSet;
 
 use forge_overlay::config::ACCENT_OPTIONS;
-use forge_overlay::{OverlayKindRegistry, RUNTIME_SOURCE, register_builtin_kinds};
+use forge_overlay::{
+    OverlayKindRegistry, PREVIEW_PARAM, PREVIEW_VALUE, RUNTIME_SOURCE, SAMPLE_FILE,
+    register_builtin_kinds,
+};
 
 fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
     register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
     reg
+}
+
+fn function_body(name: &str) -> &'static str {
+    let opening = format!("function {name}(");
+    let start = RUNTIME_SOURCE
+        .find(&opening)
+        .unwrap_or_else(|| panic!("the runtime no longer declares '{opening}'"));
+    let rest = &RUNTIME_SOURCE[start..];
+    let end = rest
+        .find("\n  }")
+        .unwrap_or_else(|| panic!("'{opening}' is never closed"));
+    &rest[..end]
+}
+
+fn at(body: &str, needle: &str) -> usize {
+    body.find(needle)
+        .unwrap_or_else(|| panic!("the runtime no longer contains '{needle}'"))
+}
+
+fn behind_the_preview_gate(body: &str, needle: &str) -> bool {
+    let gate = at(body, "if (!previewing)");
+    at(body, needle) > at(&body[gate..], "return;") + gate
 }
 
 fn block_after(source: &str, opening: &str) -> String {
@@ -76,4 +101,62 @@ fn every_helper_a_generated_page_calls_is_one_the_runtime_publishes() {
             );
         }
     }
+}
+
+#[test]
+fn the_runtime_previews_a_page_on_the_flag_this_build_writes_into_its_url() {
+    for declaration in [
+        format!("var PREVIEW_PARAM = \"{PREVIEW_PARAM}\";"),
+        format!("var PREVIEW_VALUE = \"{PREVIEW_VALUE}\";"),
+    ] {
+        assert!(
+            RUNTIME_SOURCE.contains(&declaration),
+            "the runtime does not state '{declaration}', so a preview link opens an ordinary page"
+        );
+    }
+}
+
+#[test]
+fn the_runtime_fetches_the_sample_document_this_build_generates() {
+    let declaration = format!("var SAMPLE_FILE = \"./{SAMPLE_FILE}\";");
+
+    assert!(
+        RUNTIME_SOURCE.contains(&declaration),
+        "the runtime does not state '{declaration}', so a preview page fetches a file nothing writes"
+    );
+}
+
+#[test]
+fn a_page_opened_without_the_preview_flag_never_delivers_the_sample_document() {
+    let start = function_body("start");
+
+    assert!(
+        behind_the_preview_gate(start, "loadSample("),
+        "a browser source on a live stream would deliver sample content to itself"
+    );
+}
+
+#[test]
+fn the_checkerboard_backdrop_is_painted_only_while_previewing() {
+    let start = function_body("start");
+
+    assert_eq!(
+        RUNTIME_SOURCE.matches("paintCheckerboard();").count(),
+        1,
+        "the backdrop is painted from somewhere other than the preview branch"
+    );
+    assert!(
+        behind_the_preview_gate(start, "paintCheckerboard();"),
+        "a transparent browser source would be painted over with the preview backdrop"
+    );
+}
+
+#[test]
+fn a_transient_overlay_is_never_hidden_on_a_timer_while_previewing() {
+    let show = function_body("show");
+
+    assert!(
+        at(show, "previewing ||") < at(show, "window.setTimeout("),
+        "a previewed overlay disappears before it can be looked at"
+    );
 }

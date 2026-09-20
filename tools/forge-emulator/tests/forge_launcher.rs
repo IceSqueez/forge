@@ -8,7 +8,8 @@ use std::time::Duration;
 use forge_emulator::EmulatorError;
 use forge_emulator::fixture::Fixture;
 use forge_emulator::launch::{
-    DEFAULT_LOG_DIRECTIVES, ForgeCommand, HyprlandProbe, LaunchOptions, LivePaths, launch_forge,
+    DEFAULT_LOG_DIRECTIVES, ForgeCommand, GameGuard, HyprlandProbe, LaunchOptions, LivePaths,
+    launch_forge,
 };
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -30,10 +31,10 @@ fn options(root: &TempDir, stub_body: &str, max_attempts: u32) -> LaunchOptions 
         fixture: Fixture::chat_command_mvp(),
         endpoint_overrides: Vec::new(),
         log_directives: DEFAULT_LOG_DIRECTIVES.to_owned(),
-        guard: HyprlandProbe::command(
+        guard: GameGuard::probing(HyprlandProbe::command(
             "/bin/sh",
             vec!["-c".into(), "printf '[]'".into(), "sh".into()],
-        ),
+        )),
         live: LivePaths {
             data_dir: PathBuf::from("/nonexistent-live-user/.local/share/forge"),
             home: PathBuf::from("/nonexistent-live-user"),

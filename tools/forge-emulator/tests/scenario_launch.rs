@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::launch::{DEFAULT_LOG_DIRECTIVES, ForgeCommand, HyprlandProbe, LivePaths};
+use forge_emulator::launch::{
+    DEFAULT_LOG_DIRECTIVES, ForgeCommand, GameGuard, HyprlandProbe, LivePaths,
+};
 use forge_emulator::run::{RunOptions, ScenarioVerdict, StepStatus, run_scenario};
 use forge_emulator::scenario::{Scenario, parse_scenario};
 use tempfile::TempDir;
@@ -44,10 +46,10 @@ fn options(root: &TempDir, stub_body: &str) -> RunOptions {
         },
         run_root: root.path().join("run"),
         log_directives: DEFAULT_LOG_DIRECTIVES.to_owned(),
-        guard: HyprlandProbe::command(
+        guard: GameGuard::probing(HyprlandProbe::command(
             "/bin/sh",
             vec!["-c".into(), "printf '[]'".into(), "sh".into()],
-        ),
+        )),
         live: LivePaths {
             data_dir: PathBuf::from("/nonexistent-live-user/.local/share/forge"),
             home: PathBuf::from("/nonexistent-live-user"),

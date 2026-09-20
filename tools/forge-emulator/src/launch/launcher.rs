@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::game_guard::HyprlandProbe;
+use super::game_guard::GameGuard;
 use super::live_paths::LivePaths;
 use super::process::ForgeProcess;
 use super::spec::{ForgeCommand, LaunchSpec};
@@ -18,7 +18,7 @@ pub struct LaunchOptions {
     pub fixture: Fixture,
     pub endpoint_overrides: Vec<(&'static str, String)>,
     pub log_directives: String,
-    pub guard: HyprlandProbe,
+    pub guard: GameGuard,
     pub live: LivePaths,
     pub ready_timeout: Duration,
     /// Bounds relaunches after forge loses the race for its seeded server port.

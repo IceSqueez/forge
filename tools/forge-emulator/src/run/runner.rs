@@ -16,8 +16,7 @@ use crate::EmulatorError;
 use crate::control::EventFilter;
 use crate::fixture::Redactions;
 use crate::launch::{
-    ForgeCommand, HyprlandProbe, LaunchOptions, LaunchedForge, LivePaths, OutputStream,
-    launch_forge,
+    ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
 use crate::scenario::{Expectation, Scenario, StepAction};
 use crate::twitch::FakeTwitch;
@@ -31,7 +30,7 @@ pub struct RunOptions {
     pub run_root: PathBuf,
     /// forge's `RUST_LOG` filter; `log_line` expectations only see targets it enables.
     pub log_directives: String,
-    pub guard: HyprlandProbe,
+    pub guard: GameGuard,
     pub live: LivePaths,
     pub max_attempts: u32,
     pub shutdown_grace: Duration,

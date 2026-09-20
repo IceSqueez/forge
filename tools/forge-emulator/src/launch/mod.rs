@@ -7,7 +7,7 @@ mod process;
 mod signals;
 mod spec;
 
-pub use game_guard::{HyprlandProbe, assess_hyprland_clients};
+pub use game_guard::{GameGuard, HyprlandProbe, assess_hyprland_clients};
 pub use launcher::{LaunchOptions, LaunchedForge, launch_forge};
 pub use live_paths::LivePaths;
 pub use output::{CapturedOutput, OutputLine, OutputStream};

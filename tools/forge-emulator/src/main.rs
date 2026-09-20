@@ -10,8 +10,8 @@ use forge_emulator::control::{
 };
 use forge_emulator::fixture::{Fixture, seed_forge_environment};
 use forge_emulator::launch::{
-    DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, HyprlandProbe, LaunchOptions,
-    LaunchedForge, LivePaths, OutputStream, launch_forge,
+    DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, GameGuard, LaunchOptions, LaunchedForge,
+    LivePaths, OutputStream, launch_forge,
 };
 use forge_emulator::report::{RunContext, RunReport, write_report};
 use forge_emulator::run::{RunOptions, ScenarioVerdict, run_scenario};
@@ -73,6 +73,9 @@ enum Command {
         /// Relaunches allowed when forge loses the race for its seeded server port.
         #[arg(long, default_value_t = 3)]
         attempts: u32,
+        /// Launch even while a game is on screen: the compositor is never asked.
+        #[arg(long)]
+        allow_over_game: bool,
     },
     /// Work with scenario files.
     Scenario {
@@ -102,6 +105,9 @@ enum ScenarioCommand {
         /// Relaunches allowed when forge loses the race for its seeded server port.
         #[arg(long, default_value_t = 3)]
         attempts: u32,
+        /// Run even while a game is on screen: the compositor is never asked.
+        #[arg(long)]
+        allow_over_game: bool,
     },
 }
 
@@ -124,6 +130,7 @@ async fn main() -> ExitCode {
             log,
             ready_timeout_secs,
             attempts,
+            allow_over_game,
         } => launch(LaunchArgs {
             forge,
             fixture,
@@ -131,6 +138,7 @@ async fn main() -> ExitCode {
             log,
             ready_timeout: Duration::from_secs(ready_timeout_secs),
             attempts,
+            allow_over_game,
         })
         .await
         .map(|()| ExitCode::SUCCESS),
@@ -145,6 +153,7 @@ async fn main() -> ExitCode {
                     run_root,
                     log,
                     attempts,
+                    allow_over_game,
                 },
         } => {
             run(RunArgs {
@@ -153,6 +162,7 @@ async fn main() -> ExitCode {
                 run_root,
                 log,
                 attempts,
+                allow_over_game,
             })
             .await
         }
@@ -188,6 +198,15 @@ struct LaunchArgs {
     log: String,
     ready_timeout: Duration,
     attempts: u32,
+    allow_over_game: bool,
+}
+
+fn game_guard(allow_over_game: bool) -> GameGuard {
+    if allow_over_game {
+        eprintln!("forge-emulator: game guard bypassed by --allow-over-game");
+        return GameGuard::system().allow_over_game();
+    }
+    GameGuard::system()
 }
 
 async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
@@ -212,7 +231,7 @@ async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
             .unwrap_or_default(),
         fixture,
         log_directives: args.log,
-        guard: HyprlandProbe::system(),
+        guard: game_guard(args.allow_over_game),
         live: LivePaths::discover()?,
         ready_timeout: args.ready_timeout,
         max_attempts: args.attempts,
@@ -283,6 +302,7 @@ struct RunArgs {
     run_root: Option<PathBuf>,
     log: String,
     attempts: u32,
+    allow_over_game: bool,
 }
 
 async fn run(args: RunArgs) -> Result<ExitCode, EmulatorError> {
@@ -294,7 +314,7 @@ async fn run(args: RunArgs) -> Result<ExitCode, EmulatorError> {
         forge: ForgeCommand::binary(args.forge.clone()),
         run_root: run_root.clone(),
         log_directives: args.log.clone(),
-        guard: HyprlandProbe::system(),
+        guard: game_guard(args.allow_over_game),
         live: LivePaths::discover()?,
         max_attempts: args.attempts,
         shutdown_grace: SHUTDOWN_GRACE,

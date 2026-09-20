@@ -7,7 +7,7 @@ use tokio::process::{Child, Command};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-use super::game_guard::HyprlandProbe;
+use super::game_guard::GameGuard;
 use super::group::{self, Stop};
 use super::live_paths::LivePaths;
 use super::output::{CapturedOutput, OutputStream};
@@ -45,7 +45,7 @@ impl ForgeProcess {
     /// Refuses before spawning while a game may be running or when the fixture overlaps live paths.
     pub async fn spawn(
         spec: &LaunchSpec,
-        guard: &HyprlandProbe,
+        guard: &GameGuard,
         live: &LivePaths,
     ) -> Result<Self, EmulatorError> {
         spec.validate()?;

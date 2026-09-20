@@ -29,7 +29,8 @@ tools/forge-emulator/target/debug/forge-emulator scenario run \
 `--run-root` is the parent of the per-attempt directories; a temp directory is used when it
 is omitted. Useful flags: `--log` sets forge's `RUST_LOG` filter (only the targets it
 enables are visible to `log_line` expectations), `--attempts` caps the relaunches allowed
-when forge loses the race for its seeded server port.
+when forge loses the race for its seeded server port, `--allow-over-game` starts forge even
+while a game is on screen (see below).
 
 Other subcommands: `scenario check <file>` validates a scenario without launching anything,
 `launch` boots a seeded forge and streams its events as JSON, `watch` attaches to an already
@@ -72,7 +73,12 @@ afterwards.
 screen and refuse to start while a fullscreen Steam or gamescope window is up. The guard
 fails closed: an unreadable answer, a missing compositor, or a slow one all refuse too, and
 every refusal exits 3. The guard is a required argument of the process spawner, so no code
-path can skip it. If it refuses, stop: do not retry and do not work around it.
+path can skip it by accident. If it refuses, stop: do not retry and do not work around it.
+
+The one way past it is `--allow-over-game` on `launch` or `scenario run`, which skips the
+compositor query entirely and prints that it did. It is a flag and nothing else: no
+environment variable can disable the guard, so a stale shell can never silence it. Without
+the flag the guard still runs and still fails closed.
 
 The launcher separately refuses to run against the maintainer's live data directory or home
 (exit 4). Every run gets a scratch `HOME`, scratch XDG directories, and an environment

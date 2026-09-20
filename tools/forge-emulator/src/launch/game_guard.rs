@@ -15,6 +15,37 @@ const GAME_CLASS_PREFIXES: [&str; 2] = ["steam_app_", "gamescope"];
 const FULLSCREEN_MODE: f64 = 2.0;
 const DEFAULT_PROBE_DEADLINE: Duration = Duration::from_secs(5);
 
+#[derive(Debug, Clone)]
+pub struct GameGuard {
+    probe: HyprlandProbe,
+    allow_over_game: bool,
+}
+
+impl GameGuard {
+    pub fn system() -> Self {
+        Self::probing(HyprlandProbe::system())
+    }
+
+    pub fn probing(probe: HyprlandProbe) -> Self {
+        Self {
+            probe,
+            allow_over_game: false,
+        }
+    }
+
+    pub fn allow_over_game(mut self) -> Self {
+        self.allow_over_game = true;
+        self
+    }
+
+    pub async fn ensure_no_game(&self) -> Result<(), EmulatorError> {
+        if self.allow_over_game {
+            return Ok(());
+        }
+        self.probe.ensure_no_game().await
+    }
+}
+
 /// Runs `<program> <args...> clients -j` and fails closed on anything but a readable, game-free answer.
 #[derive(Debug, Clone)]
 pub struct HyprlandProbe {
@@ -177,6 +208,30 @@ mod tests {
                 "{json:?}: got {refusal:?}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_guard_allowed_over_a_game_never_runs_the_probe_that_would_refuse() {
+        let probe = HyprlandProbe::command(
+            "/bin/sh",
+            vec![
+                "-c".into(),
+                r#"printf '[{"class":"steam_app_570","fullscreen":2}]'"#.into(),
+                "sh".into(),
+            ],
+        );
+
+        let guarded = GameGuard::probing(probe.clone()).ensure_no_game().await;
+        assert!(
+            matches!(guarded, Err(EmulatorError::GameInProgress { .. })),
+            "got {guarded:?}"
+        );
+        let allowed = GameGuard::probing(probe)
+            .allow_over_game()
+            .ensure_no_game()
+            .await;
+        assert!(allowed.is_ok(), "got {allowed:?}");
     }
 
     #[cfg(unix)]

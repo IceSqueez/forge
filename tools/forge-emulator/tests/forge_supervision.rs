@@ -10,8 +10,8 @@ use std::time::Duration;
 use forge_emulator::EmulatorError;
 use forge_emulator::fixture::ForgeDataDir;
 use forge_emulator::launch::{
-    DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, HyprlandProbe, INHERITED_VARIABLES,
-    LaunchSpec, LivePaths,
+    DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, GameGuard, HyprlandProbe,
+    INHERITED_VARIABLES, LaunchSpec, LivePaths,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -76,8 +76,12 @@ impl Stage {
     }
 }
 
-fn clear_desktop() -> HyprlandProbe {
-    probe_script("printf '[]'")
+fn clear_desktop() -> GameGuard {
+    guard_script("printf '[]'")
+}
+
+fn guard_script(body: &str) -> GameGuard {
+    GameGuard::probing(probe_script(body))
 }
 
 fn probe_script(body: &str) -> HyprlandProbe {
@@ -405,10 +409,10 @@ async fn forge_environment_holds_only_allowlisted_and_launch_variables() {
 async fn game_on_screen_or_unreadable_desktop_prevents_the_spawn() {
     for (probe, expect_game) in [
         (
-            probe_script(r#"printf '[{"class":"steam_app_570","fullscreen":2}]'"#),
+            guard_script(r#"printf '[{"class":"steam_app_570","fullscreen":2}]'"#),
             true,
         ),
-        (probe_script("echo 'no hyprland socket' >&2; exit 1"), false),
+        (guard_script("echo 'no hyprland socket' >&2; exit 1"), false),
     ] {
         let stage = Stage::new();
         let marker = stage.file("spawned");
@@ -423,6 +427,25 @@ async fn game_on_screen_or_unreadable_desktop_prevents_the_spawn() {
         }
         assert!(!marker.exists(), "{probe:?}: stub forge ran");
     }
+}
+
+#[tokio::test]
+async fn a_launch_allowed_over_a_game_spawns_without_asking_the_compositor() {
+    let stage = Stage::new();
+    let asked = stage.file("probe-ran");
+    let guard = guard_script(&format!(
+        r#": > '{}'; printf '[{{"class":"steam_app_570","fullscreen":2}}]'"#,
+        asked.display()
+    ))
+    .allow_over_game();
+    let spec = stage.spec(stage.stub("exec sleep 600"));
+
+    let process = ForgeProcess::spawn(&spec, &guard, &elsewhere())
+        .await
+        .expect("the bypassed guard let the spawn through");
+
+    assert!(!asked.exists(), "the bypassed guard still ran its probe");
+    process.shutdown(DEADLINE).await.unwrap();
 }
 
 #[tokio::test]

@@ -48,17 +48,12 @@ pub struct Server {
 impl Server {
     pub async fn start(self) -> Result<ServerHandle, ServerError> {
         let addr = self.config.bind_addr;
-        let credentials = Arc::clone(&self.config.credentials);
-        validate_lan_bind(&addr, self.config.lan_bind_enabled, credentials.as_ref()).await?;
-        let auth = AuthState::load(
-            self.config.auth_required_for_reads,
+        validate_lan_bind(
+            &addr,
+            self.config.lan_bind_enabled,
             self.config.credentials.as_ref(),
         )
         .await?;
-        let bus = Arc::clone(&self.config.event_bus);
-        let bus_adapter = BusAdapter::new(Arc::clone(&bus));
-        bus_adapter.spawn();
-        let overlay_root = Arc::new(self.config.overlay_root.clone());
         let listener = TcpListener::bind(addr)
             .await
             .map_err(|e| ServerError::Bind {
@@ -66,33 +61,48 @@ impl Server {
                 reason: e.to_string(),
             })?;
         let bind_addr = listener.local_addr().unwrap_or(addr);
-        let allowed_origins = Arc::new(build_allowed_origins(
-            bind_addr,
-            &self.config.additional_origins,
-        ));
-        let state = AppState {
-            auth,
-            bus,
-            bus_adapter,
-            actions: self.config.actions,
-            globals: self.config.globals,
-            user_globals: self.config.user_globals,
-            overlays: self.config.overlays,
-            credentials,
-            settings: self.config.settings,
-            server_info: ServerInfo::new(),
-            action_engine: self.config.action_engine,
-            overlay_root,
-            overlay_cors_any_origin: self.config.overlay_cors_any_origin,
-            bind_addr,
-            allowed_origins,
-        };
+        let state = build_state(self.config, bind_addr).await?;
         Ok(serve_on(listener, state))
     }
+
+    pub async fn stopped(self) -> Result<ServerHandle, ServerError> {
+        let bind_addr = self.config.bind_addr;
+        let state = build_state(self.config, bind_addr).await?;
+        Ok(ServerHandle::stopped(state, bind_addr))
+    }
+}
+
+async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppState, ServerError> {
+    let auth = AuthState::load(config.auth_required_for_reads, config.credentials.as_ref()).await?;
+    let bus = Arc::clone(&config.event_bus);
+    let bus_adapter = BusAdapter::new(Arc::clone(&bus));
+    bus_adapter.spawn();
+    let allowed_origins = Arc::new(build_allowed_origins(bind_addr, &config.additional_origins));
+    Ok(AppState {
+        auth,
+        bus,
+        bus_adapter,
+        actions: config.actions,
+        globals: config.globals,
+        user_globals: config.user_globals,
+        overlays: config.overlays,
+        credentials: config.credentials,
+        settings: config.settings,
+        server_info: ServerInfo::new(),
+        action_engine: config.action_engine,
+        overlay_root: Arc::new(config.overlay_root),
+        overlay_cors_any_origin: config.overlay_cors_any_origin,
+        bind_addr,
+        allowed_origins,
+    })
 }
 
 pub async fn start_server(config: ServerConfig) -> Result<ServerHandle, ServerError> {
     Server { config }.start().await
+}
+
+pub async fn stopped_server(config: ServerConfig) -> Result<ServerHandle, ServerError> {
+    Server { config }.stopped().await
 }
 
 pub(crate) async fn validate_lan_bind(
@@ -221,8 +231,11 @@ fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
     let bind_addr = listener.local_addr().unwrap_or(state.bind_addr);
     let stored_state = state.clone();
     let (run_state_tx, _run_state_rx) = tokio::sync::watch::channel(true);
-    let (join, shutdown_tx) = serve_on_with_shutdown(listener, state, run_state_tx.clone());
-    ServerHandle::new(join, shutdown_tx, stored_state, bind_addr, run_state_tx)
+    let (reported_tx, reported_rx) = tokio::sync::watch::channel(true);
+    let (join, shutdown_tx) = serve_on_with_shutdown(listener, state, reported_tx);
+    let handle = ServerHandle::new(join, shutdown_tx, stored_state, bind_addr, run_state_tx);
+    handle.adopt_generation(reported_rx);
+    handle
 }
 
 #[cfg(test)]

@@ -12,6 +12,7 @@ use tokio::sync::{Mutex, watch};
 use crate::auth::AuthState;
 use crate::config::ServerSettings;
 use crate::origin::build_allowed_origins;
+use crate::run_state::{Generation, RunState};
 use crate::server::AppState;
 use crate::{ServerError, server};
 
@@ -25,7 +26,7 @@ struct HandleInner {
 #[derive(Clone)]
 pub struct ServerHandle {
     inner: Arc<Mutex<HandleInner>>,
-    run_state_tx: watch::Sender<bool>,
+    run_state: RunState,
 }
 
 impl ServerHandle {
@@ -43,12 +44,39 @@ impl ServerHandle {
                 state,
                 bind_addr,
             })),
-            run_state_tx,
+            run_state: RunState::new(run_state_tx),
         }
     }
 
+    pub(crate) fn stopped(state: AppState, bind_addr: SocketAddr) -> Self {
+        let (run_state_tx, _run_state_rx) = watch::channel(false);
+        Self {
+            inner: Arc::new(Mutex::new(HandleInner {
+                join: None,
+                shutdown_tx: None,
+                state,
+                bind_addr,
+            })),
+            run_state: RunState::new(run_state_tx),
+        }
+    }
+
+    pub(crate) fn adopt_generation(&self, mut reported: watch::Receiver<bool>) -> Generation {
+        let generation = self.run_state.claim();
+        let run_state = self.run_state.clone();
+        tokio::spawn(async move {
+            while reported.changed().await.is_ok() {
+                if !*reported.borrow_and_update() {
+                    break;
+                }
+            }
+            run_state.report_stopped(generation);
+        });
+        generation
+    }
+
     pub fn run_state(&self) -> watch::Receiver<bool> {
-        self.run_state_tx.subscribe()
+        self.run_state.subscribe()
     }
 
     pub async fn stop(&self) -> Result<(), ServerError> {
@@ -70,7 +98,7 @@ impl ServerHandle {
             let _ = tx.send(true);
         }
 
-        self.run_state_tx.send_replace(false);
+        self.run_state.stop();
 
         bus_adapter.broadcast_close().await;
 
@@ -149,8 +177,10 @@ impl ServerHandle {
             allowed_origins,
         };
 
+        let (reported_tx, reported_rx) = watch::channel(true);
         let (join, shutdown_tx) =
-            server::serve_on_with_shutdown(listener, new_state.clone(), self.run_state_tx.clone());
+            server::serve_on_with_shutdown(listener, new_state.clone(), reported_tx);
+        let generation = self.adopt_generation(reported_rx);
 
         let mut guard = self.inner.lock().await;
         guard.join = Some(join);
@@ -159,7 +189,7 @@ impl ServerHandle {
         guard.bind_addr = bind_addr;
         drop(guard);
 
-        self.run_state_tx.send_replace(true);
+        self.run_state.report_running(generation);
 
         Ok(())
     }
@@ -232,7 +262,7 @@ impl ServerHandle {
     }
 
     pub fn abort(&self) {
-        self.run_state_tx.send_replace(false);
+        self.run_state.stop();
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {
             let mut guard = inner.lock().await;

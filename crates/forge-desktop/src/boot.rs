@@ -394,48 +394,61 @@ async fn build_server(
             return None;
         }
     };
-    if !settings.enabled {
-        return None;
-    }
-    let ip: std::net::IpAddr = match settings.bind_address.parse() {
-        Ok(ip) => ip,
+    let bind_addr = match settings.bind_address.parse::<std::net::IpAddr>() {
+        Ok(ip) => Some(std::net::SocketAddr::new(ip, settings.port)),
         Err(e) => {
             eprintln!(
                 "forge-desktop: invalid server bind address '{}': {e}",
                 settings.bind_address
             );
-            return None;
+            None
         }
     };
-    let bind_addr = std::net::SocketAddr::new(ip, settings.port);
 
-    let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
-    let credentials: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;
-    let globals: Arc<dyn GlobalsRepo> = Arc::clone(backend) as Arc<dyn GlobalsRepo>;
-    let user_globals: Arc<dyn UserGlobalsRepo> = Arc::clone(backend) as Arc<dyn UserGlobalsRepo>;
-    let mut config = forge_server::ServerConfig::new(
-        settings_repo,
-        credentials,
-        Arc::clone(bus),
-        backend.action_repo(),
-        globals,
-        user_globals,
-        backend.overlay_repo(),
-        Arc::new(action_engine.clone()),
-    );
-    config.bind_addr = bind_addr;
-    config.auth_required_for_reads = settings.auth_required_for_reads;
-    config.lan_bind_enabled = settings.lan_bind_enabled;
-    config.overlay_cors_any_origin = settings.overlay_cors_any_origin;
-    config.additional_origins = settings.additional_origins.clone();
-    if let Some(root) = settings.overlay_root.filter(|root| !root.is_empty()) {
-        config.overlay_root = std::path::PathBuf::from(root);
+    let build_config = || {
+        let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(backend) as Arc<dyn SettingsRepo>;
+        let credentials: Arc<dyn CredentialsRepo> = Arc::clone(backend) as Arc<dyn CredentialsRepo>;
+        let globals: Arc<dyn GlobalsRepo> = Arc::clone(backend) as Arc<dyn GlobalsRepo>;
+        let user_globals: Arc<dyn UserGlobalsRepo> =
+            Arc::clone(backend) as Arc<dyn UserGlobalsRepo>;
+        let mut config = forge_server::ServerConfig::new(
+            settings_repo,
+            credentials,
+            Arc::clone(bus),
+            backend.action_repo(),
+            globals,
+            user_globals,
+            backend.overlay_repo(),
+            Arc::new(action_engine.clone()),
+        );
+        if let Some(bind_addr) = bind_addr {
+            config.bind_addr = bind_addr;
+        }
+        config.auth_required_for_reads = settings.auth_required_for_reads;
+        config.lan_bind_enabled = settings.lan_bind_enabled;
+        config.overlay_cors_any_origin = settings.overlay_cors_any_origin;
+        config.additional_origins = settings.additional_origins.clone();
+        if let Some(root) = settings
+            .overlay_root
+            .as_ref()
+            .filter(|root| !root.is_empty())
+        {
+            config.overlay_root = std::path::PathBuf::from(root);
+        }
+        config
+    };
+
+    if settings.enabled && bind_addr.is_some() {
+        match forge_server::start_server(build_config()).await {
+            Ok(handle) => return Some(handle),
+            Err(e) => eprintln!("forge-desktop: server failed to start, leaving it off: {e}"),
+        }
     }
 
-    match forge_server::start_server(config).await {
+    match forge_server::stopped_server(build_config()).await {
         Ok(handle) => Some(handle),
         Err(e) => {
-            eprintln!("forge-desktop: server failed to start, leaving it off: {e}");
+            eprintln!("forge-desktop: server state unavailable, leaving it off: {e}");
             None
         }
     }

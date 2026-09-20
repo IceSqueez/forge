@@ -545,7 +545,10 @@ mod tests {
         (handle, addr)
     }
 
-    async fn stopped_awaiting_a_port(settings: Arc<MapSettings>) -> (ServerHandle, u16) {
+    async fn handle_awaiting_a_port(
+        settings: Arc<MapSettings>,
+        listening: bool,
+    ) -> (ServerHandle, u16) {
         let port = reserve_a_free_port().await;
         crate::config::ServerSettings::save_bind_address(&*settings, LOOPBACK)
             .await
@@ -554,8 +557,22 @@ mod tests {
             .await
             .expect("save port");
         let config = loopback_config(settings, port, Vec::new());
-        let handle = stopped_server(config).await.expect("stopped handle");
+        let handle = if listening {
+            start_server(config).await.expect("listening handle")
+        } else {
+            stopped_server(config).await.expect("stopped handle")
+        };
         (handle, port)
+    }
+
+    async fn stopped_awaiting_a_port(settings: Arc<MapSettings>) -> (ServerHandle, u16) {
+        handle_awaiting_a_port(settings, false).await
+    }
+
+    async fn accepts_on(port: u16) -> bool {
+        tokio::net::TcpStream::connect(format!("{LOOPBACK}:{port}"))
+            .await
+            .is_ok()
     }
 
     async fn info_status(port: u16) -> u16 {
@@ -1217,9 +1234,7 @@ mod tests {
             "a handle built without a listener must not report running"
         );
         assert!(
-            tokio::net::TcpStream::connect(format!("{LOOPBACK}:{port}"))
-                .await
-                .is_err(),
+            !accepts_on(port).await,
             "nothing may accept on the configured port before the restart"
         );
 
@@ -1263,6 +1278,55 @@ mod tests {
             "a refused bind must leave the handle stopped, not half started"
         );
         drop(squatter);
+    }
+
+    #[tokio::test]
+    async fn a_restart_refused_by_the_settings_switch_leaves_the_port_unserved() {
+        for (listening, case) in [
+            (true, "a server that was serving when the switch went off"),
+            (false, "a handle that never listened"),
+        ] {
+            let settings = MapSettings::new();
+            let (handle, port) = handle_awaiting_a_port(Arc::clone(&settings), listening).await;
+            crate::config::ServerSettings::save_enabled(&*settings, false)
+                .await
+                .expect("save enabled");
+
+            let err = handle
+                .restart()
+                .await
+                .expect_err("a switched-off server must refuse to come up");
+
+            assert!(matches!(err, ServerError::Disabled), "{case}");
+            assert!(
+                !*handle.run_state().borrow(),
+                "{case} must report stopped after the refusal"
+            );
+            assert!(!accepts_on(port).await, "{case} left a listener behind");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_restart_binds_again_once_the_settings_switch_goes_back_on() {
+        let settings = MapSettings::new();
+        let (handle, port) = handle_awaiting_a_port(Arc::clone(&settings), true).await;
+        crate::config::ServerSettings::save_enabled(&*settings, false)
+            .await
+            .expect("save enabled");
+        handle
+            .restart()
+            .await
+            .expect_err("the switched-off restart must refuse");
+
+        crate::config::ServerSettings::save_enabled(&*settings, true)
+            .await
+            .expect("save enabled");
+        handle.restart().await.expect("restart once switched on");
+
+        assert!(*handle.run_state().borrow());
+        assert_eq!(info_status(port).await, reqwest::StatusCode::OK);
+
+        handle.stop().await.expect("stop after restart");
     }
 
     #[tokio::test]

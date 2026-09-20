@@ -44,6 +44,16 @@
  * business, and a content group is applied whole, so a key the frame leaves out is
  * left out of the display too.
  *
+ * A page reached with ?preview=1 in its query previews itself. It reads
+ * sample.json, the generated sample document sitting beside config.json, and
+ * delivers that content to itself as soon as the page is ready; it paints a
+ * checkerboard behind the page so transparent areas are visible; and it never
+ * hides anything on a timer, so a transient overlay stays up to be looked at.
+ * Nothing else changes: a preview page connects, identifies and receives exactly
+ * like the page a browser source loads, so forge counts it among this overlay's
+ * connections. Without the flag the page is transparent and shows nothing until
+ * content arrives.
+ *
  * A reload frame is handled here rather than by the page. forge sends it after
  * rewriting an overlay's files, which is why hand-edited pages pick up regenerated
  * markup without the browser source being refreshed by hand.
@@ -60,6 +70,12 @@
   "use strict";
 
   var CONFIG_FILE = "./config.json";
+  var SAMPLE_FILE = "./sample.json";
+  var PREVIEW_PARAM = "preview";
+  var PREVIEW_VALUE = "1";
+  var CHECKER_TILE_PX = 24;
+  var CHECKER_BASE = "#15151c";
+  var CHECKER_SQUARE = "#23232e";
   var SOCKET_PATH = "/ws/v1/";
   var AUTH_REQUEST_ID = "1";
   var CONTENT_FRAME = "content";
@@ -94,6 +110,9 @@
 
   var socket = null;
   var attempt = 0;
+  var previewing =
+    new URLSearchParams(window.location.search).get(PREVIEW_PARAM) ===
+    PREVIEW_VALUE;
 
   function warn(message) {
     if (window.console) {
@@ -114,14 +133,63 @@
         config = document_json.config || {};
         credential = document_json.credential || "";
         applyAppearance(config);
-        fireReady();
-        connect();
+        start();
       })
       .catch(function (error) {
         attempt += 1;
         warn("could not load config.json (" + error.message + "), retrying");
         window.setTimeout(loadConfig, backoffMs());
       });
+  }
+
+  function start() {
+    if (!previewing) {
+      fireReady();
+      connect();
+      return;
+    }
+
+    paintCheckerboard();
+    loadSample(function (values) {
+      fireReady();
+      connect();
+      deliver(values, 0);
+    });
+  }
+
+  function loadSample(then) {
+    window
+      .fetch(SAMPLE_FILE, { cache: "no-store" })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error("sample.json responded " + response.status);
+        }
+        return response.json();
+      })
+      .then(function (document_json) {
+        then(document_json.content || {});
+      })
+      .catch(function (error) {
+        warn("could not load sample.json (" + error.message + ")");
+        then({});
+      });
+  }
+
+  function paintCheckerboard() {
+    var tile = CHECKER_TILE_PX + "px";
+    var offset = CHECKER_TILE_PX / 2 + "px";
+    var square =
+      "linear-gradient(45deg, " +
+      CHECKER_SQUARE +
+      " 25%, transparent 25%, transparent 75%, " +
+      CHECKER_SQUARE +
+      " 75%)";
+
+    var backdrop = document_.documentElement.style;
+    backdrop.setProperty("background-color", CHECKER_BASE);
+    backdrop.setProperty("background-image", square + ", " + square);
+    backdrop.setProperty("background-position", "0 0, " + offset + " " + offset);
+    backdrop.setProperty("background-size", tile + " " + tile);
   }
 
   function applyAppearance(values) {
@@ -243,7 +311,6 @@
       return;
     }
 
-    unclear();
     var values =
       frame.content && typeof frame.content === "object" ? frame.content : {};
     var durationMs =
@@ -251,6 +318,11 @@
         ? frame.durationMs
         : 0;
 
+    deliver(values, durationMs);
+  }
+
+  function deliver(values, durationMs) {
+    unclear();
     contentCallbacks.forEach(function (callback) {
       invoke(callback, values, durationMs);
     });
@@ -325,7 +397,7 @@
       window.clearTimeout(pending);
       hideTimers.delete(selector);
     }
-    if (!(milliseconds > 0)) {
+    if (previewing || !(milliseconds > 0)) {
       return;
     }
 

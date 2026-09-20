@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::assets::{CONFIG_FILE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE};
-use crate::document::config_document;
+use crate::assets::{CONFIG_FILE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE};
+use crate::document::{config_document, sample_document};
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
 use crate::registry::OverlayKindRegistry;
@@ -42,6 +42,7 @@ pub fn materialize_overlay(
 
     let directory = overlay_directory(root, &instance.id)?;
     let document = config_document(instance, descriptor)?;
+    let sample = sample_document(instance, descriptor)?;
 
     let mut report = MaterializeReport {
         directory: directory.clone(),
@@ -64,6 +65,9 @@ pub fn materialize_overlay(
 
     write_atomic(&directory, CONFIG_FILE, document.as_bytes())?;
     report.written.push(CONFIG_FILE.to_owned());
+
+    write_atomic(&directory, SAMPLE_FILE, sample.as_bytes())?;
+    report.written.push(SAMPLE_FILE.to_owned());
 
     Ok(report)
 }

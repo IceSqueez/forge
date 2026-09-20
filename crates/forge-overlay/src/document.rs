@@ -6,6 +6,7 @@ use crate::descriptor::OverlayKindDescriptor;
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
 use crate::materialize::GENERATOR_VERSION;
+use crate::sample::sample_content;
 
 pub const DOCUMENT_VERSION: u32 = 1;
 
@@ -43,6 +44,38 @@ pub fn config_document(
         kind_id: descriptor.id(),
         config_schema_version: descriptor.config_schema_version(),
         config,
+    };
+
+    Ok(serde_json::to_string_pretty(&document)?)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SampleDocument<'a> {
+    document_version: u32,
+    generator_version: u32,
+    overlay_id: &'a str,
+    kind_id: &'a str,
+    content: Map<String, Value>,
+}
+
+/// Carries no credential: this is the content a test delivery would send, and the page reads it
+/// only when it was opened as its own preview.
+pub fn sample_document(
+    instance: &OverlayInstance,
+    descriptor: &dyn OverlayKindDescriptor,
+) -> Result<String, OverlayError> {
+    let content = sample_content(descriptor, &instance.config)
+        .into_iter()
+        .map(|(key, value)| (key, value.to_plain_json()))
+        .collect();
+
+    let document = SampleDocument {
+        document_version: DOCUMENT_VERSION,
+        generator_version: GENERATOR_VERSION,
+        overlay_id: instance.id.as_str(),
+        kind_id: descriptor.id(),
+        content,
     };
 
     Ok(serde_json::to_string_pretty(&document)?)

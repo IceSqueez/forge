@@ -1,3 +1,5 @@
+use forge_types::Variant;
+
 use crate::config;
 use crate::descriptor::OverlayConfig;
 
@@ -45,6 +47,12 @@ pub struct PreviewLine {
     pub text: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewCanvas {
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Text carries whatever the config holds; `%var%` tokens are expanded by the caller, not here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewComposition {
@@ -52,6 +60,7 @@ pub struct PreviewComposition {
     pub accent: PreviewAccent,
     pub font: PreviewFont,
     pub position: PreviewPosition,
+    pub canvas: PreviewCanvas,
     pub lines: Vec<PreviewLine>,
     /// Filled share of a progress track, unset for a shape without one and for values that are
     /// not two numbers.
@@ -64,6 +73,7 @@ pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewCom
         accent: accent_of(config),
         font: font_of(config),
         position: position_of(config),
+        canvas: canvas_of(config),
         lines: lines_of(shape, config),
         fill: fill_of(shape, config),
     }
@@ -93,6 +103,21 @@ fn position_of(config: &OverlayConfig) -> PreviewPosition {
         "bottom" => PreviewPosition::Bottom,
         _ => PreviewPosition::Center,
     }
+}
+
+fn canvas_of(config: &OverlayConfig) -> PreviewCanvas {
+    PreviewCanvas {
+        width: canvas_side(config, config::CANVAS_WIDTH, config::CANVAS_DEFAULT_WIDTH),
+        height: canvas_side(config, config::CANVAS_HEIGHT, config::CANVAS_DEFAULT_HEIGHT),
+    }
+}
+
+fn canvas_side(config: &OverlayConfig, key: &str, fallback: i64) -> u32 {
+    config
+        .get(key)
+        .and_then(Variant::as_int)
+        .unwrap_or(fallback)
+        .clamp(config::CANVAS_MIN_PX, config::CANVAS_MAX_PX) as u32
 }
 
 /// A kind that names its own content keys reads them here; every other kind speaks the shared

@@ -9,6 +9,8 @@ pub const SUBLINE: &str = "subline";
 pub const ACCENT: &str = "accent";
 pub const FONT: &str = "font";
 pub const POSITION: &str = "position";
+pub const CANVAS_WIDTH: &str = "canvas_width";
+pub const CANVAS_HEIGHT: &str = "canvas_height";
 pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
@@ -36,6 +38,11 @@ pub const ANIMATION_OPTIONS: &[&str] = &[
 
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
+
+pub const CANVAS_MIN_PX: i64 = 160;
+pub const CANVAS_MAX_PX: i64 = 7680;
+pub const CANVAS_DEFAULT_WIDTH: i64 = 1920;
+pub const CANVAS_DEFAULT_HEIGHT: i64 = 1080;
 
 pub fn effective_overlay_config(
     descriptor: &dyn OverlayKindDescriptor,
@@ -196,6 +203,24 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
             },
         ),
         in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: CANVAS_WIDTH,
+                label: "Canvas width",
+                min: CANVAS_MIN_PX,
+                max: CANVAS_MAX_PX,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: CANVAS_HEIGHT,
+                label: "Canvas height",
+                min: CANVAS_MIN_PX,
+                max: CANVAS_MAX_PX,
+            },
+        ),
+        in_section(
             ConfigSection::Behavior,
             FormField::Select {
                 key: ANIMATION,
@@ -333,6 +358,11 @@ pub(crate) fn shared_style_defaults(
         (FONT.to_owned(), text(font)),
         (POSITION.to_owned(), text(position)),
         (ANIMATION.to_owned(), text(animation)),
+        (CANVAS_WIDTH.to_owned(), Variant::Int(CANVAS_DEFAULT_WIDTH)),
+        (
+            CANVAS_HEIGHT.to_owned(),
+            Variant::Int(CANVAS_DEFAULT_HEIGHT),
+        ),
     ])
 }
 

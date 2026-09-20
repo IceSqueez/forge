@@ -2,6 +2,7 @@ mod code_pane;
 mod editor_pane;
 mod form_modal;
 mod kind_visuals;
+mod preview_shapes;
 mod preview_stage;
 mod property_panel;
 mod registry_pane;
@@ -30,7 +31,7 @@ use crate::toasts::{PushToast, copy_to_clipboard};
 use code_pane::{CodeState, LeaveIntent};
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
 use kind_visuals::{KindVisuals, kind_visuals};
-use preview_stage::TestFireRun;
+use preview_stage::{StageState, TestFireRun};
 use property_panel::{OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
 
 const HEADER_GAP: Pixels = px(5.0);
@@ -104,6 +105,7 @@ pub struct OverlaysView {
     pending_delete: Confirm<PendingDelete>,
     fire: Option<TestFireRun>,
     fire_epoch: u64,
+    stage: StageState,
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
 }
@@ -143,6 +145,7 @@ impl OverlaysView {
             pending_delete: Confirm::default(),
             fire: None,
             fire_epoch: 0,
+            stage: StageState::default(),
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
         };
@@ -291,6 +294,7 @@ impl OverlaysView {
                     self.clear_test();
                 }
                 self.sync_panel(cx);
+                self.sync_preview();
                 self.sync_source(cx);
             }
             Err(message) => self.report(&message, cx),
@@ -309,6 +313,7 @@ impl OverlaysView {
         self.selected = Some(id);
         self.clear_test();
         self.sync_panel(cx);
+        self.sync_preview();
         self.sync_source(cx);
         cx.notify();
     }

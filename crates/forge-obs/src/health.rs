@@ -9,6 +9,12 @@ use forge_platform_core::{BuiltinHealth, HealthDelta, HealthMetric, HealthStream
 
 use crate::client::ObsClient;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FrameCounterSample {
+    pub skipped: u32,
+    pub total: u32,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct HealthSnapshot {
     pub stream_active: bool,
@@ -21,6 +27,8 @@ pub struct HealthSnapshot {
     pub render_lag: bool,
     pub dropped_frames: u64,
     pub total_frames: u64,
+    pub render_frame_sample: Option<FrameCounterSample>,
+    pub output_frame_sample: Option<FrameCounterSample>,
 }
 
 pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLock<HealthSnapshot>>)

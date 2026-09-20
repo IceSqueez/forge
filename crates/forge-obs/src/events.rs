@@ -6,7 +6,7 @@ use forge_types::EventId;
 use serde_json::json;
 
 use crate::catalog::ObsCatalog;
-use crate::health::HealthSnapshot;
+use crate::health::{FrameCounterSample, HealthSnapshot};
 use crate::payload_fields::{
     audio as audio_fields, collection as collection_fields, connection as connection_fields,
     filter as filter_fields, profile as profile_fields, recording as recording_fields,
@@ -522,13 +522,49 @@ pub(crate) fn apply_health_update(
     }
 }
 
+const OBS_FRAME_LAG_WARNING_PCT: f64 = 1.0;
+const FRAME_LAG_PCT_BASE: f64 = 100.0;
+
+fn frame_lag_detected(
+    prev_sample: &mut Option<FrameCounterSample>,
+    current: FrameCounterSample,
+) -> bool {
+    let lagging = match *prev_sample {
+        Some(prev) if current.total >= prev.total && current.skipped >= prev.skipped => {
+            let total_delta = current.total - prev.total;
+            let skipped_delta = current.skipped - prev.skipped;
+            total_delta > 0
+                && (f64::from(skipped_delta) / f64::from(total_delta)) * FRAME_LAG_PCT_BASE
+                    > OBS_FRAME_LAG_WARNING_PCT
+        }
+        _ => false,
+    };
+    *prev_sample = Some(current);
+    lagging
+}
+
 /// Only emits a delta when the rendered value actually changed. Dropped-frame figures come from
 /// the stream-status poll (`apply_stream_status_update`), not from `GetStats`.
 pub(crate) fn apply_stats_update(
     stats: &obws::responses::general::Stats,
     snapshot: &mut HealthSnapshot,
 ) -> Vec<HealthDelta> {
-    let render_lag = stats.render_skipped_frames > 0 || stats.output_skipped_frames > 0;
+    let render_lagging = frame_lag_detected(
+        &mut snapshot.render_frame_sample,
+        FrameCounterSample {
+            skipped: stats.render_skipped_frames,
+            total: stats.render_total_frames,
+        },
+    );
+    let output_lagging = frame_lag_detected(
+        &mut snapshot.output_frame_sample,
+        FrameCounterSample {
+            skipped: stats.output_skipped_frames,
+            total: stats.output_total_frames,
+        },
+    );
+    let render_lag = render_lagging || output_lagging;
+
     let unchanged = (snapshot.cpu_percent - stats.cpu_usage).abs() <= f64::EPSILON
         && (snapshot.fps - stats.active_fps).abs() <= f64::EPSILON
         && snapshot.render_lag == render_lag;

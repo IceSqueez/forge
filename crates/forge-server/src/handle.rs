@@ -123,6 +123,12 @@ impl ServerHandle {
         let settings = ServerSettings::load(state.settings.as_ref())
             .await
             .map_err(|e| ServerError::Storage(e.to_string()))?;
+
+        if !settings.enabled {
+            self.stop().await?;
+            return Err(ServerError::Disabled);
+        }
+
         let ip: IpAddr = settings
             .bind_address
             .parse()

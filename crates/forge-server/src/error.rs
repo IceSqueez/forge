@@ -34,6 +34,9 @@ pub enum ServerError {
         "refusing to bind to {addr}: bearer token missing - generate one before exposing the server"
     )]
     NoTokenForLanBind { addr: String },
+
+    #[error("the server is switched off in settings")]
+    Disabled,
 }
 
 #[cfg(test)]

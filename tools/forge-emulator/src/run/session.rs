@@ -17,8 +17,10 @@ use super::outcome::{
     ActionDetail, ActionReport, Evidence, ExpectationOutcome, FailureCause, RunClock, StepOutcome,
     StepStatus, Verdict,
 };
+use super::overlay_checks::observe_overlay_content;
 use super::steps::{ActionIndex, Stimuli};
 use crate::control::ControlClient;
+use crate::overlay::{OverlayMarks, OverlayPages};
 use crate::scenario::{Expectation, Scenario, Step, StepAction};
 use crate::twitch::FakeTwitch;
 
@@ -28,6 +30,7 @@ pub struct Session<'a> {
     pub journal: &'a Journal,
     pub twitch: Option<&'a FakeTwitch>,
     pub actions: &'a ActionIndex,
+    pub pages: &'a OverlayPages,
     pub log_dir: PathBuf,
     pub clock: RunClock,
     /// When the forge_ready step counts as satisfied.
@@ -79,6 +82,7 @@ async fn run_step(
             LogTail::from_now(&session.log_dir),
         )
     };
+    let marks = session.pages.marks();
     let performed = if is_ready_step {
         Ok(session.ready.clone())
     } else {
@@ -86,6 +90,7 @@ async fn run_step(
             client: session.client,
             twitch: session.twitch,
             actions: session.actions,
+            pages: session.pages,
         };
         stimuli.perform(&step.action).await
     };
@@ -116,6 +121,7 @@ async fn run_step(
     let context = ExpectationContext {
         session,
         from,
+        marks,
         acted,
         log_tail,
     };
@@ -145,6 +151,8 @@ async fn run_step(
 struct ExpectationContext<'s, 'a> {
     session: &'s Session<'a>,
     from: usize,
+    /// Frame counts taken before the step acted, so a page this step opened starts from nothing.
+    marks: OverlayMarks,
     acted: Instant,
     log_tail: LogTail,
 }
@@ -201,6 +209,28 @@ impl ExpectationContext<'_, '_> {
                     None => no_fake_twitch(),
                 };
                 (verdict, evidence, None)
+            }
+            Expectation::OverlayContent(content) => {
+                let until = deadline(content.within_ms);
+                let (verdict, evidence) = match session.pages.page(&content.overlay) {
+                    Some(page) => {
+                        observe_overlay_content(
+                            &page,
+                            self.marks.of(&content.overlay),
+                            until,
+                            content,
+                            clock,
+                        )
+                        .await
+                    }
+                    None => (
+                        Verdict::Failed(FailureCause::NoOverlayPage {
+                            overlay: content.overlay.clone(),
+                        }),
+                        Evidence::None,
+                    ),
+                };
+                (verdict, evidence, Some(until))
             }
             Expectation::LogLine(line) => {
                 let until = deadline(line.within_ms);

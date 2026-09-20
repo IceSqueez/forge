@@ -929,3 +929,102 @@ fn every_bound_accepts_its_exact_limits() {
     scenario["fakes"]["twitch"]["keepalive_interval_ms"] = json!(14_000);
     assert_eq!(problems(scenario), Vec::new());
 }
+
+fn with_overlay(mut scenario: Value) -> Value {
+    scenario["fixture"]["overlays"] = json!([
+        { "display_name": "Alert Box", "kind_id": "overlay.alert" }
+    ]);
+    scenario
+}
+
+fn opens(overlay: &str) -> Value {
+    json!({ "overlay_page": { "overlay": overlay, "within_ms": 30000 } })
+}
+
+fn receives(overlay: &str) -> Value {
+    json!({ "overlay_content": { "overlay": overlay, "values": { "headline": "hi" }, "within_ms": 5000 } })
+}
+
+#[test]
+fn overlay_step_and_expectation_problems_are_located() {
+    assert_cases(vec![
+        (
+            "a page opened for an overlay the fixture never declares",
+            with_steps([step(opens("Alert Box"))]),
+            vec![(
+                "steps[2].do.overlay_page.overlay",
+                "names overlay `Alert Box`, which the fixture does not declare",
+            )],
+        ),
+        (
+            "a page opened for nothing at all",
+            with_overlay(with_steps([step(opens("  "))])),
+            vec![("steps[2].do.overlay_page.overlay", "must not be blank")],
+        ),
+        (
+            "content expected on a page no step ever opened",
+            with_overlay(with_steps([expecting(
+                pause(),
+                json!([receives("Alert Box")]),
+            )])),
+            vec![(
+                "steps[2].expect[0].overlay_content",
+                "expects content on `Alert Box` before any overlay_page step opened it, so nothing can be delivered there",
+            )],
+        ),
+        (
+            "content expected with no values to judge it by",
+            with_overlay(with_steps([
+                step(opens("Alert Box")),
+                expecting(
+                    pause(),
+                    json!([{ "overlay_content": { "overlay": "Alert Box", "values": {}, "within_ms": 5000 } }]),
+                ),
+            ])),
+            vec![(
+                "steps[3].expect[0].overlay_content.values",
+                "needs at least one content key; an empty frame proves nothing",
+            )],
+        ),
+        (
+            "unbounded deadlines on both halves of the vocabulary",
+            with_overlay(with_steps([
+                step(json!({ "overlay_page": { "overlay": "Alert Box", "within_ms": 120001 } })),
+                expecting(
+                    pause(),
+                    json!([{ "overlay_content": { "overlay": "Alert Box", "values": { "headline": "hi" }, "within_ms": 0 } }]),
+                ),
+            ])),
+            vec![
+                (
+                    "steps[2].do.overlay_page.within_ms",
+                    "must be between 1 and 120000, got 120001",
+                ),
+                (
+                    "steps[3].expect[0].overlay_content.within_ms",
+                    "must be between 1 and 120000, got 0",
+                ),
+            ],
+        ),
+    ]);
+}
+
+#[test]
+fn a_page_opened_before_the_content_it_is_judged_on_has_no_problems() {
+    let scenario = with_overlay(with_steps([expecting(
+        opens("Alert Box"),
+        json!([receives("Alert Box")]),
+    )]));
+
+    assert_eq!(problems(scenario), Vec::new());
+}
+
+#[test]
+fn a_repeated_content_key_is_a_syntax_error_rather_than_a_silent_overwrite() {
+    let json = r#"{ "overlay": "Alert Box", "values": { "headline": "a", "headline": "b" }, "within_ms": 5000 }"#;
+
+    assert!(
+        serde_json::from_str::<forge_emulator::scenario::OverlayContent>(json).is_err(),
+        "a duplicate key must not silently keep only the last value"
+    );
+}

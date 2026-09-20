@@ -1,0 +1,105 @@
+{
+  "name": "a chat command raises an alert on a connected overlay page",
+  "purpose": "One Twitch chat message runs an action whose only step sends to an alert overlay, and the browser source connected to that overlay receives a content frame whose headline and subline are plain strings built from the chat event's variables. A value that arrives as tagged Variant JSON fails this scenario: that is the shape a page renders as [object Object].",
+  "fixture": {
+    "twitch": {},
+    "overlays": [
+      {
+        "display_name": "Alert Box",
+        "kind_id": "overlay.alert",
+        "config": {
+          "headline": { "type": "string", "value": "stored headline" },
+          "subline": { "type": "string", "value": "stored subline" }
+        }
+      }
+    ],
+    "chat_commands": [
+      {
+        "phrase": "!alert",
+        "action_name": "Raise Alert",
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": { "type": "string", "value": "Alert Box" },
+              "headline": { "type": "string", "value": "%user_login% raised an alert" },
+              "subline": { "type": "string", "value": "via %message_text%" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Alert Box", "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": { "user_id": "200000042", "login": "alice" },
+          "text": "!alert"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat",
+            "source": "twitch",
+            "kind": "twitch.channel.chat.message",
+            "payload": { "/user/login": { "equals": "alice" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "matched",
+            "source": "core",
+            "kind": "command.matched",
+            "payload": { "/command": { "equals": "!alert" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "matched", "cause": "chat" } },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Raise Alert" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } },
+        {
+          "overlay_content": {
+            "overlay": "Alert Box",
+            "values": {
+              "headline": "alice raised an alert",
+              "subline": "via !alert"
+            },
+            "within_ms": 5000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

@@ -13,7 +13,8 @@ use forge_emulator::report::{
 use forge_emulator::run::{
     ActionDetail, ActionReport, CausationEvidence, EventEvidence, Evidence, ExpectationOutcome,
     FailureCause, ForgeEvidence, Gap, GapKind, JournaledEvent, LedgerExcerpt, LogEvidence,
-    LogRecord, NearMiss, ScenarioOutcome, ScenarioVerdict, StepOutcome, StepStatus, Verdict,
+    LogRecord, NearMiss, OverlayEvidence, ReceivedContent, ScenarioOutcome, ScenarioVerdict,
+    StepOutcome, StepStatus, Verdict,
 };
 use forge_emulator::scenario::Scenario;
 use forge_emulator::twitch::{
@@ -1228,4 +1229,155 @@ async fn neither_seeded_token_appears_in_any_rendered_report() {
         );
         assert!(rendered.contains(REDACTED), "{label} redacted nothing");
     }
+}
+
+fn overlay_scenario() -> Scenario {
+    serde_json::from_value(json!({
+        "name": "an alert reaches its page",
+        "purpose": "A chat command sends an alert to a connected overlay page.",
+        "fixture": {
+            "twitch": {},
+            "overlays": [ { "display_name": "Alert Box", "kind_id": "overlay.alert" } ],
+            "chat_commands": [ { "phrase": "!alert", "action_name": "Raise Alert" } ]
+        },
+        "fakes": { "twitch": {} },
+        "steps": [
+            { "do": { "forge_ready": { "within_ms": 30000 } } },
+            { "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 5000 } } },
+            { "do": { "overlay_page": { "overlay": "Alert Box", "within_ms": 30000 } } },
+            {
+                "do": { "chat": { "viewer": { "user_id": "200000042", "login": "alice" }, "text": "!alert" } },
+                "expect": [
+                    { "overlay_content": {
+                        "overlay": "Alert Box",
+                        "values": { "headline": "alice raised an alert" },
+                        "within_ms": 5000
+                    } }
+                ]
+            }
+        ]
+    }))
+    .unwrap()
+}
+
+fn tagged_evidence() -> Evidence {
+    Evidence::Overlay(OverlayEvidence {
+        overlay: "Alert Box".to_owned(),
+        frames: vec![ReceivedContent {
+            arrived_ms: 1800,
+            content: json!({ "headline": { "type": "string", "value": "alice raised an alert" } }),
+            duration_ms: Some(5000),
+        }],
+        mismatched: vec!["headline".to_owned()],
+        tagged: vec!["/headline".to_owned()],
+    })
+}
+
+fn overlay_bug(cause: FailureCause, evidence: Evidence) -> (Scenario, ScenarioOutcome, BugEntry) {
+    let scenario = overlay_scenario();
+    let mut steps = all_passed(&scenario);
+    let failed = &mut steps[3];
+    failed.status = StepStatus::Failed;
+    failed.expectations[0].verdict = Verdict::Failed(cause);
+    failed.expectations[0].deadline_ms = Some(5000);
+    failed.expectations[0].evidence = evidence;
+    let outcome = outcome(&scenario, steps);
+    let bug = only_bug(&scenario, &outcome);
+    (scenario, outcome, bug)
+}
+
+#[test]
+fn a_tagged_content_value_is_filed_as_the_field_bug_with_the_raw_frame_as_evidence() {
+    let (_, _, bug) = overlay_bug(
+        FailureCause::TaggedOverlayValue {
+            pointers: vec!["/headline".to_owned()],
+        },
+        tagged_evidence(),
+    );
+
+    assert_eq!(
+        bug.title,
+        "Overlay `Alert Box` received tagged values after chat message \"!alert\""
+    );
+    assert_eq!(
+        bug.story,
+        "As a Twitch viewer `alice` I send \"!alert\" in chat"
+    );
+    assert_eq!(
+        bug.expected,
+        "the page for overlay `Alert Box` receives a content frame carrying `headline` = \"alice raised an alert\" as plain values within 5s"
+    );
+    assert_eq!(
+        bug.actual,
+        "the content frame carries tagged Variant JSON at `/headline`; a page renders that as `[object Object]`"
+    );
+    assert_eq!(
+        bug.details,
+        [
+            "closest frame differs at `headline`",
+            "at +1800 ms the page received `{\"headline\":{\"type\":\"string\",\"value\":\"alice raised an alert\"}}`",
+        ],
+        "a reader must see the frame the page had to render, verbatim"
+    );
+}
+
+#[test]
+fn a_page_that_received_nothing_is_told_apart_from_one_that_received_the_wrong_thing() {
+    let (_, _, silent) = overlay_bug(
+        FailureCause::NoOverlayContent { observed: 0 },
+        Evidence::Overlay(OverlayEvidence {
+            overlay: "Alert Box".to_owned(),
+            ..OverlayEvidence::default()
+        }),
+    );
+    let (_, _, wrong) = overlay_bug(
+        FailureCause::NoOverlayContent { observed: 2 },
+        tagged_evidence(),
+    );
+
+    assert_eq!(
+        silent.actual,
+        "the page for `Alert Box` received no content frame within 5s"
+    );
+    assert_eq!(
+        wrong.actual,
+        "the page for `Alert Box` received 2 content frames within 5s, none carrying those values"
+    );
+}
+
+#[test]
+fn content_expected_on_a_page_the_run_never_opened_is_reported_as_the_harness_gap_it_is() {
+    let (_, _, bug) = overlay_bug(
+        FailureCause::NoOverlayPage {
+            overlay: "Alert Box".to_owned(),
+        },
+        Evidence::None,
+    );
+
+    assert_eq!(
+        bug.actual,
+        "no page is open for overlay `Alert Box`, so forge had nowhere to deliver content"
+    );
+}
+
+#[test]
+fn the_markdown_report_carries_every_content_frame_the_page_received() {
+    let (scenario, outcome, _) = overlay_bug(
+        FailureCause::TaggedOverlayValue {
+            pointers: vec!["/headline".to_owned()],
+        },
+        tagged_evidence(),
+    );
+    let report = RunReport::new(context(), &scenario, &outcome).unwrap();
+
+    let markdown = report.to_markdown();
+
+    assert!(
+        markdown.contains("content frames the page for `Alert Box` received: 1"),
+        "{markdown}"
+    );
+    assert!(
+        markdown.contains("tagged Variant JSON at: `/headline`"),
+        "{markdown}"
+    );
 }

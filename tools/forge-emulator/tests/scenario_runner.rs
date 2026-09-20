@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint};
 use forge_emulator::fixture::{SeedReport, SeededCommand, SeededServer, TwitchAccount};
+use forge_emulator::overlay::OverlayPages;
 use forge_emulator::run::{
     ActionDetail, ActionIndex, ActionReport, FailureCause, Journal, RunClock, Session, StepOutcome,
     StepStatus, Verdict, execute_steps,
@@ -265,6 +266,7 @@ struct Harness {
     client: ControlClient,
     journal: Journal,
     actions: ActionIndex,
+    pages: OverlayPages,
     ping: ActionId,
     logs: TempDir,
 }
@@ -290,26 +292,30 @@ impl Harness {
             .unwrap();
         let (journal, _feeder) = Journal::follow(events);
         let ping = ActionId::new();
-        let actions = ActionIndex::from_seed(&SeedReport {
+        let seed = SeedReport {
             data_dir: PathBuf::from("/nonexistent-fixture/data"),
             server: SeededServer {
                 port: 1,
                 bearer_token: "fixture-bearer".to_owned(),
             },
             twitch: None,
+            overlays: Vec::new(),
             chat_commands: vec![SeededCommand {
                 phrase: "!ping".to_owned(),
                 action_name: "Ping".to_owned(),
                 action_id: ping,
                 trigger_instance_id: TriggerInstanceId::new(),
             }],
-        });
+        };
+        let actions = ActionIndex::from_seed(&seed);
+        let pages = OverlayPages::for_seed(&seed).unwrap();
         Self {
             forge,
             fake,
             client,
             journal,
             actions,
+            pages,
             ping,
             logs: tempfile::tempdir().unwrap(),
         }
@@ -321,6 +327,7 @@ impl Harness {
             journal: &self.journal,
             twitch: self.fake.as_ref(),
             actions: &self.actions,
+            pages: &self.pages,
             log_dir: self.logs.path().to_owned(),
             clock: RunClock::starting_now(),
             ready_at: Instant::now(),

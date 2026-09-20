@@ -29,6 +29,11 @@ pub(crate) fn story(action: &StepAction) -> String {
             "As Twitch I ask forge to reconnect its EventSub session and wait up to {} for the successor",
             span_ms(*within_ms)
         ),
+        StepAction::OverlayPage { overlay, within_ms } => format!(
+            "As a browser source I open the page for overlay {} and wait up to {} for forge to accept its credential",
+            code(overlay),
+            span_ms(*within_ms)
+        ),
         StepAction::Pause { ms, reason } => {
             format!("As the streamer I wait {} ({reason})", span_ms(*ms))
         }
@@ -64,6 +69,9 @@ pub(crate) fn step_short(action: &StepAction) -> String {
         ),
         StepAction::Crowd(crowd) => format!("a crowd of {} viewers", crowd.viewers),
         StepAction::SessionReconnect { .. } => "a Twitch reconnect request".to_owned(),
+        StepAction::OverlayPage { overlay, .. } => {
+            format!("opening the page for {}", code(overlay))
+        }
         StepAction::Pause { .. } => "a pause".to_owned(),
         StepAction::RunAction { action, .. } => format!("running action {}", code(action)),
         StepAction::SetGlobal { name, .. } => format!("setting global {}", code(name)),
@@ -77,6 +85,9 @@ pub(crate) fn action_title(action: &StepAction) -> String {
         StepAction::Crowd(_) => "Crowd not delivered to forge".to_owned(),
         StepAction::SessionReconnect { .. } => {
             "forge did not reconnect its EventSub session".to_owned()
+        }
+        StepAction::OverlayPage { overlay, .. } => {
+            format!("Overlay page {} could not be opened", code(overlay))
         }
         StepAction::RunAction { action, .. } => format!("Action {} could not be run", code(action)),
         StepAction::SetGlobal { name, .. } => format!("Global {} could not be set", code(name)),
@@ -105,6 +116,11 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
         ),
         StepAction::SessionReconnect { within_ms } => format!(
             "forge opens a successor EventSub session within {}",
+            span_ms(*within_ms)
+        ),
+        StepAction::OverlayPage { overlay, within_ms } => format!(
+            "forge serves the page for {} and accepts the credential its config.json carries, within {}",
+            code(overlay),
             span_ms(*within_ms)
         ),
         StepAction::Pause { .. } => "the pause completes".to_owned(),

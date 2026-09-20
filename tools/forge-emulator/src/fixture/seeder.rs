@@ -1,20 +1,23 @@
 use std::time::{Duration, SystemTime};
 
+use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::paths;
 use forge_platform_twitch::credentials::{StoredCredential, store_credential};
 use forge_server::ServerSettings;
 use forge_storage::{CredentialId, DataProvider, SettingsRepo, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ExecutionMode, OAuthToken, PermissionRung, PlatformScope, TriggerConfig,
-    TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ExecutionMode, OAuthToken, PermissionRung, PlatformScope, SubActionStep,
+    TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use rand::Rng as _;
 
 use super::data_dir::{DATA_DIR_VARIABLE, ForgeDataDir, KEY_FILE_VARIABLE};
 use super::port::free_loopback_port;
-use super::report::{SeedReport, SeededCommand, SeededServer, SeededTwitch};
-use super::spec::{ChatCommand, Fixture, TwitchAccount};
+use super::report::{SeedReport, SeededCommand, SeededOverlay, SeededServer, SeededTwitch};
+use super::spec::{
+    ChatCommand, Fixture, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, OverlayFixture, TwitchAccount,
+};
 use crate::EmulatorError;
 
 const DATABASE_FILE: &str = "forge.db";
@@ -42,14 +45,25 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
         .map_err(|e| storage_error(e.into()))?;
     let written = write_fixture(&backend, fixture, port, &bearer_token).await;
     backend.shutdown().await;
-    let (twitch, chat_commands) = written?;
+    let Written {
+        twitch,
+        overlays,
+        chat_commands,
+    } = written?;
 
     Ok(SeedReport {
         data_dir: data_dir.path().to_owned(),
         server: SeededServer { port, bearer_token },
         twitch,
+        overlays,
         chat_commands,
     })
+}
+
+struct Written {
+    twitch: Option<SeededTwitch>,
+    overlays: Vec<SeededOverlay>,
+    chat_commands: Vec<SeededCommand>,
 }
 
 async fn write_fixture(
@@ -57,7 +71,7 @@ async fn write_fixture(
     fixture: &Fixture,
     port: u16,
     bearer_token: &str,
-) -> Result<(Option<SeededTwitch>, Vec<SeededCommand>), EmulatorError> {
+) -> Result<Written, EmulatorError> {
     let settings: &dyn SettingsRepo = provider;
     ServerSettings::save_enabled(settings, true)
         .await
@@ -77,11 +91,92 @@ async fn write_fixture(
         Some(account) => Some(seed_twitch_account(provider, account).await?),
         None => None,
     };
+    let kinds = builtin_overlay_kinds()?;
+    let mut overlays = Vec::with_capacity(fixture.overlays.len());
+    for overlay in &fixture.overlays {
+        overlays.push(seed_overlay(provider, &kinds, overlay).await?);
+    }
     let mut chat_commands = Vec::with_capacity(fixture.chat_commands.len());
     for command in &fixture.chat_commands {
-        chat_commands.push(seed_chat_command(provider, command).await?);
+        chat_commands.push(seed_chat_command(provider, command, &overlays).await?);
     }
-    Ok((twitch, chat_commands))
+    Ok(Written {
+        twitch,
+        overlays,
+        chat_commands,
+    })
+}
+
+fn builtin_overlay_kinds() -> Result<OverlayKindRegistry, EmulatorError> {
+    let mut kinds = OverlayKindRegistry::new();
+    register_builtin_kinds(&mut kinds).map_err(|e| EmulatorError::InvalidFixture {
+        reason: format!("overlay types could not be registered: {e}"),
+    })?;
+    Ok(kinds)
+}
+
+/// The repository mints the identity slug and the page credential; the fixture only supplies the
+/// name, the type and the stored config.
+async fn seed_overlay(
+    provider: &dyn DataProvider,
+    kinds: &OverlayKindRegistry,
+    overlay: &OverlayFixture,
+) -> Result<SeededOverlay, EmulatorError> {
+    let descriptor = kinds
+        .get(&overlay.kind_id)
+        .ok_or_else(|| EmulatorError::InvalidFixture {
+            reason: format!(
+                "overlay `{}` needs overlay type `{}`, which this build does not carry",
+                overlay.display_name, overlay.kind_id
+            ),
+        })?;
+    let repo = provider.overlay_repo();
+    let mut definition = repo
+        .create(
+            &overlay.display_name,
+            &overlay.kind_id,
+            descriptor.config_schema_version(),
+        )
+        .await
+        .map_err(storage_error)?;
+    definition.config = overlay.config.clone();
+    repo.save(&definition).await.map_err(storage_error)?;
+
+    Ok(SeededOverlay {
+        id: definition.id.as_str().to_owned(),
+        display_name: overlay.display_name.clone(),
+        kind_id: overlay.kind_id.clone(),
+        credential: definition.credential.as_str().to_owned(),
+    })
+}
+
+/// Rewrites every `overlay.send` target from the fixture's display name to the identity the
+/// repository minted, which is the only name forge answers to.
+fn addressed_steps(steps: &[SubActionStep], overlays: &[SeededOverlay]) -> Vec<SubActionStep> {
+    steps
+        .iter()
+        .cloned()
+        .map(|mut step| {
+            if step.kind_id != OVERLAY_SEND_KIND {
+                return step;
+            }
+            let identity = step
+                .config
+                .get(OVERLAY_TARGET_KEY)
+                .and_then(Variant::as_str)
+                .and_then(|target| {
+                    overlays
+                        .iter()
+                        .find(|overlay| overlay.display_name == target)
+                })
+                .map(|overlay| overlay.id.clone());
+            if let Some(identity) = identity {
+                step.config
+                    .insert(OVERLAY_TARGET_KEY.to_owned(), Variant::String(identity));
+            }
+            step
+        })
+        .collect()
 }
 
 async fn seed_twitch_account(
@@ -109,6 +204,7 @@ async fn seed_twitch_account(
 async fn seed_chat_command(
     provider: &dyn DataProvider,
     command: &ChatCommand,
+    overlays: &[SeededOverlay],
 ) -> Result<SeededCommand, EmulatorError> {
     let queue = provider
         .queue_repo()
@@ -128,7 +224,7 @@ async fn seed_chat_command(
         bypass_pause: false,
         execution_mode: ExecutionMode::default(),
         description: None,
-        sub_actions: command.steps.clone(),
+        sub_actions: addressed_steps(&command.steps, overlays),
     };
     provider
         .action_repo()

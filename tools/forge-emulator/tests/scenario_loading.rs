@@ -40,7 +40,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p", "fixture": {},
 "steps": [{"do": {"wait_for": {}}}]}"#,
             (2, 28),
-            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `session_reconnect`, `pause`, `run_action`, `set_global`",
+            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`",
         ),
         (
             "unknown field inside a step",
@@ -56,7 +56,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
 "steps": [{"do": {"forge_ready": {"within_ms": 1}},
   "expect": [{"event_seen": {}}]}]}"#,
             (3, 26),
-            "unknown variant `event_seen`, expected one of `event`, `event_absent`, `caused_by`, `twitch_subscription`, `twitch_no_unexpected_requests`, `twitch_request_count`, `log_line`",
+            "unknown variant `event_seen`, expected one of `event`, `event_absent`, `caused_by`, `twitch_subscription`, `twitch_no_unexpected_requests`, `twitch_request_count`, `overlay_content`, `log_line`",
         ),
         (
             "unknown top-level field",
@@ -70,7 +70,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p",
 "fixture": {"twich": {}}, "steps": []}"#,
             (2, 19),
-            "unknown field `twich`, expected `twitch` or `chat_commands`",
+            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`",
         ),
         (
             "missing deadline",

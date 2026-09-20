@@ -31,14 +31,19 @@ impl Redactions {
         Self { secrets }
     }
 
-    /// The fake Twitch access token and, once seeded, the server bearer token.
+    /// The fake Twitch access token and, once seeded, the server bearer token and every overlay
+    /// page credential.
     pub fn for_run(fixture: &Fixture, seed: Option<&SeedReport>) -> Self {
         let access_token = fixture
             .twitch
             .as_ref()
             .map(|account| account.access_token.clone());
         let bearer = seed.map(|seed| seed.server.bearer_token.clone());
-        Self::new(access_token.into_iter().chain(bearer))
+        let overlays = seed
+            .into_iter()
+            .flat_map(|seed| seed.overlays.iter())
+            .map(|overlay| overlay.credential.clone());
+        Self::new(access_token.into_iter().chain(bearer).chain(overlays))
     }
 
     pub fn scrub(&self, text: &str) -> String {

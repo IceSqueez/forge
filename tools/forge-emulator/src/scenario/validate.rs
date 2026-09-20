@@ -1,11 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use forge_types::Variant;
 
 use super::crowd::{Crowd, CrowdLine, template_problem};
 use super::expectation::{
-    AbsentEvent, Causation, Expectation, LogLine, ObservedEvent, RequestCount, TwitchSubscription,
+    AbsentEvent, Causation, Expectation, LogLine, ObservedEvent, OverlayContent, RequestCount,
+    TwitchSubscription,
 };
 use super::matcher::{PayloadMatchers, ValueMatcher};
 use super::model::Scenario;
@@ -64,6 +65,7 @@ struct Validator<'a> {
     session_subscribed: bool,
     command_matches_sent: u64,
     named_events: HashMap<&'a str, NamedEvent>,
+    pages_opened: HashSet<&'a str>,
 }
 
 impl<'a> Validator<'a> {
@@ -76,6 +78,7 @@ impl<'a> Validator<'a> {
             session_subscribed: false,
             command_matches_sent: 0,
             named_events: HashMap::new(),
+            pages_opened: HashSet::new(),
         }
     }
 
@@ -192,7 +195,7 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn check_action(&mut self, index: usize, location: &str, action: &StepAction) {
+    fn check_action(&mut self, index: usize, location: &str, action: &'a StepAction) {
         match action {
             StepAction::ForgeReady { within_ms } => {
                 if index > 0 {
@@ -217,6 +220,11 @@ impl<'a> Validator<'a> {
                 }
                 self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
             }
+            StepAction::OverlayPage { overlay, within_ms } => {
+                self.require_seeded_overlay(&format!("{location}.overlay"), overlay);
+                self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
+                self.pages_opened.insert(overlay.as_str());
+            }
             StepAction::Pause { ms, reason } => {
                 self.in_range(format!("{location}.ms"), *ms, 1, MAX_PAUSE_MS);
                 self.not_blank(format!("{location}.reason"), reason);
@@ -238,6 +246,15 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
+        }
+    }
+
+    fn require_seeded_overlay(&mut self, location: &str, overlay: &str) {
+        if overlay.trim().is_empty() {
+            self.report(location, "must not be blank");
+        } else if !self.scenario.fixture.declares_overlay(overlay) {
+            let message = format!("names overlay `{overlay}`, which the fixture does not declare");
+            self.report(location, message);
         }
     }
 
@@ -428,6 +445,7 @@ impl<'a> Validator<'a> {
             }
             Expectation::TwitchNoUnexpectedRequests {} => {}
             Expectation::TwitchRequestCount(count) => self.check_request_count(location, count),
+            Expectation::OverlayContent(content) => self.check_overlay_content(location, content),
             Expectation::LogLine(line) => self.check_log_line(location, line),
         }
     }
@@ -600,6 +618,34 @@ impl<'a> Validator<'a> {
                 self.report(location, format!("min {min} exceeds max {max}"));
             }
             _ => {}
+        }
+    }
+
+    fn check_overlay_content(&mut self, location: &str, content: &OverlayContent) {
+        self.require_seeded_overlay(&format!("{location}.overlay"), &content.overlay);
+        if !self.pages_opened.contains(content.overlay.as_str()) {
+            let message = format!(
+                "expects content on `{}` before any overlay_page step opened it, so nothing can be delivered there",
+                content.overlay
+            );
+            self.report(location, message);
+        }
+        self.in_range(
+            format!("{location}.within_ms"),
+            content.within_ms,
+            1,
+            MAX_WAIT_MS,
+        );
+        if content.values.0.is_empty() {
+            self.report(
+                format!("{location}.values"),
+                "needs at least one content key; an empty frame proves nothing",
+            );
+        }
+        for key in content.values.0.keys() {
+            if key.trim().is_empty() {
+                self.report(format!("{location}.values"), "has a blank content key");
+            }
         }
     }
 

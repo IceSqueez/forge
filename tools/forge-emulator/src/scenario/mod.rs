@@ -8,8 +8,8 @@ mod validate;
 
 pub use crowd::{Crowd, CrowdLine, CrowdMessage};
 pub use expectation::{
-    AbsentEvent, Causation, Expectation, LogLine, ObservedCount, ObservedEvent, RequestCount,
-    TwitchSubscription,
+    AbsentEvent, Causation, Expectation, LogLine, ObservedCount, ObservedEvent, OverlayContent,
+    RequestCount, TwitchSubscription,
 };
 pub use load::{load_scenario, parse_scenario};
 pub use matcher::{EventPattern, PayloadMatchers, UniqueMap, ValueMatcher};

@@ -36,6 +36,42 @@ Other subcommands: `scenario check <file>` validates a scenario without launchin
 `launch` boots a seeded forge and streams its events as JSON, `watch` attaches to an already
 running forge, and `seed` fills an empty data directory from a fixture on stdin.
 
+## Overlays
+
+A fixture can declare overlays beside its chat commands:
+
+```json
+"overlays": [
+  { "display_name": "Alert Box", "kind_id": "overlay.alert",
+    "config": { "headline": { "type": "string", "value": "stored headline" } } }
+]
+```
+
+The seeder creates each one through forge's own overlay repository, which mints the identity
+slug and the page credential; the fixture never picks either. A scenario names an overlay by
+its `display_name` everywhere, and an `overlay.send` step whose `overlay_id` holds a declared
+display name is rewritten to the minted identity before it reaches storage. A display name no
+overlay declares, or an overlay type this build does not carry, fails the seed rather than
+producing a step that addresses nothing. Page credentials are scrubbed from both report files.
+
+Two pieces of scenario vocabulary follow:
+
+- the step `{ "overlay_page": { "overlay": "Alert Box", "within_ms": 30000 } }` opens a browser
+  source for that overlay: it fetches `/overlays/<identity>/config.json` over HTTP, opens
+  `ws://127.0.0.1:<port>/ws/v1/` with the matching `Origin`, and presents the credential the
+  document carries, exactly as `crates/forge-overlay/assets/shared/runtime-v1.js` does. The step
+  succeeds only once forge has accepted the credential.
+- the expectation `{ "overlay_content": { "overlay": "Alert Box", "values": { "headline":
+  "alice raised an alert" }, "within_ms": 5000 } }` holds when that page receives a content
+  frame carrying every named key as exactly that plain JSON string. Expected values are always
+  literals: the harness never re-derives what forge should have interpolated. A frame whose
+  content holds a `{"type": ..., "value": ...}` object at any depth fails the expectation even
+  when the named keys read correctly - that is the tagged `Variant` shape a browser renders as
+  `[object Object]` - and the report names the pointers and prints the raw frame.
+
+Content delivered while the credential is still being checked counts as the opening step's own,
+so a page opened after a Replace-kind delivery can be judged on the content forge replays to it.
+
 ## Where reports land
 
 Each run writes `report.md` and `report.json` into the run root, and prints the verdict line
@@ -91,11 +127,18 @@ An event expectation names the `kind` string exactly as forge publishes it; the 
 the harness subscribes only to the kinds a scenario names, so an unknown kind produces
 silence that reads like forge never emitted the event. Check the kind against the wiki
 before blaming forge for a missing event. A Twitch chat message, for instance, is
-`twitch.channel.chat.message`, not `chat.message`.
+`twitch.channel.chat.message`, not `chat.message`. Payload pointers deserve the same care:
+`action.start` carries `action_name`, `action.done` carries only the `action_id` it shares
+with its cause, so an outcome is pinned to an action through a `caused_by` and not through a
+name matcher on `action.done`.
 
-`scenarios/` holds the scenario set. Three of them describe behaviour forge gets right and
-are expected to pass. `reconnect-keeps-subscriptions.json` describes behaviour forge gets
-wrong and is expected to FAIL (exit 12) until the defect is fixed: Twitch attaches the old
-connection's subscriptions to the reconnect URL, but forge runs a second full subscription
-pass on the successor session and publishes a `request.fail` per topic. Its report is the
-evidence; do not soften the expectation to make it green.
+`scenarios/` holds the scenario set, and every one of them is expected to pass. Two of them
+cover the overlay chain end to end: `chat-command-raises-an-alert.json` runs a chat command
+whose step sends to an alert overlay and judges the frame a connected page receives, and
+`overlay-page-replays-retained-content.json` opens a page only after a goal overlay was
+already updated, so the retained content is what it has to render. Both are written so that
+content arriving as tagged `Variant` JSON fails them.
+
+`reconnect-keeps-subscriptions.json` was the first defect this harness found - forge ran a
+second full subscription pass on a successor EventSub session - and was kept red as evidence
+until that was fixed. It has passed since; if it ever fails again, the regression is forge's.

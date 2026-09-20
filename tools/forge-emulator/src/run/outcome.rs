@@ -104,6 +104,10 @@ pub enum ActionDetail {
         to_session: String,
     },
     Paused,
+    OverlayPageOpened {
+        overlay: String,
+        identity: String,
+    },
     ActionRun {
         action_id: ActionId,
         /// forge publishes `action.start` with this id as its cause.
@@ -168,6 +172,18 @@ pub enum FailureCause {
         max: Option<u32>,
     },
     NoFakeTwitch,
+    /// No step opened a page for the overlay the expectation names.
+    NoOverlayPage {
+        overlay: String,
+    },
+    NoOverlayContent {
+        observed: usize,
+    },
+    /// Content reached the page as tagged `Variant` JSON, which a browser renders as
+    /// `[object Object]`; the pointers name where.
+    TaggedOverlayValue {
+        pointers: Vec<String>,
+    },
     NoLogLine,
     LogUnreadable {
         reason: String,
@@ -230,6 +246,18 @@ impl fmt::Display for FailureCause {
                 Ok(())
             }
             Self::NoFakeTwitch => write!(f, "the run has no fake Twitch"),
+            Self::NoOverlayPage { overlay } => {
+                write!(f, "no page is open for overlay `{overlay}`")
+            }
+            Self::NoOverlayContent { observed } => write!(
+                f,
+                "no content frame carrying those values arrived in time, observed {observed}"
+            ),
+            Self::TaggedOverlayValue { pointers } => write!(
+                f,
+                "the content frame carries tagged Variant JSON at {}, which renders as [object Object]",
+                pointers.join(", ")
+            ),
             Self::NoLogLine => write!(f, "no log line with those fields appeared in time"),
             Self::LogUnreadable { reason } => write!(f, "forge's log could not be read: {reason}"),
         }
@@ -243,7 +271,28 @@ pub enum Evidence {
     Events(EventEvidence),
     Causation(CausationEvidence),
     Ledger(LedgerExcerpt),
+    Overlay(OverlayEvidence),
     Log(LogEvidence),
+}
+
+/// One content frame exactly as it came off the wire, so a report shows what the page had to
+/// render rather than a re-serialization of it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReceivedContent {
+    pub arrived_ms: u64,
+    pub content: serde_json::Value,
+    pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OverlayEvidence {
+    pub overlay: String,
+    /// Content frames in the window; other frame shapes are not evidence for this claim.
+    pub frames: Vec<ReceivedContent>,
+    /// Keys of the closest frame whose value differs from the expected literal.
+    pub mismatched: Vec<String>,
+    /// Pointers into the closest frame's content that hold tagged Variant JSON.
+    pub tagged: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

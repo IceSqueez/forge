@@ -341,3 +341,130 @@ async fn seeder_process_refuses_to_write_outside_a_fresh_fixture_environment() {
         );
     }
 }
+
+fn overlay_send_step(target: &str, headline: &str) -> SubActionStep {
+    SubActionStep {
+        kind_id: "overlay.send".to_owned(),
+        config: BTreeMap::from([
+            ("overlay_id".to_owned(), Variant::String(target.to_owned())),
+            ("headline".to_owned(), Variant::String(headline.to_owned())),
+        ]),
+        enabled: true,
+        continue_on_error: false,
+        condition: None,
+        label: None,
+    }
+}
+
+fn alert_fixture() -> Fixture {
+    Fixture {
+        overlays: vec![forge_emulator::fixture::OverlayFixture {
+            display_name: "Alert Box".to_owned(),
+            kind_id: "overlay.alert".to_owned(),
+            config: BTreeMap::from([(
+                "headline".to_owned(),
+                Variant::String("stored headline".to_owned()),
+            )]),
+        }],
+        chat_commands: vec![ChatCommand {
+            phrase: "!alert".to_owned(),
+            action_name: "Raise Alert".to_owned(),
+            steps: vec![overlay_send_step(
+                "Alert Box",
+                "%user_login% raised an alert",
+            )],
+        }],
+        ..Fixture::default()
+    }
+}
+
+#[tokio::test]
+async fn a_seeded_overlay_is_enabled_and_stored_with_the_fixture_config_under_its_minted_identity()
+{
+    let (dir, report) = seed_fresh(&alert_fixture()).await;
+    let seeded = &report.overlays[0];
+    let backend = reopen(dir.path()).await;
+    let stored = backend
+        .overlay_repo()
+        .get(&forge_storage::OverlayId::new(&seeded.id))
+        .await
+        .unwrap()
+        .expect("the overlay row is stored");
+    backend.shutdown().await;
+
+    assert_eq!(seeded.display_name, "Alert Box");
+    assert_eq!(stored.kind_id, "overlay.alert");
+    assert!(
+        stored.enabled,
+        "a disabled overlay refuses its own page credential, so nothing could connect"
+    );
+    assert_eq!(
+        stored.config.get("headline"),
+        Some(&Variant::String("stored headline".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn the_page_credential_the_report_names_is_the_one_the_overlay_row_answers_to() {
+    let (dir, report) = seed_fresh(&alert_fixture()).await;
+    let seeded = &report.overlays[0];
+    let backend = reopen(dir.path()).await;
+    let found = backend
+        .overlay_repo()
+        .get_by_credential(&forge_storage::OverlayCredential::new(&seeded.credential))
+        .await
+        .unwrap()
+        .expect("forge resolves a page by the credential the report carries");
+    backend.shutdown().await;
+
+    assert_eq!(found.id.as_str(), seeded.id);
+}
+
+#[tokio::test]
+async fn an_overlay_send_step_reaches_storage_addressed_by_identity_rather_than_display_name() {
+    let (dir, report) = seed_fresh(&alert_fixture()).await;
+    let seeded = report.overlays[0].clone();
+    let backend = reopen(dir.path()).await;
+    let action = backend
+        .action_repo()
+        .get(report.chat_commands[0].action_id)
+        .await
+        .unwrap()
+        .expect("action is stored");
+    backend.shutdown().await;
+
+    assert_eq!(
+        action.sub_actions[0].config.get("overlay_id"),
+        Some(&Variant::String(seeded.id.clone())),
+        "forge answers to the minted slug; a display name would leave the step addressing nothing"
+    );
+    assert_ne!(
+        seeded.id, seeded.display_name,
+        "this assertion is only meaningful while the two differ"
+    );
+    assert_eq!(
+        action.sub_actions[0].config.get("headline"),
+        Some(&Variant::String("%user_login% raised an alert".to_owned())),
+        "rewriting the target must leave every other config value untouched"
+    );
+}
+
+#[tokio::test]
+async fn an_overlay_type_this_build_does_not_carry_is_refused_rather_than_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = Fixture {
+        overlays: vec![forge_emulator::fixture::OverlayFixture {
+            display_name: "Alert Box".to_owned(),
+            kind_id: "vendor.unshipped".to_owned(),
+            config: BTreeMap::new(),
+        }],
+        ..Fixture::default()
+    };
+
+    let refusal = seed(Path::new(EMULATOR), dir.path(), &fixture).await;
+
+    assert!(
+        matches!(&refusal, Err(EmulatorError::SeederProcess { reason }) if reason.contains("vendor.unshipped")),
+        "got {refusal:?}"
+    );
+}

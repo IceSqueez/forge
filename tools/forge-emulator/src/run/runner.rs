@@ -18,6 +18,7 @@ use crate::fixture::Redactions;
 use crate::launch::{
     ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
+use crate::overlay::OverlayPages;
 use crate::scenario::{Expectation, Scenario, StepAction};
 use crate::twitch::FakeTwitch;
 
@@ -117,12 +118,22 @@ pub async fn run_scenario(
     let version = client.forge_version().await.ok();
     let (journal, feeder) = Journal::follow(events);
     let actions = ActionIndex::from_seed(&seed);
+    let pages = match OverlayPages::for_seed(&seed) {
+        Ok(pages) => pages,
+        Err(e) => {
+            drop(client);
+            let _ = process.shutdown(options.shutdown_grace).await;
+            shut_down_fake(fake).await;
+            return Err(e);
+        }
+    };
     let log_dir = process.log_dir();
     let session = Session {
         client: &client,
         journal: &journal,
         twitch: fake.as_ref(),
         actions: &actions,
+        pages: &pages,
         log_dir: log_dir.clone(),
         clock,
         ready_at: Instant::now(),
@@ -133,6 +144,8 @@ pub async fn run_scenario(
     };
     let steps = execute_steps(scenario, &session, &mut stop).await;
     drop(session);
+    // Why: the pages hold sockets on forge's server; they close before forge is asked to stop.
+    pages.close();
 
     let exited_during_run = !process.is_running();
     let pid = process.pid();

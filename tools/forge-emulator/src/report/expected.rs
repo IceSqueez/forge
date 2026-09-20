@@ -70,6 +70,20 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
             count_range(count.min, count.max),
             code(&request_label(count))
         ),
+        Expectation::OverlayContent(content) => {
+            let values: Vec<String> = content
+                .values
+                .0
+                .iter()
+                .map(|(key, value)| format!("{} = {}", code(key), quoted(value)))
+                .collect();
+            format!(
+                "the page for overlay {} receives a content frame carrying {} as plain values within {}",
+                code(&content.overlay),
+                values.join(", "),
+                span_ms(content.within_ms)
+            )
+        }
         Expectation::LogLine(line) => {
             let fields: Vec<String> = line
                 .fields

@@ -32,6 +32,12 @@ pub enum StepAction {
     SessionReconnect {
         within_ms: u64,
     },
+    /// Opens a browser source for the named fixture overlay and waits for forge to accept the
+    /// page credential its `config.json` carries.
+    OverlayPage {
+        overlay: String,
+        within_ms: u64,
+    },
     /// A fixed wait; `reason` is mandatory because an event-driven wait is almost always better.
     Pause {
         ms: u64,
@@ -89,6 +95,7 @@ impl StepAction {
             Self::Chat(_) => "chat",
             Self::Crowd(_) => "crowd",
             Self::SessionReconnect { .. } => "session_reconnect",
+            Self::OverlayPage { .. } => "overlay_page",
             Self::Pause { .. } => "pause",
             Self::RunAction { .. } => "run_action",
             Self::SetGlobal { .. } => "set_global",

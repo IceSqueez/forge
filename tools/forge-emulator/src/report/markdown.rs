@@ -254,6 +254,36 @@ fn expectation_evidence(evidence: &Evidence) -> Vec<String> {
             lines
         }
         Evidence::Ledger(ledger) => ledger_lines(ledger),
+        Evidence::Overlay(overlay) => {
+            let mut lines = vec![format!(
+                "content frames the page for {} received: {}",
+                code(&overlay.overlay),
+                overlay.frames.len()
+            )];
+            listed(&mut lines, "content frame", &overlay.frames, |frame| {
+                let duration = frame
+                    .duration_ms
+                    .map(|ms| format!(" for {ms} ms"))
+                    .unwrap_or_default();
+                format!(
+                    "+{} ms{duration} {}",
+                    frame.arrived_ms,
+                    code(&compact(&frame.content, PAYLOAD_CHARS))
+                )
+            });
+            if !overlay.tagged.is_empty() {
+                lines.push(format!(
+                    "tagged Variant JSON at: {}",
+                    overlay
+                        .tagged
+                        .iter()
+                        .map(|pointer| code(pointer))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            lines
+        }
         Evidence::Log(log) => {
             let mut lines = Vec::new();
             if let Some(record) = &log.matched {

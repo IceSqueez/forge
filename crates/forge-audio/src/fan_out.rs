@@ -167,7 +167,7 @@ fn route_failure(reasons: Vec<String>) -> AudioError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::pin::pin;
     use std::sync::Mutex;
@@ -469,6 +469,73 @@ mod tests {
                 );
             } else {
                 assert_every_reason_survives(case, &outcome.unwrap_err(), &expected);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_start_refusal_is_still_named_when_the_route_that_started_fails_to_settle() {
+        for (case, plan, expected) in [
+            (
+                "the route that refused to start comes first",
+                vec![
+                    (Some(START_REFUSAL_A), None),
+                    (None, Some(VERDICT_FAILURE_B)),
+                ],
+                Some(vec![START_REFUSAL_A, VERDICT_FAILURE_B]),
+            ),
+            (
+                "the route that refused to start comes last",
+                vec![
+                    (None, Some(VERDICT_FAILURE_A)),
+                    (Some(START_REFUSAL_B), None),
+                ],
+                Some(vec![VERDICT_FAILURE_A, START_REFUSAL_B]),
+            ),
+            (
+                "the route that started plays to the end",
+                vec![(Some(START_REFUSAL_A), None), (None, None)],
+                None,
+            ),
+        ] {
+            let mut probes: Vec<Probe> = plan.iter().map(|(refusal, _)| route(*refusal)).collect();
+            let playback = fan(&probes)
+                .play_controlled(clip())
+                .await
+                .unwrap_or_else(|e| panic!("{case}: a surviving route must start, got {e:?}"));
+            let playback = pin!(playback);
+
+            for (probe, (refusal, verdict)) in probes.iter_mut().zip(&plan) {
+                if refusal.is_none() {
+                    assert!(
+                        probe.finish(verdict.map_or(Ok(()), |reason| Err(reason.to_owned()))),
+                        "{case}: a started route was dropped"
+                    );
+                }
+            }
+
+            let outcome = playback.await;
+            match expected {
+                None => assert!(
+                    outcome.is_ok(),
+                    "{case}: a route that played must finish the utterance, got {outcome:?}"
+                ),
+                Some(reasons) => {
+                    let err = outcome.unwrap_err();
+                    assert!(
+                        matches!(&err, AudioError::AllRoutesFailed(_)),
+                        "{case}: every route failed yet the fan-out reported {err:?}"
+                    );
+                    assert_eq!(
+                        reported_reasons(&err),
+                        reasons
+                            .iter()
+                            .map(|reason| AudioError::Host((*reason).to_owned()).to_string())
+                            .collect::<Vec<_>>()
+                            .join(ROUTE_REASON_SEPARATOR),
+                        "{case}: every reason must survive, in route order"
+                    );
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -7,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_overlay::{
     CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry, RESERVED_DIRECTORY,
-    STYLE_FILE, register_builtin_kinds, sample_content,
+    STYLE_FILE, register_builtin_kinds,
 };
 use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
@@ -33,6 +34,16 @@ const LABEL_KEY: &str = "label";
 const VALUE_KEY: &str = "value";
 const TARGET_KEY: &str = "target";
 const ACCENT_KEY: &str = "accent";
+const HEADLINE_KEY: &str = "headline";
+const SUBLINE_KEY: &str = "subline";
+
+const TAG_KEY: &str = "type";
+const TAGGED_VALUE_KEY: &str = "value";
+
+const SAMPLE_HEADLINE: &str = "Thanks for the raid";
+const SAMPLE_SUBLINE: &str = "200 viewers arrived";
+const SAMPLE_UNIX_SECONDS: i64 = 1_700_000_000;
+const SAMPLE_RFC3339: &str = "2023-11-14T22:13:20Z";
 
 #[derive(Debug, Clone, PartialEq)]
 struct ContentFrame {
@@ -87,13 +98,25 @@ impl OverlayFrameSink for RecordingSink {
     }
 }
 
-fn content_json(content: &OverlayConfig) -> serde_json::Value {
-    serde_json::Value::Object(
-        content
-            .iter()
-            .map(|(key, value)| (key.clone(), value.to_json()))
-            .collect(),
-    )
+fn tagged_variant_nodes(value: &serde_json::Value) -> Vec<serde_json::Value> {
+    let mut found = Vec::new();
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.len() == 2 && map.contains_key(TAG_KEY) && map.contains_key(TAGGED_VALUE_KEY) {
+                found.push(value.clone());
+            }
+            for nested in map.values() {
+                found.extend(tagged_variant_nodes(nested));
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for nested in items {
+                found.extend(tagged_variant_nodes(nested));
+            }
+        }
+        _ => {}
+    }
+    found
 }
 
 fn definition(id: &str) -> OverlayDefinition {
@@ -314,7 +337,11 @@ async fn test_fire_records_its_origin_without_broadcasting_anything() {
 
 #[tokio::test]
 async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
-    let stored = definition("sub-alert");
+    let mut stored = definition("sub-alert");
+    stored.config = text_config(&[
+        (HEADLINE_KEY, SAMPLE_HEADLINE),
+        (SUBLINE_KEY, SAMPLE_SUBLINE),
+    ]);
     let harness = harness(vec![stored.clone()], true);
 
     let fired = harness.service.test_fire(&stored.id).await.expect("fire");
@@ -327,7 +354,18 @@ async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
     );
     assert_eq!(
         frames[0].content,
-        content_json(&fired.content),
+        serde_json::json!({
+            HEADLINE_KEY: SAMPLE_HEADLINE,
+            SUBLINE_KEY: SAMPLE_SUBLINE,
+        }),
+        "the page received something other than the previewed content as plain values"
+    );
+    assert_eq!(
+        fired.content,
+        text_config(&[
+            (HEADLINE_KEY, SAMPLE_HEADLINE),
+            (SUBLINE_KEY, SAMPLE_SUBLINE),
+        ]),
         "the caller previews content the page never received"
     );
     assert!(fired.delivered);
@@ -335,7 +373,11 @@ async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
 
 #[tokio::test]
 async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_landed_nowhere() {
-    let stored = definition("sub-alert");
+    let mut stored = definition("sub-alert");
+    stored.config = text_config(&[
+        (HEADLINE_KEY, SAMPLE_HEADLINE),
+        (SUBLINE_KEY, SAMPLE_SUBLINE),
+    ]);
     let harness = harness(vec![stored.clone()], false);
 
     let fired = harness.service.test_fire(&stored.id).await.expect("fire");
@@ -346,10 +388,10 @@ async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_l
     );
     assert_eq!(
         fired.content,
-        sample_content(
-            registry().get(&stored.kind_id).expect("a shipped kind"),
-            &stored.config
-        ),
+        text_config(&[
+            (HEADLINE_KEY, SAMPLE_HEADLINE),
+            (SUBLINE_KEY, SAMPLE_SUBLINE),
+        ]),
         "the caller still needs the very content a connected page would have received"
     );
 }
@@ -564,6 +606,59 @@ async fn delivered_content_is_kept_for_replay_only_by_a_kind_whose_delivery_is_t
 }
 
 #[tokio::test]
+async fn every_variant_kind_reaches_the_page_as_a_plain_json_value() {
+    let stored = definition_of_kind("goal-box", GOAL_KIND);
+    let harness = harness(vec![stored.clone()], true);
+    let moment = OffsetDateTime::from_unix_timestamp(SAMPLE_UNIX_SECONDS).unwrap();
+
+    for (held, expected) in [
+        (Variant::Int(42), serde_json::json!(42)),
+        (Variant::Float(0.5), serde_json::json!(0.5)),
+        (Variant::Bool(true), serde_json::json!(true)),
+        (
+            Variant::String("Sub goal".to_owned()),
+            serde_json::json!("Sub goal"),
+        ),
+        (Variant::Datetime(moment), serde_json::json!(SAMPLE_RFC3339)),
+        (
+            Variant::Array(vec![Variant::Int(1), Variant::Bool(false)]),
+            serde_json::json!([1, false]),
+        ),
+        (
+            Variant::Object(BTreeMap::from([
+                ("target".to_owned(), Variant::Int(100)),
+                ("live".to_owned(), Variant::Bool(true)),
+            ])),
+            serde_json::json!({ "target": 100, "live": true }),
+        ),
+    ] {
+        let content = OverlayConfig::from([(VALUE_KEY.to_owned(), held.clone())]);
+
+        harness
+            .service
+            .deliver_content(&stored.id, content, None)
+            .await
+            .expect("a bound overlay accepts content");
+
+        let frame = harness
+            .sink
+            .frames()
+            .pop()
+            .expect("the delivery reached the sink");
+        assert_eq!(
+            frame.content,
+            serde_json::json!({ VALUE_KEY: expected }),
+            "{held:?} reached the page in a shape its runtime renders as something else"
+        );
+        assert_eq!(
+            tagged_variant_nodes(&frame.content),
+            Vec::<serde_json::Value>::new(),
+            "{held:?} reached the page wrapped in its stored form, which renders as [object Object]"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
     let stored = definition_of_kind("goal-box", GOAL_KIND);
     let harness = harness(vec![stored.clone()], true);
@@ -587,7 +682,7 @@ async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
         frames[1],
         ContentFrame {
             identity: stored.id.clone(),
-            content: content_json(&content),
+            content: serde_json::json!({ LABEL_KEY: "Sub goal", VALUE_KEY: "42" }),
             duration_ms: None,
         },
         "the replay must restore the display without re-running the original timer"
@@ -644,7 +739,11 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
         harness.sink.frames(),
         vec![ContentFrame {
             identity: stored.id.clone(),
-            content: content_json(&expected),
+            content: serde_json::json!({
+                LABEL_KEY: "Sub goal",
+                VALUE_KEY: "42",
+                TARGET_KEY: "100",
+            }),
             duration_ms: Some(2_000),
         }],
         "the page received something other than the funnelled content"

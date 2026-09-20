@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::bus_adapter::{ClientFilterSet, WsFrame};
-use crate::origin::is_origin_allowed;
+use crate::origin::accepts_origin;
 use crate::protocol::{
     DispatchContext, WsEnvelope, WsRequest, WsResponse, dispatch, serialize_response_frame,
 };
@@ -26,8 +26,9 @@ pub async fn ws_handler(
 ) -> Response {
     let origin_header = headers.get(header::ORIGIN);
     let origin = origin_header.and_then(|v| v.to_str().ok());
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
     if (origin_header.is_some() && origin.is_none())
-        || !is_origin_allowed(&state.allowed_origins, origin)
+        || !accepts_origin(&state.allowed_origins, origin, host)
     {
         return origin_rejected_response();
     }

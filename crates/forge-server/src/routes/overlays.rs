@@ -1,16 +1,20 @@
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use forge_storage::OverlayId;
 
+use crate::origin::accepts_origin;
 use crate::protocol::mime_for_extension;
 use crate::server::AppState;
 
 const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
+const ANY_ORIGIN: &str = "*";
+const SELF_SCHEME: &str = "http://";
 
 pub async fn serve_overlay_file(
     State(state): State<AppState>,
+    headers: HeaderMap,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> Response {
     match resolve_and_read(&state, &path).await {
@@ -20,16 +24,14 @@ pub async fn serve_overlay_file(
                 .and_then(|e| e.to_str())
                 .unwrap_or_default();
             let mime = mime_for_extension(ext).unwrap_or("application/octet-stream");
-            let cors_value = cors_header_value(&state);
+            let cors_value = cors_header_value(&state, &headers);
 
             (
                 StatusCode::OK,
                 [
                     (header::CONTENT_TYPE, HeaderValue::from_static(mime)),
-                    (
-                        axum::http::HeaderName::from_static("access-control-allow-origin"),
-                        cors_value,
-                    ),
+                    (header::ACCESS_CONTROL_ALLOW_ORIGIN, cors_value),
+                    (header::VARY, HeaderValue::from_name(header::ORIGIN)),
                 ],
                 Body::from(body_bytes),
             )
@@ -39,13 +41,19 @@ pub async fn serve_overlay_file(
     }
 }
 
-fn cors_header_value(state: &AppState) -> HeaderValue {
+fn cors_header_value(state: &AppState, headers: &HeaderMap) -> HeaderValue {
     if state.overlay_cors_any_origin {
-        HeaderValue::from_static("*")
-    } else {
-        let addr = format!("http://{}", state.bind_addr);
-        HeaderValue::from_str(&addr).unwrap_or_else(|_| HeaderValue::from_static("*"))
+        return HeaderValue::from_static(ANY_ORIGIN);
     }
+    let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
+    origin
+        .filter(|_| accepts_origin(&state.allowed_origins, origin, host))
+        .and_then(|raw| HeaderValue::from_str(raw.trim()).ok())
+        .unwrap_or_else(|| {
+            let addr = format!("{SELF_SCHEME}{}", state.bind_addr);
+            HeaderValue::from_str(&addr).unwrap_or_else(|_| HeaderValue::from_static(ANY_ORIGIN))
+        })
 }
 
 async fn resolve_and_read(

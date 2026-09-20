@@ -1,7 +1,12 @@
 use std::collections::HashSet;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 const SCHEMES: [&str; 2] = ["http", "https"];
+const SCHEME_SEPARATOR: &str = "://";
+const PORT_SEPARATOR: char = ':';
+const IPV6_LITERAL_OPEN: char = '[';
+const IPV6_LITERAL_CLOSE: char = ']';
+const LOCALHOST: &str = "localhost";
 
 fn loopback_origins(port: u16) -> HashSet<String> {
     let mut origins = HashSet::new();
@@ -15,11 +20,6 @@ fn loopback_origins(port: u16) -> HashSet<String> {
 
 pub(crate) fn build_allowed_origins(bind_addr: SocketAddr, extra: &[String]) -> HashSet<String> {
     let mut origins = loopback_origins(bind_addr.port());
-    if !bind_addr.ip().is_loopback() {
-        for scheme in SCHEMES {
-            origins.insert(format!("{scheme}://{bind_addr}"));
-        }
-    }
     for raw in extra {
         let trimmed = raw.trim();
         if !trimmed.is_empty() {
@@ -34,6 +34,56 @@ pub(crate) fn is_origin_allowed(allowed: &HashSet<String>, origin_header: Option
     match origin_header {
         None => true,
         Some(raw) => allowed.contains(&raw.trim().to_ascii_lowercase()),
+    }
+}
+
+pub(crate) fn accepts_origin(
+    allowed: &HashSet<String>,
+    origin_header: Option<&str>,
+    host_header: Option<&str>,
+) -> bool {
+    is_origin_allowed(allowed, origin_header)
+        || origin_matches_address_literal_host(origin_header, host_header)
+}
+
+fn origin_matches_address_literal_host(
+    origin_header: Option<&str>,
+    host_header: Option<&str>,
+) -> bool {
+    let (Some(origin), Some(host)) = (origin_header, host_header) else {
+        return false;
+    };
+    let host = host.trim().to_ascii_lowercase();
+    if !is_address_literal_authority(&host) {
+        return false;
+    }
+    let origin = origin.trim().to_ascii_lowercase();
+    SCHEMES.into_iter().any(|scheme| {
+        origin
+            .strip_prefix(scheme)
+            .and_then(|rest| rest.strip_prefix(SCHEME_SEPARATOR))
+            == Some(host.as_str())
+    })
+}
+
+fn is_address_literal_authority(authority: &str) -> bool {
+    match authority_host(authority) {
+        Some(host) => host == LOCALHOST || host.parse::<IpAddr>().is_ok(),
+        None => false,
+    }
+}
+
+fn authority_host(authority: &str) -> Option<&str> {
+    match authority.strip_prefix(IPV6_LITERAL_OPEN) {
+        Some(rest) => {
+            let (inside, after) = rest.split_once(IPV6_LITERAL_CLOSE)?;
+            (after.is_empty() || after.starts_with(PORT_SEPARATOR)).then_some(inside)
+        }
+        None => Some(
+            authority
+                .split_once(PORT_SEPARATOR)
+                .map_or(authority, |(host, _)| host),
+        ),
     }
 }
 

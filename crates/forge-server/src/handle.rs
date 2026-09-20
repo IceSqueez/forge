@@ -9,6 +9,7 @@ use forge_storage::OverlayId;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
 
+use crate::audio_clips::{ClipCapability, ClipOffer, ClipOutcomeHandle, ClipTicket};
 use crate::auth::AuthState;
 use crate::config::ServerSettings;
 use crate::origin::build_allowed_origins;
@@ -86,6 +87,8 @@ impl ServerHandle {
             if guard.shutdown_tx.is_none() {
                 return Ok(());
             }
+
+            guard.state.audio_clips.discard_all();
 
             (
                 guard.shutdown_tx.take(),
@@ -177,6 +180,7 @@ impl ServerHandle {
             settings: Arc::clone(&state.settings),
             server_info: Arc::clone(&state.server_info),
             action_engine: Arc::clone(&state.action_engine),
+            audio_clips: Arc::clone(&state.audio_clips),
             overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin: settings.overlay_cors_any_origin,
             bind_addr,
@@ -210,6 +214,20 @@ impl ServerHandle {
 
     pub async fn overlay_root(&self) -> Arc<std::path::PathBuf> {
         Arc::clone(&self.inner.lock().await.state.overlay_root)
+    }
+
+    pub async fn offer_audio_clip(
+        &self,
+        owner: &OverlayId,
+        offer: ClipOffer,
+    ) -> Result<(ClipTicket, ClipOutcomeHandle), ServerError> {
+        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
+        store.offer(owner, offer)
+    }
+
+    pub async fn revoke_audio_clip(&self, capability: &ClipCapability) -> bool {
+        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
+        store.revoke(capability.expose())
     }
 
     /// Addressed at the connections identified as `identity`; never reaches any other client.
@@ -272,6 +290,7 @@ impl ServerHandle {
         let inner = Arc::clone(&self.inner);
         tokio::spawn(async move {
             let mut guard = inner.lock().await;
+            guard.state.audio_clips.discard_all();
             if let Some(tx) = guard.shutdown_tx.take() {
                 let _ = tx.send(true);
             }

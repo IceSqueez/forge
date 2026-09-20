@@ -15,10 +15,11 @@ use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, UserGlobalsRepo,
 };
 
+use crate::audio_clips::AudioClipStore;
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
 use crate::origin::build_allowed_origins;
-use crate::routes::{api_v1, overlays, ws};
+use crate::routes::{api_v1, audio, overlays, ws};
 use crate::server_info::ServerInfo;
 use crate::{ServerConfig, ServerError, ServerHandle};
 
@@ -35,6 +36,7 @@ pub struct AppState {
     pub settings: Arc<dyn SettingsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
+    pub audio_clips: Arc<AudioClipStore>,
     pub overlay_root: Arc<std::path::PathBuf>,
     pub overlay_cors_any_origin: bool,
     pub bind_addr: std::net::SocketAddr,
@@ -90,6 +92,7 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
         settings: config.settings,
         server_info: ServerInfo::new(),
         action_engine: config.action_engine,
+        audio_clips: AudioClipStore::new(),
         overlay_root: Arc::new(config.overlay_root),
         overlay_cors_any_origin: config.overlay_cors_any_origin,
         bind_addr,
@@ -190,6 +193,7 @@ fn build_router(state: AppState) -> Router {
         .route("/ws/v1/", get(ws::ws_handler))
         .nest("/api/v1", api_routes)
         .route("/overlays/{*path}", get(overlays::serve_overlay_file))
+        .merge(audio::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             metrics_middleware,
@@ -393,6 +397,7 @@ mod tests {
             settings,
             server_info: ServerInfo::new(),
             action_engine,
+            audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_cors_any_origin: true,
             bind_addr: "127.0.0.1:9515".parse().expect("addr"),

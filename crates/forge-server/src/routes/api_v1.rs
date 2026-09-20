@@ -338,6 +338,7 @@ mod tests {
             settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
             server_info: ServerInfo::new(),
             action_engine,
+            audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_cors_any_origin: true,
             bind_addr: "127.0.0.1:9515".parse().expect("addr"),

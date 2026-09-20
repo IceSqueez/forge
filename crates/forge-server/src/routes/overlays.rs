@@ -41,7 +41,7 @@ pub async fn serve_overlay_file(
     }
 }
 
-fn cors_header_value(state: &AppState, headers: &HeaderMap) -> HeaderValue {
+pub(crate) fn cors_header_value(state: &AppState, headers: &HeaderMap) -> HeaderValue {
     if state.overlay_cors_any_origin {
         return HeaderValue::from_static(ANY_ORIGIN);
     }
@@ -258,6 +258,7 @@ mod tests {
             settings: Arc::clone(&dp) as Arc<dyn forge_storage::SettingsRepo>,
             server_info: ServerInfo::new(),
             action_engine,
+            audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(overlay_root),
             overlay_cors_any_origin,
             bind_addr,

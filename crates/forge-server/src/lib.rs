@@ -2,6 +2,7 @@
 
 mod routes;
 
+pub mod audio_clips;
 pub mod auth;
 pub mod bandwidth;
 pub mod bus_adapter;
@@ -20,6 +21,10 @@ pub mod ws_client;
 #[cfg(test)]
 pub mod test_helpers;
 
+pub use audio_clips::{
+    AudioClipStore, ClipCapability, ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle,
+    ClipTicket, MAX_CLIP_BYTES, MAX_TOTAL_CLIP_BYTES,
+};
 pub use auth::AuthState;
 pub use bandwidth::BandwidthTracker;
 pub use bus_adapter::{BusAdapter, ClientId, EventFilter};

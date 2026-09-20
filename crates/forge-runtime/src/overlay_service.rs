@@ -410,7 +410,7 @@ fn content_json(content: &OverlayConfig) -> serde_json::Value {
     serde_json::Value::Object(
         content
             .iter()
-            .map(|(key, value)| (key.clone(), value.to_json()))
+            .map(|(key, value)| (key.clone(), value.to_plain_json()))
             .collect(),
     )
 }

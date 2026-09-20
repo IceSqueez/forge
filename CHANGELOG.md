@@ -1,6 +1,80 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.5.2] - 2026-09-20
+### Deps
+- *(build)* Bump dependencies
+
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump actions-rust-lang/setup-rust-toolchain from 1 to 2 (#67)
+- *(deps)* Bump taiki-e/install-action from 2.87.5 to 2.87.11 (#68)
+
+### 🐛 Bug Fixes
+- *(twitch)* Keep subscriptions and the old socket across a session reconnect
+- *(twitch)* Reset chat backoff on a healthy session and drain the retired socket
+- *(twitch)* Retire an eventsub session that subscribed to no topic
+- *(core)* Keep evaluating triggers after the bus subscription lags
+- *(server)* Accept a page served at the address the browser dialled
+- *(ui)* Maximize the window on a title bar double-click
+- *(ui)* Address a browser source by a host another machine can dial
+- *(server)* Report run state per generation and start from a stopped handle
+- *(server)* Log a refused websocket origin and require a numeric host port
+- *(ui)* Apply websocket server settings to the live server at once
+- *(ui)* Keep settings controls reachable in a narrow window
+- *(ui)* Keep typed origins on navigation and let only the toggle start the server
+- *(obs)* Judge frame lag on the frames skipped since the last poll
+- *(server)* Refuse to restart a server that settings switched off
+- *(ui)* Keep a switched-off server quiet and point the console at its switch
+
+### 📚 Documentation
+- *(emulator)* Describe running scenarios, exit codes and the game guard
+
+### 🚀 Features
+- *(platform)* Resolve loopback-only platform endpoint overrides
+- *(twitch)* Route Helix, EventSub and socket through endpoint overrides
+- *(audio)* Compose playback routes with a completion-bearing fan-out
+
+### 🚜 Refactor
+- *(twitch)* Name eventsub status codes and drop restating comments
+- *(youtube)* Name http status codes and protocol constants
+- *(tts)* Name http status codes and provider sample rates
+- *(kick)* Name http status codes and protocol constants
+- *(platform)* Share status and retry constants across platform crates
+- *(ui)* Separate server control decisions from their rendering
+
+### 🛠️ Build
+- *(release)* Pass platform secrets to the build matrix and fail on empty ids
+
+### 🧪 Testing
+- *(tts)* Wait out the language-detector rebuild on a deadline
+- *(platform)* Cover loopback-only endpoint override refusals
+- *(twitch)* Route session and helix tests through loopback endpoints
+- *(emulator)* Add nested workspace with authenticated control client
+- *(emulator)* Seed a bootable forge data directory from fixtures
+- *(emulator)* Add fake Twitch EventSub socket and Helix endpoints
+- *(emulator)* Supervise the forge binary with a fail-closed game guard
+- *(emulator)* Define and validate scenario files with a step vocabulary
+- *(emulator)* Run scenarios end to end and assess expectations
+- *(emulator)* Render run outcomes as markdown and json bug reports
+- *(emulator)* Match scenario expectations to the events forge publishes
+- *(emulator)* Pin that a session reconnect must not re-create subscriptions
+- *(twitch)* Cover the eventsub session reconnect handoff
+- *(twitch)* Cover the backoff reset and the predecessor drain at switchover
+- *(twitch)* Drop helper docs that restate their names
+- *(twitch)* Cover the zero-live-topic session and its growing backoff
+- *(core)* Pin that a bus lag never retires a long-lived consumer
+- *(server)* Cover same-origin acceptance against rebinding and cswsh
+- *(ui)* Cover routable overlay origins and browser-source selection
+- *(server)* Cover run-state generations, stopped handles and refused origins
+- *(ui)* Cover the overlay root scan
+- *(obs)* Cover per-poll frame-lag verdicts
+- *(ui)* Cover origin persistence on view release and restart queueing
+- *(ui)* Cover server restart, bind state and overlay delivery decisions
+- *(emulator)* Allow launching over a running game behind a flag
+- *(server)* Cover restart refusal when settings switch the server off
+- *(ui)* Cover quiet restart refusal and share the stopped-server fixture
+- *(audio)* Cover fan-out completion, routes and clip redaction
+
 ## [0.5.1] - 2026-09-09
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump taiki-e/install-action from 2 to 2.85.5 (#52)
@@ -14,6 +88,7 @@ All notable changes to this project will be documented in this file.
 - *(deps)* Bump taiki-e/install-action from 2.87.0 to 2.87.5 (#64)
 - *(deps)* Bump gpui_platform from v1.17.2 to v1.18.1 (#65)
 - *(deps)* Bump gpui from v1.17.2 to v1.18.1 (#66)
+- Release
 
 ### ⚡ Performance
 - *(ui)* Cap repeat animation frame rates and sync pulse dots
@@ -31,6 +106,9 @@ All notable changes to this project will be documented in this file.
 - *(youtube)* Sanitize error text in chat poller and lookup sub-actions
 - *(diagnostics)* Keep bundle slicing on char bounds and drop log paths
 - *(core)* Drop interpolated values from sub-action failure text
+
+### 📚 Documentation
+- *(release)* Release v0.5.1
 
 ### 🚀 Features
 - *(core)* Resolve chat badges into an ordered permission ladder

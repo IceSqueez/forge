@@ -11,12 +11,14 @@ use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::bus_adapter::{ClientFilterSet, WsFrame};
-use crate::origin::accepts_origin;
+use crate::origin::{accepts_origin, is_well_formed_origin};
 use crate::protocol::{
     DispatchContext, WsEnvelope, WsRequest, WsResponse, dispatch, serialize_response_frame,
 };
 use crate::server::AppState;
 use crate::ws_client::{WsClient, detect_from_user_agent};
+
+const HEADER_LOG_PLACEHOLDER: &str = "<absent-or-invalid>";
 
 pub async fn ws_handler(
     upgrade: WebSocketUpgrade,
@@ -30,6 +32,13 @@ pub async fn ws_handler(
     if (origin_header.is_some() && origin.is_none())
         || !accepts_origin(&state.allowed_origins, origin, host)
     {
+        let origin_log = origin_log_value(origin);
+        let host_log = host.unwrap_or(HEADER_LOG_PLACEHOLDER);
+        tracing::warn!(
+            origin = origin_log,
+            host = host_log,
+            "rejected overlay websocket origin; add it in Settings or open the page by IP address"
+        );
         return origin_rejected_response();
     }
 
@@ -38,6 +47,13 @@ pub async fn ws_handler(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
     upgrade.on_upgrade(move |socket| handle_socket(socket, state, addr, user_agent))
+}
+
+fn origin_log_value(origin: Option<&str>) -> &str {
+    match origin {
+        Some(value) if is_well_formed_origin(value) => value,
+        _ => HEADER_LOG_PLACEHOLDER,
+    }
 }
 
 fn origin_rejected_response() -> Response {

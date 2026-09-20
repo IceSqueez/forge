@@ -7,6 +7,7 @@ const PORT_SEPARATOR: char = ':';
 const IPV6_LITERAL_OPEN: char = '[';
 const IPV6_LITERAL_CLOSE: char = ']';
 const LOCALHOST: &str = "localhost";
+const BEYOND_AUTHORITY_MARKERS: [char; 4] = ['/', '?', '#', '@'];
 
 fn loopback_origins(port: u16) -> HashSet<String> {
     let mut origins = HashSet::new();
@@ -46,6 +47,18 @@ pub(crate) fn accepts_origin(
         || origin_matches_address_literal_host(origin_header, host_header)
 }
 
+pub(crate) fn is_well_formed_origin(value: &str) -> bool {
+    let trimmed = value.trim().to_ascii_lowercase();
+    SCHEMES.into_iter().any(|scheme| {
+        trimmed
+            .strip_prefix(scheme)
+            .and_then(|rest| rest.strip_prefix(SCHEME_SEPARATOR))
+            .is_some_and(|authority| {
+                !authority.is_empty() && !authority.contains(BEYOND_AUTHORITY_MARKERS)
+            })
+    })
+}
+
 fn origin_matches_address_literal_host(
     origin_header: Option<&str>,
     host_header: Option<&str>,
@@ -77,14 +90,24 @@ fn authority_host(authority: &str) -> Option<&str> {
     match authority.strip_prefix(IPV6_LITERAL_OPEN) {
         Some(rest) => {
             let (inside, after) = rest.split_once(IPV6_LITERAL_CLOSE)?;
-            (after.is_empty() || after.starts_with(PORT_SEPARATOR)).then_some(inside)
+            has_valid_optional_port(after).then_some(inside)
         }
-        None => Some(
-            authority
-                .split_once(PORT_SEPARATOR)
-                .map_or(authority, |(host, _)| host),
-        ),
+        None => match authority.split_once(PORT_SEPARATOR) {
+            Some((host, port)) => is_valid_port(port).then_some(host),
+            None => Some(authority),
+        },
     }
+}
+
+fn has_valid_optional_port(after: &str) -> bool {
+    after.is_empty()
+        || after
+            .strip_prefix(PORT_SEPARATOR)
+            .is_some_and(is_valid_port)
+}
+
+fn is_valid_port(port: &str) -> bool {
+    port.bytes().all(|byte| byte.is_ascii_digit()) && port.parse::<u16>().is_ok()
 }
 
 #[cfg(test)]

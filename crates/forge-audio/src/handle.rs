@@ -55,6 +55,7 @@ impl PlaybackHandle {
 enum Completion {
     Ready,
     Handle(tokio::task::JoinHandle<()>),
+    Merged(Pin<Box<dyn Future<Output = Result<(), AudioError>> + Send>>),
 }
 
 pub struct ControlledPlayback {
@@ -80,6 +81,20 @@ impl ControlledPlayback {
         }
     }
 
+    pub(crate) fn merged(
+        playback: PlaybackHandle,
+        completion: Pin<Box<dyn Future<Output = Result<(), AudioError>> + Send>>,
+    ) -> Self {
+        Self {
+            playback,
+            completion: Completion::Merged(completion),
+        }
+    }
+
+    pub(crate) fn handle(&self) -> PlaybackHandle {
+        self.playback.clone()
+    }
+
     pub fn stop(&self) {
         self.playback.stop();
     }
@@ -103,6 +118,7 @@ impl Future for ControlledPlayback {
             Completion::Handle(handle) => Pin::new(handle)
                 .poll(cx)
                 .map(|res| res.map_err(|e| AudioError::JoinFailed(e.to_string()))),
+            Completion::Merged(future) => future.as_mut().poll(cx),
         }
     }
 }

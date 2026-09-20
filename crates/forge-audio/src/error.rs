@@ -19,4 +19,16 @@ pub enum AudioError {
 
     #[error("playback task failed: {0}")]
     JoinFailed(String),
+
+    #[error("no audio route is configured")]
+    NoRoute,
+
+    #[error("unknown audio route: {0}")]
+    UnknownRoute(String),
+
+    #[error("every audio route failed: {0}")]
+    AllRoutesFailed(String),
+
+    #[error("remote audio destination failed: {0}")]
+    RemoteDestination(String),
 }

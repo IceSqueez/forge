@@ -1424,3 +1424,638 @@ fn mask_token(token: &str) -> String {
         .collect();
     format!("fg_•••••{tail}")
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use forge_components::ThemeId;
+    use forge_events::Event;
+    use forge_overlay::OverlayKindRegistry;
+    use forge_registry::SubActionRegistry;
+    use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
+    use forge_server::{ServerConfig, stopped_server};
+    use forge_storage::{
+        ActionRepo, ActionStats, ActionTelemetry, ChatHistoryRepo, EventLogRepo, ExecutionStatus,
+        GlobalEntry, GlobalsRepo, HistoryRepo, OverlayConfig, OverlayCredential, OverlayDefinition,
+        OverlayId, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
+        SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
+        UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
+    };
+    use forge_types::{Action, ActionId, EventId, ExecutionContext, ScriptId, Variant};
+    use gpui::TestAppContext;
+    use time::OffsetDateTime;
+    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+
+    use super::*;
+
+    const STORED_ORIGIN: &str = "http://stored.test:9000";
+    const TYPED_ORIGIN: &str = "http://typed.test:9100";
+    const RUNTIME_PUMPS: usize = 8;
+    const RESTART_FAILURE: &str = "address already in use";
+
+    type SettingWrite = (String, String);
+
+    struct TestBackend {
+        values: Mutex<HashMap<String, String>>,
+        writes: UnboundedSender<SettingWrite>,
+    }
+
+    fn test_backend() -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
+        let (writes, rx) = unbounded_channel();
+        (
+            Arc::new(TestBackend {
+                values: Mutex::new(HashMap::new()),
+                writes,
+            }),
+            rx,
+        )
+    }
+
+    #[async_trait::async_trait]
+    impl SettingsRepo for TestBackend {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self.values.lock().unwrap().get(key).cloned())
+        }
+
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.values
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), value.to_owned());
+            let _ = self.writes.send((key.to_owned(), value.to_owned()));
+            Ok(())
+        }
+
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            Ok(self.values.lock().unwrap().remove(key).is_some())
+        }
+
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(self.values.lock().unwrap().clone())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CredentialsRepo for TestBackend {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(None)
+        }
+
+        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl GlobalsRepo for TestBackend {
+        async fn get(&self, _: &str) -> Result<Option<Variant>, StorageError> {
+            unreachable!("globals are out of scope for the settings pane")
+        }
+
+        async fn set(&self, _: &str, _: Variant, _: bool) -> Result<(), StorageError> {
+            unreachable!("globals are out of scope for the settings pane")
+        }
+
+        async fn delete(&self, _: &str) -> Result<bool, StorageError> {
+            unreachable!("globals are out of scope for the settings pane")
+        }
+
+        async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError> {
+            unreachable!("globals are out of scope for the settings pane")
+        }
+
+        async fn storage_bytes(&self) -> Result<u64, StorageError> {
+            unreachable!("globals are out of scope for the settings pane")
+        }
+
+        async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+            unreachable!("globals are out of scope for the settings pane")
+        }
+
+        async fn incr(&self, _: &str, _: i64) -> Result<Variant, StorageError> {
+            unreachable!("globals are out of scope for the settings pane")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl UserGlobalsRepo for TestBackend {
+        async fn get(&self, _: &str, _: &str, _: &str) -> Result<Option<Variant>, StorageError> {
+            unreachable!("user globals are out of scope for the settings pane")
+        }
+
+        async fn set(&self, _: &str, _: &str, _: &str, _: Variant) -> Result<(), StorageError> {
+            unreachable!("user globals are out of scope for the settings pane")
+        }
+
+        async fn delete(&self, _: &str, _: &str, _: &str) -> Result<bool, StorageError> {
+            unreachable!("user globals are out of scope for the settings pane")
+        }
+
+        async fn list_for_user(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<Vec<UserGlobalEntry>, StorageError> {
+            unreachable!("user globals are out of scope for the settings pane")
+        }
+
+        async fn list_for_broadcaster(
+            &self,
+            _: &str,
+        ) -> Result<Vec<UserGlobalEntry>, StorageError> {
+            unreachable!("user globals are out of scope for the settings pane")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ScriptRepo for TestBackend {
+        async fn get(&self, _: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn get_by_name(&self, _: &str) -> Result<Option<ScriptRecord>, StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn save(&self, _: ScriptRecord) -> Result<(), StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn delete(&self, _: ScriptId) -> Result<bool, StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn record_execution(
+            &self,
+            _: ScriptId,
+            _: OffsetDateTime,
+            _: u64,
+            _: ExecutionStatus,
+        ) -> Result<(), StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn telemetry(&self, _: ScriptId) -> Result<ScriptTelemetry, StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+
+        async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            unreachable!("scripts are out of scope for the settings pane")
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DataProvider for TestBackend {
+        fn action_repo(&self) -> Arc<dyn ActionRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn queue_repo(&self) -> Arc<dyn QueueRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn history_repo(&self) -> Arc<dyn HistoryRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn event_log_repo(&self) -> Arc<dyn EventLogRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn soundboard_clips_repo(&self) -> Arc<dyn SoundboardClipsRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn voice_alias_repo(&self) -> Arc<dyn VoiceAliasRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn viewer_repo(&self) -> Arc<dyn ViewerRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn tts_filters_repo(&self) -> Arc<dyn TtsFiltersRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
+            unreachable!("the settings pane reaches no sub-repo")
+        }
+
+        async fn schema_version(&self) -> Result<u32, StorageError> {
+            unreachable!("the settings pane never reads the schema version")
+        }
+
+        async fn export(&self, _: &std::path::Path) -> Result<(), StorageError> {
+            unreachable!("the settings pane never exports")
+        }
+
+        async fn shutdown(&self) {}
+    }
+
+    struct StubEventLog;
+
+    #[async_trait::async_trait]
+    impl EventLogRepo for StubEventLog {
+        async fn insert(&self, _: &Event) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get(&self, _: EventId) -> Result<Option<Event>, StorageError> {
+            Ok(None)
+        }
+
+        async fn recent(&self, _: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn recent_since(
+            &self,
+            _: usize,
+            _: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    struct StubOverlays;
+
+    #[async_trait::async_trait]
+    impl OverlayRepo for StubOverlays {
+        async fn list(&self) -> Result<Vec<OverlayDefinition>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn get(&self, _: &OverlayId) -> Result<Option<OverlayDefinition>, StorageError> {
+            Ok(None)
+        }
+
+        async fn get_by_credential(
+            &self,
+            _: &OverlayCredential,
+        ) -> Result<Option<OverlayDefinition>, StorageError> {
+            Ok(None)
+        }
+
+        async fn create(
+            &self,
+            _: &str,
+            _: &str,
+            _: u32,
+        ) -> Result<OverlayDefinition, StorageError> {
+            unreachable!("the settings pane never creates an overlay")
+        }
+
+        async fn save(&self, _: &OverlayDefinition) -> Result<(), StorageError> {
+            unreachable!("the settings pane never saves an overlay")
+        }
+
+        async fn set_enabled(&self, _: &OverlayId, _: bool) -> Result<bool, StorageError> {
+            unreachable!("the settings pane never toggles an overlay")
+        }
+
+        async fn delete(&self, _: &OverlayId) -> Result<bool, StorageError> {
+            unreachable!("the settings pane never deletes an overlay")
+        }
+
+        async fn get_retained_content(
+            &self,
+            _: &OverlayId,
+        ) -> Result<Option<OverlayConfig>, StorageError> {
+            Ok(None)
+        }
+
+        async fn set_retained_content(
+            &self,
+            _: &OverlayId,
+            _: &OverlayConfig,
+        ) -> Result<(), StorageError> {
+            unreachable!("the settings pane never writes overlay content")
+        }
+    }
+
+    /// Why: gpui's test scheduler rejects any wake reaching it from a foreign thread, so
+    /// the view's tokio work has to stay on the test thread and be pumped explicitly.
+    struct StubActions;
+
+    #[async_trait::async_trait]
+    impl ActionRepo for StubActions {
+        async fn list(&self) -> Result<Vec<Action>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn get(&self, _: ActionId) -> Result<Option<Action>, StorageError> {
+            Ok(None)
+        }
+
+        async fn save(&self, _: &Action) -> Result<(), StorageError> {
+            unreachable!("the settings pane never writes an action")
+        }
+
+        async fn delete(&self, _: ActionId) -> Result<bool, StorageError> {
+            unreachable!("the settings pane never deletes an action")
+        }
+
+        async fn list_by_group<'a>(
+            &'a self,
+            _: Option<&'a str>,
+        ) -> Result<Vec<Action>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn telemetry(&self, _: ActionId) -> Result<ActionTelemetry, StorageError> {
+            unreachable!("the settings pane never reads action telemetry")
+        }
+
+        async fn record_execution(
+            &self,
+            _: ActionId,
+            _: OffsetDateTime,
+            _: u64,
+            _: ExecutionStatus,
+        ) -> Result<(), StorageError> {
+            unreachable!("the settings pane never runs an action")
+        }
+
+        async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    struct StubHistory;
+
+    #[async_trait::async_trait]
+    impl HistoryRepo for StubHistory {
+        async fn save(&self, _: &ExecutionContext) -> Result<(), StorageError> {
+            unreachable!("the settings pane never records a run")
+        }
+
+        async fn recent_for_action(
+            &self,
+            _: ActionId,
+            _: u32,
+        ) -> Result<Vec<ExecutionContext>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn recent_for_builtin(
+            &self,
+            _: &str,
+            _: u32,
+        ) -> Result<Vec<ExecutionContext>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn stats_summary(
+            &self,
+            _: OffsetDateTime,
+        ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
+            Ok(HashMap::new())
+        }
+
+        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("current-thread runtime")
+    }
+
+    fn pump(rt: &tokio::runtime::Runtime) {
+        rt.block_on(async {
+            for _ in 0..RUNTIME_PUMPS {
+                tokio::task::yield_now().await;
+            }
+        });
+    }
+
+    fn settings_view(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+    ) -> Entity<SettingsWebSocketView> {
+        settings_view_with_server(cx, rt, backend, None)
+    }
+
+    fn settings_view_with_server(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+        server: Option<ServerHandle>,
+    ) -> Entity<SettingsWebSocketView> {
+        let overlays = OverlayServiceHandle::new(
+            Arc::new(StubOverlays),
+            Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            Arc::new(OverlayKindRegistry::new()),
+            EventBus::new(Arc::new(StubEventLog)),
+            None,
+        );
+        let handle = rt.handle().clone();
+        cx.update(|cx| {
+            cx.set_global(crate::presentation::Presentation::new(
+                ThemeId::default(),
+                Density::default(),
+            ));
+        });
+        cx.new(|cx| {
+            SettingsWebSocketView::new(
+                backend as Arc<dyn DataProvider>,
+                handle,
+                server,
+                overlays,
+                cx,
+            )
+        })
+    }
+
+    fn stopped_handle(rt: &tokio::runtime::Runtime, backend: &Arc<TestBackend>) -> ServerHandle {
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        rt.block_on(async {
+            let engine = Arc::new(spawn_action_engine(
+                Arc::clone(&bus),
+                Arc::new(StubActions),
+                Arc::new(StubHistory),
+                Arc::new(SubActionRegistry::new()),
+                Arc::new(ActionCancelRegistry::new()),
+            ));
+            stopped_server(ServerConfig::new(
+                Arc::clone(backend) as Arc<dyn SettingsRepo>,
+                Arc::clone(backend) as Arc<dyn CredentialsRepo>,
+                bus,
+                Arc::new(StubActions),
+                Arc::clone(backend) as Arc<dyn GlobalsRepo>,
+                Arc::clone(backend) as Arc<dyn UserGlobalsRepo>,
+                Arc::new(StubOverlays),
+                engine,
+            ))
+            .await
+            .expect("a stopped server handle")
+        })
+    }
+
+    fn type_origins(cx: &mut TestAppContext, view: &Entity<SettingsWebSocketView>, text: &str) {
+        let text = text.to_owned();
+        view.update(cx, |this, cx| {
+            this.origins_input
+                .update(cx, |input, cx| input.set_content(text, cx));
+        });
+    }
+
+    /// Why: dropping the last handle only queues the release; gpui runs release
+    /// callbacks on the next app update, so the pump has to include one.
+    fn release(cx: &mut TestAppContext, view: Entity<SettingsWebSocketView>) {
+        drop(view);
+        cx.update(|_cx| {});
+        cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn leaving_the_pane_persists_origins_typed_but_never_committed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (backend, mut writes) = test_backend();
+        let view = settings_view(cx, &rt, backend);
+
+        type_origins(cx, &view, TYPED_ORIGIN);
+        release(cx, view);
+        pump(&rt);
+
+        let (key, value) = writes
+            .try_recv()
+            .expect("the released pane never wrote the typed origins");
+        assert_eq!(key, reserved_keys::SERVER_ADDITIONAL_ORIGINS);
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(&value).expect("origins json"),
+            vec![TYPED_ORIGIN.to_owned()],
+        );
+    }
+
+    #[gpui::test]
+    fn leaving_the_pane_writes_nothing_when_the_typed_origins_add_nothing(cx: &mut TestAppContext) {
+        for (typed, case) in [
+            ("http://:not-an-origin", "text that is not a valid origin"),
+            (STORED_ORIGIN, "the list that is already stored"),
+        ] {
+            let rt = runtime();
+            let (backend, mut writes) = test_backend();
+            let view = settings_view(cx, &rt, backend);
+            view.update(cx, |this, _| {
+                this.additional_origins = vec![STORED_ORIGIN.to_owned()];
+            });
+
+            type_origins(cx, &view, typed);
+            release(cx, view);
+            pump(&rt);
+
+            assert!(writes.try_recv().is_err(), "{case}");
+        }
+    }
+    #[gpui::test]
+    fn a_change_during_an_in_flight_restart_queues_exactly_one_rerun(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let server = stopped_handle(&rt, &backend);
+        let view = settings_view_with_server(cx, &rt, backend, Some(server));
+
+        view.update(cx, |this, cx| {
+            this.restart_server(cx);
+            assert!(this.restarting, "the first request goes out immediately");
+            assert!(!this.restart_queued);
+
+            this.restart_server(cx);
+            this.restart_server(cx);
+            assert!(
+                this.restart_queued,
+                "changes arriving mid-flight must queue a rerun",
+            );
+
+            this.finish_restart(Ok(()), cx);
+            assert!(this.restarting, "the queued rerun must go out");
+            assert!(
+                !this.restart_queued,
+                "two mid-flight changes must not book two reruns",
+            );
+
+            this.finish_restart(Ok(()), cx);
+            assert!(!this.restarting);
+        });
+    }
+
+    #[gpui::test]
+    fn a_failed_restart_never_leaves_a_rerun_stuck_in_the_queue(cx: &mut TestAppContext) {
+        for (changed_mid_flight, expect_rerun, case) in [
+            (
+                false,
+                false,
+                "nothing changed while the restart was in flight",
+            ),
+            (
+                true,
+                true,
+                "a change landed while the restart was in flight",
+            ),
+        ] {
+            let rt = runtime();
+            let (backend, _writes) = test_backend();
+            let server = stopped_handle(&rt, &backend);
+            let view = settings_view_with_server(cx, &rt, backend, Some(server));
+
+            view.update(cx, |this, cx| {
+                this.restart_server(cx);
+                if changed_mid_flight {
+                    this.restart_server(cx);
+                }
+
+                this.finish_restart(Err(RESTART_FAILURE.to_owned()), cx);
+
+                assert!(!this.restart_queued, "{case}");
+                assert_eq!(this.restarting, expect_rerun, "{case}");
+            });
+        }
+    }
+}

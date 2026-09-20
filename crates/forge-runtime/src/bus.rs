@@ -84,6 +84,10 @@ impl EventSubscription {
     pub(crate) fn into_receiver(self) -> broadcast::Receiver<Event> {
         self.0
     }
+
+    pub(crate) fn receiver_mut(&mut self) -> &mut broadcast::Receiver<Event> {
+        &mut self.0
+    }
 }
 
 impl EventBus {

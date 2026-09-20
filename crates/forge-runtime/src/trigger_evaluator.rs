@@ -13,6 +13,7 @@ use forge_types::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use tokio::sync::broadcast;
 use tracing::{Level, debug, enabled, trace, warn};
 
 use crate::cooldown::CooldownMap;
@@ -73,9 +74,15 @@ impl TriggerEvaluator {
 
     async fn run(mut self, cancel: CancelSignal) {
         while !cancel.is_cancelled() {
-            match self.subscription.recv().await {
+            let received = self.subscription.receiver_mut().recv().await;
+            match received {
                 Ok(event) => self.handle(event).await,
-                Err(_) => break,
+                Err(broadcast::error::RecvError::Lagged(missed)) => warn!(
+                    target: DECISION_TARGET,
+                    missed,
+                    "evaluation fell behind the bus; those events fired no trigger"
+                ),
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
         self.drain_backlog().await;

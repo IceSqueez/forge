@@ -73,10 +73,11 @@ impl AppShell {
         status: Entity<RuntimeStatus>,
         topics: Topics,
         handles: Arc<RuntimeHandles>,
+        initial_screen: Screen,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let screen = Screen::Home;
+        let screen = initial_screen;
         let content = Self::content_for(&screen, &topics, &handles, cx);
         let focus = cx.focus_handle();
         let chrome = Chrome::new(status, topics.platforms.clone(), screen.clone(), cx);
@@ -306,7 +307,8 @@ impl AppShell {
                 })
                 .into()
             }
-            Screen::Tts => {
+            Screen::Tts(preselect) => {
+                let preselect = *preselect;
                 let speak_state = topics.speak.clone();
                 let speak = handles.speak.clone();
                 let backend = Arc::clone(&handles.backend);
@@ -321,6 +323,7 @@ impl AppShell {
                         rt_handle,
                         pipeline_config,
                         tts_registry,
+                        preselect,
                         cx,
                     )
                 })

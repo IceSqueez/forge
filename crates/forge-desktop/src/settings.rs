@@ -117,6 +117,14 @@ impl SettingsSection {
             SettingsSection::Diagnostics => "diagnostics",
         }
     }
+
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
+        NAV_GROUPS
+            .iter()
+            .flat_map(|(_, sections)| sections.iter())
+            .copied()
+            .find(|section| section.key() == key)
+    }
 }
 
 fn theme_meta(theme: ThemeId) -> (String, String) {

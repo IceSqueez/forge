@@ -25,6 +25,7 @@ use crate::presentation::{ActivePresentation, Presentation};
 use crate::queue_health::QueueHealth;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
+use crate::screen::Screen;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::topics::Topics;
@@ -46,6 +47,7 @@ pub struct RootView {
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
+    initial_screen: Screen,
     window: Option<WindowHandle<RootView>>,
 }
 
@@ -54,6 +56,7 @@ impl RootView {
         rt_handle: tokio::runtime::Handle,
         log_tail: LogTail,
         endpoints: PlatformEndpoints,
+        initial_screen: Screen,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
@@ -63,6 +66,7 @@ impl RootView {
             rt_handle,
             log_tail,
             endpoints,
+            initial_screen,
             window: None,
         }
     }
@@ -86,9 +90,10 @@ impl RootView {
         let rt_handle = self.rt_handle.clone();
         let log_tail = self.log_tail.clone();
         let endpoints = self.endpoints.clone();
+        let initial_screen = self.initial_screen.clone();
         self.state = BootState::Booting;
         cx.notify();
-        run_boot(rt_handle, log_tail, endpoints, window, cx);
+        run_boot(rt_handle, log_tail, endpoints, initial_screen, window, cx);
     }
 }
 
@@ -96,6 +101,7 @@ pub fn run_boot(
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
+    initial_screen: Screen,
     window: WindowHandle<RootView>,
     cx: &mut App,
 ) {
@@ -163,8 +169,16 @@ pub fn run_boot(
                         speak,
                         queue_health,
                     );
-                    let shell =
-                        cx.new(|cx| AppShell::new(status, topics, handles_for_shell, window, cx));
+                    let shell = cx.new(|cx| {
+                        AppShell::new(
+                            status,
+                            topics,
+                            handles_for_shell,
+                            initial_screen,
+                            window,
+                            cx,
+                        )
+                    });
                     let mut shutdown =
                         Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
                     cx.on_app_quit(move |_root, _cx| {

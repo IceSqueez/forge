@@ -104,11 +104,72 @@ use crate::actions::{bind_list_keys, register_shell_key_bindings};
 use crate::log_tail::LogTail;
 use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
+use crate::screen::Screen;
 use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
 use crate::sidebar::SIDEBAR_MAX;
 use crate::titlebar::TITLEBAR_HEIGHT;
 
 const SHELL_MIN_CONTENT_HEIGHT: Pixels = px(480.0);
+
+const FLAG_SCREEN: &str = "--screen";
+const FLAG_SELECT: &str = "--select";
+const FLAG_HELP: &str = "--help";
+const EXIT_USAGE_ERROR: i32 = 2;
+
+enum StartupRequest {
+    Open(Screen),
+    Help,
+}
+
+fn parse_startup_request(mut args: impl Iterator<Item = String>) -> Result<StartupRequest, String> {
+    let mut screen_arg: Option<String> = None;
+    let mut select_arg: Option<String> = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            FLAG_HELP => return Ok(StartupRequest::Help),
+            FLAG_SCREEN => {
+                screen_arg = Some(
+                    args.next()
+                        .ok_or_else(|| format!("{FLAG_SCREEN} requires a value"))?,
+                );
+            }
+            FLAG_SELECT => {
+                select_arg = Some(
+                    args.next()
+                        .ok_or_else(|| format!("{FLAG_SELECT} requires a value"))?,
+                );
+            }
+            other => return Err(format!("unrecognized argument: {other}")),
+        }
+    }
+    let Some(screen_arg) = screen_arg else {
+        return match select_arg {
+            Some(_) => Err(format!("{FLAG_SELECT} requires {FLAG_SCREEN}")),
+            None => Ok(StartupRequest::Open(Screen::Home)),
+        };
+    };
+    let screen = Screen::parse_cli(&screen_arg).map_err(|err| err.to_string())?;
+    let screen = match select_arg {
+        Some(id) => screen
+            .with_selected_entity(&id)
+            .map_err(|err| err.to_string())?,
+        None => screen,
+    };
+    Ok(StartupRequest::Open(screen))
+}
+
+fn print_usage() {
+    println!(
+        "Usage: forge-desktop [{FLAG_SCREEN} <name>[:<param>]] [{FLAG_SELECT} <id>] [{FLAG_HELP}]"
+    );
+    println!();
+    println!(
+        "  {FLAG_SCREEN} <name>   open directly on a screen ({})",
+        Screen::accepted_cli_names().join(", ")
+    );
+    println!("  {FLAG_SELECT} <id>    preselect an entity on the actions or triggers screen");
+    println!("  {FLAG_HELP}          print this message");
+}
 
 fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTail) {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -166,6 +227,18 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
 }
 
 fn main() {
+    let initial_screen = match parse_startup_request(std::env::args().skip(1)) {
+        Ok(StartupRequest::Open(screen)) => screen,
+        Ok(StartupRequest::Help) => {
+            print_usage();
+            return;
+        }
+        Err(message) => {
+            eprintln!("forge-desktop: {message}");
+            std::process::exit(EXIT_USAGE_ERROR);
+        }
+    };
+
     let (log_guard, log_tail) = init_tracing();
 
     let endpoints = match forge_platform_core::PlatformEndpoints::from_env() {
@@ -258,12 +331,14 @@ fn main() {
             let rt_handle_for_root = rt_handle.clone();
             let log_tail_for_root = log_tail.clone();
             let endpoints_for_root = endpoints.clone();
+            let initial_screen_for_root = initial_screen.clone();
             let window = match cx.open_window(options, move |_window, cx| {
                 cx.new(|cx| {
                     RootView::new(
                         rt_handle_for_root.clone(),
                         log_tail_for_root.clone(),
                         endpoints_for_root.clone(),
+                        initial_screen_for_root.clone(),
                         cx,
                     )
                 })
@@ -284,6 +359,7 @@ fn main() {
                 rt_handle.clone(),
                 log_tail.clone(),
                 endpoints.clone(),
+                initial_screen.clone(),
                 window,
                 cx,
             );

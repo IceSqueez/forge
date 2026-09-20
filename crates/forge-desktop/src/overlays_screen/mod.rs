@@ -23,7 +23,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::overlay_url::{overlay_origin, overlay_page_url};
+use crate::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
 use crate::presentation::ActivePresentation;
 use crate::toasts::{PushToast, copy_to_clipboard};
 
@@ -55,6 +55,11 @@ struct OpenPanel {
 struct PendingDelete {
     id: OverlayId,
     display_name: String,
+}
+
+struct ServedEndpoint {
+    bind_address: String,
+    routable_host: Option<String>,
 }
 
 /// What a regeneration pass leaves for the screen to say: a failure to report, and the claimed
@@ -92,6 +97,7 @@ pub struct OverlaysView {
     loading: bool,
     server_running: bool,
     bind_address: Option<String>,
+    routable_host: Option<String>,
     menu_open: Option<OverlayId>,
     menu_click_pos: Option<Point<Pixels>>,
     form: Option<OpenForm>,
@@ -130,6 +136,7 @@ impl OverlaysView {
             loading: false,
             server_running,
             bind_address: None,
+            routable_host: None,
             menu_open: None,
             menu_click_pos: None,
             form: None,
@@ -167,7 +174,7 @@ impl OverlaysView {
         if !self.server_running {
             return None;
         }
-        let origin = overlay_origin(self.bind_address.as_deref()?);
+        let origin = overlay_origin(self.bind_address.as_deref()?, self.routable_host.as_deref());
         Some(overlay_page_url(&origin, id.as_str()))
     }
 
@@ -211,12 +218,17 @@ impl OverlaysView {
                 let (tx, rx) = tokio::sync::oneshot::channel();
                 let probe = handle.clone();
                 rt_handle.spawn(async move {
-                    let _ = tx.send(probe.bind_addr().await.to_string());
+                    let bind_address = probe.bind_addr().await.to_string();
+                    let routable_host = resolve_routable_host(&bind_address);
+                    let _ = tx.send(ServedEndpoint {
+                        bind_address,
+                        routable_host,
+                    });
                 });
-                let bind_address = rx.await.ok();
+                let endpoint = rx.await.ok();
                 if this
                     .update(cx, |this, cx| {
-                        this.apply_server_state(running, bind_address, cx)
+                        this.apply_server_state(running, endpoint, cx)
                     })
                     .is_err()
                     || run_state.changed().await.is_err()
@@ -231,13 +243,17 @@ impl OverlaysView {
     fn apply_server_state(
         &mut self,
         running: bool,
-        bind_address: Option<String>,
+        endpoint: Option<ServedEndpoint>,
         cx: &mut Context<Self>,
     ) {
         let mut changed = self.server_running != running;
         self.server_running = running;
-        if bind_address.is_some() && self.bind_address != bind_address {
-            self.bind_address = bind_address;
+        if let Some(endpoint) = endpoint
+            && (self.bind_address.as_deref() != Some(endpoint.bind_address.as_str())
+                || self.routable_host != endpoint.routable_host)
+        {
+            self.bind_address = Some(endpoint.bind_address);
+            self.routable_host = endpoint.routable_host;
             changed = true;
         }
         if changed {

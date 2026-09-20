@@ -6,10 +6,12 @@ use forge_components::{
     icon, metric_card, mono_family, overlay, page_frame, platform_color, radius, spacing,
     sparkline, status_dot, tooltip_builder, tr, virtual_table,
 };
+use std::ffi::OsStr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::EventSource;
+use forge_overlay::MARKUP_FILE;
 use forge_server::{ConnectedClientSnapshot, EventFilterSnapshot, ServerHandle, ServerSnapshot};
 use forge_storage::{CredentialId, CredentialsRepo};
 use gpui::{
@@ -18,7 +20,9 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::overlay_url::{extract_port, overlay_origin};
+use crate::overlay_url::{
+    extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
+};
 use crate::presentation::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
@@ -80,7 +84,7 @@ struct OwnedClientRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OwnedOverlayKind {
     File { html: bool },
-    Dir,
+    Dir { overlay: bool },
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +102,14 @@ impl OwnedOverlayEntry {
 
     fn is_file(&self) -> bool {
         matches!(self.kind, OwnedOverlayKind::File { .. })
+    }
+
+    fn hosts_overlay(&self) -> bool {
+        matches!(self.kind, OwnedOverlayKind::Dir { overlay: true })
+    }
+
+    fn is_selectable(&self) -> bool {
+        self.hosts_overlay() || self.is_file()
     }
 }
 
@@ -117,6 +129,7 @@ pub struct ServerConsoleView {
     credentials: Arc<dyn CredentialsRepo>,
     running: bool,
     bind_address: Option<String>,
+    routable_host: Option<String>,
     bearer_token: String,
     token_revealed: bool,
     connected_clients: Vec<OwnedClientRow>,
@@ -126,7 +139,7 @@ pub struct ServerConsoleView {
     stats: ServerStats,
     overlay_root: String,
     overlay_entries: Vec<OwnedOverlayEntry>,
-    selected_overlay_file: Option<usize>,
+    selected_overlay_entry: Option<usize>,
     /// Target client's stable `identification`, not its row index (which shifts under a live snapshot refresh).
     pending_disconnect: Confirm<String>,
 }
@@ -147,6 +160,7 @@ impl ServerConsoleView {
             credentials,
             running,
             bind_address: None,
+            routable_host: None,
             bearer_token: String::new(),
             token_revealed: false,
             connected_clients: Vec::new(),
@@ -156,7 +170,7 @@ impl ServerConsoleView {
             stats: ServerStats::default(),
             overlay_root: String::new(),
             overlay_entries: Vec::new(),
-            selected_overlay_file: None,
+            selected_overlay_entry: None,
             pending_disconnect: Confirm::default(),
         };
         view.fetch_token(cx);
@@ -242,6 +256,7 @@ impl ServerConsoleView {
                 rt_handle.spawn(async move {
                     let snapshot = handle.snapshot().await;
                     let bind_address = handle.bind_addr().await.to_string();
+                    let routable_host = resolve_routable_host(&bind_address);
                     let overlay = if want_overlay {
                         let root = handle.overlay_root().await;
                         Some(scan_overlay_root(root.as_ref()).await)
@@ -251,6 +266,7 @@ impl ServerConsoleView {
                     let _ = tx.send(ServerPoll {
                         snapshot,
                         bind_address,
+                        routable_host,
                         overlay,
                     });
                 });
@@ -273,6 +289,7 @@ impl ServerConsoleView {
 
     fn apply_poll(&mut self, poll: ServerPoll) {
         self.bind_address = Some(poll.bind_address);
+        self.routable_host = poll.routable_host;
 
         if self.running {
             let snapshot = &poll.snapshot;
@@ -302,19 +319,19 @@ impl ServerConsoleView {
         if let Some(overlay) = poll.overlay {
             self.overlay_root = overlay.root;
             self.overlay_entries = overlay.entries;
-            if let Some(idx) = self.selected_overlay_file
+            if let Some(idx) = self.selected_overlay_entry
                 && idx >= self.overlay_entries.len()
             {
-                self.selected_overlay_file = None;
+                self.selected_overlay_entry = None;
             }
         }
     }
 
-    /// Falls back to the first hosted `.html` so the browser-source box is populated before the user picks a file.
     fn browser_source_entry(&self) -> Option<&OwnedOverlayEntry> {
-        self.selected_overlay_file
+        self.selected_overlay_entry
             .and_then(|index| self.overlay_entries.get(index))
-            .filter(|entry| entry.is_file())
+            .filter(|entry| entry.is_selectable())
+            .or_else(|| self.overlay_entries.iter().find(|e| e.hosts_overlay()))
             .or_else(|| self.overlay_entries.iter().find(|e| e.is_html()))
     }
 
@@ -322,9 +339,12 @@ impl ServerConsoleView {
         if !self.running {
             return None;
         }
-        let origin = overlay_origin(self.bind_address.as_deref()?);
+        let origin = overlay_origin(self.bind_address.as_deref()?, self.routable_host.as_deref());
         let entry = self.browser_source_entry()?;
-        Some(format!("{origin}/overlays/{}", entry.name))
+        Some(match entry.kind {
+            OwnedOverlayKind::Dir { .. } => overlay_page_url(&origin, &entry.name),
+            OwnedOverlayKind::File { .. } => overlay_file_url(&origin, &entry.name),
+        })
     }
 
     fn toggle_token_reveal(&mut self, cx: &mut Context<Self>) {
@@ -390,8 +410,8 @@ impl ServerConsoleView {
         );
     }
 
-    fn select_overlay_file(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.selected_overlay_file = Some(index);
+    fn select_overlay_entry(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.selected_overlay_entry = Some(index);
         cx.notify();
     }
 
@@ -867,7 +887,7 @@ impl ServerConsoleView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let (glyph, glyph_color, size_label) = match entry.kind {
-            OwnedOverlayKind::Dir => (
+            OwnedOverlayKind::Dir { .. } => (
                 Icon::Folder,
                 palette.warning,
                 tr!("server_overlay_dir_files", count = entry.child_count as i64),
@@ -912,11 +932,11 @@ impl ServerConsoleView {
                     .child(size_label),
             );
 
-        if entry.is_file() {
+        if entry.is_selectable() {
             row =
                 row.cursor_pointer()
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.select_overlay_file(index, cx)
+                        this.select_overlay_entry(index, cx)
                     }));
         }
 
@@ -1499,6 +1519,7 @@ fn mask_token(token: &str) -> String {
 struct ServerPoll {
     snapshot: ServerSnapshot,
     bind_address: String,
+    routable_host: Option<String>,
     overlay: Option<OverlayListing>,
 }
 
@@ -1534,14 +1555,16 @@ async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing {
         };
         if meta.is_dir() {
             let mut child_count: u32 = 0;
+            let mut overlay = false;
             if let Ok(mut child) = tokio::fs::read_dir(entry.path()).await {
-                while let Ok(Some(_)) = child.next_entry().await {
+                while let Ok(Some(child_entry)) = child.next_entry().await {
                     child_count = child_count.saturating_add(1);
+                    overlay |= child_entry.file_name().as_os_str() == OsStr::new(MARKUP_FILE);
                 }
             }
             entries.push(OwnedOverlayEntry {
                 name,
-                kind: OwnedOverlayKind::Dir,
+                kind: OwnedOverlayKind::Dir { overlay },
                 size_bytes: 0,
                 child_count,
             });
@@ -1558,8 +1581,8 @@ async fn scan_overlay_root(root: &std::path::Path) -> OverlayListing {
     }
 
     entries.sort_by(|a, b| {
-        let dir_a = matches!(a.kind, OwnedOverlayKind::Dir);
-        let dir_b = matches!(b.kind, OwnedOverlayKind::Dir);
+        let dir_a = matches!(a.kind, OwnedOverlayKind::Dir { .. });
+        let dir_b = matches!(b.kind, OwnedOverlayKind::Dir { .. });
         match (dir_a, dir_b) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,

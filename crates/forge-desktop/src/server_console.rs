@@ -1851,8 +1851,9 @@ mod tests {
     use super::*;
     use forge_overlay::RESERVED_DIRECTORY;
     use forge_server::BandwidthSnapshot;
-    use forge_storage::StorageError;
     use gpui::{Entity, TestAppContext};
+
+    use crate::test_support::{runtime, test_backend};
 
     const WILDCARD_BIND: &str = "0.0.0.0:9515";
     const ROUTABLE_HOST: &str = "192.168.1.5";
@@ -1860,50 +1861,20 @@ mod tests {
     const PLAIN_DIR: &str = "assets";
     const LOOSE_PAGE: &str = "legacy.html";
 
-    struct NoCredentials;
-
-    #[async_trait::async_trait]
-    impl CredentialsRepo for NoCredentials {
-        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
-            Ok(())
-        }
-
-        async fn load(&self, _: &CredentialId) -> Result<Option<String>, StorageError> {
-            Ok(None)
-        }
-
-        async fn delete(&self, _: &CredentialId) -> Result<bool, StorageError> {
-            Ok(false)
-        }
-
-        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
-            Ok(Vec::new())
-        }
-
-        async fn last_refresh(
-            &self,
-            _: &CredentialId,
-        ) -> Result<Option<time::OffsetDateTime>, StorageError> {
-            Ok(None)
-        }
-
-        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
-            Ok(())
-        }
-    }
-
-    fn runtime() -> tokio::runtime::Runtime {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("current-thread runtime")
-    }
-
     fn serverless_console(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
     ) -> Entity<ServerConsoleView> {
-        cx.new(|cx| ServerConsoleView::new(None, rt.handle().clone(), Arc::new(NoCredentials), cx))
+        let (backend, _writes) = test_backend();
+        cx.new(|cx| {
+            ServerConsoleView::new(
+                None,
+                rt.handle().clone(),
+                Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                backend as Arc<dyn SettingsRepo>,
+                cx,
+            )
+        })
     }
 
     fn dir_entry(name: &str, overlay: bool) -> OwnedOverlayEntry {
@@ -1956,7 +1927,6 @@ mod tests {
                 dropped_events_total: 0,
             },
             bind_address: WILDCARD_BIND.to_owned(),
-            routable_host: Some(ROUTABLE_HOST.to_owned()),
             overlay: Some(OverlayListing {
                 root: "/overlays".to_owned(),
                 entries,
@@ -2108,15 +2078,30 @@ mod tests {
         let rt = runtime();
         let view = serverless_console(cx, &rt);
 
-        for (running, restarting, disabled, case) in [
-            (true, false, false, "a running, idle server"),
-            (true, true, true, "a restart already in flight"),
-            (false, false, true, "a stopped server"),
-            (false, true, true, "a restart in flight while stopped"),
+        for (running, restarting, enabled, disabled, case) in [
+            (true, false, true, false, "a running, idle server"),
+            (true, true, true, true, "a restart already in flight"),
+            (false, false, true, true, "a stopped server"),
+            (false, true, true, true, "a restart in flight while stopped"),
+            (
+                true,
+                false,
+                false,
+                false,
+                "a server still serving after settings switched it off",
+            ),
+            (
+                false,
+                false,
+                false,
+                true,
+                "a stopped server that settings switched off",
+            ),
         ] {
             view.update(cx, |this, _| {
                 this.running = running;
                 this.restarting = restarting;
+                this.enabled = enabled;
                 assert_eq!(this.restart_disabled(), disabled, "{case}");
             });
         }

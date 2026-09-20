@@ -75,6 +75,8 @@ mod speak_boot;
 mod speak_bridge;
 mod speak_state;
 mod stream_apps;
+#[cfg(test)]
+mod test_support;
 mod titlebar;
 mod toasts;
 mod topics;

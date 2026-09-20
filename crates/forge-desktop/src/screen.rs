@@ -33,3 +33,28 @@ impl Screen {
         ) || self == other
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_settings_section_opened_directly_still_lights_the_settings_nav_leaf() {
+        for (current, leaf, same, case) in [
+            (
+                Screen::Settings(Some(SettingsSection::WebSocket)),
+                Screen::Settings(None),
+                true,
+                "a section reached without passing through the leaf",
+            ),
+            (
+                Screen::Settings(Some(SettingsSection::WebSocket)),
+                Screen::Server,
+                false,
+                "the screen the section was reached from",
+            ),
+        ] {
+            assert_eq!(current.same_nav(&leaf), same, "{case}");
+        }
+    }
+}

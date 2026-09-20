@@ -221,6 +221,8 @@ impl RenderOnce for Button {
 
         if self.full_width {
             root = root.w_full().justify_start();
+        } else {
+            root = root.flex_none();
         }
         if let Some(h) = self.height {
             root = root.h(h);

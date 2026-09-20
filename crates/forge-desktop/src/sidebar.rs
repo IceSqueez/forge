@@ -16,7 +16,7 @@ use crate::screen::Screen;
 
 const SIDEBAR_WIDTH: Pixels = px(210.0);
 const SIDEBAR_MIN: Pixels = px(170.0);
-const SIDEBAR_MAX: Pixels = px(320.0);
+pub const SIDEBAR_MAX: Pixels = px(320.0);
 const SIDEBAR_PAD_H: Pixels = px(8.0);
 const SIDEBAR_PAD_TOP: Pixels = px(12.0);
 const SIDEBAR_PAD_BOTTOM: Pixels = px(12.0);

@@ -405,12 +405,14 @@ impl SettingsWebSocketView {
     ) -> impl IntoElement {
         let mut row = div()
             .flex()
+            .flex_none()
             .items_center()
             .gap(spacing(Spacing::Xs, density));
 
         if self.restarting {
             row = row.child(
                 div()
+                    .flex_none()
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.warning)
@@ -419,6 +421,7 @@ impl SettingsWebSocketView {
         } else if self.enable_server && !self.running {
             row = row.child(
                 div()
+                    .flex_none()
                     .font_family(body_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_faint)
@@ -700,15 +703,22 @@ impl SettingsWebSocketView {
             .child(icon(Icon::Server, px(20.0), palette.brand))
             .child(
                 div()
+                    .min_w(px(0.0))
                     .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_LG)
                     .text_color(palette.text_primary)
                     .child(tr!("settings_ws_title")),
             )
-            .child(div().flex_1())
+            .child(div().flex_1().min_w(px(0.0)))
             .child(self.restart_button(palette, cx))
-            .child(save_indicator(&self.save_state, palette))
+            .child(
+                div()
+                    .flex()
+                    .min_w(px(0.0))
+                    .overflow_hidden()
+                    .child(save_indicator(&self.save_state, palette)),
+            )
     }
 
     fn bind_section(
@@ -783,6 +793,7 @@ impl SettingsWebSocketView {
             .gap(spacing(Spacing::Xs, density))
             .child(
                 div()
+                    .min_w(px(0.0))
                     .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_SM)
@@ -800,6 +811,7 @@ impl SettingsWebSocketView {
 
         let info = div()
             .flex_1()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(px(2.0))
@@ -859,11 +871,13 @@ impl SettingsWebSocketView {
             footer = footer.child(
                 div()
                     .flex()
+                    .min_w(px(0.0))
                     .items_center()
                     .gap(spacing(Spacing::Xxs, density))
                     .child(icon(Icon::AlertTriangle, px(12.0), palette.random))
                     .child(
                         div()
+                            .flex_none()
                             .font_family(body_family())
                             .text_size(FONT_XS)
                             .text_color(palette.random)
@@ -871,6 +885,9 @@ impl SettingsWebSocketView {
                     )
                     .child(
                         div()
+                            .min_w(px(0.0))
+                            .overflow_hidden()
+                            .text_ellipsis()
                             .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.random)
@@ -889,7 +906,7 @@ impl SettingsWebSocketView {
             ))
             .child(field_hint(tr!("settings_ws_origins_subtitle"), palette))
             .child(self.origins_input.clone())
-            .child(footer.child(div().flex_1()).child(apply))
+            .child(footer.child(div().flex_1().min_w(px(0.0))).child(apply))
     }
 
     fn port_column(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
@@ -967,6 +984,9 @@ impl SettingsWebSocketView {
             .bg(palette.shell)
             .child(
                 div()
+                    .min_w(px(0.0))
+                    .overflow_hidden()
+                    .text_ellipsis()
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
@@ -975,6 +995,7 @@ impl SettingsWebSocketView {
             .child(
                 div()
                     .flex()
+                    .flex_none()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))
                     .child(
@@ -1002,6 +1023,7 @@ impl SettingsWebSocketView {
         let regenerate = div()
             .id("settings-ws-token-regen")
             .flex()
+            .flex_none()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
             .py(px(7.0))
@@ -1084,6 +1106,7 @@ impl SettingsWebSocketView {
     ) -> impl IntoElement {
         let labels = div()
             .flex_1()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(px(2.0))
@@ -1103,6 +1126,7 @@ impl SettingsWebSocketView {
             );
 
         div()
+            .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, density))
@@ -1143,6 +1167,8 @@ impl SettingsWebSocketView {
         let path_box = div()
             .flex_1()
             .min_w(px(0.0))
+            .overflow_hidden()
+            .text_ellipsis()
             .py(px(7.0))
             .px(spacing(Spacing::Sm, Density::Cozy))
             .rounded(radius(Radius::Md))
@@ -1172,6 +1198,7 @@ impl SettingsWebSocketView {
             .child(desc)
             .child(
                 div()
+                    .w_full()
                     .flex()
                     .items_center()
                     .gap(spacing(Spacing::Xs, density))

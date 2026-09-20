@@ -306,7 +306,7 @@ impl SettingsAudioView {
             )
             .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint));
 
-        let mut field = div().relative().flex_1().child(trigger);
+        let mut field = div().relative().flex_1().min_w(px(0.0)).child(trigger);
         if self.picker_open {
             field = field.child(self.picker_overlay(palette, cx));
         }
@@ -314,6 +314,7 @@ impl SettingsAudioView {
         let refresh_btn = div()
             .id("settings-audio-refresh")
             .flex()
+            .flex_none()
             .items_center()
             .justify_center()
             .px(spacing(Spacing::Xs, Density::Cozy))
@@ -349,6 +350,7 @@ impl SettingsAudioView {
             );
 
         div()
+            .w_full()
             .flex()
             .flex_row()
             .items_center()
@@ -390,6 +392,7 @@ impl SettingsAudioView {
                 .child(
                     div()
                         .flex_1()
+                        .min_w(px(0.0))
                         .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)

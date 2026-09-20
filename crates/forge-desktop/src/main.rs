@@ -88,17 +88,24 @@ mod voice_gate;
 mod vtube_connect;
 mod vtube_connect_form;
 
-use forge_components::{IconAssets, bind_picker_keys, bind_text_area_keys, bind_text_input_keys};
+use forge_components::{
+    FOOTER_HEIGHT, IconAssets, bind_picker_keys, bind_text_area_keys, bind_text_input_keys,
+};
 use forge_platform_core::paths;
 use gpui::{
-    App, AppContext, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowOptions, point, px,
-    size,
+    App, AppContext, Bounds, Pixels, SharedString, TitlebarOptions, WindowBounds, WindowOptions,
+    point, px, size,
 };
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
 use crate::log_tail::LogTail;
 use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
+use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
+use crate::sidebar::SIDEBAR_MAX;
+use crate::titlebar::TITLEBAR_HEIGHT;
+
+const SHELL_MIN_CONTENT_HEIGHT: Pixels = px(480.0);
 
 fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTail) {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -238,6 +245,10 @@ fn main() {
                     traffic_light_position: Some(point(px(14.0), px(10.0))),
                 }),
                 app_id: Some("forge-desktop".to_owned()),
+                window_min_size: Some(size(
+                    SIDEBAR_MAX + NAV_WIDTH + PANE_MIN_WIDTH,
+                    TITLEBAR_HEIGHT + FOOTER_HEIGHT + SHELL_MIN_CONTENT_HEIGHT,
+                )),
                 ..Default::default()
             };
 

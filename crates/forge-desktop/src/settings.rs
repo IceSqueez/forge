@@ -9,8 +9,8 @@ use forge_components::{
 };
 use forge_storage::{Language, SettingsRepo, reserved_keys};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Rgba, SharedString, Subscription, Window,
-    div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
@@ -24,6 +24,9 @@ use crate::settings_storage::SettingsStorageView;
 use crate::settings_websocket::SettingsWebSocketView;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
+
+pub const NAV_WIDTH: Pixels = px(200.0);
+pub const PANE_MIN_WIDTH: Pixels = px(360.0);
 
 const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
@@ -399,7 +402,10 @@ impl SettingsView {
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_font_picker(target, window, cx)
             }));
-        div().flex_1().child(field_label(palette, label, value))
+        div()
+            .flex_1()
+            .min_w(px(0.0))
+            .child(field_label(palette, label, value))
     }
 
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
@@ -503,7 +509,9 @@ impl SettingsView {
 
         div()
             .id("settings-nav")
-            .w(px(200.0))
+            .w(NAV_WIDTH)
+            .min_w(NAV_WIDTH)
+            .max_w(NAV_WIDTH)
             .h_full()
             .flex_shrink_0()
             .overflow_y_scroll()
@@ -557,6 +565,7 @@ impl SettingsView {
         div()
             .id("settings-pane")
             .flex_1()
+            .min_w(px(0.0))
             .h_full()
             .overflow_y_scroll()
             .bg(palette.base)
@@ -670,6 +679,7 @@ impl SettingsView {
         };
         let sidebar = div()
             .w(px(46.0))
+            .flex_none()
             .h_full()
             .flex()
             .flex_col()
@@ -697,6 +707,7 @@ impl SettingsView {
             ));
         let content_area = div()
             .flex_1()
+            .min_w(px(0.0))
             .h_full()
             .flex()
             .flex_col()
@@ -767,6 +778,7 @@ impl SettingsView {
                 theme_key(theme)
             )))
             .flex_1()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(px(6.0))
@@ -934,6 +946,7 @@ impl SettingsView {
         let tile = div()
             .w(px(48.0))
             .h(px(48.0))
+            .flex_none()
             .flex()
             .items_center()
             .justify_center()

@@ -100,6 +100,8 @@ pub fn setting_row(
     let mut labels = div()
         .flex()
         .flex_col()
+        .flex_1()
+        .min_w(px(0.0))
         .gap(SETTING_LABEL_GAP)
         .child(field_title(title, palette));
     if let Some(hint) = hint {
@@ -107,12 +109,13 @@ pub fn setting_row(
     }
 
     div()
+        .w_full()
         .flex()
         .items_center()
         .justify_between()
         .gap(spacing(Spacing::Md, density))
         .child(labels)
-        .child(control)
+        .child(div().flex().flex_none().child(control))
 }
 
 const METRIC_LINE_GAP: Pixels = px(4.0);
@@ -217,7 +220,7 @@ impl RenderOnce for Card {
             .child(self.child);
 
         if self.full_width {
-            root = root.w_full();
+            root = root.w_full().min_w(px(0.0));
         }
         if self.full_height {
             root = root.h_full();

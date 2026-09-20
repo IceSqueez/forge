@@ -425,7 +425,7 @@ impl SettingsVoiceGateView {
             )
             .child(icon(Icon::ChevronDown, FONT_XS, palette.text_faint));
 
-        let mut field = div().relative().flex_1().child(trigger);
+        let mut field = div().relative().flex_1().min_w(px(0.0)).child(trigger);
         if self.picker_open {
             field = field.child(self.picker_overlay(palette, cx));
         }
@@ -433,6 +433,7 @@ impl SettingsVoiceGateView {
         let refresh_btn = div()
             .id("settings-voice-gate-refresh")
             .flex()
+            .flex_none()
             .items_center()
             .justify_center()
             .px(spacing(Spacing::Xs, Density::Cozy))
@@ -446,6 +447,7 @@ impl SettingsVoiceGateView {
             .child(icon(Icon::Refresh, px(12.0), palette.text_secondary));
 
         div()
+            .w_full()
             .flex()
             .flex_row()
             .items_center()
@@ -486,6 +488,7 @@ impl SettingsVoiceGateView {
                 .child(
                     div()
                         .flex_1()
+                        .min_w(px(0.0))
                         .font_family(body_family())
                         .text_size(FONT_SM)
                         .text_color(palette.text_primary)

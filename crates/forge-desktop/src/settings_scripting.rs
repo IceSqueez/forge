@@ -285,6 +285,7 @@ impl SettingsScriptingView {
 
     fn header_row(&self, palette: &ForgePalette) -> impl IntoElement {
         div()
+            .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xs, Density::Cozy))
@@ -294,11 +295,18 @@ impl SettingsScriptingView {
                     .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(FONT_LG)
+                    .min_w(px(0.0))
                     .text_color(palette.text_primary)
                     .child(tr!("settings_scripting_title")),
             )
-            .child(div().flex_1())
-            .child(save_indicator(&self.save_state, palette))
+            .child(div().flex_1().min_w(px(0.0)))
+            .child(
+                div()
+                    .flex()
+                    .min_w(px(0.0))
+                    .overflow_hidden()
+                    .child(save_indicator(&self.save_state, palette)),
+            )
     }
 
     fn domains_block(
@@ -347,6 +355,7 @@ impl SettingsScriptingView {
         let add_btn = div()
             .id("settings-scripting-domain-add")
             .flex()
+            .flex_none()
             .items_center()
             .justify_center()
             .px(spacing(Spacing::Xs, density))
@@ -364,7 +373,12 @@ impl SettingsScriptingView {
             .flex_row()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .child(div().flex_1().child(self.domain_draft.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .child(self.domain_draft.clone()),
+            )
             .child(add_btn);
 
         div()
@@ -561,6 +575,7 @@ fn labeled_row(
     density: Density,
 ) -> impl IntoElement {
     div()
+        .w_full()
         .flex()
         .flex_row()
         .items_center()
@@ -570,6 +585,7 @@ fn labeled_row(
                 .flex_grow(1.0)
                 .flex_shrink(1.0)
                 .flex_basis(relative(4.0))
+                .min_w(px(0.0))
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xxs, density))
@@ -593,6 +609,7 @@ fn labeled_row(
                 .flex_grow(1.0)
                 .flex_shrink(1.0)
                 .flex_basis(relative(3.0))
+                .min_w(px(0.0))
                 .child(control),
         )
 }

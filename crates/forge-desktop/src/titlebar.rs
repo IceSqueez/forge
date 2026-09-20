@@ -6,7 +6,7 @@ use gpui::{
 
 use crate::presentation::{ActivePresentation, Presentation};
 
-const TITLEBAR_HEIGHT: Pixels = px(32.0);
+pub const TITLEBAR_HEIGHT: Pixels = px(32.0);
 const TITLEBAR_PAD_H: Pixels = px(14.0);
 const LOGO_SIZE: Pixels = px(16.0);
 const CLUSTER_GAP: Pixels = px(8.0);

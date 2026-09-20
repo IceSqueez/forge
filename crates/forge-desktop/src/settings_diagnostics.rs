@@ -699,6 +699,7 @@ fn statement_row(
         .child(
             div()
                 .flex_1()
+                .min_w(px(0.0))
                 .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(text_color)
@@ -764,6 +765,7 @@ fn log_row(line: &LogLine, palette: &ForgePalette, density: Density) -> impl Int
         .child(
             div()
                 .flex_1()
+                .min_w(px(0.0))
                 .text_color(palette.text_primary)
                 .child(SharedString::from(line.message.clone())),
         )

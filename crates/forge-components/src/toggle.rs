@@ -82,6 +82,7 @@ impl RenderOnce for Toggle {
 
         let track = div()
             .relative()
+            .flex_none()
             .w(TRACK_WIDTH)
             .h(TRACK_HEIGHT)
             .rounded(radius(Radius::Pill))

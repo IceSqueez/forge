@@ -106,3 +106,38 @@ pub trait RemoteAudioDestination: Send + Sync {
 
     async fn verdict(&self, clip_id: &RemoteClipId) -> Result<RemoteVerdict, AudioError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::STAMP;
+
+    use super::*;
+
+    const CAPABILITY: &str = "clip-cap-7Hq2ZtVn9Lx4";
+
+    #[test]
+    fn clip_id_withholds_the_capability_from_every_debug_rendering() {
+        let clip_id = RemoteClipId::new(CAPABILITY);
+        assert_eq!(clip_id.expose(), CAPABILITY);
+
+        let delivery = RemoteDelivery {
+            clip_id: clip_id.clone(),
+            live_players: 1,
+        };
+        for rendering in [format!("{clip_id:?}"), format!("{delivery:?}")] {
+            assert!(
+                !rendering.contains(CAPABILITY),
+                "{rendering} leaks the capability"
+            );
+            assert!(
+                rendering.contains(STAMP),
+                "{rendering} does not mark the value as withheld"
+            );
+        }
+    }
+
+    #[test]
+    fn wave_clips_advertise_the_media_type_the_browser_decodes() {
+        assert_eq!(ClipMediaType::Wave.as_str(), "audio/wav");
+    }
+}

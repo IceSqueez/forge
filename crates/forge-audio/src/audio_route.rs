@@ -55,3 +55,72 @@ impl FromStr for AudioRoute {
         Err(AudioError::UnknownRoute(s.to_owned()))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    const EVERY_ROUTE: [AudioRoute; 3] = [AudioRoute::Local, AudioRoute::Overlay, AudioRoute::Both];
+
+    #[test]
+    fn each_route_composes_exactly_the_legs_it_names() {
+        for (route, local, overlay) in [
+            (AudioRoute::Local, true, false),
+            (AudioRoute::Overlay, false, true),
+            (AudioRoute::Both, true, true),
+        ] {
+            assert_eq!(route.plays_local(), local, "{route} local leg");
+            assert_eq!(route.plays_overlay(), overlay, "{route} overlay leg");
+        }
+
+        assert_eq!(AudioRoute::default(), AudioRoute::Local);
+    }
+
+    #[test]
+    fn route_parses_every_canonical_spelling_regardless_of_case_or_padding() {
+        for (text, expected) in [
+            ("local", AudioRoute::Local),
+            ("overlay", AudioRoute::Overlay),
+            ("both", AudioRoute::Both),
+            ("LOCAL", AudioRoute::Local),
+            ("Overlay", AudioRoute::Overlay),
+            ("  both\n", AudioRoute::Both),
+        ] {
+            assert_eq!(
+                text.parse::<AudioRoute>().ok(),
+                Some(expected),
+                "input {text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn route_rejects_anything_outside_the_vocabulary_echoing_the_raw_input() {
+        for bad in [
+            "",
+            "   ",
+            "loca",
+            "local overlay",
+            "localoverlay",
+            "none",
+            "remote",
+        ] {
+            let err = bad.parse::<AudioRoute>().unwrap_err();
+            assert!(
+                matches!(&err, AudioError::UnknownRoute(raw) if raw == bad),
+                "input {bad:?} produced {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn route_serializes_under_the_same_spelling_it_parses() {
+        for route in EVERY_ROUTE {
+            let json = serde_json::to_string(&route).unwrap();
+            assert_eq!(json, format!("\"{route}\""));
+            assert_eq!(serde_json::from_str::<AudioRoute>(&json).unwrap(), route);
+            assert_eq!(route.to_string().parse::<AudioRoute>().unwrap(), route);
+        }
+    }
+}

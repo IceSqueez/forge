@@ -71,6 +71,13 @@ enum ClientLiveness {
     Idle,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BindState {
+    Bound(String),
+    AwaitingAddress,
+    Stopped,
+}
+
 #[derive(Debug, Clone)]
 struct OwnedClientRow {
     key: String,
@@ -208,6 +215,10 @@ impl ServerConsoleView {
         cx.notify();
     }
 
+    fn restart_disabled(&self) -> bool {
+        self.restarting || !self.running
+    }
+
     fn restart_control(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let label = if self.restarting {
             tr!("server_btn_restarting")
@@ -215,7 +226,7 @@ impl ServerConsoleView {
             tr!("server_btn_restart")
         };
         ghost_button_with_icon(Icon::Refresh, label, palette)
-            .disabled(self.restarting || !self.running)
+            .disabled(self.restart_disabled())
             .on_click(
                 "srv-restart",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
@@ -519,14 +530,22 @@ impl ServerConsoleView {
             .into_any_element()
     }
 
+    fn bind_state(&self) -> BindState {
+        match (self.running, self.bind_address.clone()) {
+            (true, Some(address)) => BindState::Bound(address),
+            (true, None) => BindState::AwaitingAddress,
+            (false, _) => BindState::Stopped,
+        }
+    }
+
     fn bind_column(
         &self,
         palette: &ForgePalette,
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let field = match (self.running, self.bind_address.clone()) {
-            (true, Some(address)) => mono_field(palette, density)
+        let field = match self.bind_state() {
+            BindState::Bound(address) => mono_field(palette, density)
                 .child(
                     div()
                         .flex_1()
@@ -547,20 +566,20 @@ impl ServerConsoleView {
                         )
                         .child(icon(Icon::Copy, CONTROL_GLYPH, palette.text_faint)),
                 ),
-            (running, _) => {
-                let placeholder = if running {
-                    tr!("server_bind_address_loading")
-                } else {
-                    tr!("server_not_running")
-                };
-                mono_field(palette, density).child(
-                    div()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .text_color(palette.text_faint)
-                        .child(placeholder),
-                )
-            }
+            BindState::AwaitingAddress => mono_field(palette, density).child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .text_color(palette.text_faint)
+                    .child(tr!("server_bind_address_loading")),
+            ),
+            BindState::Stopped => mono_field(palette, density).child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .text_color(palette.text_faint)
+                    .child(tr!("server_not_running")),
+            ),
         };
 
         div()

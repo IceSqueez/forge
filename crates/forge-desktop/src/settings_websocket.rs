@@ -385,6 +385,10 @@ impl SettingsWebSocketView {
         }
     }
 
+    fn restart_disabled(&self) -> bool {
+        self.restarting || self.loading || self.server.is_none() || !self.enable_server
+    }
+
     fn restart_button(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
         let label = if self.restarting {
             tr!("server_btn_restarting")
@@ -392,9 +396,7 @@ impl SettingsWebSocketView {
             tr!("server_btn_restart")
         };
         ghost_button_with_icon(Icon::Refresh, label, palette)
-            .disabled(
-                self.restarting || self.loading || self.server.is_none() || !self.enable_server,
-            )
+            .disabled(self.restart_disabled())
             .on_click(
                 "settings-ws-restart",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),

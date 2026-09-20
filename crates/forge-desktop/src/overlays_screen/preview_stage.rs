@@ -100,6 +100,29 @@ enum TestFirePhase {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeliveryHint {
+    Sending,
+    Delivered,
+    NoBrowserSource,
+    Undelivered,
+}
+
+fn delivery_hint(phase: &TestFirePhase, server_running: bool) -> DeliveryHint {
+    match phase {
+        TestFirePhase::Sending => DeliveryHint::Sending,
+        TestFirePhase::Landed {
+            delivered: true, ..
+        } => DeliveryHint::Delivered,
+        TestFirePhase::Landed {
+            delivered: false, ..
+        } if server_running => DeliveryHint::NoBrowserSource,
+        TestFirePhase::Landed {
+            delivered: false, ..
+        } => DeliveryHint::Undelivered,
+    }
+}
+
 pub(super) struct TestFireRun {
     overlay: OverlayId,
     phase: TestFirePhase,
@@ -316,29 +339,23 @@ impl OverlaysView {
             .as_ref()
             .filter(|run| run.overlay == definition.id)?;
 
-        let (glyph, tint, message) = match &run.phase {
-            TestFirePhase::Sending => (
+        let (glyph, tint, message) = match delivery_hint(&run.phase, self.server_running) {
+            DeliveryHint::Sending => (
                 Icon::PlayerPlay,
                 palette.text_muted,
                 tr!("overlays_test_sending"),
             ),
-            TestFirePhase::Landed {
-                delivered: true, ..
-            } => (
+            DeliveryHint::Delivered => (
                 Icon::CircleCheck,
                 palette.success,
                 tr!("overlays_test_delivered"),
             ),
-            TestFirePhase::Landed {
-                delivered: false, ..
-            } if self.server_running => (
+            DeliveryHint::NoBrowserSource => (
                 Icon::AlertTriangle,
                 palette.warning,
                 tr!("overlays_test_no_browser_source"),
             ),
-            TestFirePhase::Landed {
-                delivered: false, ..
-            } => (
+            DeliveryHint::Undelivered => (
                 Icon::AlertTriangle,
                 palette.warning,
                 tr!("overlays_test_undelivered"),

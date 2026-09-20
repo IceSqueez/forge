@@ -2001,6 +2001,61 @@ mod tests {
         }
     }
 
+    #[gpui::test]
+    fn restart_is_offered_only_while_the_server_runs_with_no_restart_in_flight(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        for (running, restarting, disabled, case) in [
+            (true, false, false, "a running, idle server"),
+            (true, true, true, "a restart already in flight"),
+            (false, false, true, "a stopped server"),
+            (false, true, true, "a restart in flight while stopped"),
+        ] {
+            view.update(cx, |this, _| {
+                this.running = running;
+                this.restarting = restarting;
+                assert_eq!(this.restart_disabled(), disabled, "{case}");
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn the_bind_field_shows_an_address_only_while_the_server_runs(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = serverless_console(cx, &rt);
+
+        for (running, bind_address, expected, case) in [
+            (
+                true,
+                Some(WILDCARD_BIND),
+                BindState::Bound(WILDCARD_BIND.to_owned()),
+                "running with its address known",
+            ),
+            (
+                true,
+                None,
+                BindState::AwaitingAddress,
+                "running before the first poll answers",
+            ),
+            (false, None, BindState::Stopped, "stopped"),
+            (
+                false,
+                Some(WILDCARD_BIND),
+                BindState::Stopped,
+                "stopped with a stale address still held",
+            ),
+        ] {
+            view.update(cx, |this, _| {
+                this.running = running;
+                this.bind_address = bind_address.map(str::to_owned);
+                assert_eq!(this.bind_state(), expected, "{case}");
+            });
+        }
+    }
+
     #[test]
     fn mask_token_keeps_only_the_last_four_characters() {
         let token = "fg_supersecretvalue9c4a";

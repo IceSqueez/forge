@@ -723,3 +723,43 @@ fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl 
                 .child(message),
         )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn landed(delivered: bool) -> TestFirePhase {
+        TestFirePhase::Landed {
+            content: OverlayConfig::new(),
+            delivered,
+        }
+    }
+
+    #[test]
+    fn a_fire_in_flight_or_already_delivered_reads_the_same_whether_the_server_runs() {
+        for (phase, expected) in [
+            (TestFirePhase::Sending, DeliveryHint::Sending),
+            (landed(true), DeliveryHint::Delivered),
+        ] {
+            for server_running in [false, true] {
+                assert_eq!(
+                    delivery_hint(&phase, server_running),
+                    expected,
+                    "server running: {server_running}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_undelivered_landing_blames_the_browser_source_only_while_the_server_runs() {
+        assert_eq!(
+            delivery_hint(&landed(false), true),
+            DeliveryHint::NoBrowserSource
+        );
+        assert_eq!(
+            delivery_hint(&landed(false), false),
+            DeliveryHint::Undelivered
+        );
+    }
+}

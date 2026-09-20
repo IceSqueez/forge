@@ -1998,6 +1998,50 @@ mod tests {
         }
     }
     #[gpui::test]
+    fn restart_is_offered_only_once_an_enabled_server_is_loaded_and_idle(cx: &mut TestAppContext) {
+        for (with_server, restarting, loading, enable_server, disabled, case) in [
+            (
+                true,
+                false,
+                false,
+                true,
+                false,
+                "an enabled, loaded, idle server",
+            ),
+            (true, true, false, true, true, "a restart already in flight"),
+            (
+                true,
+                false,
+                true,
+                true,
+                true,
+                "the settings are still loading",
+            ),
+            (
+                true,
+                false,
+                false,
+                false,
+                true,
+                "the server is switched off",
+            ),
+            (false, false, false, true, true, "there is no server handle"),
+        ] {
+            let rt = runtime();
+            let (backend, _writes) = test_backend();
+            let server = with_server.then(|| stopped_handle(&rt, &backend));
+            let view = settings_view_with_server(cx, &rt, backend, server);
+
+            view.update(cx, |this, _| {
+                this.restarting = restarting;
+                this.loading = loading;
+                this.enable_server = enable_server;
+                assert_eq!(this.restart_disabled(), disabled, "{case}");
+            });
+        }
+    }
+
+    #[gpui::test]
     fn a_change_during_an_in_flight_restart_queues_exactly_one_rerun(cx: &mut TestAppContext) {
         let rt = runtime();
         let (backend, _writes) = test_backend();

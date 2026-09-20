@@ -1,5 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use std::collections::BTreeMap;
+
 use forge_overlay::{
     OverlayConfig, OverlayInstance, OverlayKindRegistry, register_builtin_kinds, sample_document,
 };
@@ -11,6 +13,37 @@ const BUILTIN_IDS: &[&str] = &[
     "overlay.frame",
     "overlay.goal",
     "overlay.ticker",
+];
+
+const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
+    (
+        "overlay.alert",
+        &[
+            ("headline", "Thanks for the sub!"),
+            ("subline", "7 months subscribed"),
+        ],
+    ),
+    (
+        "overlay.chat",
+        &[
+            ("author", "pixel_pal"),
+            ("author_color", "#89dceb"),
+            ("badges", ""),
+            ("message", "first time here, hi!"),
+        ],
+    ),
+    ("overlay.frame", &[("headline", ""), ("subline", "LIVE")]),
+    (
+        "overlay.goal",
+        &[("label", "Sub goal"), ("target", "100"), ("value", "42")],
+    ),
+    (
+        "overlay.ticker",
+        &[
+            ("headline", "Latest cheer: 500 bits"),
+            ("subline", "\"take my bits\""),
+        ],
+    ),
 ];
 
 const IDENTITY: &str = "sub-alert-1";
@@ -45,6 +78,25 @@ fn content_of(document: &Value) -> &serde_json::Map<String, Value> {
     document["content"]
         .as_object()
         .expect("the preview page reads content as an object")
+}
+
+fn content_text(kind_id: &str) -> BTreeMap<String, String> {
+    content_of(&sample(kind_id))
+        .iter()
+        .map(|(key, value)| {
+            let text = value
+                .as_str()
+                .map_or_else(|| value.to_string(), str::to_owned);
+            (key.clone(), text)
+        })
+        .collect()
+}
+
+fn expected_content(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
 }
 
 fn mentions(value: &Value, name: &str) -> bool {
@@ -143,12 +195,32 @@ fn every_sample_content_value_reaches_the_page_as_a_plain_json_value() {
 
 #[test]
 fn the_sample_content_expands_the_overlays_own_wording_against_the_sampled_payload() {
-    let document = sample("overlay.chat");
-    let content = content_of(&document);
-
     assert_eq!(
-        (content["author"].as_str(), content["message"].as_str(),),
-        (Some("PixelPal"), Some("sample payload")),
-        "the sample reached the page with its variable tokens unexpanded"
+        EXPECTED_SAMPLE_CONTENT
+            .iter()
+            .map(|(kind_id, _)| *kind_id)
+            .collect::<Vec<_>>(),
+        BUILTIN_IDS,
+        "a builtin overlay kind has no pinned sample wording"
     );
+
+    for (kind_id, pairs) in EXPECTED_SAMPLE_CONTENT {
+        assert_eq!(
+            content_text(kind_id),
+            expected_content(pairs),
+            "{kind_id} reached the page with wording its sampled payload never produces"
+        );
+    }
+}
+
+#[test]
+fn no_builtin_default_reaches_the_page_with_an_unexpanded_token() {
+    for kind_id in BUILTIN_IDS {
+        for (key, text) in content_text(kind_id) {
+            assert!(
+                !text.contains('%'),
+                "{kind_id} sent {key} to the page as {text:?}, so the viewer reads a raw token"
+            );
+        }
+    }
 }

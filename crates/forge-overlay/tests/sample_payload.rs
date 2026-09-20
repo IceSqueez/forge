@@ -2,14 +2,40 @@
 
 use std::collections::BTreeSet;
 
-use forge_overlay::{OverlayKindRegistry, register_builtin_kinds, sample_payload};
-use serde_json::Value;
+use forge_overlay::sample_payload;
 
-fn registry() -> OverlayKindRegistry {
-    let mut reg = OverlayKindRegistry::new();
-    register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
-    reg
-}
+const CHAT_MESSAGE_FIELDS: &[&str] = &[
+    "channel",
+    "message_text",
+    "user_color",
+    "user_id",
+    "user_login",
+];
+const RESUBSCRIBE_FIELDS: &[&str] = &[
+    "sub_cumulative_months",
+    "sub_message",
+    "sub_streak_months",
+    "sub_tier",
+    "user_id",
+    "user_login",
+];
+const CHEER_FIELDS: &[&str] = &[
+    "bits_amount",
+    "cheer_is_anonymous",
+    "cheer_message",
+    "user_id",
+    "user_login",
+];
+const FOLLOW_FIELDS: &[&str] = &["followed_at", "user"];
+const SUBSCRIBE_FIELDS: &[&str] = &["is_gift", "tier", "user"];
+const GIFT_SUBSCRIPTION_FIELDS: &[&str] = &["gifter", "is_anonymous", "recipient", "tier"];
+const RAID_FIELDS: &[&str] = &[
+    "direction",
+    "from_broadcaster",
+    "to_broadcaster",
+    "viewer_count",
+];
+const PLAIN_FIELDS: &[&str] = &["message", "user"];
 
 fn keys_of(event_kind: &str) -> BTreeSet<String> {
     sample_payload(event_kind)
@@ -24,56 +50,19 @@ fn expected(names: &[&str]) -> BTreeSet<String> {
     names.iter().map(|n| (*n).to_owned()).collect()
 }
 
-fn placeholders(template: &str) -> Vec<String> {
-    template
-        .split('%')
-        .skip(1)
-        .step_by(2)
-        .map(|token| token.trim().to_owned())
-        .filter(|token| !token.is_empty())
-        .collect()
-}
-
 #[test]
 fn a_sample_carries_exactly_the_fields_of_the_family_its_kind_names() {
     for (event_kind, fields) in [
-        ("twitch.chat.message", &["channel", "message", "user"][..]),
-        ("kick.chat.message", &["channel", "message", "user"]),
-        ("twitch.channel.follow", &["followed_at", "user"]),
-        ("twitch.channel.subscribe", &["is_gift", "tier", "user"]),
-        (
-            "twitch.channel.subscription.message",
-            &[
-                "cumulative_months",
-                "message",
-                "share_streak",
-                "streak_months",
-                "tier",
-                "user",
-            ],
-        ),
-        (
-            "twitch.channel.subscription.gift",
-            &["gifter", "is_anonymous", "recipient", "tier"],
-        ),
-        (
-            "kick.channel.subscription.gifts",
-            &["gifter", "is_anonymous", "recipient", "tier"],
-        ),
-        (
-            "twitch.channel.cheer",
-            &["bits", "is_anonymous", "message", "user"],
-        ),
-        (
-            "twitch.channel.raid",
-            &[
-                "direction",
-                "from_broadcaster",
-                "to_broadcaster",
-                "viewer_count",
-            ],
-        ),
-        ("obs.scene.changed", &["message", "user"]),
+        ("twitch.chat.message", CHAT_MESSAGE_FIELDS),
+        ("kick.chat.message", CHAT_MESSAGE_FIELDS),
+        ("twitch.channel.follow", FOLLOW_FIELDS),
+        ("twitch.channel.subscribe", SUBSCRIBE_FIELDS),
+        ("twitch.channel.subscription.message", RESUBSCRIBE_FIELDS),
+        ("twitch.channel.subscription.gift", GIFT_SUBSCRIPTION_FIELDS),
+        ("kick.channel.subscription.gifts", GIFT_SUBSCRIPTION_FIELDS),
+        ("twitch.channel.cheer", CHEER_FIELDS),
+        ("twitch.channel.raid", RAID_FIELDS),
+        ("obs.scene.changed", PLAIN_FIELDS),
     ] {
         assert_eq!(
             keys_of(event_kind),
@@ -83,56 +72,19 @@ fn a_sample_carries_exactly_the_fields_of_the_family_its_kind_names() {
     }
 }
 
-/// Mirrors the runtime's resolution order: an exact top level key wins before dots walk nesting.
-fn resolve<'a>(sample: &'a Value, token: &str) -> Option<&'a Value> {
-    sample.get(token).or_else(|| {
-        token
-            .split('.')
-            .try_fold(sample, |value, segment| value.get(segment))
-    })
-}
-
 #[test]
-fn every_placeholder_a_builtin_default_writes_names_a_field_its_sample_renders_as_text() {
-    let targets = [
-        ("overlay.alert", "twitch.channel.subscription.message"),
-        ("overlay.ticker", "twitch.channel.cheer"),
-        ("overlay.frame", "twitch.channel.subscribe"),
-        ("overlay.chat", "overlay.chat"),
-        ("overlay.goal", "overlay.goal"),
-    ];
-    let reg = registry();
-
-    assert_eq!(
-        targets
-            .iter()
-            .map(|(kind, _)| *kind)
-            .collect::<BTreeSet<_>>(),
-        reg.all().map(|d| d.id()).collect::<BTreeSet<_>>(),
-        "a builtin overlay kind has no sample its default template was written against"
-    );
-
-    for (kind_id, event_kind) in targets {
-        let descriptor = reg.get(kind_id).expect("a registered builtin kind");
-        let defaults = descriptor.default_config();
-        let sample = sample_payload(event_kind);
-
-        for (key, held) in &defaults {
-            let Some(template) = held.as_str() else {
-                continue;
-            };
-            for token in placeholders(template) {
-                let value = resolve(&sample, &token).unwrap_or_else(|| {
-                    panic!(
-                        "{kind_id} defaults {key} to %{token}%, a field {event_kind} never carries"
-                    )
-                });
-                assert!(
-                    value.is_string() || value.is_number() || value.is_boolean(),
-                    "{kind_id} defaults {key} to %{token}%, which {event_kind} carries as {value}; \
-                     the page renders that as a field count, not as text"
-                );
-            }
-        }
+fn an_overlay_kind_id_selects_the_family_its_own_default_wording_was_written_against() {
+    for (kind_id, fields) in [
+        ("overlay.alert", RESUBSCRIBE_FIELDS),
+        ("overlay.chat", CHAT_MESSAGE_FIELDS),
+        ("overlay.ticker", CHEER_FIELDS),
+        ("overlay.frame", PLAIN_FIELDS),
+        ("overlay.goal", PLAIN_FIELDS),
+    ] {
+        assert_eq!(
+            keys_of(kind_id),
+            expected(fields),
+            "{kind_id} sampled a family its stored defaults never name"
+        );
     }
 }

@@ -119,6 +119,18 @@ pub fn report_failure<V, F, E>(
     .detach();
 }
 
+pub fn detached<F, E>(handle: &Handle, context: &'static str, fut: F)
+where
+    F: Future<Output = Result<(), E>> + Send + 'static,
+    E: Display + Send + 'static,
+{
+    handle.spawn(async move {
+        if let Err(e) = fut.await {
+            tracing::warn!(error = %e, context = %context, "detached write failed");
+        }
+    });
+}
+
 pub async fn open_path(target: impl AsRef<std::ffi::OsStr> + Send + 'static) -> Result<(), String> {
     tokio::task::spawn_blocking(move || open::that(target))
         .await

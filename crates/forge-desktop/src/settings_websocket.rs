@@ -27,6 +27,7 @@ const LAN_ADDR: &str = "0.0.0.0";
 const MIN_PORT: u16 = 1024;
 const DEFAULT_PORT: u16 = 8081;
 const DEFAULT_OVERLAY_HINT: &str = "~/.local/share/forge/overlays";
+const ORIGINS_PERSIST_CONTEXT: &str = "websocket additional origins";
 const ORIGINS_AREA_HEIGHT: Pixels = px(72.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +116,7 @@ impl SettingsWebSocketView {
                 }
             }),
         );
+        subs.push(cx.on_release(|this, cx| this.persist_origins_on_release(cx)));
 
         let running = server
             .as_ref()
@@ -390,7 +392,9 @@ impl SettingsWebSocketView {
             tr!("server_btn_restart")
         };
         ghost_button_with_icon(Icon::Refresh, label, palette)
-            .disabled(self.restarting || self.server.is_none())
+            .disabled(
+                self.restarting || self.loading || self.server.is_none() || !self.enable_server,
+            )
             .on_click(
                 "settings-ws-restart",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
@@ -588,6 +592,28 @@ impl SettingsWebSocketView {
                 cx.notify();
             }
         }
+    }
+
+    fn persist_origins_on_release(&mut self, cx: &mut App) {
+        let raw = self.origins_input.read(cx).content().to_owned();
+        let Ok(origins) = parse_origins(&raw) else {
+            return;
+        };
+        if origins == self.additional_origins {
+            return;
+        }
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let reload = self.running || self.restarting;
+        let server = self.server.clone().filter(|_| reload);
+        async_bridge::detached(&self.rt_handle, ORIGINS_PERSIST_CONTEXT, async move {
+            ServerSettings::save_additional_origins(repo.as_ref(), &origins)
+                .await
+                .map_err(|e| e.to_string())?;
+            if let Some(handle) = server {
+                handle.restart().await.map_err(|e| e.to_string())?;
+            }
+            Ok::<(), String>(())
+        });
     }
 
     fn toggle_require_ws_token(&mut self, cx: &mut Context<Self>) {

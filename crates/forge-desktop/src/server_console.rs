@@ -27,6 +27,7 @@ use crate::presentation::ActivePresentation;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_THROUGHPUT_SAMPLES: usize = 60;
 const MAX_VISIBLE_CHIPS: usize = 6;
 /// Matches the rolling window `forge-server` measures per-client event rate over, so the stat hint stays honest.
@@ -214,7 +215,7 @@ impl ServerConsoleView {
             tr!("server_btn_restart")
         };
         ghost_button_with_icon(Icon::Refresh, label, palette)
-            .disabled(self.restarting || self.server.is_none())
+            .disabled(self.restarting || !self.running)
             .on_click(
                 "srv-restart",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),
@@ -289,7 +290,6 @@ impl ServerConsoleView {
         cx.spawn(async move |this, cx| {
             let mut tick: u32 = 0;
             loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
                 tick = tick.wrapping_add(1);
                 let want_overlay = tick == 1 || tick.is_multiple_of(5);
                 let (tx, rx) = tokio::sync::oneshot::channel::<ServerPoll>();
@@ -311,18 +311,17 @@ impl ServerConsoleView {
                         overlay,
                     });
                 });
-                let Ok(poll) = rx.await else {
-                    continue;
-                };
-                if this
-                    .update(cx, |this, cx| {
-                        this.apply_poll(poll);
-                        cx.notify();
-                    })
-                    .is_err()
+                if let Ok(poll) = rx.await
+                    && this
+                        .update(cx, |this, cx| {
+                            this.apply_poll(poll);
+                            cx.notify();
+                        })
+                        .is_err()
                 {
                     break;
                 }
+                cx.background_executor().timer(POLL_INTERVAL).await;
             }
         })
         .detach();
@@ -526,14 +525,8 @@ impl ServerConsoleView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let address = if self.running {
-            self.bind_address.clone()
-        } else {
-            None
-        };
-
-        let field = match address {
-            Some(address) => mono_field(palette, density)
+        let field = match (self.running, self.bind_address.clone()) {
+            (true, Some(address)) => mono_field(palette, density)
                 .child(
                     div()
                         .flex_1()
@@ -554,13 +547,20 @@ impl ServerConsoleView {
                         )
                         .child(icon(Icon::Copy, CONTROL_GLYPH, palette.text_faint)),
                 ),
-            None => mono_field(palette, density).child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .text_color(palette.text_faint)
-                    .child(tr!("server_not_running")),
-            ),
+            (running, _) => {
+                let placeholder = if running {
+                    tr!("server_bind_address_loading")
+                } else {
+                    tr!("server_not_running")
+                };
+                mono_field(palette, density).child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .text_color(palette.text_faint)
+                        .child(placeholder),
+                )
+            }
         };
 
         div()

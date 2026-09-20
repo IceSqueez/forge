@@ -1336,6 +1336,7 @@ server_status_listening = Слухає · { $clients ->
 server_status_stopped = Зупинено
 server_not_running = Не запущено
 server_bind_address = АДРЕСА ПРИВ'ЯЗКИ
+server_bind_address_loading = Читаємо адресу…
 server_bearer_token = BEARER-ТОКЕН
 server_btn_restart = Перезапуск
 server_btn_restarting = Перезапуск…

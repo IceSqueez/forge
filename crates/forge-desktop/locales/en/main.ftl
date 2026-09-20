@@ -1327,6 +1327,7 @@ server_status_listening = Listening · { $clients ->
 server_status_stopped = Stopped
 server_not_running = Not running
 server_bind_address = BIND ADDRESS
+server_bind_address_loading = Reading address…
 server_bearer_token = BEARER TOKEN
 server_btn_restart = Restart
 server_btn_restarting = Restarting…

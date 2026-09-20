@@ -13,6 +13,11 @@ on:
         required: false
         type: number
         default: 0
+      require_platform_client_ids:
+        description: "Fail the build when a platform client id secret is empty (a caller without `secrets: inherit` passes empty strings, which ships a binary that cannot sign in)."
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -73,6 +78,23 @@ jobs:
         run: |
           RAW_VERSION=$(cargo pkgid -p ${{ inputs.package_name }} | cut -d# -f2 | cut -d@ -f2)
           echo "VERSION=$RAW_VERSION" >> $GITHUB_ENV
+
+      - name: Require platform client ids
+        if: ${{ inputs.require_platform_client_ids }}
+        shell: bash
+        env:
+          FORGE_TWITCH_CLIENT_ID: ${{ secrets.FORGE_TWITCH_CLIENT_ID }}
+          FORGE_YOUTUBE_CLIENT_ID: ${{ secrets.FORGE_YOUTUBE_CLIENT_ID }}
+          FORGE_YOUTUBE_CLIENT_SECRET: ${{ secrets.FORGE_YOUTUBE_CLIENT_SECRET }}
+        run: |
+          missing=0
+          for name in FORGE_TWITCH_CLIENT_ID FORGE_YOUTUBE_CLIENT_ID FORGE_YOUTUBE_CLIENT_SECRET; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::$name is empty - the caller must pass secrets (secrets: inherit) and the repository secret must be set"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       - name: Build
         shell: bash

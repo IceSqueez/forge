@@ -16,10 +16,12 @@ jobs:
   build:
     name: Build
     uses: ./.github/workflows/_build-matrix.yml
+    secrets: inherit
     with:
       package_name: forge-desktop
       bin_name: forge
       retention_days: 1
+      require_platform_client_ids: true
 
   publish:
     name: Publish

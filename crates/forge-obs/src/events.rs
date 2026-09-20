@@ -931,25 +931,164 @@ mod tests {
         assert!(active);
     }
 
+    type FrameCounters = (u32, u32);
+
+    const IDLE_FRAMES: FrameCounters = (0, 0);
+    const CPU_FPS_DELTA_INDEX: u8 = 2;
+    const SMOOTH: bool = false;
+    const LAGGING: bool = true;
+
+    fn stats(cpu: f64, fps: f64, render: FrameCounters, output: FrameCounters) -> Stats {
+        Stats {
+            cpu_usage: cpu,
+            active_fps: fps,
+            render_skipped_frames: render.0,
+            render_total_frames: render.1,
+            output_skipped_frames: output.0,
+            output_total_frames: output.1,
+            ..Stats::default()
+        }
+    }
+
     #[test]
     fn stats_poll_emits_a_cpu_delta_only_when_a_rendered_figure_changes() {
         let mut snapshot = HealthSnapshot::default();
-        let stats = Stats {
-            cpu_usage: 12.5,
-            active_fps: 60.0,
-            ..Stats::default()
-        };
 
-        assert_eq!(apply_stats_update(&stats, &mut snapshot).len(), 1);
-        assert!(apply_stats_update(&stats, &mut snapshot).is_empty());
+        for (reading, expected, case) in [
+            (
+                stats(12.5, 60.0, IDLE_FRAMES, IDLE_FRAMES),
+                true,
+                "first reading",
+            ),
+            (
+                stats(12.5, 60.0, IDLE_FRAMES, IDLE_FRAMES),
+                false,
+                "an identical reading",
+            ),
+            (
+                stats(13.0, 60.0, IDLE_FRAMES, IDLE_FRAMES),
+                true,
+                "cpu moved",
+            ),
+            (
+                stats(13.0, 59.0, IDLE_FRAMES, IDLE_FRAMES),
+                true,
+                "fps moved",
+            ),
+            (
+                stats(13.0, 59.0, (60, 600), IDLE_FRAMES),
+                true,
+                "the lag verdict flipped",
+            ),
+            (
+                stats(13.0, 59.0, (120, 1_200), IDLE_FRAMES),
+                false,
+                "still lagging on unchanged cpu and fps",
+            ),
+        ] {
+            let indexes: Vec<u8> = apply_stats_update(&reading, &mut snapshot)
+                .iter()
+                .map(|d| d.index)
+                .collect();
+            let expected = if expected {
+                vec![CPU_FPS_DELTA_INDEX]
+            } else {
+                vec![]
+            };
+            assert_eq!(indexes, expected, "{case}");
+        }
+    }
 
-        let lagging = Stats {
-            render_skipped_frames: 1,
-            ..stats.clone()
-        };
-        let deltas = apply_stats_update(&lagging, &mut snapshot);
-        assert_eq!(deltas.iter().map(|d| d.index).collect::<Vec<_>>(), vec![2]);
-        assert!(snapshot.render_lag);
+    #[test]
+    fn stats_poll_judges_frame_lag_on_the_share_of_frames_skipped_since_the_previous_poll() {
+        for (case, polls) in [
+            (
+                "a cumulative skip count carries no verdict on the first poll",
+                vec![((500, 10_000), IDLE_FRAMES, SMOOTH)],
+            ),
+            (
+                "a stray skipped frame in a full interval stays smooth",
+                vec![
+                    (IDLE_FRAMES, IDLE_FRAMES, SMOOTH),
+                    ((1, 120), IDLE_FRAMES, SMOOTH),
+                ],
+            ),
+            (
+                "sustained skipping trips the warning",
+                vec![
+                    (IDLE_FRAMES, IDLE_FRAMES, SMOOTH),
+                    ((30, 600), IDLE_FRAMES, LAGGING),
+                ],
+            ),
+            (
+                "the threshold share itself is still smooth, one frame past it is not",
+                vec![
+                    (IDLE_FRAMES, IDLE_FRAMES, SMOOTH),
+                    ((1, 100), IDLE_FRAMES, SMOOTH),
+                    ((3, 200), IDLE_FRAMES, LAGGING),
+                ],
+            ),
+            (
+                "a clean interval clears the warning without an OBS restart",
+                vec![
+                    (IDLE_FRAMES, IDLE_FRAMES, SMOOTH),
+                    ((30, 600), IDLE_FRAMES, LAGGING),
+                    ((30, 1_200), IDLE_FRAMES, SMOOTH),
+                ],
+            ),
+            (
+                "a skip counter that went down rebaselines, and the next poll judges against it",
+                vec![
+                    ((100, 5_000), IDLE_FRAMES, SMOOTH),
+                    ((30, 600), IDLE_FRAMES, SMOOTH),
+                    ((60, 1_200), IDLE_FRAMES, LAGGING),
+                ],
+            ),
+            (
+                "a frame counter that went down rebaselines, and the next poll judges against it",
+                vec![
+                    ((0, 5_000), IDLE_FRAMES, SMOOTH),
+                    ((0, 600), IDLE_FRAMES, SMOOTH),
+                    ((30, 1_200), IDLE_FRAMES, LAGGING),
+                ],
+            ),
+            (
+                "an interval that produced no frames cannot be lagging",
+                vec![
+                    ((10, 500), IDLE_FRAMES, SMOOTH),
+                    ((10, 500), IDLE_FRAMES, SMOOTH),
+                    ((15, 500), IDLE_FRAMES, SMOOTH),
+                ],
+            ),
+            (
+                "render skipping alone trips the warning",
+                vec![
+                    (IDLE_FRAMES, IDLE_FRAMES, SMOOTH),
+                    ((30, 600), (0, 600), LAGGING),
+                ],
+            ),
+            (
+                "output skipping alone trips the warning",
+                vec![
+                    (IDLE_FRAMES, IDLE_FRAMES, SMOOTH),
+                    ((0, 600), (30, 600), LAGGING),
+                ],
+            ),
+            (
+                "a poll that emits no delta still advances the baseline",
+                vec![
+                    (IDLE_FRAMES, IDLE_FRAMES, SMOOTH),
+                    ((0, 10_000), IDLE_FRAMES, SMOOTH),
+                    ((60, 10_600), IDLE_FRAMES, LAGGING),
+                ],
+            ),
+        ] {
+            let mut snapshot = HealthSnapshot::default();
+            for (poll, (render, output, expected)) in polls.into_iter().enumerate() {
+                apply_stats_update(&stats(12.5, 60.0, render, output), &mut snapshot);
+                assert_eq!(snapshot.render_lag, expected, "{case}: poll {poll}");
+            }
+        }
     }
 
     #[test]

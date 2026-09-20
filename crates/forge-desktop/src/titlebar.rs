@@ -1,5 +1,8 @@
 use forge_components::{BORDER_THIN, FONT_SM, FONT_XS, ForgePalette, Radius, body_family, radius};
-use gpui::{Context, FontWeight, MouseButton, MouseDownEvent, Pixels, Window, div, prelude::*, px};
+use gpui::{
+    ClickEvent, Context, FontWeight, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, Window, WindowControlArea, div, prelude::*, px,
+};
 
 use crate::presentation::{ActivePresentation, Presentation};
 
@@ -7,14 +10,17 @@ const TITLEBAR_HEIGHT: Pixels = px(32.0);
 const TITLEBAR_PAD_H: Pixels = px(14.0);
 const LOGO_SIZE: Pixels = px(16.0);
 const CLUSTER_GAP: Pixels = px(8.0);
+const DOUBLE_CLICK_COUNT: usize = 2;
 
-pub struct TitleBar;
+pub struct TitleBar {
+    should_move: bool,
+}
 
 impl TitleBar {
     pub fn new(cx: &mut Context<Self>) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
-        Self
+        Self { should_move: false }
     }
 
     fn logo(palette: &ForgePalette) -> impl IntoElement {
@@ -79,10 +85,38 @@ impl Render for TitleBar {
             .bg(palette.shell)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
+            .window_control_area(WindowControlArea::Drag)
+            .on_mouse_down_out(cx.listener(|this, _: &MouseDownEvent, _, _| {
+                this.should_move = false;
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, _| {
+                    this.should_move = false;
+                }),
+            )
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|_, _: &MouseDownEvent, window, _| window.start_window_move()),
+                cx.listener(|this, _: &MouseDownEvent, _, _| {
+                    this.should_move = true;
+                }),
             )
+            .on_mouse_move(cx.listener(|this, _: &MouseMoveEvent, window, _| {
+                if this.should_move {
+                    this.should_move = false;
+                    window.start_window_move();
+                }
+            }))
+            .id("titlebar")
+            .on_click(cx.listener(|_, event: &ClickEvent, window, _| {
+                if event.click_count() == DOUBLE_CLICK_COUNT {
+                    if cfg!(target_os = "macos") {
+                        window.titlebar_double_click();
+                    } else if cfg!(target_os = "linux") {
+                        window.zoom_window();
+                    }
+                }
+            }))
             .child(cluster)
     }
 }

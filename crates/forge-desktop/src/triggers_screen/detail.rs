@@ -45,6 +45,8 @@ const FOOTER_PAD_H: Pixels = px(16.0);
 const PLACEHOLDER_PAD_V: Pixels = px(14.0);
 const PLACEHOLDER_PAD_H: Pixels = px(12.0);
 
+const RELEASE_PERSIST_CONTEXT: &str = "trigger detail teardown";
+
 impl TriggersRegistryView {
     pub(super) fn load_detail(&self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
@@ -123,19 +125,23 @@ impl TriggersRegistryView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Submitted(_) = event {
+        if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
             self.commit_config(cx);
         }
     }
 
     fn on_cooldown_committed(
         &mut self,
-        _field: Entity<TextInput>,
+        field: Entity<TextInput>,
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Submitted(_) = event {
-            self.commit_config(cx);
+        match event {
+            InputEvent::Submitted(_) | InputEvent::Blurred(_) => self.commit_config(cx),
+            InputEvent::Cancelled => {
+                field.update(cx, |input, cx| input.restore_committed(cx));
+            }
+            InputEvent::Changed(_) => {}
         }
     }
 
@@ -223,26 +229,38 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    fn commit_config(&mut self, cx: &mut Context<Self>) {
-        let Some(detail) = self.detail.as_ref() else {
-            return;
-        };
-        let kind_id = detail.instance.kind_id.clone();
+    /// An unparseable number contributes nothing, so the record keeps the value it already had.
+    fn pending_instance(&self, cx: &App) -> Option<TriggerInstance> {
+        let detail = self.detail.as_ref()?;
         let default = self
             .registry
-            .get(&kind_id)
+            .get(&detail.instance.kind_id)
             .map(|d| d.default_config())
             .unwrap_or_default();
         let mut buffer = effective_config(&default, &detail.instance.overrides);
         collect_field_values(&detail.fields, &mut buffer, cx);
 
-        let sparse = sparse_overrides(&default, &buffer);
-        let cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
         let mut instance = detail.instance.clone();
-        instance.overrides = sparse;
-        instance.cooldown_secs = cooldown_secs;
+        instance.overrides = sparse_overrides(&default, &buffer);
+        instance.cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
         instance.cooldown_global = !detail.cooldown_per_user;
         instance.permission_rung = detail.permission_rung;
+        Some(instance)
+    }
+
+    /// The sheet's own Save button also unfocuses the field the click left, so the write is skipped
+    /// once the sheet already holds what the form says.
+    fn commit_config(&mut self, cx: &mut Context<Self>) {
+        let Some(instance) = self.pending_instance(cx) else {
+            return;
+        };
+        let Some(detail) = self.detail.as_mut() else {
+            return;
+        };
+        if detail.instance == instance {
+            return;
+        }
+        detail.instance = instance.clone();
         let repo = Arc::clone(&self.repo);
         self.spawn_reload(
             async move {
@@ -251,6 +269,25 @@ impl TriggersRegistryView {
             },
             cx,
         );
+    }
+
+    /// The sheet can go away in the same tick as the click that unfocused a field, so the value a
+    /// blur would have committed is written straight through the repo with no reload to land on.
+    pub(super) fn persist_detail_on_release(&mut self, cx: &mut App) {
+        let Some(instance) = self.pending_instance(cx) else {
+            return;
+        };
+        if self
+            .detail
+            .as_ref()
+            .is_some_and(|detail| detail.instance == instance)
+        {
+            return;
+        }
+        let repo = Arc::clone(&self.repo);
+        async_bridge::detached(&self.rt_handle, RELEASE_PERSIST_CONTEXT, async move {
+            repo.save(&instance).await.map_err(|e| e.to_string())
+        });
     }
 
     fn revert_config_field(&mut self, key: String, cx: &mut Context<Self>) {

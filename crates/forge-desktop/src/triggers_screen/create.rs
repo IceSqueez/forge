@@ -148,6 +148,7 @@ impl TriggersRegistryView {
             InputEvent::Submitted(_) => self.submit_create(cx),
             InputEvent::Cancelled => self.cancel_create(cx),
             InputEvent::Changed(_) => cx.notify(),
+            InputEvent::Blurred(_) => {}
         }
     }
 

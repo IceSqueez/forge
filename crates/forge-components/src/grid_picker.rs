@@ -270,7 +270,7 @@ impl GridPicker {
                 cx.notify();
             }
             InputEvent::Cancelled => cx.emit(GridPickerEvent::Dismissed),
-            InputEvent::Submitted(_) => {}
+            InputEvent::Submitted(_) | InputEvent::Blurred(_) => {}
         }
     }
 

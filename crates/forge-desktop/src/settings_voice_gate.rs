@@ -84,7 +84,7 @@ impl SettingsVoiceGateView {
             |this, _input, event: &InputEvent, cx| match event {
                 InputEvent::Changed(text) => this.commit_hold(text.as_ref(), cx),
                 InputEvent::Submitted(text) => this.commit_hold(text.as_ref(), cx),
-                InputEvent::Cancelled => {}
+                InputEvent::Cancelled | InputEvent::Blurred(_) => {}
             },
         )];
 

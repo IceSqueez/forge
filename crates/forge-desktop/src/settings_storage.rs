@@ -62,17 +62,17 @@ impl SettingsStorageView {
 
         let subs = vec![
             cx.subscribe(&store_input, |this, _input, event: &InputEvent, cx| {
-                if let InputEvent::Submitted(_) = event {
+                if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
                     this.commit_store(cx);
                 }
             }),
             cx.subscribe(&display_input, |this, _input, event: &InputEvent, cx| {
-                if let InputEvent::Submitted(_) = event {
+                if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
                     this.commit_display(cx);
                 }
             }),
             cx.subscribe(&retention_input, |this, _input, event: &InputEvent, cx| {
-                if let InputEvent::Submitted(_) = event {
+                if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
                     this.commit_retention(cx);
                 }
             }),

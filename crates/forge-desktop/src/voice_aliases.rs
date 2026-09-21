@@ -167,6 +167,7 @@ impl AliasForm {
                 InputEvent::Submitted(_) => this.submit(cx),
                 InputEvent::Changed(_) => cx.notify(),
                 InputEvent::Cancelled => this.cancel(cx),
+                InputEvent::Blurred(_) => {}
             },
         ));
         for field in [&voice, &pitch, &rate] {
@@ -175,6 +176,7 @@ impl AliasForm {
                     InputEvent::Changed(_) => cx.notify(),
                     InputEvent::Cancelled => this.cancel(cx),
                     InputEvent::Submitted(_) => this.submit(cx),
+                    InputEvent::Blurred(_) => {}
                 }),
             );
         }

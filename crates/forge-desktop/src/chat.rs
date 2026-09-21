@@ -757,7 +757,7 @@ impl ChatView {
         match event {
             InputEvent::Submitted(_) => self.send_reply(cx),
             InputEvent::Cancelled => self.cancel_reply(cx),
-            InputEvent::Changed(_) => {}
+            InputEvent::Changed(_) | InputEvent::Blurred(_) => {}
         }
     }
 
@@ -895,7 +895,7 @@ impl ChatView {
         match event {
             InputEvent::Submitted(_) => self.send_whisper(cx),
             InputEvent::Cancelled => self.cancel_whisper(cx),
-            InputEvent::Changed(_) => {}
+            InputEvent::Changed(_) | InputEvent::Blurred(_) => {}
         }
     }
 

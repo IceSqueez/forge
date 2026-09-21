@@ -226,6 +226,7 @@ impl MidiMappingModal {
         match event {
             InputEvent::Cancelled => self.cancel(cx),
             InputEvent::Changed(_) | InputEvent::Submitted(_) => cx.notify(),
+            InputEvent::Blurred(_) => {}
         }
     }
 

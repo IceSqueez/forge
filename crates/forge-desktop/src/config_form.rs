@@ -360,7 +360,17 @@ fn build_config_input<V: 'static>(
         }
         input
     });
-    let sub = cx.subscribe(&input, ctx.on_committed);
+    let on_committed = ctx.on_committed;
+    let sub = cx.subscribe(
+        &input,
+        move |view, field: Entity<TextInput>, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Cancelled) {
+                field.update(cx, |input, cx| input.restore_committed(cx));
+                return;
+            }
+            on_committed(view, field, event, cx);
+        },
+    );
     ConfigField::Input {
         key: spec.key.to_owned(),
         integer: spec.integer,

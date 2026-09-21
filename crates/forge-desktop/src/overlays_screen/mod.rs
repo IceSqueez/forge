@@ -71,6 +71,20 @@ struct Regenerated {
     missing: Vec<String>,
 }
 
+/// `false` means the record is gone, so the caller reports a miss rather than recreating it.
+pub(super) async fn store_config(
+    repo: &dyn OverlayRepo,
+    id: &OverlayId,
+    config: OverlayConfig,
+) -> Result<bool, String> {
+    let Some(mut definition) = repo.get(id).await.map_err(|e| e.to_string())? else {
+        return Ok(false);
+    };
+    definition.config = config;
+    repo.save(&definition).await.map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 async fn regenerate(service: &OverlayServiceHandle, id: &OverlayId) -> Regenerated {
     match service.materialize(id).await {
         Ok(report) => Regenerated {
@@ -381,6 +395,9 @@ impl OverlaysView {
             effective,
             choices: HashMap::new(),
             overridden_files: definition.source_overrides.clone(),
+            repo: Arc::clone(&self.repo),
+            service: self.service.clone(),
+            rt_handle: self.rt_handle.clone(),
         };
 
         let view = cx.new(|cx| OverlayPropertyPanel::new(launch, cx));
@@ -407,11 +424,9 @@ impl OverlaysView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
+                if !store_config(repo.as_ref(), &id, config).await? {
                     return Ok((false, Regenerated::default()));
-                };
-                definition.config = config;
-                repo.save(&definition).await.map_err(|e| e.to_string())?;
+                }
                 Ok((true, regenerate(&service, &id).await))
             },
             |this, result: Result<(bool, Regenerated), String>, cx| match result {

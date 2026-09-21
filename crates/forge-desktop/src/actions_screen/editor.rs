@@ -1310,6 +1310,7 @@ impl ScreenActionsView {
             InputEvent::Submitted(_) => self.submit_trigger_fill(cx),
             InputEvent::Cancelled => self.cancel_trigger_picker(cx),
             InputEvent::Changed(_) => cx.notify(),
+            InputEvent::Blurred(_) => {}
         }
     }
 

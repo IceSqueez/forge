@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
@@ -8,12 +9,15 @@ use forge_components::{
 use forge_overlay::config::RETIRED_KEYS;
 use forge_overlay::{ConfigSection, SectionedField};
 use forge_registry::FormField;
-use forge_storage::{OverlayConfig, OverlayId};
+use forge_runtime::OverlayServiceHandle;
+use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
 use gpui::{
-    AnyElement, Context, Entity, EventEmitter, Pixels, Point, SharedString, Subscription, Window,
-    div, prelude::*, px,
+    AnyElement, App, Context, Entity, EventEmitter, Pixels, Point, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
+use super::store_config;
+use crate::async_bridge;
 use crate::config_form::{
     ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext, collect_field_values,
     fold_config_field, render_config_control, resolve_dependent_choices, sparse_overrides,
@@ -34,6 +38,8 @@ const NOTICE_LINE_H: Pixels = px(15.0);
 /// A slider fires while the pointer moves; a save per step would rewrite the page and reload the
 /// browser source dozens of times per drag.
 const SLIDE_SETTLE: Duration = Duration::from_millis(400);
+
+const RELEASE_PERSIST_CONTEXT: &str = "overlay property panel teardown";
 
 const SECTION_ORDER: [ConfigSection; 3] = [
     ConfigSection::Content,
@@ -61,6 +67,9 @@ pub(super) struct PanelLaunch {
     pub(super) effective: OverlayConfig,
     pub(super) choices: HashMap<String, Vec<(String, String)>>,
     pub(super) overridden_files: Vec<String>,
+    pub(super) repo: Arc<dyn OverlayRepo>,
+    pub(super) service: OverlayServiceHandle,
+    pub(super) rt_handle: tokio::runtime::Handle,
 }
 
 struct ChoicePicker {
@@ -81,6 +90,10 @@ pub(super) struct OverlayPropertyPanel {
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
     settle_epoch: u64,
+    repo: Arc<dyn OverlayRepo>,
+    service: OverlayServiceHandle,
+    rt_handle: tokio::runtime::Handle,
+    _release: Subscription,
 }
 
 impl EventEmitter<PropertyPanelEvent> for OverlayPropertyPanel {}
@@ -100,6 +113,7 @@ impl OverlayPropertyPanel {
             fold_config_field(&spec.field, None, &fold, &mut fields, cx);
         }
         let index = index_fields(&launch.specs);
+        let release = cx.on_release(|this, cx| this.persist_on_release(cx));
 
         Self {
             overlay_id: launch.overlay_id,
@@ -112,6 +126,10 @@ impl OverlayPropertyPanel {
             overridden_files: launch.overridden_files,
             picker: None,
             settle_epoch: 0,
+            repo: launch.repo,
+            service: launch.service,
+            rt_handle: launch.rt_handle,
+            _release: release,
         }
     }
 
@@ -121,7 +139,7 @@ impl OverlayPropertyPanel {
 
     /// Keys a retired build wrote are dropped instead of being carried forward, so a save is the
     /// moment a record stops mentioning them.
-    fn emit_save(&mut self, cx: &mut Context<Self>) {
+    fn pending_config(&self, cx: &App) -> OverlayConfig {
         let mut buffer = self.defaults.clone();
         for (key, value) in &self.stored {
             if RETIRED_KEYS.contains(&key.as_str()) {
@@ -130,10 +148,36 @@ impl OverlayPropertyPanel {
             buffer.insert(key.clone(), value.clone());
         }
         collect_field_values(&self.fields, &mut buffer, cx);
+        sparse_overrides(&self.defaults, &buffer)
+    }
 
-        let sparse = sparse_overrides(&self.defaults, &buffer);
+    /// Regenerating the files reloads every connected page, so a commit that changes nothing -
+    /// a blur on an untouched field, a swatch clicked twice - never reaches the record.
+    fn emit_save(&mut self, cx: &mut Context<Self>) {
+        let sparse = self.pending_config(cx);
+        if sparse == self.stored {
+            return;
+        }
         self.stored = sparse.clone();
         cx.emit(PropertyPanelEvent::Save(sparse));
+    }
+
+    /// The panel can go away in the same tick as the click that unfocused a field, so the value a
+    /// blur would have committed is written straight through the repo instead of through the screen.
+    fn persist_on_release(&mut self, cx: &mut App) {
+        let sparse = self.pending_config(cx);
+        if sparse == self.stored {
+            return;
+        }
+        let repo = Arc::clone(&self.repo);
+        let service = self.service.clone();
+        let id = self.overlay_id.clone();
+        async_bridge::detached(&self.rt_handle, RELEASE_PERSIST_CONTEXT, async move {
+            if store_config(repo.as_ref(), &id, sparse).await? {
+                service.materialize(&id).await.map_err(|e| e.to_string())?;
+            }
+            Ok::<(), String>(())
+        });
     }
 
     /// A later move supersedes an earlier one, so only the value the pointer came to rest on saves.
@@ -160,7 +204,10 @@ impl OverlayPropertyPanel {
         event: &forge_components::InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let forge_components::InputEvent::Submitted(_) = event {
+        if matches!(
+            event,
+            forge_components::InputEvent::Submitted(_) | forge_components::InputEvent::Blurred(_)
+        ) {
             self.emit_save(cx);
             cx.notify();
         }

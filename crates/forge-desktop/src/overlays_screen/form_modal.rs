@@ -96,6 +96,7 @@ impl OverlayFormModal {
             InputEvent::Cancelled => self.cancel(cx),
             InputEvent::Submitted(_) => self.submit(cx),
             InputEvent::Changed(_) => cx.notify(),
+            InputEvent::Blurred(_) => {}
         }
     }
 

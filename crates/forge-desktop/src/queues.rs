@@ -250,6 +250,7 @@ impl EditQueueModal {
                 InputEvent::Submitted(_) => this.submit(cx),
                 InputEvent::Cancelled => this.cancel(cx),
                 InputEvent::Changed(_) => cx.notify(),
+                InputEvent::Blurred(_) => {}
             },
         );
         EditQueueModal {

@@ -197,7 +197,7 @@ impl TtsDashboardView {
             |this, _input, event: &InputEvent, cx| match event {
                 InputEvent::Submitted(_) => this.speak_test(cx),
                 InputEvent::Changed(_) => cx.notify(),
-                InputEvent::Cancelled => {}
+                InputEvent::Cancelled | InputEvent::Blurred(_) => {}
             },
         );
         let speak_obs = cx.observe(&speak_state, |_this, _state, cx| cx.notify());

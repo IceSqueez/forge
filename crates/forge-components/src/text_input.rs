@@ -4,8 +4,9 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextAlign, TextRun, UTF16Selection,
-    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, size,
+    Pixels, Point, Rgba, ShapedLine, SharedString, Style, Subscription, TextAlign, TextRun,
+    UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative,
+    size,
 };
 
 use crate::icons::{Icon, icon};
@@ -91,6 +92,8 @@ pub fn bind_text_input_keys(cx: &mut App) {
 pub enum InputEvent {
     Changed(SharedString),
     Submitted(SharedString),
+    /// Focus left the field and the text differs from the last commit; an untouched field stays silent.
+    Blurred(SharedString),
     Cancelled,
 }
 
@@ -121,6 +124,8 @@ pub struct TextInput {
     invalid: bool,
     blink_visible: bool,
     focused_cached: bool,
+    committed: SharedString,
+    blur_sub: Option<Subscription>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -155,6 +160,8 @@ impl TextInput {
             invalid: false,
             blink_visible: true,
             focused_cached: false,
+            committed: SharedString::default(),
+            blur_sub: None,
         }
     }
 
@@ -255,6 +262,7 @@ impl TextInput {
 
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.content = text.into();
+        self.committed = self.content.clone();
         let end = self.content.len();
         self.selected_range = end..end;
         self.selection_reversed = false;
@@ -264,6 +272,11 @@ impl TextInput {
 
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.set_content("", cx);
+    }
+
+    pub fn restore_committed(&mut self, cx: &mut Context<Self>) {
+        let committed = self.committed.clone();
+        self.set_content(committed, cx);
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
@@ -308,7 +321,16 @@ impl TextInput {
     }
 
     fn submit(&mut self, _: &Submit, _: &mut Window, cx: &mut Context<Self>) {
+        self.committed = self.content.clone();
         cx.emit(InputEvent::Submitted(self.content.clone()));
+    }
+
+    fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if self.content == self.committed {
+            return;
+        }
+        self.committed = self.content.clone();
+        cx.emit(InputEvent::Blurred(self.content.clone()));
     }
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
@@ -860,6 +882,10 @@ impl Focusable for TextInput {
 
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.blur_sub.is_none() {
+            let handle = self.focus_handle.clone();
+            self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
+        }
         let focused = self.focus_handle.is_focused(window);
         self.focused_cached = focused;
         let (border_color, corner) = match self.static_chrome {

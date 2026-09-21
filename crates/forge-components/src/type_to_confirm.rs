@@ -133,6 +133,7 @@ pub fn type_to_confirm(
             }
         }
         InputEvent::Cancelled => cx.emit(TypeToConfirmEvent::Cancelled),
+        InputEvent::Blurred(_) => {}
     });
 
     TypeToConfirm {

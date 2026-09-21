@@ -3,6 +3,7 @@ use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.alert";
@@ -39,7 +40,8 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn default_config(&self) -> OverlayConfig {
-        let mut defaults = config::shared_defaults("mauve", "Rubik", "top", "slide-up");
+        let mut defaults =
+            config::shared_defaults("mauve", "Rubik", "top", "slide-up", metrics::ALERT_SIZING);
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Thanks for the sub!"),
@@ -53,7 +55,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn config_fields(&self) -> Vec<SectionedField> {
-        let mut fields = config::shared_fields();
+        let mut fields = config::shared_fields(metrics::ALERT_SIZING);
         fields.push(config::duration_field());
         fields.push(config::sound_field());
         fields

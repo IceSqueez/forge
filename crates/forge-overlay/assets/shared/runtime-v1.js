@@ -17,6 +17,16 @@
  * properties, position and animation become data-position and data-animation on
  * <body>. Stylesheets read those.
  *
+ * The element_width, element_height and text_size entries are applied the same
+ * way, as pixels of the 1920x1080 browser source. Width and height become the
+ * --element-width and --element-height custom properties with their px unit
+ * attached; a stylesheet spends them through var() with its own fallback, so an
+ * entry config.json leaves out is an element that sizes itself. text_size becomes
+ * the unitless --text-size, and each stylesheet divides it by the text size that
+ * kind draws at to reach its own --text-scale, which every size it states is
+ * multiplied by. A config.json without text_size leaves every page exactly as it
+ * was drawn before any of these three entries existed.
+ *
  * The connection has no subscription surface. The page says who it is, and from
  * then on it only receives. It opens ws://<this host>/ws/v1/ and, when config.json
  * carries a top-level credential, presents it as the first frame:
@@ -97,6 +107,12 @@
   };
   var FALLBACK_ACCENT = ACCENT_HEX.mauve;
   var FONT_NAME = /^[A-Za-z0-9 _-]+$/;
+
+  var ELEMENT_WIDTH_PROPERTY = "--element-width";
+  var ELEMENT_HEIGHT_PROPERTY = "--element-height";
+  var TEXT_SIZE_PROPERTY = "--text-size";
+  var PIXEL_UNIT = "px";
+  var NO_UNIT = "";
 
   var document_ = window.document;
   var readyCallbacks = [];
@@ -204,8 +220,21 @@
       );
     }
 
+    applySize(ELEMENT_WIDTH_PROPERTY, values.element_width, PIXEL_UNIT);
+    applySize(ELEMENT_HEIGHT_PROPERTY, values.element_height, PIXEL_UNIT);
+    applySize(TEXT_SIZE_PROPERTY, values.text_size, NO_UNIT);
+
     document_.body.dataset.position = values.position || "";
     document_.body.dataset.animation = values.animation || "";
+  }
+
+  function applySize(property, value, unit) {
+    var root = document_.documentElement.style;
+    if (typeof value === "number" && isFinite(value) && value > 0) {
+      root.setProperty(property, value + unit);
+    } else {
+      root.removeProperty(property);
+    }
   }
 
   function fireReady() {

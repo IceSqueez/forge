@@ -3,6 +3,7 @@ use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.goal";
@@ -39,7 +40,8 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn default_config(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults("green", "Inter", "bottom", "fade");
+        let mut defaults =
+            config::shared_style_defaults("green", "Inter", "bottom", "fade", metrics::GOAL_SIZING);
         defaults.insert(config::SOUND.to_owned(), config::text(""));
         defaults.insert(config::LABEL.to_owned(), config::text("Sub goal"));
         defaults.insert(config::VALUE.to_owned(), config::text("42"));
@@ -53,7 +55,7 @@ impl OverlayKindDescriptor for GoalOverlayKind {
             config::value_field(),
             config::target_field(),
         ];
-        fields.extend(config::shared_style_fields());
+        fields.extend(config::shared_style_fields(metrics::GOAL_SIZING));
         fields.push(config::sound_field());
         fields
     }

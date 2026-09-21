@@ -3,6 +3,7 @@ use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.ticker";
@@ -39,7 +40,13 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn default_config(&self) -> OverlayConfig {
-        let mut defaults = config::shared_defaults("yellow", "Bebas Neue", "bottom", "slide-left");
+        let mut defaults = config::shared_defaults(
+            "yellow",
+            "Bebas Neue",
+            "bottom",
+            "slide-left",
+            metrics::TICKER_SIZING,
+        );
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Latest cheer: %bits_amount% bits"),
@@ -53,7 +60,7 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn config_fields(&self) -> Vec<SectionedField> {
-        let mut fields = config::shared_fields();
+        let mut fields = config::shared_fields(metrics::TICKER_SIZING);
         fields.push(config::duration_field());
         fields.push(config::sound_field());
         fields

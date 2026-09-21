@@ -3,14 +3,17 @@ use forge_types::Variant;
 
 use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
+use crate::metrics::ElementSizing;
+use crate::preview::{CANVAS_HEIGHT_PX, CANVAS_WIDTH_PX};
 
 pub const HEADLINE: &str = "headline";
 pub const SUBLINE: &str = "subline";
 pub const ACCENT: &str = "accent";
 pub const FONT: &str = "font";
 pub const POSITION: &str = "position";
-pub const CANVAS_WIDTH: &str = "canvas_width";
-pub const CANVAS_HEIGHT: &str = "canvas_height";
+pub const ELEMENT_WIDTH: &str = "element_width";
+pub const ELEMENT_HEIGHT: &str = "element_height";
+pub const TEXT_SIZE: &str = "text_size";
 pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
@@ -46,10 +49,13 @@ pub const ANIMATION_OPTIONS: &[&str] = &[
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
 
-pub const CANVAS_MIN_PX: i64 = 160;
-pub const CANVAS_MAX_PX: i64 = 7680;
-pub const CANVAS_DEFAULT_WIDTH: i64 = 1920;
-pub const CANVAS_DEFAULT_HEIGHT: i64 = 1080;
+/// Width and height are absent while the element sizes itself, so neither carries a default.
+pub const ELEMENT_SIZE_MIN_PX: i64 = 40;
+pub const ELEMENT_WIDTH_MAX_PX: i64 = CANVAS_WIDTH_PX as i64;
+pub const ELEMENT_HEIGHT_MAX_PX: i64 = CANVAS_HEIGHT_PX as i64;
+
+pub const TEXT_SIZE_MIN_PX: i64 = 8;
+pub const TEXT_SIZE_MAX_PX: i64 = 200;
 
 pub const CLIP_DURATION_MIN_MS: i64 = 0;
 pub const CLIP_DURATION_MAX_MS: i64 = 60 * 60 * 1_000;
@@ -163,7 +169,7 @@ pub(crate) fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
 }
 
-pub(crate) fn shared_fields() -> Vec<SectionedField> {
+pub(crate) fn shared_fields(sizing: ElementSizing) -> Vec<SectionedField> {
     let mut fields = vec![
         in_section(
             ConfigSection::Content,
@@ -182,12 +188,12 @@ pub(crate) fn shared_fields() -> Vec<SectionedField> {
             },
         ),
     ];
-    fields.extend(shared_style_fields());
+    fields.extend(shared_style_fields(sizing));
     fields
 }
 
-pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
-    vec![
+pub(crate) fn shared_style_fields(sizing: ElementSizing) -> Vec<SectionedField> {
+    let mut fields = vec![
         in_section(
             ConfigSection::Style,
             FormField::Swatch {
@@ -212,33 +218,49 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
                 options: POSITION_OPTIONS,
             },
         ),
-        in_section(
+    ];
+
+    if sizing.width.is_some() {
+        fields.push(in_section(
             ConfigSection::Style,
             FormField::Integer {
-                key: CANVAS_WIDTH,
-                label: "Canvas width",
-                min: CANVAS_MIN_PX,
-                max: CANVAS_MAX_PX,
+                key: ELEMENT_WIDTH,
+                label: "Width",
+                min: ELEMENT_SIZE_MIN_PX,
+                max: ELEMENT_WIDTH_MAX_PX,
             },
-        ),
-        in_section(
+        ));
+    }
+    if sizing.height.is_some() {
+        fields.push(in_section(
             ConfigSection::Style,
             FormField::Integer {
-                key: CANVAS_HEIGHT,
-                label: "Canvas height",
-                min: CANVAS_MIN_PX,
-                max: CANVAS_MAX_PX,
+                key: ELEMENT_HEIGHT,
+                label: "Height",
+                min: ELEMENT_SIZE_MIN_PX,
+                max: ELEMENT_HEIGHT_MAX_PX,
             },
-        ),
-        in_section(
-            ConfigSection::Behavior,
-            FormField::Select {
-                key: ANIMATION,
-                label: "Animation",
-                options: ANIMATION_OPTIONS,
-            },
-        ),
-    ]
+        ));
+    }
+
+    fields.push(in_section(
+        ConfigSection::Style,
+        FormField::Integer {
+            key: TEXT_SIZE,
+            label: "Text size",
+            min: TEXT_SIZE_MIN_PX,
+            max: TEXT_SIZE_MAX_PX,
+        },
+    ));
+    fields.push(in_section(
+        ConfigSection::Behavior,
+        FormField::Select {
+            key: ANIMATION,
+            label: "Animation",
+            options: ANIMATION_OPTIONS,
+        },
+    ));
+    fields
 }
 
 pub(crate) fn author_field() -> SectionedField {
@@ -419,8 +441,9 @@ pub(crate) fn shared_defaults(
     font: &str,
     position: &str,
     animation: &str,
+    sizing: ElementSizing,
 ) -> OverlayConfig {
-    let mut defaults = shared_style_defaults(accent, font, position, animation);
+    let mut defaults = shared_style_defaults(accent, font, position, animation, sizing);
     defaults.insert(SOUND.to_owned(), text(""));
     defaults
 }
@@ -430,16 +453,16 @@ pub(crate) fn shared_style_defaults(
     font: &str,
     position: &str,
     animation: &str,
+    sizing: ElementSizing,
 ) -> OverlayConfig {
     OverlayConfig::from([
         (ACCENT.to_owned(), text(accent)),
         (FONT.to_owned(), text(font)),
         (POSITION.to_owned(), text(position)),
         (ANIMATION.to_owned(), text(animation)),
-        (CANVAS_WIDTH.to_owned(), Variant::Int(CANVAS_DEFAULT_WIDTH)),
         (
-            CANVAS_HEIGHT.to_owned(),
-            Variant::Int(CANVAS_DEFAULT_HEIGHT),
+            TEXT_SIZE.to_owned(),
+            Variant::Int(i64::from(sizing.default_text_size_px())),
         ),
     ])
 }

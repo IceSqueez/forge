@@ -2,6 +2,10 @@ use forge_types::Variant;
 
 use crate::config;
 use crate::descriptor::OverlayConfig;
+use crate::metrics::{self, ElementSizing};
+
+pub const CANVAS_WIDTH_PX: u32 = 1920;
+pub const CANVAS_HEIGHT_PX: u32 = 1080;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewShape {
@@ -54,6 +58,22 @@ pub struct PreviewCanvas {
     pub height: u32,
 }
 
+impl PreviewCanvas {
+    pub const REFERENCE: Self = Self {
+        width: CANVAS_WIDTH_PX,
+        height: CANVAS_HEIGHT_PX,
+    };
+}
+
+/// Sizes are pixels of the reference canvas; an unset side means the page lets the element size
+/// itself there, and an unset text size means the kind draws no page at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewElement {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub text_size: Option<u32>,
+}
+
 /// Text carries whatever the config holds; `%var%` tokens are expanded by the caller, not here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewComposition {
@@ -62,6 +82,7 @@ pub struct PreviewComposition {
     pub font: PreviewFont,
     pub position: PreviewPosition,
     pub canvas: PreviewCanvas,
+    pub element: PreviewElement,
     pub lines: Vec<PreviewLine>,
     /// Filled share of a progress track, unset for a shape without one and for values that are
     /// not two numbers.
@@ -74,7 +95,8 @@ pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewCom
         accent: accent_of(config),
         font: font_of(config),
         position: position_of(config),
-        canvas: canvas_of(config),
+        canvas: PreviewCanvas::REFERENCE,
+        element: element_of(shape, config),
         lines: lines_of(shape, config),
         fill: fill_of(shape, config),
     }
@@ -106,19 +128,54 @@ fn position_of(config: &OverlayConfig) -> PreviewPosition {
     }
 }
 
-fn canvas_of(config: &OverlayConfig) -> PreviewCanvas {
-    PreviewCanvas {
-        width: canvas_side(config, config::CANVAS_WIDTH, config::CANVAS_DEFAULT_WIDTH),
-        height: canvas_side(config, config::CANVAS_HEIGHT, config::CANVAS_DEFAULT_HEIGHT),
+fn sizing_of(shape: PreviewShape) -> Option<ElementSizing> {
+    match shape {
+        PreviewShape::AudioPlayer => None,
+        PreviewShape::BadgeBanner => Some(metrics::ALERT_SIZING),
+        PreviewShape::BorderedFrame => Some(metrics::FRAME_SIZING),
+        PreviewShape::MessageFeed => Some(metrics::CHAT_SIZING),
+        PreviewShape::ProgressBar => Some(metrics::GOAL_SIZING),
+        PreviewShape::Strip => Some(metrics::TICKER_SIZING),
     }
 }
 
-fn canvas_side(config: &OverlayConfig, key: &str, fallback: i64) -> u32 {
-    config
-        .get(key)
-        .and_then(Variant::as_int)
-        .unwrap_or(fallback)
-        .clamp(config::CANVAS_MIN_PX, config::CANVAS_MAX_PX) as u32
+fn element_of(shape: PreviewShape, config: &OverlayConfig) -> PreviewElement {
+    let Some(sizing) = sizing_of(shape) else {
+        return PreviewElement {
+            width: None,
+            height: None,
+            text_size: None,
+        };
+    };
+
+    PreviewElement {
+        width: sizing.width.and(bounded_px(
+            config,
+            config::ELEMENT_WIDTH,
+            config::ELEMENT_SIZE_MIN_PX,
+            config::ELEMENT_WIDTH_MAX_PX,
+        )),
+        height: sizing.height.and(bounded_px(
+            config,
+            config::ELEMENT_HEIGHT,
+            config::ELEMENT_SIZE_MIN_PX,
+            config::ELEMENT_HEIGHT_MAX_PX,
+        )),
+        text_size: Some(
+            bounded_px(
+                config,
+                config::TEXT_SIZE,
+                config::TEXT_SIZE_MIN_PX,
+                config::TEXT_SIZE_MAX_PX,
+            )
+            .unwrap_or_else(|| sizing.default_text_size_px()),
+        ),
+    }
+}
+
+fn bounded_px(config: &OverlayConfig, key: &str, min: i64, max: i64) -> Option<u32> {
+    let stored = config.get(key).and_then(Variant::as_int)?.clamp(min, max);
+    u32::try_from(stored).ok()
 }
 
 /// A kind that names its own content keys reads them here; every other kind speaks the shared

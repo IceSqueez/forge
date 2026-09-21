@@ -33,10 +33,12 @@ pub use materialize::{
     GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
     remove_overlay_directory,
 };
-pub use metrics::{StyleGuard, style_guards};
+pub use metrics::{
+    AxisBound, AxisFallback, ElementAxis, ElementSizing, StyleGuard, element_sizing, style_guards,
+};
 pub use preview::{
-    PreviewAccent, PreviewCanvas, PreviewComposition, PreviewFont, PreviewLine, PreviewLineRole,
-    PreviewPosition, PreviewShape,
+    CANVAS_HEIGHT_PX, CANVAS_WIDTH_PX, PreviewAccent, PreviewCanvas, PreviewComposition,
+    PreviewElement, PreviewFont, PreviewLine, PreviewLineRole, PreviewPosition, PreviewShape,
 };
 pub use registry::OverlayKindRegistry;
 pub use sample::{sample_content, sample_payload};

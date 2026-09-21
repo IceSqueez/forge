@@ -123,3 +123,33 @@ impl Future for ControlledPlayback {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    const DEVICE_REFUSAL: &str = "no output device accepted the stream";
+
+    #[tokio::test]
+    async fn a_controlled_playback_carries_the_verdict_its_device_task_returned() {
+        let played = ControlledPlayback::from_handle(
+            PlaybackHandle::default(),
+            tokio::spawn(async { Ok::<(), AudioError>(()) }),
+        );
+        assert!(
+            played.await.is_ok(),
+            "a device that played the clip to the end must finish the utterance"
+        );
+
+        let refused = ControlledPlayback::from_handle(
+            PlaybackHandle::default(),
+            tokio::spawn(async { Err(AudioError::Host(DEVICE_REFUSAL.to_owned())) }),
+        );
+        let outcome = refused.await;
+        assert!(
+            matches!(&outcome, Err(AudioError::Host(reason)) if reason == DEVICE_REFUSAL),
+            "a device that never opened must reach the caller, got {outcome:?}"
+        );
+    }
+}

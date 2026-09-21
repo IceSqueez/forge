@@ -76,3 +76,89 @@ impl AudioSink for DeviceSink {
         self.current().await?.play_controlled(buffer).await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    use crate::device::{DeviceId, DeviceInfo};
+    use crate::events::NullAudioEventSink;
+    use crate::route::resolve_device;
+
+    const DEFAULT_ID: &str = "default";
+    const HEADSET_ID: &str = "hw:1";
+    const DECOY_ID: &str = "hw:2";
+    const RETIRED_ID: &str = "hw:9";
+
+    fn enumerated_devices() -> Vec<DeviceInfo> {
+        vec![
+            DeviceInfo {
+                id: DeviceId::new(DEFAULT_ID),
+                name: "Built-in Audio".to_owned(),
+                is_default: true,
+            },
+            DeviceInfo {
+                id: DeviceId::new(HEADSET_ID),
+                name: "USB Headset".to_owned(),
+                is_default: false,
+            },
+            DeviceInfo {
+                id: DeviceId::new(DECOY_ID),
+                name: HEADSET_ID.to_owned(),
+                is_default: false,
+            },
+        ]
+    }
+
+    #[test]
+    fn a_stored_device_resolves_by_id_and_falls_back_to_the_default_when_it_is_gone() {
+        for (case, stored, expected) in [
+            (
+                "nothing stored plays on the system default",
+                None,
+                DEFAULT_ID,
+            ),
+            (
+                "a stored id outranks a device merely named after it",
+                Some(HEADSET_ID),
+                HEADSET_ID,
+            ),
+            (
+                "a stored device that is no longer enumerated falls back",
+                Some(RETIRED_ID),
+                DEFAULT_ID,
+            ),
+        ] {
+            let resolved = resolve_device(
+                stored_output_device(stored.map(str::to_owned)),
+                &enumerated_devices(),
+            );
+            assert_eq!(
+                resolved.as_ref().map(DeviceId::as_str),
+                Some(expected),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_handle_a_sink_hands_out_reroutes_that_same_sink() {
+        let sink = DeviceSink::new(
+            OutputDeviceHandle::new(OutputDevice::Default),
+            Arc::new(NullAudioEventSink),
+        );
+
+        sink.device_handle().swap(OutputDevice::ById {
+            id: HEADSET_ID.to_owned(),
+        });
+
+        assert_eq!(
+            sink.device.load().as_ref(),
+            &OutputDevice::ById {
+                id: HEADSET_ID.to_owned()
+            },
+            "the settings screen must reroute the live sink, not a detached copy of its device"
+        );
+    }
+}

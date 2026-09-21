@@ -158,7 +158,11 @@ mod tests {
                 "is_automatic": true,
                 "started_at": "2026-06-13T10:00:00Z",
             },
-            "requester": { "login": "broadcaster_one" },
+            "requester": {
+                "id": "1",
+                "login": "broadcaster_one",
+                "display_name": "BroadcasterOne",
+            },
         });
         Event::new(
             EventSource::Twitch,
@@ -178,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn an_ad_break_publishes_whoever_requested_it_as_the_canonical_actor() {
+        let stack = AdBreakStartedDescriptor.build_arg_stack(&ad_break_event());
+        for (name, value) in [
+            ("user_id", "1"),
+            ("user_name", "BroadcasterOne"),
+            ("user_login", "broadcaster_one"),
+            ("user_platform", "twitch"),
+            ("requester_login", "broadcaster_one"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
+
+    #[test]
     fn build_arg_stack_types_duration_as_int_and_is_automatic_as_bool() {
         let stack = AdBreakStartedDescriptor.build_arg_stack(&ad_break_event());
         assert_eq!(
@@ -191,10 +213,6 @@ mod tests {
         assert_eq!(
             stack.get("ad_break.started_at"),
             Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
-        );
-        assert_eq!(
-            stack.get("requester_login"),
-            Some(&Variant::String("broadcaster_one".to_owned()))
         );
     }
 

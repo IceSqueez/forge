@@ -136,14 +136,29 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_resub_fields() {
+    fn a_resubscriber_publishes_the_canonical_actor_block_the_tier_and_the_resub_message() {
         let stack = SupportResubscriberDescriptor.build_arg_stack(&resub_event());
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("loyalfan".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "222"),
+            ("user_name", "LoyalFan"),
+            ("user_login", "loyalfan"),
+            ("user_platform", "twitch"),
+            ("sub_tier", "1000"),
+            ("message_text", "Love this channel!"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
         assert_eq!(stack.get("sub_streak_months"), Some(&Variant::Int(6)));
+    }
+
+    #[test]
+    fn the_legacy_resub_message_still_carries_the_line_message_text_now_carries() {
+        let stack = SupportResubscriberDescriptor.build_arg_stack(&resub_event());
         assert_eq!(
             stack.get("sub_message"),
             Some(&Variant::String("Love this channel!".to_owned()))

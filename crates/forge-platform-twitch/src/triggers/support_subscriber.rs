@@ -118,16 +118,21 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_sub_fields() {
+    fn a_new_subscriber_publishes_the_canonical_actor_block_and_the_platform_native_tier() {
         let stack = SupportSubscriberDescriptor.build_arg_stack(&subscribe_event());
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("newbie".to_owned()))
-        );
-        assert_eq!(
-            stack.get("sub_tier"),
-            Some(&Variant::String("1000".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "111"),
+            ("user_name", "Newbie"),
+            ("user_login", "newbie"),
+            ("user_platform", "twitch"),
+            ("sub_tier", "1000"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(stack.get("sub_is_gift"), Some(&Variant::Bool(false)));
     }
 }

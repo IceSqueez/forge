@@ -114,42 +114,115 @@ fn recipient_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
 
-    fn gift_event() -> Event {
+    fn gift_event(gift_total: serde_json::Value, recipient: serde_json::Value) -> Event {
         Event::new(
             EventSource::Twitch,
             "channel.subscription.gift",
             serde_json::json!({
                 "tier": "1000",
                 "is_anonymous": false,
-                "gifter": { "id": "333", "login": "generous_viewer", "display_name": "GenerousViewer", "total": 5 },
-                "recipient": { "id": "444", "login": "lucky_one", "display_name": "LuckyOne" }
+                "gift_total": gift_total,
+                "gifter": {
+                    "id": "333",
+                    "login": "generous_viewer",
+                    "display_name": "GenerousViewer",
+                },
+                "recipient": recipient,
             }),
+        )
+    }
+
+    fn as_twitch_sends_it() -> Event {
+        gift_event(
+            serde_json::json!(5),
+            serde_json::json!({ "id": null, "login": null, "display_name": null }),
         )
     }
 
     #[test]
     fn always_matches() {
-        assert!(SupportGiftSubDescriptor.matches_trigger(&TriggerConfig::new(), &gift_event()));
+        assert!(
+            SupportGiftSubDescriptor.matches_trigger(&TriggerConfig::new(), &as_twitch_sends_it())
+        );
     }
 
     #[test]
-    fn build_arg_stack_extracts_gift_fields() {
-        let stack = SupportGiftSubDescriptor.build_arg_stack(&gift_event());
-        assert_eq!(
-            stack.get("gifter_login"),
-            Some(&Variant::String("generous_viewer".to_owned()))
-        );
+    fn a_gift_sub_publishes_the_gifter_as_both_the_principal_and_the_gifter_role() {
+        let stack = SupportGiftSubDescriptor.build_arg_stack(&as_twitch_sends_it());
+        for (name, value) in [
+            ("user_id", "333"),
+            ("user_name", "GenerousViewer"),
+            ("user_login", "generous_viewer"),
+            ("user_platform", "twitch"),
+            ("gifter_id", "333"),
+            ("gifter_name", "GenerousViewer"),
+            ("gifter_login", "generous_viewer"),
+            ("gifter_platform", "twitch"),
+            ("sub_tier", "1000"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(
             stack.get("gifter_is_anonymous"),
             Some(&Variant::Bool(false))
         );
+    }
+
+    #[test]
+    fn a_gift_sub_counts_the_gifts_the_wire_reports_and_falls_back_to_none_at_all() {
+        for (wire_total, expected) in [
+            (serde_json::json!(5), 5),
+            (serde_json::json!(1), 1),
+            (serde_json::json!(null), 0),
+        ] {
+            let event = gift_event(wire_total.clone(), serde_json::json!({}));
+            assert_eq!(
+                SupportGiftSubDescriptor
+                    .build_arg_stack(&event)
+                    .get("gift_count"),
+                Some(&Variant::Int(expected)),
+                "wire total {wire_total}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_gift_sub_leaves_the_recipient_block_empty_because_twitch_names_no_recipient() {
+        let stack = SupportGiftSubDescriptor.build_arg_stack(&as_twitch_sends_it());
+        for name in ["recipient_id", "recipient_name", "recipient_login"] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
         assert_eq!(
-            stack.get("recipient_login"),
-            Some(&Variant::String("lucky_one".to_owned()))
+            stack.get("recipient_platform"),
+            Some(&Variant::String("twitch".to_owned()))
         );
-        assert_eq!(
-            stack.get("sub_tier"),
-            Some(&Variant::String("1000".to_owned()))
+    }
+
+    #[test]
+    fn a_named_recipient_reaches_the_recipient_block() {
+        let event = gift_event(
+            serde_json::json!(1),
+            serde_json::json!({ "id": "444", "login": "lucky_one", "display_name": "LuckyOne" }),
         );
+        let stack = SupportGiftSubDescriptor.build_arg_stack(&event);
+        for (name, value) in [
+            ("recipient_id", "444"),
+            ("recipient_name", "LuckyOne"),
+            ("recipient_login", "lucky_one"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
     }
 }

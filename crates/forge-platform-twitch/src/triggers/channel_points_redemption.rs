@@ -368,48 +368,36 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_exposes_all_redemption_user_and_reward_vars() {
+    fn a_redemption_publishes_the_redeemer_the_typed_input_and_the_reward_it_names() {
         let stack = ChannelPointsRedemptionDescriptor.build_arg_stack(&redemption_event());
-        assert_eq!(
-            stack.get("redemption.id"),
-            Some(&Variant::String("redemption-42".to_owned()))
-        );
-        assert_eq!(
-            stack.get("redemption.status"),
-            Some(&Variant::String("unfulfilled".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "777"),
+            ("user_name", "ViewerOne"),
+            ("user_login", "viewer_one"),
+            ("user_platform", "twitch"),
+            ("message_text", "play my song"),
+            ("redemption.id", "redemption-42"),
+            ("redemption.status", "unfulfilled"),
+            ("redeemed_at", "2026-06-13T10:00:00Z"),
+            ("reward.id", "r1"),
+            ("reward.title", "Hydrate"),
+            ("reward.prompt", "Make the streamer drink water"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+        assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(500)));
+    }
+
+    #[test]
+    fn the_legacy_user_input_still_carries_the_line_message_text_now_carries() {
+        let stack = ChannelPointsRedemptionDescriptor.build_arg_stack(&redemption_event());
         assert_eq!(
             stack.get("user_input"),
             Some(&Variant::String("play my song".to_owned()))
-        );
-        assert_eq!(
-            stack.get("redeemed_at"),
-            Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_id"),
-            Some(&Variant::String("777".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("viewer_one".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_name"),
-            Some(&Variant::String("ViewerOne".to_owned()))
-        );
-        assert_eq!(
-            stack.get("reward.id"),
-            Some(&Variant::String("r1".to_owned()))
-        );
-        assert_eq!(
-            stack.get("reward.title"),
-            Some(&Variant::String("Hydrate".to_owned()))
-        );
-        assert_eq!(stack.get("reward.cost"), Some(&Variant::Int(500)));
-        assert_eq!(
-            stack.get("reward.prompt"),
-            Some(&Variant::String("Make the streamer drink water".to_owned()))
         );
     }
 }

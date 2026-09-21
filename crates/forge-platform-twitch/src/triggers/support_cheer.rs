@@ -201,13 +201,31 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_cheer_fields() {
+    fn a_cheer_publishes_the_canonical_actor_block_the_bits_and_the_cheer_message() {
         let stack = SupportCheerDescriptor.build_arg_stack(&cheer_event(200));
+        for (name, value) in [
+            ("user_id", "555"),
+            ("user_name", "Cheerer"),
+            ("user_login", "cheerer"),
+            ("user_platform", "twitch"),
+            ("message_text", "PogChamp PogChamp PogChamp"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(stack.get("bits_amount"), Some(&Variant::Int(200)));
         assert_eq!(stack.get("cheer_is_anonymous"), Some(&Variant::Bool(false)));
+    }
+
+    #[test]
+    fn the_legacy_cheer_message_still_carries_the_line_message_text_now_carries() {
+        let stack = SupportCheerDescriptor.build_arg_stack(&cheer_event(200));
         assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("cheerer".to_owned()))
+            stack.get("cheer_message"),
+            Some(&Variant::String("PogChamp PogChamp PogChamp".to_owned()))
         );
     }
 }

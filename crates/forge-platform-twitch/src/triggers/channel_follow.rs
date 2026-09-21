@@ -116,23 +116,20 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_maps_user_and_followed_at_from_nested_payload() {
+    fn a_follow_publishes_the_canonical_actor_block_and_the_moment_it_happened() {
         let stack = ChannelFollowDescriptor.build_arg_stack(&follow_event());
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("new_follower".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_id"),
-            Some(&Variant::String("42".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_name"),
-            Some(&Variant::String("NewFollower".to_owned()))
-        );
-        assert_eq!(
-            stack.get("followed_at"),
-            Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "42"),
+            ("user_name", "NewFollower"),
+            ("user_login", "new_follower"),
+            ("user_platform", "twitch"),
+            ("followed_at", "2026-06-13T10:00:00Z"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
     }
 }

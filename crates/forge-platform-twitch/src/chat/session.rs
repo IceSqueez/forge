@@ -4419,6 +4419,121 @@ mod tests {
         );
     }
 
+    async fn published(mut sub: EventStream) -> Event {
+        tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .expect("the ingest must publish within the wait")
+            .expect("the bus must stay open")
+    }
+
+    #[tokio::test]
+    async fn a_chat_message_carries_the_chatters_display_name_into_the_bus_payload() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let sub = bus.subscribe();
+
+        session.publish_chat_message(&serde_json::json!({
+            "broadcaster_user_login": "streamer",
+            "chatter_user_id": "222",
+            "chatter_user_login": "loyalfan",
+            "chatter_user_name": "LoyalFan",
+            "message": { "text": "hello there" },
+        }));
+
+        let event = published(sub).await;
+        assert_eq!(
+            event.payload["user"]["display_name"].as_str(),
+            Some("LoyalFan")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_chat_message_without_a_display_name_carries_the_login_in_its_place() {
+        for absent in [serde_json::json!(""), serde_json::json!(null)] {
+            let bus = Arc::new(PlatformEventChannel::new());
+            let session = make_session(&bus);
+            let sub = bus.subscribe();
+
+            session.publish_chat_message(&serde_json::json!({
+                "broadcaster_user_login": "streamer",
+                "chatter_user_id": "222",
+                "chatter_user_login": "loyalfan",
+                "chatter_user_name": absent,
+                "message": { "text": "hello there" },
+            }));
+
+            let event = published(sub).await;
+            assert_eq!(
+                event.payload["user"]["display_name"].as_str(),
+                Some("loyalfan"),
+                "display name {absent}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_gift_sub_carries_the_number_of_gifts_and_counts_a_silent_wire_as_one() {
+        for (wire, expected) in [
+            (serde_json::json!({ "total": 5 }), 5),
+            (serde_json::json!({}), 1),
+        ] {
+            let bus = Arc::new(PlatformEventChannel::new());
+            let session = make_session(&bus);
+            let sub = bus.subscribe();
+
+            let mut event_data = serde_json::json!({
+                "user_id": "333",
+                "user_login": "generous_viewer",
+                "user_name": "GenerousViewer",
+                "tier": "1000",
+                "is_anonymous": false,
+            });
+            if let Some(total) = wire.get("total") {
+                event_data["total"] = total.clone();
+            }
+            session.publish_gift_sub_event(&event_data, "meta-gift-001");
+
+            let event = published(sub).await;
+            assert_eq!(
+                event.payload["gift_total"].as_i64(),
+                Some(expected),
+                "wire {wire}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_ad_break_carries_the_identity_of_whoever_requested_it() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let sub = bus.subscribe();
+
+        session.publish_ad_break_begin_event(
+            &serde_json::json!({
+                "duration_seconds": 90,
+                "is_automatic": true,
+                "started_at": "2026-09-21T10:00:00Z",
+                "requester_user_id": "1",
+                "requester_user_login": "broadcaster_one",
+                "requester_user_name": "BroadcasterOne",
+            }),
+            "meta-ad-001",
+        );
+
+        let event = published(sub).await;
+        for (key, value) in [
+            ("id", "1"),
+            ("login", "broadcaster_one"),
+            ("display_name", "BroadcasterOne"),
+        ] {
+            assert_eq!(
+                event.payload["requester"][key].as_str(),
+                Some(value),
+                "requester.{key}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn raid_received_attaches_event_detail_raid() {
         let bus = Arc::new(PlatformEventChannel::new());

@@ -222,12 +222,9 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_adds_cheer_args_to_base_chat_args() {
+    fn a_cheer_message_publishes_the_canonical_bits_amount_beside_its_legacy_name() {
         let stack = ChatCheerMessageDescriptor.build_arg_stack(&chat_event(Some(250)));
+        assert_eq!(stack.get("bits_amount"), Some(&Variant::Int(250)));
         assert_eq!(stack.get("cheer.bits"), Some(&Variant::Int(250)));
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("cheer100 hi".to_owned()))
-        );
     }
 }

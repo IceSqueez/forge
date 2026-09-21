@@ -13,6 +13,7 @@ pub mod registry;
 pub mod run_context;
 pub mod runner;
 pub mod telemetry;
+pub mod variables;
 
 pub use category::{SubActionCategory, TriggerCategory};
 pub use chain::{
@@ -32,3 +33,6 @@ pub use registry::{SubActionRegistry, TriggerRegistry};
 pub use run_context::RunContext;
 pub use runner::{SubActionConfig, SubActionRunner};
 pub use telemetry::StepTimer;
+pub use variables::{
+    ActorBlock, ActorDeclaration, ActorIdentity, LoginSlot, TriggerVariable, TriggerVariables,
+};

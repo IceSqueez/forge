@@ -18,6 +18,7 @@ pub mod trigger_config;
 pub mod trigger_instance;
 pub mod unified_chat;
 pub mod variant;
+pub mod vocabulary;
 
 pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
@@ -48,3 +49,6 @@ pub use unified_chat::{
     ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
 };
 pub use variant::{Variant, VariantError, VariantKind, VariantType, display_scalar};
+pub use vocabulary::{
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, SlotPresence, VariableStanding,
+};

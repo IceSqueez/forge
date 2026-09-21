@@ -21,7 +21,7 @@ use crate::async_bridge::{self, ErrorSink};
 
 use super::OverlaysView;
 use super::preview_shapes::{
-    Scale, body_padding, centers_horizontally, fills_canvas, render_composition,
+    ElementPlan, Scale, body_padding, centers_horizontally, fills_canvas, render_composition,
 };
 
 const REGION_PAD: Pixels = px(20.0);
@@ -90,6 +90,7 @@ pub(super) enum PreviewScale {
 struct StagePreview {
     overlay: OverlayId,
     composition: PreviewComposition,
+    plan: ElementPlan,
 }
 
 #[derive(Default)]
@@ -100,11 +101,10 @@ pub(super) struct StageState {
 }
 
 impl StageState {
-    fn composition_for(&self, id: &OverlayId) -> Option<&PreviewComposition> {
+    fn preview_for(&self, id: &OverlayId) -> Option<&StagePreview> {
         self.preview
             .as_ref()
             .filter(|preview| &preview.overlay == id)
-            .map(|preview| &preview.composition)
     }
 }
 
@@ -143,13 +143,16 @@ impl OverlaysView {
         self.sync_preview();
     }
 
-    /// The composition only moves when the record, the selection or a landed sample does, so it is
-    /// rebuilt at those edges rather than on every frame the stage draws.
+    /// The composition and the sizing it resolves only move when the record, the selection or a
+    /// landed sample does, so both are rebuilt at those edges rather than on every drawn frame.
     pub(super) fn sync_preview(&mut self) {
         let next = self.selected_definition().and_then(|definition| {
+            let composition = self.preview_composition(definition)?;
+            let plan = ElementPlan::of(&definition.kind_id, composition.element);
             Some(StagePreview {
                 overlay: definition.id.clone(),
-                composition: self.preview_composition(definition)?,
+                composition,
+                plan,
             })
         });
         self.stage.preview = next;
@@ -325,7 +328,7 @@ impl OverlaysView {
             .flex()
             .flex_col();
 
-        let Some(composition) = self.stage.composition_for(&definition.id) else {
+        let Some(preview) = self.stage.preview_for(&definition.id) else {
             return region
                 .items_center()
                 .justify_center()
@@ -340,8 +343,20 @@ impl OverlaysView {
         let served = self.preview_address().is_some();
 
         region
-            .child(self.render_stage_head(composition.canvas, definition, served, palette, cx))
-            .child(self.render_arena(composition, visuals.icon, palette, cx))
+            .child(self.render_stage_head(
+                preview.composition.canvas,
+                definition,
+                served,
+                palette,
+                cx,
+            ))
+            .child(self.render_arena(
+                &preview.composition,
+                preview.plan,
+                visuals.icon,
+                palette,
+                cx,
+            ))
             .child(self.render_hints(definition, served, palette))
             .into_any_element()
     }
@@ -439,6 +454,7 @@ impl OverlaysView {
     fn render_arena(
         &self,
         composition: &PreviewComposition,
+        plan: ElementPlan,
         badge: Icon,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
@@ -474,6 +490,7 @@ impl OverlaysView {
         arena
             .child(render_canvas(
                 composition,
+                plan,
                 fit,
                 self.stage.scale,
                 badge,
@@ -573,15 +590,19 @@ impl OverlaysView {
 
 fn render_canvas(
     composition: &PreviewComposition,
+    plan: ElementPlan,
     fit: CanvasFit,
     mode: PreviewScale,
     badge: Icon,
     palette: &ForgePalette,
 ) -> AnyElement {
-    let scale = Scale::new(match mode {
-        PreviewScale::Zoom => ZOOM_FACTOR,
-        PreviewScale::True => fit.scale,
-    });
+    let scale = Scale::new(
+        match mode {
+            PreviewScale::Zoom => ZOOM_FACTOR,
+            PreviewScale::True => fit.scale,
+        },
+        plan.text_scale(),
+    );
     let shape = composition.shape;
     let tint = palette.base;
 
@@ -636,7 +657,7 @@ fn render_canvas(
     }
 
     stage
-        .child(render_composition(composition, scale, badge, palette))
+        .child(render_composition(composition, plan, scale, badge, palette))
         .into_any_element()
 }
 

@@ -4,30 +4,105 @@ use forge_components::{
 };
 use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, SURFACE_RGB, TICKER};
 use forge_overlay::{
-    PreviewComposition, PreviewFont, PreviewLineRole, PreviewPosition, PreviewShape,
+    AxisBound, AxisFallback, ElementAxis, ElementSizing, PreviewComposition, PreviewElement,
+    PreviewFont, PreviewLineRole, PreviewPosition, PreviewShape, element_sizing,
 };
-use gpui::{AnyElement, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px, relative};
+use gpui::{
+    AnyElement, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, prelude::*, px, relative,
+};
 
 use super::kind_visuals::accent_color;
 use super::preview_stage::{HINT_FS, HINT_GAP, HINT_GLYPH};
 
 const PLACEHOLDER: &str = "-";
 const CHANNEL_MAX: f32 = 255.0;
+const UNSCALED_TEXT: f32 = 1.0;
 
 /// The goal page washes its track with white at this alpha; the metrics carry lengths only.
 const TRACK_WASH_ALPHA: f32 = 0.14;
 
+/// Two factors the stage composes: `at` carries the metrics a stylesheet states in plain pixels,
+/// `text_at` the ones it multiplies by `--text-scale`.
 #[derive(Clone, Copy)]
-pub(super) struct Scale(f32);
+pub(super) struct Scale {
+    canvas: f32,
+    text: f32,
+}
 
 impl Scale {
-    pub(super) fn new(factor: f32) -> Self {
-        Self(factor)
+    pub(super) fn new(canvas: f32, text: f32) -> Self {
+        Self { canvas, text }
     }
 
     pub(super) fn at(self, metric: f32) -> Pixels {
-        px(metric * self.0)
+        px(metric * self.canvas)
     }
+
+    fn text_at(self, metric: f32) -> Pixels {
+        px(metric * self.canvas * self.text)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct ElementPlan {
+    sizing: Option<ElementSizing>,
+    element: PreviewElement,
+    text_scale: f32,
+}
+
+impl ElementPlan {
+    pub(super) fn of(kind_id: &str, element: PreviewElement) -> Self {
+        let sizing = element_sizing(kind_id);
+        let text_scale = sizing
+            .zip(element.text_size)
+            .map_or(UNSCALED_TEXT, |(sizing, size)| sizing.text_scale(size));
+        Self {
+            sizing,
+            element,
+            text_scale,
+        }
+    }
+
+    pub(super) fn text_scale(self) -> f32 {
+        self.text_scale
+    }
+}
+
+fn sized(root: Div, plan: ElementPlan, scale: Scale) -> Div {
+    let Some(sizing) = plan.sizing else {
+        return root;
+    };
+
+    let root = match axis_extent(sizing.width, plan.element.width, scale) {
+        Some((AxisBound::Exact, length)) => root.w(length),
+        Some((AxisBound::AtLeast, length)) => root.min_w(length),
+        Some((AxisBound::AtMost, length)) => root.max_w(length),
+        None => root,
+    };
+
+    match axis_extent(sizing.height, plan.element.height, scale) {
+        Some((AxisBound::Exact, length)) => root.h(length),
+        Some((AxisBound::AtLeast, length)) => root.min_h(length),
+        Some((AxisBound::AtMost, length)) => root.max_h(length),
+        None => root,
+    }
+}
+
+fn axis_extent(
+    rule: Option<ElementAxis>,
+    value: Option<u32>,
+    scale: Scale,
+) -> Option<(AxisBound, Length)> {
+    let rule = rule?;
+    let length = match value {
+        Some(pixels) => Length::from(scale.at(pixels as f32)),
+        None => match rule.fallback {
+            AxisFallback::Content => return None,
+            AxisFallback::Canvas => Length::from(relative(1.0)),
+            AxisFallback::Pixels(metric) => Length::from(scale.at(metric)),
+        },
+    };
+    Some((rule.bound, length))
 }
 
 pub(super) fn body_padding(shape: PreviewShape) -> Option<f32> {
@@ -50,6 +125,7 @@ pub(super) fn fills_canvas(shape: PreviewShape) -> bool {
 
 pub(super) fn render_composition(
     composition: &PreviewComposition,
+    plan: ElementPlan,
     scale: Scale,
     badge: Icon,
     palette: &ForgePalette,
@@ -63,12 +139,16 @@ pub(super) fn render_composition(
     match composition.shape {
         PreviewShape::AudioPlayer => audio_player(badge, family, palette),
         PreviewShape::BadgeBanner => {
-            badge_banner(composition, scale, accent, family, badge, palette)
+            badge_banner(composition, plan, scale, accent, family, badge, palette)
         }
         PreviewShape::BorderedFrame => bordered_frame(composition, scale, accent, family, palette),
-        PreviewShape::MessageFeed => message_feed(composition, scale, accent, family, palette),
-        PreviewShape::ProgressBar => progress_bar(composition, scale, accent, family, palette),
-        PreviewShape::Strip => strip(composition, scale, accent, family, palette),
+        PreviewShape::MessageFeed => {
+            message_feed(composition, plan, scale, accent, family, palette)
+        }
+        PreviewShape::ProgressBar => {
+            progress_bar(composition, plan, scale, accent, family, palette)
+        }
+        PreviewShape::Strip => strip(composition, plan, scale, accent, family, palette),
     }
 }
 
@@ -104,13 +184,14 @@ fn audio_player(badge: Icon, family: SharedString, palette: &ForgePalette) -> An
 
 fn badge_banner(
     composition: &PreviewComposition,
+    plan: ElementPlan,
     scale: Scale,
     accent: Rgba,
     family: SharedString,
     badge: Icon,
     palette: &ForgePalette,
 ) -> AnyElement {
-    let mut lines = div().flex().flex_col().min_w(px(0.0));
+    let mut lines = div().flex_1().min_w(px(0.0)).flex().flex_col();
 
     if let Some(text) = line_text(composition, PreviewLineRole::Headline) {
         lines = lines.child(banner_headline(text, scale, family.clone(), palette));
@@ -119,7 +200,7 @@ fn badge_banner(
         lines = lines.child(
             div()
                 .font_family(family.clone())
-                .text_size(scale.at(ALERT.subline_size))
+                .text_size(scale.text_at(ALERT.subline_size))
                 .text_color(accent)
                 .child(text),
         );
@@ -128,24 +209,25 @@ fn badge_banner(
         lines = lines.child(banner_headline(PLACEHOLDER.into(), scale, family, palette));
     }
 
-    div()
+    let card = div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(scale.at(ALERT.gap))
-        .py(scale.at(ALERT.padding_block))
-        .px(scale.at(ALERT.padding_inline))
-        .rounded(scale.at(ALERT.radius))
+        .gap(scale.text_at(ALERT.gap))
+        .py(scale.text_at(ALERT.padding_block))
+        .px(scale.text_at(ALERT.padding_inline))
+        .rounded(scale.text_at(ALERT.radius))
         .border(scale.at(ALERT.border))
         .border_color(accent)
         .bg(surface(ALERT.surface_alpha))
         .child(
             div()
                 .flex_none()
-                .child(icon(badge, scale.at(ALERT.icon_size), accent)),
+                .child(icon(badge, scale.text_at(ALERT.icon_size), accent)),
         )
-        .child(lines)
-        .into_any_element()
+        .child(lines);
+
+    sized(card, plan, scale).into_any_element()
 }
 
 fn banner_headline(
@@ -157,7 +239,7 @@ fn banner_headline(
     div()
         .font_family(family)
         .font_weight(FontWeight::BOLD)
-        .text_size(scale.at(ALERT.headline_size))
+        .text_size(scale.text_at(ALERT.headline_size))
         .text_color(palette.text_primary)
         .child(text)
 }
@@ -178,9 +260,9 @@ fn bordered_frame(
         .left(scale.at(FRAME.label_inset_inline))
         .flex()
         .items_center()
-        .gap(scale.at(FRAME.label_gap))
-        .py(scale.at(FRAME.label_padding_block))
-        .px(scale.at(FRAME.label_padding_inline))
+        .gap(scale.text_at(FRAME.label_gap))
+        .py(scale.text_at(FRAME.label_padding_block))
+        .px(scale.text_at(FRAME.label_padding_inline))
         .rounded(scale.at(FRAME.label_radius))
         .border(scale.at(FRAME.label_border))
         .border_color(accent)
@@ -188,9 +270,9 @@ fn bordered_frame(
         .font_family(family);
 
     corner = match composition.position {
-        PreviewPosition::Top => corner.top(-scale.at(FRAME.label_overhang)),
+        PreviewPosition::Top => corner.top(-scale.text_at(FRAME.label_overhang)),
         PreviewPosition::Center | PreviewPosition::Bottom => {
-            corner.bottom(-scale.at(FRAME.label_overhang))
+            corner.bottom(-scale.text_at(FRAME.label_overhang))
         }
     };
 
@@ -198,21 +280,21 @@ fn bordered_frame(
         .children(headline.map(|text| {
             div()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(scale.at(FRAME.headline_size))
+                .text_size(scale.text_at(FRAME.headline_size))
                 .text_color(palette.text_primary)
                 .child(text)
         }))
         .children(subline.map(|text| {
             div()
                 .font_weight(FontWeight::BOLD)
-                .text_size(scale.at(FRAME.subline_size))
+                .text_size(scale.text_at(FRAME.subline_size))
                 .text_color(accent)
                 .child(text)
         }))
         .when(empty, |label| {
             label.child(
                 div()
-                    .text_size(scale.at(FRAME.headline_size))
+                    .text_size(scale.text_at(FRAME.headline_size))
                     .text_color(palette.text_primary)
                     .child(PLACEHOLDER),
             )
@@ -233,6 +315,7 @@ fn bordered_frame(
 
 fn message_feed(
     composition: &PreviewComposition,
+    plan: ElementPlan,
     scale: Scale,
     accent: Rgba,
     family: SharedString,
@@ -246,42 +329,42 @@ fn message_feed(
         .w_full()
         .flex()
         .items_baseline()
-        .gap(scale.at(CHAT.row_gap))
-        .py(scale.at(CHAT.row_padding_block))
-        .px(scale.at(CHAT.row_padding_inline))
-        .rounded(scale.at(CHAT.row_radius))
+        .gap(scale.text_at(CHAT.row_gap))
+        .py(scale.text_at(CHAT.row_padding_block))
+        .px(scale.text_at(CHAT.row_padding_inline))
+        .rounded(scale.text_at(CHAT.row_radius))
         .bg(surface(CHAT.surface_alpha))
-        .font_family(family)
         .children(author.map(|name| {
             div()
-                .flex_none()
+                .min_w(px(0.0))
                 .font_weight(FontWeight::BOLD)
-                .text_size(scale.at(CHAT.author_size))
+                .text_size(scale.text_at(CHAT.author_size))
                 .text_color(accent)
                 .child(name)
         }))
         .child(
             div()
-                .flex_1()
                 .min_w(px(0.0))
-                .truncate()
-                .text_size(scale.at(CHAT.message_size))
+                .text_size(scale.text_at(CHAT.message_size))
                 .text_color(palette.text_primary)
                 .child(message),
         );
 
-    div()
-        .flex_none()
-        .w(scale.at(CHAT.column_width))
+    let rows = div()
+        .w_full()
         .flex()
         .flex_col()
-        .gap(scale.at(CHAT.row_gap))
-        .child(row)
-        .into_any_element()
+        .gap(scale.text_at(CHAT.row_gap))
+        .overflow_hidden()
+        .font_family(family)
+        .child(row);
+
+    sized(div().flex_none().flex().child(rows), plan, scale).into_any_element()
 }
 
 fn progress_bar(
     composition: &PreviewComposition,
+    plan: ElementPlan,
     scale: Scale,
     accent: Rgba,
     family: SharedString,
@@ -294,7 +377,8 @@ fn progress_bar(
 
     let track = div()
         .w_full()
-        .h(scale.at(GOAL.track_height))
+        .flex_none()
+        .h(scale.text_at(GOAL.track_height))
         .overflow_hidden()
         .rounded(scale.at(GOAL.track_radius))
         .bg(with_alpha(palette.text_primary, TRACK_WASH_ALPHA))
@@ -304,15 +388,15 @@ fn progress_bar(
                 .map(|share| div().h_full().w(relative(share)).bg(accent)),
         );
 
-    div()
+    let card = div()
         .flex_none()
-        .w(scale.at(GOAL.width))
         .flex()
         .flex_col()
-        .gap(scale.at(GOAL.gap))
-        .py(scale.at(GOAL.padding_block))
-        .px(scale.at(GOAL.padding_inline))
-        .rounded(scale.at(GOAL.radius))
+        .justify_center()
+        .gap(scale.text_at(GOAL.gap))
+        .py(scale.text_at(GOAL.padding_block))
+        .px(scale.text_at(GOAL.padding_inline))
+        .rounded(scale.text_at(GOAL.radius))
         .border(scale.at(GOAL.border))
         .border_color(accent)
         .bg(surface(GOAL.surface_alpha))
@@ -320,9 +404,9 @@ fn progress_bar(
         .child(
             div()
                 .w_full()
-                .truncate()
+                .min_w(px(0.0))
                 .font_weight(FontWeight::BOLD)
-                .text_size(scale.at(GOAL.label_size))
+                .text_size(scale.text_at(GOAL.label_size))
                 .text_color(palette.text_primary)
                 .child(label),
         )
@@ -330,17 +414,19 @@ fn progress_bar(
         .child(
             div()
                 .w_full()
-                .truncate()
+                .min_w(px(0.0))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_size(scale.at(GOAL.figure_size))
+                .text_size(scale.text_at(GOAL.figure_size))
                 .text_color(accent)
                 .child(figure),
-        )
-        .into_any_element()
+        );
+
+    sized(card, plan, scale).into_any_element()
 }
 
 fn strip(
     composition: &PreviewComposition,
+    plan: ElementPlan,
     scale: Scale,
     accent: Rgba,
     family: SharedString,
@@ -355,14 +441,14 @@ fn strip(
         .min_w(px(0.0))
         .flex()
         .items_baseline()
-        .gap(scale.at(TICKER.gap))
+        .gap(scale.text_at(TICKER.gap))
         .overflow_hidden()
         .child(
             div()
                 .flex_none()
                 .truncate()
                 .font_weight(FontWeight::BOLD)
-                .text_size(scale.at(TICKER.headline_size))
+                .text_size(scale.text_at(TICKER.headline_size))
                 .text_color(palette.text_primary)
                 .child(headline),
         )
@@ -371,19 +457,19 @@ fn strip(
                 .flex_1()
                 .min_w(px(0.0))
                 .truncate()
-                .text_size(scale.at(TICKER.subline_size))
+                .text_size(scale.text_at(TICKER.subline_size))
                 .text_color(accent)
                 .child(text)
         }));
 
-    div()
+    let bar = div()
         .flex_none()
         .w_full()
         .flex()
         .items_center()
-        .gap(scale.at(TICKER.gap))
-        .py(scale.at(TICKER.padding_block))
-        .px(scale.at(TICKER.padding_inline))
+        .gap(scale.text_at(TICKER.gap))
+        .py(scale.text_at(TICKER.padding_block))
+        .px(scale.text_at(TICKER.padding_inline))
         .border_t(scale.at(TICKER.edge_border))
         .border_b(scale.at(TICKER.edge_border))
         .border_color(accent)
@@ -392,13 +478,14 @@ fn strip(
         .child(
             div()
                 .flex_none()
-                .w(scale.at(TICKER.mark_width))
-                .h(scale.at(TICKER.mark_height))
-                .rounded(scale.at(TICKER.mark_radius))
+                .w(scale.text_at(TICKER.mark_width))
+                .h(scale.text_at(TICKER.mark_height))
+                .rounded(scale.text_at(TICKER.mark_radius))
                 .bg(accent),
         )
-        .child(body)
-        .into_any_element()
+        .child(body);
+
+    sized(bar, plan, scale).into_any_element()
 }
 
 fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<SharedString> {

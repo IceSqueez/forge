@@ -314,3 +314,63 @@ impl Render for OverlayFormModal {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::presentation::Presentation;
+    use forge_components::{Density, ThemeId};
+
+    const NAME: &str = "Stream alert";
+    const KIND: &str = "overlay.alert";
+
+    struct Submits {
+        count: usize,
+        _sub: Subscription,
+    }
+
+    fn launch() -> OverlayFormLaunch {
+        OverlayFormLaunch {
+            target: None,
+            display_name: NAME.to_owned(),
+            kind_id: KIND.to_owned(),
+            types: Vec::new(),
+        }
+    }
+
+    fn submits_after(cx: &mut gpui::TestAppContext, event: InputEvent) -> usize {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+        });
+        let modal = cx.update(|cx| cx.new(|cx| OverlayFormModal::new(launch(), cx)));
+        let submits = cx.update(|cx| {
+            cx.new(|cx| Submits {
+                count: 0,
+                _sub: cx.subscribe(&modal, |this: &mut Submits, _modal, event, _cx| {
+                    if matches!(event, OverlayFormEvent::Submit { .. }) {
+                        this.count += 1;
+                    }
+                }),
+            })
+        });
+        let field = cx.update(|cx| modal.read(cx).name.clone());
+
+        cx.update(|cx| field.update(cx, |_, cx| cx.emit(event)));
+        cx.run_until_parked();
+
+        cx.update(|cx| submits.read(cx).count)
+    }
+
+    #[gpui::test]
+    fn a_fill_form_submits_on_enter_and_never_on_a_field_losing_focus(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (event, expected) in [
+            (InputEvent::Blurred(NAME.into()), 0),
+            (InputEvent::Changed(NAME.into()), 0),
+            (InputEvent::Submitted(NAME.into()), 1),
+        ] {
+            assert_eq!(submits_after(cx, event.clone()), expected, "{event:?}");
+        }
+    }
+}

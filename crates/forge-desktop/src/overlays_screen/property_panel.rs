@@ -540,3 +540,355 @@ impl Render for OverlayPropertyPanel {
             .children(popover)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Mutex;
+
+    use forge_components::{Density, ThemeId};
+    use forge_overlay::OverlayKindRegistry;
+    use forge_overlay::config::{ELEMENT_WIDTH, HEADLINE};
+    use forge_registry::FormField;
+    use forge_runtime::EventBus;
+    use forge_storage::{OverlayCredential, OverlayDefinition, StorageError};
+    use forge_types::Variant;
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::presentation::Presentation;
+    use crate::test_support::{StubEventLog, pump, runtime, test_backend};
+
+    const OVERLAY: &str = "alert-one";
+    const KIND: &str = "overlay.alert";
+    const TOKEN: &str = "token";
+    const DEFAULT_HEADLINE: &str = "hello";
+    const EDITED_HEADLINE: &str = "goodbye";
+    const ACCENT: &str = "accent";
+    const CANVAS_WIDTH: &str = "canvas_width";
+    const CANVAS_HEIGHT: &str = "canvas_height";
+
+    struct RecordingOverlays {
+        definition: Mutex<OverlayDefinition>,
+        saved: Mutex<Vec<OverlayConfig>>,
+    }
+
+    impl RecordingOverlays {
+        fn new() -> Arc<Self> {
+            let now = OffsetDateTime::UNIX_EPOCH;
+            Arc::new(Self {
+                definition: Mutex::new(OverlayDefinition {
+                    id: OverlayId::new(OVERLAY),
+                    display_name: OVERLAY.to_owned(),
+                    kind_id: KIND.to_owned(),
+                    enabled: true,
+                    position: 0,
+                    config: OverlayConfig::new(),
+                    config_schema_version: 1,
+                    generator_version: 1,
+                    source_overrides: Vec::new(),
+                    credential: OverlayCredential::new(TOKEN),
+                    created_at: now,
+                    updated_at: now,
+                }),
+                saved: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn saved(&self) -> Vec<OverlayConfig> {
+            self.saved.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OverlayRepo for RecordingOverlays {
+        async fn list(&self) -> Result<Vec<OverlayDefinition>, StorageError> {
+            Ok(vec![self.definition.lock().unwrap().clone()])
+        }
+
+        async fn get(&self, _: &OverlayId) -> Result<Option<OverlayDefinition>, StorageError> {
+            Ok(Some(self.definition.lock().unwrap().clone()))
+        }
+
+        async fn get_by_credential(
+            &self,
+            _: &OverlayCredential,
+        ) -> Result<Option<OverlayDefinition>, StorageError> {
+            Ok(None)
+        }
+
+        async fn create(
+            &self,
+            _: &str,
+            _: &str,
+            _: u32,
+        ) -> Result<OverlayDefinition, StorageError> {
+            unreachable!("the property panel never creates an overlay")
+        }
+
+        async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError> {
+            self.saved.lock().unwrap().push(definition.config.clone());
+            Ok(())
+        }
+
+        async fn set_enabled(&self, _: &OverlayId, _: bool) -> Result<bool, StorageError> {
+            unreachable!("the property panel never toggles an overlay")
+        }
+
+        async fn delete(&self, _: &OverlayId) -> Result<bool, StorageError> {
+            unreachable!("the property panel never deletes an overlay")
+        }
+
+        async fn get_retained_content(
+            &self,
+            _: &OverlayId,
+        ) -> Result<Option<OverlayConfig>, StorageError> {
+            Ok(None)
+        }
+
+        async fn set_retained_content(
+            &self,
+            _: &OverlayId,
+            _: &OverlayConfig,
+        ) -> Result<(), StorageError> {
+            unreachable!("the property panel never writes overlay content")
+        }
+    }
+
+    struct Saves {
+        seen: Vec<OverlayConfig>,
+        _sub: Subscription,
+    }
+
+    fn config(entries: &[(&str, Variant)]) -> OverlayConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect()
+    }
+
+    fn defaults() -> OverlayConfig {
+        config(&[
+            (HEADLINE, Variant::String(DEFAULT_HEADLINE.into())),
+            (ACCENT, Variant::String("mauve".into())),
+        ])
+    }
+
+    fn specs() -> Vec<SectionedField> {
+        vec![
+            SectionedField {
+                section: ConfigSection::Content,
+                field: FormField::Text {
+                    key: HEADLINE,
+                    label: "Headline",
+                    placeholder: "",
+                },
+            },
+            SectionedField {
+                section: ConfigSection::Style,
+                field: FormField::Integer {
+                    key: ELEMENT_WIDTH,
+                    label: "Width",
+                    min: 40,
+                    max: 1920,
+                },
+            },
+        ]
+    }
+
+    struct Fixture {
+        panel: Option<Entity<OverlayPropertyPanel>>,
+        saves: Entity<Saves>,
+        repo: Arc<RecordingOverlays>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl Fixture {
+        fn new(cx: &mut gpui::TestAppContext, stored: OverlayConfig) -> Self {
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let repo = RecordingOverlays::new();
+            let (backend, _writes) = test_backend();
+            let service = OverlayServiceHandle::new(
+                Arc::clone(&repo) as Arc<dyn OverlayRepo>,
+                backend as Arc<dyn forge_storage::SettingsRepo>,
+                Arc::new(OverlayKindRegistry::new()),
+                EventBus::new(Arc::new(StubEventLog)),
+                None,
+            );
+            let defaults = defaults();
+            let mut effective = defaults.clone();
+            for (key, value) in &stored {
+                effective.insert(key.clone(), value.clone());
+            }
+            let launch = PanelLaunch {
+                overlay_id: OverlayId::new(OVERLAY),
+                specs: specs(),
+                defaults,
+                stored,
+                effective,
+                choices: HashMap::new(),
+                overridden_files: Vec::new(),
+                repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
+                service,
+                rt_handle: rt.handle().clone(),
+            };
+            let panel = cx.update(|cx| cx.new(|cx| OverlayPropertyPanel::new(launch, cx)));
+            let saves = cx.update(|cx| {
+                cx.new(|cx| Saves {
+                    seen: Vec::new(),
+                    _sub: cx.subscribe(&panel, |this: &mut Saves, _panel, event, _cx| {
+                        let PropertyPanelEvent::Save(config) = event;
+                        this.seen.push(config.clone());
+                    }),
+                })
+            });
+            Self {
+                panel: Some(panel),
+                saves,
+                repo,
+                rt,
+            }
+        }
+
+        fn panel(&self) -> &Entity<OverlayPropertyPanel> {
+            self.panel.as_ref().unwrap()
+        }
+
+        fn type_into(&self, cx: &mut gpui::TestAppContext, key: &str, text: &str) {
+            self.panel().update(cx, |panel, cx| {
+                for field in &panel.fields {
+                    if let ConfigField::Input {
+                        key: field_key,
+                        input,
+                        ..
+                    } = field
+                        && field_key == key
+                    {
+                        input.update(cx, |input, cx| input.set_content(text.to_owned(), cx));
+                    }
+                }
+            });
+        }
+
+        fn commit(&self, cx: &mut gpui::TestAppContext) {
+            self.panel().update(cx, |panel, cx| panel.emit_save(cx));
+            cx.run_until_parked();
+        }
+
+        fn saves(&self, cx: &mut gpui::TestAppContext) -> Vec<OverlayConfig> {
+            cx.update(|cx| self.saves.read(cx).seen.clone())
+        }
+
+        /// Why: gpui defers the release callback to the next app update, so dropping the handle
+        /// has to be followed by one before the tokio work it spawns exists to be pumped.
+        fn release(&mut self, cx: &mut gpui::TestAppContext) {
+            self.panel = None;
+            cx.update(|_cx| {});
+            cx.run_until_parked();
+            pump(&self.rt);
+        }
+    }
+
+    #[gpui::test]
+    fn a_commit_that_moves_nothing_never_reaches_the_record(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, OverlayConfig::new());
+
+        fixture.commit(cx);
+        fixture.commit(cx);
+
+        assert!(fixture.saves(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn an_edited_field_saves_once_and_the_commit_that_repeats_it_is_silent(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, OverlayConfig::new());
+        fixture.type_into(cx, HEADLINE, EDITED_HEADLINE);
+
+        fixture.commit(cx);
+        fixture.commit(cx);
+
+        assert_eq!(
+            fixture.saves(cx),
+            vec![config(&[(
+                HEADLINE,
+                Variant::String(EDITED_HEADLINE.into())
+            )])]
+        );
+    }
+
+    #[gpui::test]
+    fn a_save_forgets_the_retired_canvas_keys_and_carries_every_other_one_forward(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(
+            cx,
+            config(&[
+                (CANVAS_WIDTH, Variant::Int(1920)),
+                (CANVAS_HEIGHT, Variant::Int(1080)),
+                (ACCENT, Variant::String("sky".into())),
+            ]),
+        );
+
+        fixture.commit(cx);
+
+        assert_eq!(
+            fixture.saves(cx),
+            vec![config(&[(ACCENT, Variant::String("sky".into()))])]
+        );
+    }
+
+    #[gpui::test]
+    fn clearing_the_width_drops_the_element_width_key(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, config(&[(ELEMENT_WIDTH, Variant::Int(600))]));
+        fixture.type_into(cx, ELEMENT_WIDTH, "");
+
+        fixture.commit(cx);
+
+        assert_eq!(fixture.saves(cx), vec![OverlayConfig::new()]);
+    }
+
+    #[gpui::test]
+    fn a_panel_torn_down_over_an_uncommitted_edit_writes_it_straight_through_the_repo(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx, OverlayConfig::new());
+        fixture.type_into(cx, HEADLINE, EDITED_HEADLINE);
+
+        fixture.release(cx);
+
+        assert_eq!(
+            fixture.repo.saved(),
+            vec![config(&[(
+                HEADLINE,
+                Variant::String(EDITED_HEADLINE.into())
+            )])]
+        );
+    }
+
+    #[gpui::test]
+    fn a_panel_torn_down_after_its_commit_landed_writes_nothing_more(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx, OverlayConfig::new());
+        fixture.type_into(cx, HEADLINE, EDITED_HEADLINE);
+        fixture.commit(cx);
+
+        fixture.release(cx);
+
+        assert!(fixture.repo.saved().is_empty());
+    }
+
+    #[gpui::test]
+    fn a_panel_torn_down_over_an_untouched_form_writes_nothing(cx: &mut gpui::TestAppContext) {
+        let mut fixture = Fixture::new(cx, config(&[(ELEMENT_WIDTH, Variant::Int(600))]));
+
+        fixture.release(cx);
+
+        assert!(fixture.repo.saved().is_empty());
+    }
+}

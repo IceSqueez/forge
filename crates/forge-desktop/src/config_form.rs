@@ -884,4 +884,133 @@ mod tests {
             );
         });
     }
+
+    const NOTE_KEY: &str = "note";
+    const SEEDED: i64 = 9;
+
+    struct Host;
+
+    fn ignore_commit(_: &mut Host, _: Entity<TextInput>, _: &InputEvent, _: &mut Context<Host>) {}
+
+    fn integer_spec(key: &'static str) -> FormField {
+        FormField::Integer {
+            key,
+            label: "Note",
+            min: 0,
+            max: 127,
+        }
+    }
+
+    fn optional_integer_spec(key: &'static str) -> FormField {
+        FormField::Optional {
+            key,
+            label: "Note",
+            inner: Box::new(integer_spec(key)),
+        }
+    }
+
+    fn build(
+        cx: &mut gpui::TestAppContext,
+        spec: &FormField,
+        defaults: &FieldConfig,
+        config: &FieldConfig,
+        typed: &str,
+    ) -> (gpui::Entity<Host>, Vec<ConfigField>) {
+        let host = cx.update(|cx| cx.new(|_| Host));
+        let fields = host.update(cx, |_, cx| {
+            let palette = forge_components::ThemeId::ForgeDefault.palette();
+            let ctx = FoldContext {
+                config,
+                defaults,
+                palette: &palette,
+                choices: ChoiceSupport::Text,
+                on_committed: ignore_commit as ConfigCommitHandler<Host>,
+            };
+            let mut fields = Vec::new();
+            fold_config_field(spec, None, &ctx, &mut fields, cx);
+            for field in &fields {
+                if let ConfigField::Input { input, .. } = field {
+                    input.update(cx, |field, cx| field.set_content(typed.to_owned(), cx));
+                }
+            }
+            fields
+        });
+        (host, fields)
+    }
+
+    fn collected(
+        cx: &mut gpui::TestAppContext,
+        fields: &[ConfigField],
+        seed: &FieldConfig,
+    ) -> FieldConfig {
+        let mut buffer = seed.clone();
+        cx.update(|cx| collect_field_values(fields, &mut buffer, cx));
+        buffer
+    }
+
+    #[gpui::test]
+    fn an_integer_field_writes_only_a_parsed_number_and_clears_only_an_optional_key(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (declared_default, typed, expected) in [
+            (false, "48", Some(Variant::Int(48))),
+            (false, "", None),
+            (false, "   ", None),
+            (false, "abc", Some(Variant::Int(SEEDED))),
+            (false, "4.5", Some(Variant::Int(SEEDED))),
+            (true, "48", Some(Variant::Int(48))),
+            (true, "", Some(Variant::Int(SEEDED))),
+            (true, "abc", Some(Variant::Int(SEEDED))),
+        ] {
+            let defaults = if declared_default {
+                config(&[(NOTE_KEY, Variant::Int(0))])
+            } else {
+                FieldConfig::new()
+            };
+            let seeded = config(&[(NOTE_KEY, Variant::Int(SEEDED))]);
+            let (_host, fields) = build(cx, &integer_spec(NOTE_KEY), &defaults, &seeded, typed);
+
+            assert_eq!(
+                collected(cx, &fields, &seeded).get(NOTE_KEY),
+                expected.as_ref(),
+                "declared default: {declared_default}, typed: {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn emptying_an_optional_number_leaves_every_other_key_standing(cx: &mut gpui::TestAppContext) {
+        let seeded = config(&[
+            (NOTE_KEY, Variant::Int(SEEDED)),
+            ("device", Variant::String("Launchkey".into())),
+        ]);
+        let (_host, fields) = build(
+            cx,
+            &integer_spec(NOTE_KEY),
+            &FieldConfig::new(),
+            &seeded,
+            "",
+        );
+
+        assert_eq!(
+            collected(cx, &fields, &seeded),
+            config(&[("device", Variant::String("Launchkey".into()))])
+        );
+    }
+
+    #[gpui::test]
+    fn an_optional_number_sharing_its_key_with_its_own_gate_erases_that_gate_when_emptied(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let gated_on = config(&[(NOTE_KEY, Variant::Bool(true))]);
+        let (_host, fields) = build(
+            cx,
+            &optional_integer_spec(NOTE_KEY),
+            &FieldConfig::new(),
+            &gated_on,
+            "",
+        );
+
+        assert_eq!(collected(cx, &fields, &gated_on), FieldConfig::new());
+    }
 }

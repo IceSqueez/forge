@@ -506,3 +506,128 @@ fn surface(alpha: f32) -> Rgba {
         a: alpha,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CANVAS_FACTOR: f32 = 0.5;
+    const TEXT_FACTOR: f32 = 2.0;
+
+    const ALERT_KIND: &str = "overlay.alert";
+    const CHAT_KIND: &str = "overlay.chat";
+    const FRAME_KIND: &str = "overlay.frame";
+    const GOAL_KIND: &str = "overlay.goal";
+    const TICKER_KIND: &str = "overlay.ticker";
+    const AUDIO_KIND: &str = "overlay.audio";
+
+    const UNCONSTRAINED: [Option<Length>; 6] = [None, None, None, None, None, None];
+
+    fn element(width: Option<u32>, height: Option<u32>, text_size: Option<u32>) -> PreviewElement {
+        PreviewElement {
+            width,
+            height,
+            text_size,
+        }
+    }
+
+    fn scale() -> Scale {
+        Scale::new(CANVAS_FACTOR, TEXT_FACTOR)
+    }
+
+    fn pixels(value: f32) -> Option<Length> {
+        Some(Length::from(px(value)))
+    }
+
+    fn canvas_span() -> Option<Length> {
+        Some(Length::from(relative(1.0)))
+    }
+
+    fn extents(mut root: Div) -> [Option<Length>; 6] {
+        let style = root.style();
+        [
+            style.size.width,
+            style.min_size.width,
+            style.max_size.width,
+            style.size.height,
+            style.min_size.height,
+            style.max_size.height,
+        ]
+    }
+
+    #[test]
+    fn a_canvas_metric_ignores_the_text_factor_that_a_text_metric_multiplies_in() {
+        let scale = scale();
+
+        assert_eq!(scale.at(10.0), px(5.0));
+        assert_eq!(scale.text_at(10.0), px(10.0));
+    }
+
+    #[test]
+    fn the_text_factor_is_the_chosen_size_over_the_kinds_own_base() {
+        for (kind, text_size, expected) in [
+            (ALERT_KIND, Some(40), 2.0),
+            (ALERT_KIND, Some(10), 0.5),
+            (CHAT_KIND, Some(26), 2.0),
+            (FRAME_KIND, Some(13), 1.0),
+            (GOAL_KIND, Some(7), 0.5),
+            (TICKER_KIND, Some(38), 2.0),
+            (AUDIO_KIND, Some(40), 1.0),
+            (ALERT_KIND, None, 1.0),
+        ] {
+            let plan = ElementPlan::of(kind, element(None, None, text_size));
+
+            assert_eq!(
+                plan.text_scale(),
+                expected,
+                "{kind} asked for {text_size:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_axis_takes_the_bound_and_the_fallback_its_kind_declares() {
+        for (kind, element, expected) in [
+            (
+                ALERT_KIND,
+                element(Some(600), Some(200), None),
+                [pixels(300.0), None, None, None, pixels(100.0), None],
+            ),
+            (ALERT_KIND, element(None, None, None), UNCONSTRAINED),
+            (
+                CHAT_KIND,
+                element(Some(600), Some(200), None),
+                [pixels(300.0), None, None, None, None, pixels(100.0)],
+            ),
+            (
+                CHAT_KIND,
+                element(None, None, None),
+                [pixels(180.0), None, None, None, None, canvas_span()],
+            ),
+            (
+                FRAME_KIND,
+                element(Some(600), Some(200), None),
+                UNCONSTRAINED,
+            ),
+            (
+                GOAL_KIND,
+                element(None, None, None),
+                [pixels(160.0), None, None, None, None, None],
+            ),
+            (
+                TICKER_KIND,
+                element(Some(600), Some(200), None),
+                [None, None, None, None, pixels(100.0), None],
+            ),
+            (
+                AUDIO_KIND,
+                element(Some(600), Some(200), Some(40)),
+                UNCONSTRAINED,
+            ),
+        ] {
+            let plan = ElementPlan::of(kind, element);
+
+            assert_eq!(extents(sized(div(), plan, scale())), expected, "{kind}");
+        }
+    }
+}

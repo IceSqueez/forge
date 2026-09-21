@@ -8,6 +8,7 @@ mod chat;
 mod chat_drawer;
 mod chat_feed;
 mod chrome;
+mod clip_messages;
 mod cloud_credentials;
 mod cloud_tts_boot;
 mod config_form;

@@ -6,16 +6,18 @@ use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels, TextInput,
     anchored_popover, body_family, field_label, section_label, tr,
 };
-use forge_overlay::config::RETIRED_KEYS;
-use forge_overlay::{ConfigSection, SectionedField};
+use forge_overlay::config::{RETIRED_KEYS, SOUND_OPTIONS_KEY};
+use forge_overlay::{ConfigSection, MediaIssue, SectionedField, key_holds_media};
 use forge_registry::FormField;
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
+use forge_types::ClipId;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, Pixels, Point, SharedString, Subscription,
     Window, div, prelude::*, px,
 };
 
+use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
 use super::store_config;
 use crate::async_bridge;
 use crate::config_form::{
@@ -59,6 +61,17 @@ pub(super) enum PropertyPanelEvent {
     Save(OverlayConfig),
 }
 
+pub(super) struct AdoptClipRequested {
+    pub(super) key: String,
+    pub(super) value: String,
+    pub(super) clip: ClipId,
+}
+
+struct PendingPick {
+    key: String,
+    value: String,
+}
+
 pub(super) struct PanelLaunch {
     pub(super) overlay_id: OverlayId,
     pub(super) specs: Vec<SectionedField>,
@@ -89,6 +102,9 @@ pub(super) struct OverlayPropertyPanel {
     choices: HashMap<String, Vec<(String, String)>>,
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
+    media_issues: Vec<MediaIssue>,
+    pending_pick: Option<PendingPick>,
+    pick_refusal: Option<(String, String)>,
     settle_epoch: u64,
     repo: Arc<dyn OverlayRepo>,
     service: OverlayServiceHandle,
@@ -97,6 +113,8 @@ pub(super) struct OverlayPropertyPanel {
 }
 
 impl EventEmitter<PropertyPanelEvent> for OverlayPropertyPanel {}
+
+impl EventEmitter<AdoptClipRequested> for OverlayPropertyPanel {}
 
 impl OverlayPropertyPanel {
     pub(super) fn new(launch: PanelLaunch, cx: &mut Context<Self>) -> Self {
@@ -115,7 +133,7 @@ impl OverlayPropertyPanel {
         let index = index_fields(&launch.specs);
         let release = cx.on_release(|this, cx| this.persist_on_release(cx));
 
-        Self {
+        let mut panel = Self {
             overlay_id: launch.overlay_id,
             defaults: launch.defaults,
             stored: launch.stored,
@@ -125,11 +143,51 @@ impl OverlayPropertyPanel {
             choices: launch.choices,
             overridden_files: launch.overridden_files,
             picker: None,
+            media_issues: Vec::new(),
+            pending_pick: None,
+            pick_refusal: None,
             settle_epoch: 0,
             repo: launch.repo,
             service: launch.service,
             rt_handle: launch.rt_handle,
             _release: release,
+        };
+        panel.refresh_media_choices();
+        panel
+    }
+
+    pub(super) fn set_sound_choices(
+        &mut self,
+        clips: Vec<(String, String)>,
+        cx: &mut Context<Self>,
+    ) {
+        self.choices.insert(SOUND_OPTIONS_KEY.to_owned(), clips);
+        self.refresh_media_choices();
+        cx.notify();
+    }
+
+    pub(super) fn set_media_issues(&mut self, issues: Vec<MediaIssue>, cx: &mut Context<Self>) {
+        self.media_issues = issues;
+        cx.notify();
+    }
+
+    fn refresh_media_choices(&mut self) {
+        let clips = self
+            .choices
+            .get(SOUND_OPTIONS_KEY)
+            .cloned()
+            .unwrap_or_default();
+        for field in &mut self.fields {
+            if let ConfigField::Choice {
+                key,
+                options,
+                selected,
+                ..
+            } = field
+                && key_holds_media(key)
+            {
+                *options = sound_choices(&clips, selected);
+            }
         }
     }
 
@@ -321,6 +379,46 @@ impl OverlayPropertyPanel {
         let Some(key) = self.picker.as_ref().map(|open| open.key.clone()) else {
             return;
         };
+        self.picker = None;
+        self.pick_refusal = None;
+
+        if let Some(clip) = picked_clip(&key, &value) {
+            self.pending_pick = Some(PendingPick {
+                key: key.clone(),
+                value: value.clone(),
+            });
+            cx.emit(AdoptClipRequested { key, value, clip });
+            cx.notify();
+            return;
+        }
+        self.commit_choice(key, value, cx);
+    }
+
+    pub(super) fn settle_clip_pick(
+        &mut self,
+        key: String,
+        value: String,
+        outcome: PickOutcome,
+        cx: &mut Context<Self>,
+    ) {
+        let stale = match self.pending_pick.as_ref() {
+            Some(pending) => pending.key != key || pending.value != value,
+            None => true,
+        };
+        if stale {
+            return;
+        }
+        self.pending_pick = None;
+        match outcome {
+            PickOutcome::Accepted => self.commit_choice(key, value, cx),
+            PickOutcome::Refused(message) => {
+                self.pick_refusal = Some((key, message));
+                cx.notify();
+            }
+        }
+    }
+
+    fn commit_choice(&mut self, key: String, value: String, cx: &mut Context<Self>) {
         for field in &mut self.fields {
             if let ConfigField::Choice {
                 key: k, selected, ..
@@ -334,7 +432,7 @@ impl OverlayPropertyPanel {
             fields, choices, ..
         } = self;
         resolve_dependent_choices(fields, choices, cx);
-        self.picker = None;
+        self.refresh_media_choices();
         self.emit_save(cx);
         cx.notify();
     }
@@ -358,6 +456,19 @@ impl OverlayPropertyPanel {
             .get(key)
             .copied()
             .unwrap_or(ConfigSection::Content)
+    }
+
+    fn notes_for(&self, key: &str) -> Vec<String> {
+        let adopting = self
+            .pending_pick
+            .as_ref()
+            .is_some_and(|pending| pending.key == key);
+        let refusal = self
+            .pick_refusal
+            .as_ref()
+            .filter(|(refused_key, _)| refused_key == key)
+            .map(|(_, message)| message.as_str());
+        field_notes(&self.media_issues, key, adopting, refusal)
     }
 
     fn handlers() -> ConfigFieldHandlers<Self> {
@@ -398,9 +509,18 @@ impl OverlayPropertyPanel {
         let handlers = Self::handlers();
         for field in members {
             let control = render_config_control(field, palette, "overlays-panel", &view, &handlers);
+            let body = match notes_block(self.notes_for(field.key()), palette) {
+                Some(notes) => div()
+                    .flex()
+                    .flex_col()
+                    .child(control)
+                    .child(notes)
+                    .into_any_element(),
+                None => control,
+            };
             column = column.child(
                 div().pb(FIELD_GAP).child(
-                    field_label(palette, self.label_of(field.key()).to_uppercase(), control)
+                    field_label(palette, self.label_of(field.key()).to_uppercase(), body)
                         .tone(palette.text_faint),
                 ),
             );

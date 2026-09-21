@@ -21,7 +21,7 @@ use forge_soundboard::{
     SoundboardSettings,
 };
 use forge_storage::{
-    MediaFormat, MediaKind, SettingsRepo, StorageError, StoredClip, set_soundboard_also_headphones,
+    MediaFormat, MediaKind, SettingsRepo, StoredClip, set_soundboard_also_headphones,
     set_soundboard_enabled, set_soundboard_master_volume, set_soundboard_output_device,
 };
 use forge_types::{ClipId, OutputDevice};
@@ -32,6 +32,7 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::clip_messages::{clip_refusal_message, failure_message};
 use crate::presentation::ActivePresentation;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
@@ -2216,17 +2217,6 @@ fn audio_dialog_extensions() -> Vec<&'static str> {
         .collect()
 }
 
-fn failure_message(error: &SoundboardError) -> String {
-    match error {
-        SoundboardError::ImportRefused(refusal) => refusal_message(refusal),
-        SoundboardError::SourceMissing(name) => {
-            tr!("soundboard_error_source_missing", name = name.as_str())
-        }
-        SoundboardError::ClipNotFound(_) => tr!("soundboard_error_clip_gone"),
-        other => other.to_string(),
-    }
-}
-
 fn availability_after_play_error(error: &SoundboardError) -> Option<ClipAvailability> {
     match error {
         SoundboardError::SourceMissing(_) => Some(ClipAvailability::Missing),
@@ -2334,65 +2324,6 @@ fn adoption_summary(tally: &AdoptionTally) -> String {
     parts.join(ADOPT_SUMMARY_SEPARATOR)
 }
 
-fn clip_refusal_message(refusal: &ClipRefusal) -> String {
-    refusal_message(&match refusal {
-        ClipRefusal::Unsupported { label } => StorageError::MediaUnsupported {
-            label: label.clone(),
-        },
-        ClipRefusal::TypeMismatch {
-            label,
-            claimed,
-            detected,
-        } => StorageError::MediaTypeMismatch {
-            label: label.clone(),
-            claimed: *claimed,
-            detected: *detected,
-        },
-        ClipRefusal::TooLarge {
-            label,
-            size,
-            limit,
-            kind,
-        } => StorageError::MediaTooLarge {
-            label: label.clone(),
-            size: *size,
-            limit: *limit,
-            kind: *kind,
-        },
-    })
-}
-
-fn refusal_message(refusal: &StorageError) -> String {
-    match refusal {
-        StorageError::MediaUnsupported { label } => {
-            tr!("soundboard_import_unsupported", file = label.as_str())
-        }
-        StorageError::MediaTypeMismatch {
-            label,
-            claimed,
-            detected,
-        } => tr!(
-            "soundboard_import_type_mismatch",
-            file = label.as_str(),
-            named = claimed.as_str(),
-            detected = detected.as_str()
-        ),
-        StorageError::MediaTooLarge {
-            label, size, limit, ..
-        } => {
-            let size = fmt_bytes(*size);
-            let limit = fmt_bytes(*limit);
-            tr!(
-                "soundboard_import_too_large",
-                file = label.as_str(),
-                size = size.as_str(),
-                limit = limit.as_str()
-            )
-        }
-        other => other.to_string(),
-    }
-}
-
 fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
     match cat {
         "memes" => palette.bits,
@@ -2495,6 +2426,8 @@ fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use forge_storage::StorageError;
+
     use super::*;
 
     fn sound_clip(id: ClipId) -> SoundClip {

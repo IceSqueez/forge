@@ -332,8 +332,11 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let kinds = Arc::clone(&handles.overlay_kinds);
                 let overlays = handles.overlays.clone();
-                cx.new(|cx| OverlaysView::new(repo, server, rt_handle, kinds, overlays, cx))
-                    .into()
+                let library = Arc::clone(handles.soundboard_player.library());
+                cx.new(|cx| {
+                    OverlaysView::new(repo, server, rt_handle, kinds, overlays, library, cx)
+                })
+                .into()
             }
             Screen::Server => {
                 let server = handles.server.clone();

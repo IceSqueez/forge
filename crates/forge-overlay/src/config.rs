@@ -34,6 +34,8 @@ pub const CLIP_MEDIA_TYPE: &str = "clip_media_type";
 pub const CLIP_DURATION_MS: &str = "clip_duration_ms";
 pub const COMMAND: &str = "command";
 
+pub const SOUND_OPTIONS_KEY: &str = "soundboard.clips";
+
 pub const ACCENT_OPTIONS: &[&str] = &["mauve", "sky", "green", "peach", "yellow", "red"];
 pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas Neue"];
 pub const POSITION_OPTIONS: &[&str] = &["top", "center", "bottom"];
@@ -428,10 +430,10 @@ pub(crate) fn duration_field() -> SectionedField {
 pub(crate) fn sound_field() -> SectionedField {
     in_section(
         ConfigSection::Behavior,
-        FormField::Text {
+        FormField::DynamicSelect {
             key: SOUND,
             label: "Sound",
-            placeholder: "fanfare.mp3",
+            options_key: SOUND_OPTIONS_KEY,
         },
     )
 }

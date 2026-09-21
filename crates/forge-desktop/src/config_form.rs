@@ -416,14 +416,18 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                 gate,
                 selected,
                 ..
+            } => {
+                if gate_on(gate) && !selected.is_empty() {
+                    buffer.insert(key.clone(), Variant::String(selected.clone()));
+                }
             }
-            | ConfigField::Choice {
+            ConfigField::Choice {
                 key,
                 gate,
                 selected,
                 ..
             } => {
-                if gate_on(gate) && !selected.is_empty() {
+                if gate_on(gate) {
                     buffer.insert(key.clone(), Variant::String(selected.clone()));
                 }
             }

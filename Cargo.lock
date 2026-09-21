@@ -2850,6 +2850,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "forge-events",
+ "forge-overlay",
  "forge-platform-core",
  "forge-registry",
  "forge-runtime",

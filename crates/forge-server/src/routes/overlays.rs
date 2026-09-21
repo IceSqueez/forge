@@ -12,6 +12,16 @@ const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
 const ANY_ORIGIN: &str = "*";
 const SELF_SCHEME: &str = "http://";
 
+const CACHE_CONTROL_PUBLIC: &str = "public";
+const CACHE_CONTROL_MAX_AGE_PARAM: &str = "max-age";
+const CACHE_CONTROL_IMMUTABLE: &str = "immutable";
+const SECONDS_PER_MINUTE: u64 = 60;
+const MINUTES_PER_HOUR: u64 = 60;
+const HOURS_PER_DAY: u64 = 24;
+const DAYS_PER_YEAR: u64 = 365;
+const GENERATED_MEDIA_CACHE_MAX_AGE_SECONDS: u64 =
+    SECONDS_PER_MINUTE * MINUTES_PER_HOUR * HOURS_PER_DAY * DAYS_PER_YEAR;
+
 pub async fn serve_overlay_file(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -26,19 +36,36 @@ pub async fn serve_overlay_file(
             let mime = mime_for_extension(ext).unwrap_or("application/octet-stream");
             let cors_value = cors_header_value(&state, &headers);
 
-            (
-                StatusCode::OK,
-                [
-                    (header::CONTENT_TYPE, HeaderValue::from_static(mime)),
-                    (header::ACCESS_CONTROL_ALLOW_ORIGIN, cors_value),
-                    (header::VARY, HeaderValue::from_name(header::ORIGIN)),
-                ],
-                Body::from(body_bytes),
-            )
-                .into_response()
+            let mut response_headers = HeaderMap::new();
+            response_headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(mime));
+            response_headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, cors_value);
+            response_headers.insert(header::VARY, HeaderValue::from_name(header::ORIGIN));
+            if is_generated_media_path(&path) {
+                response_headers.insert(header::CACHE_CONTROL, generated_media_cache_control());
+            }
+
+            (StatusCode::OK, response_headers, Body::from(body_bytes)).into_response()
         }
         Err(status) => status.into_response(),
     }
+}
+
+fn is_generated_media_path(url_path: &str) -> bool {
+    let segments: Vec<&str> = url_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    matches!(
+        segments.as_slice(),
+        [_, namespace, _] if *namespace == forge_overlay::GENERATED_MEDIA_DIRECTORY
+    )
+}
+
+fn generated_media_cache_control() -> HeaderValue {
+    let value = format!(
+        "{CACHE_CONTROL_PUBLIC}, {CACHE_CONTROL_MAX_AGE_PARAM}={GENERATED_MEDIA_CACHE_MAX_AGE_SECONDS}, {CACHE_CONTROL_IMMUTABLE}"
+    );
+    HeaderValue::from_str(&value).unwrap_or_else(|_| HeaderValue::from_static(CACHE_CONTROL_PUBLIC))
 }
 
 pub(crate) fn cors_header_value(state: &AppState, headers: &HeaderMap) -> HeaderValue {

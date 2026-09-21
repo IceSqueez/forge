@@ -2158,6 +2158,7 @@ fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -2243,6 +2244,109 @@ mod tests {
                 expected,
                 "playing {duration_secs:?} looped {looped}"
             );
+        }
+    }
+
+    #[test]
+    fn the_import_dialog_offers_every_accepted_audio_format_and_nothing_else() {
+        let mut offered = audio_dialog_extensions();
+        offered.sort_unstable();
+        assert_eq!(offered, ["flac", "m4a", "mp3", "ogg", "wav"]);
+    }
+
+    #[test]
+    fn failure_message_routes_each_typed_reason_to_its_own_catalog_key() {
+        for (error, expected_key) in [
+            (
+                SoundboardError::SourceMissing("Fanfare".to_owned()),
+                "soundboard_error_source_missing",
+            ),
+            (
+                SoundboardError::ClipNotFound("01J0".to_owned()),
+                "soundboard_error_clip_gone",
+            ),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaUnsupported {
+                    label: "notes.txt".to_owned(),
+                }),
+                "soundboard_import_unsupported",
+            ),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaTypeMismatch {
+                    label: "logo.mp3".to_owned(),
+                    claimed: MediaFormat::Mp3,
+                    detected: MediaFormat::Png,
+                }),
+                "soundboard_import_type_mismatch",
+            ),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaTooLarge {
+                    label: "huge.wav".to_owned(),
+                    size: 60 * 1024 * 1024,
+                    limit: 50 * 1024 * 1024,
+                    kind: MediaKind::Audio,
+                }),
+                "soundboard_import_too_large",
+            ),
+        ] {
+            assert_eq!(failure_message(&error), expected_key, "{error}");
+        }
+    }
+
+    #[test]
+    fn failure_message_falls_back_to_the_error_text_when_no_key_covers_the_reason() {
+        let error = SoundboardError::Storage("disk is busy".to_owned());
+        assert_eq!(failure_message(&error), error.to_string());
+    }
+
+    #[test]
+    fn a_refusal_from_outside_the_admission_gate_falls_back_to_its_own_text() {
+        let refusal = StorageError::NotFound {
+            key: "sha256-abc".to_owned(),
+        };
+        let expected = refusal.to_string();
+
+        assert_eq!(
+            failure_message(&SoundboardError::ImportRefused(refusal)),
+            expected
+        );
+    }
+
+    #[test]
+    fn every_media_message_is_defined_in_both_catalogs_with_the_arguments_the_code_passes() {
+        for (key, arguments) in [
+            ("soundboard_error_source_missing", &["name"][..]),
+            ("soundboard_error_clip_gone", &[][..]),
+            ("soundboard_import_unsupported", &["file"][..]),
+            (
+                "soundboard_import_type_mismatch",
+                &["file", "named", "detected"][..],
+            ),
+            (
+                "soundboard_import_too_large",
+                &["file", "size", "limit"][..],
+            ),
+            ("soundboard_pad_source_missing", &[][..]),
+            ("soundboard_pad_source_missing_hint", &[][..]),
+        ] {
+            for locale in ["en", "uk"] {
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("locales")
+                    .join(locale)
+                    .join("main.ftl");
+                let catalog = std::fs::read_to_string(&path).unwrap();
+                let prefix = format!("{key} = ");
+                let definition = catalog
+                    .lines()
+                    .find(|line| line.starts_with(&prefix))
+                    .unwrap_or_else(|| panic!("{locale}/main.ftl is missing {key}"));
+                for argument in arguments {
+                    assert!(
+                        definition.contains(&format!("${argument}")),
+                        "{locale}/main.ftl defines {key} without ${argument}"
+                    );
+                }
+            }
         }
     }
 }

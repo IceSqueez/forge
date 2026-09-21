@@ -468,3 +468,242 @@ pub trait MediaRepo: Send + Sync {
 
     async fn blob_of(&self, referrer: &MediaReferrer) -> Result<Option<MediaBlobId>, StorageError>;
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    const WAV: &[u8] = b"RIFF\x04\x00\x00\x00WAVE";
+    const WEBP: &[u8] = b"RIFF\x04\x00\x00\x00WEBP";
+    const OGG: &[u8] = b"OggS\x00\x02\x00\x00";
+    const FLAC: &[u8] = b"fLaC\x00\x00\x00\x22";
+    const MP3_ID3: &[u8] = b"ID3\x03\x00\x00\x00";
+    const MP3_FRAME_SYNC: &[u8] = b"\xff\xfb\x90\x00";
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\x0d";
+    const GIF87A: &[u8] = b"GIF87a";
+    const GIF89A: &[u8] = b"GIF89a";
+    const M4A: &[u8] = b"\x00\x00\x00\x20ftypM4A \x00\x00\x02\x00";
+    const M4B: &[u8] = b"\x00\x00\x00\x20ftypM4B \x00\x00\x02\x00";
+    const MP4_ISOM: &[u8] = b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00";
+    const MP4_MP42: &[u8] = b"\x00\x00\x00\x20ftypmp42\x00\x00\x02\x00";
+    const SVG_PLAIN: &[u8] = b"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>";
+    const SVG_PROLOG: &[u8] = b"<?xml version=\"1.0\"?>\n<svg width=\"8\"></svg>";
+    const SVG_LEADING_WHITESPACE: &[u8] = b"\n\t  <svg></svg>";
+    const SVG_WITH_BOM: &[u8] = b"\xef\xbb\xbf<svg></svg>";
+    const HTML_MENTIONING_SVG: &[u8] =
+        b"<html><body><p>a long paragraph</p><svg></svg></body></html>";
+    const XML_WITHOUT_SVG: &[u8] = b"<?xml version=\"1.0\"?><rss><channel/></rss>";
+    const RANDOM: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09";
+    const AVI: &[u8] = b"RIFF\x04\x00\x00\x00AVI ";
+
+    const IMAGE_CAP_BYTES: usize = 10 * 1024 * 1024;
+    const AUDIO_CAP_BYTES: usize = 50 * 1024 * 1024;
+    const LABEL_MAX_CHARS: usize = 120;
+
+    fn padded(magic: &[u8], total: usize) -> Vec<u8> {
+        let mut bytes = vec![0u8; total];
+        bytes[..magic.len()].copy_from_slice(magic);
+        bytes
+    }
+
+    #[test]
+    fn sniff_maps_every_accepted_header_to_its_format() {
+        for (bytes, expected) in [
+            (WAV, MediaFormat::Wav),
+            (WEBP, MediaFormat::Webp),
+            (OGG, MediaFormat::Ogg),
+            (FLAC, MediaFormat::Flac),
+            (MP3_ID3, MediaFormat::Mp3),
+            (MP3_FRAME_SYNC, MediaFormat::Mp3),
+            (PNG, MediaFormat::Png),
+            (GIF87A, MediaFormat::Gif),
+            (GIF89A, MediaFormat::Gif),
+            (M4A, MediaFormat::M4a),
+            (M4B, MediaFormat::M4a),
+            (SVG_PLAIN, MediaFormat::Svg),
+            (SVG_PROLOG, MediaFormat::Svg),
+            (SVG_LEADING_WHITESPACE, MediaFormat::Svg),
+            (SVG_WITH_BOM, MediaFormat::Svg),
+        ] {
+            assert_eq!(sniff(bytes), Some(expected), "header {bytes:?}");
+        }
+    }
+
+    #[test]
+    fn sniff_returns_nothing_for_content_outside_the_accepted_list() {
+        for bytes in [
+            MP4_ISOM,
+            MP4_MP42,
+            AVI,
+            HTML_MENTIONING_SVG,
+            XML_WITHOUT_SVG,
+            RANDOM,
+            b"",
+        ] {
+            assert_eq!(sniff(bytes), None, "content {bytes:?}");
+        }
+    }
+
+    #[test]
+    fn sniff_reads_only_the_opening_window_for_markup() {
+        let mut deep = vec![b' '; 4096];
+        deep.extend_from_slice(SVG_PLAIN);
+        assert_eq!(sniff(&deep), None);
+    }
+
+    #[test]
+    fn accept_media_rejects_an_extension_that_contradicts_the_content() {
+        for (label, bytes, claimed, detected) in [
+            ("logo.mp3", PNG, MediaFormat::Mp3, MediaFormat::Png),
+            ("pic.png", GIF89A, MediaFormat::Png, MediaFormat::Gif),
+            ("chime.ogg", WAV, MediaFormat::Ogg, MediaFormat::Wav),
+            ("drawing.svg", WEBP, MediaFormat::Svg, MediaFormat::Webp),
+        ] {
+            let error = accept_media(label, bytes).unwrap_err();
+            let StorageError::MediaTypeMismatch {
+                label: reported,
+                claimed: got_claimed,
+                detected: got_detected,
+            } = error
+            else {
+                panic!("{label} was not refused as a type mismatch: {error:?}");
+            };
+            assert_eq!(
+                (reported.as_str(), got_claimed, got_detected),
+                (label, claimed, detected)
+            );
+        }
+    }
+
+    #[test]
+    fn accept_media_rejects_content_outside_the_accepted_list() {
+        for (label, expected_label) in [
+            ("notes.txt", "notes.txt"),
+            ("../../../etc/passwd", "etcpasswd"),
+            ("", "untitled"),
+        ] {
+            let error = accept_media(label, RANDOM).unwrap_err();
+            let StorageError::MediaUnsupported { label: reported } = error else {
+                panic!("{label} was not refused as unsupported: {error:?}");
+            };
+            assert_eq!(reported, expected_label);
+        }
+    }
+
+    #[test]
+    fn accept_media_treats_the_extension_as_a_hint_the_content_may_override() {
+        for (label, bytes, expected) in [
+            ("voice.m4b", M4B, MediaFormat::M4a),
+            ("voice.mp4", M4A, MediaFormat::M4a),
+            ("voice.M4A", M4A, MediaFormat::M4a),
+            ("fanfare", WAV, MediaFormat::Wav),
+            ("archive.xyz", WAV, MediaFormat::Wav),
+            ("no.extension.here.flac", FLAC, MediaFormat::Flac),
+        ] {
+            let accepted = accept_media(label, bytes).unwrap();
+            assert_eq!(accepted.format, expected, "label {label}");
+        }
+    }
+
+    #[test]
+    fn accept_media_admits_a_file_sitting_exactly_on_its_kind_cap() {
+        for (magic, cap) in [(GIF89A, IMAGE_CAP_BYTES), (WAV, AUDIO_CAP_BYTES)] {
+            let bytes = padded(magic, cap);
+            assert!(
+                accept_media("at-cap", &bytes).is_ok(),
+                "a file of exactly {cap} bytes was refused"
+            );
+        }
+    }
+
+    #[test]
+    fn accept_media_refuses_a_file_one_byte_over_its_kind_cap() {
+        for (magic, cap, kind) in [
+            (GIF89A, IMAGE_CAP_BYTES, MediaKind::Image),
+            (WAV, AUDIO_CAP_BYTES, MediaKind::Audio),
+        ] {
+            let bytes = padded(magic, cap + 1);
+            let error = accept_media("over-cap", &bytes).unwrap_err();
+            let StorageError::MediaTooLarge {
+                size,
+                limit,
+                kind: reported,
+                ..
+            } = error
+            else {
+                panic!("a file of {} bytes was not refused: {error:?}", cap + 1);
+            };
+            assert_eq!(
+                (size, limit, reported),
+                ((cap + 1) as u64, cap as u64, kind)
+            );
+        }
+    }
+
+    #[test]
+    fn sanitize_label_strips_everything_that_could_steer_a_path() {
+        for (raw, expected) in [
+            ("../../../etc/passwd", "etcpasswd"),
+            ("..", "untitled"),
+            ("/absolute/fanfare.wav", "absolutefanfare.wav"),
+            (".hidden.wav", "hidden.wav"),
+            ("bell\u{7}\u{1b}.wav", "bell.wav"),
+            ("  spaced   out  .wav ", "spaced out .wav"),
+            ("", "untitled"),
+            ("///", "untitled"),
+            ("   ", "untitled"),
+            ("Мелодія.wav", "Мелодія.wav"),
+        ] {
+            assert_eq!(sanitize_label(raw), expected, "raw {raw:?}");
+        }
+    }
+
+    #[test]
+    fn sanitize_label_clips_an_overlong_name_to_the_display_ceiling() {
+        let clipped = sanitize_label(&"x".repeat(LABEL_MAX_CHARS + 40));
+        assert_eq!(clipped, "x".repeat(LABEL_MAX_CHARS));
+    }
+
+    #[test]
+    fn blob_id_renders_the_digest_as_lowercase_zero_padded_hex() {
+        for (digest, expected) in [
+            (
+                [0x00u8; MEDIA_CONTENT_DIGEST_BYTES],
+                format!("sha256-{}", "00".repeat(32)),
+            ),
+            (
+                [0xffu8; MEDIA_CONTENT_DIGEST_BYTES],
+                format!("sha256-{}", "ff".repeat(32)),
+            ),
+            (
+                [0x0au8; MEDIA_CONTENT_DIGEST_BYTES],
+                format!("sha256-{}", "0a".repeat(32)),
+            ),
+        ] {
+            assert_eq!(MediaBlobId::from_digest(&digest).as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn from_extension_resolves_the_container_aliases_and_refuses_the_rest() {
+        for (extension, expected) in [
+            ("mp3", Some(MediaFormat::Mp3)),
+            ("MP3", Some(MediaFormat::Mp3)),
+            ("mp4", Some(MediaFormat::M4a)),
+            ("m4b", Some(MediaFormat::M4a)),
+            ("M4B", Some(MediaFormat::M4a)),
+            ("svg", Some(MediaFormat::Svg)),
+            ("aac", None),
+            ("jpg", None),
+            ("", None),
+            ("audio/mpeg", None),
+        ] {
+            assert_eq!(
+                MediaFormat::from_extension(extension),
+                expected,
+                "extension {extension:?}"
+            );
+        }
+    }
+}

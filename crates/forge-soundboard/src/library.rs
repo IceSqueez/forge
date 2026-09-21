@@ -313,3 +313,117 @@ impl ClipLibrary {
             .remove(&clip_id);
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use forge_storage::{MediaFormat, MediaKind};
+
+    use super::*;
+
+    const MANAGED: &str = "/data/media/sha256-abc.wav";
+    const LEGACY: &str = "/home/streamer/sounds/fanfare.wav";
+    const OTHER_LEGACY: &str = "/home/streamer/sounds/airhorn.wav";
+
+    fn path(raw: &str) -> PathBuf {
+        PathBuf::from(raw)
+    }
+
+    #[test]
+    fn choose_source_prefers_the_managed_copy_and_falls_back_to_the_legacy_path() {
+        for (managed, legacy, expected) in [
+            (
+                Some(path(MANAGED)),
+                Some(path(LEGACY)),
+                ClipSource::Managed(path(MANAGED)),
+            ),
+            (
+                Some(path(MANAGED)),
+                None,
+                ClipSource::Managed(path(MANAGED)),
+            ),
+            (None, Some(path(LEGACY)), ClipSource::Legacy(path(LEGACY))),
+            (None, None, ClipSource::Missing),
+        ] {
+            assert_eq!(choose_source(managed.clone(), legacy.clone()), expected);
+        }
+    }
+
+    #[test]
+    fn a_source_that_resolves_nowhere_is_the_only_unplayable_one() {
+        for (source, playable) in [
+            (ClipSource::Managed(path(MANAGED)), true),
+            (ClipSource::Legacy(path(LEGACY)), true),
+            (ClipSource::Missing, false),
+        ] {
+            assert_eq!(source.availability().is_playable(), playable, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn plan_source_imports_what_the_user_named_and_adopts_only_an_untouched_row() {
+        for (previous, next, resolvable, expected) in [
+            (None, LEGACY, false, SourcePlan::ImportChosen),
+            (None, LEGACY, true, SourcePlan::ImportChosen),
+            (Some(OTHER_LEGACY), LEGACY, true, SourcePlan::ImportChosen),
+            (Some(OTHER_LEGACY), LEGACY, false, SourcePlan::ImportChosen),
+            (Some(LEGACY), LEGACY, false, SourcePlan::ImportAdopted),
+            (Some(LEGACY), LEGACY, true, SourcePlan::Keep),
+        ] {
+            let previous = previous.map(path);
+            assert_eq!(
+                plan_source(previous.as_deref(), &path(next), resolvable),
+                expected,
+                "previous {previous:?} next {next} resolvable {resolvable}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_an_admission_refusal_counts_as_final() {
+        for (error, final_refusal) in [
+            (
+                StorageError::MediaUnsupported {
+                    label: "notes.txt".to_owned(),
+                },
+                true,
+            ),
+            (
+                StorageError::MediaTypeMismatch {
+                    label: "logo.mp3".to_owned(),
+                    claimed: MediaFormat::Mp3,
+                    detected: MediaFormat::Png,
+                },
+                true,
+            ),
+            (
+                StorageError::MediaTooLarge {
+                    label: "huge.wav".to_owned(),
+                    size: 2,
+                    limit: 1,
+                    kind: MediaKind::Audio,
+                },
+                true,
+            ),
+            (
+                StorageError::NotFound {
+                    key: "sha256-abc".to_owned(),
+                },
+                false,
+            ),
+            (StorageError::MediaReferenced { referrer_count: 1 }, false),
+            (
+                StorageError::Connection {
+                    reason: "disk is busy".to_owned(),
+                },
+                false,
+            ),
+            (
+                StorageError::Io(std::io::Error::other("device went away")),
+                false,
+            ),
+        ] {
+            assert_eq!(refusal_is_final(&error), final_refusal, "{error}");
+        }
+    }
+}

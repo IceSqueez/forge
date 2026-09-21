@@ -801,6 +801,8 @@ async fn connect_obs(
         .await
         .map_err(|e| e.to_string())?;
 
+    seed.disconnect_live().await;
+
     let client = forge_obs::credentials::load_and_connect(&*credentials, bus)
         .await
         .map_err(|e| e.to_string())?;

@@ -107,6 +107,17 @@ impl ObsInstallSeed {
         *guard = None;
     }
 
+    /// Returns once the retired client's supervisor has joined, so it can no longer publish.
+    pub async fn disconnect_live(&self) {
+        let previous = {
+            let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+            guard.take()
+        };
+        if let Some(client) = previous {
+            let _ = client.disconnect().await;
+        }
+    }
+
     pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()

@@ -19,6 +19,10 @@ const POLICY_VIOLATION: u16 = 1008;
 
 const PROBE_PASSWORD: &str = "obs-handshake-secret-9z8y7x";
 
+const AUTH_FAILED_KIND: &str = "obs.connection.auth_failed";
+
+const SUPERVISOR_BUDGET: Duration = Duration::from_secs(5);
+
 /// A loopback web-socket peer that completes the upgrade and then closes the connection with the
 /// given code, which is how obs-websocket rejects an `Identify` it does not accept.
 async fn serve_one_close_frame(listener: TcpListener, code: u16, reason: &'static str) {
@@ -132,15 +136,30 @@ async fn a_rejected_password_makes_the_supervisor_report_an_authentication_failu
     .await
     .unwrap();
 
-    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("the supervisor published nothing before the timeout")
-        .expect("the publisher channel closed without an event");
+    let deadline = std::time::Instant::now() + SUPERVISOR_BUDGET;
+    let mut kinds: Vec<String> = Vec::new();
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let Ok(received) = tokio::time::timeout(remaining, rx.recv()).await else {
+            break;
+        };
+        let kind = received
+            .expect("the publisher channel closed without an event")
+            .kind;
+        let reached_auth_failure = kind == AUTH_FAILED_KIND;
+        kinds.push(kind);
+        if reached_auth_failure {
+            break;
+        }
+    }
 
     server.abort();
     drop(client);
 
-    assert_eq!(event.kind, "obs.connection.auth_failed");
+    assert!(
+        kinds.iter().any(|kind| kind == AUTH_FAILED_KIND),
+        "a rejected password produced only {kinds:?}"
+    );
 }
 
 /// Reads the client's connection state at the instant each event is published, which is the only
@@ -215,14 +234,33 @@ async fn the_connection_state_is_already_settled_when_the_auth_failure_is_publis
     let _ = slot.set(Arc::clone(&client));
     let _ = gate_tx.send(());
 
-    let (kind, state_at_publish) = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .expect("the supervisor published nothing before the timeout")
-        .expect("the publisher channel closed without an event");
+    let deadline = std::time::Instant::now() + SUPERVISOR_BUDGET;
+    let mut observed: Vec<(String, Option<ConnectionState>)> = Vec::new();
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let Ok(received) = tokio::time::timeout(remaining, rx.recv()).await else {
+            break;
+        };
+        let entry = received.expect("the publisher channel closed without an event");
+        let reached_auth_failure = entry.0 == AUTH_FAILED_KIND;
+        observed.push(entry);
+        if reached_auth_failure {
+            break;
+        }
+    }
 
     server.abort();
     drop(client);
 
-    assert_eq!(kind, "obs.connection.auth_failed");
-    assert_eq!(state_at_publish, Some(ConnectionState::Disconnected));
+    assert!(
+        observed.iter().any(|(kind, _)| kind == AUTH_FAILED_KIND),
+        "a rejected password produced only {observed:?}"
+    );
+    for (kind, state_at_publish) in &observed {
+        assert_eq!(
+            *state_at_publish,
+            Some(ConnectionState::Disconnected),
+            "{kind} was published before the rejection was stored"
+        );
+    }
 }

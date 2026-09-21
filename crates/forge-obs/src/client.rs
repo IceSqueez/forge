@@ -1142,6 +1142,47 @@ pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
 mod tests {
     use super::*;
 
+    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+
+    const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
+        ConnectionState::Disconnected,
+        ConnectionState::Connecting,
+        ConnectionState::Connected,
+        ConnectionState::Reconnecting,
+    ];
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn a_state_transition_announces_the_new_state_only_when_it_actually_changed() {
+        for previous in EVERY_CONNECTION_STATE {
+            for next in EVERY_CONNECTION_STATE {
+                match connection_state_transition(previous, next) {
+                    None => assert_eq!(
+                        previous, next,
+                        "{previous:?} -> {next:?} never reached the bus"
+                    ),
+                    Some(event) => {
+                        assert_ne!(
+                            previous, next,
+                            "{previous:?} -> {next:?} re-announced a state that did not change"
+                        );
+                        assert_eq!(event.kind, CONNECTION_STATE_CHANGED_KIND);
+                        assert_eq!(
+                            event.payload["platform_id"].as_str(),
+                            Some(OBS_PLATFORM_ID),
+                            "{previous:?} -> {next:?} was announced for another platform"
+                        );
+                        assert_eq!(
+                            event.payload["state"],
+                            serde_json::to_value(next).unwrap(),
+                            "{previous:?} -> {next:?} announced the wrong state"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     #[allow(clippy::unwrap_used)]
     fn parse_endpoint_drops_the_scheme_and_falls_back_to_the_obs_websocket_port() {

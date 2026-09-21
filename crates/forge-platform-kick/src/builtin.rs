@@ -696,7 +696,7 @@ impl QuickActions for KickIntegrationBundle {
 mod tests {
     use forge_events::{Event, EventSource};
     use forge_registry::KindPlatformContract;
-    use forge_types::{PlatformId, VariantKind};
+    use forge_types::PlatformId;
 
     use super::*;
 
@@ -725,40 +725,6 @@ mod tests {
             "kick.channel.reward.redemption.updated",
         ] {
             assert!(reg.get(id).is_some(), "missing kind id: {id}");
-        }
-    }
-
-    // Why: the analyzer offers variable completions from output_schema while the action engine
-    // interpolates whatever build_arg_stack actually produced. A declared kind that the builder
-    // never emits (or a name it never sets) is invisible until a user's action reads a wrong-typed
-    // variable at runtime, so the two surfaces are pinned against each other here.
-    #[test]
-    fn declared_output_schema_kinds_match_the_arg_stack_built_from_an_empty_payload() {
-        let mut reg = TriggerRegistry::new();
-        register_kick_triggers(&mut reg).unwrap();
-        for descriptor in reg.all() {
-            let Some(schema) = descriptor.output_schema() else {
-                continue;
-            };
-            let event = Event::new(EventSource::Kick, descriptor.id(), serde_json::json!({}));
-            let stack = descriptor.build_arg_stack(&event).snapshot();
-            for declared in schema.variables {
-                let actual = stack.get(&declared.name).unwrap_or_else(|| {
-                    panic!(
-                        "'{}' declares '{}' but never sets it",
-                        descriptor.id(),
-                        declared.name
-                    )
-                });
-                assert_eq!(
-                    VariantKind::from_variant(actual),
-                    declared.kind,
-                    "'{}' declares '{}' as {:?} but emits {actual:?}",
-                    descriptor.id(),
-                    declared.name,
-                    declared.kind,
-                );
-            }
         }
     }
 

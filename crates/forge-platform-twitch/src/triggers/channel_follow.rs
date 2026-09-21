@@ -1,12 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::follow as fields;
 
 pub(crate) struct ChannelFollowDescriptor;
@@ -63,73 +62,34 @@ impl TriggerKindDescriptor for ChannelFollowDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user_login = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_name = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let followed_at = event
-            .payload
-            .get(fields::FOLLOWED_AT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("user_name".to_owned(), Variant::String(user_name))
-            .set("followed_at".to_owned(), Variant::String(followed_at))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Follower login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Follower ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "user_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Follower display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), follower_identity)
+                .event_specific(
                     DeclaredVariable {
                         name: "followed_at".to_owned(),
                         kind: VariantKind::String,
                         label: "Followed at".to_owned(),
                         synthesis: None,
                     },
-                ],
-            }
-        })
+                    |event| Variant::String(payload_read::text(event, fields::FOLLOWED_AT)),
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn follower_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::USER),
+        fields::USER_ID,
+        fields::USER_LOGIN,
+        fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

@@ -1,12 +1,13 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, CanonicalCount, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::support as fields;
 
 pub(crate) struct SupportGiftSubDescriptor;
@@ -63,105 +64,49 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let gifter_login = event
-            .payload
-            .get(fields::GIFTER)
-            .and_then(|g| g.get(fields::GIFTER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let gifter_id = event
-            .payload
-            .get(fields::GIFTER)
-            .and_then(|g| g.get(fields::GIFTER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let is_anonymous = event
-            .payload
-            .get(fields::IS_ANONYMOUS)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let recipient_login = event
-            .payload
-            .get(fields::RECIPIENT)
-            .and_then(|r| r.get(fields::RECIPIENT_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let recipient_id = event
-            .payload
-            .get(fields::RECIPIENT)
-            .and_then(|r| r.get(fields::RECIPIENT_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let tier = event
-            .payload
-            .get(fields::TIER)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("gifter_login".to_owned(), Variant::String(gifter_login))
-            .set("gifter_id".to_owned(), Variant::String(gifter_id))
-            .set(
-                "gifter_is_anonymous".to_owned(),
-                Variant::Bool(is_anonymous),
-            )
-            .set(
-                "recipient_login".to_owned(),
-                Variant::String(recipient_login),
-            )
-            .set("recipient_id".to_owned(), Variant::String(recipient_id))
-            .set("sub_tier".to_owned(), Variant::String(tier))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "gifter_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Gifter login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "gifter_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Gifter ID".to_owned(),
-                        synthesis: None,
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), gifter_identity)
+                .actor(twitch_actor(ActorRole::Gifter), gifter_identity)
+                .actor(twitch_actor(ActorRole::Recipient), recipient_identity)
+                .count(CanonicalCount::GiftCount, |event| {
+                    payload_read::number(event, fields::GIFT_TOTAL)
+                })
+                .sub_tier(|event| payload_read::text(event, fields::TIER))
+                .event_specific(
                     DeclaredVariable {
                         name: "gifter_is_anonymous".to_owned(),
                         kind: VariantKind::Bool,
                         label: "Anonymous gifter".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "recipient_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Recipient login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "recipient_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Recipient ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "sub_tier".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Subscription tier".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
+                    |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Gifter, ActorRole::Recipient])
+    }
+}
+
+fn gifter_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::GIFTER),
+        fields::GIFTER_ID,
+        fields::GIFTER_LOGIN,
+        fields::GIFTER_DISPLAY_NAME,
+    )
+}
+
+fn recipient_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::RECIPIENT),
+        fields::RECIPIENT_ID,
+        fields::RECIPIENT_LOGIN,
+        fields::RECIPIENT_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
+    SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::shoutout as shoutout_fields;
 
 pub(crate) struct ShoutoutReceivedDescriptor;
@@ -63,75 +65,72 @@ impl TriggerKindDescriptor for ShoutoutReceivedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let from = event.payload.get(shoutout_fields::FROM_BROADCASTER);
-
-        let from_broadcaster_login = from
-            .and_then(|v| v.get(shoutout_fields::BROADCASTER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let from_broadcaster_id = from
-            .and_then(|v| v.get(shoutout_fields::BROADCASTER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let viewer_count = event
-            .payload
-            .get(shoutout_fields::VIEWER_COUNT)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let started_at = event
-            .payload
-            .get(shoutout_fields::STARTED_AT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "from_broadcaster_login".to_owned(),
-                Variant::String(from_broadcaster_login),
-            )
-            .set(
-                "from_broadcaster_id".to_owned(),
-                Variant::String(from_broadcaster_id),
-            )
-            .set("viewer_count".to_owned(), Variant::Int(viewer_count))
-            .set("started_at".to_owned(), Variant::String(started_at))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "from_broadcaster_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Shouting-out channel login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "from_broadcaster_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Shouting-out channel ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "viewer_count".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Viewer count".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 500 }),
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(
+                    twitch_actor(ActorRole::Principal),
+                    shoutout_channel_identity,
+                )
+                .count(CanonicalCount::ViewerCount, |event| {
+                    payload_read::number(event, shoutout_fields::VIEWER_COUNT)
+                })
+                .event_specific(
                     DeclaredVariable {
                         name: "started_at".to_owned(),
                         kind: VariantKind::String,
                         label: "Started at".to_owned(),
                         synthesis: None,
                     },
-                ],
-            }
-        })
+                    |event| Variant::String(payload_read::text(event, shoutout_fields::STARTED_AT)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "from_broadcaster_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Shouting-out channel login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            shoutout_fields::FROM_BROADCASTER,
+                            shoutout_fields::BROADCASTER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "from_broadcaster_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Shouting-out channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            shoutout_fields::FROM_BROADCASTER,
+                            shoutout_fields::BROADCASTER_ID,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn shoutout_channel_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(shoutout_fields::FROM_BROADCASTER),
+        shoutout_fields::BROADCASTER_ID,
+        shoutout_fields::BROADCASTER_LOGIN,
+        shoutout_fields::BROADCASTER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

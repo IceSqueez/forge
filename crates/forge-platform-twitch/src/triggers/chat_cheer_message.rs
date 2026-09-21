@@ -1,13 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig,
+    Variant, VariantKind,
 };
 
-use super::chat_arg_stack::{base_chat_args, base_chat_schema};
+use super::chat_arg_stack::base_chat_variables;
 use crate::payload_fields::chat as fields;
 
 pub(crate) struct ChatCheerMessageDescriptor;
@@ -143,26 +144,35 @@ impl TriggerKindDescriptor for ChatCheerMessageDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let bits = event
-            .payload
-            .get(fields::CHEER)
-            .and_then(|c| c.get(fields::CHEER_BITS))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            base_chat_variables()
+                .count(CanonicalCount::BitsAmount, cheered_bits)
+                .legacy(
+                    DeclaredVariable {
+                        name: "cheer.bits".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Bits cheered".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 10000 }),
+                    },
+                    CanonicalVariable::Count(CanonicalCount::BitsAmount),
+                    |event| Variant::Int(cheered_bits(event)),
+                ),
+        )
+    }
 
-        base_chat_args(event).set("cheer.bits".to_owned(), Variant::Int(bits))
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        let mut schema = base_chat_schema();
-        schema.variables.push(DeclaredVariable {
-            name: "cheer.bits".to_owned(),
-            kind: VariantKind::Int,
-            label: "Bits cheered".to_owned(),
-            synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 10000 }),
-        });
-        Some(schema)
-    }
+}
+
+fn cheered_bits(event: &Event) -> i64 {
+    event
+        .payload
+        .get(fields::CHEER)
+        .and_then(|cheer| cheer.get(fields::CHEER_BITS))
+        .and_then(|value| value.as_i64())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

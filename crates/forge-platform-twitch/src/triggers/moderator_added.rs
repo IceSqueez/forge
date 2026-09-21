@@ -1,12 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, PlatformId, TriggerConfig};
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::moderator as moderator_fields;
 
 pub(crate) struct ModeratorAddedDescriptor;
@@ -63,61 +62,31 @@ impl TriggerKindDescriptor for ModeratorAddedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get(moderator_fields::USER);
-
-        let user_login = user
-            .and_then(|u| u.get(moderator_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = user
-            .and_then(|u| u.get(moderator_fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_name = user
-            .and_then(|u| u.get(moderator_fields::USER_DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("user_name".to_owned(), Variant::String(user_name))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), affected_user_identity),
+        )
     }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "user_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
-                ],
-            }
-        })
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
+}
+
+fn affected_user_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(moderator_fields::USER),
+        moderator_fields::USER_ID,
+        moderator_fields::USER_LOGIN,
+        moderator_fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     fn moderator_add_event() -> Event {
         let payload = serde_json::json!({

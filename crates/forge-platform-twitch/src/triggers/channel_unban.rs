@@ -1,12 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, PlatformId, TriggerConfig};
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::moderation as fields;
 
 pub(crate) struct ChannelUnbanDescriptor;
@@ -63,89 +62,44 @@ impl TriggerKindDescriptor for ChannelUnbanDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get(fields::USER);
-        let moderator = event.payload.get(fields::MODERATOR);
-
-        let user_login = user
-            .and_then(|u| u.get(fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = user
-            .and_then(|u| u.get(fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_name = user
-            .and_then(|u| u.get(fields::USER_DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_id = moderator
-            .and_then(|m| m.get(fields::MODERATOR_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_login = moderator
-            .and_then(|m| m.get(fields::MODERATOR_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("user_name".to_owned(), Variant::String(user_name))
-            .set("moderator_id".to_owned(), Variant::String(moderator_id))
-            .set(
-                "moderator_login".to_owned(),
-                Variant::String(moderator_login),
-            )
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), moderated_user_identity)
+                .actor(
+                    twitch_actor(ActorRole::Moderator),
+                    acting_moderator_identity,
+                ),
+        )
     }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Unbanned user login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Unbanned user ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "user_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Unbanned user display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
-                    DeclaredVariable {
-                        name: "moderator_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "moderator_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                ],
-            }
-        })
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
     }
+}
+
+fn moderated_user_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::USER),
+        fields::USER_ID,
+        fields::USER_LOGIN,
+        fields::USER_DISPLAY_NAME,
+    )
+}
+
+fn acting_moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::MODERATOR),
+        fields::MODERATOR_ID,
+        fields::MODERATOR_LOGIN,
+        fields::MODERATOR_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_types::Variant;
 
     fn unban_event() -> Event {
         let payload = serde_json::json!({

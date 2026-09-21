@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::warning as warning_fields;
 
 pub(crate) struct WarningSentDescriptor;
@@ -63,129 +65,136 @@ impl TriggerKindDescriptor for WarningSentDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get(warning_fields::USER);
-        let moderator = event.payload.get(warning_fields::MODERATOR);
-
-        let user_login = user
-            .and_then(|v| v.get(warning_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = user
-            .and_then(|v| v.get(warning_fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_name = user
-            .and_then(|v| v.get(warning_fields::USER_DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let moderator_id = moderator
-            .and_then(|v| v.get(warning_fields::MODERATOR_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_login = moderator
-            .and_then(|v| v.get(warning_fields::MODERATOR_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let reason = event
-            .payload
-            .get(warning_fields::REASON)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let chat_rules_cited = event
-            .payload
-            .get(warning_fields::CHAT_RULES_CITED)
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                Variant::Array(
-                    arr.iter()
-                        .filter_map(|s| s.as_str())
-                        .map(|s| Variant::String(s.to_owned()))
-                        .collect(),
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), warned_user_identity)
+                .actor(
+                    twitch_actor(ActorRole::Moderator),
+                    warning_moderator_identity,
                 )
-            })
-            .unwrap_or_else(|| Variant::Array(vec![]));
-
-        ArgStack::new()
-            .set(
-                "warning.target.login".to_owned(),
-                Variant::String(user_login),
-            )
-            .set("warning.target.id".to_owned(), Variant::String(user_id))
-            .set(
-                "warning.target.display_name".to_owned(),
-                Variant::String(user_name),
-            )
-            .set(
-                "warning.moderator.id".to_owned(),
-                Variant::String(moderator_id),
-            )
-            .set(
-                "warning.moderator.login".to_owned(),
-                Variant::String(moderator_login),
-            )
-            .set("warning.reason".to_owned(), Variant::String(reason))
-            .set("warning.chat_rules_cited".to_owned(), chat_rules_cited)
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "warning.target.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Warned user login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "warning.target.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Warned user ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "warning.target.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Warned user display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
-                    DeclaredVariable {
-                        name: "warning.moderator.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "warning.moderator.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
+                .event_specific(
                     DeclaredVariable {
                         name: "warning.reason".to_owned(),
                         kind: VariantKind::String,
                         label: "Warning reason".to_owned(),
                         synthesis: None,
                     },
+                    |event| Variant::String(payload_read::text(event, warning_fields::REASON)),
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "warning.chat_rules_cited".to_owned(),
                         kind: VariantKind::Array,
                         label: "Cited chat rules".to_owned(),
                         synthesis: None,
                     },
-                ],
-            }
-        })
+                    |event| payload_read::text_list(event, warning_fields::CHAT_RULES_CITED),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "warning.target.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Warned user login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            warning_fields::USER,
+                            warning_fields::USER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "warning.target.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Warned user ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            warning_fields::USER,
+                            warning_fields::USER_ID,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "warning.target.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Warned user display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            warning_fields::USER,
+                            warning_fields::USER_DISPLAY_NAME,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "warning.moderator.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            warning_fields::MODERATOR,
+                            warning_fields::MODERATOR_ID,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "warning.moderator.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            warning_fields::MODERATOR,
+                            warning_fields::MODERATOR_LOGIN,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
+    }
+}
+
+fn warned_user_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(warning_fields::USER),
+        warning_fields::USER_ID,
+        warning_fields::USER_LOGIN,
+        warning_fields::USER_DISPLAY_NAME,
+    )
+}
+
+fn warning_moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(warning_fields::MODERATOR),
+        warning_fields::MODERATOR_ID,
+        warning_fields::MODERATOR_LOGIN,
+        warning_fields::MODERATOR_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

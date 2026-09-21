@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::shield as shield_fields;
 
 pub(crate) struct ShieldModeStartedDescriptor;
@@ -63,60 +65,73 @@ impl TriggerKindDescriptor for ShieldModeStartedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let moderator = event.payload.get(shield_fields::MODERATOR);
-
-        let moderator_login = moderator
-            .and_then(|m| m.get(shield_fields::MODERATOR_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_id = moderator
-            .and_then(|m| m.get(shield_fields::MODERATOR_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let started_at = event
-            .payload
-            .get(shield_fields::STARTED_AT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "moderator_login".to_owned(),
-                Variant::String(moderator_login),
-            )
-            .set("moderator_id".to_owned(), Variant::String(moderator_id))
-            .set("started_at".to_owned(), Variant::String(started_at))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "moderator_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "moderator_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator ID".to_owned(),
-                        synthesis: None,
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(
+                    twitch_actor(ActorRole::Principal),
+                    shield_moderator_identity,
+                )
+                .actor(
+                    twitch_actor(ActorRole::Moderator),
+                    shield_moderator_identity,
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "started_at".to_owned(),
                         kind: VariantKind::String,
                         label: "Started at".to_owned(),
                         synthesis: None,
                     },
-                ],
-            }
-        })
+                    |event| Variant::String(payload_read::text(event, shield_fields::STARTED_AT)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "moderator_login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            shield_fields::MODERATOR,
+                            shield_fields::MODERATOR_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "moderator_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            shield_fields::MODERATOR,
+                            shield_fields::MODERATOR_ID,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
+    }
+}
+
+fn shield_moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(shield_fields::MODERATOR),
+        shield_fields::MODERATOR_ID,
+        shield_fields::MODERATOR_LOGIN,
+        shield_fields::MODERATOR_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

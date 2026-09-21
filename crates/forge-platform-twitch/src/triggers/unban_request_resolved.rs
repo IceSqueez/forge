@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::unban_request as unban_request_fields;
 
 pub(crate) struct UnbanRequestResolvedDescriptor;
@@ -63,93 +65,106 @@ impl TriggerKindDescriptor for UnbanRequestResolvedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let request_id = event
-            .payload
-            .get(unban_request_fields::REQUEST_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let user = event.payload.get(unban_request_fields::USER);
-        let user_login = user
-            .and_then(|u| u.get(unban_request_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let resolution = event
-            .payload
-            .get(unban_request_fields::STATUS)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let moderator = event.payload.get(unban_request_fields::MODERATOR);
-        let moderator_login = moderator
-            .and_then(|m| m.get(unban_request_fields::MODERATOR_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let resolution_text = event
-            .payload
-            .get(unban_request_fields::RESOLUTION_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("unban.request_id".to_owned(), Variant::String(request_id))
-            .set("unban.target.login".to_owned(), Variant::String(user_login))
-            .set("unban.resolution".to_owned(), Variant::String(resolution))
-            .set(
-                "unban.moderator.login".to_owned(),
-                Variant::String(moderator_login),
-            )
-            .set(
-                "unban.resolution_text".to_owned(),
-                Variant::String(resolution_text),
-            )
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), unban_target_identity)
+                .actor(
+                    twitch_actor(ActorRole::Moderator),
+                    resolving_moderator_identity,
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "unban.request_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Unban request ID".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "unban.target.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Target user login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
+                    |event| {
+                        Variant::String(payload_read::text(event, unban_request_fields::REQUEST_ID))
                     },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "unban.resolution".to_owned(),
                         kind: VariantKind::String,
                         label: "Resolution status".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::text(event, unban_request_fields::STATUS))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "unban.target.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Target user login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            unban_request_fields::USER,
+                            unban_request_fields::USER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "unban.moderator.login".to_owned(),
                         kind: VariantKind::String,
                         label: "Resolving moderator login".to_owned(),
                         synthesis: Some(SynthesisHint::Username),
                     },
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            unban_request_fields::MODERATOR,
+                            unban_request_fields::MODERATOR_LOGIN,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "unban.resolution_text".to_owned(),
                         kind: VariantKind::String,
                         label: "Resolution note".to_owned(),
                         synthesis: Some(SynthesisHint::Message),
                     },
-                ],
-            }
-        })
+                    |event| {
+                        Variant::String(payload_read::text(
+                            event,
+                            unban_request_fields::RESOLUTION_TEXT,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
+    }
+}
+
+fn unban_target_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(unban_request_fields::USER),
+        unban_request_fields::USER_ID,
+        unban_request_fields::USER_LOGIN,
+        unban_request_fields::USER_DISPLAY_NAME,
+    )
+}
+
+fn resolving_moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(unban_request_fields::MODERATOR),
+        unban_request_fields::MODERATOR_ID,
+        unban_request_fields::MODERATOR_LOGIN,
+        unban_request_fields::MODERATOR_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

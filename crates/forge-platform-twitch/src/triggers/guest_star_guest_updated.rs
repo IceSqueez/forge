@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::guest_star as guest_star_fields;
 
 pub(crate) struct GuestStarGuestUpdatedDescriptor;
@@ -103,126 +105,136 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
         event_state == filter
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let guest = event.payload.get(guest_star_fields::GUEST);
-        let host = event.payload.get(guest_star_fields::HOST);
-
-        let session_id = event
-            .payload
-            .get(guest_star_fields::SESSION_ID_FIELD)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let slot_id = event
-            .payload
-            .get(guest_star_fields::SLOT_ID_FIELD)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let state = event
-            .payload
-            .get(guest_star_fields::STATE)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let guest_login = guest
-            .and_then(|g| g.get(guest_star_fields::GUEST_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let guest_id = guest
-            .and_then(|g| g.get(guest_star_fields::GUEST_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let host_video_enabled = host
-            .and_then(|h| h.get(guest_star_fields::HOST_VIDEO_ENABLED))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let host_audio_enabled = host
-            .and_then(|h| h.get(guest_star_fields::HOST_AUDIO_ENABLED))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let host_volume = host
-            .and_then(|h| h.get(guest_star_fields::HOST_VOLUME))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        ArgStack::new()
-            .set(
-                "guest_star.session_id".to_owned(),
-                Variant::String(session_id),
-            )
-            .set("guest_star.slot_id".to_owned(), Variant::String(slot_id))
-            .set("guest_star.state".to_owned(), Variant::String(state))
-            .set("guest.login".to_owned(), Variant::String(guest_login))
-            .set("guest.id".to_owned(), Variant::String(guest_id))
-            .set(
-                "host.video_enabled".to_owned(),
-                Variant::Bool(host_video_enabled),
-            )
-            .set(
-                "host.audio_enabled".to_owned(),
-                Variant::Bool(host_audio_enabled),
-            )
-            .set("host.volume".to_owned(), Variant::Int(host_volume))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), guest_identity)
+                .event_specific(
                     DeclaredVariable {
                         name: "guest_star.session_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Guest Star session ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::text(
+                            event,
+                            guest_star_fields::SESSION_ID_FIELD,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "guest_star.slot_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Guest Star slot ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::text(event, guest_star_fields::SLOT_ID_FIELD))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "guest_star.state".to_owned(),
                         kind: VariantKind::String,
                         label: "Guest state".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "guest.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Guest login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "guest.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Guest ID".to_owned(),
-                        synthesis: None,
-                    },
+                    |event| Variant::String(payload_read::text(event, guest_star_fields::STATE)),
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "host.video_enabled".to_owned(),
                         kind: VariantKind::Bool,
                         label: "Host video enabled".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::Bool(payload_read::nested_flag(
+                            event,
+                            guest_star_fields::HOST,
+                            guest_star_fields::HOST_VIDEO_ENABLED,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "host.audio_enabled".to_owned(),
                         kind: VariantKind::Bool,
                         label: "Host audio enabled".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::Bool(payload_read::nested_flag(
+                            event,
+                            guest_star_fields::HOST,
+                            guest_star_fields::HOST_AUDIO_ENABLED,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "host.volume".to_owned(),
                         kind: VariantKind::Int,
                         label: "Host volume".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
                     },
-                ],
-            }
-        })
+                    |event| {
+                        Variant::Int(payload_read::nested_number(
+                            event,
+                            guest_star_fields::HOST,
+                            guest_star_fields::HOST_VOLUME,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "guest.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            guest_star_fields::GUEST,
+                            guest_star_fields::GUEST_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "guest.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Guest ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            guest_star_fields::GUEST,
+                            guest_star_fields::GUEST_ID,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn guest_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(guest_star_fields::GUEST),
+        guest_star_fields::GUEST_ID,
+        guest_star_fields::GUEST_LOGIN,
+        guest_star_fields::GUEST_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

@@ -1,12 +1,13 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::automod as automod_fields;
 
 pub(crate) struct AutomodMessageHeldDescriptor;
@@ -63,140 +64,110 @@ impl TriggerKindDescriptor for AutomodMessageHeldDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let automod = event.payload.get(automod_fields::AUTOMOD);
-        let user = event.payload.get(automod_fields::USER);
-
-        // automod.message_id is the key input for approve_message/deny_message sub-actions.
-        let message_id = automod
-            .and_then(|a| a.get(automod_fields::MESSAGE_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let category = automod
-            .and_then(|a| a.get(automod_fields::CATEGORY))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let level = automod
-            .and_then(|a| a.get(automod_fields::LEVEL))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let held_at = automod
-            .and_then(|a| a.get(automod_fields::HELD_AT))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_login = user
-            .and_then(|u| u.get(automod_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = user
-            .and_then(|u| u.get(automod_fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let message_text = event
-            .payload
-            .get(automod_fields::MESSAGE_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let reason = event
-            .payload
-            .get(automod_fields::REASON)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let terms_found = event
-            .payload
-            .get(automod_fields::BLOCKED_TERM)
-            .and_then(|b| b.get(automod_fields::TERMS_FOUND))
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                Variant::Array(
-                    arr.iter()
-                        .filter_map(|t| t.as_str())
-                        .map(|s| Variant::String(s.to_owned()))
-                        .collect(),
-                )
-            })
-            .unwrap_or_else(|| Variant::Array(vec![]));
-
-        ArgStack::new()
-            .set("automod.message_id".to_owned(), Variant::String(message_id))
-            .set("automod.category".to_owned(), Variant::String(category))
-            .set("automod.level".to_owned(), Variant::Int(level))
-            .set("automod.reason".to_owned(), Variant::String(reason))
-            .set("automod.terms_found".to_owned(), terms_found)
-            .set("held_at".to_owned(), Variant::String(held_at))
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("message_text".to_owned(), Variant::String(message_text))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), held_author_identity)
+                .message_text(|event| payload_read::text(event, automod_fields::MESSAGE_TEXT))
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.message_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Automod message ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            automod_fields::AUTOMOD,
+                            automod_fields::MESSAGE_ID,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.category".to_owned(),
                         kind: VariantKind::String,
                         label: "Automod category".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            automod_fields::AUTOMOD,
+                            automod_fields::CATEGORY,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.level".to_owned(),
                         kind: VariantKind::Int,
                         label: "Automod level".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 4 }),
                     },
+                    |event| {
+                        Variant::Int(payload_read::nested_number(
+                            event,
+                            automod_fields::AUTOMOD,
+                            automod_fields::LEVEL,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.reason".to_owned(),
                         kind: VariantKind::String,
                         label: "Hold reason".to_owned(),
                         synthesis: None,
                     },
+                    |event| Variant::String(payload_read::text(event, automod_fields::REASON)),
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.terms_found".to_owned(),
                         kind: VariantKind::Array,
                         label: "Blocked term IDs".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        payload_read::nested_text_list(
+                            event,
+                            automod_fields::BLOCKED_TERM,
+                            automod_fields::TERMS_FOUND,
+                        )
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "held_at".to_owned(),
                         kind: VariantKind::String,
                         label: "Held at".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            automod_fields::AUTOMOD,
+                            automod_fields::HELD_AT,
+                        ))
                     },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "message_text".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message text".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
-                ],
-            }
-        })
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn held_author_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(automod_fields::USER),
+        automod_fields::USER_ID,
+        automod_fields::USER_LOGIN,
+        automod_fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

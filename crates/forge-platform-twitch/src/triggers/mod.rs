@@ -34,6 +34,7 @@ mod hype_train_progress;
 mod hype_train_started;
 mod moderator_added;
 mod moderator_removed;
+mod payload_read;
 mod poll_ended;
 mod poll_progress;
 mod poll_started;

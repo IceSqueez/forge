@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
+    SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::raid as fields;
 
 pub(crate) struct RaidSentDescriptor;
@@ -67,58 +69,60 @@ impl TriggerKindDescriptor for RaidSentDescriptor {
             .is_some_and(|d| d == "sent")
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let viewer_count = event
-            .payload
-            .get(fields::VIEWER_COUNT)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let to_login = event
-            .payload
-            .get(fields::TO_BROADCASTER)
-            .and_then(|b| b.get(fields::BROADCASTER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let to_id = event
-            .payload
-            .get(fields::TO_BROADCASTER)
-            .and_then(|b| b.get(fields::BROADCASTER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("to_broadcaster_login".to_owned(), Variant::String(to_login))
-            .set("to_broadcaster_id".to_owned(), Variant::String(to_id))
-            .set("viewer_count".to_owned(), Variant::Int(viewer_count))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), raid_target_identity)
+                .count(CanonicalCount::ViewerCount, |event| {
+                    payload_read::number(event, fields::VIEWER_COUNT)
+                })
+                .legacy(
                     DeclaredVariable {
                         name: "to_broadcaster_login".to_owned(),
                         kind: VariantKind::String,
                         label: "Target channel login".to_owned(),
                         synthesis: Some(SynthesisHint::Username),
                     },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            fields::TO_BROADCASTER,
+                            fields::BROADCASTER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "to_broadcaster_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Target channel ID".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "viewer_count".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Viewer count".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 500 }),
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            fields::TO_BROADCASTER,
+                            fields::BROADCASTER_ID,
+                        ))
                     },
-                ],
-            }
-        })
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn raid_target_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::TO_BROADCASTER),
+        fields::BROADCASTER_ID,
+        fields::BROADCASTER_LOGIN,
+        fields::BROADCASTER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

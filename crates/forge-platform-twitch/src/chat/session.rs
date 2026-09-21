@@ -480,6 +480,12 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let user_display = event_data
+            .get("chatter_user_name")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(user_login.as_str())
+            .to_owned();
         let message = event_data
             .get("message")
             .and_then(|m| m.get("text"))
@@ -510,6 +516,7 @@ impl ChatSession {
             (chat_fields::USER): {
                 (chat_fields::USER_LOGIN): user_login,
                 (chat_fields::USER_ID): user_id,
+                (chat_fields::USER_DISPLAY_NAME): user_display,
                 (chat_fields::USER_ROLES): roles,
             },
             (chat_fields::MESSAGE): message,
@@ -723,6 +730,10 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let gift_total = event_data
+            .get("total")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1);
 
         debug!(gifter_id = %gifter_id, "gift sub event received");
 
@@ -730,6 +741,7 @@ impl ChatSession {
         let mut forge_payload = serde_json::json!({
             (support_fields::TIER): tier,
             (support_fields::IS_ANONYMOUS): is_anonymous,
+            (support_fields::GIFT_TOTAL): gift_total,
             (support_fields::GIFTER): {
                 (support_fields::GIFTER_ID): gifter_id,
                 (support_fields::GIFTER_LOGIN): gifter_login,
@@ -3511,6 +3523,16 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let requester_id = event_data
+            .get("requester_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let requester_name = event_data
+            .get("requester_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
 
         debug!(
             duration_seconds,
@@ -3527,7 +3549,9 @@ impl ChatSession {
                     (ad_break_fields::STARTED_AT): started_at,
                 },
                 (ad_break_fields::REQUESTER): {
+                    (ad_break_fields::REQUESTER_ID): requester_id,
                     (ad_break_fields::REQUESTER_LOGIN): requester_login,
+                    (ad_break_fields::REQUESTER_DISPLAY_NAME): requester_name,
                 },
             }),
         ));

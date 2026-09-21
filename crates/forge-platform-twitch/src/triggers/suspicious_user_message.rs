@@ -1,12 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::suspicious as suspicious_fields;
 
 pub(crate) struct SuspiciousUserMessageDescriptor;
@@ -63,73 +62,40 @@ impl TriggerKindDescriptor for SuspiciousUserMessageDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get(suspicious_fields::USER);
-
-        let user_login = user
-            .and_then(|v| v.get(suspicious_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = user
-            .and_then(|v| v.get(suspicious_fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let low_trust_status = event
-            .payload
-            .get(suspicious_fields::LOW_TRUST_STATUS)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let message_text = event
-            .payload
-            .get(suspicious_fields::MESSAGE_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set(
-                "low_trust_status".to_owned(),
-                Variant::String(low_trust_status),
-            )
-            .set("message_text".to_owned(), Variant::String(message_text))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), suspicious_user_identity)
+                .message_text(|event| payload_read::text(event, suspicious_fields::MESSAGE_TEXT))
+                .event_specific(
                     DeclaredVariable {
                         name: "low_trust_status".to_owned(),
                         kind: VariantKind::String,
                         label: "Low-trust status".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "message_text".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message text".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
+                    |event| {
+                        Variant::String(payload_read::text(
+                            event,
+                            suspicious_fields::LOW_TRUST_STATUS,
+                        ))
                     },
-                ],
-            }
-        })
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn suspicious_user_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(suspicious_fields::USER),
+        suspicious_fields::USER_ID,
+        suspicious_fields::USER_LOGIN,
+        suspicious_fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

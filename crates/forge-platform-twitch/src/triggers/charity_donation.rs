@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::charity as charity_fields;
 
 pub(crate) struct CharityDonationDescriptor;
@@ -102,73 +104,41 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
         amount_cents >= min_amount_cents
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let charity = event.payload.get(charity_fields::CHARITY);
-        let user = event.payload.get(charity_fields::USER);
-
-        let charity_id = charity
-            .and_then(|c| c.get(charity_fields::CHARITY_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let charity_name = charity
-            .and_then(|c| c.get(charity_fields::CHARITY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let amount_cents = charity
-            .and_then(|c| c.get(charity_fields::AMOUNT_CENTS))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let currency_code = charity
-            .and_then(|c| c.get(charity_fields::CURRENCY_CODE))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_login = user
-            .and_then(|u| u.get(charity_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let user_display_name = user
-            .and_then(|u| u.get(charity_fields::USER_DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-
-        ArgStack::new()
-            .set("charity.id".to_owned(), Variant::String(charity_id))
-            .set("charity.name".to_owned(), Variant::String(charity_name))
-            .set(
-                "charity.amount_cents".to_owned(),
-                Variant::Int(amount_cents),
-            )
-            .set(
-                "charity.currency_code".to_owned(),
-                Variant::String(currency_code),
-            )
-            .set("charity.user.login".to_owned(), Variant::String(user_login))
-            .set(
-                "charity.user.display_name".to_owned(),
-                Variant::String(user_display_name),
-            )
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), donor_identity)
+                .event_specific(
                     DeclaredVariable {
                         name: "charity.id".to_owned(),
                         kind: VariantKind::String,
                         label: "Charity campaign ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            charity_fields::CHARITY,
+                            charity_fields::CHARITY_ID,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "charity.name".to_owned(),
                         kind: VariantKind::String,
                         label: "Charity name".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            charity_fields::CHARITY,
+                            charity_fields::CHARITY_NAME,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "charity.amount_cents".to_owned(),
                         kind: VariantKind::Int,
@@ -178,28 +148,76 @@ impl TriggerKindDescriptor for CharityDonationDescriptor {
                             max: 1000000,
                         }),
                     },
+                    |event| {
+                        Variant::Int(payload_read::nested_number(
+                            event,
+                            charity_fields::CHARITY,
+                            charity_fields::AMOUNT_CENTS,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "charity.currency_code".to_owned(),
                         kind: VariantKind::String,
                         label: "Currency code".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            charity_fields::CHARITY,
+                            charity_fields::CURRENCY_CODE,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "charity.user.login".to_owned(),
                         kind: VariantKind::String,
                         label: "Donor login".to_owned(),
                         synthesis: Some(SynthesisHint::Username),
                     },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            charity_fields::USER,
+                            charity_fields::USER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "charity.user.display_name".to_owned(),
                         kind: VariantKind::String,
                         label: "Donor display name".to_owned(),
                         synthesis: Some(SynthesisHint::DisplayName),
                     },
-                ],
-            }
-        })
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            charity_fields::USER,
+                            charity_fields::USER_DISPLAY_NAME,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn donor_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(charity_fields::USER),
+        charity_fields::USER_ID,
+        charity_fields::USER_LOGIN,
+        charity_fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

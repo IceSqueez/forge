@@ -26,6 +26,8 @@ const RETRY_BUDGET: Duration = Duration::from_secs(600);
 /// How long the retired peer is given to push its close frame; the assertion holds either way.
 const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
 
+const HANDSHAKE_BUDGET: Duration = Duration::from_secs(30);
+
 const ATTEMPTS_BEFORE_VERDICT: usize = 3;
 
 const SESSION_INVALIDATED: u16 = 4011;
@@ -174,10 +176,14 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
     )
     .await
     .unwrap();
-    upgraded_rx
+    tokio::time::timeout(HANDSHAKE_BUDGET, upgraded_rx)
         .await
+        .expect("the mock peer never reached the web-socket upgrade")
         .expect("the mock peer never completed the web-socket upgrade");
-    client.disconnect().await.unwrap();
+    tokio::time::timeout(HANDSHAKE_BUDGET, client.disconnect())
+        .await
+        .expect("retiring the client never returned")
+        .unwrap();
     while rx.try_recv().is_ok() {}
 
     let _ = gate_tx.send(());

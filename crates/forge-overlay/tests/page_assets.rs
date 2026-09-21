@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 
 use forge_overlay::config::{ANIMATION_OPTIONS, POSITION_OPTIONS};
 use forge_overlay::{
-    BEHAVIOR_FILE, OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE,
-    register_builtin_kinds,
+    BEHAVIOR_FILE, ConfigSection, OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET,
+    STYLE_FILE, register_builtin_kinds,
 };
 use forge_registry::FormField;
 
@@ -84,7 +84,7 @@ fn every_kind_markup_loads_the_shared_runtime_and_its_own_sibling_files() {
 }
 
 #[test]
-fn a_page_only_binds_config_keys_its_own_form_declares() {
+fn a_page_binds_config_keys_its_own_form_declares_and_binds_none_when_it_draws_nothing() {
     for descriptor in registry().all() {
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
@@ -93,10 +93,13 @@ fn a_page_only_binds_config_keys_its_own_form_declares() {
             .collect();
         let bindings = quoted_after(descriptor.page_assets().markup, "data-bind=\"");
 
-        assert!(
+        assert_eq!(
             !bindings.is_empty(),
-            "{} markup declares no bindings at all",
-            descriptor.id()
+            descriptor.has_visual_page(),
+            "{} declares has_visual_page()={} but binds {} config keys into its markup",
+            descriptor.id(),
+            descriptor.has_visual_page(),
+            bindings.len()
         );
         for bound in &bindings {
             assert!(
@@ -109,7 +112,7 @@ fn a_page_only_binds_config_keys_its_own_form_declares() {
 }
 
 #[test]
-fn a_page_only_reads_config_members_its_own_form_declares() {
+fn a_page_reads_config_members_its_own_form_declares_and_reads_none_when_it_draws_nothing() {
     for descriptor in registry().all() {
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
@@ -119,10 +122,13 @@ fn a_page_only_reads_config_members_its_own_form_declares() {
         let behavior = without_line_comments(descriptor.page_assets().behavior);
         let members = members_after(&behavior, "config.");
 
-        assert!(
+        assert_eq!(
             !members.is_empty(),
-            "{} behavior reads nothing from its config",
-            descriptor.id()
+            descriptor.has_visual_page(),
+            "{} declares has_visual_page()={} but reads {} members off its config document",
+            descriptor.id(),
+            descriptor.has_visual_page(),
+            members.len()
         );
         for member in &members {
             assert!(
@@ -135,8 +141,8 @@ fn a_page_only_reads_config_members_its_own_form_declares() {
 }
 
 #[test]
-fn every_kind_stylesheet_takes_its_accent_and_font_from_runtime_custom_properties() {
-    for descriptor in registry().all() {
+fn every_kind_that_draws_a_page_takes_its_accent_and_font_from_runtime_custom_properties() {
+    for descriptor in registry().all().filter(|d| d.has_visual_page()) {
         let style = descriptor.page_assets().style;
 
         for property in ["var(--accent)", "var(--font)"] {
@@ -144,6 +150,21 @@ fn every_kind_stylesheet_takes_its_accent_and_font_from_runtime_custom_propertie
                 style.contains(property),
                 "{} hardcodes what {property} should supply at runtime",
                 descriptor.id()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_kind_that_draws_no_page_declares_no_style_or_behavior_field_to_draw_with() {
+    for descriptor in registry().all().filter(|d| !d.has_visual_page()) {
+        for sectioned in descriptor.config_fields() {
+            assert_eq!(
+                sectioned.section,
+                ConfigSection::Content,
+                "{} declares {} outside its content group, which nothing on a silent page reads",
+                descriptor.id(),
+                field_key(&sectioned.field)
             );
         }
     }

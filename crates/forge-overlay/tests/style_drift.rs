@@ -98,13 +98,18 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
 }
 
 #[test]
-fn every_kind_this_build_registers_is_guarded_against_style_drift() {
+fn a_kind_is_guarded_against_style_drift_exactly_when_it_draws_a_page() {
     let reg = registry();
     let guarded: BTreeSet<&str> = style_guards().iter().map(|guard| guard.kind_id).collect();
-    let registered: BTreeSet<&str> = reg.all().map(|descriptor| descriptor.id()).collect();
+    let drawing: BTreeSet<&str> = reg
+        .all()
+        .filter(|descriptor| descriptor.has_visual_page())
+        .map(|descriptor| descriptor.id())
+        .collect();
 
     assert_eq!(
-        guarded, registered,
-        "a kind with no guard can drift away from the size its preview draws"
+        guarded, drawing,
+        "a drawing kind with no guard drifts away from the size its preview draws, and a guard on \
+         a kind that draws nothing pins geometry no page has"
     );
 }

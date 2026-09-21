@@ -9,6 +9,7 @@ use serde_json::Value;
 
 const BUILTIN_IDS: &[&str] = &[
     "overlay.alert",
+    "overlay.audio",
     "overlay.chat",
     "overlay.frame",
     "overlay.goal",
@@ -21,6 +22,17 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
         &[
             ("headline", "Thanks for the sub!"),
             ("subline", "7 months subscribed"),
+        ],
+    ),
+    (
+        "overlay.audio",
+        &[
+            ("clip_duration_ms", "0"),
+            ("clip_id", ""),
+            ("clip_media_type", ""),
+            ("clip_path", ""),
+            ("command", ""),
+            ("report_path", ""),
         ],
     ),
     (

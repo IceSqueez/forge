@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_overlay::{
-    CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry, RESERVED_DIRECTORY,
-    STYLE_FILE, register_builtin_kinds,
+    AudioAnnouncement, CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry,
+    RESERVED_DIRECTORY, STYLE_FILE, announcement_content, register_builtin_kinds,
 };
 use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
@@ -26,9 +26,16 @@ use tempfile::TempDir;
 use time::OffsetDateTime;
 
 const ALERT_KIND: &str = "overlay.alert";
+const AUDIO_KIND: &str = "overlay.audio";
 const CHAT_KIND: &str = "overlay.chat";
 const GOAL_KIND: &str = "overlay.goal";
 const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
+
+const CLIP_ID: &str = "5f2a";
+const CLIP_PATH: &str = "/audio/v1/clip/n3Zq";
+const REPORT_PATH: &str = "/audio/v1/report/n3Zq";
+const CLIP_MEDIA_TYPE: &str = "audio/wav";
+const CLIP_DURATION_MS: u64 = 2_500;
 
 const LABEL_KEY: &str = "label";
 const VALUE_KEY: &str = "value";
@@ -782,9 +789,10 @@ async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_conn
 }
 
 #[tokio::test]
-async fn sending_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolve() {
+async fn sending_content_refuses_an_identity_or_an_overlay_type_no_step_may_author() {
     let unshipped = definition_of_kind("vendor-box", UNSHIPPED_KIND);
-    let harness = harness(vec![unshipped.clone()], true);
+    let audio = definition_of_kind("clip-player", AUDIO_KIND);
+    let harness = harness(vec![unshipped.clone(), audio.clone()], true);
 
     type Check = fn(&OverlayServiceError) -> bool;
     for (id, matches_expected, label) in [
@@ -798,6 +806,13 @@ async fn sending_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolv
             (|e: &OverlayServiceError| matches!(e, OverlayServiceError::UnavailableKind { .. }))
                 as Check,
             "an overlay type this build lacks",
+        ),
+        (
+            audio.id.clone(),
+            (|e: &OverlayServiceError| {
+                matches!(e, OverlayServiceError::ContentNotAuthorable { .. })
+            }) as Check,
+            "an overlay type that fills its own content",
         ),
     ] {
         let err = harness
@@ -817,6 +832,87 @@ async fn sending_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolv
     assert!(
         harness.sink.frames().is_empty(),
         "a refused send still pushed a frame to connected pages"
+    );
+    assert!(
+        harness.retained_for(&audio.id).is_none(),
+        "a refused send left content behind for the next connection to replay"
+    );
+}
+
+#[tokio::test]
+async fn a_direct_delivery_to_a_machine_filled_overlay_reaches_the_page_and_is_never_retained() {
+    let audio = definition_of_kind("clip-player", AUDIO_KIND);
+    let harness = harness(vec![audio.clone()], true);
+
+    let delivered = harness
+        .service
+        .deliver_content(
+            &audio.id,
+            announcement_content(&AudioAnnouncement {
+                clip_id: CLIP_ID,
+                clip_path: CLIP_PATH,
+                report_path: REPORT_PATH,
+                media_type: CLIP_MEDIA_TYPE,
+                duration_ms: CLIP_DURATION_MS,
+            }),
+            None,
+        )
+        .await
+        .expect("the sink that fills this overlay's content is not the step funnel");
+
+    assert!(delivered, "a connected page was not counted as reached");
+    assert_eq!(
+        harness.sink.frames(),
+        vec![ContentFrame {
+            identity: audio.id.clone(),
+            content: serde_json::json!({
+                "clip_id": CLIP_ID,
+                "clip_path": CLIP_PATH,
+                "report_path": REPORT_PATH,
+                "clip_media_type": CLIP_MEDIA_TYPE,
+                "clip_duration_ms": CLIP_DURATION_MS,
+            }),
+            duration_ms: None,
+        }],
+        "the page received something other than the announcement, or received it tagged"
+    );
+    assert!(
+        harness.retained_for(&audio.id).is_none(),
+        "an announcement was retained, so a reconnect replays a capability already spent"
+    );
+}
+
+#[tokio::test]
+async fn a_test_fire_on_a_machine_filled_overlay_announces_no_clip_and_no_address() {
+    let audio = definition_of_kind("clip-player", AUDIO_KIND);
+    let harness = harness(vec![audio.clone()], true);
+
+    let fired = harness
+        .service
+        .test_fire(&audio.id)
+        .await
+        .expect("a test fire builds a sample for every shipped kind");
+
+    assert_eq!(
+        harness.sink.frames(),
+        vec![ContentFrame {
+            identity: audio.id.clone(),
+            content: serde_json::json!({
+                "clip_id": "",
+                "clip_path": "",
+                "report_path": "",
+                "clip_media_type": "",
+                "clip_duration_ms": 0,
+                "command": "",
+            }),
+            duration_ms: None,
+        }],
+        "a test fire reached the page with something a browser source would act on"
+    );
+    assert_eq!(
+        fired.content.get("clip_path").and_then(Variant::as_str),
+        Some(""),
+        "the previewed sample names an address the caller could read back"
     );
 }
 

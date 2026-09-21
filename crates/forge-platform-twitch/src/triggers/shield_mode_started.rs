@@ -3,10 +3,7 @@ use forge_registry::{
     ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
     TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    TriggerConfig, Variant, VariantKind,
-};
+use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
 use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::shield as shield_fields;
@@ -84,38 +81,6 @@ impl TriggerKindDescriptor for ShieldModeStartedDescriptor {
                         synthesis: None,
                     },
                     |event| Variant::String(payload_read::text(event, shield_fields::STARTED_AT)),
-                )
-                .legacy(
-                    DeclaredVariable {
-                        name: "moderator_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Login),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shield_fields::MODERATOR,
-                            shield_fields::MODERATOR_LOGIN,
-                        ))
-                    },
-                )
-                .legacy(
-                    DeclaredVariable {
-                        name: "moderator_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator ID".to_owned(),
-                        synthesis: None,
-                    },
-                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
-                    |event| {
-                        Variant::String(payload_read::nested_text(
-                            event,
-                            shield_fields::MODERATOR,
-                            shield_fields::MODERATOR_ID,
-                        ))
-                    },
                 ),
         )
     }

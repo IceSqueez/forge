@@ -1085,6 +1085,8 @@ soundboard_stop_all = Stop all
 soundboard_pad_playing = playing…
 soundboard_pad_source_missing = file missing
 soundboard_pad_source_missing_hint = The source file is gone. Edit this sound and pick the file again.
+soundboard_pad_adopt_blocked = cannot be copied
+soundboard_pad_not_in_library = not in library yet
 soundboard_no_matches = No sounds match your filter
 soundboard_library_section = Library
 soundboard_library_import = Import
@@ -1101,6 +1103,22 @@ soundboard_routing_hint = Add this device as an Audio Input Capture in OBS.
 soundboard_routing_volume = MASTER VOLUME · { $pct }%
 soundboard_routing_headphones = Also play in headphones
 soundboard_footer_left = { $sounds } sounds · { $categories } categories · { $size }
+soundboard_footer_unadopted =
+    { $count ->
+        [one] { $count } sound still plays from its original folder
+       *[other] { $count } sounds still play from their original folder
+    }
+soundboard_footer_adopt_action =
+    { $count ->
+        [one] Copy { $count } clip into the library
+       *[other] Copy { $count } clips into the library
+    }
+soundboard_footer_adopt_busy = Copying...
+soundboard_adopt_copied = { $count } copied
+soundboard_adopt_refused = { $count } refused
+soundboard_adopt_missing = { $count } missing
+soundboard_adopt_unfinished = { $count } unfinished
+soundboard_adopt_nothing = Nothing changed
 soundboard_output_ready = Output device ready
 soundboard_output_missing = Output device missing
 

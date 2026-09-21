@@ -1092,6 +1092,8 @@ soundboard_stop_all = Зупинити все
 soundboard_pad_playing = грає…
 soundboard_pad_source_missing = файл зник
 soundboard_pad_source_missing_hint = Вихідний файл зник. Відредагуй цей звук і вкажи файл ще раз.
+soundboard_pad_adopt_blocked = не копіюється
+soundboard_pad_not_in_library = ще не в бібліотеці
 soundboard_no_matches = Немає звуків за фільтром
 soundboard_library_section = Бібліотека
 soundboard_library_import = Імпорт
@@ -1108,6 +1110,26 @@ soundboard_routing_hint = Додайте цей пристрій як Audio Inpu
 soundboard_routing_volume = ГОЛОСНІСТЬ · { $pct }%
 soundboard_routing_headphones = Також відтворювати в навушниках
 soundboard_footer_left = { $sounds } звуків · { $categories } категорій · { $size }
+soundboard_footer_unadopted =
+    { $count ->
+        [one] { $count } звук досі грає зі своєї початкової теки
+        [few] { $count } звуки досі грають зі своєї початкової теки
+        [many] { $count } звуків досі грають зі своєї початкової теки
+       *[other] { $count } звуків досі грають зі своєї початкової теки
+    }
+soundboard_footer_adopt_action =
+    { $count ->
+        [one] Скопіювати { $count } кліп у бібліотеку
+        [few] Скопіювати { $count } кліпи у бібліотеку
+        [many] Скопіювати { $count } кліпів у бібліотеку
+       *[other] Скопіювати { $count } кліпів у бібліотеку
+    }
+soundboard_footer_adopt_busy = Копіюю...
+soundboard_adopt_copied = скопійовано: { $count }
+soundboard_adopt_refused = відхилено: { $count }
+soundboard_adopt_missing = зникло: { $count }
+soundboard_adopt_unfinished = незавершено: { $count }
+soundboard_adopt_nothing = Нічого не змінилось
 soundboard_output_ready = Пристрій виходу готовий
 soundboard_output_missing = Пристрій виходу відсутній
 

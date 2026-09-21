@@ -1,3 +1,4 @@
+use forge_types::Variant;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -6,6 +7,7 @@ use crate::descriptor::OverlayKindDescriptor;
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
 use crate::materialize::GENERATOR_VERSION;
+use crate::media::emitted_media_value;
 use crate::sample::sample_content;
 
 pub const DOCUMENT_VERSION: u32 = 1;
@@ -32,7 +34,7 @@ pub fn config_document(
     let effective = effective_overlay_config(descriptor, &instance.config);
     let config = effective
         .iter()
-        .map(|(key, value)| (key.clone(), value.to_plain_json()))
+        .map(|(key, value)| (key.clone(), page_value(instance, key, value)))
         .collect();
 
     let document = ConfigDocument {
@@ -47,6 +49,16 @@ pub fn config_document(
     };
 
     Ok(serde_json::to_string_pretty(&document)?)
+}
+
+fn page_value(instance: &OverlayInstance, key: &str, value: &Variant) -> Value {
+    let Some(stored) = value.as_str() else {
+        return value.to_plain_json();
+    };
+    match emitted_media_value(key, stored, instance.media.for_key(key)) {
+        Some(emitted) => Value::String(emitted),
+        None => value.to_plain_json(),
+    }
 }
 
 #[derive(Serialize)]

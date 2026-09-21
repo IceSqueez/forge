@@ -5,7 +5,17 @@ use forge_types::{ClipId, OutputDevice};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::StorageError;
+use crate::{MediaReferrer, MediaReferrerKind, StorageError};
+
+pub const CLIP_SOURCE_SLOT: &str = "source";
+
+pub fn clip_source_referrer(clip_id: ClipId) -> MediaReferrer {
+    MediaReferrer::new(
+        MediaReferrerKind::SoundboardClip,
+        clip_id.to_string(),
+        CLIP_SOURCE_SLOT,
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoredClip {

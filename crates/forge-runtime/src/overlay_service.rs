@@ -6,8 +6,9 @@ use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_overlay::{
     DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
-    OverlayKindRegistry, delivered_content, ensure_shared_directory, materialize_overlay,
-    read_overlay_source, remove_overlay_directory, sample_content, write_overlay_source,
+    OverlayKindRegistry, OverlayMedia, delivered_content, ensure_shared_directory,
+    materialize_overlay, read_overlay_source, remove_overlay_directory, sample_content,
+    write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_storage::{
@@ -18,6 +19,7 @@ use forge_types::ArgStack;
 use serde_json::json;
 
 use crate::bus::EventBus;
+use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -90,6 +92,7 @@ struct OverlayService {
     kinds: Arc<OverlayKindRegistry>,
     bus: Arc<EventBus>,
     frames: Option<Arc<dyn OverlayFrameSink>>,
+    media: Option<OverlayMediaLibrary>,
 }
 
 #[derive(Clone)]
@@ -112,6 +115,20 @@ impl OverlayServiceHandle {
                 kinds,
                 bus,
                 frames,
+                media: None,
+            }),
+        }
+    }
+
+    pub fn with_media_library(self, library: OverlayMediaLibrary) -> Self {
+        Self {
+            inner: Arc::new(OverlayService {
+                repo: Arc::clone(&self.inner.repo),
+                settings: Arc::clone(&self.inner.settings),
+                kinds: Arc::clone(&self.inner.kinds),
+                bus: Arc::clone(&self.inner.bus),
+                frames: self.inner.frames.clone(),
+                media: Some(library),
             }),
         }
     }
@@ -206,6 +223,13 @@ impl OverlayServiceHandle {
         let identity = id.as_str().to_owned();
         let name = file.to_owned();
         Ok(blocking(move || write_overlay_source(&root, &identity, &name, &body)).await??)
+    }
+
+    pub async fn release_media(&self, id: &OverlayId) -> Result<u64, OverlayServiceError> {
+        let Some(library) = &self.inner.media else {
+            return Ok(0);
+        };
+        Ok(library.release(id).await?)
     }
 
     /// `Ok(false)` when the directory was already gone.
@@ -371,9 +395,24 @@ impl OverlayServiceHandle {
         definition: &OverlayDefinition,
     ) -> Result<MaterializeReport, OverlayServiceError> {
         let root = self.root().await;
-        let instance = instance_of(definition);
+        let instance = instance_of(definition, self.media_pass(definition).await);
         let kinds = Arc::clone(&self.inner.kinds);
         let report = blocking(move || materialize_overlay(&root, &instance, &kinds)).await??;
+
+        if !report.media_sweep_failures.is_empty() {
+            tracing::warn!(
+                overlay = %definition.id,
+                paths = ?report.media_sweep_failures,
+                "generated overlay media could not be swept"
+            );
+        }
+        if !report.media_issues.is_empty() {
+            tracing::warn!(
+                overlay = %definition.id,
+                issues = ?report.media_issues,
+                "overlay media reference did not resolve; the page receives no file for it"
+            );
+        }
 
         if definition.generator_version != GENERATOR_VERSION {
             let mut stamped = definition.clone();
@@ -382,6 +421,25 @@ impl OverlayServiceHandle {
         }
 
         Ok(report)
+    }
+
+    async fn media_pass(&self, definition: &OverlayDefinition) -> OverlayMedia {
+        let config = match self
+            .inner
+            .kinds
+            .effective_config(&definition.kind_id, &definition.config)
+        {
+            Ok(config) => config,
+            Err(_) => definition.config.clone(),
+        };
+
+        let Some(library) = &self.inner.media else {
+            return unresolvable(&config).media;
+        };
+
+        let pass = library.resolve(&config).await;
+        library.record(&definition.id, &pass).await;
+        pass.media
     }
 }
 
@@ -424,7 +482,7 @@ fn content_json(content: &OverlayConfig) -> serde_json::Value {
     )
 }
 
-fn instance_of(definition: &OverlayDefinition) -> OverlayInstance {
+fn instance_of(definition: &OverlayDefinition, media: OverlayMedia) -> OverlayInstance {
     OverlayInstance {
         id: definition.id.as_str().to_owned(),
         display_name: definition.display_name.clone(),
@@ -432,6 +490,7 @@ fn instance_of(definition: &OverlayDefinition) -> OverlayInstance {
         config: definition.config.clone(),
         source_overrides: definition.source_overrides.clone(),
         credential: Some(definition.credential.as_str().to_owned()),
+        media,
     }
 }
 

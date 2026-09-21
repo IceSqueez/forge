@@ -4,7 +4,8 @@ use forge_overlay::config::{
     ACCENT, ANIMATION, DURATION, FONT, HEADLINE, POSITION, SOUND, SUBLINE,
 };
 use forge_overlay::{
-    OverlayConfig, OverlayInstance, OverlayKindRegistry, config_document, register_builtin_kinds,
+    OverlayConfig, OverlayInstance, OverlayKindRegistry, OverlayMedia, config_document,
+    register_builtin_kinds,
 };
 use forge_types::Variant;
 use serde_json::Value;
@@ -26,6 +27,7 @@ fn raw_document(config: OverlayConfig, credential: Option<&str>) -> String {
         config,
         source_overrides: Vec::new(),
         credential: credential.map(str::to_owned),
+        media: OverlayMedia::default(),
     };
 
     config_document(&instance, descriptor).expect("the config document builds")

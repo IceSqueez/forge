@@ -51,7 +51,7 @@ pub use settings::{
     soundboard_enabled, soundboard_master_volume, soundboard_output_device, synthesis_defaults,
     voice_gate_settings,
 };
-pub use soundboard::{SoundboardClipsRepo, StoredClip};
+pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
 pub use trigger_instance::TriggerInstanceRepo;
 pub use tts_filters::{

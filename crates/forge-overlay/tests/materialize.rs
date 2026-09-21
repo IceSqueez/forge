@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use forge_overlay::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OverlayConfig, OverlayError, OverlayInstance,
-    OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, SAMPLE_FILE, STYLE_FILE,
+    OverlayKindRegistry, OverlayMedia, RESERVED_DIRECTORY, RUNTIME_ASSET, SAMPLE_FILE, STYLE_FILE,
     ensure_shared_directory, materialize_overlay, register_builtin_kinds, remove_overlay_directory,
 };
 use forge_types::Variant;
@@ -43,6 +43,7 @@ fn instance(source_overrides: &[&str]) -> OverlayInstance {
         config: OverlayConfig::new(),
         source_overrides: source_overrides.iter().map(|n| (*n).to_owned()).collect(),
         credential: None,
+        media: OverlayMedia::default(),
     }
 }
 

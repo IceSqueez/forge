@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -5,6 +6,7 @@ use crate::assets::{CONFIG_FILE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOUR
 use crate::document::{config_document, sample_document};
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
+use crate::media::{GENERATED_MEDIA_DIRECTORY, MediaIssue, ResolvedMedia};
 use crate::registry::OverlayKindRegistry;
 
 /// Stamped into every config document so a stale record can be spotted and regenerated.
@@ -19,6 +21,10 @@ pub struct MaterializeReport {
     pub preserved: Vec<String>,
     /// A subset of `preserved` whose user copy is gone from disk; nothing was written in its place.
     pub missing_overrides: Vec<String>,
+    pub media_written: Vec<String>,
+    pub media_removed: Vec<String>,
+    pub media_sweep_failures: Vec<String>,
+    pub media_issues: Vec<MediaIssue>,
 }
 
 /// The runtime is rewritten on every pass; the reserved subtree is generator territory, not the user's.
@@ -49,7 +55,13 @@ pub fn materialize_overlay(
         written: Vec::new(),
         preserved: Vec::new(),
         missing_overrides: Vec::new(),
+        media_written: Vec::new(),
+        media_removed: Vec::new(),
+        media_sweep_failures: Vec::new(),
+        media_issues: instance.media.issues.clone(),
     };
+
+    write_generated_media(&directory, &instance.media.resolved, &mut report)?;
 
     for (name, body) in descriptor.page_assets().files() {
         if instance.source_overrides.iter().any(|held| held == name) {
@@ -70,6 +82,74 @@ pub fn materialize_overlay(
     report.written.push(SAMPLE_FILE.to_owned());
 
     Ok(report)
+}
+
+fn write_generated_media(
+    directory: &Path,
+    resolved: &[ResolvedMedia],
+    report: &mut MaterializeReport,
+) -> Result<(), OverlayError> {
+    let namespace = directory.join(GENERATED_MEDIA_DIRECTORY);
+    if resolved.is_empty() && !namespace.exists() {
+        return Ok(());
+    }
+
+    reject_symlink(&namespace)?;
+    create_dir(&namespace)?;
+
+    let mut named = BTreeSet::new();
+    for media in resolved {
+        named.insert(media.file_name().to_owned());
+        if is_regular_file(&namespace.join(media.file_name())) {
+            continue;
+        }
+        write_atomic(&namespace, media.file_name(), media.bytes())?;
+        report.media_written.push(media.file_name().to_owned());
+    }
+
+    sweep_generated_media(&namespace, &named, report);
+    Ok(())
+}
+
+fn is_regular_file(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
+}
+
+fn sweep_generated_media(
+    namespace: &Path,
+    named: &BTreeSet<String>,
+    report: &mut MaterializeReport,
+) {
+    let entries = match fs::read_dir(namespace) {
+        Ok(entries) => entries,
+        Err(_) => {
+            report.media_sweep_failures.push(display(namespace));
+            return;
+        }
+    };
+
+    for entry in entries {
+        let Ok(entry) = entry else {
+            report.media_sweep_failures.push(display(namespace));
+            continue;
+        };
+        let path = entry.path();
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            report.media_sweep_failures.push(display(&path));
+            continue;
+        };
+        if named.contains(&name) {
+            continue;
+        }
+        if !is_regular_file(&path) {
+            report.media_sweep_failures.push(display(&path));
+            continue;
+        }
+        match fs::remove_file(&path) {
+            Ok(()) => report.media_removed.push(name),
+            Err(_) => report.media_sweep_failures.push(display(&path)),
+        }
+    }
 }
 
 /// `Ok(false)` when there was nothing to remove; a symlinked or escaping directory is refused, never followed.

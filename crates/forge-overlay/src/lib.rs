@@ -8,6 +8,7 @@ pub mod error;
 pub mod instance;
 pub mod kinds;
 pub mod materialize;
+pub mod media;
 pub mod metrics;
 pub mod preview;
 pub mod registry;
@@ -32,6 +33,11 @@ pub use kinds::register_builtin_kinds;
 pub use materialize::{
     GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
     remove_overlay_directory,
+};
+pub use media::{
+    CLIP_REFERENCE_PREFIX, ClipReference, GENERATED_MEDIA_DIRECTORY, MEDIA_KEYS, MediaIssue,
+    MediaValue, OverlayMedia, ResolvedMedia, clip_reference, clip_references, emitted_media_value,
+    key_holds_media, read_media_value,
 };
 pub use metrics::{
     AxisBound, AxisFallback, ElementAxis, ElementSizing, StyleGuard, element_sizing, style_guards,

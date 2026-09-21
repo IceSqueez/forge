@@ -3,7 +3,7 @@
 use forge_overlay::config::{ELEMENT_HEIGHT, ELEMENT_WIDTH, TEXT_SIZE};
 use forge_overlay::metrics::{ELEMENT_HEIGHT_PROPERTY, ELEMENT_WIDTH_PROPERTY};
 use forge_overlay::{
-    ConfigSection, OverlayConfig, OverlayError, OverlayInstance, OverlayKindRegistry,
+    ConfigSection, OverlayConfig, OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia,
     PreviewCanvas, PreviewElement, config_document, effective_overlay_config, element_sizing,
     register_builtin_kinds, style_guards, validate_overlay_config,
 };
@@ -181,6 +181,7 @@ fn document(kind_id: &str, stored: &OverlayConfig) -> Value {
         config: stored.clone(),
         source_overrides: Vec::new(),
         credential: None,
+        media: OverlayMedia::default(),
     };
 
     serde_json::from_str(&config_document(&instance, descriptor).expect("the document builds"))

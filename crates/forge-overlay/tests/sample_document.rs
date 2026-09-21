@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use forge_overlay::{
-    OverlayConfig, OverlayInstance, OverlayKindRegistry, register_builtin_kinds, sample_document,
+    OverlayConfig, OverlayInstance, OverlayKindRegistry, OverlayMedia, register_builtin_kinds,
+    sample_document,
 };
 use serde_json::Value;
 
@@ -77,6 +78,7 @@ fn raw_sample(kind_id: &str, credential: Option<&str>) -> String {
         config: OverlayConfig::new(),
         source_overrides: Vec::new(),
         credential: credential.map(str::to_owned),
+        media: OverlayMedia::default(),
     };
 
     sample_document(&instance, descriptor).expect("the sample document builds")

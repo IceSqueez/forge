@@ -1,4 +1,5 @@
 use crate::descriptor::OverlayConfig;
+use crate::media::OverlayMedia;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverlayInstance {
@@ -11,4 +12,5 @@ pub struct OverlayInstance {
     pub source_overrides: Vec<String>,
     /// Emitted top-level in the config document, never merged into `config`.
     pub credential: Option<String>,
+    pub media: OverlayMedia,
 }

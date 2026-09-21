@@ -3,22 +3,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use forge_storage::{
-    MediaBlobId, MediaFormat, MediaKind, MediaReferrer, MediaReferrerKind, MediaRepo,
-    SoundboardClipsRepo, StorageError, StoredClip,
+    MediaBlobId, MediaFormat, MediaKind, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
+    StorageError, StoredClip,
 };
 use forge_types::ClipId;
 
+pub use forge_storage::clip_source_referrer;
+
 use crate::error::SoundboardError;
-
-const CLIP_SOURCE_SLOT: &str = "source";
-
-pub fn clip_source_referrer(clip_id: ClipId) -> MediaReferrer {
-    MediaReferrer::new(
-        MediaReferrerKind::SoundboardClip,
-        clip_id.to_string(),
-        CLIP_SOURCE_SLOT,
-    )
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipSource {

@@ -647,6 +647,9 @@ impl OverlaysView {
                 if !removed {
                     return Ok((false, None));
                 }
+                if let Err(error) = service.release_media(&id).await {
+                    tracing::warn!(overlay = %id, %error, "overlay media references not released");
+                }
                 let swept = service
                     .remove_folder(&id)
                     .await

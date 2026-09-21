@@ -594,11 +594,121 @@ pub(crate) async fn run_supervisor(ctx: SupervisorContext) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, RwLock};
 
     use serde_json::json;
 
-    use super::{diff_and_emit_expressions, emit_connection_changed};
+    use forge_events::{Event, EventPublisher};
+    use forge_platform_core::{
+        AtomicConnectionState, CONNECTION_STATE_CHANGED_KIND, ConnectionState,
+    };
+
+    use super::{
+        connection_state_transition, diff_and_emit_expressions, emit_connection_changed,
+        set_connection_state,
+    };
+    use crate::client::VTUBE_PLATFORM_ID;
     use crate::client::tests::MockPublisher;
+    use crate::health::HealthSnapshot;
+
+    const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
+        ConnectionState::Disconnected,
+        ConnectionState::Connecting,
+        ConnectionState::Connected,
+        ConnectionState::Reconnecting,
+    ];
+
+    struct StateAtAnnouncement {
+        state: Arc<AtomicConnectionState>,
+        observed: Mutex<Vec<ConnectionState>>,
+    }
+
+    impl EventPublisher for StateAtAnnouncement {
+        fn publish(&self, event: Event) {
+            if event.kind == CONNECTION_STATE_CHANGED_KIND {
+                self.observed.lock().unwrap().push(self.state.load());
+            }
+        }
+    }
+
+    #[test]
+    fn a_state_transition_announces_the_new_state_only_when_it_actually_changed() {
+        for previous in EVERY_CONNECTION_STATE {
+            for next in EVERY_CONNECTION_STATE {
+                match connection_state_transition(previous, next) {
+                    None => assert_eq!(
+                        previous, next,
+                        "{previous:?} -> {next:?} never reached the bus"
+                    ),
+                    Some(event) => {
+                        assert_ne!(
+                            previous, next,
+                            "{previous:?} -> {next:?} re-announced a state that did not change"
+                        );
+                        assert_eq!(event.kind, CONNECTION_STATE_CHANGED_KIND);
+                        assert_eq!(
+                            event.payload["platform_id"].as_str(),
+                            Some(VTUBE_PLATFORM_ID),
+                            "{previous:?} -> {next:?} was announced for another platform"
+                        );
+                        assert_eq!(
+                            event.payload["state"],
+                            serde_json::to_value(next).unwrap(),
+                            "{previous:?} -> {next:?} announced the wrong state"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_shared_announcement_finds_the_new_state_already_stored() {
+        let state = Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected));
+        let health_state = RwLock::new(HealthSnapshot::default());
+        let publisher = Arc::new(StateAtAnnouncement {
+            state: Arc::clone(&state),
+            observed: Mutex::new(Vec::new()),
+        });
+        let walk = [
+            ConnectionState::Connecting,
+            ConnectionState::Connected,
+            ConnectionState::Reconnecting,
+            ConnectionState::Disconnected,
+        ];
+
+        for next in walk {
+            set_connection_state(&state, &health_state, &*publisher, next);
+        }
+
+        assert_eq!(publisher.observed.lock().unwrap().as_slice(), walk);
+    }
+
+    #[test]
+    fn the_dialing_flag_tracks_exactly_the_states_that_are_still_reaching_for_a_socket() {
+        for (next, expected) in [
+            (ConnectionState::Connecting, true),
+            (ConnectionState::Reconnecting, true),
+            (ConnectionState::Connected, false),
+            (ConnectionState::Disconnected, false),
+        ] {
+            let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connected));
+            let health_state = RwLock::new(HealthSnapshot::default());
+
+            set_connection_state(
+                &state,
+                &health_state,
+                &*MockPublisher::new().publisher(),
+                next,
+            );
+
+            assert_eq!(
+                health_state.read().unwrap().dialing,
+                expected,
+                "dialing after moving to {next:?}"
+            );
+        }
+    }
 
     #[test]
     fn diff_emits_state_changed_only_when_active_value_flips() {

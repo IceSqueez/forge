@@ -417,6 +417,27 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_utterance_clears_the_now_playing_row_and_keeps_its_reason() {
+        const DEVICE_LOSS: &str = "cpal host error: output stream disconnected";
+        let mut state = SpeakState::new();
+        state.apply_event(started("a"));
+
+        let changed = state.apply_event(SpeakEvent::Failed {
+            request_id: rid("a"),
+            error: DEVICE_LOSS.to_owned(),
+        });
+
+        assert!(changed);
+        assert!(state.now_speaking_snapshot().is_none());
+        assert_eq!(state.last_drop(), Some(DEVICE_LOSS));
+        assert_eq!(
+            state.stats_snapshot().spoken,
+            0,
+            "an utterance the device dropped must not be counted as spoken"
+        );
+    }
+
+    #[test]
     fn removed_neither_drops_the_row_nor_asks_for_a_repaint_on_its_own() {
         let mut state = seeded(&["a", "b"]);
 

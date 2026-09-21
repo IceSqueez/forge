@@ -80,14 +80,180 @@ impl AudioSink for DeviceSink {
 mod tests {
     use super::*;
 
+    use std::sync::Mutex;
+
+    use tokio::sync::Notify;
+
     use crate::device::{DeviceId, DeviceInfo};
-    use crate::events::NullAudioEventSink;
     use crate::route::resolve_device;
 
     const DEFAULT_ID: &str = "default";
     const HEADSET_ID: &str = "hw:1";
     const DECOY_ID: &str = "hw:2";
     const RETIRED_ID: &str = "hw:9";
+
+    const DEVICE_REFUSAL: &str = "output device is busy";
+    const SAMPLE_RATE: u32 = 22_050;
+    const MONO: u16 = 1;
+
+    fn clip() -> PcmBuffer {
+        PcmBuffer::new(vec![0i16; 8], SAMPLE_RATE, MONO)
+    }
+
+    fn headset() -> OutputDevice {
+        OutputDevice::ById {
+            id: HEADSET_ID.to_owned(),
+        }
+    }
+
+    struct RecordingFactory {
+        built: Mutex<Vec<OutputDevice>>,
+        finished: Arc<Mutex<Vec<OutputDevice>>>,
+        gate: Option<Arc<Notify>>,
+    }
+
+    impl RecordingFactory {
+        fn new(gate: Option<Arc<Notify>>) -> Arc<Self> {
+            Arc::new(Self {
+                built: Mutex::new(Vec::new()),
+                finished: Arc::new(Mutex::new(Vec::new())),
+                gate,
+            })
+        }
+
+        fn built(&self) -> Vec<OutputDevice> {
+            self.built.lock().unwrap().clone()
+        }
+
+        fn finished(&self) -> Vec<OutputDevice> {
+            self.finished.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl AudioSinkFactory for RecordingFactory {
+        async fn build(&self, device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
+            self.built.lock().unwrap().push(device.clone());
+            Ok(Arc::new(RecordingSink {
+                device: device.clone(),
+                finished: Arc::clone(&self.finished),
+                gate: self.gate.clone(),
+            }))
+        }
+    }
+
+    struct RecordingSink {
+        device: OutputDevice,
+        finished: Arc<Mutex<Vec<OutputDevice>>>,
+        gate: Option<Arc<Notify>>,
+    }
+
+    #[async_trait]
+    impl AudioSink for RecordingSink {
+        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        async fn play_controlled(
+            &self,
+            _buffer: PcmBuffer,
+        ) -> Result<ControlledPlayback, AudioError> {
+            let device = self.device.clone();
+            let finished = Arc::clone(&self.finished);
+            let gate = self.gate.clone();
+            Ok(ControlledPlayback::from_future(async move {
+                if let Some(gate) = gate {
+                    gate.notified().await;
+                }
+                finished.lock().unwrap().push(device);
+                Ok(())
+            }))
+        }
+    }
+
+    struct RefusingFactory;
+
+    #[async_trait]
+    impl AudioSinkFactory for RefusingFactory {
+        async fn build(&self, _device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
+            Err(AudioError::Host(DEVICE_REFUSAL.to_owned()))
+        }
+    }
+
+    #[tokio::test]
+    async fn the_factory_is_asked_on_every_play_so_a_swap_reaches_the_next_clip() {
+        let factory = RecordingFactory::new(None);
+        let sink = DeviceSink::with_factory(
+            OutputDeviceHandle::new(OutputDevice::Default),
+            Arc::clone(&factory) as Arc<dyn AudioSinkFactory>,
+        );
+
+        sink.play(clip()).await.unwrap();
+        sink.play(clip()).await.unwrap();
+        sink.device_handle().swap(headset());
+        sink.play(clip()).await.unwrap();
+
+        assert_eq!(
+            factory.built(),
+            vec![OutputDevice::Default, OutputDevice::Default, headset()]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_swap_mid_clip_leaves_the_running_one_on_its_own_device_and_takes_the_next() {
+        let gate = Arc::new(Notify::new());
+        let factory = RecordingFactory::new(Some(Arc::clone(&gate)));
+        let sink = DeviceSink::with_factory(
+            OutputDeviceHandle::new(OutputDevice::Default),
+            Arc::clone(&factory) as Arc<dyn AudioSinkFactory>,
+        );
+
+        let running = sink.play_controlled(clip()).await.unwrap();
+        sink.device_handle().swap(headset());
+        gate.notify_one();
+        running.await.unwrap();
+
+        assert_eq!(
+            factory.finished(),
+            vec![OutputDevice::Default],
+            "a swap mid-clip must not move the clip that is already playing"
+        );
+
+        let next = sink.play_controlled(clip()).await.unwrap();
+        gate.notify_one();
+        next.await.unwrap();
+
+        assert_eq!(
+            factory.finished(),
+            vec![OutputDevice::Default, headset()],
+            "the clip after the swap must play on the newly chosen device"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_device_the_factory_cannot_open_reaches_the_caller_as_a_typed_error() {
+        let sink = DeviceSink::with_factory(
+            OutputDeviceHandle::new(OutputDevice::Default),
+            Arc::new(RefusingFactory),
+        );
+
+        let refused = |outcome: Result<(), AudioError>, entry_point: &str| {
+            assert!(
+                matches!(&outcome, Err(AudioError::Host(reason)) if reason == DEVICE_REFUSAL),
+                "{entry_point} swallowed the refusal, got {outcome:?}"
+            );
+        };
+
+        refused(sink.play(clip()).await, "play");
+        refused(
+            sink.play_stoppable(clip()).await.map(|_| ()),
+            "play_stoppable",
+        );
+        refused(
+            sink.play_controlled(clip()).await.map(|_| ()),
+            "play_controlled",
+        );
+    }
 
     fn enumerated_devices() -> Vec<DeviceInfo> {
         vec![
@@ -138,25 +304,5 @@ mod tests {
                 "{case}"
             );
         }
-    }
-
-    #[test]
-    fn the_handle_a_sink_hands_out_reroutes_that_same_sink() {
-        let sink = DeviceSink::new(
-            OutputDeviceHandle::new(OutputDevice::Default),
-            Arc::new(NullAudioEventSink),
-        );
-
-        sink.device_handle().swap(OutputDevice::ById {
-            id: HEADSET_ID.to_owned(),
-        });
-
-        assert_eq!(
-            sink.device.load().as_ref(),
-            &OutputDevice::ById {
-                id: HEADSET_ID.to_owned()
-            },
-            "the settings screen must reroute the live sink, not a detached copy of its device"
-        );
     }
 }

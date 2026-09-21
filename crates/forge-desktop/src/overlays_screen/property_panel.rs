@@ -4,19 +4,20 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels, TextInput,
-    anchored_popover, body_family, field_label, section_label, tr,
+    accent_swatch, anchored_popover, body_family, field_label, section_label, tr,
 };
-use forge_overlay::config::{RETIRED_KEYS, SOUND_OPTIONS_KEY};
+use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
 use forge_registry::FormField;
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
 use forge_types::ClipId;
 use gpui::{
-    AnyElement, App, Context, Entity, EventEmitter, Pixels, Point, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, App, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
+use super::icon_choice::{IconImage, icon_field_row};
 use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
 use super::store_config;
 use crate::async_bridge;
@@ -67,6 +68,15 @@ pub(super) struct AdoptClipRequested {
     pub(super) clip: ClipId,
 }
 
+pub(super) struct IconPickRequested {
+    pub(super) key: String,
+}
+
+pub(super) enum IconPickResult {
+    Chosen(String),
+    Refused(String),
+}
+
 struct PendingPick {
     key: String,
     value: String,
@@ -79,6 +89,7 @@ pub(super) struct PanelLaunch {
     pub(super) stored: OverlayConfig,
     pub(super) effective: OverlayConfig,
     pub(super) choices: HashMap<String, Vec<(String, String)>>,
+    pub(super) icon_images: Vec<IconImage>,
     pub(super) overridden_files: Vec<String>,
     pub(super) repo: Arc<dyn OverlayRepo>,
     pub(super) service: OverlayServiceHandle,
@@ -100,6 +111,7 @@ pub(super) struct OverlayPropertyPanel {
     sections: HashMap<String, ConfigSection>,
     fields: Vec<ConfigField>,
     choices: HashMap<String, Vec<(String, String)>>,
+    icon_images: Vec<IconImage>,
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
     media_issues: Vec<MediaIssue>,
@@ -115,6 +127,8 @@ pub(super) struct OverlayPropertyPanel {
 impl EventEmitter<PropertyPanelEvent> for OverlayPropertyPanel {}
 
 impl EventEmitter<AdoptClipRequested> for OverlayPropertyPanel {}
+
+impl EventEmitter<IconPickRequested> for OverlayPropertyPanel {}
 
 impl OverlayPropertyPanel {
     pub(super) fn new(launch: PanelLaunch, cx: &mut Context<Self>) -> Self {
@@ -141,6 +155,7 @@ impl OverlayPropertyPanel {
             sections: index.sections,
             fields,
             choices: launch.choices,
+            icon_images: launch.icon_images,
             overridden_files: launch.overridden_files,
             picker: None,
             media_issues: Vec::new(),
@@ -169,6 +184,63 @@ impl OverlayPropertyPanel {
     pub(super) fn set_media_issues(&mut self, issues: Vec<MediaIssue>, cx: &mut Context<Self>) {
         self.media_issues = issues;
         cx.notify();
+    }
+
+    pub(super) fn set_icon_images(&mut self, images: Vec<IconImage>, cx: &mut Context<Self>) {
+        self.icon_images = images;
+        cx.notify();
+    }
+
+    pub(super) fn begin_icon_import(&mut self, key: String, cx: &mut Context<Self>) {
+        self.pick_refusal = None;
+        self.pending_pick = Some(PendingPick {
+            key,
+            value: String::new(),
+        });
+        cx.notify();
+    }
+
+    pub(super) fn cancel_icon_import(&mut self, key: String, cx: &mut Context<Self>) {
+        if !self.awaits_icon(&key) {
+            return;
+        }
+        self.pending_pick = None;
+        cx.notify();
+    }
+
+    pub(super) fn settle_icon_pick(
+        &mut self,
+        key: String,
+        result: IconPickResult,
+        cx: &mut Context<Self>,
+    ) {
+        self.pending_pick = None;
+        self.pick_refusal = None;
+        match result {
+            IconPickResult::Chosen(value) => self.commit_choice(key, value, cx),
+            IconPickResult::Refused(message) => {
+                self.pick_refusal = Some((key, message));
+                cx.notify();
+            }
+        }
+    }
+
+    fn accent_tint(&self, palette: &ForgePalette) -> Rgba {
+        self.fields
+            .iter()
+            .find_map(|field| match field {
+                ConfigField::Swatch { key, selected, .. } if key == ACCENT => {
+                    accent_swatch(selected, palette)
+                }
+                _ => None,
+            })
+            .unwrap_or(palette.brand)
+    }
+
+    fn awaits_icon(&self, key: &str) -> bool {
+        self.pending_pick
+            .as_ref()
+            .is_some_and(|pending| pending.key == key)
     }
 
     fn refresh_media_choices(&mut self) {
@@ -312,6 +384,13 @@ impl OverlayPropertyPanel {
             }
         }
         self.emit_save(cx);
+        cx.notify();
+    }
+
+    fn request_icon_pick(&mut self, key: String, cx: &mut Context<Self>) {
+        self.picker = None;
+        self.pick_refusal = None;
+        cx.emit(IconPickRequested { key });
         cx.notify();
     }
 
@@ -480,6 +559,40 @@ impl OverlayPropertyPanel {
         }
     }
 
+    fn icon_control(
+        &self,
+        field: &ConfigField,
+        palette: &ForgePalette,
+        view: &Entity<Self>,
+    ) -> Option<AnyElement> {
+        let ConfigField::Choice { key, selected, .. } = field else {
+            return None;
+        };
+        if media_slot(key) != Some(MediaSlot::Icon) {
+            return None;
+        }
+        let open_key = key.clone();
+        let view = view.clone();
+        let hover_border = palette.brand;
+        Some(
+            icon_field_row(
+                selected,
+                &self.icon_images,
+                self.accent_tint(palette),
+                palette,
+            )
+            .id(SharedString::from(format!("overlays-panel-{key}")))
+            .cursor_pointer()
+            .hover(move |style| style.border_color(hover_border))
+            .on_click(
+                move |_: &gpui::ClickEvent, _window: &mut Window, cx: &mut App| {
+                    view.update(cx, |this, cx| this.request_icon_pick(open_key.clone(), cx));
+                },
+            )
+            .into_any_element(),
+        )
+    }
+
     fn render_section(
         &self,
         section: ConfigSection,
@@ -508,7 +621,10 @@ impl OverlayPropertyPanel {
         let view = cx.entity();
         let handlers = Self::handlers();
         for field in members {
-            let control = render_config_control(field, palette, "overlays-panel", &view, &handlers);
+            let control = match self.icon_control(field, palette, &view) {
+                Some(icon_control) => icon_control,
+                None => render_config_control(field, palette, "overlays-panel", &view, &handlers),
+            };
             let body = match notes_block(self.notes_for(field.key()), palette) {
                 Some(notes) => div()
                     .flex()
@@ -881,6 +997,7 @@ mod tests {
                 stored,
                 effective,
                 choices,
+                icon_images: Vec::new(),
                 overridden_files: Vec::new(),
                 repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
                 service,

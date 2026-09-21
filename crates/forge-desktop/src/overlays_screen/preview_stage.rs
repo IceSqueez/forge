@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, body_family, empty_state, ghost_button_with_icon, icon,
-    mono_family, section_label, segment, segmented, tr,
+    BORDER_THIN, ForgePalette, GlyphArt, Icon, body_family, empty_state, ghost_button_with_icon,
+    icon, mono_family, section_label, segment, segmented, tr,
 };
 use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_overlay::{
@@ -21,7 +21,8 @@ use crate::async_bridge::{self, ErrorSink};
 
 use super::OverlaysView;
 use super::preview_shapes::{
-    ElementPlan, Scale, body_padding, centers_horizontally, fills_canvas, render_composition,
+    ElementPlan, Scale, StageGlyphs, body_padding, centers_horizontally, fills_canvas,
+    render_composition,
 };
 
 const REGION_PAD: Pixels = px(20.0);
@@ -91,6 +92,7 @@ struct StagePreview {
     overlay: OverlayId,
     composition: PreviewComposition,
     plan: ElementPlan,
+    icon: Option<GlyphArt>,
 }
 
 #[derive(Default)]
@@ -153,6 +155,7 @@ impl OverlaysView {
                 overlay: definition.id.clone(),
                 composition,
                 plan,
+                icon: self.preview_icon(definition),
             })
         });
         self.stage.preview = next;
@@ -353,7 +356,10 @@ impl OverlaysView {
             .child(self.render_arena(
                 &preview.composition,
                 preview.plan,
-                visuals.icon,
+                StageGlyphs {
+                    badge: visuals.icon,
+                    icon: preview.icon.clone(),
+                },
                 palette,
                 cx,
             ))
@@ -455,7 +461,7 @@ impl OverlaysView {
         &self,
         composition: &PreviewComposition,
         plan: ElementPlan,
-        badge: Icon,
+        glyphs: StageGlyphs,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -493,7 +499,7 @@ impl OverlaysView {
                 plan,
                 fit,
                 self.stage.scale,
-                badge,
+                &glyphs,
                 palette,
             ))
             .into_any_element()
@@ -593,7 +599,7 @@ fn render_canvas(
     plan: ElementPlan,
     fit: CanvasFit,
     mode: PreviewScale,
-    badge: Icon,
+    glyphs: &StageGlyphs,
     palette: &ForgePalette,
 ) -> AnyElement {
     let scale = Scale::new(
@@ -657,7 +663,13 @@ fn render_canvas(
     }
 
     stage
-        .child(render_composition(composition, plan, scale, badge, palette))
+        .child(render_composition(
+            composition,
+            plan,
+            scale,
+            glyphs,
+            palette,
+        ))
         .into_any_element()
 }
 

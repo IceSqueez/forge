@@ -25,9 +25,9 @@ const SWATCH_SIZE: Pixels = px(22.0);
 const SWATCH_RADIUS: Pixels = px(6.0);
 const SWATCH_RING: Pixels = px(2.0);
 
-const CHOICE_PAD_V: Pixels = px(6.0);
-const CHOICE_PAD_H: Pixels = px(9.0);
-const CHOICE_GLYPH: Pixels = px(12.0);
+pub(crate) const CHOICE_PAD_V: Pixels = px(6.0);
+pub(crate) const CHOICE_PAD_H: Pixels = px(9.0);
+pub(crate) const CHOICE_GLYPH: Pixels = px(12.0);
 
 const INTEGER_PLACEHOLDER: &str = "0";
 

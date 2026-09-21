@@ -1,6 +1,6 @@
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, Icon, Radius, Spacing, body_family, icon, mono_family,
-    radius, spacing, tr, with_alpha,
+    BORDER_THIN, Density, ForgePalette, GlyphArt, Icon, Radius, Spacing, body_family, glyph_art,
+    icon, mono_family, radius, spacing, tr, with_alpha,
 };
 use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, SURFACE_RGB, TICKER};
 use forge_overlay::{
@@ -123,11 +123,16 @@ pub(super) fn fills_canvas(shape: PreviewShape) -> bool {
     shape == PreviewShape::BorderedFrame
 }
 
+pub(super) struct StageGlyphs {
+    pub(super) badge: Icon,
+    pub(super) icon: Option<GlyphArt>,
+}
+
 pub(super) fn render_composition(
     composition: &PreviewComposition,
     plan: ElementPlan,
     scale: Scale,
-    badge: Icon,
+    glyphs: &StageGlyphs,
     palette: &ForgePalette,
 ) -> AnyElement {
     let accent = accent_color(composition.accent, palette);
@@ -137,10 +142,16 @@ pub(super) fn render_composition(
     };
 
     match composition.shape {
-        PreviewShape::AudioPlayer => audio_player(badge, family, palette),
-        PreviewShape::BadgeBanner => {
-            badge_banner(composition, plan, scale, accent, family, badge, palette)
-        }
+        PreviewShape::AudioPlayer => audio_player(glyphs.badge, family, palette),
+        PreviewShape::BadgeBanner => badge_banner(
+            composition,
+            plan,
+            scale,
+            accent,
+            family,
+            glyphs.icon.as_ref(),
+            palette,
+        ),
         PreviewShape::BorderedFrame => bordered_frame(composition, scale, accent, family, palette),
         PreviewShape::MessageFeed => {
             message_feed(composition, plan, scale, accent, family, palette)
@@ -188,7 +199,7 @@ fn badge_banner(
     scale: Scale,
     accent: Rgba,
     family: SharedString,
-    badge: Icon,
+    art: Option<&GlyphArt>,
     palette: &ForgePalette,
 ) -> AnyElement {
     let mut lines = div().flex_1().min_w(px(0.0)).flex().flex_col();
@@ -220,11 +231,14 @@ fn badge_banner(
         .border(scale.at(ALERT.border))
         .border_color(accent)
         .bg(surface(ALERT.surface_alpha))
-        .child(
-            div()
-                .flex_none()
-                .child(icon(badge, scale.text_at(ALERT.icon_size), accent)),
-        )
+        .children(art.map(|art| {
+            div().flex_none().child(glyph_art(
+                art,
+                scale.text_at(ALERT.icon_size),
+                accent,
+                "overlays-preview-icon",
+            ))
+        }))
         .child(lines);
 
     sized(card, plan, scale).into_any_element()

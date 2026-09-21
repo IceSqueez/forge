@@ -10,7 +10,7 @@ use crate::config_form::{
 use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
 use forge_components::{
-    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GridPicker,
+    BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GlyphArt, GridPicker,
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
     GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition, PlatformKind,
     Radius, Spacing, TextInput, body_family, ghost_button_with_icon, icon, menu_button,
@@ -330,11 +330,12 @@ fn build_step_groups(
         picks.insert(id.clone(), runner.id().to_owned());
         let item = GridPickerItem {
             id,
-            icon: Icon::from_name(runner.icon_name()),
-            icon_color: color,
+            glyph: GlyphArt::Icon(Icon::from_name(runner.icon_name())),
+            tint: color,
             name: runner.label().to_string().into(),
             desc: runner.summary().to_string().into(),
             state: GridPickerItemState::Normal,
+            matches: None,
         };
         match groups.iter_mut().find(|g| g.scope == scope) {
             Some(g) => g.items.push(item),
@@ -389,11 +390,12 @@ fn build_recent_group(
         };
         items.push(GridPickerItem {
             id,
-            icon: glyph,
-            icon_color: platform_dot_color(&instance.kind_id, palette),
+            glyph: GlyphArt::Icon(glyph),
+            tint: platform_dot_color(&instance.kind_id, palette),
             name: instance.name.clone().into(),
             desc: desc.into(),
             state,
+            matches: None,
         });
     }
     let group = GridPickerGroup {

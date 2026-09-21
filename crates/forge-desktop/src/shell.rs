@@ -27,7 +27,7 @@ use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::midi_screen::MidiScreenView;
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
-use crate::overlays_screen::OverlaysView;
+use crate::overlays_screen::{OverlaysLaunch, OverlaysView};
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
@@ -327,16 +327,16 @@ impl AppShell {
                 .into()
             }
             Screen::Overlays => {
-                let repo = handles.backend.overlay_repo();
-                let server = handles.server.clone();
-                let rt_handle = handles.rt_handle.clone();
-                let kinds = Arc::clone(&handles.overlay_kinds);
-                let overlays = handles.overlays.clone();
-                let library = Arc::clone(handles.soundboard_player.library());
-                cx.new(|cx| {
-                    OverlaysView::new(repo, server, rt_handle, kinds, overlays, library, cx)
-                })
-                .into()
+                let launch = OverlaysLaunch {
+                    repo: handles.backend.overlay_repo(),
+                    server: handles.server.clone(),
+                    rt_handle: handles.rt_handle.clone(),
+                    kinds: Arc::clone(&handles.overlay_kinds),
+                    service: handles.overlays.clone(),
+                    library: Arc::clone(handles.soundboard_player.library()),
+                    media: handles.backend.media_repo(),
+                };
+                cx.new(|cx| OverlaysView::new(launch, cx)).into()
             }
             Screen::Server => {
                 let server = handles.server.clone();

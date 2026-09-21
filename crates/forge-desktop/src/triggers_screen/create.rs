@@ -6,10 +6,11 @@ use crate::config_form::{
 };
 use crate::presentation::ActivePresentation;
 use forge_components::{
-    BORDER_THIN, Density, FONT_XXS, ForgePalette, GridPicker, GridPickerConfig, GridPickerEvent,
-    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon, InputEvent,
-    ModalSize, OverlayPosition, Radius, Spacing, TextInput, body_family, ghost_button_with_icon,
-    modal, mono_family, overlay, primary_button, radius, secondary_button, spacing, tr,
+    BORDER_THIN, Density, FONT_XXS, ForgePalette, GlyphArt, GridPicker, GridPickerConfig,
+    GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
+    Icon, InputEvent, ModalSize, OverlayPosition, Radius, Spacing, TextInput, body_family,
+    ghost_button_with_icon, modal, mono_family, overlay, primary_button, radius, secondary_button,
+    spacing, tr,
 };
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
@@ -468,11 +469,12 @@ pub(crate) fn build_kind_groups(
             picks.insert(id.clone(), d.id().to_owned());
             items.push(GridPickerItem {
                 id,
-                icon: Icon::from_name(d.icon_name()),
-                icon_color: color,
+                glyph: GlyphArt::Icon(Icon::from_name(d.icon_name())),
+                tint: color,
                 name: d.label().to_string().into(),
                 desc: d.summary().to_string().into(),
                 state: GridPickerItemState::Normal,
+                matches: None,
             });
         }
         groups.push(GridPickerGroup {

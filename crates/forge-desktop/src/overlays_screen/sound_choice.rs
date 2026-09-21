@@ -100,7 +100,10 @@ pub(super) fn field_notes(
     refusal: Option<&str>,
 ) -> Vec<String> {
     if adopting {
-        return vec![tr!("overlays_sound_adopting")];
+        return vec![match media_slot(key) {
+            Some(MediaSlot::Icon) => tr!("overlays_icon_importing"),
+            Some(MediaSlot::Sound) | None => tr!("overlays_sound_adopting"),
+        }];
     }
     let mut notes: Vec<String> = issues
         .iter()

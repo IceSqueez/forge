@@ -1,6 +1,7 @@
 mod code_pane;
 mod editor_pane;
 mod form_modal;
+mod icon_choice;
 mod kind_visuals;
 mod preview_shapes;
 mod preview_stage;
@@ -8,7 +9,7 @@ mod property_panel;
 mod registry_pane;
 mod sound_choice;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use forge_components::{
@@ -22,10 +23,12 @@ use forge_overlay::{
 use forge_runtime::OverlayServiceHandle;
 use forge_server::ServerHandle;
 use forge_soundboard::{ClipLibrary, SoundboardError};
-use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StoredClip};
+use forge_storage::{
+    MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StoredClip,
+};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FocusHandle, Pixels, Point, Subscription, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FocusHandle, Pixels, Point, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -35,6 +38,7 @@ use crate::toasts::{PushToast, copy_to_clipboard};
 
 use code_pane::{CodeState, LeaveIntent};
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
+use icon_choice::{IconImage, OpenIconPicker};
 use kind_visuals::{KindVisuals, kind_visuals};
 use preview_stage::{StageState, TestFireRun};
 use property_panel::{AdoptClipRequested, OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
@@ -57,6 +61,7 @@ struct OpenPanel {
     view: Entity<OverlayPropertyPanel>,
     _sub: Subscription,
     _media_sub: Subscription,
+    _icon_sub: Subscription,
 }
 
 struct PendingDelete {
@@ -114,8 +119,13 @@ pub struct OverlaysView {
     kinds: Arc<OverlayKindRegistry>,
     service: OverlayServiceHandle,
     library: Arc<ClipLibrary>,
+    media: Arc<dyn MediaRepo>,
     clip_choices: Vec<(String, String)>,
     clips_gen: async_bridge::Generation,
+    icon_images: Vec<IconImage>,
+    icon_favorites: HashSet<SharedString>,
+    icon_picker: Option<OpenIconPicker>,
+    images_gen: async_bridge::Generation,
     media_issues: HashMap<OverlayId, Vec<MediaIssue>>,
     overlays: Vec<OverlayDefinition>,
     selected: Option<OverlayId>,
@@ -137,30 +147,38 @@ pub struct OverlaysView {
     focus_restore: Option<FocusHandle>,
 }
 
+pub struct OverlaysLaunch {
+    pub repo: Arc<dyn OverlayRepo>,
+    pub server: Option<ServerHandle>,
+    pub rt_handle: tokio::runtime::Handle,
+    pub kinds: Arc<OverlayKindRegistry>,
+    pub service: OverlayServiceHandle,
+    pub library: Arc<ClipLibrary>,
+    pub media: Arc<dyn MediaRepo>,
+}
+
 impl OverlaysView {
-    pub fn new(
-        repo: Arc<dyn OverlayRepo>,
-        server: Option<ServerHandle>,
-        rt_handle: tokio::runtime::Handle,
-        kinds: Arc<OverlayKindRegistry>,
-        service: OverlayServiceHandle,
-        library: Arc<ClipLibrary>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let server_running = server
+    pub fn new(launch: OverlaysLaunch, cx: &mut Context<Self>) -> Self {
+        let server_running = launch
+            .server
             .as_ref()
             .is_some_and(|handle| *handle.run_state().borrow());
 
         let code = CodeState::new(cx);
         let mut view = Self {
-            repo,
-            server,
-            rt_handle,
-            kinds,
-            service,
-            library,
+            repo: launch.repo,
+            server: launch.server,
+            rt_handle: launch.rt_handle,
+            kinds: launch.kinds,
+            service: launch.service,
+            library: launch.library,
+            media: launch.media,
             clip_choices: Vec::new(),
             clips_gen: async_bridge::Generation::default(),
+            icon_images: Vec::new(),
+            icon_favorites: HashSet::new(),
+            icon_picker: None,
+            images_gen: async_bridge::Generation::default(),
             media_issues: HashMap::new(),
             overlays: Vec::new(),
             selected: None,
@@ -183,6 +201,7 @@ impl OverlaysView {
         };
         view.load(cx);
         view.load_clips(cx);
+        view.load_images(cx);
         view.start_server_bridge(cx);
         view
     }
@@ -512,6 +531,7 @@ impl OverlaysView {
             stored: definition.config.clone(),
             effective,
             choices: HashMap::from([(SOUND_OPTIONS_KEY.to_owned(), self.clip_choices.clone())]),
+            icon_images: self.icon_images.clone(),
             overridden_files: definition.source_overrides.clone(),
             repo: Arc::clone(&self.repo),
             service: self.service.clone(),
@@ -523,10 +543,12 @@ impl OverlaysView {
         view.update(cx, |panel, cx| panel.set_media_issues(issues, cx));
         let sub = cx.subscribe(&view, Self::on_panel_event);
         let media_sub = cx.subscribe(&view, Self::on_adopt_requested);
+        let icon_sub = cx.subscribe(&view, Self::on_icon_pick_requested);
         self.panel = Some(OpenPanel {
             view,
             _sub: sub,
             _media_sub: media_sub,
+            _icon_sub: icon_sub,
         });
         self.load_clips(cx);
     }
@@ -900,6 +922,7 @@ impl Render for OverlaysView {
             window,
             cx,
         );
+        self.focus_icon_picker(window, cx);
 
         let body = div()
             .flex_1()
@@ -934,6 +957,7 @@ impl Render for OverlaysView {
             .child(frame)
             .children(self.form.as_ref().map(|open| open.view.clone()))
             .children(delete)
+            .children(self.render_icon_picker(&palette, cx))
             .children(self.render_code_confirms(&palette, cx))
     }
 }

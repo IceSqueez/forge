@@ -6,8 +6,10 @@ use gpui::{
     Subscription, Window, div, list, prelude::*, px, relative,
 };
 
+use crate::glyph::{GlyphArt, glyph_art};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
+use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev};
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
@@ -66,13 +68,16 @@ pub enum GridPickerItemState {
     Disabled,
 }
 
+pub type GridItemQuery = Box<dyn Fn(&str) -> bool>;
+
 pub struct GridPickerItem {
     pub id: SharedString,
-    pub icon: Icon,
-    pub icon_color: Rgba,
+    pub glyph: GlyphArt,
+    pub tint: Rgba,
     pub name: SharedString,
     pub desc: SharedString,
     pub state: GridPickerItemState,
+    pub matches: Option<GridItemQuery>,
 }
 
 pub struct GridPickerGroup {
@@ -119,12 +124,13 @@ enum RailSel {
 #[derive(Clone)]
 struct CardData {
     id: SharedString,
-    icon: Icon,
-    icon_color: Rgba,
+    glyph: GlyphArt,
+    tint: Rgba,
     name: SharedString,
     desc: SharedString,
     state: GridPickerItemState,
     favorite: bool,
+    cursored: bool,
 }
 
 enum PickerRow {
@@ -145,9 +151,17 @@ pub struct GridPicker {
     config: GridPickerConfig,
     palette: ForgePalette,
     rows: Vec<PickerRow>,
+    matched: Vec<MatchedItem>,
+    cursor: usize,
     match_total: usize,
     list_state: ListState,
     _search_sub: Subscription,
+}
+
+#[derive(Clone)]
+struct MatchedItem {
+    id: SharedString,
+    row: usize,
 }
 
 impl EventEmitter<GridPickerEvent> for GridPicker {}
@@ -179,6 +193,8 @@ impl GridPicker {
             config,
             palette,
             rows: Vec::new(),
+            matched: Vec::new(),
+            cursor: 0,
             match_total: 0,
             list_state: ListState::new(0, ListAlignment::Top, px(320.0)),
             _search_sub: search_sub,
@@ -191,8 +207,7 @@ impl GridPicker {
         let searching = !self.query.trim().is_empty();
         let query = self.query.trim().to_lowercase();
 
-        let mut rows: Vec<PickerRow> = Vec::new();
-        let mut total = 0usize;
+        let mut shown: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)> = Vec::new();
         for group in &self.groups {
             let show_group = searching
                 || matches!(self.rail, RailSel::All | RailSel::Favorites)
@@ -204,9 +219,7 @@ impl GridPicker {
                 .items
                 .iter()
                 .filter(|it| {
-                    let matches_query = !searching
-                        || it.name.to_lowercase().contains(&query)
-                        || it.desc.to_lowercase().contains(&query);
+                    let matches_query = !searching || item_hit(it, &query);
                     let matches_fav =
                         !matches!(self.rail, RailSel::Favorites) || self.favorites.contains(&it.id);
                     matches_query && matches_fav
@@ -215,31 +228,92 @@ impl GridPicker {
             if items.is_empty() {
                 continue;
             }
-            total += items.len();
+            shown.push((group, items));
+        }
+
+        let total: usize = shown.iter().map(|(_, items)| items.len()).sum();
+        let cursor = if reset_scroll {
+            0
+        } else {
+            self.cursor.min(total.saturating_sub(1))
+        };
+
+        let mut rows: Vec<PickerRow> = Vec::new();
+        let mut matched: Vec<MatchedItem> = Vec::new();
+        for (group, items) in shown {
             rows.push(PickerRow::Header {
                 label: group.label.clone(),
                 dot: group.dot_color,
                 count: items.len(),
             });
             for chunk in items.chunks(2) {
-                let left = self.card_data(chunk[0]);
-                let right = chunk.get(1).map(|it| self.card_data(it));
-                rows.push(PickerRow::Cards([Some(left), right]));
+                let row = rows.len();
+                let mut cards: [Option<CardData>; 2] = [None, None];
+                for (slot, item) in chunk.iter().enumerate() {
+                    cards[slot] = Some(self.card_data(item, matched.len() == cursor));
+                    matched.push(MatchedItem {
+                        id: item.id.clone(),
+                        row,
+                    });
+                }
+                rows.push(PickerRow::Cards(cards));
             }
         }
 
         let count_changed = rows.len() != self.list_state.item_count();
         let new_count = rows.len();
         self.rows = rows;
+        self.matched = matched;
+        self.cursor = cursor;
         self.match_total = total;
         if reset_scroll || count_changed {
             self.list_state.reset(new_count);
         }
     }
 
+    fn move_cursor(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if self.matched.is_empty() {
+            return;
+        }
+        let last = self.matched.len() - 1;
+        self.cursor = match (forward, self.cursor) {
+            (true, position) if position >= last => 0,
+            (true, position) => position + 1,
+            (false, 0) => last,
+            (false, position) => position - 1,
+        };
+        self.rebuild_rows(false);
+        if let Some(item) = self.matched.get(self.cursor) {
+            self.list_state.scroll_to_reveal_item(item.row);
+        }
+        cx.notify();
+    }
+
+    fn select_next(&mut self, _: &SelectNext, _window: &mut Window, cx: &mut Context<Self>) {
+        self.move_cursor(true, cx);
+    }
+
+    fn select_prev(&mut self, _: &SelectPrev, _window: &mut Window, cx: &mut Context<Self>) {
+        self.move_cursor(false, cx);
+    }
+
+    fn confirm_cursored(&mut self, cx: &mut Context<Self>) {
+        let Some(item) = self.matched.get(self.cursor) else {
+            return;
+        };
+        let id = item.id.clone();
+        self.emit_picked(id, cx);
+    }
+
     /// The caller must call this when the picker opens; gpui delivers key events only down the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.search.update(cx, |f, cx| f.focus(window, cx));
+    }
+
+    pub fn set_groups(&mut self, groups: Vec<GridPickerGroup>, cx: &mut Context<Self>) {
+        self.groups = groups;
+        self.rebuild_rows(false);
+        cx.notify();
     }
 
     pub fn set_favorites(&mut self, favorites: HashSet<SharedString>, cx: &mut Context<Self>) {
@@ -270,7 +344,8 @@ impl GridPicker {
                 cx.notify();
             }
             InputEvent::Cancelled => cx.emit(GridPickerEvent::Dismissed),
-            InputEvent::Submitted(_) | InputEvent::Blurred(_) => {}
+            InputEvent::Submitted(_) => self.confirm_cursored(cx),
+            InputEvent::Blurred(_) => {}
         }
     }
 
@@ -598,15 +673,16 @@ impl GridPicker {
         }
     }
 
-    fn card_data(&self, item: &GridPickerItem) -> CardData {
+    fn card_data(&self, item: &GridPickerItem, cursored: bool) -> CardData {
         CardData {
             id: item.id.clone(),
-            icon: item.icon,
-            icon_color: item.icon_color,
+            glyph: item.glyph.clone(),
+            tint: item.tint,
             name: item.name.clone(),
             desc: item.desc.clone(),
             state: item.state,
             favorite: self.favorites.contains(&item.id),
+            cursored,
         }
     }
 
@@ -647,6 +723,9 @@ impl Render for GridPicker {
             .child(self.render_cards(cx));
 
         div()
+            .key_context(PICKER_CONTEXT)
+            .on_action(cx.listener(Self::select_next))
+            .on_action(cx.listener(Self::select_prev))
             .w(GRID_W)
             .h(GRID_H)
             .flex()
@@ -750,7 +829,12 @@ fn render_card_el(
         .size(GRID_CARD_TILE)
         .rounded(GRID_CARD_TILE_RADIUS)
         .bg(p.surface_overlay)
-        .child(icon(card.icon, GRID_CARD_ICON, card.icon_color));
+        .child(glyph_art(
+            &card.glyph,
+            GRID_CARD_ICON,
+            card.tint,
+            SharedString::from(format!("forge-grid-art-{}", card.id)),
+        ));
 
     let name = div()
         .flex_1()
@@ -821,6 +905,11 @@ fn render_card_el(
         .text_color(p.text_muted)
         .child(card.desc.clone());
 
+    let edge = if card.cursored {
+        accent
+    } else {
+        p.border_regular
+    };
     let base = div()
         .flex_1()
         .min_w(px(0.0))
@@ -831,7 +920,7 @@ fn render_card_el(
         .px(GRID_CARD_PAD_H)
         .rounded(radius(Radius::Md))
         .border(BORDER_ACCENT)
-        .border_color(p.border_regular)
+        .border_color(edge)
         .bg(p.shell)
         .child(top)
         .child(desc);
@@ -850,6 +939,15 @@ fn render_card_el(
             move |this, _: &ClickEvent, _, cx| this.emit_picked(id.clone(), cx)
         }))
         .into_any_element()
+}
+
+fn item_hit(item: &GridPickerItem, query: &str) -> bool {
+    match &item.matches {
+        Some(test) => test(query),
+        None => {
+            item.name.to_lowercase().contains(query) || item.desc.to_lowercase().contains(query)
+        }
+    }
 }
 
 fn scope_label(group_label: &str) -> String {

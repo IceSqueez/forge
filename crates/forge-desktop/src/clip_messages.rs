@@ -41,7 +41,7 @@ pub(crate) fn clip_refusal_message(refusal: &ClipRefusal) -> String {
     })
 }
 
-fn refusal_message(refusal: &StorageError) -> String {
+pub(crate) fn refusal_message(refusal: &StorageError) -> String {
     match refusal {
         StorageError::MediaUnsupported { label } => {
             tr!("soundboard_import_unsupported", file = label.as_str())

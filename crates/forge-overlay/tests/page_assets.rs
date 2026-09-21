@@ -9,6 +9,9 @@ use forge_overlay::{
 };
 use forge_registry::FormField;
 
+const ALERT_KIND: &str = "overlay.alert";
+const ICON_BOX_MARKER: &str = "class=\"icon\"";
+
 fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
     register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
@@ -168,6 +171,76 @@ fn a_kind_that_draws_no_page_declares_no_style_or_behavior_field_to_draw_with() 
             );
         }
     }
+}
+
+#[test]
+fn the_icon_box_carries_no_glyph_of_its_own() {
+    let markup = registry()
+        .get(ALERT_KIND)
+        .expect("the alert kind ships in this build")
+        .page_assets()
+        .markup;
+
+    let at = markup
+        .find(ICON_BOX_MARKER)
+        .expect("the alert markup has an icon box");
+    let rest = &markup[at..];
+    let opened = rest.find('>').expect("the icon box tag is closed") + 1;
+    let closed = rest.find("</div>").expect("the icon box element is closed");
+
+    assert_eq!(
+        rest[opened..closed].trim(),
+        "",
+        "the icon box ships a glyph of its own, so the recorded choice is not what a viewer sees"
+    );
+}
+
+#[test]
+fn no_page_behavior_parses_a_media_file_into_the_document() {
+    for descriptor in registry().all() {
+        let behavior = without_line_comments(descriptor.page_assets().behavior);
+
+        for sink in [
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "eval(",
+            "new Function",
+            "createContextualFragment",
+        ] {
+            assert!(
+                !behavior.contains(sink),
+                "{} reaches for {sink}, which can run whatever a fetched file carries",
+                descriptor.id()
+            );
+        }
+    }
+}
+
+#[test]
+fn the_page_tints_an_icon_through_the_very_property_and_class_its_script_sets() {
+    let assets = registry()
+        .get(ALERT_KIND)
+        .expect("the alert kind ships in this build")
+        .page_assets();
+    let behavior = without_line_comments(assets.behavior);
+
+    let property = quoted_after(&behavior, "ICON_SOURCE_PROPERTY = \"")
+        .pop()
+        .expect("the behavior names the custom property it sets the icon source on");
+    let class = quoted_after(&behavior, "TINTED_CLASS = \"")
+        .pop()
+        .expect("the behavior names the class it marks a tintable icon with");
+
+    assert!(
+        assets.style.contains(&format!("var({property})")),
+        "the script sets {property} and the stylesheet never reads it, so a glyph stays invisible"
+    );
+    assert!(
+        assets.style.contains(&format!(".icon.{class} {{")),
+        "the script marks a tintable icon '{class}' and the stylesheet has no rule for it"
+    );
 }
 
 #[test]

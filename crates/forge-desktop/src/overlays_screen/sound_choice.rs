@@ -138,7 +138,7 @@ pub(super) fn notes_block(notes: Vec<String>, palette: &ForgePalette) -> Option<
 mod tests {
     use std::path::PathBuf;
 
-    use forge_overlay::config::{HEADLINE, SOUND};
+    use forge_overlay::config::{HEADLINE, ICON, SOUND};
     use forge_soundboard::ClipRefusal;
     use forge_storage::MediaFormat;
     use forge_types::OutputDevice;
@@ -149,6 +149,7 @@ mod tests {
     const CLIP_ULID: &str = "01J9P4S2M7Q8V3X5Y6Z7A8B9C0";
     const OTHER_ULID: &str = "01J9P4S2M7Q8V3X5Y6Z7A8B9C1";
     const LEGACY_FILE: &str = "fanfare.mp3";
+    const BLOB_ID: &str = "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
 
     fn clip(id: &str, name: &str) -> StoredClip {
         StoredClip {
@@ -233,6 +234,12 @@ mod tests {
                 reference.as_str(),
                 None,
                 "wording that opens with the prefix",
+            ),
+            (
+                ICON,
+                reference.as_str(),
+                None,
+                "a key that holds media of another kind",
             ),
         ] {
             assert_eq!(
@@ -327,45 +334,89 @@ mod tests {
         }
     }
 
-    fn issue(kind: usize) -> MediaIssue {
-        let key = SOUND.to_owned();
-        let clip = CLIP_ULID.to_owned();
-        match kind {
-            0 => MediaIssue::UnknownClip { key, clip },
-            1 => MediaIssue::ClipOutsideLibrary { key, clip },
-            2 => MediaIssue::ClipBytesMissing { key, clip },
-            3 => MediaIssue::ClipKindMismatch {
-                key,
-                clip,
-                format: MediaFormat::Png.to_string(),
-            },
-            _ => MediaIssue::LookupFailed {
-                key,
-                clip,
-                reason: "store offline".to_owned(),
-            },
+    fn unresolved_sound() -> MediaIssue {
+        MediaIssue::UnknownClip {
+            key: SOUND.to_owned(),
+            clip: CLIP_ULID.to_owned(),
         }
     }
 
     #[test]
     fn every_unresolved_reference_states_its_own_reason() {
-        let messages: Vec<String> = (0..5).map(|kind| issue_message(&issue(kind))).collect();
+        let key = SOUND.to_owned();
+        let clip = CLIP_ULID.to_owned();
+        let icon_key = ICON.to_owned();
+        let image = BLOB_ID.to_owned();
 
-        assert_eq!(
-            messages,
-            vec![
-                "overlays_sound_issue_unknown_clip",
+        for (issue, expected) in [
+            (unresolved_sound(), "overlays_sound_issue_unknown_clip"),
+            (
+                MediaIssue::ClipOutsideLibrary {
+                    key: key.clone(),
+                    clip: clip.clone(),
+                },
                 "overlays_sound_issue_outside_library",
+            ),
+            (
+                MediaIssue::ClipBytesMissing {
+                    key: key.clone(),
+                    clip: clip.clone(),
+                },
                 "overlays_sound_issue_bytes_missing",
+            ),
+            (
+                MediaIssue::ClipKindMismatch {
+                    key: key.clone(),
+                    clip: clip.clone(),
+                    format: MediaFormat::Png.to_string(),
+                },
                 "overlays_sound_issue_kind_mismatch",
+            ),
+            (
+                MediaIssue::UnknownGlyph {
+                    key: icon_key.clone(),
+                    glyph: "no-such-glyph".to_owned(),
+                },
+                "overlays_icon_issue_unknown_glyph",
+            ),
+            (
+                MediaIssue::UnknownImage {
+                    key: icon_key.clone(),
+                    image: image.clone(),
+                },
+                "overlays_icon_issue_unknown_image",
+            ),
+            (
+                MediaIssue::ImageBytesMissing {
+                    key: icon_key.clone(),
+                    image: image.clone(),
+                },
+                "overlays_icon_issue_bytes_missing",
+            ),
+            (
+                MediaIssue::ImageKindMismatch {
+                    key: icon_key,
+                    image,
+                    format: MediaFormat::Wav.to_string(),
+                },
+                "overlays_icon_issue_kind_mismatch",
+            ),
+            (
+                MediaIssue::LookupFailed {
+                    key,
+                    reference: clip,
+                    reason: "store offline".to_owned(),
+                },
                 "overlays_sound_issue_lookup_failed",
-            ]
-        );
+            ),
+        ] {
+            assert_eq!(issue_message(&issue), expected, "{issue:?}");
+        }
     }
 
     #[test]
     fn a_running_copy_replaces_every_other_note_until_it_settles() {
-        let notes = field_notes(&[issue(0)], SOUND, true, Some("refused earlier"));
+        let notes = field_notes(&[unresolved_sound()], SOUND, true, Some("refused earlier"));
 
         assert_eq!(notes, vec!["overlays_sound_adopting".to_owned()]);
     }
@@ -374,7 +425,7 @@ mod tests {
     fn a_field_shows_its_own_issues_followed_by_the_refusal_of_the_last_pick() {
         let notes = field_notes(
             &[
-                issue(0),
+                unresolved_sound(),
                 MediaIssue::UnknownClip {
                     key: HEADLINE.to_owned(),
                     clip: CLIP_ULID.to_owned(),
@@ -399,8 +450,8 @@ mod tests {
     fn a_record_with_nothing_unresolved_carries_no_badge() {
         assert_eq!(badge_note(&[]), None);
         assert_eq!(
-            badge_note(&[issue(1)]),
-            Some("overlays_sound_issue_outside_library".to_owned())
+            badge_note(&[unresolved_sound()]),
+            Some("overlays_sound_issue_unknown_clip".to_owned())
         );
     }
 
@@ -429,6 +480,10 @@ mod tests {
             ("overlays_sound_issue_bytes_missing", &[][..]),
             ("overlays_sound_issue_kind_mismatch", &["format"][..]),
             ("overlays_sound_issue_lookup_failed", &["reason"][..]),
+            ("overlays_icon_issue_unknown_glyph", &[][..]),
+            ("overlays_icon_issue_unknown_image", &[][..]),
+            ("overlays_icon_issue_bytes_missing", &[][..]),
+            ("overlays_icon_issue_kind_mismatch", &["format"][..]),
         ] {
             for locale in ["en", "uk"] {
                 let entry = catalog_entry(locale, key);

@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use forge_overlay::config::{ELEMENT_HEIGHT, ELEMENT_WIDTH, TEXT_SIZE};
+use forge_overlay::config::{ELEMENT_HEIGHT, ELEMENT_WIDTH, ICON, TEXT_SIZE};
 use forge_overlay::metrics::{ELEMENT_HEIGHT_PROPERTY, ELEMENT_WIDTH_PROPERTY};
 use forge_overlay::{
     ConfigSection, OverlayConfig, OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia,
@@ -42,6 +42,7 @@ const STYLE_FIELDS: &[(&str, &[&str])] = &[
             ELEMENT_WIDTH,
             ELEMENT_HEIGHT,
             TEXT_SIZE,
+            ICON,
         ],
     ),
     (AUDIO_KIND, &[]),
@@ -98,6 +99,15 @@ const ELEMENT_EXTENTS: &[(&str, &[&str])] = &[
         ],
     ),
     (TICKER_KIND, &["min-height: var(--element-height, auto);"]),
+];
+
+const CONFIG_SCHEMA_VERSIONS: &[(&str, u64)] = &[
+    (ALERT_KIND, 2),
+    (AUDIO_KIND, 1),
+    (CHAT_KIND, 1),
+    (FRAME_KIND, 1),
+    (GOAL_KIND, 1),
+    (TICKER_KIND, 1),
 ];
 
 const BASE_TEXT_SIZE: &[(&str, Option<u32>)] = &[
@@ -189,7 +199,7 @@ fn document(kind_id: &str, stored: &OverlayConfig) -> Value {
 }
 
 #[test]
-fn each_kind_offers_the_size_fields_its_page_can_spend_and_its_sizing_table_agrees() {
+fn each_kind_offers_the_style_fields_its_page_can_spend_and_its_sizing_table_agrees() {
     let reg = registry();
 
     for (kind_id, expected) in STYLE_FIELDS {
@@ -204,7 +214,7 @@ fn each_kind_offers_the_size_fields_its_page_can_spend_and_its_sizing_table_agre
 
         assert_eq!(
             offered, *expected,
-            "{kind_id} offers a size its page cannot spend, or withholds one it can"
+            "{kind_id} offers an appearance field its page cannot spend, or withholds one it can"
         );
 
         let sizing = element_sizing(kind_id);
@@ -476,7 +486,7 @@ fn a_record_stored_before_these_fields_keeps_working_untouched() {
     ]);
     let reg = registry();
 
-    for (kind_id, _) in BASE_TEXT_SIZE {
+    for (kind_id, schema_version) in CONFIG_SCHEMA_VERSIONS {
         let descriptor = reg.get(kind_id).expect("a registered builtin kind");
         validate_overlay_config(descriptor, &stale)
             .unwrap_or_else(|e| panic!("{kind_id} refused a record an older build wrote: {e}"));
@@ -493,8 +503,24 @@ fn a_record_stored_before_these_fields_keeps_working_untouched() {
         );
         assert_eq!(
             document(kind_id, &stale)["configSchemaVersion"].as_u64(),
-            Some(1),
-            "{kind_id} bumped its config schema, which puts every stored record through a rewrite"
+            Some(*schema_version),
+            "{kind_id} moved its config schema without a decision to read stored records anew"
+        );
+    }
+}
+
+#[test]
+fn every_kind_accepts_the_record_its_own_form_opens_on() {
+    let reg = registry();
+
+    for (kind_id, _) in CONFIG_SCHEMA_VERSIONS {
+        let descriptor = reg.get(kind_id).expect("a registered builtin kind");
+
+        let refusal = validate_overlay_config(descriptor, &descriptor.default_config()).err();
+
+        assert!(
+            refusal.is_none(),
+            "{kind_id} refuses the record its own form opens on: {refusal:?}"
         );
     }
 }

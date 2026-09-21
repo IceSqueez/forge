@@ -149,6 +149,30 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
 }
 
 #[test]
+fn the_icon_box_spends_the_guarded_height_and_accent_on_the_icon_itself() {
+    let style = stylesheet("overlay.alert");
+    let icon_height = ALERT
+        .declarations()
+        .into_iter()
+        .find(|declaration| declaration.starts_with("height:"))
+        .expect("the alert guard states the icon box height");
+
+    let box_rule = rule_block(style, ".icon");
+    assert!(
+        box_rule.contains(&icon_height),
+        "the icon box does not state '{icon_height}', so a chosen text size leaves it behind"
+    );
+    assert!(
+        box_rule.contains("aspect-ratio: 1;"),
+        "the icon box is free to stretch, so a wide glyph is drawn distorted"
+    );
+    assert!(
+        rule_block(style, ".icon.tinted").contains("background-color: var(--accent);"),
+        "a tintable glyph is not filled with the overlay accent"
+    );
+}
+
+#[test]
 fn every_number_a_page_scales_is_the_number_it_drew_before_a_text_size_could_be_chosen() {
     for (kind_id, expected) in SCALED_NUMBERS {
         assert_eq!(

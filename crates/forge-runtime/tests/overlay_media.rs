@@ -4,10 +4,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use forge_overlay::config::{HEADLINE, SOUND};
+use forge_overlay::config::{DEFAULT_ICON, HEADLINE, ICON, SOUND};
 use forge_overlay::{
-    CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MaterializeReport, MediaIssue, OverlayKindRegistry,
-    register_builtin_kinds,
+    CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, ICON_FILE_FIELD, ICON_TINTABLE_FIELD,
+    MaterializeReport, MediaIssue, OverlayKindRegistry, clip_reference, glyph_media,
+    image_reference, register_builtin_kinds,
 };
 use forge_runtime::{EventBus, NullEventLogRepo, OverlayMediaLibrary, OverlayServiceHandle};
 use forge_storage::settings::MockSettingsRepo;
@@ -187,9 +188,33 @@ impl Harness {
             .to_owned()
     }
 
+    fn icon(&self) -> serde_json::Value {
+        self.document()["config"][ICON].clone()
+    }
+
+    fn icon_file(&self) -> String {
+        self.icon()[ICON_FILE_FIELD]
+            .as_str()
+            .expect("the page always carries an icon file name")
+            .to_owned()
+    }
+
     fn world(&self) -> std::sync::MutexGuard<'_, MediaWorld> {
         self.world.lock().expect("world")
     }
+}
+
+fn default_glyph_file() -> String {
+    let stored: OverlayConfig = [(ICON.to_owned(), Variant::String(DEFAULT_ICON.to_owned()))]
+        .into_iter()
+        .collect();
+
+    glyph_media(&stored)
+        .resolved
+        .first()
+        .expect("the icon an untouched alert draws resolves without a library")
+        .file_name()
+        .to_owned()
 }
 
 fn definition(config: OverlayConfig) -> OverlayDefinition {
@@ -213,6 +238,15 @@ fn sound_config(value: &str) -> OverlayConfig {
     [(SOUND.to_owned(), Variant::String(value.to_owned()))]
         .into_iter()
         .collect()
+}
+
+fn icon_config(value: &str) -> OverlayConfig {
+    [
+        (SOUND.to_owned(), Variant::String(String::new())),
+        (ICON.to_owned(), Variant::String(value.to_owned())),
+    ]
+    .into_iter()
+    .collect()
 }
 
 fn registry() -> Arc<OverlayKindRegistry> {
@@ -336,7 +370,7 @@ async fn every_way_a_reference_can_fail_leaves_the_page_silent_and_names_the_rea
             },
             MediaIssue::LookupFailed {
                 key: SOUND.to_owned(),
-                clip: CLIP_ULID.to_owned(),
+                reference: CLIP_ULID.to_owned(),
                 reason: offline().to_string(),
             },
             "a store that cannot answer",
@@ -352,9 +386,11 @@ async fn every_way_a_reference_can_fail_leaves_the_page_silent_and_names_the_rea
             "",
             "{label} must leave the page with no sound filename"
         );
-        assert!(
-            report.media_written.is_empty(),
-            "{label} wrote a generated file anyway"
+        assert_eq!(
+            report.media_written,
+            vec![default_glyph_file()],
+            "{label} wrote a file for the reference it could not resolve, or dropped the rest of \
+             the pass"
         );
     }
 }
@@ -385,7 +421,10 @@ async fn a_resolved_reference_is_written_to_the_namespace_and_named_on_the_page(
 
     let file = format!("{BLOB_ID}.{}", MediaFormat::Wav.as_str());
     assert!(report.media_issues.is_empty());
-    assert_eq!(report.media_written, vec![file.clone()]);
+    assert_eq!(
+        report.media_written,
+        vec![default_glyph_file(), file.clone()]
+    );
     assert_eq!(
         harness.sound(),
         format!("{GENERATED_MEDIA_DIRECTORY}/{file}")
@@ -394,6 +433,144 @@ async fn a_resolved_reference_is_written_to_the_namespace_and_named_on_the_page(
         std::fs::read(report.directory.join(GENERATED_MEDIA_DIRECTORY).join(&file))
             .expect("the generated file is on disk"),
         CLIP_BYTES
+    );
+}
+
+#[tokio::test]
+async fn a_curated_glyph_reaches_the_page_even_when_the_service_has_no_media_library() {
+    let harness = harness(icon_config(DEFAULT_ICON), None);
+
+    let report = pass(&harness).await;
+
+    let glyph = default_glyph_file();
+    assert!(report.media_issues.is_empty(), "{:?}", report.media_issues);
+    assert_eq!(report.media_written, vec![glyph.clone()]);
+    assert_eq!(
+        harness.icon()[ICON_FILE_FIELD].as_str(),
+        Some(format!("{GENERATED_MEDIA_DIRECTORY}/{glyph}").as_str()),
+        "a glyph needs no library and still did not reach the page"
+    );
+    assert_eq!(
+        harness.icon()[ICON_TINTABLE_FIELD].as_bool(),
+        Some(true),
+        "a curated glyph reached the page as something the accent may not fill"
+    );
+}
+
+#[tokio::test]
+async fn an_icon_naming_a_glyph_this_build_does_not_carry_leaves_the_page_iconless() {
+    for stored in ["no-such-glyph", &clip_reference(CLIP_ULID)] {
+        let harness = harness(icon_config(stored), Some(MediaWorld::resolvable()));
+
+        let report = pass(&harness).await;
+
+        assert_eq!(
+            report.media_issues,
+            vec![MediaIssue::UnknownGlyph {
+                key: ICON.to_owned(),
+                glyph: stored.to_owned(),
+            }],
+            "{stored:?} was answered with something other than an unknown glyph"
+        );
+        assert_eq!(harness.icon_file(), "", "{stored:?} still named a file");
+        assert!(
+            report.media_written.is_empty(),
+            "{stored:?} wrote a generated file"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_icon_naming_a_blob_that_is_not_a_picture_leaves_the_page_iconless() {
+    let harness = harness(
+        icon_config(&image_reference(BLOB_ID)),
+        Some(MediaWorld::resolvable()),
+    );
+
+    let report = pass(&harness).await;
+
+    assert_eq!(
+        report.media_issues,
+        vec![MediaIssue::ImageKindMismatch {
+            key: ICON.to_owned(),
+            image: BLOB_ID.to_owned(),
+            format: MediaFormat::Wav.to_string(),
+        }]
+    );
+    assert_eq!(harness.icon_file(), "");
+}
+
+#[tokio::test]
+async fn an_icon_reference_shaped_like_a_path_is_refused_before_anything_is_written() {
+    let escaping = "../../etc/passwd";
+    let harness = harness(
+        icon_config(&image_reference(escaping)),
+        Some(MediaWorld {
+            blob: Some(blob(MediaFormat::Png)),
+            ..MediaWorld::resolvable()
+        }),
+    );
+
+    let report = pass(&harness).await;
+
+    assert!(
+        matches!(
+            report.media_issues.as_slice(),
+            [MediaIssue::LookupFailed { key, reference, .. }]
+                if key == ICON && reference == escaping
+        ),
+        "{:?}",
+        report.media_issues
+    );
+    assert_eq!(harness.icon_file(), "");
+    assert!(
+        report.media_written.is_empty(),
+        "{:?} was written",
+        report.media_written
+    );
+}
+
+#[tokio::test]
+async fn an_imported_icon_is_drawn_as_imported_and_holds_the_slot_a_glyph_gives_back() {
+    let imported = harness(
+        icon_config(&image_reference(BLOB_ID)),
+        Some(MediaWorld {
+            blob: Some(blob(MediaFormat::Png)),
+            ..MediaWorld::resolvable()
+        }),
+    );
+
+    let report = pass(&imported).await;
+
+    let file = format!("{BLOB_ID}.{}", MediaFormat::Png.as_str());
+    assert!(report.media_issues.is_empty(), "{:?}", report.media_issues);
+    assert_eq!(
+        imported.icon()[ICON_FILE_FIELD].as_str(),
+        Some(format!("{GENERATED_MEDIA_DIRECTORY}/{file}").as_str())
+    );
+    assert_eq!(
+        imported.icon()[ICON_TINTABLE_FIELD].as_bool(),
+        Some(false),
+        "an imported image reached the page as something the accent may repaint"
+    );
+    assert_eq!(
+        imported.world().retained,
+        vec![(ICON.to_owned(), MediaBlobId::from_stored(BLOB_ID))],
+        "an imported icon did not hold the blob it draws"
+    );
+
+    let mut world = MediaWorld::resolvable();
+    world
+        .slots
+        .insert(ICON.to_owned(), MediaBlobId::from_stored(BLOB_ID));
+    let switched = harness(icon_config(DEFAULT_ICON), Some(world));
+
+    pass(&switched).await;
+
+    assert_eq!(
+        switched.world().released,
+        vec![ICON.to_owned()],
+        "switching to a curated glyph left the imported image held forever"
     );
 }
 
@@ -471,8 +648,8 @@ async fn a_service_with_no_media_library_reports_every_reference_instead_of_drop
     assert!(
         matches!(
             report.media_issues.as_slice(),
-            [MediaIssue::LookupFailed { key, clip, .. }]
-                if key == SOUND && clip == CLIP_ULID
+            [MediaIssue::LookupFailed { key, reference, .. }]
+                if key == SOUND && reference == CLIP_ULID
         ),
         "{:?}",
         report.media_issues

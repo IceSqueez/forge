@@ -309,7 +309,7 @@ pub fn accept_media(label: &str, bytes: &[u8]) -> Result<AcceptedMedia, StorageE
         return Err(StorageError::MediaUnsupported { label: sanitized });
     };
 
-    if let Some(claimed) = claimed_format(label)
+    if let Some(claimed) = claimed_format(&sanitized)
         && claimed != detected
     {
         return Err(StorageError::MediaTypeMismatch {

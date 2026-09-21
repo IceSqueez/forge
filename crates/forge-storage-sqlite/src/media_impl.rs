@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use forge_storage::{
-    MEDIA_BLOB_HARD_CEILING_BYTES, MEDIA_CONTENT_DIGEST_BYTES, MediaBlob, MediaBlobId, MediaFormat,
-    MediaReferrer, MediaReferrerKind, MediaRepo, StorageError, accept_media, sanitize_label, sniff,
+    MEDIA_CONTENT_DIGEST_BYTES, MediaBlob, MediaBlobId, MediaFormat, MediaReferrer,
+    MediaReferrerKind, MediaRepo, StorageError, accept_media, sanitize_label, sniff,
 };
 use rand::rand_core::Rng as _;
 use sha2::{Digest, Sha256};
@@ -102,7 +102,7 @@ fn read_import(source: &Path) -> Result<(String, Vec<u8>), StorageError> {
         });
     }
 
-    let remaining = MEDIA_BLOB_HARD_CEILING_BYTES.saturating_sub(bytes.len() as u64) + 1;
+    let remaining = (limit + 1).saturating_sub(bytes.len() as u64);
     std::io::Read::take(&mut file, remaining).read_to_end(&mut bytes)?;
 
     Ok((raw_label, bytes))

@@ -806,6 +806,34 @@ mod tests {
         }
     }
 
+    #[gpui::test]
+    fn clearing_a_choice_erases_the_stored_value_while_clearing_a_swatch_keeps_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seeded = config(&[
+            ("sound", Variant::String("clip:01J9P4S2M7".into())),
+            ("accent", Variant::String("mauve".into())),
+        ]);
+        let cleared = vec![
+            choice("sound", "", None),
+            ConfigField::Swatch {
+                key: "accent".to_owned(),
+                gate: None,
+                options: Vec::new(),
+                selected: String::new(),
+            },
+        ];
+
+        assert_eq!(
+            collected(cx, &cleared, &seeded),
+            config(&[
+                ("sound", Variant::String(String::new())),
+                ("accent", Variant::String("mauve".into())),
+            ]),
+            "picking the empty option must unset the value, while a swatch with nothing selected keeps it"
+        );
+    }
+
     fn choice(key: &str, selected: &str, depends_on: Option<&str>) -> ConfigField {
         ConfigField::Choice {
             key: key.to_owned(),

@@ -662,13 +662,13 @@ impl Render for OverlayPropertyPanel {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Mutex;
 
     use forge_components::{Density, ThemeId};
     use forge_overlay::OverlayKindRegistry;
-    use forge_overlay::config::{ELEMENT_WIDTH, HEADLINE};
+    use forge_overlay::config::{ELEMENT_WIDTH, HEADLINE, SOUND};
     use forge_registry::FormField;
     use forge_runtime::EventBus;
     use forge_storage::{OverlayCredential, OverlayDefinition, StorageError};
@@ -825,6 +825,37 @@ mod tests {
 
     impl Fixture {
         fn new(cx: &mut gpui::TestAppContext, stored: OverlayConfig) -> Self {
+            Self::build(cx, stored, specs(), HashMap::new())
+        }
+
+        fn with_sound_library(
+            cx: &mut gpui::TestAppContext,
+            stored: OverlayConfig,
+            clips: Vec<(String, String)>,
+        ) -> Self {
+            let mut sound_specs = specs();
+            sound_specs.push(SectionedField {
+                section: ConfigSection::Behavior,
+                field: FormField::DynamicSelect {
+                    key: SOUND,
+                    label: "Sound",
+                    options_key: SOUND_OPTIONS_KEY,
+                },
+            });
+            Self::build(
+                cx,
+                stored,
+                sound_specs,
+                HashMap::from([(SOUND_OPTIONS_KEY.to_owned(), clips)]),
+            )
+        }
+
+        fn build(
+            cx: &mut gpui::TestAppContext,
+            stored: OverlayConfig,
+            specs: Vec<SectionedField>,
+            choices: HashMap<String, Vec<(String, String)>>,
+        ) -> Self {
             cx.update(|cx| {
                 cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
             });
@@ -845,11 +876,11 @@ mod tests {
             }
             let launch = PanelLaunch {
                 overlay_id: OverlayId::new(OVERLAY),
-                specs: specs(),
+                specs,
                 defaults,
                 stored,
                 effective,
-                choices: HashMap::new(),
+                choices,
                 overridden_files: Vec::new(),
                 repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
                 service,
@@ -1010,5 +1041,201 @@ mod tests {
         fixture.release(cx);
 
         assert!(fixture.repo.saved().is_empty());
+    }
+
+    const CLIP_A: &str = "clip:01J9P4S2M7Q8V3X5Y6Z7A8B9C0";
+    const CLIP_B: &str = "clip:01J9P4S2M7Q8V3X5Y6Z7A8B9C1";
+
+    impl Fixture {
+        fn sound_options(&self, cx: &mut gpui::TestAppContext) -> Vec<String> {
+            self.panel().read_with(cx, |panel, _| {
+                panel
+                    .fields
+                    .iter()
+                    .find_map(|field| match field {
+                        ConfigField::Choice { key, options, .. } if key == SOUND => {
+                            Some(options.iter().map(|(value, _)| value.clone()).collect())
+                        }
+                        _ => None,
+                    })
+                    .expect("the sound field is a choice over the library")
+            })
+        }
+
+        fn sound_selection(&self, cx: &mut gpui::TestAppContext) -> String {
+            self.panel().read_with(cx, |panel, _| {
+                panel
+                    .fields
+                    .iter()
+                    .find_map(|field| match field {
+                        ConfigField::Choice { key, selected, .. } if key == SOUND => {
+                            Some(selected.clone())
+                        }
+                        _ => None,
+                    })
+                    .expect("the sound field is a choice over the library")
+            })
+        }
+
+        fn expect_pick(&self, cx: &mut gpui::TestAppContext, value: &str) {
+            self.panel().update(cx, |panel, _| {
+                panel.pending_pick = Some(PendingPick {
+                    key: SOUND.to_owned(),
+                    value: value.to_owned(),
+                });
+            });
+        }
+
+        fn settle(&self, cx: &mut gpui::TestAppContext, value: &str, outcome: PickOutcome) {
+            self.panel().update(cx, |panel, cx| {
+                panel.settle_clip_pick(SOUND.to_owned(), value.to_owned(), outcome, cx);
+            });
+            cx.run_until_parked();
+        }
+
+        fn sound_notes(&self, cx: &mut gpui::TestAppContext) -> Vec<String> {
+            self.panel()
+                .read_with(cx, |panel, _| panel.notes_for(SOUND))
+        }
+    }
+
+    #[gpui::test]
+    fn a_sound_field_offers_silence_before_the_library_it_was_launched_with(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_sound_library(
+            cx,
+            OverlayConfig::new(),
+            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+        );
+
+        assert_eq!(
+            fixture.sound_options(cx),
+            vec![String::new(), CLIP_A.to_owned()]
+        );
+    }
+
+    #[gpui::test]
+    fn a_library_that_arrives_after_the_panel_opens_still_reaches_the_sound_field(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_sound_library(cx, OverlayConfig::new(), Vec::new());
+
+        fixture.panel().update(cx, |panel, cx| {
+            panel.set_sound_choices(vec![(CLIP_B.to_owned(), "Airhorn".to_owned())], cx);
+        });
+
+        assert_eq!(
+            fixture.sound_options(cx),
+            vec![String::new(), CLIP_B.to_owned()],
+            "the picker must offer clips the screen loaded after the panel was built"
+        );
+    }
+
+    #[gpui::test]
+    fn an_adoption_answer_for_a_pick_the_user_moved_past_never_moves_the_field(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_sound_library(
+            cx,
+            OverlayConfig::new(),
+            vec![
+                (CLIP_A.to_owned(), "Fanfare".to_owned()),
+                (CLIP_B.to_owned(), "Airhorn".to_owned()),
+            ],
+        );
+        fixture.expect_pick(cx, CLIP_B);
+
+        fixture.settle(cx, CLIP_A, PickOutcome::Accepted);
+
+        assert_eq!(
+            fixture.sound_selection(cx),
+            "",
+            "a late answer about an earlier pick overwrote the one the user is waiting on"
+        );
+        assert!(fixture.saves(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn an_answer_with_nothing_pending_is_ignored(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::with_sound_library(
+            cx,
+            OverlayConfig::new(),
+            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+        );
+
+        fixture.settle(cx, CLIP_A, PickOutcome::Accepted);
+
+        assert_eq!(fixture.sound_selection(cx), "");
+        assert!(fixture.saves(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_clip_that_reached_the_library_is_committed_and_saved(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::with_sound_library(
+            cx,
+            OverlayConfig::new(),
+            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+        );
+        fixture.expect_pick(cx, CLIP_A);
+
+        fixture.settle(cx, CLIP_A, PickOutcome::Accepted);
+
+        assert_eq!(fixture.sound_selection(cx), CLIP_A);
+        assert_eq!(
+            fixture
+                .saves(cx)
+                .last()
+                .and_then(|config| config.get(SOUND).cloned()),
+            Some(Variant::String(CLIP_A.to_owned()))
+        );
+    }
+
+    #[gpui::test]
+    fn a_refused_clip_leaves_the_field_alone_and_states_the_reason(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::with_sound_library(
+            cx,
+            OverlayConfig::new(),
+            vec![(CLIP_A.to_owned(), "Fanfare".to_owned())],
+        );
+        fixture.expect_pick(cx, CLIP_A);
+
+        fixture.settle(
+            cx,
+            CLIP_A,
+            PickOutcome::Refused("the file is not audio".to_owned()),
+        );
+
+        assert_eq!(fixture.sound_selection(cx), "");
+        assert_eq!(fixture.sound_notes(cx), vec!["the file is not audio"]);
+        assert!(fixture.saves(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn an_unresolved_reference_reported_by_the_pass_is_shown_on_its_own_field(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_sound_library(cx, OverlayConfig::new(), Vec::new());
+
+        fixture.panel().update(cx, |panel, cx| {
+            panel.set_media_issues(
+                vec![MediaIssue::ClipOutsideLibrary {
+                    key: SOUND.to_owned(),
+                    clip: "01J9P4S2M7Q8V3X5Y6Z7A8B9C0".to_owned(),
+                }],
+                cx,
+            );
+        });
+
+        assert_eq!(
+            fixture.sound_notes(cx),
+            vec!["overlays_sound_issue_outside_library"]
+        );
+        assert!(
+            fixture
+                .panel()
+                .read_with(cx, |panel, _| panel.notes_for(HEADLINE).is_empty()),
+            "an issue raised against the sound key was shown on another field"
+        );
     }
 }

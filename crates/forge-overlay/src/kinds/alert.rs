@@ -36,7 +36,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        1
+        2
     }
 
     fn default_config(&self) -> OverlayConfig {
@@ -51,11 +51,13 @@ impl OverlayKindDescriptor for AlertOverlayKind {
             config::text("%sub_cumulative_months% months subscribed"),
         );
         defaults.insert(config::DURATION.to_owned(), forge_types::Variant::Int(5));
+        defaults.insert(config::ICON.to_owned(), config::text(config::DEFAULT_ICON));
         defaults
     }
 
     fn config_fields(&self) -> Vec<SectionedField> {
         let mut fields = config::shared_fields(metrics::ALERT_SIZING);
+        fields.push(config::icon_field());
         fields.push(config::duration_field());
         fields.push(config::sound_field());
         fields

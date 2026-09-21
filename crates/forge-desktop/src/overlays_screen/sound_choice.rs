@@ -1,5 +1,7 @@
 use forge_components::{Density, FONT_XXS, ForgePalette, Spacing, body_family, spacing, tr};
-use forge_overlay::{MediaIssue, MediaValue, clip_reference, key_holds_media, read_media_value};
+use forge_overlay::{
+    MediaIssue, MediaSlot, MediaValue, clip_reference, media_slot, read_media_value,
+};
 use forge_soundboard::{AdoptionVerdict, SoundboardError};
 use forge_storage::StoredClip;
 use forge_types::ClipId;
@@ -36,7 +38,7 @@ pub(super) fn sound_choices(clips: &[(String, String)], selected: &str) -> Vec<(
 }
 
 pub(super) fn picked_clip(key: &str, value: &str) -> Option<ClipId> {
-    if !key_holds_media(key) {
+    if media_slot(key) != Some(MediaSlot::Sound) {
         return None;
     }
     match read_media_value(value) {
@@ -70,6 +72,15 @@ pub(super) fn issue_message(issue: &MediaIssue) -> String {
         MediaIssue::ClipKindMismatch { format, .. } => {
             tr!(
                 "overlays_sound_issue_kind_mismatch",
+                format = format.as_str()
+            )
+        }
+        MediaIssue::UnknownGlyph { .. } => tr!("overlays_icon_issue_unknown_glyph"),
+        MediaIssue::UnknownImage { .. } => tr!("overlays_icon_issue_unknown_image"),
+        MediaIssue::ImageBytesMissing { .. } => tr!("overlays_icon_issue_bytes_missing"),
+        MediaIssue::ImageKindMismatch { format, .. } => {
+            tr!(
+                "overlays_icon_issue_kind_mismatch",
                 format = format.as_str()
             )
         }

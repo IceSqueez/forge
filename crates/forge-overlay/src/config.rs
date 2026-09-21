@@ -17,6 +17,7 @@ pub const TEXT_SIZE: &str = "text_size";
 pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
+pub const ICON: &str = "icon";
 
 pub const AUTHOR: &str = "author";
 pub const AUTHOR_COLOR: &str = "author_color";
@@ -35,6 +36,9 @@ pub const CLIP_DURATION_MS: &str = "clip_duration_ms";
 pub const COMMAND: &str = "command";
 
 pub const SOUND_OPTIONS_KEY: &str = "soundboard.clips";
+pub const ICON_OPTIONS_KEY: &str = "overlay.icons";
+
+pub const DEFAULT_ICON: &str = "star-filled";
 
 pub const ACCENT_OPTIONS: &[&str] = &["mauve", "sky", "green", "peach", "yellow", "red"];
 pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas Neue"];
@@ -423,6 +427,17 @@ pub(crate) fn duration_field() -> SectionedField {
             min: DURATION_MIN_SECS,
             max: DURATION_MAX_SECS,
             unit: "s",
+        },
+    )
+}
+
+pub(crate) fn icon_field() -> SectionedField {
+    in_section(
+        ConfigSection::Style,
+        FormField::DynamicSelect {
+            key: ICON,
+            label: "Icon",
+            options_key: ICON_OPTIONS_KEY,
         },
     )
 }

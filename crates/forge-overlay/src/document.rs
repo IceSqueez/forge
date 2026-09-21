@@ -7,10 +7,13 @@ use crate::descriptor::OverlayKindDescriptor;
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
 use crate::materialize::GENERATOR_VERSION;
-use crate::media::emitted_media_value;
+use crate::media::{EmittedIcon, MediaSlot, emitted_icon, emitted_media_value, media_slot};
 use crate::sample::sample_content;
 
 pub const DOCUMENT_VERSION: u32 = 1;
+
+pub const ICON_FILE_FIELD: &str = "file";
+pub const ICON_TINTABLE_FIELD: &str = "tintable";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,10 +58,22 @@ fn page_value(instance: &OverlayInstance, key: &str, value: &Variant) -> Value {
     let Some(stored) = value.as_str() else {
         return value.to_plain_json();
     };
-    match emitted_media_value(key, stored, instance.media.for_key(key)) {
-        Some(emitted) => Value::String(emitted),
+    let resolved = instance.media.for_key(key);
+    match media_slot(key) {
+        Some(MediaSlot::Icon) => icon_value(&emitted_icon(stored, resolved)),
+        Some(MediaSlot::Sound) => match emitted_media_value(key, stored, resolved) {
+            Some(emitted) => Value::String(emitted),
+            None => value.to_plain_json(),
+        },
         None => value.to_plain_json(),
     }
+}
+
+fn icon_value(icon: &EmittedIcon) -> Value {
+    Value::Object(Map::from_iter([
+        (ICON_FILE_FIELD.to_owned(), Value::String(icon.file.clone())),
+        (ICON_TINTABLE_FIELD.to_owned(), Value::Bool(icon.tintable)),
+    ]))
 }
 
 #[derive(Serialize)]

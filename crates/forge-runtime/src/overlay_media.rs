@@ -1,13 +1,13 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use forge_overlay::config::SOUND;
 use forge_overlay::{
-    ClipReference, MEDIA_KEYS, MediaIssue, OverlayMedia, ResolvedMedia, clip_references,
+    ClipReference, ImageReference, MEDIA_KEYS, MediaIssue, OverlayMedia, ResolvedMedia,
+    clip_references, glyph_media, image_references,
 };
 use forge_storage::{
-    MediaBlobId, MediaKind, MediaReferrer, MediaReferrerKind, MediaRepo, OverlayConfig, OverlayId,
-    SoundboardClipsRepo, StorageError, clip_source_referrer,
+    MediaBlobId, MediaFormat, MediaKind, MediaReferrer, MediaReferrerKind, MediaRepo,
+    OverlayConfig, OverlayId, SoundboardClipsRepo, StorageError, clip_source_referrer,
 };
 use forge_types::ClipId;
 
@@ -20,18 +20,23 @@ pub(crate) struct MediaPass {
 }
 
 pub(crate) fn unresolvable(config: &OverlayConfig) -> MediaPass {
+    let mut media = glyph_media(config);
+    for reference in clip_references(config) {
+        media.issues.push(MediaIssue::LookupFailed {
+            key: reference.key,
+            reference: reference.clip,
+            reason: LIBRARY_UNREACHABLE.to_owned(),
+        });
+    }
+    for reference in image_references(config) {
+        media.issues.push(MediaIssue::LookupFailed {
+            key: reference.key,
+            reference: reference.image,
+            reason: LIBRARY_UNREACHABLE.to_owned(),
+        });
+    }
     MediaPass {
-        media: OverlayMedia {
-            resolved: Vec::new(),
-            issues: clip_references(config)
-                .into_iter()
-                .map(|reference| MediaIssue::LookupFailed {
-                    key: reference.key,
-                    clip: reference.clip,
-                    reason: LIBRARY_UNREACHABLE.to_owned(),
-                })
-                .collect(),
-        },
+        media,
         held: Vec::new(),
     }
 }
@@ -48,9 +53,21 @@ impl OverlayMediaLibrary {
     }
 
     pub(crate) async fn resolve(&self, config: &OverlayConfig) -> MediaPass {
-        let mut pass = MediaPass::default();
+        let mut pass = MediaPass {
+            media: glyph_media(config),
+            held: Vec::new(),
+        };
         for reference in clip_references(config) {
-            match self.resolve_one(&reference).await {
+            match self.resolve_clip(&reference).await {
+                Ok((blob, media)) => {
+                    pass.held.push((reference.key, blob));
+                    pass.media.resolved.push(media);
+                }
+                Err(issue) => pass.media.issues.push(issue),
+            }
+        }
+        for reference in image_references(config) {
+            match self.resolve_image(&reference).await {
                 Ok((blob, media)) => {
                     pass.held.push((reference.key, blob));
                     pass.media.resolved.push(media);
@@ -101,7 +118,7 @@ impl OverlayMediaLibrary {
         }
     }
 
-    async fn resolve_one(
+    async fn resolve_clip(
         &self,
         reference: &ClipReference,
     ) -> Result<(MediaBlobId, ResolvedMedia), MediaIssue> {
@@ -114,7 +131,7 @@ impl OverlayMediaLibrary {
             .clips
             .get(clip)
             .await
-            .map_err(|error| lookup_failed(reference, &error))?;
+            .map_err(|error| lookup_failed(&reference.key, &reference.clip, &error))?;
         if known.is_none() {
             return Err(MediaIssue::UnknownClip {
                 key: reference.key.clone(),
@@ -126,7 +143,7 @@ impl OverlayMediaLibrary {
             .blobs
             .blob_of(&clip_source_referrer(clip))
             .await
-            .map_err(|error| lookup_failed(reference, &error))?
+            .map_err(|error| lookup_failed(&reference.key, &reference.clip, &error))?
         else {
             return Err(MediaIssue::ClipOutsideLibrary {
                 key: reference.key.clone(),
@@ -138,7 +155,7 @@ impl OverlayMediaLibrary {
             .blobs
             .get(&id)
             .await
-            .map_err(|error| lookup_failed(reference, &error))?
+            .map_err(|error| lookup_failed(&reference.key, &reference.clip, &error))?
         else {
             return Err(MediaIssue::ClipBytesMissing {
                 key: reference.key.clone(),
@@ -146,7 +163,7 @@ impl OverlayMediaLibrary {
             });
         };
 
-        if expected_kind(&reference.key).is_some_and(|expected| expected != blob.format.kind()) {
+        if blob.format.kind() != MediaKind::Audio {
             return Err(MediaIssue::ClipKindMismatch {
                 key: reference.key.clone(),
                 clip: reference.clip.clone(),
@@ -162,40 +179,79 @@ impl OverlayMediaLibrary {
                     clip: reference.clip.clone(),
                 });
             }
-            Err(error) => return Err(lookup_failed(reference, &error)),
+            Err(error) => return Err(lookup_failed(&reference.key, &reference.clip, &error)),
         };
 
-        let media = ResolvedMedia::new(
-            reference.key.clone(),
-            id.as_str(),
-            blob.format.as_str(),
-            bytes,
-        )
-        .map_err(|error| MediaIssue::LookupFailed {
-            key: reference.key.clone(),
-            clip: reference.clip.clone(),
-            reason: error.to_string(),
-        })?;
-
+        let media = named(&reference.key, &reference.clip, &id, blob.format, bytes)?;
         Ok((id, media))
     }
+
+    async fn resolve_image(
+        &self,
+        reference: &ImageReference,
+    ) -> Result<(MediaBlobId, ResolvedMedia), MediaIssue> {
+        let id = MediaBlobId::from_stored(reference.image.clone());
+
+        let Some(blob) = self
+            .blobs
+            .get(&id)
+            .await
+            .map_err(|error| lookup_failed(&reference.key, &reference.image, &error))?
+        else {
+            return Err(MediaIssue::UnknownImage {
+                key: reference.key.clone(),
+                image: reference.image.clone(),
+            });
+        };
+
+        if blob.format.kind() != MediaKind::Image {
+            return Err(MediaIssue::ImageKindMismatch {
+                key: reference.key.clone(),
+                image: reference.image.clone(),
+                format: blob.format.to_string(),
+            });
+        }
+
+        let bytes = match self.blobs.read(&id).await {
+            Ok(bytes) => bytes,
+            Err(StorageError::NotFound { .. }) => {
+                return Err(MediaIssue::ImageBytesMissing {
+                    key: reference.key.clone(),
+                    image: reference.image.clone(),
+                });
+            }
+            Err(error) => return Err(lookup_failed(&reference.key, &reference.image, &error)),
+        };
+
+        let media = named(&reference.key, &reference.image, &id, blob.format, bytes)?;
+        Ok((id, media))
+    }
+}
+
+fn named(
+    key: &str,
+    reference: &str,
+    id: &MediaBlobId,
+    format: MediaFormat,
+    bytes: Vec<u8>,
+) -> Result<ResolvedMedia, MediaIssue> {
+    ResolvedMedia::new(key, id.as_str(), format.as_str(), bytes).map_err(|error| {
+        MediaIssue::LookupFailed {
+            key: key.to_owned(),
+            reference: reference.to_owned(),
+            reason: error.to_string(),
+        }
+    })
 }
 
 fn overlay_referrer(overlay: &OverlayId, key: &str) -> MediaReferrer {
     MediaReferrer::new(MediaReferrerKind::Overlay, overlay.as_str(), key)
 }
 
-fn expected_kind(key: &str) -> Option<MediaKind> {
-    match key {
-        SOUND => Some(MediaKind::Audio),
-        _ => None,
-    }
-}
-
-fn lookup_failed(reference: &ClipReference, error: &StorageError) -> MediaIssue {
+fn lookup_failed(key: &str, reference: &str, error: &StorageError) -> MediaIssue {
     MediaIssue::LookupFailed {
-        key: reference.key.clone(),
-        clip: reference.clip.clone(),
+        key: key.to_owned(),
+        reference: reference.to_owned(),
         reason: error.to_string(),
     }
 }

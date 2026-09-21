@@ -311,7 +311,8 @@ impl AlertMetrics {
             scaled_length_pair("padding", self.padding_block, self.padding_inline),
             accent_border("border", self.border),
             scaled_length("border-radius", self.radius),
-            scaled_length("font-size", self.icon_size),
+            scaled_length("height", self.icon_size),
+            accent_fill(),
             scaled_length("font-size", self.headline_size),
             scaled_length("font-size", self.subline_size),
             surface(self.surface_alpha),
@@ -432,6 +433,10 @@ fn axis_extent(axis: &str, property: &str, rule: ElementAxis) -> String {
 
 fn accent_border(property: &str, width: f32) -> String {
     format!("{property}: {width}px solid var(--accent);")
+}
+
+fn accent_fill() -> String {
+    "background-color: var(--accent);".to_owned()
 }
 
 fn surface(alpha: f32) -> String {

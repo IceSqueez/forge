@@ -7,7 +7,7 @@ use forge_components::{
     anchored_popover, body_family, field_label, section_label, tr,
 };
 use forge_overlay::config::{RETIRED_KEYS, SOUND_OPTIONS_KEY};
-use forge_overlay::{ConfigSection, MediaIssue, SectionedField, key_holds_media};
+use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
 use forge_registry::FormField;
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
@@ -184,7 +184,7 @@ impl OverlayPropertyPanel {
                 selected,
                 ..
             } = field
-                && key_holds_media(key)
+                && media_slot(key) == Some(MediaSlot::Sound)
             {
                 *options = sound_choices(&clips, selected);
             }

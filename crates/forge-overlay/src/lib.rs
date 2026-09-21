@@ -5,6 +5,7 @@ pub mod content;
 pub mod descriptor;
 pub mod document;
 pub mod error;
+pub mod icons;
 pub mod instance;
 pub mod kinds;
 pub mod materialize;
@@ -25,8 +26,11 @@ pub use content::delivered_content;
 pub use descriptor::{
     ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
-pub use document::{DOCUMENT_VERSION, config_document, sample_document};
+pub use document::{
+    DOCUMENT_VERSION, ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document,
+};
 pub use error::OverlayError;
+pub use icons::{CURATED_ICONS, CuratedIcon, IconCategory, curated_icon};
 pub use instance::OverlayInstance;
 pub use kinds::audio::{AudioAnnouncement, AudioCommand, announcement_content, command_content};
 pub use kinds::register_builtin_kinds;
@@ -35,9 +39,11 @@ pub use materialize::{
     remove_overlay_directory,
 };
 pub use media::{
-    CLIP_REFERENCE_PREFIX, ClipReference, GENERATED_MEDIA_DIRECTORY, MEDIA_KEYS, MediaIssue,
-    MediaValue, OverlayMedia, ResolvedMedia, clip_reference, clip_references, emitted_media_value,
-    key_holds_media, read_media_value,
+    CLIP_REFERENCE_PREFIX, ClipReference, EmittedIcon, GENERATED_MEDIA_DIRECTORY,
+    IMAGE_REFERENCE_PREFIX, IconValue, ImageReference, MEDIA_KEYS, MediaIssue, MediaSlot,
+    MediaValue, OverlayMedia, ResolvedMedia, clip_reference, clip_references, emitted_icon,
+    emitted_media_value, glyph_media, image_reference, image_references, key_holds_media,
+    media_slot, read_icon_value, read_media_value,
 };
 pub use metrics::{
     AxisBound, AxisFallback, ElementAxis, ElementSizing, StyleGuard, element_sizing, style_guards,

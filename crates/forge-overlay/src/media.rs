@@ -1,20 +1,42 @@
-use crate::config::SOUND;
+use sha2::{Digest, Sha256};
+
+use crate::config::{ICON, SOUND};
 use crate::descriptor::OverlayConfig;
 use crate::error::OverlayError;
+use crate::icons::curated_icon;
 
 pub const CLIP_REFERENCE_PREFIX: &str = "clip:";
 
+pub const IMAGE_REFERENCE_PREFIX: &str = "image:";
+
 pub const GENERATED_MEDIA_DIRECTORY: &str = "forge-media";
 
-/// The only keys a reference is ever read from, so wording that opens with the prefix stays wording.
-pub const MEDIA_KEYS: &[&str] = &[SOUND];
-
-pub fn key_holds_media(key: &str) -> bool {
-    MEDIA_KEYS.contains(&key)
-}
+/// The only keys a reference is ever read from, so wording that opens with a prefix stays wording.
+pub const MEDIA_KEYS: &[&str] = &[SOUND, ICON];
 
 const PAGE_PATH_SEPARATOR: char = '/';
 const EXTENSION_SEPARATOR: char = '.';
+const IDENTITY_SEPARATOR: char = '-';
+const CONTENT_DIGEST_LABEL: &str = "sha256";
+const GLYPH_EXTENSION: &str = "svg";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaSlot {
+    Sound,
+    Icon,
+}
+
+pub fn media_slot(key: &str) -> Option<MediaSlot> {
+    match key {
+        SOUND => Some(MediaSlot::Sound),
+        ICON => Some(MediaSlot::Icon),
+        _ => None,
+    }
+}
+
+pub fn key_holds_media(key: &str) -> bool {
+    media_slot(key).is_some()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaValue<'a> {
@@ -35,24 +57,115 @@ pub fn clip_reference(clip_id: &str) -> String {
     format!("{CLIP_REFERENCE_PREFIX}{clip_id}")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IconValue<'a> {
+    Empty,
+    Glyph(&'a str),
+    Image(&'a str),
+}
+
+pub fn read_icon_value(stored: &str) -> IconValue<'_> {
+    match stored.strip_prefix(IMAGE_REFERENCE_PREFIX) {
+        Some(image) => IconValue::Image(image),
+        None if stored.is_empty() => IconValue::Empty,
+        None => IconValue::Glyph(stored),
+    }
+}
+
+pub fn image_reference(blob_id: &str) -> String {
+    format!("{IMAGE_REFERENCE_PREFIX}{blob_id}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipReference {
     pub key: String,
     pub clip: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageReference {
+    pub key: String,
+    pub image: String,
+}
+
 pub fn clip_references(config: &OverlayConfig) -> Vec<ClipReference> {
-    config
-        .iter()
-        .filter(|(key, _)| key_holds_media(key))
-        .filter_map(|(key, value)| match read_media_value(value.as_str()?) {
+    stored_values(config, MediaSlot::Sound)
+        .filter_map(|(key, value)| match read_media_value(value) {
             MediaValue::Clip(clip) => Some(ClipReference {
-                key: key.clone(),
+                key,
                 clip: clip.to_owned(),
             }),
             MediaValue::Empty | MediaValue::File(_) => None,
         })
         .collect()
+}
+
+pub fn image_references(config: &OverlayConfig) -> Vec<ImageReference> {
+    stored_values(config, MediaSlot::Icon)
+        .filter_map(|(key, value)| match read_icon_value(value) {
+            IconValue::Image(image) => Some(ImageReference {
+                key,
+                image: image.to_owned(),
+            }),
+            IconValue::Empty | IconValue::Glyph(_) => None,
+        })
+        .collect()
+}
+
+pub fn glyph_media(config: &OverlayConfig) -> OverlayMedia {
+    let mut media = OverlayMedia::default();
+    for (key, value) in stored_values(config, MediaSlot::Icon) {
+        let IconValue::Glyph(name) = read_icon_value(value) else {
+            continue;
+        };
+        match resolve_glyph(&key, name) {
+            Ok(resolved) => media.resolved.push(resolved),
+            Err(issue) => media.issues.push(issue),
+        }
+    }
+    media
+}
+
+fn resolve_glyph(key: &str, name: &str) -> Result<ResolvedMedia, MediaIssue> {
+    let Some(icon) = curated_icon(name) else {
+        return Err(MediaIssue::UnknownGlyph {
+            key: key.to_owned(),
+            glyph: name.to_owned(),
+        });
+    };
+
+    let bytes = icon.bytes();
+    ResolvedMedia::new(
+        key,
+        &content_identity(bytes),
+        GLYPH_EXTENSION,
+        bytes.to_vec(),
+    )
+    .map_err(|error| MediaIssue::LookupFailed {
+        key: key.to_owned(),
+        reference: name.to_owned(),
+        reason: error.to_string(),
+    })
+}
+
+fn content_identity(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let digest = Sha256::digest(bytes);
+    let mut identity = String::with_capacity(CONTENT_DIGEST_LABEL.len() + 1 + digest.len() * 2);
+    identity.push_str(CONTENT_DIGEST_LABEL);
+    identity.push(IDENTITY_SEPARATOR);
+    for byte in digest {
+        let _ = write!(identity, "{byte:02x}");
+    }
+    identity
+}
+
+fn stored_values(config: &OverlayConfig, slot: MediaSlot) -> impl Iterator<Item = (String, &str)> {
+    config
+        .iter()
+        .filter(move |(key, _)| media_slot(key) == Some(slot))
+        .filter_map(|(key, value)| Some((key.clone(), value.as_str()?)))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,9 +245,26 @@ pub enum MediaIssue {
         clip: String,
         format: String,
     },
+    UnknownGlyph {
+        key: String,
+        glyph: String,
+    },
+    UnknownImage {
+        key: String,
+        image: String,
+    },
+    ImageBytesMissing {
+        key: String,
+        image: String,
+    },
+    ImageKindMismatch {
+        key: String,
+        image: String,
+        format: String,
+    },
     LookupFailed {
         key: String,
-        clip: String,
+        reference: String,
         reason: String,
     },
 }
@@ -146,6 +276,10 @@ impl MediaIssue {
             | Self::ClipOutsideLibrary { key, .. }
             | Self::ClipBytesMissing { key, .. }
             | Self::ClipKindMismatch { key, .. }
+            | Self::UnknownGlyph { key, .. }
+            | Self::UnknownImage { key, .. }
+            | Self::ImageBytesMissing { key, .. }
+            | Self::ImageKindMismatch { key, .. }
             | Self::LookupFailed { key, .. } => key,
         }
     }
@@ -169,11 +303,35 @@ pub fn emitted_media_value(
     stored: &str,
     resolved: Option<&ResolvedMedia>,
 ) -> Option<String> {
-    if !key_holds_media(key) {
+    if media_slot(key) != Some(MediaSlot::Sound) {
         return None;
     }
     match read_media_value(stored) {
         MediaValue::Clip(_) => Some(resolved.map(ResolvedMedia::page_path).unwrap_or_default()),
         MediaValue::Empty | MediaValue::File(_) => None,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmittedIcon {
+    pub file: String,
+    pub tintable: bool,
+}
+
+pub fn emitted_icon(stored: &str, resolved: Option<&ResolvedMedia>) -> EmittedIcon {
+    let file = resolved.map(ResolvedMedia::page_path).unwrap_or_default();
+    match read_icon_value(stored) {
+        IconValue::Empty => EmittedIcon {
+            file: String::new(),
+            tintable: false,
+        },
+        IconValue::Glyph(_) => EmittedIcon {
+            file,
+            tintable: true,
+        },
+        IconValue::Image(_) => EmittedIcon {
+            file,
+            tintable: false,
+        },
     }
 }

@@ -212,6 +212,7 @@ impl SettingsView {
             SettingsAudioView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
+                Arc::clone(&handles.speech_output),
                 Arc::clone(&handles.voice_gate),
                 section == SettingsSection::Audio,
                 cx,

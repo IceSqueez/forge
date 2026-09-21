@@ -166,7 +166,7 @@ pub async fn build_runtime(
     spawn_viewer_tracker(Arc::clone(&bus), backend.viewer_repo());
     spawn_chat_moderation_persistence(Arc::clone(&bus), backend.chat_history_repo());
 
-    let (speak, speak_events, pipeline_config, tts_registry) =
+    let (speak, speak_events, pipeline_config, tts_registry, speech_output) =
         build_speak_queue(&bus, &backend).await;
     let voice_gate = build_voice_gate(settings_repo.as_ref(), speak.clone()).await;
     let speak_bridge = speak
@@ -359,6 +359,7 @@ pub async fn build_runtime(
         speak_events,
         pipeline_config,
         tts_registry,
+        speech_output,
         soundboard_player,
         voice_gate,
     })

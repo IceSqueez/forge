@@ -41,7 +41,7 @@ impl CpalSink {
         buffer: PcmBuffer,
         stop: Arc<AtomicBool>,
         paused: Arc<AtomicBool>,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> tokio::task::JoinHandle<Result<(), AudioError>> {
         let device_id_str = self.device_id.0.clone();
         let event_sink = Arc::clone(&self.event_sink);
         let target_sr = self.target_sample_rate;
@@ -56,7 +56,7 @@ impl CpalSink {
                 event_sink,
                 stop,
                 paused,
-            );
+            )
         })
     }
 }
@@ -68,7 +68,7 @@ impl AudioSink for CpalSink {
         let paused = Arc::new(AtomicBool::new(false));
         self.spawn_playback(buffer, stop, paused)
             .await
-            .map_err(|e| AudioError::JoinFailed(e.to_string()))
+            .map_err(|e| AudioError::JoinFailed(e.to_string()))?
     }
 
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
@@ -103,11 +103,11 @@ fn run_playback(
     event_sink: Arc<dyn AudioEventSink>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
-) {
+) -> Result<(), AudioError> {
     let host = cpal::default_host();
     let candidates = candidate_device_ids(&device_id_str);
 
-    let mut last_error = format!("device '{}' not found", device_id_str);
+    let mut last_error = AudioError::Host(format!("device '{}' not found", device_id_str));
     for (idx, candidate) in candidates.iter().enumerate() {
         match try_start_stream(
             &host, candidate, &buffer, target_sr, target_ch, &stop, &paused,
@@ -133,19 +133,26 @@ fn run_playback(
                     clip_id: None,
                     clip_label: None,
                 });
-                return;
+                return Ok(());
             }
             Err(e) => {
-                last_error = e.to_string();
+                last_error = e;
             }
         }
     }
 
+    let reason = last_error.to_string();
+    tracing::warn!(
+        requested = %device_id_str,
+        error = %reason,
+        "no output device accepted the stream; nothing was played"
+    );
     event_sink.emit(AudioEvent::PlaybackFailed {
         clip_id: None,
         clip_label: None,
-        error: last_error,
+        error: reason,
     });
+    Err(last_error)
 }
 
 fn candidate_device_ids(requested: &str) -> Vec<String> {

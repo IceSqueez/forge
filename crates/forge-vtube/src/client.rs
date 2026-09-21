@@ -20,6 +20,7 @@ pub(crate) type VtsWs =
 
 pub(crate) const DEFAULT_VTS_HOST: &str = "127.0.0.1";
 pub(crate) const DEFAULT_VTS_PORT: u16 = 8001;
+pub(crate) const VTUBE_PLATFORM_ID: &str = "vtube";
 
 #[derive(Debug, Clone)]
 pub struct VTubeConfig {
@@ -135,7 +136,7 @@ impl VTubeClient {
 
         Self {
             config: cfg,
-            vtube_id: BuiltinId::new("vtube"),
+            vtube_id: BuiltinId::new(VTUBE_PLATFORM_ID),
             state,
             auth_state,
             shutdown,
@@ -227,7 +228,7 @@ impl VTubeClient {
             config: VTubeConfig {
                 endpoint: endpoint.into(),
             },
-            vtube_id: BuiltinId::new("vtube"),
+            vtube_id: BuiltinId::new(VTUBE_PLATFORM_ID),
             state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
             auth_state: Arc::new(RwLock::new(AuthState::Cold)),
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),

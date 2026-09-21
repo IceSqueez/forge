@@ -36,9 +36,9 @@ const CANVAS_NOTE_OPACITY: f32 = 0.6;
 const CHECKER_CELL: Pixels = px(11.0);
 
 const HINT_TOP: Pixels = px(8.0);
-const HINT_GAP: Pixels = px(6.0);
-const HINT_FS: Pixels = px(10.5);
-const HINT_GLYPH: Pixels = px(12.0);
+pub(super) const HINT_GAP: Pixels = px(6.0);
+pub(super) const HINT_FS: Pixels = px(10.5);
+pub(super) const HINT_GLYPH: Pixels = px(12.0);
 
 const ZOOM_FACTOR: f32 = 1.0;
 
@@ -340,7 +340,7 @@ impl OverlaysView {
         let served = self.preview_address().is_some();
 
         region
-            .child(self.render_stage_head(composition.canvas, served, palette, cx))
+            .child(self.render_stage_head(composition.canvas, definition, served, palette, cx))
             .child(self.render_arena(composition, visuals.icon, palette, cx))
             .child(self.render_hints(definition, served, palette))
             .into_any_element()
@@ -349,17 +349,36 @@ impl OverlaysView {
     fn render_stage_head(
         &self,
         canvas: PreviewCanvas,
+        definition: &OverlayDefinition,
         served: bool,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let width = canvas.width.to_string();
-        let height = canvas.height.to_string();
-        let label = tr!(
-            "overlays_preview_label",
-            width = width.as_str(),
-            height = height.as_str()
-        );
+        let descriptor = self.kinds.get(&definition.kind_id);
+        let page = descriptor.is_some_and(|d| d.has_visual_page());
+        let test_fire_ok = descriptor.is_some_and(|d| !d.content_is_machine_filled());
+
+        let size_label = page.then(|| {
+            let width = canvas.width.to_string();
+            let height = canvas.height.to_string();
+            let label = tr!(
+                "overlays_preview_label",
+                width = width.as_str(),
+                height = height.as_str()
+            );
+            div()
+                .flex_none()
+                .child(section_label(label.to_uppercase(), palette))
+        });
+        let scale_switch = page.then(|| self.render_scale_switch(palette, cx));
+        let open_button = page.then(|| {
+            ghost_button_with_icon(Icon::ExternalLink, tr!("overlays_preview_open"), palette)
+                .disabled(!served)
+                .on_click(
+                    "overlays-open-preview",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.open_preview_page(cx)),
+                )
+        });
 
         div()
             .flex_none()
@@ -368,25 +387,14 @@ impl OverlaysView {
             .items_center()
             .gap(HEAD_GAP)
             .pb(HEAD_GAP)
-            .child(
-                div()
-                    .flex_none()
-                    .child(section_label(label.to_uppercase(), palette)),
-            )
-            .child(self.render_scale_switch(palette, cx))
+            .children(size_label)
+            .children(scale_switch)
             .child(div().flex_1().min_w(px(0.0)))
-            .child(
-                ghost_button_with_icon(Icon::ExternalLink, tr!("overlays_preview_open"), palette)
-                    .disabled(!served)
-                    .on_click(
-                        "overlays-open-preview",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.open_preview_page(cx)),
-                    ),
-            )
+            .children(open_button)
             .child(
                 ghost_button_with_icon(Icon::PlayerPlay, tr!("overlays_test_send"), palette)
                     .ink(palette.brand)
-                    .disabled(self.is_sending())
+                    .disabled(self.is_sending() || !test_fire_ok)
                     .on_click(
                         "overlays-send-test",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.send_test(cx)),
@@ -480,11 +488,23 @@ impl OverlaysView {
         served: bool,
         palette: &ForgePalette,
     ) -> AnyElement {
+        let test_fire_ok = self
+            .kinds
+            .get(&definition.kind_id)
+            .is_some_and(|d| !d.content_is_machine_filled());
         let stopped = (!served).then(|| {
             hint_row(
                 Icon::AlertTriangle,
                 palette.text_faint,
                 tr!("overlays_url_not_served"),
+                palette.text_faint,
+            )
+        });
+        let test_unavailable = (!test_fire_ok).then(|| {
+            hint_row(
+                Icon::InfoCircle,
+                palette.text_faint,
+                tr!("overlays_test_unavailable"),
                 palette.text_faint,
             )
         });
@@ -509,6 +529,7 @@ impl OverlaysView {
                 palette.text_faint,
             ))
             .children(stopped)
+            .children(test_unavailable)
             .children(self.render_delivery_hint(definition, palette))
             .into_any_element()
     }

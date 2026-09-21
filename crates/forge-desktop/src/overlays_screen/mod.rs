@@ -14,7 +14,7 @@ use forge_components::{
     BreadcrumbCrumb, Confirm, ConfirmTone, FONT_XS, ForgePalette, Icon, OverlayPosition, ToastKind,
     body_family, confirm_modal, drive_overlay_focus, icon, overlay, page_frame, tr,
 };
-use forge_overlay::{OverlayKindRegistry, effective_overlay_config};
+use forge_overlay::{ConfigSection, OverlayKindRegistry, SectionedField, effective_overlay_config};
 use forge_runtime::OverlayServiceHandle;
 use forge_server::ServerHandle;
 use forge_storage::{OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo};
@@ -363,12 +363,22 @@ impl OverlaysView {
             return;
         };
 
+        let effective = effective_overlay_config(descriptor, &definition.config);
+        let specs: Vec<SectionedField> = descriptor
+            .config_fields()
+            .into_iter()
+            .filter(|sectioned| {
+                !(descriptor.content_is_machine_filled()
+                    && sectioned.section == ConfigSection::Content)
+            })
+            .collect();
+
         let launch = PanelLaunch {
             overlay_id: definition.id.clone(),
-            specs: descriptor.config_fields(),
+            specs,
             defaults: descriptor.default_config(),
             stored: definition.config.clone(),
-            effective: effective_overlay_config(descriptor, &definition.config),
+            effective,
             choices: HashMap::new(),
             overridden_files: definition.source_overrides.clone(),
         };

@@ -32,6 +32,9 @@ pub enum OverlayServiceError {
     #[error("overlay '{id}' needs an overlay type this build does not carry: {kind_id}")]
     UnavailableKind { id: OverlayId, kind_id: String },
 
+    #[error("overlay '{id}' of type {kind_id} fills its own content and cannot take a send")]
+    ContentNotAuthorable { id: OverlayId, kind_id: String },
+
     #[error(transparent)]
     Storage(#[from] StorageError),
 
@@ -266,6 +269,12 @@ impl OverlayServiceHandle {
                 kind_id: definition.kind_id,
             });
         };
+        if descriptor.content_is_machine_filled() {
+            return Err(OverlayServiceError::ContentNotAuthorable {
+                id: definition.id,
+                kind_id: definition.kind_id,
+            });
+        }
 
         let content = delivered_content(descriptor, &definition.config, supplied, args);
         let disposition = descriptor.delivery_disposition();

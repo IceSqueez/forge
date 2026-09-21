@@ -1,4 +1,5 @@
 pub mod alert;
+pub mod audio;
 pub mod chat;
 pub mod frame;
 pub mod goal;
@@ -9,6 +10,7 @@ use crate::registry::OverlayKindRegistry;
 
 pub fn register_builtin_kinds(reg: &mut OverlayKindRegistry) -> Result<(), OverlayError> {
     reg.register(Box::new(alert::AlertOverlayKind))?;
+    reg.register(Box::new(audio::AudioOverlayKind))?;
     reg.register(Box::new(chat::ChatOverlayKind))?;
     reg.register(Box::new(frame::FrameOverlayKind))?;
     reg.register(Box::new(goal::GoalOverlayKind))?;

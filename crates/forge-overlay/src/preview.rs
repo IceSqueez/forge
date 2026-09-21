@@ -5,6 +5,7 @@ use crate::descriptor::OverlayConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewShape {
+    AudioPlayer,
     BadgeBanner,
     BorderedFrame,
     MessageFeed,
@@ -124,6 +125,7 @@ fn canvas_side(config: &OverlayConfig, key: &str, fallback: i64) -> u32 {
 /// headline and subline vocabulary.
 fn lines_of(shape: PreviewShape, config: &OverlayConfig) -> Vec<PreviewLine> {
     match shape {
+        PreviewShape::AudioPlayer => Vec::new(),
         PreviewShape::MessageFeed => paired_lines(config, config::AUTHOR, config::MESSAGE),
         PreviewShape::ProgressBar => progress_lines(config),
         _ => paired_lines(config, config::HEADLINE, config::SUBLINE),

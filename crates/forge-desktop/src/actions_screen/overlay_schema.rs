@@ -31,6 +31,12 @@ impl OverlayContentSchema {
             .and_then(|kind_id| self.kinds.get(kind_id))
             .is_some_and(|descriptor| descriptor.order_sensitive())
     }
+
+    pub(super) fn is_sendable_kind(&self, kind_id: &str) -> bool {
+        self.kinds
+            .get(kind_id)
+            .is_none_or(|descriptor| !descriptor.content_is_machine_filled())
+    }
 }
 
 impl FormSchemaSource for OverlayContentSchema {

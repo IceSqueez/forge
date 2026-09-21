@@ -27,6 +27,7 @@ pub use descriptor::{
 pub use document::{DOCUMENT_VERSION, config_document, sample_document};
 pub use error::OverlayError;
 pub use instance::OverlayInstance;
+pub use kinds::audio::{AudioAnnouncement, AudioCommand, announcement_content, command_content};
 pub use kinds::register_builtin_kinds;
 pub use materialize::{
     GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,

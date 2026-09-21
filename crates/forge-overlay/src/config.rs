@@ -24,6 +24,13 @@ pub const LABEL: &str = "label";
 pub const VALUE: &str = "value";
 pub const TARGET: &str = "target";
 
+pub const CLIP_ID: &str = "clip_id";
+pub const CLIP_PATH: &str = "clip_path";
+pub const REPORT_PATH: &str = "report_path";
+pub const CLIP_MEDIA_TYPE: &str = "clip_media_type";
+pub const CLIP_DURATION_MS: &str = "clip_duration_ms";
+pub const COMMAND: &str = "command";
+
 pub const ACCENT_OPTIONS: &[&str] = &["mauve", "sky", "green", "peach", "yellow", "red"];
 pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas Neue"];
 pub const POSITION_OPTIONS: &[&str] = &["top", "center", "bottom"];
@@ -43,6 +50,9 @@ pub const CANVAS_MIN_PX: i64 = 160;
 pub const CANVAS_MAX_PX: i64 = 7680;
 pub const CANVAS_DEFAULT_WIDTH: i64 = 1920;
 pub const CANVAS_DEFAULT_HEIGHT: i64 = 1080;
+
+pub const CLIP_DURATION_MIN_MS: i64 = 0;
+pub const CLIP_DURATION_MAX_MS: i64 = 60 * 60 * 1_000;
 
 pub fn effective_overlay_config(
     descriptor: &dyn OverlayKindDescriptor,
@@ -306,6 +316,74 @@ pub(crate) fn target_field() -> SectionedField {
             placeholder: "100",
         },
     )
+}
+
+pub(crate) fn audio_content_fields() -> Vec<SectionedField> {
+    vec![
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: CLIP_ID,
+                label: "Clip",
+                placeholder: "",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: CLIP_PATH,
+                label: "Clip address",
+                placeholder: "",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: REPORT_PATH,
+                label: "Verdict address",
+                placeholder: "",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: CLIP_MEDIA_TYPE,
+                label: "Clip media type",
+                placeholder: "audio/wav",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Integer {
+                key: CLIP_DURATION_MS,
+                label: "Clip length",
+                min: CLIP_DURATION_MIN_MS,
+                max: CLIP_DURATION_MAX_MS,
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: COMMAND,
+                label: "Transport command",
+                placeholder: "stop",
+            },
+        ),
+    ]
+}
+
+pub(crate) fn audio_content_defaults() -> OverlayConfig {
+    OverlayConfig::from([
+        (CLIP_ID.to_owned(), text("")),
+        (CLIP_PATH.to_owned(), text("")),
+        (REPORT_PATH.to_owned(), text("")),
+        (CLIP_MEDIA_TYPE.to_owned(), text("")),
+        (
+            CLIP_DURATION_MS.to_owned(),
+            Variant::Int(CLIP_DURATION_MIN_MS),
+        ),
+        (COMMAND.to_owned(), text("")),
+    ])
 }
 
 pub(crate) fn duration_field() -> SectionedField {

@@ -1,4 +1,7 @@
-use forge_components::{ForgePalette, Icon, body_family, icon, mono_family, with_alpha};
+use forge_components::{
+    BORDER_THIN, Density, ForgePalette, Icon, Radius, Spacing, body_family, icon, mono_family,
+    radius, spacing, tr, with_alpha,
+};
 use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, SURFACE_RGB, TICKER};
 use forge_overlay::{
     PreviewComposition, PreviewFont, PreviewLineRole, PreviewPosition, PreviewShape,
@@ -6,6 +9,7 @@ use forge_overlay::{
 use gpui::{AnyElement, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px, relative};
 
 use super::kind_visuals::accent_color;
+use super::preview_stage::{HINT_FS, HINT_GAP, HINT_GLYPH};
 
 const PLACEHOLDER: &str = "-";
 const CHANNEL_MAX: f32 = 255.0;
@@ -28,6 +32,7 @@ impl Scale {
 
 pub(super) fn body_padding(shape: PreviewShape) -> Option<f32> {
     match shape {
+        PreviewShape::AudioPlayer => None,
         PreviewShape::BadgeBanner => Some(ALERT.body_padding),
         PreviewShape::MessageFeed => Some(CHAT.body_padding),
         PreviewShape::ProgressBar => Some(GOAL.body_padding),
@@ -56,6 +61,7 @@ pub(super) fn render_composition(
     };
 
     match composition.shape {
+        PreviewShape::AudioPlayer => audio_player(badge, family, palette),
         PreviewShape::BadgeBanner => {
             badge_banner(composition, scale, accent, family, badge, palette)
         }
@@ -64,6 +70,36 @@ pub(super) fn render_composition(
         PreviewShape::ProgressBar => progress_bar(composition, scale, accent, family, palette),
         PreviewShape::Strip => strip(composition, scale, accent, family, palette),
     }
+}
+
+fn audio_player(badge: Icon, family: SharedString, palette: &ForgePalette) -> AnyElement {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Sm, Density::Cozy))
+        .py(spacing(Spacing::Sm, Density::Cozy))
+        .px(spacing(Spacing::Md, Density::Cozy))
+        .rounded(radius(Radius::Md))
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .child(
+            div()
+                .flex_none()
+                .child(icon(badge, HINT_GLYPH, palette.text_faint)),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(HINT_GAP)
+                .font_family(family)
+                .text_size(HINT_FS)
+                .text_color(palette.text_faint)
+                .child(tr!("overlays_preview_audio_silent"))
+                .child(tr!("overlays_preview_audio_needs_source")),
+        )
+        .into_any_element()
 }
 
 fn badge_banner(

@@ -14,6 +14,7 @@ pub mod pcm;
 pub mod remote;
 pub mod route;
 pub mod sink;
+pub mod sink_factory;
 pub mod voice_gate;
 
 pub use audio_route::AudioRoute;
@@ -38,4 +39,5 @@ pub use route::{
     DevicePreference, build_cpal_sink, fan_out_targets, resolve_device, resolve_output_device,
 };
 pub use sink::{AudioSink, NullSink};
+pub use sink_factory::{AudioSinkFactory, CpalSinkFactory};
 pub use voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState};

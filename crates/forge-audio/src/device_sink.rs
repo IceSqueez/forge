@@ -3,18 +3,18 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_types::{OutputDevice, Shared};
 
-use crate::cpal_sink::CpalSink;
 use crate::error::AudioError;
 use crate::events::AudioEventSink;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::pcm::PcmBuffer;
-use crate::route::resolve_output_device;
+use crate::route::DevicePreference;
 use crate::sink::AudioSink;
+use crate::sink_factory::{AudioSinkFactory, CpalSinkFactory};
 
 pub fn stored_output_device(stored_id: Option<String>) -> OutputDevice {
-    match stored_id {
-        Some(id) => OutputDevice::ById { id },
-        None => OutputDevice::Default,
+    match DevicePreference::from(stored_id) {
+        DevicePreference::ById(id) => OutputDevice::ById { id },
+        _ => OutputDevice::Default,
     }
 }
 
@@ -38,27 +38,25 @@ impl OutputDeviceHandle {
 /// Reads the handle once per playback call, so a swap reaches the next clip and leaves a running one untouched.
 pub struct DeviceSink {
     device: OutputDeviceHandle,
-    event_sink: Arc<dyn AudioEventSink>,
+    factory: Arc<dyn AudioSinkFactory>,
 }
 
 impl DeviceSink {
     pub fn new(device: OutputDeviceHandle, event_sink: Arc<dyn AudioEventSink>) -> Self {
-        Self { device, event_sink }
+        Self::with_factory(device, Arc::new(CpalSinkFactory::new(event_sink)))
+    }
+
+    pub fn with_factory(device: OutputDeviceHandle, factory: Arc<dyn AudioSinkFactory>) -> Self {
+        Self { device, factory }
     }
 
     pub fn device_handle(&self) -> OutputDeviceHandle {
         self.device.clone()
     }
 
-    async fn current(&self) -> Result<CpalSink, AudioError> {
+    async fn current(&self) -> Result<Arc<dyn AudioSink>, AudioError> {
         let device = self.device.load().as_ref().clone();
-        let device_id = resolve_output_device(device).await?;
-        Ok(CpalSink::new(
-            device_id,
-            None,
-            None,
-            Arc::clone(&self.event_sink),
-        ))
+        self.factory.build(&device).await
     }
 }
 

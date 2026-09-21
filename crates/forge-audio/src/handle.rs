@@ -64,6 +64,16 @@ pub struct ControlledPlayback {
 }
 
 impl ControlledPlayback {
+    pub fn resolved(outcome: Result<(), AudioError>) -> Self {
+        Self::from_future(std::future::ready(outcome))
+    }
+
+    pub fn from_future(
+        completion: impl Future<Output = Result<(), AudioError>> + Send + 'static,
+    ) -> Self {
+        Self::merged(PlaybackHandle::default(), Box::pin(completion))
+    }
+
     pub(crate) fn completed() -> Self {
         Self {
             playback: PlaybackHandle::default(),

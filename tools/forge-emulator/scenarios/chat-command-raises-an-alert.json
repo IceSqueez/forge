@@ -1,6 +1,6 @@
 {
   "name": "a chat command raises an alert on a connected overlay page",
-  "purpose": "One Twitch chat message runs an action whose only step sends to an alert overlay, and the browser source connected to that overlay receives a content frame whose headline and subline are plain strings built from the chat event's variables. A value that arrives as tagged Variant JSON fails this scenario: that is the shape a page renders as [object Object].",
+  "purpose": "One Twitch chat message runs an action whose only step sends to an alert overlay, and the browser source connected to that overlay receives a content frame whose headline and subline are plain strings built from the chat event's canonical variables. The chatter's display name differs from the login only in casing, so a page that shows the login instead of %user_name% fails here. A value that arrives as tagged Variant JSON fails too: that is the shape a page renders as [object Object].",
   "fixture": {
     "twitch": {},
     "overlays": [
@@ -22,7 +22,7 @@
             "kind_id": "overlay.send",
             "config": {
               "overlay_id": { "type": "string", "value": "Alert Box" },
-              "headline": { "type": "string", "value": "%user_login% raised an alert" },
+              "headline": { "type": "string", "value": "%user_name% raised an alert" },
               "subline": { "type": "string", "value": "via %message_text%" }
             },
             "enabled": true
@@ -45,7 +45,7 @@
     {
       "do": {
         "chat": {
-          "viewer": { "user_id": "200000042", "login": "alice" },
+          "viewer": { "user_id": "200000042", "login": "alice", "display_name": "Alice" },
           "text": "!alert"
         }
       },
@@ -92,7 +92,7 @@
           "overlay_content": {
             "overlay": "Alert Box",
             "values": {
-              "headline": "alice raised an alert",
+              "headline": "Alice raised an alert",
               "subline": "via !alert"
             },
             "within_ms": 5000

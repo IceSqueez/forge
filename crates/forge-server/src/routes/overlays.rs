@@ -728,6 +728,101 @@ mod tests {
         handle.abort();
     }
 
+    const MEDIA_FILE: &str =
+        "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8.wav";
+    const CACHEABLE_FLOOR_SECONDS: u64 = 30 * 24 * 60 * 60;
+
+    async fn media_overlay_root(base: &std::path::Path) -> std::path::PathBuf {
+        let root = make_root(base).await;
+        let overlay = root.join("alerts");
+        write_at(overlay.join("index.html"), "<h1>Entry</h1>").await;
+        write_at(overlay.join("config.json"), "{}").await;
+        write_at(overlay.join(MEDIA_FILE), "hand placed").await;
+        write_at(
+            overlay
+                .join(forge_overlay::GENERATED_MEDIA_DIRECTORY)
+                .join(MEDIA_FILE),
+            "generated",
+        )
+        .await;
+        write_at(
+            overlay
+                .join(forge_overlay::GENERATED_MEDIA_DIRECTORY)
+                .join("nested")
+                .join(MEDIA_FILE),
+            "deeper",
+        )
+        .await;
+        write_at(
+            overlay
+                .join(format!("{}-user", forge_overlay::GENERATED_MEDIA_DIRECTORY))
+                .join(MEDIA_FILE),
+            "lookalike",
+        )
+        .await;
+        root
+    }
+
+    async fn cache_control_of(addr: SocketAddr, target: &str) -> Option<String> {
+        let response = reqwest::get(format!("http://{addr}{target}"))
+            .await
+            .expect("request");
+        assert_eq!(response.status().as_u16(), 200, "expected 200 for {target}");
+        response
+            .headers()
+            .get(reqwest::header::CACHE_CONTROL)
+            .map(|value| {
+                value
+                    .to_str()
+                    .expect("an ascii cache-control value")
+                    .to_owned()
+            })
+    }
+
+    #[tokio::test]
+    async fn only_a_content_named_file_in_the_generated_namespace_is_cached_forever() {
+        let dir = qa_tempdir();
+        let root = media_overlay_root(dir.path()).await;
+
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        let namespace = forge_overlay::GENERATED_MEDIA_DIRECTORY;
+        for target in [
+            "/overlays/alerts".to_owned(),
+            "/overlays/alerts/".to_owned(),
+            "/overlays/alerts/index.html".to_owned(),
+            "/overlays/alerts/config.json".to_owned(),
+            format!("/overlays/alerts/{MEDIA_FILE}"),
+            format!("/overlays/alerts/{namespace}/nested/{MEDIA_FILE}"),
+            format!("/overlays/alerts/{namespace}-user/{MEDIA_FILE}"),
+        ] {
+            assert_eq!(
+                cache_control_of(addr, &target).await,
+                None,
+                "{target} was handed an immutable cache directive"
+            );
+        }
+
+        let cached = cache_control_of(addr, &format!("/overlays/alerts/{namespace}/{MEDIA_FILE}"))
+            .await
+            .expect("a content-named generated file carries a cache directive");
+        assert!(cached.contains("public"), "{cached}");
+        assert!(cached.contains("immutable"), "{cached}");
+        let max_age: u64 = cached
+            .split(',')
+            .filter_map(|part| part.trim().strip_prefix("max-age="))
+            .next()
+            .expect("the directive states a max age")
+            .parse()
+            .expect("the max age is a number of seconds");
+        assert!(
+            max_age >= CACHEABLE_FLOOR_SECONDS,
+            "a content-named body was given a {max_age}s lifetime"
+        );
+
+        handle.abort();
+    }
+
     fn overlay_definition(identity: &str, enabled: bool) -> OverlayDefinition {
         OverlayDefinition {
             id: OverlayId::new(identity),

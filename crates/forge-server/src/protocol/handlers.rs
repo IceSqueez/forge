@@ -459,7 +459,22 @@ pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext)
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::MediaFormat;
+
     use super::mime_for_extension;
+
+    #[test]
+    fn every_accepted_media_format_is_served_with_its_own_media_type() {
+        for format in MediaFormat::ACCEPTED {
+            assert_eq!(
+                mime_for_extension(format.as_str()),
+                Some(format.media_type()),
+                "the overlay host does not serve .{} as {}",
+                format.as_str(),
+                format.media_type()
+            );
+        }
+    }
 
     #[test]
     fn mime_for_extension_is_case_insensitive_for_every_served_asset_type() {

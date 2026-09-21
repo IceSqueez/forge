@@ -505,13 +505,15 @@ mod tests {
     }
 
     #[test]
-    fn only_an_admission_refusal_counts_as_final() {
-        for (error, final_refusal) in [
+    fn only_an_admission_refusal_is_final_and_it_carries_the_reason_verbatim() {
+        for (error, expected) in [
             (
                 StorageError::MediaUnsupported {
                     label: "notes.txt".to_owned(),
                 },
-                true,
+                Some(ClipRefusal::Unsupported {
+                    label: "notes.txt".to_owned(),
+                }),
             ),
             (
                 StorageError::MediaTypeMismatch {
@@ -519,7 +521,11 @@ mod tests {
                     claimed: MediaFormat::Mp3,
                     detected: MediaFormat::Png,
                 },
-                true,
+                Some(ClipRefusal::TypeMismatch {
+                    label: "logo.mp3".to_owned(),
+                    claimed: MediaFormat::Mp3,
+                    detected: MediaFormat::Png,
+                }),
             ),
             (
                 StorageError::MediaTooLarge {
@@ -528,27 +534,32 @@ mod tests {
                     limit: 1,
                     kind: MediaKind::Audio,
                 },
-                true,
+                Some(ClipRefusal::TooLarge {
+                    label: "huge.wav".to_owned(),
+                    size: 2,
+                    limit: 1,
+                    kind: MediaKind::Audio,
+                }),
             ),
             (
                 StorageError::NotFound {
                     key: "sha256-abc".to_owned(),
                 },
-                false,
+                None,
             ),
-            (StorageError::MediaReferenced { referrer_count: 1 }, false),
+            (StorageError::MediaReferenced { referrer_count: 1 }, None),
             (
                 StorageError::Connection {
                     reason: "disk is busy".to_owned(),
                 },
-                false,
+                None,
             ),
             (
                 StorageError::Io(std::io::Error::other("device went away")),
-                false,
+                None,
             ),
         ] {
-            assert_eq!(refusal_is_final(&error), final_refusal, "{error}");
+            assert_eq!(final_refusal(&error), expected, "{error}");
         }
     }
 }

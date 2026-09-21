@@ -237,6 +237,53 @@ async fn import_file_refuses_a_source_one_byte_over_its_kind_cap() {
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn import_file_stops_reading_a_source_that_understates_its_length_at_the_kind_cap() {
+    const OVERSHOOT: usize = 64 * 1024;
+    const IMPORT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+    let fx = fixture().await;
+    let source = fx.dir.path().join("stream.gif");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&source)
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success(), "mkfifo refused to create {source:?}");
+
+    let feed = source.clone();
+    let writer = std::thread::spawn(move || {
+        let mut bytes = vec![0u8; IMAGE_CAP_BYTES + OVERSHOOT];
+        bytes[..TINY_GIF.len()].copy_from_slice(TINY_GIF);
+        let mut pipe = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&feed)
+            .expect("open the fifo for writing");
+        let _ = std::io::Write::write_all(&mut pipe, &bytes);
+    });
+
+    let error = tokio::time::timeout(IMPORT_DEADLINE, fx.media().import_file(&source))
+        .await
+        .expect("the import must not stall on a source that never ends")
+        .unwrap_err();
+    let _ = writer.join();
+
+    let StorageError::MediaTooLarge {
+        size, limit, kind, ..
+    } = error
+    else {
+        panic!("an endless image was not refused: {error:?}");
+    };
+    assert_eq!(
+        (size, limit, kind),
+        (
+            (IMAGE_CAP_BYTES + 1) as u64,
+            IMAGE_CAP_BYTES as u64,
+            MediaKind::Image
+        )
+    );
+}
+
 #[tokio::test]
 async fn import_file_reports_a_source_that_does_not_exist() {
     let fx = fixture().await;

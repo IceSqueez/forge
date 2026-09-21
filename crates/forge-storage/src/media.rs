@@ -554,11 +554,63 @@ mod tests {
 
     #[test]
     fn accept_media_rejects_an_extension_that_contradicts_the_content() {
-        for (label, bytes, claimed, detected) in [
-            ("logo.mp3", PNG, MediaFormat::Mp3, MediaFormat::Png),
-            ("pic.png", GIF89A, MediaFormat::Png, MediaFormat::Gif),
-            ("chime.ogg", WAV, MediaFormat::Ogg, MediaFormat::Wav),
-            ("drawing.svg", WEBP, MediaFormat::Svg, MediaFormat::Webp),
+        for (label, reported_as, bytes, claimed, detected) in [
+            (
+                "logo.mp3",
+                "logo.mp3",
+                PNG,
+                MediaFormat::Mp3,
+                MediaFormat::Png,
+            ),
+            (
+                "pic.png",
+                "pic.png",
+                GIF89A,
+                MediaFormat::Png,
+                MediaFormat::Gif,
+            ),
+            (
+                "chime.ogg",
+                "chime.ogg",
+                WAV,
+                MediaFormat::Ogg,
+                MediaFormat::Wav,
+            ),
+            (
+                "drawing.svg",
+                "drawing.svg",
+                WEBP,
+                MediaFormat::Svg,
+                MediaFormat::Webp,
+            ),
+            (
+                "logo.mp3 ",
+                "logo.mp3",
+                PNG,
+                MediaFormat::Mp3,
+                MediaFormat::Png,
+            ),
+            (
+                "logo.mp3/",
+                "logo.mp3",
+                PNG,
+                MediaFormat::Mp3,
+                MediaFormat::Png,
+            ),
+            (
+                "logo.mp\u{7}3",
+                "logo.mp3",
+                PNG,
+                MediaFormat::Mp3,
+                MediaFormat::Png,
+            ),
+            (
+                "\tlogo.mp3\n",
+                "logo.mp3",
+                PNG,
+                MediaFormat::Mp3,
+                MediaFormat::Png,
+            ),
         ] {
             let error = accept_media(label, bytes).unwrap_err();
             let StorageError::MediaTypeMismatch {
@@ -567,11 +619,11 @@ mod tests {
                 detected: got_detected,
             } = error
             else {
-                panic!("{label} was not refused as a type mismatch: {error:?}");
+                panic!("{label:?} was not refused as a type mismatch: {error:?}");
             };
             assert_eq!(
                 (reported.as_str(), got_claimed, got_detected),
-                (label, claimed, detected)
+                (reported_as, claimed, detected)
             );
         }
     }

@@ -2497,6 +2497,48 @@ fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String {
 mod tests {
     use super::*;
 
+    fn sound_clip(id: ClipId) -> SoundClip {
+        SoundClip {
+            id,
+            name: String::new(),
+            file_path: PathBuf::new(),
+            hotkey: None,
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
+            glyph: Icon::Music,
+        }
+    }
+
+    fn unsupported(label: &str) -> ClipRefusal {
+        ClipRefusal::Unsupported {
+            label: label.to_owned(),
+        }
+    }
+
+    fn catalog_entry(locale: &str, key: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("locales")
+            .join(locale)
+            .join("main.ftl");
+        let catalog = std::fs::read_to_string(&path).unwrap();
+        let head = format!("{key} =");
+        let mut lines = catalog.lines().skip_while(|line| !line.starts_with(&head));
+        let mut entry = lines
+            .next()
+            .unwrap_or_else(|| panic!("{locale}/main.ftl is missing {key}"))
+            .to_owned();
+        for line in lines {
+            if line.trim().is_empty() || !line.starts_with(char::is_whitespace) {
+                break;
+            }
+            entry.push('\n');
+            entry.push_str(line);
+        }
+        entry
+    }
+
     fn progress(duration_secs: Option<f64>, looped: bool) -> PlaybackProgress {
         PlaybackProgress {
             started_at: Instant::now(),
@@ -2663,25 +2705,201 @@ mod tests {
             ),
             ("soundboard_pad_source_missing", &[][..]),
             ("soundboard_pad_source_missing_hint", &[][..]),
+            ("soundboard_pad_adopt_blocked", &[][..]),
+            ("soundboard_pad_not_in_library", &[][..]),
+            ("soundboard_footer_unadopted", &["count"][..]),
+            ("soundboard_footer_adopt_action", &["count"][..]),
+            ("soundboard_footer_adopt_busy", &[][..]),
+            ("soundboard_adopt_copied", &["count"][..]),
+            ("soundboard_adopt_refused", &["count"][..]),
+            ("soundboard_adopt_missing", &["count"][..]),
+            ("soundboard_adopt_unfinished", &["count"][..]),
+            ("soundboard_adopt_nothing", &[][..]),
         ] {
             for locale in ["en", "uk"] {
-                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("locales")
-                    .join(locale)
-                    .join("main.ftl");
-                let catalog = std::fs::read_to_string(&path).unwrap();
-                let prefix = format!("{key} = ");
-                let definition = catalog
-                    .lines()
-                    .find(|line| line.starts_with(&prefix))
-                    .unwrap_or_else(|| panic!("{locale}/main.ftl is missing {key}"));
+                let entry = catalog_entry(locale, key);
                 for argument in arguments {
                     assert!(
-                        definition.contains(&format!("${argument}")),
+                        entry.contains(&format!("${argument}")),
                         "{locale}/main.ftl defines {key} without ${argument}"
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn every_counted_adoption_message_offers_the_plural_categories_its_locale_needs() {
+        for key in [
+            "soundboard_footer_unadopted",
+            "soundboard_footer_adopt_action",
+        ] {
+            for (locale, categories) in [
+                ("en", &["[one]", "*[other]"][..]),
+                ("uk", &["[one]", "[few]", "[many]", "*[other]"][..]),
+            ] {
+                let entry = catalog_entry(locale, key);
+                assert!(
+                    entry.contains("$count ->"),
+                    "{locale}/main.ftl states {key} without selecting on $count"
+                );
+                for category in categories {
+                    assert!(
+                        entry.contains(category),
+                        "{locale}/main.ftl defines {key} without the {category} plural form"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_vanished_source_rewrites_the_row_state_after_a_failed_play() {
+        for (error, expected) in [
+            (
+                SoundboardError::SourceMissing("Fanfare".to_owned()),
+                Some(ClipAvailability::Missing),
+            ),
+            (SoundboardError::ClipNotFound("01J0".to_owned()), None),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaUnsupported {
+                    label: "notes.txt".to_owned(),
+                }),
+                None,
+            ),
+            (SoundboardError::Storage("disk is busy".to_owned()), None),
+            (SoundboardError::JoinError("panicked".to_owned()), None),
+            (
+                SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice),
+                None,
+            ),
+        ] {
+            assert_eq!(availability_after_play_error(&error), expected, "{error}");
+        }
+    }
+
+    #[test]
+    fn only_an_unadopted_row_is_badged_and_a_blocked_one_carries_its_reason() {
+        for (availability, expected) in [
+            (None, None),
+            (Some(ClipAvailability::Managed), None),
+            (Some(ClipAvailability::Missing), None),
+            (
+                Some(ClipAvailability::Unadopted { refusal: None }),
+                Some(None),
+            ),
+            (
+                Some(ClipAvailability::Unadopted {
+                    refusal: Some(unsupported("notes.txt")),
+                }),
+                Some(Some(unsupported("notes.txt"))),
+            ),
+        ] {
+            let badge = adoption_badge(availability.as_ref()).map(|badge| match badge {
+                AdoptionBadge::Blocked(reason) => Some(reason),
+                AdoptionBadge::Pending => None,
+            });
+            assert_eq!(badge, expected, "{availability:?}");
+        }
+    }
+
+    #[test]
+    fn unadopted_ids_names_every_row_the_library_has_not_taken_in() {
+        let ids: Vec<ClipId> = (0..5).map(|_| ClipId::new()).collect();
+        let clips: Vec<SoundClip> = ids.iter().copied().map(sound_clip).collect();
+        let availability = HashMap::from([
+            (ids[0], ClipAvailability::Managed),
+            (ids[1], ClipAvailability::Unadopted { refusal: None }),
+            (ids[2], ClipAvailability::Missing),
+            (
+                ids[3],
+                ClipAvailability::Unadopted {
+                    refusal: Some(unsupported("notes.txt")),
+                },
+            ),
+        ]);
+
+        assert_eq!(unadopted_ids(&clips, &availability), vec![ids[1], ids[3]]);
+    }
+
+    #[test]
+    fn a_run_of_adoptions_is_counted_by_what_each_verdict_means_for_the_user() {
+        let results = [
+            Ok(AdoptionVerdict::Adopted),
+            Ok(AdoptionVerdict::AlreadyManaged),
+            Ok(AdoptionVerdict::Refused(unsupported("notes.txt"))),
+            Ok(AdoptionVerdict::SourceMissing),
+            Ok(AdoptionVerdict::InFlight),
+            Err(SoundboardError::Storage("disk is busy".to_owned())),
+        ];
+
+        assert_eq!(
+            tally_adoption(results.iter()),
+            AdoptionTally {
+                copied: 2,
+                refused: 1,
+                missing: 1,
+                unfinished: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn the_adoption_summary_names_only_the_outcomes_that_happened() {
+        for (tally, expected) in [
+            (
+                AdoptionTally {
+                    copied: 2,
+                    refused: 1,
+                    missing: 1,
+                    unfinished: 1,
+                },
+                "soundboard_adopt_copied · soundboard_adopt_refused · soundboard_adopt_missing · soundboard_adopt_unfinished",
+            ),
+            (
+                AdoptionTally {
+                    copied: 3,
+                    ..AdoptionTally::default()
+                },
+                "soundboard_adopt_copied",
+            ),
+            (
+                AdoptionTally {
+                    refused: 1,
+                    unfinished: 2,
+                    ..AdoptionTally::default()
+                },
+                "soundboard_adopt_refused · soundboard_adopt_unfinished",
+            ),
+            (AdoptionTally::default(), "soundboard_adopt_nothing"),
+        ] {
+            assert_eq!(adoption_summary(&tally), expected, "{tally:?}");
+        }
+    }
+
+    #[test]
+    fn a_blocked_badge_explains_itself_with_the_key_that_matches_the_refusal() {
+        for (refusal, expected_key) in [
+            (unsupported("notes.txt"), "soundboard_import_unsupported"),
+            (
+                ClipRefusal::TypeMismatch {
+                    label: "logo.mp3".to_owned(),
+                    claimed: MediaFormat::Mp3,
+                    detected: MediaFormat::Png,
+                },
+                "soundboard_import_type_mismatch",
+            ),
+            (
+                ClipRefusal::TooLarge {
+                    label: "huge.wav".to_owned(),
+                    size: 60 * 1024 * 1024,
+                    limit: 50 * 1024 * 1024,
+                    kind: MediaKind::Audio,
+                },
+                "soundboard_import_too_large",
+            ),
+        ] {
+            assert_eq!(clip_refusal_message(&refusal), expected_key, "{refusal:?}");
         }
     }
 }

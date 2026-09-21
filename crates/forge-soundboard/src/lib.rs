@@ -19,8 +19,9 @@ pub use cpal_factory::CpalSinkFactory;
 pub use duration::probe_clip_duration_secs;
 pub use error::SoundboardError;
 pub use library::{
-    ClipAvailability, ClipLibrary, ClipSource, SourcePlan, choose_source, clip_source_referrer,
-    plan_source, refusal_is_final,
+    AdoptionStep, AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, ClipSource,
+    SourcePlan, choose_source, clip_source_referrer, final_refusal, plan_adoption, plan_source,
+    refusal_is_final,
 };
 pub use player::SoundboardPlayer;
 pub use settings::{SoundboardSettings, SoundboardSettingsHandle, load_soundboard_settings};

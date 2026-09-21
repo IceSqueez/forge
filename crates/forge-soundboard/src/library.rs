@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use forge_storage::{
-    MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, SoundboardClipsRepo, StorageError,
-    StoredClip,
+    MediaBlobId, MediaFormat, MediaKind, MediaReferrer, MediaReferrerKind, MediaRepo,
+    SoundboardClipsRepo, StorageError, StoredClip,
 };
 use forge_types::ClipId;
 
@@ -35,25 +35,66 @@ impl ClipSource {
         }
     }
 
-    pub const fn availability(&self) -> ClipAvailability {
+    pub fn availability(&self, refusal: Option<ClipRefusal>) -> ClipAvailability {
         match self {
             Self::Managed(_) => ClipAvailability::Managed,
-            Self::Legacy(_) => ClipAvailability::Unadopted,
+            Self::Legacy(_) => ClipAvailability::Unadopted { refusal },
             Self::Missing => ClipAvailability::Missing,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClipAvailability {
     Managed,
-    Unadopted,
+    Unadopted { refusal: Option<ClipRefusal> },
     Missing,
 }
 
 impl ClipAvailability {
-    pub const fn is_playable(self) -> bool {
+    pub const fn is_playable(&self) -> bool {
         !matches!(self, Self::Missing)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClipRefusal {
+    Unsupported {
+        label: String,
+    },
+    TypeMismatch {
+        label: String,
+        claimed: MediaFormat,
+        detected: MediaFormat,
+    },
+    TooLarge {
+        label: String,
+        size: u64,
+        limit: u64,
+        kind: MediaKind,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdoptionVerdict {
+    Adopted,
+    AlreadyManaged,
+    InFlight,
+    SourceMissing,
+    Refused(ClipRefusal),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdoptionStep {
+    Import(PathBuf),
+    Settled(AdoptionVerdict),
+}
+
+pub fn plan_adoption(source: ClipSource) -> AdoptionStep {
+    match source {
+        ClipSource::Managed(_) => AdoptionStep::Settled(AdoptionVerdict::AlreadyManaged),
+        ClipSource::Legacy(path) => AdoptionStep::Import(path),
+        ClipSource::Missing => AdoptionStep::Settled(AdoptionVerdict::SourceMissing),
     }
 }
 
@@ -85,13 +126,37 @@ pub fn plan_source(previous: Option<&Path>, next: &Path, resolvable: bool) -> So
 }
 
 /// Refusals the same bytes would produce again; every other failure may be transient.
+pub fn final_refusal(error: &StorageError) -> Option<ClipRefusal> {
+    match error {
+        StorageError::MediaUnsupported { label } => Some(ClipRefusal::Unsupported {
+            label: label.clone(),
+        }),
+        StorageError::MediaTypeMismatch {
+            label,
+            claimed,
+            detected,
+        } => Some(ClipRefusal::TypeMismatch {
+            label: label.clone(),
+            claimed: *claimed,
+            detected: *detected,
+        }),
+        StorageError::MediaTooLarge {
+            label,
+            size,
+            limit,
+            kind,
+        } => Some(ClipRefusal::TooLarge {
+            label: label.clone(),
+            size: *size,
+            limit: *limit,
+            kind: *kind,
+        }),
+        _ => None,
+    }
+}
+
 pub fn refusal_is_final(error: &StorageError) -> bool {
-    matches!(
-        error,
-        StorageError::MediaUnsupported { .. }
-            | StorageError::MediaTypeMismatch { .. }
-            | StorageError::MediaTooLarge { .. }
-    )
+    final_refusal(error).is_some()
 }
 
 fn storage_failed(error: StorageError) -> SoundboardError {
@@ -103,6 +168,18 @@ fn import_failed(error: StorageError) -> SoundboardError {
         SoundboardError::ImportRefused(error)
     } else {
         SoundboardError::Storage(error.to_string())
+    }
+}
+
+fn report_adoption(clip_id: ClipId, outcome: &Result<AdoptionVerdict, SoundboardError>) {
+    match outcome {
+        Ok(AdoptionVerdict::Adopted) => {}
+        Ok(verdict) => {
+            tracing::warn!(clip_id = %clip_id, verdict = ?verdict, "clip source stays outside the media library");
+        }
+        Err(error) => {
+            tracing::warn!(clip_id = %clip_id, error = %error, "clip source stays outside the media library");
+        }
     }
 }
 
@@ -129,7 +206,7 @@ pub struct ClipLibrary {
     clips: Arc<dyn SoundboardClipsRepo>,
     media: Arc<dyn MediaRepo>,
     adopting: Mutex<HashSet<ClipId>>,
-    refused: Mutex<HashSet<ClipId>>,
+    refused: Mutex<HashMap<ClipId, ClipRefusal>>,
 }
 
 impl ClipLibrary {
@@ -138,7 +215,7 @@ impl ClipLibrary {
             clips,
             media,
             adopting: Mutex::new(HashSet::new()),
-            refused: Mutex::new(HashSet::new()),
+            refused: Mutex::new(HashMap::new()),
         }
     }
 
@@ -171,21 +248,18 @@ impl ClipLibrary {
                     .await
                     .map_err(import_failed)?,
             ),
-            SourcePlan::ImportAdopted => match self.media.import_file(&clip.file_path).await {
-                Ok(blob) => Some(blob),
-                Err(error) => {
-                    self.note_refusal(clip.id, &error);
-                    tracing::warn!(clip_id = %clip.id, error = %error, "clip source stays outside the media library");
-                    None
-                }
-            },
+            SourcePlan::ImportAdopted => {
+                let outcome = self.adopt_source(clip.id, &clip.file_path).await;
+                report_adoption(clip.id, &outcome);
+                None
+            }
             SourcePlan::Keep => None,
         };
 
         self.clips.save(clip).await.map_err(storage_failed)?;
 
         if let Some(blob) = imported {
-            self.retain(clip.id, &blob.id).await;
+            self.retain(clip.id, &blob.id).await?;
             self.clear_refusal(clip.id);
         }
         Ok(())
@@ -208,7 +282,9 @@ impl ClipLibrary {
     }
 
     pub async fn availability(&self, clip: &StoredClip) -> ClipAvailability {
-        self.source_of(clip).await.availability()
+        self.source_of(clip)
+            .await
+            .availability(self.recorded_refusal(clip.id))
     }
 
     pub async fn availability_of(&self, clips: &[StoredClip]) -> Vec<(ClipId, ClipAvailability)> {
@@ -223,29 +299,75 @@ impl ClipLibrary {
             .zip(managed)
             .zip(legacy)
             .map(|((clip, managed), legacy)| {
-                (clip.id, choose_source(managed, legacy).availability())
+                let availability =
+                    choose_source(managed, legacy).availability(self.recorded_refusal(clip.id));
+                (clip.id, availability)
             })
             .collect()
     }
 
     pub fn adopt_in_background(self: &Arc<Self>, clip_id: ClipId, source: PathBuf) {
-        if !self.claim_adoption(clip_id) {
+        if self.recorded_refusal(clip_id).is_some() || !self.claim_adoption(clip_id) {
             return;
         }
         let library = Arc::clone(self);
         tokio::spawn(async move {
-            match library.media.import_file(&source).await {
-                Ok(blob) => {
-                    library.retain(clip_id, &blob.id).await;
-                    library.clear_refusal(clip_id);
-                }
-                Err(error) => {
-                    library.note_refusal(clip_id, &error);
-                    tracing::warn!(clip_id = %clip_id, error = %error, "clip source stays outside the media library");
-                }
-            }
+            let outcome = library.import_source(clip_id, &source).await;
+            report_adoption(clip_id, &outcome);
             library.release_claim(clip_id);
         });
+    }
+
+    pub async fn adopt_now(&self, clip: &StoredClip) -> Result<AdoptionVerdict, SoundboardError> {
+        match plan_adoption(self.source_of(clip).await) {
+            AdoptionStep::Settled(verdict) => Ok(verdict),
+            AdoptionStep::Import(path) => self.adopt_source(clip.id, &path).await,
+        }
+    }
+
+    pub async fn adopt_all_now(
+        &self,
+        clips: &[StoredClip],
+    ) -> Vec<(ClipId, Result<AdoptionVerdict, SoundboardError>)> {
+        let mut verdicts = Vec::with_capacity(clips.len());
+        for clip in clips {
+            verdicts.push((clip.id, self.adopt_now(clip).await));
+        }
+        verdicts
+    }
+
+    async fn adopt_source(
+        &self,
+        clip_id: ClipId,
+        source: &Path,
+    ) -> Result<AdoptionVerdict, SoundboardError> {
+        if !self.claim_adoption(clip_id) {
+            return Ok(AdoptionVerdict::InFlight);
+        }
+        let outcome = self.import_source(clip_id, source).await;
+        self.release_claim(clip_id);
+        outcome
+    }
+
+    async fn import_source(
+        &self,
+        clip_id: ClipId,
+        source: &Path,
+    ) -> Result<AdoptionVerdict, SoundboardError> {
+        match self.media.import_file(source).await {
+            Ok(blob) => {
+                self.retain(clip_id, &blob.id).await?;
+                self.clear_refusal(clip_id);
+                Ok(AdoptionVerdict::Adopted)
+            }
+            Err(error) => match final_refusal(&error) {
+                Some(refusal) => {
+                    self.record_refusal(clip_id, refusal.clone());
+                    Ok(AdoptionVerdict::Refused(refusal))
+                }
+                None => Err(storage_failed(error)),
+            },
+        }
     }
 
     async fn managed_path(&self, clip_id: ClipId) -> Option<PathBuf> {
@@ -268,22 +390,15 @@ impl ClipLibrary {
         }
     }
 
-    async fn retain(&self, clip_id: ClipId, blob: &MediaBlobId) {
+    async fn retain(&self, clip_id: ClipId, blob: &MediaBlobId) -> Result<(), SoundboardError> {
         let referrer = clip_source_referrer(clip_id);
-        if let Err(error) = self.media.retain(&referrer, blob).await {
-            tracing::warn!(clip_id = %clip_id, error = %error, "clip media reference was not recorded");
-        }
+        self.media
+            .retain(&referrer, blob)
+            .await
+            .map_err(storage_failed)
     }
 
     fn claim_adoption(&self, clip_id: ClipId) -> bool {
-        if self
-            .refused
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .contains(&clip_id)
-        {
-            return false;
-        }
         self.adopting
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -297,13 +412,19 @@ impl ClipLibrary {
             .remove(&clip_id);
     }
 
-    fn note_refusal(&self, clip_id: ClipId, error: &StorageError) {
-        if refusal_is_final(error) {
-            self.refused
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .insert(clip_id);
-        }
+    fn record_refusal(&self, clip_id: ClipId, refusal: ClipRefusal) {
+        self.refused
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(clip_id, refusal);
+    }
+
+    fn recorded_refusal(&self, clip_id: ClipId) -> Option<ClipRefusal> {
+        self.refused
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&clip_id)
+            .cloned()
     }
 
     fn clear_refusal(&self, clip_id: ClipId) {
@@ -356,7 +477,11 @@ mod tests {
             (ClipSource::Legacy(path(LEGACY)), true),
             (ClipSource::Missing, false),
         ] {
-            assert_eq!(source.availability().is_playable(), playable, "{source:?}");
+            assert_eq!(
+                source.availability(None).is_playable(),
+                playable,
+                "{source:?}"
+            );
         }
     }
 

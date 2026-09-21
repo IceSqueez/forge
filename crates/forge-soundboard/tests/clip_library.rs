@@ -471,7 +471,7 @@ async fn availability_of_reports_each_clip_in_a_mixed_list() {
         states,
         HashMap::from([
             (managed.id, ClipAvailability::Managed),
-            (legacy.id, ClipAvailability::Unadopted),
+            (legacy.id, ClipAvailability::Unadopted { refusal: None }),
             (gone.id, ClipAvailability::Missing),
         ])
     );

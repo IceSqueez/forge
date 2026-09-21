@@ -9,7 +9,7 @@ use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, ChatHistoryRepo, CredentialId, CredentialsRepo,
-    DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo,
+    DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, MediaRepo,
     OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, QueueRepo,
     ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
@@ -232,6 +232,10 @@ impl DataProvider for TestBackend {
     }
 
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
+        unreachable!("the settings pane reaches no sub-repo")
+    }
+
+    fn media_repo(&self) -> Arc<dyn MediaRepo> {
         unreachable!("the settings pane reaches no sub-repo")
     }
 

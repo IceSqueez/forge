@@ -11,6 +11,7 @@ use forge_storage::credentials::MockCredentialsRepo;
 use forge_storage::event_log::MockEventLogRepo;
 use forge_storage::globals::MockGlobalsRepo;
 use forge_storage::history::MockHistoryRepo;
+use forge_storage::media::MockMediaRepo;
 use forge_storage::overlay::{MockOverlayRepo, OverlayRepo};
 use forge_storage::queue::MockQueueRepo;
 use forge_storage::script::MockScriptRepo;
@@ -23,9 +24,10 @@ use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider, EventLogRepo,
-    ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, QueueRepo, ScriptRecord, ScriptRepo,
-    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, MediaRepo, QueueRepo, ScriptRecord,
+    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -42,6 +44,7 @@ pub struct TestDataProvider {
     pub tts_filters_repo: Arc<MockTtsFiltersRepo>,
     pub chat_history_repo: Arc<MockChatHistoryRepo>,
     pub overlay_repo: Arc<MockOverlayRepo>,
+    pub media_repo: Arc<MockMediaRepo>,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
     pub settings_repo: Arc<MockSettingsRepo>,
@@ -62,6 +65,7 @@ impl TestDataProvider {
             event_log_repo: Arc::new(MockEventLogRepo::new()),
             soundboard_clips_repo: Arc::new(MockSoundboardClipsRepo::new()),
             overlay_repo: Arc::new(overlay_repo),
+            media_repo: Arc::new(MockMediaRepo::new()),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
             viewer_repo: Arc::new(MockViewerRepo::new()),
             tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
@@ -360,6 +364,10 @@ impl DataProvider for TestDataProvider {
 
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
         Arc::clone(&self.overlay_repo) as Arc<dyn OverlayRepo>
+    }
+
+    fn media_repo(&self) -> Arc<dyn MediaRepo> {
+        Arc::clone(&self.media_repo) as Arc<dyn MediaRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

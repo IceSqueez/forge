@@ -1,3 +1,5 @@
+use crate::media::{MediaFormat, MediaKind};
+
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
     #[error("connection failed: {reason}")]
@@ -35,6 +37,27 @@ pub enum StorageError {
         used_in_count: u32,
         sample_action_names: Vec<String>,
     },
+
+    #[error("'{label}' is not an accepted audio or image file")]
+    MediaUnsupported { label: String },
+
+    #[error("'{label}' is named {claimed} but its content is {detected}")]
+    MediaTypeMismatch {
+        label: String,
+        claimed: MediaFormat,
+        detected: MediaFormat,
+    },
+
+    #[error("'{label}' is {size} bytes, over the {limit} byte limit for {kind} files")]
+    MediaTooLarge {
+        label: String,
+        size: u64,
+        limit: u64,
+        kind: MediaKind,
+    },
+
+    #[error("cannot delete media: still referenced by {referrer_count} item(s)")]
+    MediaReferenced { referrer_count: u32 },
 
     #[error("parse error: {0}")]
     Parse(String),

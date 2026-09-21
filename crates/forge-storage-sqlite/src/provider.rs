@@ -6,9 +6,9 @@ use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
     EXPECTED_SCHEMA_VERSION, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalTransit,
-    GlobalsRepo, HistoryRepo, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo,
+    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -18,9 +18,10 @@ use crate::error::SqliteStorageError;
 use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
-    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteOverlayRepo, SqliteQueueRepo, SqliteScriptRepo,
-    SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
-    SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect,
+    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
+    SqliteScriptRepo, SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo,
+    SqliteTtsFiltersRepo, SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo,
+    apply_migrations, connect,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -43,6 +44,7 @@ pub struct SqliteBackend {
     tts_filters: Arc<SqliteTtsFiltersRepo>,
     chat_history: Arc<SqliteChatHistoryRepo>,
     overlay: Arc<SqliteOverlayRepo>,
+    media: Arc<SqliteMediaRepo>,
     shutdown: Arc<Notify>,
 }
 
@@ -54,6 +56,7 @@ impl SqliteBackend {
             pool,
             credentials,
             PRUNE_INTERVAL_PRODUCTION,
+            forge_platform_core::paths::media_dir(),
         ))
     }
 
@@ -65,6 +68,23 @@ impl SqliteBackend {
             pool,
             credentials,
             PRUNE_INTERVAL_PRODUCTION,
+            forge_platform_core::paths::media_dir(),
+        ))
+    }
+
+    #[doc(hidden)]
+    pub async fn open_with_key_and_media_root(
+        url: &str,
+        key: [u8; 32],
+        media_root: std::path::PathBuf,
+    ) -> Result<Self, SqliteStorageError> {
+        let pool = Self::migrate_and_gate(url).await?;
+        let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
+        Ok(Self::from_pool_and_credentials(
+            pool,
+            credentials,
+            PRUNE_INTERVAL_PRODUCTION,
+            media_root,
         ))
     }
 
@@ -80,6 +100,7 @@ impl SqliteBackend {
             pool,
             credentials,
             prune_interval,
+            forge_platform_core::paths::media_dir(),
         ))
     }
 
@@ -110,6 +131,7 @@ impl SqliteBackend {
         pool: sqlx::SqlitePool,
         credentials: SqliteCredentialsRepo,
         prune_interval: Duration,
+        media_root: std::path::PathBuf,
     ) -> Self {
         let shutdown = Arc::new(Notify::new());
 
@@ -146,6 +168,7 @@ impl SqliteBackend {
             tts_filters: Arc::new(SqliteTtsFiltersRepo::new(pool.clone())),
             chat_history: Arc::new(SqliteChatHistoryRepo::new(pool.clone())),
             overlay: Arc::new(SqliteOverlayRepo::new(pool.clone())),
+            media: Arc::new(SqliteMediaRepo::new(pool.clone(), media_root)),
             credentials,
             shutdown,
             pool,
@@ -445,6 +468,10 @@ impl DataProvider for SqliteBackend {
 
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
         Arc::clone(&self.overlay) as Arc<dyn OverlayRepo>
+    }
+
+    fn media_repo(&self) -> Arc<dyn MediaRepo> {
+        Arc::clone(&self.media) as Arc<dyn MediaRepo>
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

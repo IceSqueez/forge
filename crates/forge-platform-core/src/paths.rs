@@ -8,6 +8,8 @@ const MACOS_BUNDLE_ID: &str = "com.icesqueez.forge";
 #[cfg(not(target_os = "macos"))]
 const APP_DIR_NAME: &str = "forge";
 
+const MEDIA_DIR_NAME: &str = "media";
+
 #[allow(clippy::expect_used)]
 fn base_dirs() -> BaseDirs {
     BaseDirs::new().expect("home directory must be discoverable on supported platforms")
@@ -33,6 +35,10 @@ pub fn data_dir() -> PathBuf {
 /// Where overlay pages are materialized when the server setting is left blank.
 pub fn overlays_dir() -> PathBuf {
     data_dir().join("overlays")
+}
+
+pub fn media_dir() -> PathBuf {
+    data_dir().join(MEDIA_DIR_NAME)
 }
 
 #[cfg(test)]

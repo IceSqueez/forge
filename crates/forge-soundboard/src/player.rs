@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -6,10 +7,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink, PcmBuffer, PlaybackHandle};
 use forge_runtime::{SoundPlayer, SoundPlayerError};
-use forge_storage::SoundboardClipsRepo;
 use forge_types::{ClipId, OutputDevice};
 
 use crate::error::SoundboardError;
+use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 use crate::sink_factory::AudioSinkFactory;
 
@@ -53,7 +54,7 @@ type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, StopToken, String)>>>>
 pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
     event_sink: Arc<dyn AudioEventSink>,
-    clips_repo: Arc<dyn SoundboardClipsRepo>,
+    library: Arc<ClipLibrary>,
     /// The `u64` tags one concrete play so concurrent plays of the same clip differ.
     active: ActiveRegistry,
     next_play_id: AtomicU64,
@@ -65,19 +66,23 @@ impl SoundboardPlayer {
     pub fn with_settings(
         sink_factory: Arc<dyn AudioSinkFactory>,
         event_sink: Arc<dyn AudioEventSink>,
-        clips_repo: Arc<dyn SoundboardClipsRepo>,
+        library: Arc<ClipLibrary>,
         settings: SoundboardSettingsHandle,
     ) -> Self {
         let master_volume = settings.load().master_volume.clamp(0.0, MAX_MASTER_GAIN);
         Self {
             sink_factory,
             event_sink,
-            clips_repo,
+            library,
             active: Arc::new(Mutex::new(HashMap::new())),
             next_play_id: AtomicU64::new(0),
             master_gain_bits: AtomicU32::new(master_volume.to_bits()),
             settings,
         }
+    }
+
+    pub fn library(&self) -> &Arc<ClipLibrary> {
+        &self.library
     }
 
     pub fn settings_handle(&self) -> SoundboardSettingsHandle {
@@ -135,27 +140,31 @@ impl SoundboardPlayer {
         clip_id: ClipId,
     ) -> Result<Option<f32>, SoundboardError> {
         let mut clip = self
-            .clips_repo
+            .library
             .get(clip_id)
-            .await
-            .map_err(|e| SoundboardError::Storage(e.to_string()))?
+            .await?
             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
 
         if clip.duration_secs.is_some() {
             return Ok(clip.duration_secs);
         }
 
-        let path = clip.file_path.clone();
+        let Some(path) = self
+            .library
+            .source_of(&clip)
+            .await
+            .path()
+            .map(Path::to_path_buf)
+        else {
+            return Err(SoundboardError::SourceMissing(clip.name.clone()));
+        };
         let probed =
             tokio::task::spawn_blocking(move || crate::duration::probe_clip_duration_secs(&path))
                 .await
                 .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
 
         clip.duration_secs = Some(probed);
-        self.clips_repo
-            .save(&clip)
-            .await
-            .map_err(|e| SoundboardError::Storage(e.to_string()))?;
+        self.library.save_clip(&clip).await?;
 
         Ok(Some(probed))
     }
@@ -172,11 +181,27 @@ impl SoundboardPlayer {
         }
 
         let clip = self
-            .clips_repo
+            .library
             .get(clip_id)
-            .await
-            .map_err(|e| SoundboardError::Storage(e.to_string()))?
+            .await?
             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
+
+        let path = match self.library.source_of(&clip).await {
+            ClipSource::Managed(path) => path,
+            ClipSource::Legacy(path) => {
+                self.library.adopt_in_background(clip.id, path.clone());
+                path
+            }
+            ClipSource::Missing => {
+                let failure = SoundboardError::SourceMissing(clip.name.clone());
+                self.event_sink.emit(AudioEvent::PlaybackFailed {
+                    clip_id: Some(clip_id),
+                    clip_label: Some(clip.name.clone()),
+                    error: failure.to_string(),
+                });
+                return Err(failure);
+            }
+        };
 
         let device = resolve_device(&clip.output_device, override_device, &settings);
         let device_label = device_label(&device);
@@ -193,7 +218,6 @@ impl SoundboardPlayer {
             }
         };
 
-        let path = clip.file_path.clone();
         let buffer = match tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
             .await
             .map_err(|e| SoundboardError::JoinError(e.to_string()))

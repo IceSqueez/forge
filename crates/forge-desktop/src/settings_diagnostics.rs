@@ -246,7 +246,7 @@ impl SettingsDiagnosticsView {
             async move {
                 let filter = async_bridge::DialogFilter {
                     name: "Text".to_owned(),
-                    extensions: &["txt"],
+                    extensions: vec!["txt"],
                 };
                 let path = async_bridge::save_file(Some(filter), Some(BUNDLE_FILE_NAME.to_owned()))
                     .await?;

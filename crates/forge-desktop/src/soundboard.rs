@@ -9,16 +9,18 @@ use forge_components::{
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput,
     body_family, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, ghost_button_with_icon,
     icon, modal, mono_family, overlay, pad_tile, page_frame, primary_button, radius,
-    secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
+    secondary_button, slider, spacing, status_dot, toggle, tooltip_builder, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
 use forge_soundboard::builtin_library::{
     BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
 };
-use forge_soundboard::{SoundboardPlayer, SoundboardSettings};
+use forge_soundboard::{
+    ClipAvailability, ClipLibrary, SoundboardError, SoundboardPlayer, SoundboardSettings,
+};
 use forge_storage::{
-    SettingsRepo, SoundboardClipsRepo, StoredClip, set_soundboard_also_headphones,
+    MediaFormat, MediaKind, SettingsRepo, StorageError, StoredClip, set_soundboard_also_headphones,
     set_soundboard_enabled, set_soundboard_master_volume, set_soundboard_output_device,
 };
 use forge_types::{ClipId, OutputDevice};
@@ -174,7 +176,7 @@ impl AddModal {
     fn browse_file(&mut self, cx: &mut Context<Self>) {
         let filter = async_bridge::DialogFilter {
             name: tr!("soundboard_file_filter_audio"),
-            extensions: &["mp3", "wav", "ogg", "flac", "aac", "m4a"],
+            extensions: audio_dialog_extensions(),
         };
         async_bridge::spawn_dialog(
             &self.rt_handle,
@@ -434,6 +436,7 @@ pub struct SoundboardView {
     devices: Vec<DeviceInfo>,
     importable: Vec<BuiltinSoundEntry>,
     total_size: Option<u64>,
+    availability: HashMap<ClipId, ClipAvailability>,
     playing: HashMap<ClipId, PlaybackProgress>,
     ticking: bool,
     settings: SoundboardSettings,
@@ -445,18 +448,18 @@ pub struct SoundboardView {
     pending_delete: Confirm<ClipId>,
     _search_sub: Subscription,
     player: Arc<SoundboardPlayer>,
-    clips_repo: Arc<dyn SoundboardClipsRepo>,
+    library: Arc<ClipLibrary>,
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
     master_volume_debounce: async_bridge::Debounced,
     reload_gen: async_bridge::Generation,
+    availability_gen: async_bridge::Generation,
     _event_bridge: Task<()>,
 }
 
 impl SoundboardView {
     pub fn new(
         player: Arc<SoundboardPlayer>,
-        clips_repo: Arc<dyn SoundboardClipsRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,
         bus: Arc<EventBus>,
@@ -481,6 +484,7 @@ impl SoundboardView {
             .await;
         });
 
+        let library = Arc::clone(player.library());
         let view = Self {
             clips: Vec::new(),
             loading: true,
@@ -488,6 +492,7 @@ impl SoundboardView {
             devices: Vec::new(),
             importable: Vec::new(),
             total_size: None,
+            availability: HashMap::new(),
             playing: HashMap::new(),
             ticking: false,
             settings,
@@ -499,13 +504,14 @@ impl SoundboardView {
             pending_delete: Confirm::default(),
             _search_sub: search_sub,
             player,
-            clips_repo,
+            library,
             settings_repo,
             rt_handle,
             master_volume_debounce: async_bridge::Debounced::new(
                 async_bridge::SLIDER_PERSIST_DEBOUNCE,
             ),
             reload_gen: async_bridge::Generation::default(),
+            availability_gen: async_bridge::Generation::default(),
             _event_bridge: event_bridge,
         };
         view.reload(cx);
@@ -596,17 +602,17 @@ impl SoundboardView {
 
     fn reload(&self, cx: &mut Context<Self>) {
         let ticket = self.reload_gen.next();
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.list().await.map_err(|e| e.to_string()) },
+            async move { library.list().await },
             move |this, result, cx| {
                 if !this.reload_gen.is_current(ticket) {
                     return;
                 }
                 match result {
                     Ok(clips) => this.apply_clips(clips, cx),
-                    Err(message) => this.on_load_error(message, cx),
+                    Err(error) => this.on_load_error(failure_message(&error), cx),
                 }
             },
             cx,
@@ -614,6 +620,7 @@ impl SoundboardView {
     }
 
     fn apply_clips(&mut self, clips: Vec<StoredClip>, cx: &mut Context<Self>) {
+        self.refresh_availability(clips.clone(), cx);
         self.clips = clips.into_iter().map(stored_to_clip).collect();
         self.loading = false;
         self.error = None;
@@ -624,7 +631,7 @@ impl SoundboardView {
         {
             self.category_filter = None;
         }
-        self.recompute_size(cx);
+        self.refresh_library_size(cx);
         self.refresh_builtins(cx);
         cx.notify();
     }
@@ -635,22 +642,44 @@ impl SoundboardView {
         cx.notify();
     }
 
-    fn recompute_size(&self, cx: &mut Context<Self>) {
-        let paths: Vec<PathBuf> = self.clips.iter().map(|c| c.file_path.clone()).collect();
-        async_bridge::run_blocking(
+    fn refresh_library_size(&self, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
+        async_bridge::run_async(
             &self.rt_handle,
-            move || {
-                paths
-                    .iter()
-                    .filter_map(|p| std::fs::metadata(p).ok().map(|m| m.len()))
-                    .sum::<u64>()
-            },
-            |this, total, cx| {
-                this.total_size = Some(total);
+            async move { library.total_bytes().await },
+            |this, result, cx| {
+                this.total_size = match result {
+                    Ok(total) => Some(total),
+                    Err(error) => {
+                        tracing::warn!(error = %error, "media library size unavailable");
+                        None
+                    }
+                };
                 cx.notify();
             },
             cx,
         );
+    }
+
+    fn refresh_availability(&self, clips: Vec<StoredClip>, cx: &mut Context<Self>) {
+        let ticket = self.availability_gen.next();
+        let library = Arc::clone(&self.library);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { library.availability_of(&clips).await },
+            move |this, states, cx| {
+                if !this.availability_gen.is_current(ticket) {
+                    return;
+                }
+                this.availability = states.into_iter().collect();
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn source_is_missing(&self, id: ClipId) -> bool {
+        matches!(self.availability.get(&id), Some(ClipAvailability::Missing))
     }
 
     fn refresh_builtins(&self, cx: &mut Context<Self>) {
@@ -724,12 +753,12 @@ impl SoundboardView {
         cx.spawn(async move |this, cx| {
             let (tx, rx) = tokio::sync::oneshot::channel();
             rt.spawn(async move {
-                let _ = tx.send(player_play.play(id, None).await.map_err(|e| e.to_string()));
+                let _ = tx.send(player_play.play(id, None).await);
             });
             match rx.await {
                 Ok(Ok(())) => {}
-                Ok(Err(message)) => {
-                    let _ = this.update(cx, |this, cx| this.on_play_error(id, message, cx));
+                Ok(Err(error)) => {
+                    let _ = this.update(cx, |this, cx| this.on_play_error(id, &error, cx));
                     return;
                 }
                 Err(_) => return,
@@ -743,8 +772,12 @@ impl SoundboardView {
         .detach();
     }
 
-    fn on_play_error(&mut self, id: ClipId, message: String, cx: &mut Context<Self>) {
+    fn on_play_error(&mut self, id: ClipId, error: &SoundboardError, cx: &mut Context<Self>) {
         self.playing.remove(&id);
+        if matches!(error, SoundboardError::SourceMissing(_)) {
+            self.availability.insert(id, ClipAvailability::Missing);
+        }
+        let message = failure_message(error);
         self.error = Some(tr!("soundboard_playback_error_prefix", error = message.as_str()).into());
         cx.notify();
     }
@@ -833,14 +866,14 @@ impl SoundboardView {
         let name = entry.display_name.to_owned();
         let category = entry.category.to_owned();
         let loop_playback = entry.loop_playback;
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         let player = Arc::clone(&self.player);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let data_dir = forge_platform_core::paths::data_dir();
                 let Some(path) = resolve_builtin_path(&data_dir, &builtin_id) else {
-                    return Err("builtin audio file missing".to_owned());
+                    return Err(SoundboardError::SourceMissing(name));
                 };
                 let clip_id = ClipId::new();
                 let clip = StoredClip {
@@ -856,15 +889,13 @@ impl SoundboardView {
                     duration_secs: None,
                     builtin_id: Some(builtin_id),
                 };
-                let result = repo.save(&clip).await.map_err(|e| e.to_string());
-                if result.is_ok() {
-                    let _ = player.ensure_clip_duration(clip_id).await;
-                }
-                result
+                library.save_clip(&clip).await?;
+                let _ = player.ensure_clip_duration(clip_id).await;
+                Ok(())
             },
             |this, result, cx| match result {
                 Ok(()) => this.reload(cx),
-                Err(message) => this.on_load_error(message, cx),
+                Err(error) => this.on_load_error(failure_message(&error), cx),
             },
             cx,
         );
@@ -958,13 +989,13 @@ impl SoundboardView {
         self.player.stop(id);
         self.playing.remove(&id);
         cx.notify();
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.delete(id).await.map_err(|e| e.to_string()) },
+            async move { library.delete_clip(id).await },
             |this, result, cx| match result {
                 Ok(_) => this.reload(cx),
-                Err(message) => this.on_load_error(message, cx),
+                Err(error) => this.on_load_error(failure_message(&error), cx),
             },
             cx,
         );
@@ -990,17 +1021,16 @@ impl SoundboardView {
                 cx.notify();
             });
         }
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         let player = Arc::clone(&self.player);
-        let missing_msg = tr!("soundboard_modal_validation_error").to_string();
         let new_hotkey = self.next_free_hotkey();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let (clip, target_id) = match edit_id {
                     Some(id) => {
-                        let Some(mut clip) = repo.get(id).await.map_err(|e| e.to_string())? else {
-                            return Err(missing_msg);
+                        let Some(mut clip) = library.get(id).await? else {
+                            return Err(SoundboardError::ClipNotFound(id.to_string()));
                         };
                         clip.name = name;
                         if clip.file_path != file_path {
@@ -1029,15 +1059,13 @@ impl SoundboardView {
                         (clip, clip_id)
                     }
                 };
-                let result = repo.save(&clip).await.map_err(|e| e.to_string());
-                if result.is_ok() {
-                    let _ = player.ensure_clip_duration(target_id).await;
-                }
-                result
+                library.save_clip(&clip).await?;
+                let _ = player.ensure_clip_duration(target_id).await;
+                Ok(())
             },
             |this, result, cx| match result {
                 Ok(()) => this.on_saved(cx),
-                Err(message) => this.on_save_error(message, cx),
+                Err(error) => this.on_save_error(failure_message(&error), cx),
             },
             cx,
         );
@@ -1350,9 +1378,22 @@ impl SoundboardView {
         };
         let readout_color = if playing { color } else { palette.text_faint };
 
+        let missing = self.source_is_missing(id);
         let mut status = div().flex().flex_1().min_w_0().items_center().gap(px(5.0));
         if clip.loop_playback {
             status = status.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
+        }
+        if missing {
+            status = status
+                .child(icon(Icon::AlertTriangle, LOOP_ICON, palette.warning))
+                .child(
+                    div()
+                        .flex_none()
+                        .font_family(mono_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.warning)
+                        .child(tr!("soundboard_pad_source_missing")),
+                );
         }
         if playing {
             status = status.child(
@@ -1380,9 +1421,10 @@ impl SoundboardView {
                     .child(readout),
             );
 
+        let glyph_color = if missing { palette.warning } else { color };
         let mut pad = pad_tile(
             (gpui::ElementId::from("sb-pad"), id.to_string()),
-            icon(glyph, PAD_GLYPH, color),
+            icon(glyph, PAD_GLYPH, glyph_color),
             clip.name.clone(),
             palette,
         )
@@ -1405,7 +1447,18 @@ impl SoundboardView {
             };
             pad = pad.progress(fraction, color);
         }
-        pad.into_any_element()
+        if !missing {
+            return pad.into_any_element();
+        }
+        div()
+            .id(("sb-pad-missing", index))
+            .w_full()
+            .tooltip(tooltip_builder(
+                tr!("soundboard_pad_source_missing_hint"),
+                palette,
+            ))
+            .child(pad)
+            .into_any_element()
     }
 
     fn pad_action_button(
@@ -1952,6 +2005,57 @@ fn field_lite_label(label: impl Into<SharedString>, palette: &ForgePalette) -> i
         .text_size(HOTKEY_FS)
         .text_color(palette.text_muted)
         .child(label.into())
+}
+
+fn audio_dialog_extensions() -> Vec<&'static str> {
+    MediaFormat::ACCEPTED
+        .iter()
+        .copied()
+        .filter(|format| format.kind() == MediaKind::Audio)
+        .map(MediaFormat::as_str)
+        .collect()
+}
+
+fn failure_message(error: &SoundboardError) -> String {
+    match error {
+        SoundboardError::ImportRefused(refusal) => refusal_message(refusal),
+        SoundboardError::SourceMissing(name) => {
+            tr!("soundboard_error_source_missing", name = name.as_str())
+        }
+        SoundboardError::ClipNotFound(_) => tr!("soundboard_error_clip_gone"),
+        other => other.to_string(),
+    }
+}
+
+fn refusal_message(refusal: &StorageError) -> String {
+    match refusal {
+        StorageError::MediaUnsupported { label } => {
+            tr!("soundboard_import_unsupported", file = label.as_str())
+        }
+        StorageError::MediaTypeMismatch {
+            label,
+            claimed,
+            detected,
+        } => tr!(
+            "soundboard_import_type_mismatch",
+            file = label.as_str(),
+            named = claimed.as_str(),
+            detected = detected.as_str()
+        ),
+        StorageError::MediaTooLarge {
+            label, size, limit, ..
+        } => {
+            let size = fmt_bytes(*size);
+            let limit = fmt_bytes(*limit);
+            tr!(
+                "soundboard_import_too_large",
+                file = label.as_str(),
+                size = size.as_str(),
+                limit = limit.as_str()
+            )
+        }
+        other => other.to_string(),
+    }
 }
 
 fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {

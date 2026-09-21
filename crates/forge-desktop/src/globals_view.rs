@@ -1766,7 +1766,7 @@ async fn export_globals_to_chosen_file(repo: Arc<dyn GlobalsRepo>) -> Result<Pat
     );
     let filter = async_bridge::DialogFilter {
         name: "JSON".to_owned(),
-        extensions: &["json"],
+        extensions: vec!["json"],
     };
     let path = async_bridge::save_file(Some(filter), Some(default_name)).await?;
     tokio::fs::write(&path, json)

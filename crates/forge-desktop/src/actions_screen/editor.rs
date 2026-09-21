@@ -86,7 +86,7 @@ async fn export_action_to_chosen_file(action: Action) -> Result<std::path::PathB
     let default_name = format!("{}.forge.json", sanitize_action_stem(&action.name));
     let filter = async_bridge::DialogFilter {
         name: "JSON".to_owned(),
-        extensions: &["json"],
+        extensions: vec!["json"],
     };
     let path = async_bridge::save_file(Some(filter), Some(default_name)).await?;
     tokio::fs::write(&path, json)

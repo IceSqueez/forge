@@ -5,6 +5,7 @@ pub mod bus_event_sink;
 pub mod cpal_factory;
 pub mod duration;
 pub mod error;
+pub mod library;
 pub mod player;
 pub mod settings;
 pub mod sink_factory;
@@ -17,6 +18,10 @@ pub use bus_event_sink::BusAudioEventSink;
 pub use cpal_factory::CpalSinkFactory;
 pub use duration::probe_clip_duration_secs;
 pub use error::SoundboardError;
+pub use library::{
+    ClipAvailability, ClipLibrary, ClipSource, SourcePlan, choose_source, clip_source_referrer,
+    plan_source, refusal_is_final,
+};
 pub use player::SoundboardPlayer;
 pub use settings::{SoundboardSettings, SoundboardSettingsHandle, load_soundboard_settings};
 pub use sink_factory::AudioSinkFactory;

@@ -1044,6 +1044,11 @@ soundboard_breadcrumb_soundboard = Звукова панель
 soundboard_loading = Завантаження кліпів…
 soundboard_empty_title = Кліпів ще немає
 soundboard_playback_error_prefix = Помилка відтворення: { $error }
+soundboard_error_source_missing = Вихідний файл для { $name } зник.
+soundboard_error_clip_gone = Цього звуку вже немає у звуковій панелі.
+soundboard_import_unsupported = { $file } - не той формат звуку, який forge вміє програвати.
+soundboard_import_type_mismatch = { $file } має розширення { $named }, але вміст файлу - { $detected }.
+soundboard_import_too_large = { $file } важить { $size }, а ліміт для звуків - { $limit }.
 
 ## Звукова панель - модальне вікно
 
@@ -1085,6 +1090,8 @@ soundboard_category_music = Стингери
 soundboard_category_voice = Голос
 soundboard_stop_all = Зупинити все
 soundboard_pad_playing = грає…
+soundboard_pad_source_missing = файл зник
+soundboard_pad_source_missing_hint = Вихідний файл зник. Відредагуй цей звук і вкажи файл ще раз.
 soundboard_no_matches = Немає звуків за фільтром
 soundboard_library_section = Бібліотека
 soundboard_library_import = Імпорт

@@ -297,15 +297,12 @@ impl AppShell {
             }
             Screen::Soundboard => {
                 let player = handles.soundboard_player.clone();
-                let clips_repo = handles.backend.soundboard_clips_repo();
                 let settings_repo =
                     Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
                 let bus = Arc::clone(&handles.bus);
-                cx.new(|cx| {
-                    SoundboardView::new(player, clips_repo, settings_repo, rt_handle, bus, cx)
-                })
-                .into()
+                cx.new(|cx| SoundboardView::new(player, settings_repo, rt_handle, bus, cx))
+                    .into()
             }
             Screen::Tts(preselect) => {
                 let preselect = *preselect;

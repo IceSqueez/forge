@@ -1037,6 +1037,11 @@ soundboard_breadcrumb_soundboard = Soundboard
 soundboard_loading = Loading clips…
 soundboard_empty_title = No clips yet
 soundboard_playback_error_prefix = Playback error: { $error }
+soundboard_error_source_missing = The source file for { $name } is gone.
+soundboard_error_clip_gone = That sound is no longer in the soundboard.
+soundboard_import_unsupported = { $file } is not a sound format forge can play.
+soundboard_import_type_mismatch = { $file } has the extension { $named } but its content is { $detected }.
+soundboard_import_too_large = { $file } is { $size }, over the { $limit } limit for sounds.
 
 ## Soundboard - modal
 
@@ -1078,6 +1083,8 @@ soundboard_category_music = Stingers
 soundboard_category_voice = Voice
 soundboard_stop_all = Stop all
 soundboard_pad_playing = playing…
+soundboard_pad_source_missing = file missing
+soundboard_pad_source_missing_hint = The source file is gone. Edit this sound and pick the file again.
 soundboard_no_matches = No sounds match your filter
 soundboard_library_section = Library
 soundboard_library_import = Import

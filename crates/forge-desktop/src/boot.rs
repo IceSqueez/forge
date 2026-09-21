@@ -16,7 +16,7 @@ use forge_runtime::{
     spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
-    BusAudioEventSink, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
+    BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
     load_soundboard_settings,
 };
 use forge_storage::{
@@ -215,10 +215,14 @@ pub async fn build_runtime(
     let soundboard_settings = SoundboardSettingsHandle::new(
         load_soundboard_settings(soundboard_settings_repo.as_ref()).await,
     );
+    let soundboard_library = Arc::new(ClipLibrary::new(
+        backend.soundboard_clips_repo(),
+        backend.media_repo(),
+    ));
     let soundboard_player = Arc::new(SoundboardPlayer::with_settings(
         Arc::new(CpalSinkFactory),
         Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
-        backend.soundboard_clips_repo(),
+        soundboard_library,
         soundboard_settings,
     ));
     match speak_dispatcher {

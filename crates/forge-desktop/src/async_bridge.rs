@@ -155,13 +155,13 @@ pub const DIALOG_CANCELLED: &str = "dialog cancelled";
 
 pub struct DialogFilter {
     pub name: String,
-    pub extensions: &'static [&'static str],
+    pub extensions: Vec<&'static str>,
 }
 
 pub async fn pick_file(filter: Option<DialogFilter>) -> Result<PathBuf, String> {
     let mut dialog = rfd::AsyncFileDialog::new();
     if let Some(filter) = filter {
-        dialog = dialog.add_filter(filter.name, filter.extensions);
+        dialog = dialog.add_filter(filter.name, &filter.extensions);
     }
     dialog
         .pick_file()
@@ -184,7 +184,7 @@ pub async fn save_file(
 ) -> Result<PathBuf, String> {
     let mut dialog = rfd::AsyncFileDialog::new();
     if let Some(filter) = filter {
-        dialog = dialog.add_filter(filter.name, filter.extensions);
+        dialog = dialog.add_filter(filter.name, &filter.extensions);
     }
     if let Some(name) = default_name {
         dialog = dialog.set_file_name(name);

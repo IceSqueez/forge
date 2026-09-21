@@ -49,6 +49,10 @@ pub const ANIMATION_OPTIONS: &[&str] = &[
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
 
+/// Sized the browser source itself; every page now fills the reference canvas, and a record that
+/// still names them is rewritten without them the next time it is saved.
+pub const RETIRED_KEYS: &[&str] = &["canvas_width", "canvas_height"];
+
 /// Width and height are absent while the element sizes itself, so neither carries a default.
 pub const ELEMENT_SIZE_MIN_PX: i64 = 40;
 pub const ELEMENT_WIDTH_MAX_PX: i64 = CANVAS_WIDTH_PX as i64;

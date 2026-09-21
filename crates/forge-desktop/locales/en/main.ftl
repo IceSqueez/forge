@@ -2261,3 +2261,4 @@ overlays_panel_unavailable = This build has no overlay type for this record, so 
 overlays_panel_choice_empty = No choices available.
 overlays_panel_override_notice = You own these files now, so they are never regenerated: { $files }. Design changes that need generated markup or styling no longer reach them.
 config_form_choice_placeholder = Not set
+config_form_auto_placeholder = auto

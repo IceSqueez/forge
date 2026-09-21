@@ -110,6 +110,7 @@ impl TriggersRegistryView {
 
         let fold = FoldContext {
             config: &default,
+            defaults: &default,
             palette: &palette,
             choices: ChoiceSupport::Text,
             on_committed: Self::on_create_config_committed,

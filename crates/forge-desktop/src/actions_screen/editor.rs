@@ -1271,6 +1271,7 @@ impl ScreenActionsView {
 
         let fold = FoldContext {
             config: &default,
+            defaults: &default,
             palette: &palette,
             choices: ChoiceSupport::Text,
             on_committed: Self::on_trigger_config_committed,

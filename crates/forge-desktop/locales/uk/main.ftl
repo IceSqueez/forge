@@ -2286,3 +2286,4 @@ overlays_panel_unavailable = У цій збірці немає типу овер
 overlays_panel_choice_empty = Немає доступних варіантів.
 overlays_panel_override_notice = Ці файли тепер ваші, тож вони ніколи не перегенеровуються: { $files }. Зміни дизайну, яким потрібна згенерована розмітка чи стилі, більше до них не доходять.
 config_form_choice_placeholder = Не задано
+config_form_auto_placeholder = авто

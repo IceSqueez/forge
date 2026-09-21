@@ -5,6 +5,7 @@ use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels, TextInput,
     anchored_popover, body_family, field_label, section_label, tr,
 };
+use forge_overlay::config::RETIRED_KEYS;
 use forge_overlay::{ConfigSection, SectionedField};
 use forge_registry::FormField;
 use forge_storage::{OverlayConfig, OverlayId};
@@ -89,6 +90,7 @@ impl OverlayPropertyPanel {
         let palette = cx.palette();
         let fold = FoldContext {
             config: &launch.effective,
+            defaults: &launch.defaults,
             palette: &palette,
             choices: ChoiceSupport::Picker(&launch.choices),
             on_committed: Self::on_field_committed,
@@ -117,9 +119,14 @@ impl OverlayPropertyPanel {
         &self.overlay_id
     }
 
+    /// Keys a retired build wrote are dropped instead of being carried forward, so a save is the
+    /// moment a record stops mentioning them.
     fn emit_save(&mut self, cx: &mut Context<Self>) {
         let mut buffer = self.defaults.clone();
         for (key, value) in &self.stored {
+            if RETIRED_KEYS.contains(&key.as_str()) {
+                continue;
+            }
             buffer.insert(key.clone(), value.clone());
         }
         collect_field_values(&self.fields, &mut buffer, cx);

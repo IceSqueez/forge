@@ -14,7 +14,7 @@ const PRINCIPAL_DISPLAY_NAME: CanonicalVariable =
 pub struct EventWiringTrigger<'a> {
     pub kind_id: &'a str,
     pub label: &'a str,
-    pub variables: &'a [TriggerVariable<'a>],
+    pub variables: &'a [TriggerVariable],
 }
 
 struct CuratedWording {
@@ -154,11 +154,11 @@ fn detail_name<'a>(trigger: &EventWiringTrigger<'a>) -> Option<&'a str> {
     trigger
         .variables
         .iter()
-        .find(|variable| carries_detail(**variable))
+        .find(|variable| carries_detail(variable))
         .map(|variable| variable.declared.name.as_str())
 }
 
-fn carries_detail(variable: TriggerVariable<'_>) -> bool {
+fn carries_detail(variable: &TriggerVariable) -> bool {
     if variable.declared.synthesis.is_none() {
         return false;
     }

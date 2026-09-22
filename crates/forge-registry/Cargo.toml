@@ -13,6 +13,7 @@ workspace = true
 forge-types = { path = "../forge-types" }
 forge-events = { path = "../forge-events" }
 async-trait = { workspace = true }
+rand = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 

@@ -1,5 +1,6 @@
 use crate::descriptor::OverlayConfig;
 use crate::media::OverlayMedia;
+use crate::sample::SampleContext;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverlayInstance {
@@ -13,4 +14,5 @@ pub struct OverlayInstance {
     /// Emitted top-level in the config document, never merged into `config`.
     pub credential: Option<String>,
     pub media: OverlayMedia,
+    pub sample: SampleContext,
 }

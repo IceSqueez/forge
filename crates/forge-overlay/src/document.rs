@@ -92,7 +92,7 @@ pub fn sample_document(
     instance: &OverlayInstance,
     descriptor: &dyn OverlayKindDescriptor,
 ) -> Result<String, OverlayError> {
-    let content = sample_content(descriptor, &instance.config)
+    let content = sample_content(descriptor, &instance.config, &instance.sample)
         .into_iter()
         .map(|(key, value)| (key, value.to_plain_json()))
         .collect();

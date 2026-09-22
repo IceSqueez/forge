@@ -6,6 +6,8 @@ use forge_types::{
     PlatformId, VariableSchema, VariableStanding, Variant,
 };
 
+use crate::descriptor::TriggerKindDescriptor;
+
 const CANONICAL_CLASS: u8 = 0;
 const EVENT_SPECIFIC_CLASS: u8 = 1;
 const LEGACY_CLASS: u8 = 2;
@@ -52,10 +54,36 @@ impl ActorDeclaration {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TriggerVariable<'a> {
-    pub declared: &'a DeclaredVariable,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TriggerVariable {
+    pub declared: DeclaredVariable,
     pub standing: VariableStanding,
+}
+
+impl TriggerVariable {
+    pub fn canonical(canonical: CanonicalVariable) -> Self {
+        TriggerVariable {
+            declared: canonical_declaration(canonical),
+            standing: VariableStanding::Canonical(canonical),
+        }
+    }
+}
+
+/// A descriptor that declares nothing at all stays distinguishable from one declaring an empty list.
+pub fn declared_variables(descriptor: &dyn TriggerKindDescriptor) -> Option<Vec<TriggerVariable>> {
+    if let Some(variables) = descriptor.variables() {
+        return Some(variables.declarations());
+    }
+    descriptor.output_schema().map(|schema| {
+        schema
+            .variables
+            .into_iter()
+            .map(|declared| TriggerVariable {
+                declared,
+                standing: VariableStanding::EventSpecific,
+            })
+            .collect()
+    })
 }
 
 type ValueReader = Arc<dyn Fn(&Event) -> Variant + Send + Sync>;
@@ -153,13 +181,13 @@ impl TriggerVariables {
         self
     }
 
-    pub fn declarations(&self) -> Vec<TriggerVariable<'_>> {
+    pub fn declarations(&self) -> Vec<TriggerVariable> {
         let mut ordered: Vec<&VariableEntry> = self.entries.iter().collect();
         ordered.sort_by_key(|entry| listing_rank(entry.standing));
         ordered
             .into_iter()
             .map(|entry| TriggerVariable {
-                declared: &entry.declared,
+                declared: entry.declared.clone(),
                 standing: entry.standing,
             })
             .collect()
@@ -170,7 +198,7 @@ impl TriggerVariables {
             variables: self
                 .declarations()
                 .into_iter()
-                .map(|variable| variable.declared.clone())
+                .map(|variable| variable.declared)
                 .collect(),
         }
     }

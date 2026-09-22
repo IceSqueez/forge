@@ -6,11 +6,14 @@ use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_overlay::{
     DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
-    OverlayKindRegistry, OverlayMedia, delivered_content, ensure_shared_directory,
-    materialize_overlay, read_overlay_source, remove_overlay_directory, sample_content,
-    write_overlay_source,
+    OverlayKindRegistry, OverlayMedia, SampleContext, SampleTrigger, delivered_content,
+    ensure_shared_directory, materialize_overlay, read_overlay_source, remove_overlay_directory,
+    sample_content, sample_context, write_overlay_source,
 };
 use forge_platform_core::paths;
+use forge_registry::{
+    KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
+};
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     reserved_keys,
@@ -18,6 +21,7 @@ use forge_storage::{
 use forge_types::ArgStack;
 use serde_json::json;
 
+use crate::actions::ActionsService;
 use crate::bus::EventBus;
 use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 
@@ -93,6 +97,14 @@ struct OverlayService {
     bus: Arc<EventBus>,
     frames: Option<Arc<dyn OverlayFrameSink>>,
     media: Option<OverlayMediaLibrary>,
+    wiring: Option<EventWiring>,
+}
+
+#[derive(Clone)]
+struct EventWiring {
+    actions: Arc<ActionsService>,
+    sub_actions: Arc<SubActionRegistry>,
+    triggers: Arc<TriggerRegistry>,
 }
 
 #[derive(Clone)]
@@ -116,6 +128,7 @@ impl OverlayServiceHandle {
                 bus,
                 frames,
                 media: None,
+                wiring: None,
             }),
         }
     }
@@ -123,13 +136,39 @@ impl OverlayServiceHandle {
     pub fn with_media_library(self, library: OverlayMediaLibrary) -> Self {
         Self {
             inner: Arc::new(OverlayService {
-                repo: Arc::clone(&self.inner.repo),
-                settings: Arc::clone(&self.inner.settings),
-                kinds: Arc::clone(&self.inner.kinds),
-                bus: Arc::clone(&self.inner.bus),
-                frames: self.inner.frames.clone(),
                 media: Some(library),
+                ..self.parts()
             }),
+        }
+    }
+
+    pub fn with_event_wiring(
+        self,
+        actions: Arc<ActionsService>,
+        sub_actions: Arc<SubActionRegistry>,
+        triggers: Arc<TriggerRegistry>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(OverlayService {
+                wiring: Some(EventWiring {
+                    actions,
+                    sub_actions,
+                    triggers,
+                }),
+                ..self.parts()
+            }),
+        }
+    }
+
+    fn parts(&self) -> OverlayService {
+        OverlayService {
+            repo: Arc::clone(&self.inner.repo),
+            settings: Arc::clone(&self.inner.settings),
+            kinds: Arc::clone(&self.inner.kinds),
+            bus: Arc::clone(&self.inner.bus),
+            frames: self.inner.frames.clone(),
+            media: self.inner.media.clone(),
+            wiring: self.inner.wiring.clone(),
         }
     }
 
@@ -317,7 +356,11 @@ impl OverlayServiceHandle {
             });
         };
 
-        let content = sample_content(descriptor, &definition.config);
+        let content = sample_content(
+            descriptor,
+            &definition.config,
+            &self.sample_pass(&definition.id).await,
+        );
         let disposition = descriptor.delivery_disposition();
         self.inner.bus.record(Event::new(
             EventSource::Core,
@@ -395,7 +438,11 @@ impl OverlayServiceHandle {
         definition: &OverlayDefinition,
     ) -> Result<MaterializeReport, OverlayServiceError> {
         let root = self.root().await;
-        let instance = instance_of(definition, self.media_pass(definition).await);
+        let instance = instance_of(
+            definition,
+            self.media_pass(definition).await,
+            self.sample_pass(&definition.id).await,
+        );
         let kinds = Arc::clone(&self.inner.kinds);
         let report = blocking(move || materialize_overlay(&root, &instance, &kinds)).await??;
 
@@ -421,6 +468,26 @@ impl OverlayServiceHandle {
         }
 
         Ok(report)
+    }
+
+    async fn sample_pass(&self, id: &OverlayId) -> SampleContext {
+        let Some(wiring) = &self.inner.wiring else {
+            return SampleContext::neutral();
+        };
+        let feeds = match wiring.actions.overlay_feeds(id, &wiring.sub_actions).await {
+            Ok(feeds) => feeds,
+            Err(error) => {
+                tracing::warn!(overlay = %id, %error, "what feeds this overlay is unreadable; its sample stays neutral");
+                return SampleContext::neutral();
+            }
+        };
+
+        let feeding: Vec<SampleTrigger> = feeds
+            .iter()
+            .flat_map(|feed| feed.triggers.iter())
+            .map(|instance| feeding_trigger(&wiring.triggers, &instance.kind_id))
+            .collect();
+        sample_context(&feeding)
     }
 
     async fn media_pass(&self, definition: &OverlayDefinition) -> OverlayMedia {
@@ -482,7 +549,22 @@ fn content_json(content: &OverlayConfig) -> serde_json::Value {
     )
 }
 
-fn instance_of(definition: &OverlayDefinition, media: OverlayMedia) -> OverlayInstance {
+fn feeding_trigger(triggers: &TriggerRegistry, kind_id: &str) -> SampleTrigger {
+    let descriptor = triggers.get(kind_id);
+    SampleTrigger {
+        kind_id: kind_id.to_owned(),
+        contract: descriptor.map_or(KindPlatformContract::Universal, |held| {
+            held.platform_contract()
+        }),
+        variables: descriptor.and_then(declared_variables).unwrap_or_default(),
+    }
+}
+
+fn instance_of(
+    definition: &OverlayDefinition,
+    media: OverlayMedia,
+    sample: SampleContext,
+) -> OverlayInstance {
     OverlayInstance {
         id: definition.id.as_str().to_owned(),
         display_name: definition.display_name.clone(),
@@ -491,6 +573,7 @@ fn instance_of(definition: &OverlayDefinition, media: OverlayMedia) -> OverlayIn
         source_overrides: definition.source_overrides.clone(),
         credential: Some(definition.credential.as_str().to_owned()),
         media,
+        sample,
     }
 }
 

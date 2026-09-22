@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use forge_registry::{FormField, SubActionRegistry, TriggerRegistry};
+use forge_registry::{FormField, SubActionRegistry, TriggerRegistry, declared_variables};
 use forge_types::{
     Action, ExecutionMode, SubActionOutcome, SubActionStep, TriggerInstance, Variant,
     normalize_var_name,
 };
 
-use super::{nav, trigger_variables};
+use super::nav;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum HealthSeverity {
@@ -141,7 +141,7 @@ fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Opt
     }
     let mut schemas: Vec<HashSet<String>> = Vec::with_capacity(triggers.len());
     for instance in triggers {
-        let declared = trigger_variables::declared_variables(registry.get(&instance.kind_id)?)?;
+        let declared = declared_variables(registry.get(&instance.kind_id)?)?;
         schemas.push(
             declared
                 .into_iter()
@@ -411,19 +411,92 @@ fn fixed_after_outputs(kind_id: &str) -> &'static [&'static str] {
 mod tests {
     use std::sync::Arc;
 
+    use forge_events::Event;
     use forge_registry::{
-        ActorBlock, ActorIdentity, LoginSlot, SubActionRegistry, TriggerVariables,
+        ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
+        SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
     };
     use forge_runtime::sub_action_runners::CoreLogicIfThenElseRunner;
     use forge_runtime::{ConditionGate, Config};
     use forge_types::{
         ActionId, ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PermissionRung,
         PlatformId, PlatformScope, QueueId, SubActionConfig, TriggerConfig, TriggerInstanceId,
-        VariantKind,
+        VariableSchema, VariantKind,
     };
 
-    use super::super::trigger_variables::tests::StubTrigger;
     use super::*;
+
+    struct StubTrigger {
+        id: &'static str,
+        variables: fn() -> TriggerVariables,
+    }
+
+    impl StubTrigger {
+        fn declaring(id: &'static str, variables: fn() -> TriggerVariables) -> Self {
+            StubTrigger { id, variables }
+        }
+    }
+
+    impl TriggerKindDescriptor for StubTrigger {
+        fn id(&self) -> &str {
+            self.id
+        }
+
+        fn category(&self) -> TriggerCategory {
+            TriggerCategory::Chat
+        }
+
+        fn label(&self) -> &str {
+            self.id
+        }
+
+        fn summary(&self) -> &str {
+            self.id
+        }
+
+        fn search_text(&self) -> &str {
+            self.id
+        }
+
+        fn icon_name(&self) -> &str {
+            "chat"
+        }
+
+        fn platform_contract(&self) -> KindPlatformContract {
+            KindPlatformContract::PlatformSpecific(PlatformId::Kick)
+        }
+
+        fn default_config(&self) -> TriggerConfig {
+            TriggerConfig::new()
+        }
+
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+
+        fn condition_display(&self, _config: &TriggerConfig) -> String {
+            String::new()
+        }
+
+        fn event_filter(&self) -> EventFilter {
+            EventFilter {
+                source: None,
+                kind_prefix: None,
+            }
+        }
+
+        fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
+            true
+        }
+
+        fn variables(&self) -> Option<TriggerVariables> {
+            Some((self.variables)())
+        }
+
+        fn output_schema(&self) -> Option<VariableSchema> {
+            self.variables().map(|variables| variables.schema())
+        }
+    }
 
     const BRANCH_KIND: &str = "core.logic.if_then_else";
     const THEN_CHAIN_KEY: &str = "then_chain";

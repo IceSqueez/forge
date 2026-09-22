@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use forge_overlay::{
-    OverlayConfig, OverlayInstance, OverlayKindRegistry, OverlayMedia, register_builtin_kinds,
-    sample_document,
+    OverlayConfig, OverlayInstance, OverlayKindRegistry, OverlayMedia, SampleContext,
+    register_builtin_kinds, sample_document,
 };
 use serde_json::Value;
 
@@ -22,7 +22,7 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
         "overlay.alert",
         &[
             ("headline", "Thanks for the sub!"),
-            ("subline", "7 months subscribed"),
+            ("subline", "61 months subscribed"),
         ],
     ),
     (
@@ -39,10 +39,10 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
     (
         "overlay.chat",
         &[
-            ("author", "pixel_pal"),
+            ("author", "testuser"),
             ("author_color", "#89dceb"),
             ("badges", ""),
-            ("message", "first time here, hi!"),
+            ("message", "hey, great stream!"),
         ],
     ),
     ("overlay.frame", &[("headline", ""), ("subline", "LIVE")]),
@@ -53,8 +53,8 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
     (
         "overlay.ticker",
         &[
-            ("headline", "Latest cheer: 500 bits"),
-            ("subline", "\"take my bits\""),
+            ("headline", "Latest cheer: 5001 bits"),
+            ("subline", "\"hey, great stream!\""),
         ],
     ),
 ];
@@ -79,6 +79,7 @@ fn raw_sample(kind_id: &str, credential: Option<&str>) -> String {
         source_overrides: Vec::new(),
         credential: credential.map(str::to_owned),
         media: OverlayMedia::default(),
+        sample: SampleContext::neutral(),
     };
 
     sample_document(&instance, descriptor).expect("the sample document builds")

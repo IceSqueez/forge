@@ -53,7 +53,7 @@ impl OverlayKindDescriptor for TickerOverlayKind {
         );
         defaults.insert(
             config::SUBLINE.to_owned(),
-            config::text("\"%cheer_message%\""),
+            config::text("\"%message_text%\""),
         );
         defaults.insert(config::DURATION.to_owned(), forge_types::Variant::Int(8));
         defaults

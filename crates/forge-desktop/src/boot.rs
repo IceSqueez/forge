@@ -320,7 +320,18 @@ pub async fn build_runtime(
     .with_media_library(OverlayMediaLibrary::new(
         backend.media_repo(),
         backend.soundboard_clips_repo(),
-    ));
+    ))
+    .with_event_wiring(
+        Arc::new(forge_runtime::actions::ActionsService::new(
+            backend.action_repo(),
+            backend.queue_repo(),
+            backend.history_repo(),
+            backend.trigger_instance_repo(),
+            backend.soundboard_clips_repo(),
+        )),
+        Arc::clone(&sub_action_registry),
+        Arc::clone(&trigger_registry),
+    );
     overlay_service_cell.set(overlays.clone());
     if let Some(handle) = server.clone() {
         handle

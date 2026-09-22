@@ -54,7 +54,7 @@ pub use preview::{
     PreviewElement, PreviewFont, PreviewLine, PreviewLineRole, PreviewPosition, PreviewShape,
 };
 pub use registry::OverlayKindRegistry;
-pub use sample::{sample_content, sample_payload};
+pub use sample::{SampleContext, SampleTrigger, sample_content, sample_context};
 pub use source::{read_overlay_source, write_overlay_source};
 pub use wiring::{
     EventWiringTrigger, accepts_event_wiring, is_curated, order_curated_first, suggested_content,

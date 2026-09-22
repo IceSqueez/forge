@@ -4,8 +4,8 @@ use forge_overlay::config::{ELEMENT_HEIGHT, ELEMENT_WIDTH, ICON, TEXT_SIZE};
 use forge_overlay::metrics::{ELEMENT_HEIGHT_PROPERTY, ELEMENT_WIDTH_PROPERTY};
 use forge_overlay::{
     ConfigSection, OverlayConfig, OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia,
-    PreviewCanvas, PreviewElement, config_document, effective_overlay_config, element_sizing,
-    register_builtin_kinds, style_guards, validate_overlay_config,
+    PreviewCanvas, PreviewElement, SampleContext, config_document, effective_overlay_config,
+    element_sizing, register_builtin_kinds, style_guards, validate_overlay_config,
 };
 use forge_registry::FormField;
 use forge_types::Variant;
@@ -192,6 +192,7 @@ fn document(kind_id: &str, stored: &OverlayConfig) -> Value {
         source_overrides: Vec::new(),
         credential: None,
         media: OverlayMedia::default(),
+        sample: SampleContext::neutral(),
     };
 
     serde_json::from_str(&config_document(&instance, descriptor).expect("the document builds"))

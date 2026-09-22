@@ -7,7 +7,7 @@ use forge_overlay::config::SOUND;
 use forge_overlay::{
     BEHAVIOR_FILE, CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MARKUP_FILE, OverlayConfig,
     OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia, RESERVED_DIRECTORY,
-    RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE, STYLE_FILE, ensure_shared_directory,
+    RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE, STYLE_FILE, SampleContext, ensure_shared_directory,
     materialize_overlay, register_builtin_kinds, remove_overlay_directory,
 };
 use forge_types::Variant;
@@ -46,6 +46,7 @@ fn instance(source_overrides: &[&str]) -> OverlayInstance {
         source_overrides: source_overrides.iter().map(|n| (*n).to_owned()).collect(),
         credential: None,
         media: OverlayMedia::default(),
+        sample: SampleContext::neutral(),
     }
 }
 

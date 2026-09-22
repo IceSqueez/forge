@@ -6,6 +6,7 @@ use forge_components::{
     primary_button, radius, spacing,
 };
 use forge_events::Event;
+use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
 use forge_types::{ArgStack, EventId};
 use gpui::{Rgba, Task, relative};
 use std::time::Duration;
@@ -927,15 +928,12 @@ impl ScreenActionsView {
             let declared = selected_inst
                 .and_then(|inst| self.trigger_registry.get(&inst.kind_id))
                 .and_then(|descriptor| {
-                    super::trigger_variables::declared_variables(descriptor)
+                    declared_variables(descriptor)
                         .map(|variables| (variables, descriptor.platform_contract()))
                 });
             let (initial_args, note) = match (selected_inst, declared) {
                 (Some(_), Some((variables, contract))) => (
-                    super::test_trigger::synthesize_args(
-                        &variables,
-                        &super::test_trigger::SynthesisSample::random(contract),
-                    ),
+                    synthesize_args(&variables, &SynthesisSample::random(contract)),
                     None,
                 ),
                 (Some(_), None) => (ArgStack::new(), Some(TestRunNote::NoSchema)),

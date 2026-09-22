@@ -160,6 +160,26 @@ impl CanonicalVariable {
         CanonicalVariable::Actor { role, slot }
     }
 
+    pub fn all() -> Vec<CanonicalVariable> {
+        let mut every: Vec<CanonicalVariable> = ActorRole::ALL
+            .into_iter()
+            .flat_map(|role| {
+                ActorSlot::ALL
+                    .into_iter()
+                    .map(move |slot| CanonicalVariable::actor(role, slot))
+            })
+            .chain(std::iter::once(CanonicalVariable::MessageText))
+            .chain(
+                CanonicalCount::ALL
+                    .into_iter()
+                    .map(CanonicalVariable::Count),
+            )
+            .chain(std::iter::once(CanonicalVariable::SubTier))
+            .collect();
+        every.sort_by_key(|canonical| canonical.order());
+        every
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
             CanonicalVariable::Actor { role, slot } => match (role, slot) {

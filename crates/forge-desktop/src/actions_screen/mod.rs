@@ -38,7 +38,6 @@ mod run_history;
 mod sub_action_modal;
 mod test_run;
 mod test_trigger;
-mod trigger_variables;
 
 pub(crate) use editor::parse_variable_segments;
 

@@ -5,8 +5,8 @@ use forge_overlay::config::{
 };
 use forge_overlay::{
     GENERATED_MEDIA_DIRECTORY, ICON_FILE_FIELD, ICON_TINTABLE_FIELD, OverlayConfig,
-    OverlayInstance, OverlayKindRegistry, OverlayMedia, ResolvedMedia, config_document,
-    image_reference, register_builtin_kinds,
+    OverlayInstance, OverlayKindRegistry, OverlayMedia, ResolvedMedia, SampleContext,
+    config_document, image_reference, register_builtin_kinds,
 };
 use forge_types::Variant;
 use serde_json::{Value, json};
@@ -32,6 +32,7 @@ fn raw_document(config: OverlayConfig, credential: Option<&str>, media: OverlayM
         source_overrides: Vec::new(),
         credential: credential.map(str::to_owned),
         media,
+        sample: SampleContext::neutral(),
     };
 
     config_document(&instance, descriptor).expect("the config document builds")

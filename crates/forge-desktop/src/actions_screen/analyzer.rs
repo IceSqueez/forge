@@ -50,28 +50,15 @@ impl StepHealth {
     }
 }
 
-const OVERLAY_SEND_KIND: &str = "overlay.send";
-const OVERLAY_TARGET_KEY: &str = "overlay_id";
-
 pub(super) fn sends_order_sensitive_overlay(
     steps: &[SubActionStep],
     registry: &SubActionRegistry,
     order_sensitive: &dyn Fn(&str) -> bool,
 ) -> bool {
-    steps.iter().any(|step| {
-        if !step.enabled {
-            return false;
-        }
-        let hits = step.kind_id == OVERLAY_SEND_KIND
-            && step
-                .config
-                .get(OVERLAY_TARGET_KEY)
-                .and_then(Variant::as_str)
-                .is_some_and(order_sensitive);
-        hits || nested_chains(step, registry)
-            .iter()
-            .any(|chain| sends_order_sensitive_overlay(chain, registry, order_sensitive))
-    })
+    forge_runtime::overlay_send_targets(steps, registry)
+        .iter()
+        .filter_map(forge_runtime::OverlaySendTarget::overlay)
+        .any(order_sensitive)
 }
 
 struct TriggerSeed {
@@ -470,9 +457,9 @@ mod tests {
 
     fn send(identity: &str, enabled: bool) -> SubActionStep {
         step(
-            OVERLAY_SEND_KIND,
+            forge_runtime::OVERLAY_SEND_KIND_ID,
             SubActionConfig::from([(
-                OVERLAY_TARGET_KEY.to_owned(),
+                forge_runtime::OVERLAY_TARGET_KEY.to_owned(),
                 Variant::String(identity.to_owned()),
             )]),
             enabled,

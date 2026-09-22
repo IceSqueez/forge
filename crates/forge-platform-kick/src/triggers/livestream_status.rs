@@ -1,11 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read;
 use crate::payload_fields::stream as fields;
 
 pub(crate) struct LivestreamStatusDescriptor;
@@ -62,67 +62,60 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let is_live = event
-            .payload
-            .get(fields::IS_LIVE)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let stream_title = event
-            .payload
-            .get(fields::STREAM_TITLE)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let category = event.payload.get(fields::CATEGORY);
-        let category_id = category
-            .and_then(|c| c.get(fields::CATEGORY_ID))
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
-        let category_name = category
-            .and_then(|c| c.get(fields::CATEGORY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("is_live".to_owned(), Variant::Bool(is_live))
-            .set("stream_title".to_owned(), Variant::String(stream_title))
-            .set("category_id".to_owned(), Variant::String(category_id))
-            .set("category_name".to_owned(), Variant::String(category_name))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .event_specific(
+                    DeclaredVariable {
+                        name: "is_live".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Is live".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::Bool(payload_read::flag(event, fields::IS_LIVE)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "stream_title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Stream title".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::STREAM_TITLE)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "category_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Category ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::numeric_id(
+                            event.payload.get(fields::CATEGORY),
+                            fields::CATEGORY_ID,
+                        ))
+                    },
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "category_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Category name".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event.payload.get(fields::CATEGORY),
+                            fields::CATEGORY_NAME,
+                        ))
+                    },
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "is_live".to_owned(),
-                    kind: VariantKind::Bool,
-                    label: "Is live".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "stream_title".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Stream title".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "category_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Category ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "category_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Category name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actorless
     }
 }
 

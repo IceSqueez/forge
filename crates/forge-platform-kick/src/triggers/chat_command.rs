@@ -1,15 +1,16 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor,
+    ActorDeclaration, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
+    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use super::chat::str_field;
-use crate::payload_fields::{chat as fields, entity};
+use super::chat::{sender_color, sender_identity};
+use super::payload_read::{self, kick_actor};
+use crate::payload_fields::chat as fields;
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -112,7 +113,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
             })
             .unwrap_or(false);
 
-        let content = str_field(&event.payload, fields::CONTENT);
+        let content = payload_read::text(event, fields::CONTENT);
 
         if case_sensitive {
             content.starts_with(phrase)
@@ -121,114 +122,122 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         }
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let sender = event.payload.get(fields::SENDER);
-        let sender_id = sender
-            .and_then(|s| s.get(entity::ID))
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
-        let username = sender
-            .and_then(|p| p.get(entity::USERNAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let display_name = sender
-            .and_then(|p| p.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let color = sender
-            .and_then(|s| s.get(fields::COLOR))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let message_id = str_field(&event.payload, fields::MESSAGE_ID);
-        let content = str_field(&event.payload, fields::CONTENT);
-        let reply_to_id = str_field(&event.payload, fields::REPLY_TO_MESSAGE_ID);
-
-        let command_name = content.split_whitespace().next().unwrap_or("").to_owned();
-        let args = content
-            .trim_start_matches(command_name.as_str())
-            .trim_start()
-            .to_owned();
-
-        ArgStack::new()
-            .set("message_id".to_owned(), Variant::String(message_id))
-            .set("sender_id".to_owned(), Variant::String(sender_id))
-            .set("username".to_owned(), Variant::String(username))
-            .set("display_name".to_owned(), Variant::String(display_name))
-            .set("content".to_owned(), Variant::String(content))
-            .set("color".to_owned(), Variant::String(color))
-            .set("reply_to_id".to_owned(), Variant::String(reply_to_id))
-            .set("command_name".to_owned(), Variant::String(command_name))
-            .set("args".to_owned(), Variant::String(args))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(kick_actor(ActorRole::Principal), sender_identity)
+                .message_text(|event| payload_read::text(event, fields::CONTENT))
+                .event_specific(
+                    DeclaredVariable {
+                        name: "message_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Message ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::MESSAGE_ID)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "color".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender name color".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(sender_color(event)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "reply_to_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Replied-to message ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::REPLY_TO_MESSAGE_ID)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "command_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Command name".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(command_name(event)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "args".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Command arguments".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    |event| Variant::String(command_args(event)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "sender_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender user ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(sender_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "username".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender username".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| Variant::String(payload_read::login_of(sender_identity(event))),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| Variant::String(sender_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "content".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Message content".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    CanonicalVariable::MessageText,
+                    |event| Variant::String(payload_read::text(event, fields::CONTENT)),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "message_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Message ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "sender_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender user ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "username".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender username".to_owned(),
-                    synthesis: Some(SynthesisHint::Username),
-                },
-                DeclaredVariable {
-                    name: "display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-                DeclaredVariable {
-                    name: "content".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Message content".to_owned(),
-                    synthesis: Some(SynthesisHint::Message),
-                },
-                DeclaredVariable {
-                    name: "color".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender name color".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "reply_to_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Replied-to message ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "command_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Command name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "args".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Command arguments".to_owned(),
-                    synthesis: Some(SynthesisHint::Message),
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
 
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         Some(ChatTriggerFamily::Command)
     }
+}
+
+fn command_name(event: &Event) -> String {
+    payload_read::text(event, fields::CONTENT)
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+fn command_args(event: &Event) -> String {
+    let content = payload_read::text(event, fields::CONTENT);
+    content
+        .trim_start_matches(command_name(event).as_str())
+        .trim_start()
+        .to_owned()
 }
 
 #[cfg(test)]

@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{entity, moderation as fields};
+use super::payload_read::{self, kick_actor};
+use crate::payload_fields::moderation as fields;
 
 pub(crate) struct BanDescriptor;
 
@@ -63,74 +65,66 @@ impl TriggerKindDescriptor for BanDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let banned_user = event.payload.get(fields::BANNED_USER);
-        let banned_user_id = banned_user
-            .and_then(|u| u.get(entity::ID))
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
-        let banned_username = banned_user
-            .and_then(|u| u.get(entity::USERNAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let duration_secs = event
-            .payload
-            .get(fields::DURATION_SECS)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        let reason = event
-            .payload
-            .get(fields::REASON)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("banned_user_id".to_owned(), Variant::String(banned_user_id))
-            .set(
-                "banned_username".to_owned(),
-                Variant::String(banned_username),
-            )
-            .set("duration_secs".to_owned(), Variant::Int(duration_secs))
-            .set("reason".to_owned(), Variant::String(reason))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(kick_actor(ActorRole::Principal), banned_identity)
+                .actor(kick_actor(ActorRole::Moderator), moderator_identity)
+                .event_specific(
+                    DeclaredVariable {
+                        name: "duration_secs".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Ban duration (seconds)".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 1_209_600,
+                        }),
+                    },
+                    |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "reason".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Ban reason".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::REASON)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "banned_user_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned user ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(banned_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "banned_username".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned username".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| Variant::String(payload_read::login_of(banned_identity(event))),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "banned_user_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Banned user ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "banned_username".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Banned username".to_owned(),
-                    synthesis: Some(SynthesisHint::Username),
-                },
-                DeclaredVariable {
-                    name: "duration_secs".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Ban duration (seconds)".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt {
-                        min: 0,
-                        max: 1_209_600,
-                    }),
-                },
-                DeclaredVariable {
-                    name: "reason".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Ban reason".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
     }
+}
+
+fn banned_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::BANNED_USER))
+}
+
+fn moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::MODERATOR))
 }
 
 #[cfg(test)]

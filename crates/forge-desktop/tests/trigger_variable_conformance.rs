@@ -6,18 +6,7 @@ use forge_events::{Event, EventSource};
 use forge_registry::{ActorDeclaration, KindPlatformContract, TriggerRegistry};
 use forge_types::{ActorRole, ActorSlot, CanonicalVariable, SlotPresence, VariantKind};
 
-const VOCABULARY_HAS_NOT_REACHED: &[&str] = &[
-    "kick.channel.hosted",
-    "kick.channel.reward.redemption.updated",
-    "kick.channel.subscribed",
-    "kick.channel.subscription.gifts",
-    "kick.chat.command",
-    "kick.chat.message.deleted",
-    "kick.chat.message.sent",
-    "kick.livestream.metadata.updated",
-    "kick.livestream.status.updated",
-    "kick.moderation.banned",
-];
+const VOCABULARY_HAS_NOT_REACHED: &[&str] = &[];
 
 fn every_registered_trigger() -> TriggerRegistry {
     let mut registry = TriggerRegistry::new();

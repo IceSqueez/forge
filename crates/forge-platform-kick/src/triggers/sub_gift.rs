@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
+    SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{entity, subscription_gift as fields};
+use super::payload_read::{self, kick_actor};
+use crate::payload_fields::subscription_gift as fields;
 
 pub(crate) struct SubGiftDescriptor;
 
@@ -63,72 +65,66 @@ impl TriggerKindDescriptor for SubGiftDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let gifter = event.payload.get(fields::GIFTER);
-        let gifter_id = gifter
-            .and_then(|g| g.get(entity::ID))
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
-
-        let gifter_username = gifter
-            .and_then(|g| g.get(entity::USERNAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let count = event
-            .payload
-            .get(fields::COUNT)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        let tier = event
-            .payload
-            .get(fields::TIER)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("gifter_id".to_owned(), Variant::String(gifter_id))
-            .set(
-                "gifter_username".to_owned(),
-                Variant::String(gifter_username),
-            )
-            .set("count".to_owned(), Variant::Int(count))
-            .set("tier".to_owned(), Variant::String(tier))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(kick_actor(ActorRole::Principal), gifter_identity)
+                .actor(kick_actor(ActorRole::Gifter), gifter_identity)
+                .actor(kick_actor(ActorRole::Recipient), first_giftee_identity)
+                .count(CanonicalCount::GiftCount, |event| {
+                    payload_read::number(event, fields::COUNT)
+                })
+                .sub_tier(|event| payload_read::text(event, fields::TIER))
+                .legacy(
+                    DeclaredVariable {
+                        name: "gifter_username".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter username".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Login),
+                    |event| Variant::String(payload_read::login_of(gifter_identity(event))),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "count".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Gifted subscription count".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
+                    },
+                    CanonicalVariable::Count(CanonicalCount::GiftCount),
+                    |event| Variant::Int(payload_read::number(event, fields::COUNT)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "tier".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Subscription tier".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::SubTier,
+                    |event| Variant::String(payload_read::text(event, fields::TIER)),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "gifter_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter user ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "gifter_username".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter username".to_owned(),
-                    synthesis: Some(SynthesisHint::Username),
-                },
-                DeclaredVariable {
-                    name: "count".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Gifted subscription count".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 100 }),
-                },
-                DeclaredVariable {
-                    name: "tier".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Subscription tier".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Gifter, ActorRole::Recipient])
     }
+}
+
+fn gifter_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::GIFTER))
+}
+
+fn first_giftee_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event
+            .payload
+            .get(fields::GIFTEES)
+            .and_then(serde_json::Value::as_array)
+            .and_then(|giftees| giftees.first()),
+    )
 }
 
 #[cfg(test)]

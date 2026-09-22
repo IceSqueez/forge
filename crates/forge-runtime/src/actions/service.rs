@@ -1,14 +1,19 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use forge_registry::SubActionRegistry;
+use forge_overlay::OverlayKindDescriptor;
+use forge_registry::{SubActionRegistry, TriggerKindDescriptor};
 use forge_storage::{
-    ActionRepo, ActionTelemetry, HistoryRepo, OverlayId, QueueRepo, SoundboardClipsRepo,
-    StorageError, TriggerInstanceRepo,
+    ActionRepo, ActionTelemetry, HistoryRepo, OverlayDefinition, OverlayId, QueueRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
 };
 use forge_types::{ActionId, ClipId, ExecutionContext, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
+use super::overlay_wiring::{
+    OverlayWiringError, OverlayWiringOutcome, OverlayWiringRecords, QueuePlacement, WiredQueue,
+    plan_overlay_wiring,
+};
 use super::types::{ActionDetail, ActionSummary, OverlayFeed};
 use crate::sub_action_runners::feeds_overlay;
 
@@ -176,6 +181,80 @@ impl ActionsService {
             });
         }
         Ok(feeds)
+    }
+
+    pub async fn overlay_wired_to(
+        &self,
+        overlay: &OverlayId,
+        trigger_kind_id: &str,
+        sub_actions: &SubActionRegistry,
+    ) -> Result<Option<ActionId>, StorageError> {
+        Ok(self
+            .overlay_feeds(overlay, sub_actions)
+            .await?
+            .into_iter()
+            .find(|feed| {
+                feed.triggers
+                    .iter()
+                    .any(|instance| instance.kind_id == trigger_kind_id)
+            })
+            .map(|feed| feed.action_id))
+    }
+
+    pub async fn wire_overlay_to_event(
+        &self,
+        overlay: &OverlayDefinition,
+        kind: &dyn OverlayKindDescriptor,
+        trigger: &dyn TriggerKindDescriptor,
+        sub_actions: &SubActionRegistry,
+    ) -> Result<OverlayWiringOutcome, OverlayWiringError> {
+        let plan = plan_overlay_wiring(overlay, kind, trigger)?;
+
+        match self
+            .overlay_wired_to(&overlay.id, trigger.id(), sub_actions)
+            .await
+        {
+            Ok(Some(action_id)) => return Ok(OverlayWiringOutcome::AlreadyWired { action_id }),
+            Ok(None) => {}
+            Err(source) => return Err(OverlayWiringError::NothingWritten { source }),
+        }
+
+        let queue = match self.resolve_queue(plan.queue).await {
+            Ok(queue) => queue,
+            Err(source) => return Err(OverlayWiringError::NothingWritten { source }),
+        };
+
+        let mut records = OverlayWiringRecords {
+            queue: Some(queue.clone()),
+            ..OverlayWiringRecords::default()
+        };
+
+        let action = plan.action.on_queue(queue.id());
+        if let Err(source) = self.actions.save(&action).await {
+            return Err(OverlayWiringError::Incomplete { records, source });
+        }
+        records.action_id = Some(action.id);
+
+        if let Err(source) = self.trigger_instances.save(&plan.trigger).await {
+            return Err(OverlayWiringError::Incomplete { records, source });
+        }
+        records.trigger_instance_id = Some(plan.trigger.id);
+
+        if let Err(source) = self.link_trigger_instance(action.id, plan.trigger.id).await {
+            return Err(OverlayWiringError::Incomplete { records, source });
+        }
+        records.linked = true;
+
+        Ok(OverlayWiringOutcome::Wired(records))
+    }
+
+    async fn resolve_queue(&self, placement: QueuePlacement) -> Result<WiredQueue, StorageError> {
+        if let Some(existing) = self.queues.get_by_name(placement.name).await? {
+            return Ok(WiredQueue::Existing(existing));
+        }
+        let queue = placement.into_queue();
+        self.queues.save(&queue).await?;
+        Ok(WiredQueue::Created(queue))
     }
 
     pub async fn list_clip_options(&self) -> Vec<(ClipId, String)> {

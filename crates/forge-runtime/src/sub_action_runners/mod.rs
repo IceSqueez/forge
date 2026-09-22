@@ -103,7 +103,7 @@ pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;
 pub use core_logic_loop::CoreLogicLoopRunner;
 pub use core_logic_stop::CoreLogicStopRunner;
 pub use core_logic_switch_case::CoreLogicSwitchCaseRunner;
-pub use core_logic_wait::CoreLogicWaitRunner;
+pub use core_logic_wait::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 pub use core_logic_wait_until::CoreLogicWaitUntilRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
 pub use core_notify_show::CoreNotifyShowRunner;

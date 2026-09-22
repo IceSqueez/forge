@@ -9,12 +9,15 @@ use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 const MAX_DELAY_MS: u64 = 60_000;
 
+pub const WAIT_KIND_ID: &str = "core.logic.wait";
+pub const WAIT_MS_KEY: &str = "ms";
+
 pub struct CoreLogicWaitRunner;
 
 #[async_trait]
 impl SubActionRunner for CoreLogicWaitRunner {
     fn id(&self) -> &str {
-        "core.logic.wait"
+        WAIT_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -39,13 +42,13 @@ impl SubActionRunner for CoreLogicWaitRunner {
 
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert("ms".to_owned(), Variant::Int(1000));
+        cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(1000));
         cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Integer {
-            key: "ms",
+            key: WAIT_MS_KEY,
             label: "Milliseconds",
             min: 0,
             max: MAX_DELAY_MS as i64,
@@ -61,9 +64,9 @@ impl SubActionRunner for CoreLogicWaitRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "core.logic.wait");
+        let timer = StepTimer::start(ctx, WAIT_KIND_ID);
 
-        let ms = config.int("ms").unwrap_or(0).max(0) as u64;
+        let ms = config.int(WAIT_MS_KEY).unwrap_or(0).max(0) as u64;
 
         tokio::time::sleep(Duration::from_millis(ms.min(MAX_DELAY_MS))).await;
 

@@ -498,3 +498,349 @@ impl OverlaysView {
         picker.update(cx, |picker, cx| picker.focus(window, cx));
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_overlay::config::{DEFAULT_ICON, ICON};
+    use forge_overlay::kinds::alert::AlertOverlayKind;
+    use forge_overlay::{IconCategory, effective_overlay_config};
+    use forge_storage::{MediaBlob, MediaBlobId, MediaFormat, MediaKind, OverlayConfig};
+    use forge_types::Variant;
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    const BLOB_A: &str = "sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8";
+    const BLOB_B: &str = "sha256-9faccac8ea389a38814e46d03b2d4704bc2caf3bed368f3d6a694cfebcbf1d29";
+    const GONE: &str = "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
+    const GLYPH: &str = "heart";
+    const NOT_A_GLYPH: &str = "forge-has-no-such-glyph";
+
+    fn image(id: &str, label: &str, format: MediaFormat) -> IconImage {
+        IconImage {
+            id: id.to_owned(),
+            label: label.to_owned(),
+            format,
+            path: Arc::from(Path::new("/library").join(format!("{id}.{}", format.as_str()))),
+        }
+    }
+
+    fn library() -> Vec<IconImage> {
+        vec![
+            image(BLOB_A, "cat.png", MediaFormat::Png),
+            image(BLOB_B, "wave.gif", MediaFormat::Gif),
+        ]
+    }
+
+    fn blob(id: &str, label: &str, format: MediaFormat) -> MediaBlob {
+        MediaBlob {
+            id: MediaBlobId::from_stored(id),
+            format,
+            byte_size: 6,
+            label: label.to_owned(),
+            imported_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    fn choice_name(choice: &IconChoice<'_>) -> String {
+        match choice {
+            IconChoice::None => "none".to_owned(),
+            IconChoice::Glyph(glyph) => format!("glyph:{}", glyph.name),
+            IconChoice::Image(image) => format!("image:{}", image.id),
+            IconChoice::Unresolved(value) => format!("unresolved:{value}"),
+        }
+    }
+
+    fn art_name(art: Option<GlyphArt>) -> String {
+        match art {
+            None => "none".to_owned(),
+            Some(GlyphArt::Icon(_)) => "kit-icon".to_owned(),
+            Some(GlyphArt::Svg(bytes)) => format!("svg:{}", bytes.len()),
+            Some(GlyphArt::Image(path)) => format!("file:{}", path.display()),
+        }
+    }
+
+    fn pick_name(pick: &IconPick) -> String {
+        match pick {
+            IconPick::Import => "import".to_owned(),
+            IconPick::Store(value) => format!("store:{value}"),
+        }
+    }
+
+    fn refusal(result: &IconPickResult) -> Option<&str> {
+        match result {
+            IconPickResult::Chosen(_) => None,
+            IconPickResult::Refused(message) => Some(message),
+        }
+    }
+
+    fn chosen(result: &IconPickResult) -> Option<&str> {
+        match result {
+            IconPickResult::Chosen(value) => Some(value),
+            IconPickResult::Refused(_) => None,
+        }
+    }
+
+    #[test]
+    fn a_stored_token_resolves_to_the_choice_it_names() {
+        let images = library();
+        for (stored, expected) in [
+            ("", "none"),
+            (GLYPH, "glyph:heart"),
+            (NOT_A_GLYPH, "unresolved:forge-has-no-such-glyph"),
+            (
+                &image_reference(BLOB_A),
+                "image:sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8",
+            ),
+            (
+                &image_reference(GONE),
+                "unresolved:sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8",
+            ),
+        ] {
+            assert_eq!(
+                choice_name(&icon_choice(stored, &images)),
+                expected,
+                "stored {stored:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_resolved_choice_draws_the_art_it_stands_for() {
+        let images = library();
+        let heart = curated_icon(GLYPH).expect("the curated roster carries a heart");
+
+        assert_eq!(
+            art_name(icon_art(&icon_choice(GLYPH, &images))),
+            format!("svg:{}", heart.bytes().len()),
+        );
+        assert_eq!(
+            art_name(icon_art(&icon_choice(&image_reference(BLOB_B), &images))),
+            format!("file:/library/{BLOB_B}.gif"),
+        );
+    }
+
+    #[test]
+    fn nothing_is_drawn_for_no_icon_or_for_a_reference_this_library_cannot_resolve() {
+        let images = library();
+        for stored in ["", NOT_A_GLYPH, &image_reference(GONE)] {
+            assert_eq!(
+                art_name(icon_art(&icon_choice(stored, &images))),
+                "none",
+                "stored {stored:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn the_field_names_the_choice_by_what_the_user_recognises() {
+        let images = library();
+        for (stored, expected) in [
+            ("", "overlays_icon_none"),
+            (GLYPH, GLYPH),
+            (&image_reference(BLOB_A), "cat.png"),
+            (NOT_A_GLYPH, NOT_A_GLYPH),
+        ] {
+            assert_eq!(
+                icon_label(&icon_choice(stored, &images)),
+                expected,
+                "stored {stored:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn a_picked_card_stores_its_own_id_unless_it_is_one_of_the_two_commands() {
+        for (id, expected) in [
+            (IMPORT_ICON_ID, "import"),
+            (NO_ICON_ID, "store:"),
+            (GLYPH, "store:heart"),
+            (
+                &image_reference(BLOB_A) as &str,
+                "store:image:sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8",
+            ),
+        ] {
+            assert_eq!(pick_name(&picked_icon(id)), expected, "card {id:?}");
+        }
+    }
+
+    #[test]
+    fn the_file_dialog_offers_every_accepted_image_format_and_no_audio_one() {
+        let offered = image_dialog_extensions();
+
+        for format in MediaFormat::ACCEPTED {
+            assert_eq!(
+                offered.contains(&format.as_str()),
+                format.kind() == MediaKind::Image,
+                "{} is offered by the icon dialog",
+                format.as_str(),
+            );
+        }
+    }
+
+    #[test]
+    fn an_imported_image_becomes_the_reference_the_overlay_stores() {
+        let outcome = import_outcome(Ok(blob(BLOB_A, "cat.png", MediaFormat::Png)));
+
+        assert_eq!(chosen(&outcome), Some(image_reference(BLOB_A).as_str()));
+    }
+
+    #[test]
+    fn a_file_the_library_accepted_as_audio_is_refused_as_an_icon() {
+        let outcome = import_outcome(Ok(blob(BLOB_A, "airhorn.wav", MediaFormat::Wav)));
+
+        assert_eq!(refusal(&outcome), Some("overlays_icon_import_not_image"));
+    }
+
+    #[test]
+    fn a_refused_import_reuses_the_library_wording() {
+        let unsupported = import_outcome(Err(StorageError::MediaUnsupported {
+            label: "notes.txt".to_owned(),
+        }));
+        let broken = import_outcome(Err(StorageError::Connection {
+            reason: "disk gone".to_owned(),
+        }));
+
+        assert_eq!(refusal(&unsupported), Some("soundboard_import_unsupported"),);
+        assert_eq!(refusal(&broken), Some("connection failed: disk gone"));
+    }
+
+    #[test]
+    fn the_library_read_keeps_only_images_each_under_its_own_id() {
+        let rows = image_rows(vec![
+            blob(BLOB_A, "cat.png", MediaFormat::Png),
+            blob(GONE, "airhorn.wav", MediaFormat::Wav),
+            blob(BLOB_B, "wave.gif", MediaFormat::Gif),
+        ]);
+
+        assert_eq!(
+            rows.iter()
+                .map(|(id, blob)| (id.as_str().to_owned(), blob.label.clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                (BLOB_A.to_owned(), "cat.png".to_owned()),
+                (BLOB_B.to_owned(), "wave.gif".to_owned()),
+            ],
+        );
+    }
+
+    #[test]
+    fn the_grid_opens_on_no_icon_and_closes_on_the_imported_library() {
+        let palette = forge_components::FORGE_DEFAULT;
+        let groups = icon_groups(&library(), palette.brand, &palette);
+
+        let mut expected: Vec<String> = vec![NONE_SCOPE.to_owned()];
+        expected.extend(IconCategory::ALL.iter().map(|c| c.as_str().to_owned()));
+        expected.push(IMPORTED_SCOPE.to_owned());
+        assert_eq!(
+            groups
+                .iter()
+                .map(|group| group.scope.to_string())
+                .collect::<Vec<_>>(),
+            expected,
+        );
+    }
+
+    #[test]
+    fn the_only_card_that_clears_the_field_leads_the_grid() {
+        let palette = forge_components::FORGE_DEFAULT;
+        let groups = icon_groups(&library(), palette.brand, &palette);
+
+        let ids: Vec<String> = groups[0]
+            .items
+            .iter()
+            .map(|item| item.id.to_string())
+            .collect();
+        assert_eq!(ids, vec![NO_ICON_ID.to_owned()]);
+    }
+
+    #[test]
+    fn the_imported_band_offers_the_import_first_and_then_every_image_by_its_reference() {
+        let palette = forge_components::FORGE_DEFAULT;
+        let groups = icon_groups(&library(), palette.brand, &palette);
+        let imported = groups.last().expect("the imported band closes the grid");
+
+        assert_eq!(
+            imported
+                .items
+                .iter()
+                .map(|item| item.id.to_string())
+                .collect::<Vec<_>>(),
+            vec![
+                IMPORT_ICON_ID.to_owned(),
+                image_reference(BLOB_A),
+                image_reference(BLOB_B),
+            ],
+        );
+    }
+
+    #[test]
+    fn every_category_band_carries_a_label_and_a_dot_of_its_own() {
+        let palette = forge_components::FORGE_DEFAULT;
+        let groups = icon_groups(&library(), palette.brand, &palette);
+        let bands = &groups[1..groups.len() - 1];
+
+        let labels: std::collections::BTreeSet<String> =
+            bands.iter().map(|g| g.label.to_string()).collect();
+        let dots: std::collections::BTreeSet<(u32, u32, u32)> = bands
+            .iter()
+            .map(|g| {
+                (
+                    g.dot_color.r.to_bits(),
+                    g.dot_color.g.to_bits(),
+                    g.dot_color.b.to_bits(),
+                )
+            })
+            .collect();
+        assert_eq!(labels.len(), IconCategory::ALL.len());
+        assert_eq!(dots.len(), IconCategory::ALL.len());
+    }
+
+    #[test]
+    fn a_curated_glyph_is_searched_through_its_own_keywords_not_its_name() {
+        let palette = forge_components::FORGE_DEFAULT;
+        let groups = icon_groups(&library(), palette.brand, &palette);
+        let gift = groups
+            .iter()
+            .flat_map(|group| group.items.iter())
+            .find(|item| item.id.as_ref() == "gift")
+            .expect("the curated roster carries a gift");
+        let test = gift
+            .matches
+            .as_ref()
+            .expect("a curated card searches itself");
+
+        assert!(test("donation"), "a keyword the card name does not contain");
+        assert!(!test("airhorn"));
+    }
+
+    #[test]
+    fn an_alert_that_stored_no_icon_previews_the_curated_default() {
+        let effective = effective_overlay_config(&AlertOverlayKind, &OverlayConfig::new());
+        let stored = effective
+            .get(ICON)
+            .and_then(Variant::as_str)
+            .expect("the alert declares an icon default");
+        let default = curated_icon(DEFAULT_ICON).expect("the alert default is a curated glyph");
+
+        assert_eq!(
+            art_name(icon_art(&icon_choice(stored, &[]))),
+            format!("svg:{}", default.bytes().len()),
+        );
+    }
+
+    #[test]
+    fn an_alert_whose_icon_was_cleared_previews_nothing() {
+        let cleared: OverlayConfig = [(ICON.to_owned(), Variant::String(String::new()))]
+            .into_iter()
+            .collect();
+        let effective = effective_overlay_config(&AlertOverlayKind, &cleared);
+        let stored = effective
+            .get(ICON)
+            .and_then(Variant::as_str)
+            .expect("the alert declares an icon default");
+
+        assert_eq!(art_name(icon_art(&icon_choice(stored, &[]))), "none");
+    }
+}

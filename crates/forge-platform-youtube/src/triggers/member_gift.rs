@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
+    SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{entity, gift as fields};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::gift as fields;
 
 pub(crate) struct ChannelMemberGiftDescriptor;
 
@@ -63,73 +65,65 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let count = event
-            .payload
-            .get(fields::COUNT)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let level_name = event
-            .payload
-            .get(fields::LEVEL_NAME)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let gifter = event.payload.get(fields::GIFTER);
-        let gifter_channel_id = gifter
-            .and_then(|g| g.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let gifter_display_name = gifter
-            .and_then(|g| g.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("gift.count".to_owned(), Variant::Int(count))
-            .set("gift.level_name".to_owned(), Variant::String(level_name))
-            .set(
-                "gifter.channel_id".to_owned(),
-                Variant::String(gifter_channel_id),
-            )
-            .set(
-                "gifter.display_name".to_owned(),
-                Variant::String(gifter_display_name),
-            )
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), gifter_identity)
+                .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
+                .count(CanonicalCount::GiftCount, |event| {
+                    payload_read::number(event, fields::COUNT)
+                })
+                .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
+                .legacy(
+                    DeclaredVariable {
+                        name: "gift.count".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Memberships gifted count".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 100 }),
+                    },
+                    CanonicalVariable::Count(CanonicalCount::GiftCount),
+                    |event| Variant::Int(payload_read::number(event, fields::COUNT)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gift.level_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Membership level name".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::SubTier,
+                    |event| Variant::String(payload_read::text(event, fields::LEVEL_NAME)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gifter.channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
+                    |event| Variant::String(gifter_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gifter.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
+                    |event| Variant::String(gifter_identity(event).display_name),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "gift.count".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Memberships gifted count".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 100 }),
-                },
-                DeclaredVariable {
-                    name: "gift.level_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Membership level name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "gifter.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "gifter.display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Gifter])
     }
+}
+
+fn gifter_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::GIFTER))
 }
 
 #[cfg(test)]

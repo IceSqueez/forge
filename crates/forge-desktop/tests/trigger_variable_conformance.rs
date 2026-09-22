@@ -17,19 +17,6 @@ const VOCABULARY_HAS_NOT_REACHED: &[&str] = &[
     "kick.livestream.metadata.updated",
     "kick.livestream.status.updated",
     "kick.moderation.banned",
-    "youtube.channel.member",
-    "youtube.channel.member_gift",
-    "youtube.channel.member_gift_received",
-    "youtube.channel.member_milestone",
-    "youtube.channel.user_banned",
-    "youtube.chat.command",
-    "youtube.chat.message",
-    "youtube.chat.message_deleted",
-    "youtube.chat.super_chat",
-    "youtube.chat.super_sticker",
-    "youtube.stream.offline",
-    "youtube.stream.online",
-    "youtube.stream.title_changed",
 ];
 
 fn every_registered_trigger() -> TriggerRegistry {

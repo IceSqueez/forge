@@ -1,13 +1,19 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{ban as fields, entity};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::ban as fields;
+
+const ANY_BAN: &str = "any";
+const PERMANENT_BAN: &str = "permanent";
+const TEMPORARY_BAN: &str = "temporary";
 
 pub(crate) struct ChannelUserBannedDescriptor;
 
@@ -44,7 +50,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
         let mut cfg = TriggerConfig::new();
         cfg.insert(
             "ban_type_filter".to_owned(),
-            Variant::String("any".to_owned()),
+            Variant::String(ANY_BAN.to_owned()),
         );
         cfg
     }
@@ -53,7 +59,7 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
         vec![FormField::Select {
             key: "ban_type_filter",
             label: "Ban type",
-            options: &["any", "permanent", "temporary"],
+            options: &[ANY_BAN, PERMANENT_BAN, TEMPORARY_BAN],
         }]
     }
 
@@ -67,11 +73,11 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                     None
                 }
             })
-            .unwrap_or("any");
+            .unwrap_or(ANY_BAN);
 
         match filter {
-            "permanent" => "permanent ban only".to_owned(),
-            "temporary" => "temporary timeout only".to_owned(),
+            PERMANENT_BAN => "permanent ban only".to_owned(),
+            TEMPORARY_BAN => "temporary timeout only".to_owned(),
             _ => "any ban type".to_owned(),
         }
     }
@@ -93,125 +99,107 @@ impl TriggerKindDescriptor for ChannelUserBannedDescriptor {
                     None
                 }
             })
-            .unwrap_or("any");
+            .unwrap_or(ANY_BAN);
 
         match filter {
-            "permanent" => {
-                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some("permanent")
+            PERMANENT_BAN => {
+                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some(PERMANENT_BAN)
             }
-            "temporary" => {
-                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some("temporary")
+            TEMPORARY_BAN => {
+                event.payload.get(fields::TYPE).and_then(|v| v.as_str()) == Some(TEMPORARY_BAN)
             }
             _ => true,
         }
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let target_user = event.payload.get(fields::TARGET_USER);
-        let target_display_name = target_user
-            .and_then(|u| u.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let target_channel_id = target_user
-            .and_then(|u| u.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let moderator = event.payload.get(fields::MODERATOR);
-        let moderator_channel_id = moderator
-            .and_then(|m| m.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_display_name = moderator
-            .and_then(|m| m.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let ban_type = event
-            .payload
-            .get(fields::TYPE)
-            .and_then(|v| v.as_str())
-            .unwrap_or("permanent")
-            .to_owned();
-
-        let ban_duration_seconds = event
-            .payload
-            .get(fields::DURATION_SECS)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        ArgStack::new()
-            .set(
-                "ban.target.display_name".to_owned(),
-                Variant::String(target_display_name),
-            )
-            .set(
-                "ban.target.channel_id".to_owned(),
-                Variant::String(target_channel_id),
-            )
-            .set(
-                "ban.moderator.channel_id".to_owned(),
-                Variant::String(moderator_channel_id),
-            )
-            .set(
-                "ban.moderator.display_name".to_owned(),
-                Variant::String(moderator_display_name),
-            )
-            .set("ban.type".to_owned(), Variant::String(ban_type))
-            .set(
-                "ban.duration_seconds".to_owned(),
-                Variant::Int(ban_duration_seconds),
-            )
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), target_identity)
+                .actor(youtube_actor(ActorRole::Moderator), moderator_identity)
+                .event_specific(
+                    DeclaredVariable {
+                        name: "ban.type".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Ban type".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(ban_type(event)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "ban.duration_seconds".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Ban duration in seconds".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 0,
+                            max: 86_400,
+                        }),
+                    },
+                    |event| Variant::Int(payload_read::number(event, fields::DURATION_SECS)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "ban.target.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned user display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| Variant::String(target_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "ban.target.channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Banned user channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(target_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "ban.moderator.channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
+                    |event| Variant::String(moderator_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "ban.moderator.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Moderator display name".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Name),
+                    |event| Variant::String(moderator_identity(event).display_name),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "ban.target.display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Banned user display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-                DeclaredVariable {
-                    name: "ban.target.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Banned user channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "ban.moderator.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Moderator channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "ban.moderator.display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Moderator display name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "ban.type".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Ban type".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "ban.duration_seconds".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Ban duration in seconds".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt {
-                        min: 0,
-                        max: 86_400,
-                    }),
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
+    }
+}
+
+fn target_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::TARGET_USER))
+}
+
+fn moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::MODERATOR))
+}
+
+fn ban_type(event: &Event) -> String {
+    let declared = payload_read::text(event, fields::TYPE);
+    if declared.is_empty() {
+        PERMANENT_BAN.to_owned()
+    } else {
+        declared
     }
 }
 

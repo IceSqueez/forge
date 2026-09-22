@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{chat as chat_fields, entity, support as fields};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::{chat as chat_fields, support as fields};
 
 pub(crate) struct SupportSuperStickerDescriptor;
 
@@ -63,86 +65,70 @@ impl TriggerKindDescriptor for SupportSuperStickerDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let author = event.payload.get(chat_fields::AUTHOR);
-        let user_display_name = author
-            .and_then(|a| a.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let channel_id = author
-            .and_then(|a| a.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let sticker_id = event
-            .payload
-            .get(fields::STICKER_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let amount_micros = event
-            .payload
-            .get(fields::AMOUNT_MICROS)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let currency = event
-            .payload
-            .get(fields::CURRENCY)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "user_display_name".to_owned(),
-                Variant::String(user_display_name),
-            )
-            .set("channel_id".to_owned(), Variant::String(channel_id))
-            .set("sticker_id".to_owned(), Variant::String(sticker_id))
-            .set("amount_micros".to_owned(), Variant::Int(amount_micros))
-            .set("currency".to_owned(), Variant::String(currency))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), author_identity)
+                .event_specific(
+                    DeclaredVariable {
+                        name: "sticker_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sticker ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::STICKER_ID)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "amount_micros".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Amount in micros".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt {
+                            min: 2_000_000,
+                            max: 500_000_000,
+                        }),
+                    },
+                    |event| Variant::Int(payload_read::number(event, fields::AMOUNT_MICROS)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "currency".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Currency code".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::CURRENCY)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "user_display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| Variant::String(author_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(author_identity(event).id),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "user_display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-                DeclaredVariable {
-                    name: "channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "sticker_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sticker ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "amount_micros".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Amount in micros".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt {
-                        min: 2_000_000,
-                        max: 500_000_000,
-                    }),
-                },
-                DeclaredVariable {
-                    name: "currency".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Currency code".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
+}
+
+fn author_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(chat_fields::AUTHOR))
 }
 
 #[cfg(test)]

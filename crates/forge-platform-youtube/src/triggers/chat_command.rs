@@ -1,14 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, ChatTriggerFamily, EventFilter, FormField,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{chat as fields, entity};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::chat as fields;
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -124,94 +125,63 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         }
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let message_text = event
-            .payload
-            .get(fields::MESSAGE_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let command_name = event
-            .payload
-            .get(fields::COMMAND_NAME)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let args = event
-            .payload
-            .get(fields::ARGS)
-            .and_then(|v| v.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|s| Variant::String(s.to_owned()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let author = event.payload.get(fields::AUTHOR);
-        let user_display_name = author
-            .and_then(|a| a.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let channel_id = author
-            .and_then(|a| a.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("message_text".to_owned(), Variant::String(message_text))
-            .set("command_name".to_owned(), Variant::String(command_name))
-            .set("args".to_owned(), Variant::Array(args))
-            .set(
-                "user_display_name".to_owned(),
-                Variant::String(user_display_name),
-            )
-            .set("channel_id".to_owned(), Variant::String(channel_id))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), author_identity)
+                .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
+                .event_specific(
+                    DeclaredVariable {
+                        name: "command_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Command name".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::COMMAND_NAME)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "args".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Command arguments".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| payload_read::text_list(event, fields::ARGS),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "user_display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| Variant::String(author_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(author_identity(event).id),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "message_text".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Message text".to_owned(),
-                    synthesis: Some(SynthesisHint::Message),
-                },
-                DeclaredVariable {
-                    name: "command_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Command name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "args".to_owned(),
-                    kind: VariantKind::Array,
-                    label: "Command arguments".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "user_display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-                DeclaredVariable {
-                    name: "channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender channel ID".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
 
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         Some(ChatTriggerFamily::Command)
     }
+}
+
+fn author_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::AUTHOR))
 }
 
 #[cfg(test)]

@@ -1,11 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read;
 use crate::payload_fields::stream as fields;
 
 pub(crate) struct ChannelBroadcastTitleChangedDescriptor;
@@ -62,41 +62,44 @@ impl TriggerKindDescriptor for ChannelBroadcastTitleChangedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let title = event.payload.get(fields::TITLE);
-        let title_old = title
-            .and_then(|t| t.get(fields::OLD))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let title_new = title
-            .and_then(|t| t.get(fields::NEW))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("stream.title_old".to_owned(), Variant::String(title_old))
-            .set("stream.title_new".to_owned(), Variant::String(title_new))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .event_specific(
+                    DeclaredVariable {
+                        name: "stream.title_old".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Previous broadcast title".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            fields::TITLE,
+                            fields::OLD,
+                        ))
+                    },
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "stream.title_new".to_owned(),
+                        kind: VariantKind::String,
+                        label: "New broadcast title".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            fields::TITLE,
+                            fields::NEW,
+                        ))
+                    },
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "stream.title_old".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Previous broadcast title".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "stream.title_new".to_owned(),
-                    kind: VariantKind::String,
-                    label: "New broadcast title".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actorless
     }
 }
 

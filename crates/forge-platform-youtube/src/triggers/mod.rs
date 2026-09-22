@@ -8,6 +8,7 @@ pub(crate) mod chat_super_sticker;
 pub(crate) mod member_gift;
 pub(crate) mod member_gift_received;
 pub(crate) mod message_deleted;
+mod payload_read;
 pub(crate) mod stream_offline;
 pub(crate) mod stream_online;
 pub(crate) mod title_changed;

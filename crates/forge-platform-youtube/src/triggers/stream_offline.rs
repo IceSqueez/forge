@@ -1,11 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read;
 use crate::payload_fields::stream as fields;
 
 pub(crate) struct ChannelBroadcastEndedDescriptor;
@@ -62,26 +62,20 @@ impl TriggerKindDescriptor for ChannelBroadcastEndedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let broadcast_id = event
-            .payload
-            .get(fields::BROADCAST_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new().set("broadcast_id".to_owned(), Variant::String(broadcast_id))
-    }
-
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![DeclaredVariable {
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(TriggerVariables::new().event_specific(
+            DeclaredVariable {
                 name: "broadcast_id".to_owned(),
                 kind: VariantKind::String,
                 label: "Broadcast ID".to_owned(),
                 synthesis: None,
-            }],
-        })
+            },
+            |event| Variant::String(payload_read::text(event, fields::BROADCAST_ID)),
+        ))
+    }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actorless
     }
 }
 

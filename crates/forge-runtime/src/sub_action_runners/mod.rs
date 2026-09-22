@@ -68,6 +68,7 @@ mod file_sandbox;
 pub(crate) mod interpolate;
 mod os_ports;
 mod overlay_send;
+mod overlay_targets;
 mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
@@ -142,6 +143,10 @@ pub use os_ports::{
     SystemNotifyPort, SystemUrlOpenPort, UrlOpenPort,
 };
 pub use overlay_send::{CONTENT_SCHEMA_KEY, OverlaySendRunner};
+pub use overlay_targets::{
+    OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
+    overlay_send_targets,
+};
 pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;

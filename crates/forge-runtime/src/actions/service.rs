@@ -1,14 +1,16 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use forge_registry::SubActionRegistry;
 use forge_storage::{
-    ActionRepo, ActionTelemetry, HistoryRepo, QueueRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo,
+    ActionRepo, ActionTelemetry, HistoryRepo, OverlayId, QueueRepo, SoundboardClipsRepo,
+    StorageError, TriggerInstanceRepo,
 };
 use forge_types::{ActionId, ClipId, ExecutionContext, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
 
-use super::types::{ActionDetail, ActionSummary};
+use super::types::{ActionDetail, ActionSummary, OverlayFeed};
+use crate::sub_action_runners::feeds_overlay;
 
 pub struct ActionsService {
     actions: Arc<dyn ActionRepo>,
@@ -153,6 +155,27 @@ impl ActionsService {
             .unlink_action(action_id, instance_id)
             .await
             .map(|_| ())
+    }
+
+    pub async fn overlay_feeds(
+        &self,
+        overlay: &OverlayId,
+        sub_actions: &SubActionRegistry,
+    ) -> Result<Vec<OverlayFeed>, StorageError> {
+        let mut feeds = Vec::new();
+        for action in self.actions.list().await? {
+            if !feeds_overlay(&action.sub_actions, sub_actions, overlay.as_str()) {
+                continue;
+            }
+            let triggers = self.trigger_instances.list_for_action(action.id).await?;
+            feeds.push(OverlayFeed {
+                action_id: action.id,
+                action_name: action.name,
+                action_enabled: action.enabled,
+                triggers,
+            });
+        }
+        Ok(feeds)
     }
 
     pub async fn list_clip_options(&self) -> Vec<(ClipId, String)> {

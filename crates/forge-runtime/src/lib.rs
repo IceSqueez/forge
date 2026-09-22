@@ -55,7 +55,10 @@ pub use queue_scheduler::{
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
 pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
-pub use sub_action_runners::{CONTENT_SCHEMA_KEY, register_core_sub_actions};
+pub use sub_action_runners::{
+    CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
+    overlay_send_targets, register_core_sub_actions,
+};
 pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
 pub use viewer_tracker::spawn_viewer_tracker;

@@ -16,6 +16,14 @@ pub struct ActionSummary {
 }
 
 #[derive(Debug, Clone)]
+pub struct OverlayFeed {
+    pub action_id: ActionId,
+    pub action_name: String,
+    pub action_enabled: bool,
+    pub triggers: Vec<TriggerInstance>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ActionDetail {
     pub action: Action,
     pub trigger_instances: Vec<TriggerInstance>,

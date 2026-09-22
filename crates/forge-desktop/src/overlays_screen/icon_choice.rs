@@ -443,7 +443,7 @@ impl OverlaysView {
                 let outcome = import_outcome(result);
                 let settled = matches!(outcome, IconPickResult::Chosen(_));
                 if let Some(panel) = this.panel.as_ref().map(|open| open.view.clone()) {
-                    panel.update(cx, |panel, cx| panel.settle_icon_pick(key, outcome, cx));
+                    panel.update(cx, |panel, cx| panel.settle_icon_import(key, outcome, cx));
                 }
                 if settled {
                     this.load_images(cx);

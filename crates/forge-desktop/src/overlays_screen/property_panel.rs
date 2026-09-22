@@ -208,6 +208,18 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
+    pub(super) fn settle_icon_import(
+        &mut self,
+        key: String,
+        result: IconPickResult,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.awaits_icon(&key) {
+            return;
+        }
+        self.settle_icon_pick(key, result, cx);
+    }
+
     pub(super) fn settle_icon_pick(
         &mut self,
         key: String,

@@ -50,14 +50,15 @@ enum TestFirePhase {
     Sending,
     Landed {
         content: OverlayConfig,
-        delivered: bool,
+        delivery: OverlayDelivery,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeliveryHint {
     Sending,
-    Delivered,
+    Delivered { sources: usize },
+    OnlyPreview { tabs: usize },
     NoBrowserSource,
     Undelivered,
 }
@@ -65,15 +66,12 @@ enum DeliveryHint {
 fn delivery_hint(phase: &TestFirePhase, server_running: bool) -> DeliveryHint {
     match phase {
         TestFirePhase::Sending => DeliveryHint::Sending,
-        TestFirePhase::Landed {
-            delivered: true, ..
-        } => DeliveryHint::Delivered,
-        TestFirePhase::Landed {
-            delivered: false, ..
-        } if server_running => DeliveryHint::NoBrowserSource,
-        TestFirePhase::Landed {
-            delivered: false, ..
-        } => DeliveryHint::Undelivered,
+        TestFirePhase::Landed { delivery, .. } => match *delivery {
+            OverlayDelivery::Delivered { sources } => DeliveryHint::Delivered { sources },
+            OverlayDelivery::OnlyPreview { tabs } => DeliveryHint::OnlyPreview { tabs },
+            OverlayDelivery::NoPage if server_running => DeliveryHint::NoBrowserSource,
+            OverlayDelivery::NoPage => DeliveryHint::Undelivered,
+        },
     }
 }
 
@@ -210,7 +208,7 @@ impl OverlaysView {
                     overlay,
                     phase: TestFirePhase::Landed {
                         content: fired.content,
-                        delivered: !matches!(fired.delivery, OverlayDelivery::NoPage),
+                        delivery: fired.delivery,
                     },
                 });
                 self.sync_preview();
@@ -584,10 +582,15 @@ impl OverlaysView {
                 palette.text_muted,
                 tr!("overlays_test_sending"),
             ),
-            DeliveryHint::Delivered => (
+            DeliveryHint::Delivered { sources } => (
                 Icon::CircleCheck,
                 palette.success,
-                tr!("overlays_test_delivered"),
+                tr!("overlays_test_delivered", count = sources as i64),
+            ),
+            DeliveryHint::OnlyPreview { tabs } => (
+                Icon::InfoCircle,
+                palette.warning,
+                tr!("overlays_test_preview_only", count = tabs as i64),
             ),
             DeliveryHint::NoBrowserSource => (
                 Icon::AlertTriangle,
@@ -741,7 +744,11 @@ mod tests {
     fn landed(delivered: bool) -> TestFirePhase {
         TestFirePhase::Landed {
             content: OverlayConfig::new(),
-            delivered,
+            delivery: if delivered {
+                OverlayDelivery::Delivered { sources: 1 }
+            } else {
+                OverlayDelivery::NoPage
+            },
         }
     }
 
@@ -749,7 +756,7 @@ mod tests {
     fn a_fire_in_flight_or_already_delivered_reads_the_same_whether_the_server_runs() {
         for (phase, expected) in [
             (TestFirePhase::Sending, DeliveryHint::Sending),
-            (landed(true), DeliveryHint::Delivered),
+            (landed(true), DeliveryHint::Delivered { sources: 1 }),
         ] {
             for server_running in [false, true] {
                 assert_eq!(

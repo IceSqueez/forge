@@ -2265,7 +2265,7 @@ overlays_preview_scale_true = To scale
 overlays_preview_scale_zoom = Zoom
 overlays_preview_open = Open in browser
 overlays_preview_open_failed = forge could not open this overlay page in your browser.
-overlays_preview_browser_counts = A browser tab on this page counts as a connected page, so Send test reaches it the same way it reaches an OBS browser source.
+overlays_preview_browser_counts = A preview tab still receives the sample, but it does not count as a browser source.
 overlays_preview_canvas_note = transparent - OBS browser source
 overlays_preview_approximate = Approximate preview. The real overlay is drawn by the OBS browser source on a transparent background.
 overlays_preview_unavailable = This build has no overlay type for this record, so there is nothing to preview.
@@ -2273,7 +2273,14 @@ overlays_preview_audio_silent = Draws nothing in OBS - it only plays audio there
 overlays_preview_audio_needs_source = Add it as an OBS browser source - an ordinary tab blocks autoplay.
 overlays_test_send = Send test
 overlays_test_sending = Building a sample for the bound event...
-overlays_test_delivered = Sample sent to every browser source showing this overlay.
+overlays_test_delivered = { $count ->
+    [one] Sample delivered to { $count } browser source
+   *[other] Sample delivered to { $count } browser sources
+}
+overlays_test_preview_only = { $count ->
+    [one] Only a preview tab is connected - open the overlay URL in OBS to see it there
+   *[other] Only { $count } preview tabs are connected - open the overlay URL in OBS to see it there
+}
 overlays_test_undelivered = The server is stopped, so no browser source received this sample. The preview above ran on its own.
 overlays_test_no_browser_source = The server is running, but no browser source is connected to this overlay. Check the overlay URL in OBS and refresh the source.
 overlays_test_unavailable = Send test is not available yet - this overlay's content is filled in only when forge fires a real step.

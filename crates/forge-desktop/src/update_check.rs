@@ -387,3 +387,290 @@ fn remember_notified(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Ha
             .await
     });
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::{
+        CURRENT_VERSION, REPO_URL, Release, UpdateNotice, Version, is_newer, latest_release_url,
+        parse_version, release_from_json, should_notify,
+    };
+
+    fn version(raw: &str) -> Version {
+        parse_version(raw).unwrap()
+    }
+
+    #[test]
+    fn parse_version_tolerates_a_v_prefix_build_metadata_and_surrounding_padding() {
+        let plain = version("0.5.3");
+        for raw in [
+            " 0.5.3 ",
+            "v0.5.3",
+            "0.5.3+build.9",
+            "v0.5.3+build.9",
+            " v0.5.3 ",
+        ] {
+            assert_eq!(parse_version(raw).as_ref(), Some(&plain), "for {raw:?}");
+        }
+    }
+
+    #[test]
+    fn parse_version_keeps_a_prerelease_that_carries_build_metadata() {
+        assert_eq!(
+            parse_version("v0.5.3-beta.1+build.9"),
+            parse_version("0.5.3-beta.1"),
+        );
+        assert_ne!(parse_version("0.5.3-beta.1"), parse_version("0.5.3"));
+    }
+
+    #[test]
+    fn parse_version_rejects_anything_but_three_numeric_components() {
+        for raw in [
+            "",
+            "   ",
+            "0",
+            "0.5",
+            "0.5.3.1",
+            "0.5.x",
+            "0.-5.3",
+            "next release",
+            "not-a-version",
+            "18446744073709551616.0.0",
+        ] {
+            assert!(parse_version(raw).is_none(), "accepted {raw:?}");
+        }
+    }
+
+    #[test]
+    fn parse_version_rejects_an_empty_prerelease_identifier() {
+        for raw in ["0.5.3-", "0.5.3-beta.", "0.5.3-.1", "0.5.3-beta..1"] {
+            assert!(parse_version(raw).is_none(), "accepted {raw:?}");
+        }
+    }
+
+    #[test]
+    fn version_ordering_follows_semver_precedence() {
+        for (lower, higher) in [
+            ("0.5.2", "0.5.3"),
+            ("0.5.9", "0.6.0"),
+            ("0.9.9", "1.0.0"),
+            ("0.5.3-beta.1", "0.5.3"),
+            ("0.5.3-beta.2", "0.5.3-beta.10"),
+            ("0.5.3-alpha.9", "0.5.3-beta.1"),
+            ("1.0.0-alpha", "1.0.0-alpha.1"),
+            ("1.0.0-1", "1.0.0-alpha"),
+        ] {
+            assert!(
+                version(lower) < version(higher),
+                "expected {lower} below {higher}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_newer_never_offers_a_prerelease_to_a_release_build() {
+        for latest in ["0.5.3-beta.1", "0.6.0-rc.1", "1.0.0-alpha"] {
+            assert!(
+                !is_newer(&version("0.5.2"), &version(latest)),
+                "offered {latest} to a release build",
+            );
+        }
+    }
+
+    #[test]
+    fn is_newer_offers_a_release_build_only_a_strictly_higher_release() {
+        for (latest, expected) in [
+            ("0.5.3", true),
+            ("1.0.0", true),
+            ("0.5.2", false),
+            ("0.5.1", false),
+        ] {
+            assert_eq!(
+                is_newer(&version("0.5.2"), &version(latest)),
+                expected,
+                "for {latest}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_newer_offers_a_prerelease_build_the_next_prerelease_and_the_release() {
+        for (latest, expected) in [
+            ("0.5.3-beta.2", true),
+            ("0.5.3", true),
+            ("0.5.4-beta.1", true),
+            ("0.5.3-beta.1", false),
+            ("0.5.3-alpha.9", false),
+            ("0.5.2", false),
+        ] {
+            assert_eq!(
+                is_newer(&version("0.5.3-beta.1"), &version(latest)),
+                expected,
+                "for {latest}",
+            );
+        }
+    }
+
+    #[test]
+    fn release_from_json_takes_the_trimmed_tag_and_page_of_a_published_release() {
+        for body in [
+            r#"{"tag_name":" v0.6.0 ","html_url":" https://example.invalid/r ","draft":false}"#,
+            r#"{"tag_name":"v0.6.0","html_url":"https://example.invalid/r"}"#,
+        ] {
+            assert_eq!(
+                release_from_json(body),
+                Some(Release {
+                    tag: "v0.6.0".to_owned(),
+                    url: "https://example.invalid/r".to_owned(),
+                }),
+                "for {body:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn release_from_json_rejects_a_draft_a_missing_field_and_a_body_that_is_not_an_object() {
+        for body in [
+            r#"{"tag_name":"v0.6.0","html_url":"https://example.invalid/r","draft":true}"#,
+            r#"{"html_url":"https://example.invalid/r"}"#,
+            r#"{"tag_name":"v0.6.0"}"#,
+            r#"{"tag_name":"   ","html_url":"https://example.invalid/r"}"#,
+            r#"{"tag_name":"v0.6.0","html_url":""}"#,
+            r#"{"tag_name":42,"html_url":"https://example.invalid/r"}"#,
+            r#"["v0.6.0"]"#,
+            r#""v0.6.0""#,
+            "null",
+            "{not json",
+            "",
+        ] {
+            assert_eq!(release_from_json(body), None, "accepted {body:?}");
+        }
+    }
+
+    #[test]
+    fn latest_release_url_reaches_the_api_whatever_the_web_url_spelling() {
+        for repo in [
+            "https://github.com/nova/forge",
+            "https://github.com/nova/forge.git",
+            "https://github.com/nova/forge/",
+            "https://github.com/nova/forge.git/",
+            "  https://github.com/nova/forge  ",
+        ] {
+            assert_eq!(
+                latest_release_url(repo).as_deref(),
+                Some("https://api.github.com/repos/nova/forge/releases/latest"),
+                "for {repo:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn latest_release_url_is_none_for_anything_but_a_github_web_url() {
+        for repo in [
+            "https://gitlab.com/nova/forge",
+            "http://github.com/nova/forge",
+            "git@github.com:nova/forge.git",
+            "https://github.com/",
+            "https://github.com//",
+            "",
+        ] {
+            assert_eq!(latest_release_url(repo), None, "accepted {repo:?}");
+        }
+    }
+
+    #[test]
+    fn the_manifest_version_and_repository_both_feed_the_check() {
+        assert!(
+            parse_version(CURRENT_VERSION).is_some(),
+            "unparseable {CURRENT_VERSION:?}",
+        );
+        assert!(
+            latest_release_url(REPO_URL).is_some(),
+            "no release api url from {REPO_URL:?}",
+        );
+    }
+
+    #[test]
+    fn should_notify_raises_for_a_newer_release_the_user_has_not_been_shown() {
+        for dismissed in [None, Some("0.5.2"), Some("v0.5.2"), Some("not a version")] {
+            assert_eq!(
+                should_notify("0.5.2", "v0.5.3", dismissed, true, false),
+                Some(UpdateNotice::Raise),
+                "for dismissed {dismissed:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn should_notify_defers_a_newer_release_while_obs_is_live() {
+        assert_eq!(
+            should_notify("0.5.2", "0.5.3", None, true, true),
+            Some(UpdateNotice::DeferUntilObsIdle),
+        );
+    }
+
+    #[test]
+    fn should_notify_stays_silent_when_disabled_already_shown_or_not_newer() {
+        for (label, current, latest, dismissed, enabled, obs_live) in [
+            ("disabled", "0.5.2", "0.5.3", None, false, false),
+            (
+                "disabled while obs is live",
+                "0.5.2",
+                "0.5.3",
+                None,
+                false,
+                true,
+            ),
+            ("same version", "0.5.3", "0.5.3", None, true, false),
+            ("older release", "0.5.3", "0.5.2", None, true, false),
+            (
+                "prerelease for a release build",
+                "0.5.2",
+                "0.5.3-beta.1",
+                None,
+                true,
+                false,
+            ),
+            (
+                "already shown",
+                "0.5.2",
+                "0.5.3",
+                Some("0.5.3"),
+                true,
+                false,
+            ),
+            (
+                "already shown under a v tag",
+                "0.5.2",
+                "v0.5.3",
+                Some("v0.5.3"),
+                true,
+                false,
+            ),
+            (
+                "shown a later version",
+                "0.5.2",
+                "0.5.3",
+                Some("0.6.0"),
+                true,
+                false,
+            ),
+            ("unparseable current", "nightly", "0.5.3", None, true, false),
+            ("unparseable latest", "0.5.2", "latest", None, true, false),
+            (
+                "already shown while obs is live",
+                "0.5.2",
+                "0.5.3",
+                Some("0.5.3"),
+                true,
+                true,
+            ),
+        ] {
+            assert_eq!(
+                should_notify(current, latest, dismissed, enabled, obs_live),
+                None,
+                "{label}",
+            );
+        }
+    }
+}

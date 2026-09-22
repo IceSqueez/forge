@@ -967,6 +967,8 @@ mod tests {
             (reserved_keys::DIAGNOSTICS_LOG_LEVEL, "trace"),
             (reserved_keys::SERVER_PORT, "8080"),
             (reserved_keys::SERVER_ENABLED, "true"),
+            (reserved_keys::UPDATES_NOTIFY, "false"),
+            (reserved_keys::UPDATES_DISMISSED_VERSION, "v0.6.0"),
             ("tts.engine_params.piper.speed", "1.25"),
         ] {
             assert_eq!(disclosure::class_of(key), SettingDisclosure::Verbatim);

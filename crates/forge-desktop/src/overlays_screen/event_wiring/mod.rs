@@ -549,3 +549,326 @@ impl Render for EventWiringView {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use forge_components::{Density, ThemeId, ToastKind};
+    use forge_overlay::kinds::alert::{self, AlertOverlayKind};
+    use forge_overlay::{OverlayConfig, OverlayKindRegistry};
+    use forge_registry::TriggerCategory;
+    use forge_runtime::actions::WiredQueue;
+    use forge_runtime::{ActionCancelRegistry, EventBus, QueueScheduler, spawn_action_engine};
+    use forge_storage::Language;
+    use forge_storage::action::MockActionRepo;
+    use forge_storage::history::MockHistoryRepo;
+    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_types::{QueueId, TriggerInstanceId};
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::presentation::Presentation;
+    use crate::test_support::{
+        Declares, StubEventLog, StubTrigger, overlay_definition, runtime, trigger_registry,
+    };
+    use crate::toasts::Toasts;
+
+    const SUBSCRIBER: &str = "twitch.support.subscriber";
+    const FOLLOW: &str = "twitch.channel.follow";
+    const QUEUE_NAME: &str = "Overlay Alerts";
+
+    fn scheduler_on(rt: &tokio::runtime::Runtime) -> QueueSchedulerHandle {
+        rt.block_on(async {
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let engine = spawn_action_engine(
+                Arc::clone(&bus),
+                Arc::new(MockActionRepo::new()),
+                Arc::new(MockHistoryRepo::new()),
+                Arc::new(SubActionRegistry::new()),
+                Arc::new(ActionCancelRegistry::new()),
+            );
+            QueueScheduler::spawn(engine, bus, Vec::new())
+        })
+    }
+
+    fn alert_queue() -> Queue {
+        Queue {
+            id: QueueId::new(),
+            name: QUEUE_NAME.to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        }
+    }
+
+    fn records_for(queue: WiredQueue) -> OverlayWiringRecords {
+        OverlayWiringRecords {
+            queue: Some(queue),
+            ..OverlayWiringRecords::default()
+        }
+    }
+
+    fn launch(rt: &tokio::runtime::Runtime) -> WiringLaunch {
+        let mut kinds = OverlayKindRegistry::new();
+        kinds
+            .register(Box::new(AlertOverlayKind))
+            .expect("the alert kind registers once");
+        WiringLaunch {
+            actions: Arc::new(ActionsService::new(
+                Arc::new(MockActionRepo::new()),
+                Arc::new(MockQueueRepo::new()),
+                Arc::new(MockHistoryRepo::new()),
+                Arc::new(MockTriggerInstanceRepo::new()),
+                Arc::new(MockSoundboardClipsRepo::new()),
+            )),
+            triggers: Arc::new(trigger_registry(vec![
+                StubTrigger::new(
+                    SUBSCRIBER,
+                    "Subscribed",
+                    TriggerCategory::Subscriptions,
+                    Declares::APrincipal,
+                ),
+                StubTrigger::new(
+                    FOLLOW,
+                    "Followed",
+                    TriggerCategory::Subscriptions,
+                    Declares::APrincipal,
+                ),
+            ])),
+            sub_actions: Arc::new(SubActionRegistry::new()),
+            scheduler: scheduler_on(rt),
+            kinds: Arc::new(kinds),
+            rt_handle: rt.handle().clone(),
+        }
+    }
+
+    fn mount(cx: &mut TestAppContext) -> (Entity<EventWiringView>, tokio::runtime::Runtime) {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let rt = runtime();
+        let view = cx.update(|cx| cx.new(|_| EventWiringView::new(launch(&rt))));
+        (view, rt)
+    }
+
+    fn checking_on(view: &Entity<EventWiringView>, cx: &mut TestAppContext, kind_id: &str) {
+        view.update(cx, |this, _| {
+            this.overlay = Some(overlay_definition(alert::KIND_ID, OverlayConfig::new()));
+            this.stage = Some(WiringStage::Confirm(ConfirmStage {
+                trigger_kind_id: kind_id.to_owned(),
+                trigger_label: "Subscribed".to_owned(),
+                state: ConfirmState::Checking,
+                writing: false,
+            }));
+        });
+    }
+
+    fn confirm_stage<T>(
+        view: &Entity<EventWiringView>,
+        cx: &mut TestAppContext,
+        read: impl FnOnce(&ConfirmStage) -> T,
+    ) -> T {
+        view.read_with(cx, |this, _| match this.stage.as_ref() {
+            Some(WiringStage::Confirm(stage)) => read(stage),
+            _ => panic!("the confirmation stage is gone"),
+        })
+    }
+
+    fn toasts<T>(
+        cx: &mut TestAppContext,
+        read: impl FnOnce(&[forge_components::ToastData]) -> T,
+    ) -> T {
+        cx.update(|cx| read(cx.global::<Toasts>().items()))
+    }
+
+    #[gpui::test]
+    fn a_check_that_finds_an_existing_action_offers_it_instead_of_a_second_wiring(
+        cx: &mut TestAppContext,
+    ) {
+        let (view, _rt) = mount(cx);
+        checking_on(&view, cx, SUBSCRIBER);
+        let already = ActionId::new();
+
+        view.update(cx, |this, cx| {
+            this.settle_check(SUBSCRIBER, Some(already), cx)
+        });
+
+        assert!(confirm_stage(&view, cx, |stage| matches!(
+            stage.state,
+            ConfirmState::AlreadyWired { action_id, .. } if action_id == already
+        )));
+    }
+
+    #[gpui::test]
+    fn a_check_answering_for_an_event_the_user_has_left_behind_is_discarded(
+        cx: &mut TestAppContext,
+    ) {
+        let (view, _rt) = mount(cx);
+        checking_on(&view, cx, SUBSCRIBER);
+
+        view.update(cx, |this, cx| {
+            this.settle_check(FOLLOW, Some(ActionId::new()), cx)
+        });
+
+        assert!(confirm_stage(&view, cx, |stage| matches!(
+            stage.state,
+            ConfirmState::Checking
+        )));
+    }
+
+    #[gpui::test]
+    fn create_on_a_stage_that_already_found_an_action_starts_no_write(cx: &mut TestAppContext) {
+        let (view, _rt) = mount(cx);
+        checking_on(&view, cx, SUBSCRIBER);
+        view.update(cx, |this, cx| {
+            this.settle_check(SUBSCRIBER, Some(ActionId::new()), cx)
+        });
+
+        view.update(cx, |this, cx| this.confirm(cx));
+
+        assert!(!confirm_stage(&view, cx, |stage| stage.writing));
+    }
+
+    #[gpui::test]
+    fn only_a_created_queue_the_scheduler_never_took_warns_beside_the_success(
+        cx: &mut TestAppContext,
+    ) {
+        for (landing, expected) in [
+            (None, vec![ToastKind::Success]),
+            (
+                Some(QueueLanding {
+                    name: QUEUE_NAME.to_owned(),
+                    live: true,
+                }),
+                vec![ToastKind::Success],
+            ),
+            (
+                Some(QueueLanding {
+                    name: QUEUE_NAME.to_owned(),
+                    live: false,
+                }),
+                vec![ToastKind::Success, ToastKind::Error],
+            ),
+        ] {
+            let warned = landing.as_ref().is_some_and(|held| !held.live);
+            let (view, _rt) = mount(cx);
+
+            view.update(cx, |this, cx| {
+                this.settle_wiring(
+                    Landing::Wired {
+                        records: OverlayWiringRecords::default(),
+                        queue: landing,
+                    },
+                    cx,
+                )
+            });
+
+            toasts(cx, |raised| {
+                let kinds: Vec<ToastKind> = raised.iter().map(|toast| toast.kind).collect();
+                assert_eq!(kinds, expected, "a queue warned {warned} raised {kinds:?}");
+                if warned {
+                    assert!(
+                        raised[1].message.contains(QUEUE_NAME),
+                        "the warning does not say which queue is dead: {}",
+                        raised[1].message,
+                    );
+                }
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn a_wiring_that_stopped_part_way_names_what_landed_and_opens_what_it_can(
+        cx: &mut TestAppContext,
+    ) {
+        for action_id in [Some(ActionId::new()), None] {
+            let (view, _rt) = mount(cx);
+            let records = OverlayWiringRecords {
+                action_id,
+                trigger_instance_id: Some(TriggerInstanceId::new()),
+                ..OverlayWiringRecords::default()
+            };
+
+            view.update(cx, |this, cx| {
+                this.settle_wiring(
+                    Landing::Incomplete {
+                        records,
+                        message: "the disk is full".to_owned(),
+                    },
+                    cx,
+                )
+            });
+
+            toasts(cx, |raised| {
+                assert_eq!(raised.len(), 1);
+                assert!(matches!(raised[0].kind, ToastKind::Error));
+                assert!(
+                    raised[0].message.contains("the trigger"),
+                    "the toast hides what landed: {}",
+                    raised[0].message,
+                );
+                assert_eq!(
+                    raised[0].action.is_some(),
+                    action_id.is_some(),
+                    "an action id of {action_id:?} offered the wrong way out",
+                );
+            });
+        }
+    }
+
+    #[test]
+    fn a_queue_the_wiring_created_is_handed_to_the_scheduler_so_the_action_can_run() {
+        let rt = runtime();
+        let handle = scheduler_on(&rt);
+        let made = alert_queue();
+
+        let (landing, again) = rt.block_on(async {
+            let landing =
+                register_created_queue(&handle, &records_for(WiredQueue::Created(made.clone())))
+                    .await;
+            (landing, handle.register(made).await)
+        });
+
+        assert!(landing.is_some_and(|held| held.live));
+        assert_eq!(again.ok(), Some(MembershipOutcome::AlreadyRegistered));
+    }
+
+    #[test]
+    fn a_queue_that_was_already_there_is_never_announced_again() {
+        let rt = runtime();
+        let handle = scheduler_on(&rt);
+        let found = alert_queue();
+
+        let (landing, after) = rt.block_on(async {
+            let landing =
+                register_created_queue(&handle, &records_for(WiredQueue::Existing(found.clone())))
+                    .await;
+            (landing, handle.register(found).await)
+        });
+
+        assert!(landing.is_none());
+        assert_eq!(
+            after.ok(),
+            Some(MembershipOutcome::Applied),
+            "a queue the wiring only found was registered anyway",
+        );
+    }
+
+    #[test]
+    fn a_created_queue_the_scheduler_can_no_longer_take_is_reported_not_live() {
+        let gone = runtime();
+        let handle = scheduler_on(&gone);
+        drop(gone);
+
+        let landing = runtime().block_on(register_created_queue(
+            &handle,
+            &records_for(WiredQueue::Created(alert_queue())),
+        ));
+
+        assert!(landing.is_some_and(|held| !held.live && held.name == QUEUE_NAME));
+    }
+}

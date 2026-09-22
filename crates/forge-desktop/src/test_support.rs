@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use forge_events::Event;
-use forge_registry::SubActionRegistry;
+use forge_registry::{
+    ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
+    SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
+};
 use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
 use forge_storage::{
@@ -15,7 +18,10 @@ use forge_storage::{
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
     VoiceAliasRepo,
 };
-use forge_types::{Action, ActionId, EventId, ExecutionContext, ScriptId, Variant};
+use forge_types::{
+    Action, ActionId, ActorRole, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig,
+    Variant,
+};
 use time::OffsetDateTime;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -405,6 +411,135 @@ impl HistoryRepo for StubHistory {
     async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
         Ok(0)
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Declares {
+    Nothing,
+    AnEmptyList,
+    APrincipal,
+}
+
+pub(crate) struct StubTrigger {
+    id: String,
+    label: String,
+    category: TriggerCategory,
+    declares: Declares,
+}
+
+impl StubTrigger {
+    pub(crate) fn new(
+        id: &str,
+        label: &str,
+        category: TriggerCategory,
+        declares: Declares,
+    ) -> Self {
+        Self {
+            id: id.to_owned(),
+            label: label.to_owned(),
+            category,
+            declares,
+        }
+    }
+}
+
+impl TriggerKindDescriptor for StubTrigger {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn category(&self) -> TriggerCategory {
+        self.category
+    }
+
+    fn label(&self) -> &str {
+        &self.label
+    }
+
+    fn summary(&self) -> &str {
+        &self.label
+    }
+
+    fn search_text(&self) -> &str {
+        &self.label
+    }
+
+    fn icon_name(&self) -> &str {
+        "bell"
+    }
+
+    fn platform_contract(&self) -> KindPlatformContract {
+        KindPlatformContract::PlatformSpecific(PlatformId::Twitch)
+    }
+
+    fn default_config(&self) -> TriggerConfig {
+        TriggerConfig::new()
+    }
+
+    fn config_fields(&self) -> Vec<FormField> {
+        Vec::new()
+    }
+
+    fn condition_display(&self, _: &TriggerConfig) -> String {
+        String::new()
+    }
+
+    fn event_filter(&self) -> EventFilter {
+        EventFilter {
+            source: None,
+            kind_prefix: None,
+        }
+    }
+
+    fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+        true
+    }
+
+    fn variables(&self) -> Option<TriggerVariables> {
+        match self.declares {
+            Declares::Nothing => None,
+            Declares::AnEmptyList => Some(TriggerVariables::new()),
+            Declares::APrincipal => Some(TriggerVariables::new().actor(
+                ActorBlock {
+                    role: ActorRole::Principal,
+                    platform: PlatformId::Twitch,
+                    login: LoginSlot::Declared,
+                },
+                |_| ActorIdentity {
+                    id: "1".to_owned(),
+                    display_name: "Someone".to_owned(),
+                    login: Some("someone".to_owned()),
+                },
+            )),
+        }
+    }
+}
+
+pub(crate) fn overlay_definition(kind_id: &str, config: OverlayConfig) -> OverlayDefinition {
+    OverlayDefinition {
+        id: OverlayId::new("sub-alert"),
+        display_name: "Sub alert".to_owned(),
+        kind_id: kind_id.to_owned(),
+        enabled: true,
+        position: 0,
+        config,
+        config_schema_version: 2,
+        generator_version: 0,
+        source_overrides: Vec::new(),
+        credential: OverlayCredential::new("2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d"),
+        created_at: OffsetDateTime::UNIX_EPOCH,
+        updated_at: OffsetDateTime::UNIX_EPOCH,
+    }
+}
+
+pub(crate) fn trigger_registry(stubs: Vec<StubTrigger>) -> TriggerRegistry {
+    let mut registry = TriggerRegistry::new();
+    for stub in stubs {
+        registry
+            .register(Box::new(stub))
+            .expect("every stub carries its own id");
+    }
+    registry
 }
 
 pub(crate) fn runtime() -> tokio::runtime::Runtime {

@@ -2666,6 +2666,9 @@ dependencies = [
 name = "forge-overlay"
 version = "0.5.2"
 dependencies = [
+ "forge-platform-kick",
+ "forge-platform-twitch",
+ "forge-platform-youtube",
  "forge-registry",
  "forge-types",
  "serde",

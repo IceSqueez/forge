@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use forge_events::{Event, EventSource};
 use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables};
 use forge_types::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
-    SynthesisHint, Variant, VariantKind,
+    ActorRole, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    Variant, VariantKind,
 };
 
 const CANONICAL_ROSTER: &[(&str, VariantKind)] = &[
@@ -34,26 +34,6 @@ const CANONICAL_ROSTER: &[(&str, VariantKind)] = &[
     ("sub_streak_months", VariantKind::Int),
     ("sub_tier", VariantKind::String),
 ];
-
-fn every_canonical_variable_in_declared_order() -> Vec<CanonicalVariable> {
-    let mut all: Vec<CanonicalVariable> = ActorRole::ALL
-        .into_iter()
-        .flat_map(|role| {
-            ActorSlot::ALL
-                .into_iter()
-                .map(move |slot| CanonicalVariable::actor(role, slot))
-        })
-        .chain(std::iter::once(CanonicalVariable::MessageText))
-        .chain(
-            CanonicalCount::ALL
-                .into_iter()
-                .map(CanonicalVariable::Count),
-        )
-        .chain(std::iter::once(CanonicalVariable::SubTier))
-        .collect();
-    all.sort_by_key(|canonical| canonical.order());
-    all
-}
 
 fn no_payload() -> Event {
     Event::new(EventSource::Core, "test.event", serde_json::Value::Null)
@@ -131,7 +111,7 @@ fn declared_names(variables: &TriggerVariables) -> Vec<String> {
 
 #[test]
 fn the_canonical_vocabulary_is_this_roster_of_names_and_kinds_in_this_order() {
-    let actual: Vec<(&str, VariantKind)> = every_canonical_variable_in_declared_order()
+    let actual: Vec<(&str, VariantKind)> = CanonicalVariable::all()
         .into_iter()
         .map(|canonical| (canonical.name(), canonical.kind()))
         .collect();

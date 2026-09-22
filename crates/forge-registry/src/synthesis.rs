@@ -495,6 +495,12 @@ mod tests {
                     VariantKind::String,
                     Some(SynthesisHint::Message),
                 ),
+                event_specific_entry(
+                    "raider_login",
+                    "Raider login",
+                    VariantKind::String,
+                    Some(SynthesisHint::Username),
+                ),
             ],
             &sample(),
         );
@@ -502,6 +508,7 @@ mod tests {
         assert_eq!(stack.get("reward_cost"), Some(&Variant::Int(13)));
         assert_eq!(stack.get("raider_name"), text(PRINCIPAL_NAME).as_ref());
         assert_eq!(stack.get("reply_body"), text(CHOSEN_MESSAGE).as_ref());
+        assert_eq!(stack.get("raider_login"), text(PRINCIPAL_LOGIN).as_ref());
     }
 
     #[test]

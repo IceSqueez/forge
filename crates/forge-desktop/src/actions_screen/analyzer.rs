@@ -424,17 +424,29 @@ fn fixed_after_outputs(kind_id: &str) -> &'static [&'static str] {
 mod tests {
     use std::sync::Arc;
 
-    use forge_registry::SubActionRegistry;
+    use forge_registry::{
+        ActorBlock, ActorIdentity, LoginSlot, SubActionRegistry, TriggerVariables,
+    };
     use forge_runtime::sub_action_runners::CoreLogicIfThenElseRunner;
     use forge_runtime::{ConditionGate, Config};
-    use forge_types::SubActionConfig;
+    use forge_types::{
+        ActionId, ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PermissionRung,
+        PlatformId, PlatformScope, QueueId, SubActionConfig, TriggerConfig, TriggerInstanceId,
+        VariantKind,
+    };
 
+    use super::super::trigger_variables::tests::StubTrigger;
     use super::*;
 
     const BRANCH_KIND: &str = "core.logic.if_then_else";
     const THEN_CHAIN_KEY: &str = "then_chain";
     const ORDERED: &str = "chat-wall";
     const UNORDERED: &str = "alert-box";
+    const CONSUMER_KIND: &str = "chat.send";
+    const MESSAGE_KEY: &str = "message";
+    const LEGACY_TRIGGER: &str = "stub.chat_with_legacy";
+    const CANONICAL_TRIGGER: &str = "stub.chat_canonical";
+    const LEGACY_NAME: &str = "username";
 
     fn registry() -> SubActionRegistry {
         let mut reg = SubActionRegistry::new();
@@ -525,5 +537,134 @@ mod tests {
                 "{label}"
             );
         }
+    }
+
+    fn chatter(_event: &forge_events::Event) -> ActorIdentity {
+        ActorIdentity {
+            id: "51938264".to_owned(),
+            display_name: "StreamFan42".to_owned(),
+            login: Some("streamfan42".to_owned()),
+        }
+    }
+
+    fn principal_block() -> ActorBlock {
+        ActorBlock {
+            role: ActorRole::Principal,
+            platform: PlatformId::Kick,
+            login: LoginSlot::Declared,
+        }
+    }
+
+    fn canonical_actor_only() -> TriggerVariables {
+        TriggerVariables::new().actor(principal_block(), chatter)
+    }
+
+    fn canonical_actor_plus_legacy_username() -> TriggerVariables {
+        canonical_actor_only().legacy(
+            DeclaredVariable {
+                name: LEGACY_NAME.to_owned(),
+                kind: VariantKind::String,
+                label: "Username".to_owned(),
+                synthesis: None,
+            },
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            |_| Variant::String("streamfan42".to_owned()),
+        )
+    }
+
+    fn triggers(descriptors: Vec<StubTrigger>) -> TriggerRegistry {
+        let mut reg = TriggerRegistry::new();
+        for descriptor in descriptors {
+            reg.register(Box::new(descriptor))
+                .expect("each stub trigger registers under its own id");
+        }
+        reg
+    }
+
+    fn instance(kind_id: &str) -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: kind_id.to_owned(),
+            name: kind_id.to_owned(),
+            overrides: TriggerConfig::new(),
+            enabled: true,
+            user_defined: false,
+            platform_scope: PlatformScope::Any,
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::default(),
+        }
+    }
+
+    fn action_consuming(templates: &[&str]) -> Action {
+        Action {
+            id: ActionId::new(),
+            name: "stub action".to_owned(),
+            group: None,
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: templates
+                .iter()
+                .map(|template| {
+                    step(
+                        CONSUMER_KIND,
+                        SubActionConfig::from([(
+                            MESSAGE_KEY.to_owned(),
+                            Variant::String((*template).to_owned()),
+                        )]),
+                        true,
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_legacy_name_a_step_consumes_is_never_reported_as_unknown() {
+        let health = analyze(
+            &action_consuming(&["%username%", "%not_declared_anywhere%"]),
+            &[instance(LEGACY_TRIGGER)],
+            &[None, None],
+            &registry(),
+            &triggers(vec![StubTrigger::declaring(
+                LEGACY_TRIGGER,
+                canonical_actor_plus_legacy_username,
+            )]),
+        );
+
+        assert_eq!(
+            health,
+            vec![
+                StepHealth::default(),
+                StepHealth {
+                    findings: vec![Finding::UnknownVariable("not_declared_anywhere".to_owned())],
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn a_legacy_name_only_one_of_two_triggers_declares_is_reported_as_some_triggers_only() {
+        let health = analyze(
+            &action_consuming(&["%username%"]),
+            &[instance(LEGACY_TRIGGER), instance(CANONICAL_TRIGGER)],
+            &[None],
+            &registry(),
+            &triggers(vec![
+                StubTrigger::declaring(LEGACY_TRIGGER, canonical_actor_plus_legacy_username),
+                StubTrigger::declaring(CANONICAL_TRIGGER, canonical_actor_only),
+            ]),
+        );
+
+        assert_eq!(
+            health,
+            vec![StepHealth {
+                findings: vec![Finding::SomeTriggersOnly(LEGACY_NAME.to_owned())],
+            }],
+        );
     }
 }

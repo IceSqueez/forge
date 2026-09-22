@@ -253,3 +253,365 @@ pub(super) async fn dispatch_test_run(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::CanonicalCount;
+
+    use super::*;
+
+    const PRINCIPAL_NAME: &str = "StreamFan42";
+    const PRINCIPAL_LOGIN: &str = "streamfan42";
+    const PRINCIPAL_ID: &str = "51938264";
+    const MODERATOR_NAME: &str = "NightOwl";
+    const MODERATOR_LOGIN: &str = "nightowl";
+    const MODERATOR_ID: &str = "60114873";
+    const CHOSEN_MESSAGE: &str = "love the content";
+
+    fn sample() -> SynthesisSample {
+        SynthesisSample {
+            platform: Some(PlatformId::Kick),
+            name_index: 1,
+            message_index: 2,
+            tier_index: 0,
+            ratio_step: 250,
+            flag: true,
+            now: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    fn canonical_entry(canonical: CanonicalVariable) -> ListedVariable {
+        ListedVariable {
+            declared: DeclaredVariable {
+                name: canonical.name().to_owned(),
+                kind: canonical.kind(),
+                label: canonical.label(),
+                synthesis: canonical.synthesis(),
+            },
+            standing: VariableStanding::Canonical(canonical),
+        }
+    }
+
+    fn legacy_entry(
+        name: &str,
+        kind: VariantKind,
+        synthesis: Option<SynthesisHint>,
+        superseded_by: CanonicalVariable,
+    ) -> ListedVariable {
+        ListedVariable {
+            declared: DeclaredVariable {
+                name: name.to_owned(),
+                kind,
+                label: name.to_owned(),
+                synthesis,
+            },
+            standing: VariableStanding::Legacy(superseded_by),
+        }
+    }
+
+    fn event_specific_entry(
+        name: &str,
+        label: &str,
+        kind: VariantKind,
+        synthesis: Option<SynthesisHint>,
+    ) -> ListedVariable {
+        ListedVariable {
+            declared: DeclaredVariable {
+                name: name.to_owned(),
+                kind,
+                label: label.to_owned(),
+                synthesis,
+            },
+            standing: VariableStanding::EventSpecific,
+        }
+    }
+
+    fn text(value: &str) -> Option<Variant> {
+        Some(Variant::String(value.to_owned()))
+    }
+
+    #[test]
+    fn every_legacy_alias_carries_the_value_minted_for_the_slot_it_supersedes() {
+        let aliases = [
+            (
+                "display_name",
+                VariantKind::String,
+                Some(SynthesisHint::DisplayName),
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+            ),
+            (
+                "username",
+                VariantKind::String,
+                Some(SynthesisHint::Username),
+                CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            ),
+            (
+                "content",
+                VariantKind::String,
+                Some(SynthesisHint::Message),
+                CanonicalVariable::MessageText,
+            ),
+            (
+                "months",
+                VariantKind::Int,
+                Some(SynthesisHint::BoundedInt { min: 1, max: 24 }),
+                CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
+            ),
+            (
+                "gifter_username",
+                VariantKind::String,
+                Some(SynthesisHint::Username),
+                CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Login),
+            ),
+        ];
+        let mut variables: Vec<ListedVariable> = aliases
+            .iter()
+            .map(|(name, kind, synthesis, canonical)| {
+                legacy_entry(name, *kind, synthesis.clone(), *canonical)
+            })
+            .collect();
+        variables.extend(
+            aliases
+                .iter()
+                .map(|(_, _, _, canonical)| canonical_entry(*canonical)),
+        );
+
+        let stack = synthesize_args(&variables, &sample());
+
+        for (name, _, _, canonical) in aliases {
+            let minted = stack.get(canonical.name());
+            assert!(minted.is_some(), "{} was never minted", canonical.name());
+            assert_eq!(stack.get(name), minted, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_legacy_count_alias_takes_the_canonical_range_past_its_own_declared_maximum() {
+        let viewer_count = CanonicalVariable::Count(CanonicalCount::ViewerCount);
+        let stack = synthesize_args(
+            &[
+                legacy_entry(
+                    "raid_viewer_count",
+                    VariantKind::Int,
+                    Some(SynthesisHint::BoundedInt { min: 0, max: 500 }),
+                    viewer_count,
+                ),
+                canonical_entry(viewer_count),
+            ],
+            &sample(),
+        );
+
+        assert_eq!(stack.get("raid_viewer_count"), Some(&Variant::Int(12_500)));
+        assert_eq!(stack.get("viewer_count"), Some(&Variant::Int(12_500)));
+    }
+
+    #[test]
+    fn an_actor_login_is_that_same_actors_display_name_lowercased() {
+        let stack = synthesize_args(
+            &[
+                canonical_entry(CanonicalVariable::actor(
+                    ActorRole::Principal,
+                    ActorSlot::Name,
+                )),
+                canonical_entry(CanonicalVariable::actor(
+                    ActorRole::Principal,
+                    ActorSlot::Login,
+                )),
+                canonical_entry(CanonicalVariable::actor(
+                    ActorRole::Moderator,
+                    ActorSlot::Name,
+                )),
+                canonical_entry(CanonicalVariable::actor(
+                    ActorRole::Moderator,
+                    ActorSlot::Login,
+                )),
+            ],
+            &sample(),
+        );
+
+        assert_eq!(stack.get("user_name"), text(PRINCIPAL_NAME).as_ref());
+        assert_eq!(stack.get("user_login"), text(PRINCIPAL_LOGIN).as_ref());
+        assert_eq!(stack.get("moderator_name"), text(MODERATOR_NAME).as_ref());
+        assert_eq!(stack.get("moderator_login"), text(MODERATOR_LOGIN).as_ref());
+    }
+
+    #[test]
+    fn each_actor_role_holds_one_id_shared_by_its_aliases_and_distinct_from_other_roles() {
+        let stack = synthesize_args(
+            &[
+                canonical_entry(CanonicalVariable::actor(
+                    ActorRole::Principal,
+                    ActorSlot::Id,
+                )),
+                canonical_entry(CanonicalVariable::actor(
+                    ActorRole::Moderator,
+                    ActorSlot::Id,
+                )),
+                legacy_entry(
+                    "chatter_id",
+                    VariantKind::String,
+                    None,
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                ),
+                legacy_entry(
+                    "deleted_by_id",
+                    VariantKind::String,
+                    None,
+                    CanonicalVariable::actor(ActorRole::Moderator, ActorSlot::Id),
+                ),
+            ],
+            &sample(),
+        );
+
+        assert_eq!(stack.get("user_id"), text(PRINCIPAL_ID).as_ref());
+        assert_eq!(stack.get("moderator_id"), text(MODERATOR_ID).as_ref());
+        assert_eq!(stack.get("chatter_id"), text(PRINCIPAL_ID).as_ref());
+        assert_eq!(stack.get("deleted_by_id"), text(MODERATOR_ID).as_ref());
+    }
+
+    #[test]
+    fn every_actor_platform_slot_reports_the_descriptors_own_platform() {
+        for (platform, expected) in [(Some(PlatformId::Kick), "kick"), (None, "")] {
+            let stack = synthesize_args(
+                &[
+                    canonical_entry(CanonicalVariable::actor(
+                        ActorRole::Principal,
+                        ActorSlot::Platform,
+                    )),
+                    canonical_entry(CanonicalVariable::actor(
+                        ActorRole::Gifter,
+                        ActorSlot::Platform,
+                    )),
+                ],
+                &SynthesisSample {
+                    platform,
+                    ..sample()
+                },
+            );
+
+            assert_eq!(stack.get("user_platform"), text(expected).as_ref());
+            assert_eq!(stack.get("gifter_platform"), text(expected).as_ref());
+        }
+    }
+
+    #[test]
+    fn an_event_specific_variable_follows_its_own_hint() {
+        let stack = synthesize_args(
+            &[
+                event_specific_entry(
+                    "reward_cost",
+                    "Reward cost",
+                    VariantKind::Int,
+                    Some(SynthesisHint::BoundedInt { min: 10, max: 20 }),
+                ),
+                event_specific_entry(
+                    "raider_name",
+                    "Raider",
+                    VariantKind::String,
+                    Some(SynthesisHint::DisplayName),
+                ),
+                event_specific_entry(
+                    "reply_body",
+                    "Reply",
+                    VariantKind::String,
+                    Some(SynthesisHint::Message),
+                ),
+            ],
+            &sample(),
+        );
+
+        assert_eq!(stack.get("reward_cost"), Some(&Variant::Int(13)));
+        assert_eq!(stack.get("raider_name"), text(PRINCIPAL_NAME).as_ref());
+        assert_eq!(stack.get("reply_body"), text(CHOSEN_MESSAGE).as_ref());
+    }
+
+    #[test]
+    fn an_unhinted_event_specific_variable_falls_back_to_its_declared_kind() {
+        for (kind, expected) in [
+            (
+                VariantKind::String,
+                Variant::String("reward_sample".to_owned()),
+            ),
+            (VariantKind::Int, Variant::Int(26)),
+            (VariantKind::Bool, Variant::Bool(true)),
+            (
+                VariantKind::Datetime,
+                Variant::Datetime(OffsetDateTime::UNIX_EPOCH),
+            ),
+            (VariantKind::Object, Variant::Object(BTreeMap::new())),
+            (
+                VariantKind::Array,
+                Variant::Array(vec![
+                    Variant::String("reward_sample".to_owned()),
+                    Variant::String(PRINCIPAL_LOGIN.to_owned()),
+                ]),
+            ),
+        ] {
+            let stack = synthesize_args(
+                &[event_specific_entry("payload", "Reward title", kind, None)],
+                &sample(),
+            );
+
+            assert_eq!(stack.get("payload"), Some(&expected), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn an_unhinted_float_variable_lands_inside_the_generic_float_span() {
+        let stack = synthesize_args(
+            &[event_specific_entry(
+                "payload",
+                "Reward title",
+                VariantKind::Float,
+                None,
+            )],
+            &sample(),
+        );
+
+        assert!(matches!(
+            stack.get("payload"),
+            Some(Variant::Float(value)) if (value - 25.005).abs() < 1e-9
+        ));
+    }
+
+    #[test]
+    fn a_string_sample_is_named_after_the_label_and_falls_back_to_the_variable_name() {
+        for (label, name, expected) in [
+            ("Reward title", "reward_id", "reward_sample"),
+            ("", "gift_id", "giftid_sample"),
+            ("!!! ???", "mystery", "sample"),
+        ] {
+            let stack = synthesize_args(
+                &[event_specific_entry(name, label, VariantKind::String, None)],
+                &sample(),
+            );
+
+            assert_eq!(stack.get(name), text(expected).as_ref(), "{label:?}");
+        }
+    }
+
+    #[test]
+    fn a_bounded_int_hint_reaches_both_ends_of_its_declared_range() {
+        let months = CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths);
+        for (ratio_step, expected) in [
+            (0, 1),
+            (RATIO_RESOLUTION, 120),
+            (RATIO_RESOLUTION / 2, 61),
+            (250, 31),
+        ] {
+            let stack = synthesize_args(
+                &[canonical_entry(months)],
+                &SynthesisSample {
+                    ratio_step,
+                    ..sample()
+                },
+            );
+
+            assert_eq!(
+                stack.get("sub_cumulative_months"),
+                Some(&Variant::Int(expected)),
+                "{ratio_step}"
+            );
+        }
+    }
+}

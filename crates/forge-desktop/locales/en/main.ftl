@@ -2319,3 +2319,48 @@ overlays_icon_category_nature = Nature
 overlays_panel_override_notice = You own these files now, so they are never regenerated: { $files }. Design changes that need generated markup or styling no longer reach them.
 config_form_choice_placeholder = Not set
 config_form_auto_placeholder = auto
+
+## Overlays - event wiring
+
+overlays_wire_open = Show on event...
+overlays_wire_empty = Nothing sends to this overlay yet.
+overlays_wire_picker_title = Show this overlay on an event
+overlays_wire_picker_lead = for
+overlays_wire_picker_count = { $count ->
+    [one] { $count } event
+   *[other] { $count } events
+}
+overlays_wire_picker_search = Search events
+overlays_wire_picker_hint = Type to search - arrows to move - Enter to pick
+overlays_wire_scope_suggested = Suggested
+overlays_wire_confirm_title = Show { $overlay } on this event
+overlays_wire_checking = Checking what already sends to this overlay...
+overlays_wire_section_creates = Creates
+overlays_wire_section_wording = On stream it reads
+overlays_wire_record_action = Action
+overlays_wire_record_trigger = Trigger
+overlays_wire_record_queue = Queue
+overlays_wire_wording_empty = This overlay type has no wording to fill in.
+overlays_wire_create = Create
+overlays_wire_back = Back
+overlays_wire_open_action = Open action
+overlays_wire_already_body = This overlay is already shown on that event. Open the action instead of creating a second one.
+overlays_wire_refused_overlay = This overlay type does not take event wiring.
+overlays_wire_refused_trigger = This event declares nothing an overlay could show.
+overlays_wire_toast_created = Overlay wired to the event
+overlays_wire_toast_already = This overlay is already shown on that event.
+overlays_wire_toast_incomplete = Wiring stopped part-way. Written so far: { $landed }.
+overlays_wire_toast_missing = This build no longer has that overlay type or that event.
+overlays_wire_landed_action = the action
+overlays_wire_landed_trigger = the trigger
+overlays_wire_landed_link = the link between them
+overlays_wire_landed_nothing = nothing
+overlays_wire_queue_not_live = The queue { $queue } is not running yet. Restart forge so this alert plays.
+overlays_wire_fires_on = Fires on { $triggers }
+overlays_wire_fires_untriggered = Actions send to this overlay, but no event drives them yet.
+overlays_wire_action_disabled = disabled
+overlays_wire_overlay_off = This overlay is off, so nothing is displayed while it stays off.
+overlays_confirm_delete_feeds = { $count ->
+    [one] { $count } action sends to it.
+   *[other] { $count } actions send to it.
+}

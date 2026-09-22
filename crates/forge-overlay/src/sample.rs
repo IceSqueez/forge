@@ -30,7 +30,7 @@ impl SampleContext {
         )
     }
 
-    fn args(&self) -> ArgStack {
+    pub fn args(&self) -> ArgStack {
         self.0.iter().fold(ArgStack::new(), |stack, (name, value)| {
             stack.set(name.clone(), value.clone())
         })

@@ -335,8 +335,23 @@ impl AppShell {
                     service: handles.overlays.clone(),
                     library: Arc::clone(handles.soundboard_player.library()),
                     media: handles.backend.media_repo(),
+                    actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                        handles.backend.action_repo(),
+                        handles.backend.queue_repo(),
+                        handles.backend.history_repo(),
+                        handles.backend.trigger_instance_repo(),
+                        handles.backend.soundboard_clips_repo(),
+                    )),
+                    triggers: handles.trigger_registry.clone(),
+                    sub_actions: handles.sub_action_registry.clone(),
+                    scheduler: handles.scheduler.clone(),
                 };
-                cx.new(|cx| OverlaysView::new(launch, cx)).into()
+                let view = cx.new(|cx| OverlaysView::new(launch, cx));
+                cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                view.into()
             }
             Screen::Server => {
                 let server = handles.server.clone();

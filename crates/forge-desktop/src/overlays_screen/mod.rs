@@ -1,5 +1,6 @@
 mod code_pane;
 mod editor_pane;
+mod event_wiring;
 mod form_modal;
 mod icon_choice;
 mod kind_visuals;
@@ -20,23 +21,27 @@ use forge_overlay::config::SOUND_OPTIONS_KEY;
 use forge_overlay::{
     ConfigSection, MediaIssue, OverlayKindRegistry, SectionedField, effective_overlay_config,
 };
-use forge_runtime::OverlayServiceHandle;
+use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_runtime::actions::ActionsService;
+use forge_runtime::{OverlayServiceHandle, QueueSchedulerHandle};
 use forge_server::ServerHandle;
 use forge_soundboard::{ClipLibrary, SoundboardError};
 use forge_storage::{
     MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StoredClip,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FocusHandle, Pixels, Point, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Pixels, Point,
+    SharedString, Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
 use crate::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
 use crate::presentation::ActivePresentation;
+use crate::sidebar::NavRequested;
 use crate::toasts::{PushToast, copy_to_clipboard};
 
 use code_pane::{CodeState, LeaveIntent};
+use event_wiring::{EventWiringView, WiringLaunch};
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
 use icon_choice::{IconImage, OpenIconPicker};
 use kind_visuals::{KindVisuals, kind_visuals};
@@ -67,6 +72,12 @@ struct OpenPanel {
 struct PendingDelete {
     id: OverlayId,
     display_name: String,
+}
+
+struct WiringLink {
+    view: Entity<EventWiringView>,
+    _nav: Subscription,
+    _repaint: Subscription,
 }
 
 struct ServedEndpoint {
@@ -145,6 +156,7 @@ pub struct OverlaysView {
     stage: StageState,
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
+    wiring: WiringLink,
 }
 
 pub struct OverlaysLaunch {
@@ -155,6 +167,10 @@ pub struct OverlaysLaunch {
     pub service: OverlayServiceHandle,
     pub library: Arc<ClipLibrary>,
     pub media: Arc<dyn MediaRepo>,
+    pub actions: Arc<ActionsService>,
+    pub triggers: Arc<TriggerRegistry>,
+    pub sub_actions: Arc<SubActionRegistry>,
+    pub scheduler: QueueSchedulerHandle,
 }
 
 impl OverlaysView {
@@ -165,6 +181,21 @@ impl OverlaysView {
             .is_some_and(|handle| *handle.run_state().borrow());
 
         let code = CodeState::new(cx);
+        let wiring = cx.new(|_| {
+            EventWiringView::new(WiringLaunch {
+                actions: Arc::clone(&launch.actions),
+                triggers: Arc::clone(&launch.triggers),
+                sub_actions: Arc::clone(&launch.sub_actions),
+                scheduler: launch.scheduler,
+                kinds: Arc::clone(&launch.kinds),
+                rt_handle: launch.rt_handle.clone(),
+            })
+        });
+        let nav = cx.subscribe(&wiring, |_, _, event: &NavRequested, cx| {
+            cx.emit(NavRequested(event.0.clone()));
+        });
+        let repaint = cx.observe(&wiring, |_, _, cx| cx.notify());
+
         let mut view = Self {
             repo: launch.repo,
             server: launch.server,
@@ -198,6 +229,11 @@ impl OverlaysView {
             stage: StageState::default(),
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
+            wiring: WiringLink {
+                view: wiring,
+                _nav: nav,
+                _repaint: repaint,
+            },
         };
         view.load(cx);
         view.load_clips(cx);
@@ -447,10 +483,18 @@ impl OverlaysView {
                 self.sync_panel(cx);
                 self.sync_preview();
                 self.sync_source(cx);
+                self.sync_wiring(cx);
             }
             Err(message) => self.report(&message, cx),
         }
         cx.notify();
+    }
+
+    fn sync_wiring(&mut self, cx: &mut Context<Self>) {
+        let selection = self.selected_definition().cloned();
+        self.wiring
+            .view
+            .update(cx, |wiring, cx| wiring.focus_overlay(selection, cx));
     }
 
     fn select(&mut self, id: OverlayId, cx: &mut Context<Self>) {
@@ -466,6 +510,7 @@ impl OverlaysView {
         self.sync_panel(cx);
         self.sync_preview();
         self.sync_source(cx);
+        self.sync_wiring(cx);
         cx.notify();
     }
 
@@ -769,14 +814,20 @@ impl OverlaysView {
         if let Some(index) = self.index_of(&id) {
             self.pending_delete.request(PendingDelete {
                 display_name: self.overlays[index].display_name.clone(),
-                id,
+                id: id.clone(),
             });
+            self.wiring
+                .view
+                .update(cx, |wiring, cx| wiring.count_for_delete(id, cx));
         }
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
         self.pending_delete.cancel();
+        self.wiring
+            .view
+            .update(cx, |wiring, _| wiring.clear_delete_count());
         cx.notify();
     }
 
@@ -784,6 +835,9 @@ impl OverlaysView {
         let Some(prompt) = self.pending_delete.take() else {
             return;
         };
+        self.wiring
+            .view
+            .update(cx, |wiring, _| wiring.clear_delete_count());
         if self.selected.as_ref() == Some(&prompt.id) {
             self.selected = None;
             self.clear_test();
@@ -875,6 +929,17 @@ impl OverlaysView {
             .into_any_element()
     }
 
+    fn delete_body(&self, id: &OverlayId, cx: &Context<Self>) -> String {
+        let base = tr!("overlays_confirm_delete_body");
+        match self.wiring.view.read(cx).delete_feed_count(id) {
+            Some(count) => format!(
+                "{base} {}",
+                tr!("overlays_confirm_delete_feeds", count = count as i64)
+            ),
+            None => base,
+        }
+    }
+
     fn render_delete_confirm(
         &self,
         prompt: &PendingDelete,
@@ -883,7 +948,7 @@ impl OverlaysView {
     ) -> AnyElement {
         let card = confirm_modal(
             tr!("overlays_confirm_delete_title"),
-            tr!("overlays_confirm_delete_body"),
+            self.delete_body(&prompt.id, cx),
             ConfirmTone::Destructive,
             palette,
         )
@@ -957,7 +1022,10 @@ impl Render for OverlaysView {
             .child(frame)
             .children(self.form.as_ref().map(|open| open.view.clone()))
             .children(delete)
+            .child(self.wiring.view.clone())
             .children(self.render_icon_picker(&palette, cx))
             .children(self.render_code_confirms(&palette, cx))
     }
 }
+
+impl EventEmitter<NavRequested> for OverlaysView {}

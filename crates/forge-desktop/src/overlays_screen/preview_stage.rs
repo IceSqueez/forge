@@ -20,6 +20,7 @@ use gpui::{
 use crate::async_bridge::{self, ErrorSink};
 
 use super::OverlaysView;
+use super::event_wiring;
 use super::preview_shapes::{
     ElementPlan, Scale, StageGlyphs, body_padding, centers_horizontally, fills_canvas,
     render_composition,
@@ -364,6 +365,7 @@ impl OverlaysView {
                 cx,
             ))
             .child(self.render_hints(definition, served, palette))
+            .children(event_wiring::render_readout(&self.wiring.view, palette, cx))
             .into_any_element()
     }
 
@@ -378,6 +380,14 @@ impl OverlaysView {
         let descriptor = self.kinds.get(&definition.kind_id);
         let page = descriptor.is_some_and(|d| d.has_visual_page());
         let test_fire_ok = descriptor.is_some_and(|d| !d.content_is_machine_filled());
+        let wire_button = self
+            .wiring
+            .view
+            .read(cx)
+            .accepts(&definition.kind_id)
+            .then(|| {
+                event_wiring::entry_button(&self.wiring.view, "overlays-wire-entry-head", palette)
+            });
 
         let size_label = page.then(|| {
             let width = canvas.width.to_string();
@@ -411,6 +421,7 @@ impl OverlaysView {
             .children(size_label)
             .children(scale_switch)
             .child(div().flex_1().min_w(px(0.0)))
+            .children(wire_button)
             .children(open_button)
             .child(
                 ghost_button_with_icon(Icon::PlayerPlay, tr!("overlays_test_send"), palette)

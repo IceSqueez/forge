@@ -2348,3 +2348,52 @@ overlays_icon_category_nature = Природа
 overlays_panel_override_notice = Ці файли тепер ваші, тож вони ніколи не перегенеровуються: { $files }. Зміни дизайну, яким потрібна згенерована розмітка чи стилі, більше до них не доходять.
 config_form_choice_placeholder = Не задано
 config_form_auto_placeholder = авто
+
+## Оверлеї - привʼязка до події
+
+overlays_wire_open = Показати на подію...
+overlays_wire_empty = До цього оверлея ще ніщо не надсилає.
+overlays_wire_picker_title = Показати цей оверлей на подію
+overlays_wire_picker_lead = для
+overlays_wire_picker_count = { $count ->
+    [one] { $count } подія
+    [few] { $count } події
+    [many] { $count } подій
+   *[other] { $count } подій
+}
+overlays_wire_picker_search = Пошук подій
+overlays_wire_picker_hint = Введіть текст для пошуку - стрілки для переходу - Enter для вибору
+overlays_wire_scope_suggested = Рекомендовані
+overlays_wire_confirm_title = Показувати { $overlay } на цю подію
+overlays_wire_checking = Перевіряємо, що вже надсилає до цього оверлея...
+overlays_wire_section_creates = Буде створено
+overlays_wire_section_wording = У трансляції це читається як
+overlays_wire_record_action = Дія
+overlays_wire_record_trigger = Тригер
+overlays_wire_record_queue = Черга
+overlays_wire_wording_empty = Цей тип оверлея не має тексту, який можна заповнити.
+overlays_wire_create = Створити
+overlays_wire_back = Назад
+overlays_wire_open_action = Відкрити дію
+overlays_wire_already_body = Цей оверлей уже показується на цю подію. Відкрийте дію замість створення другої.
+overlays_wire_refused_overlay = Цей тип оверлея не приймає привʼязку до події.
+overlays_wire_refused_trigger = Ця подія не оголошує нічого, що оверлей міг би показати.
+overlays_wire_toast_created = Оверлей привʼязано до події
+overlays_wire_toast_already = Цей оверлей уже показується на цю подію.
+overlays_wire_toast_incomplete = Привʼязка обірвалася на півдорозі. Записано: { $landed }.
+overlays_wire_toast_missing = У цій збірці більше немає цього типу оверлея або цієї події.
+overlays_wire_landed_action = дію
+overlays_wire_landed_trigger = тригер
+overlays_wire_landed_link = звʼязок між ними
+overlays_wire_landed_nothing = нічого
+overlays_wire_queue_not_live = Черга { $queue } ще не працює. Перезапустіть forge, щоб це сповіщення програлося.
+overlays_wire_fires_on = Спрацьовує на { $triggers }
+overlays_wire_fires_untriggered = Дії надсилають до цього оверлея, але жодна подія їх ще не запускає.
+overlays_wire_action_disabled = вимкнено
+overlays_wire_overlay_off = Цей оверлей вимкнено, тож поки він вимкнений, нічого не показується.
+overlays_confirm_delete_feeds = { $count ->
+    [one] До нього надсилає { $count } дія.
+    [few] До нього надсилають { $count } дії.
+    [many] До нього надсилають { $count } дій.
+   *[other] До нього надсилають { $count } дій.
+}

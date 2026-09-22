@@ -115,56 +115,44 @@ impl TriggerKindDescriptor for LivestreamMetadataDescriptor {
 mod tests {
     use super::*;
 
-    #[test]
-    fn build_arg_stack_extracts_metadata_fields_with_nested_category() {
-        let event = Event::new(
-            EventSource::Kick,
-            "kick.channel.livestream_metadata",
-            serde_json::json!({
-                "stream_title": "New title",
-                "category": { "id": 7, "name": "Software & Game Dev" }
-            }),
-        );
-
-        let stack = LivestreamMetadataDescriptor.build_arg_stack(&event);
-
-        assert_eq!(
-            stack.get("stream_title"),
-            Some(&Variant::String("New title".to_owned()))
-        );
-        assert_eq!(
-            stack.get("category_id"),
-            Some(&Variant::String("7".to_owned()))
-        );
-        assert_eq!(
-            stack.get("category_name"),
-            Some(&Variant::String("Software & Game Dev".to_owned()))
-        );
-    }
+    use serde_json::json;
 
     #[test]
-    fn build_arg_stack_leaves_category_fields_empty_when_object_absent() {
-        let event = Event::new(
-            EventSource::Kick,
-            "kick.channel.livestream_metadata",
-            serde_json::json!({
-                "stream_title": "Title only"
-            }),
-        );
-
-        let stack = LivestreamMetadataDescriptor.build_arg_stack(&event);
-
-        assert_eq!(
-            stack.get("stream_title"),
-            Some(&Variant::String("Title only".to_owned()))
-        );
-        assert_eq!(
-            stack.get("category_id"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("category_name"),
-            Some(&Variant::String(String::new()))
-        );
+    fn the_title_and_the_nested_category_are_read_from_the_payload() {
+        for (payload, title, category_id, category_name) in [
+            (
+                json!({
+                    "stream_title": "New title",
+                    "category": { "id": 7, "name": "Software & Game Dev" }
+                }),
+                "New title",
+                "7",
+                "Software & Game Dev",
+            ),
+            (
+                json!({ "stream_title": "Title only" }),
+                "Title only",
+                "",
+                "",
+            ),
+            (json!({ "category": { "id": 7 } }), "", "7", ""),
+        ] {
+            let stack = LivestreamMetadataDescriptor.build_arg_stack(&Event::new(
+                EventSource::Kick,
+                "kick.livestream.metadata.updated",
+                payload.clone(),
+            ));
+            for (name, value) in [
+                ("stream_title", title),
+                ("category_id", category_id),
+                ("category_name", category_name),
+            ] {
+                assert_eq!(
+                    stack.get(name),
+                    Some(&Variant::String(value.to_owned())),
+                    "'{name}' for {payload}"
+                );
+            }
+        }
     }
 }

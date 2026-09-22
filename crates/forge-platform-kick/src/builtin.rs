@@ -694,7 +694,6 @@ impl QuickActions for KickIntegrationBundle {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use forge_events::{Event, EventSource};
     use forge_registry::KindPlatformContract;
     use forge_types::PlatformId;
 
@@ -725,37 +724,6 @@ mod tests {
             "kick.channel.reward.redemption.updated",
         ] {
             assert!(reg.get(id).is_some(), "missing kind id: {id}");
-        }
-    }
-
-    #[test]
-    fn numeric_trigger_fields_fall_back_to_zero_on_non_numeric_wire_values() {
-        let mut reg = TriggerRegistry::new();
-        register_kick_triggers(&mut reg).unwrap();
-        for (kind_id, field) in [
-            ("kick.moderation.banned", "duration_secs"),
-            ("kick.channel.hosted", "viewer_count"),
-            ("kick.channel.subscribed", "months"),
-            ("kick.channel.subscription.gifts", "count"),
-        ] {
-            let descriptor = reg.get(kind_id).unwrap();
-            for wire in [
-                serde_json::Value::Null,
-                serde_json::json!("300"),
-                serde_json::json!(true),
-                serde_json::json!([1]),
-            ] {
-                let event = Event::new(
-                    EventSource::Kick,
-                    kind_id,
-                    serde_json::json!({ field: wire.clone() }),
-                );
-                assert_eq!(
-                    descriptor.build_arg_stack(&event).get(field),
-                    Some(&Variant::Int(0)),
-                    "'{kind_id}' field '{field}' with wire value {wire}",
-                );
-            }
         }
     }
 

@@ -120,11 +120,13 @@ fn subscriber_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
 
-    fn sub_event() -> Event {
+    use serde_json::json;
+
+    fn a_third_month_subscription() -> Event {
         Event::new(
             EventSource::Kick,
             "kick.channel.subscribed",
-            serde_json::json!({
+            json!({
                 "subscriber": { "id": 123, "username": "new_subscriber" },
                 "months": 3,
                 "tier": "tier1"
@@ -133,20 +135,36 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_sub_fields() {
-        let stack = SubDescriptor.build_arg_stack(&sub_event());
+    fn a_subscription_publishes_the_subscriber_beside_the_canonical_tier_and_month_count() {
+        let stack = SubDescriptor.build_arg_stack(&a_third_month_subscription());
+        for (name, value) in [
+            ("user_id", "123"),
+            ("user_login", "new_subscriber"),
+            ("sub_tier", "tier1"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(
-            stack.get("user_id"),
-            Some(&Variant::String("123".to_owned()))
+            stack.get("sub_cumulative_months"),
+            Some(&Variant::Int(3)),
+            "sub_cumulative_months"
         );
+    }
+
+    #[test]
+    fn the_legacy_sub_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = SubDescriptor.build_arg_stack(&a_third_month_subscription());
+        assert_eq!(stack.get("username"), stack.get("user_login"));
+        assert_eq!(stack.get("months"), stack.get("sub_cumulative_months"));
+        assert_eq!(stack.get("tier"), stack.get("sub_tier"));
         assert_eq!(
             stack.get("username"),
             Some(&Variant::String("new_subscriber".to_owned()))
         );
         assert_eq!(stack.get("months"), Some(&Variant::Int(3)));
-        assert_eq!(
-            stack.get("tier"),
-            Some(&Variant::String("tier1".to_owned()))
-        );
     }
 }

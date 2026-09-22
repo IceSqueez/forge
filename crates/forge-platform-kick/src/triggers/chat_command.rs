@@ -245,14 +245,18 @@ fn command_args(event: &Event) -> String {
 mod tests {
     use super::*;
 
+    use serde_json::json;
+
+    use crate::triggers::chat::ChatDescriptor;
+
     fn command_event(content: &str) -> Event {
         Event::new(
             EventSource::Kick,
             "kick.chat.message.sent",
-            serde_json::json!({
+            json!({
                 "message_id": "msg-1",
                 "content": content,
-                "reply_to_message_id": null,
+                "reply_to_message_id": "parent-99",
                 "sender": {
                     "id": 42,
                     "username": "viewer_slug",
@@ -271,112 +275,80 @@ mod tests {
     }
 
     #[test]
-    fn matches_prefix_case_insensitively_by_default() {
-        let event = command_event("!Roll 1d6");
-        assert!(ChatCommandDescriptor.matches_trigger(&config("!roll", false), &event));
+    fn the_phrase_admits_only_the_messages_it_prefixes() {
+        for (phrase, case_sensitive, content, expected) in [
+            ("!roll", false, "!Roll 1d6", true),
+            ("!roll", false, "!roll 1d6", true),
+            ("!roll", true, "!Roll 1d6", false),
+            ("!roll", true, "!roll 1d6", true),
+            ("!roll", false, "please !roll for me", false),
+            ("!roll", false, "", false),
+            ("", false, "!roll 1d6", false),
+            ("", true, "", false),
+            ("!привіт", false, "!ПРИВІТ світ", true),
+        ] {
+            assert_eq!(
+                ChatCommandDescriptor
+                    .matches_trigger(&config(phrase, case_sensitive), &command_event(content)),
+                expected,
+                "phrase {phrase:?} case_sensitive {case_sensitive} content {content:?}"
+            );
+        }
     }
 
     #[test]
-    fn case_sensitive_rejects_differing_case() {
-        let event = command_event("!Roll 1d6");
-        assert!(!ChatCommandDescriptor.matches_trigger(&config("!roll", true), &event));
-    }
-
-    #[test]
-    fn case_sensitive_matches_exact_case() {
-        let event = command_event("!roll 1d6");
-        assert!(ChatCommandDescriptor.matches_trigger(&config("!roll", true), &event));
-    }
-
-    #[test]
-    fn empty_phrase_never_matches() {
-        let event = command_event("!roll 1d6");
-        assert!(!ChatCommandDescriptor.matches_trigger(&config("", false), &event));
-    }
-
-    #[test]
-    fn content_not_starting_with_phrase_does_not_match() {
-        let event = command_event("please !roll for me");
-        assert!(!ChatCommandDescriptor.matches_trigger(&config("!roll", false), &event));
-    }
-
-    #[test]
-    fn matches_reads_content_field_not_message_field() {
+    fn the_matcher_reads_the_content_field_and_never_a_message_field() {
         let event = Event::new(
             EventSource::Kick,
             "kick.chat.message.sent",
-            serde_json::json!({ "message": "!roll 1d6", "content": "" }),
+            json!({ "message": "!roll 1d6", "content": "" }),
         );
         assert!(!ChatCommandDescriptor.matches_trigger(&config("!roll", false), &event));
     }
 
     #[test]
-    fn arg_stack_splits_command_from_multi_word_args() {
-        let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!so @someone hello"));
-        assert_eq!(
-            stack.get("command_name"),
-            Some(&Variant::String("!so".to_owned()))
-        );
-        assert_eq!(
-            stack.get("args"),
-            Some(&Variant::String("@someone hello".to_owned()))
-        );
+    fn the_command_name_and_the_args_split_at_the_first_whitespace() {
+        for (content, name, args) in [
+            ("!so @someone hello", "!so", "@someone hello"),
+            ("!ping", "!ping", ""),
+            ("!ping   ", "!ping", ""),
+            ("!ping\tone\ttwo", "!ping", "one\ttwo"),
+            ("!привіт світ", "!привіт", "світ"),
+            ("", "", ""),
+        ] {
+            let stack = ChatCommandDescriptor.build_arg_stack(&command_event(content));
+            assert_eq!(
+                stack.get("command_name"),
+                Some(&Variant::String(name.to_owned())),
+                "content {content:?}"
+            );
+            assert_eq!(
+                stack.get("args"),
+                Some(&Variant::String(args.to_owned())),
+                "content {content:?}"
+            );
+        }
     }
 
     #[test]
-    fn arg_stack_yields_empty_args_when_command_has_none() {
-        let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!ping"));
+    fn the_command_trigger_publishes_the_same_chat_context_as_the_plain_message_trigger() {
+        let event = command_event("!so @someone hello");
+        let plain = ChatDescriptor.build_arg_stack(&event);
+        let command = ChatCommandDescriptor.build_arg_stack(&event);
+        for (name, value) in plain.snapshot() {
+            assert_eq!(
+                command.get(&name),
+                Some(&value),
+                "'{name}' drifted from the plain message trigger"
+            );
+        }
         assert_eq!(
-            stack.get("command_name"),
-            Some(&Variant::String("!ping".to_owned()))
-        );
-        assert_eq!(stack.get("args"), Some(&Variant::String(String::new())));
-    }
-
-    #[test]
-    fn arg_stack_extracts_chat_context_fields() {
-        let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!ping"));
-        assert_eq!(
-            stack.get("message_id"),
-            Some(&Variant::String("msg-1".to_owned()))
-        );
-        assert_eq!(
-            stack.get("sender_id"),
-            Some(&Variant::String("42".to_owned()))
-        );
-        assert_eq!(
-            stack.get("username"),
+            command.get("user_login"),
             Some(&Variant::String("viewer_slug".to_owned()))
         );
         assert_eq!(
-            stack.get("display_name"),
+            command.get("user_name"),
             Some(&Variant::String("Viewer Display".to_owned()))
-        );
-        assert_eq!(
-            stack.get("content"),
-            Some(&Variant::String("!ping".to_owned()))
-        );
-        assert_eq!(
-            stack.get("color"),
-            Some(&Variant::String("#00FF00".to_owned()))
-        );
-    }
-
-    #[test]
-    fn arg_stack_carries_normalized_reply_to_message_id() {
-        let event = Event::new(
-            EventSource::Kick,
-            "kick.chat.message.sent",
-            serde_json::json!({
-                "content": "!ping",
-                "sender": { "id": 42 },
-                "reply_to_message_id": "parent-99"
-            }),
-        );
-        let stack = ChatCommandDescriptor.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("reply_to_id"),
-            Some(&Variant::String("parent-99".to_owned()))
         );
     }
 }

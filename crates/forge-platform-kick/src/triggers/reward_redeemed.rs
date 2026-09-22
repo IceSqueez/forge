@@ -148,63 +148,68 @@ fn redeemer_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
 
-    #[test]
-    fn build_arg_stack_extracts_nested_reward_and_redeemer_fields() {
-        let event = Event::new(
+    use serde_json::json;
+
+    fn redemption_event(payload: serde_json::Value) -> Event {
+        Event::new(
             EventSource::Kick,
-            "kick.channel.reward_redeemed",
-            serde_json::json!({
-                "id": "rdm-1",
-                "reward": { "id": "rwd-2", "title": "Hydrate" },
-                "redeemer": { "user_id": 123, "username": "v" },
-                "user_input": "text"
-            }),
-        );
+            "kick.channel.reward.redemption.updated",
+            payload,
+        )
+    }
 
-        let stack = RewardRedeemedDescriptor.build_arg_stack(&event);
-
-        assert_eq!(
-            stack.get("redemption_id"),
-            Some(&Variant::String("rdm-1".to_owned()))
-        );
-        assert_eq!(
-            stack.get("reward_id"),
-            Some(&Variant::String("rwd-2".to_owned()))
-        );
-        assert_eq!(
-            stack.get("reward_title"),
-            Some(&Variant::String("Hydrate".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_id"),
-            Some(&Variant::String("123".to_owned()))
-        );
-        assert_eq!(
-            stack.get("username"),
-            Some(&Variant::String("v".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_input"),
-            Some(&Variant::String("text".to_owned()))
-        );
+    fn a_redemption_with_a_note() -> Event {
+        redemption_event(json!({
+            "id": "rdm-1",
+            "reward": { "id": "rwd-2", "title": "Hydrate" },
+            "redeemer": { "user_id": 123, "username": "v" },
+            "user_input": "drink up"
+        }))
     }
 
     #[test]
-    fn build_arg_stack_leaves_redeemer_fields_empty_when_object_absent() {
-        let event = Event::new(
-            EventSource::Kick,
-            "kick.channel.reward_redeemed",
-            serde_json::json!({
-                "id": "rdm-9",
-                "reward": { "id": "rwd-9", "title": "Anonymous reward" },
-                "user_input": ""
-            }),
+    fn the_redeemer_is_read_through_the_official_api_key_names() {
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&a_redemption_with_a_note());
+        for (name, value) in [
+            ("user_id", "123"),
+            ("user_login", "v"),
+            ("redemption_id", "rdm-1"),
+            ("reward_id", "rwd-2"),
+            ("reward_title", "Hydrate"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn the_user_input_is_published_as_the_canonical_message_text() {
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&a_redemption_with_a_note());
+        assert_eq!(
+            stack.get("message_text"),
+            Some(&Variant::String("drink up".to_owned()))
         );
+        assert_eq!(stack.get("user_input"), stack.get("message_text"));
+        assert_eq!(stack.get("username"), stack.get("user_login"));
+    }
 
-        let stack = RewardRedeemedDescriptor.build_arg_stack(&event);
-
-        assert_eq!(stack.get("user_id"), Some(&Variant::String(String::new())));
-        assert_eq!(stack.get("username"), Some(&Variant::String(String::new())));
+    #[test]
+    fn a_redemption_the_wire_attributes_to_nobody_names_an_empty_redeemer() {
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&redemption_event(json!({
+            "id": "rdm-9",
+            "reward": { "id": "rwd-9", "title": "Anonymous reward" },
+            "user_input": ""
+        })));
+        for name in ["user_id", "user_login", "user_name", "message_text"] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
         assert_eq!(
             stack.get("reward_id"),
             Some(&Variant::String("rwd-9".to_owned()))

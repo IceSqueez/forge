@@ -162,55 +162,103 @@ pub(super) fn sender_color(event: &Event) -> String {
 mod tests {
     use super::*;
 
-    fn chat_event() -> Event {
-        Event::new(
-            EventSource::Kick,
-            "kick.chat.message.sent",
-            serde_json::json!({
-                "message_id": "msg-1",
-                "content": "hello stream",
-                "reply_to_message_id": null,
-                "sender": {
-                    "id": 42,
-                    "username": "viewer_slug",
-                    "display_name": "Viewer Display",
-                    "color": "#00FF00"
-                }
-            }),
-        )
+    use serde_json::json;
+
+    fn chat_event(payload: serde_json::Value) -> Event {
+        Event::new(EventSource::Kick, "kick.chat.message.sent", payload)
+    }
+
+    fn a_message_from_a_named_viewer() -> Event {
+        chat_event(json!({
+            "message_id": "msg-1",
+            "content": "hello stream",
+            "reply_to_message_id": null,
+            "sender": {
+                "id": 42,
+                "username": "viewer_slug",
+                "display_name": "Viewer Display",
+                "color": "#00FF00"
+            }
+        }))
     }
 
     #[test]
-    fn always_matches() {
-        assert!(ChatDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event()));
+    fn the_login_and_the_display_name_never_swap_slots() {
+        let stack = ChatDescriptor.build_arg_stack(&a_message_from_a_named_viewer());
+        for (name, value) in [
+            ("user_id", "42"),
+            ("user_login", "viewer_slug"),
+            ("user_name", "Viewer Display"),
+            ("user_platform", "kick"),
+            ("message_text", "hello stream"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
     }
 
     #[test]
-    fn build_arg_stack_extracts_fields() {
-        let stack = ChatDescriptor.build_arg_stack(&chat_event());
+    fn a_sender_the_wire_gives_no_display_name_is_shown_under_the_login() {
+        let stack = ChatDescriptor.build_arg_stack(&chat_event(json!({
+            "content": "hi",
+            "sender": { "id": 42, "username": "viewer_slug" }
+        })));
         assert_eq!(
-            stack.get("message_id"),
-            Some(&Variant::String("msg-1".to_owned()))
+            stack.get("user_name"),
+            Some(&Variant::String("viewer_slug".to_owned()))
         );
         assert_eq!(
-            stack.get("sender_id"),
-            Some(&Variant::String("42".to_owned()))
+            stack.get("user_login"),
+            Some(&Variant::String("viewer_slug".to_owned()))
         );
+    }
+
+    #[test]
+    fn the_legacy_chat_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = ChatDescriptor.build_arg_stack(&a_message_from_a_named_viewer());
+        assert_eq!(stack.get("sender_id"), stack.get("user_id"));
+        assert_eq!(stack.get("username"), stack.get("user_login"));
+        assert_eq!(stack.get("display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("content"), stack.get("message_text"));
         assert_eq!(
             stack.get("username"),
             Some(&Variant::String("viewer_slug".to_owned()))
         );
         assert_eq!(
-            stack.get("content"),
-            Some(&Variant::String("hello stream".to_owned()))
+            stack.get("display_name"),
+            Some(&Variant::String("Viewer Display".to_owned()))
         );
-        assert_eq!(
-            stack.get("color"),
-            Some(&Variant::String("#00FF00".to_owned()))
-        );
-        assert_eq!(
-            stack.get("reply_to_id"),
-            Some(&Variant::String(String::new()))
-        );
+    }
+
+    #[test]
+    fn the_message_envelope_fields_are_read_straight_from_the_payload() {
+        for (reply_wire, expected_reply) in [
+            (json!("parent-99"), "parent-99"),
+            (json!(null), ""),
+            (json!(7), ""),
+        ] {
+            let stack = ChatDescriptor.build_arg_stack(&chat_event(json!({
+                "message_id": "msg-1",
+                "content": "hello stream",
+                "reply_to_message_id": reply_wire.clone(),
+                "sender": { "id": 42, "color": "#00FF00" }
+            })));
+            assert_eq!(
+                stack.get("reply_to_id"),
+                Some(&Variant::String(expected_reply.to_owned())),
+                "reply wire {reply_wire}"
+            );
+            assert_eq!(
+                stack.get("message_id"),
+                Some(&Variant::String("msg-1".to_owned()))
+            );
+            assert_eq!(
+                stack.get("color"),
+                Some(&Variant::String("#00FF00".to_owned()))
+            );
+        }
     }
 }

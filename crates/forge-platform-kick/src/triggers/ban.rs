@@ -132,31 +132,86 @@ fn moderator_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
 
-    fn ban_event() -> Event {
-        Event::new(
-            EventSource::Kick,
-            "kick.moderation.banned",
-            serde_json::json!({
-                "banned_user": { "id": 77, "username": "bad_actor" },
-                "moderator": { "id": 2, "username": "mod" },
-                "is_permanent": false,
-                "duration_secs": 300,
-                "reason": null
-            }),
-        )
+    use serde_json::json;
+
+    fn ban_event(payload: serde_json::Value) -> Event {
+        Event::new(EventSource::Kick, "kick.moderation.banned", payload)
+    }
+
+    fn a_five_minute_timeout() -> Event {
+        ban_event(json!({
+            "banned_user": { "id": 77, "username": "bad_actor" },
+            "moderator": { "id": 2, "username": "mod" },
+            "is_permanent": false,
+            "duration_secs": 300,
+            "reason": null
+        }))
     }
 
     #[test]
-    fn build_arg_stack_extracts_ban_fields() {
-        let stack = BanDescriptor.build_arg_stack(&ban_event());
+    fn a_ban_names_the_banned_user_as_principal_and_the_moderator_in_its_own_block() {
+        let stack = BanDescriptor.build_arg_stack(&a_five_minute_timeout());
+        for (name, value) in [
+            ("user_id", "77"),
+            ("user_login", "bad_actor"),
+            ("moderator_id", "2"),
+            ("moderator_login", "mod"),
+            ("moderator_platform", "kick"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn a_ban_actor_the_wire_gives_no_display_name_is_shown_under_the_login() {
+        let stack = BanDescriptor.build_arg_stack(&a_five_minute_timeout());
+        assert_eq!(
+            stack.get("user_name"),
+            Some(&Variant::String("bad_actor".to_owned()))
+        );
+        assert_eq!(
+            stack.get("moderator_name"),
+            Some(&Variant::String("mod".to_owned()))
+        );
+    }
+
+    #[test]
+    fn the_legacy_ban_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = BanDescriptor.build_arg_stack(&a_five_minute_timeout());
+        assert_eq!(stack.get("banned_user_id"), stack.get("user_id"));
+        assert_eq!(stack.get("banned_username"), stack.get("user_login"));
         assert_eq!(
             stack.get("banned_user_id"),
             Some(&Variant::String("77".to_owned()))
         );
-        assert_eq!(
-            stack.get("banned_username"),
-            Some(&Variant::String("bad_actor".to_owned()))
-        );
-        assert_eq!(stack.get("duration_secs"), Some(&Variant::Int(300)));
+    }
+
+    #[test]
+    fn the_ban_terms_come_from_the_payload_with_a_permanent_ban_reading_as_zero_seconds() {
+        for (duration, reason, expected_secs, expected_reason) in [
+            (json!(300), json!("spam"), 300, "spam"),
+            (json!(0), json!(null), 0, ""),
+            (json!(1_209_600), json!("raid bot"), 1_209_600, "raid bot"),
+        ] {
+            let stack = BanDescriptor.build_arg_stack(&ban_event(json!({
+                "banned_user": { "id": 77, "username": "bad_actor" },
+                "duration_secs": duration.clone(),
+                "reason": reason.clone()
+            })));
+            assert_eq!(
+                stack.get("duration_secs"),
+                Some(&Variant::Int(expected_secs)),
+                "duration {duration}"
+            );
+            assert_eq!(
+                stack.get("reason"),
+                Some(&Variant::String(expected_reason.to_owned())),
+                "reason {reason}"
+            );
+        }
     }
 }

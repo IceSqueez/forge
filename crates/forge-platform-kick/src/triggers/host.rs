@@ -99,24 +99,51 @@ fn host_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
 
-    fn host_event() -> Event {
-        Event::new(
-            EventSource::Kick,
-            "kick.channel.hosted",
-            serde_json::json!({
-                "host": { "id": null, "username": "hosting_channel" },
-                "viewer_count": 250
-            }),
-        )
+    use serde_json::json;
+
+    fn host_event(payload: serde_json::Value) -> Event {
+        Event::new(EventSource::Kick, "kick.channel.hosted", payload)
+    }
+
+    fn a_host_bringing_a_crowd() -> Event {
+        host_event(json!({
+            "host": { "id": null, "username": "hosting_channel" },
+            "viewer_count": 250
+        }))
     }
 
     #[test]
-    fn build_arg_stack_extracts_host_fields() {
-        let stack = HostDescriptor.build_arg_stack(&host_event());
+    fn a_host_the_wire_gives_no_id_keeps_an_empty_user_id_beside_a_real_login() {
+        let stack = HostDescriptor.build_arg_stack(&a_host_bringing_a_crowd());
+        assert_eq!(stack.get("user_id"), Some(&Variant::String(String::new())));
+        assert_eq!(
+            stack.get("user_login"),
+            Some(&Variant::String("hosting_channel".to_owned()))
+        );
+    }
+
+    #[test]
+    fn the_legacy_host_username_still_carries_what_user_login_carries() {
+        let stack = HostDescriptor.build_arg_stack(&a_host_bringing_a_crowd());
+        assert_eq!(stack.get("host_username"), stack.get("user_login"));
         assert_eq!(
             stack.get("host_username"),
             Some(&Variant::String("hosting_channel".to_owned()))
         );
-        assert_eq!(stack.get("viewer_count"), Some(&Variant::Int(250)));
+    }
+
+    #[test]
+    fn the_viewer_count_is_an_integer_read_from_the_host_payload() {
+        for (wire, expected) in [(json!(250), 250), (json!(0), 0), (json!(50_000), 50_000)] {
+            let stack = HostDescriptor.build_arg_stack(&host_event(json!({
+                "host": { "id": null, "username": "hosting_channel" },
+                "viewer_count": wire.clone()
+            })));
+            assert_eq!(
+                stack.get("viewer_count"),
+                Some(&Variant::Int(expected)),
+                "wire {wire}"
+            );
+        }
     }
 }

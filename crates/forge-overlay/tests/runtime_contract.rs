@@ -7,8 +7,8 @@ use forge_overlay::metrics::{
     ELEMENT_HEIGHT_PROPERTY, ELEMENT_WIDTH_PROPERTY, TEXT_SCALE_PROPERTY, TEXT_SIZE_PROPERTY,
 };
 use forge_overlay::{
-    OverlayKindRegistry, PREVIEW_PARAM, PREVIEW_VALUE, RUNTIME_SOURCE, SAMPLE_FILE,
-    register_builtin_kinds,
+    OverlayKindRegistry, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, RUNTIME_SOURCE,
+    SAMPLE_FILE, register_builtin_kinds,
 };
 
 fn registry() -> OverlayKindRegistry {
@@ -107,16 +107,29 @@ fn every_helper_a_generated_page_calls_is_one_the_runtime_publishes() {
 }
 
 #[test]
-fn the_runtime_previews_a_page_on_the_flag_this_build_writes_into_its_url() {
+fn the_runtime_spells_the_preview_flag_and_its_auth_field_the_way_this_build_does() {
     for declaration in [
         format!("var PREVIEW_PARAM = \"{PREVIEW_PARAM}\";"),
         format!("var PREVIEW_VALUE = \"{PREVIEW_VALUE}\";"),
+        format!("var PREVIEW_CONNECTION_FIELD = \"{PREVIEW_CONNECTION_FIELD}\";"),
     ] {
         assert!(
             RUNTIME_SOURCE.contains(&declaration),
-            "the runtime does not state '{declaration}', so a preview link opens an ordinary page"
+            "the runtime does not state '{declaration}', so a preview link opens an ordinary page \
+             or announces itself under a name the server never reads"
         );
     }
+}
+
+#[test]
+fn a_page_declares_itself_a_preview_tab_exactly_when_it_is_previewing() {
+    let identify = function_body("identify");
+
+    assert!(
+        identify.contains("frame[PREVIEW_CONNECTION_FIELD] = previewing;"),
+        "the auth frame does not carry the preview reading, so every preview tab is counted as a \
+         browser source"
+    );
 }
 
 #[test]

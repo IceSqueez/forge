@@ -103,3 +103,60 @@ async fn connected_clients_snapshot(
     }
     result
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::collections::HashSet;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicU64;
+
+    use forge_runtime::{EventBus, NullEventLogRepo};
+
+    use super::build_server_snapshot;
+    use crate::bus_adapter::{BusAdapter, ClientFilterSet, OverlayClientClass};
+    use crate::server_info::ServerInfo;
+    use crate::ws_client::WsClient;
+
+    #[tokio::test]
+    async fn the_server_console_counts_the_browser_source_and_leaves_out_the_preview_tab() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let adapter = BusAdapter::new(bus);
+        let info = ServerInfo::new();
+        let identity = forge_storage::OverlayId::new("goal-box");
+        let addr: std::net::SocketAddr = "203.0.113.7:5555".parse().unwrap();
+
+        let mut promoted = Vec::new();
+        for (label, class) in [
+            ("browser-source", OverlayClientClass::BrowserSource),
+            ("preview-tab", OverlayClientClass::PreviewTab),
+        ] {
+            let (handle, _rx) = adapter
+                .register_client(ClientFilterSet::new(HashSet::new()))
+                .await;
+            promoted.push(
+                adapter
+                    .promote_to_overlay(handle.id, identity.clone(), class)
+                    .await
+                    .expect("a just-registered client is still on the registry"),
+            );
+            let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
+            client.identification.store(Arc::new(label.to_owned()));
+            info.register(handle.id, client).await;
+        }
+
+        let snapshot = build_server_snapshot(&info, &adapter).await;
+
+        let counted: Vec<&str> = snapshot
+            .connected_clients
+            .iter()
+            .map(|client| client.identification.as_str())
+            .collect();
+        assert_eq!(
+            counted,
+            vec!["browser-source"],
+            "the console's connected-client count must not include a page the maintainer opened \
+             to look at an overlay"
+        );
+    }
+}

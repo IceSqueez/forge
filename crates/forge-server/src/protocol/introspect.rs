@@ -108,9 +108,49 @@ mod tests {
     use forge_runtime::{EventBus, NullEventLogRepo};
 
     use super::build_connected_clients;
-    use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter};
+    use crate::bus_adapter::{BusAdapter, ClientFilterSet, EventFilter, OverlayClientClass};
     use crate::server_info::ServerInfo;
     use crate::ws_client::WsClient;
+
+    #[tokio::test]
+    async fn the_wire_client_list_answers_with_the_browser_source_and_drops_the_preview_tab() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let adapter = BusAdapter::new(bus);
+        let info = ServerInfo::new();
+        let identity = forge_storage::OverlayId::new("goal-box");
+        let addr: std::net::SocketAddr = "203.0.113.7:5555".parse().unwrap();
+
+        let mut promoted = Vec::new();
+        for (label, class) in [
+            ("browser-source", OverlayClientClass::BrowserSource),
+            ("preview-tab", OverlayClientClass::PreviewTab),
+        ] {
+            let (handle, _rx) = adapter
+                .register_client(ClientFilterSet::new(HashSet::new()))
+                .await;
+            promoted.push(
+                adapter
+                    .promote_to_overlay(handle.id, identity.clone(), class)
+                    .await
+                    .expect("a just-registered client is still on the registry"),
+            );
+            let client = Arc::new(WsClient::new(handle.id, addr, Arc::new(AtomicU64::new(0))));
+            client.identification.store(Arc::new(label.to_owned()));
+            info.register(handle.id, client).await;
+        }
+
+        let rows = build_connected_clients(&info, &adapter).await;
+
+        let listed: Vec<&str> = rows
+            .iter()
+            .filter_map(|row| row["identification"].as_str())
+            .collect();
+        assert_eq!(
+            listed,
+            vec!["browser-source"],
+            "the answer a third-party dashboard reads must count browser sources only"
+        );
+    }
 
     #[tokio::test]
     async fn snapshot_row_preserves_identity_addr_and_subscriptions() {

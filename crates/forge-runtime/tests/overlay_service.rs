@@ -345,6 +345,46 @@ async fn test_fire_records_its_origin_without_broadcasting_anything() {
     );
 }
 
+#[test]
+fn a_tally_of_receivers_reports_browser_sources_first_and_preview_tabs_only_alone() {
+    for (reached, expected) in [
+        (
+            OverlayReceivers {
+                sources: 0,
+                preview_tabs: 0,
+            },
+            OverlayDelivery::NoPage,
+        ),
+        (
+            OverlayReceivers {
+                sources: 0,
+                preview_tabs: 2,
+            },
+            OverlayDelivery::OnlyPreview { tabs: 2 },
+        ),
+        (
+            OverlayReceivers {
+                sources: 3,
+                preview_tabs: 0,
+            },
+            OverlayDelivery::Delivered { sources: 3 },
+        ),
+        (
+            OverlayReceivers {
+                sources: 3,
+                preview_tabs: 2,
+            },
+            OverlayDelivery::Delivered { sources: 3 },
+        ),
+    ] {
+        assert_eq!(
+            reached.outcome(),
+            expected,
+            "{reached:?} was worded to the user as something other than {expected:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
     let mut stored = definition("sub-alert");

@@ -741,22 +741,25 @@ fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl 
 mod tests {
     use super::*;
 
-    fn landed(delivered: bool) -> TestFirePhase {
+    fn landed(delivery: OverlayDelivery) -> TestFirePhase {
         TestFirePhase::Landed {
             content: OverlayConfig::new(),
-            delivery: if delivered {
-                OverlayDelivery::Delivered { sources: 1 }
-            } else {
-                OverlayDelivery::NoPage
-            },
+            delivery,
         }
     }
 
     #[test]
-    fn a_fire_in_flight_or_already_delivered_reads_the_same_whether_the_server_runs() {
+    fn a_fire_that_reached_a_page_reads_the_same_whether_the_server_runs() {
         for (phase, expected) in [
             (TestFirePhase::Sending, DeliveryHint::Sending),
-            (landed(true), DeliveryHint::Delivered { sources: 1 }),
+            (
+                landed(OverlayDelivery::Delivered { sources: 3 }),
+                DeliveryHint::Delivered { sources: 3 },
+            ),
+            (
+                landed(OverlayDelivery::OnlyPreview { tabs: 2 }),
+                DeliveryHint::OnlyPreview { tabs: 2 },
+            ),
         ] {
             for server_running in [false, true] {
                 assert_eq!(
@@ -769,13 +772,13 @@ mod tests {
     }
 
     #[test]
-    fn an_undelivered_landing_blames_the_browser_source_only_while_the_server_runs() {
+    fn a_landing_no_page_received_blames_the_browser_source_only_while_the_server_runs() {
         assert_eq!(
-            delivery_hint(&landed(false), true),
+            delivery_hint(&landed(OverlayDelivery::NoPage), true),
             DeliveryHint::NoBrowserSource
         );
         assert_eq!(
-            delivery_hint(&landed(false), false),
+            delivery_hint(&landed(OverlayDelivery::NoPage), false),
             DeliveryHint::Undelivered
         );
     }

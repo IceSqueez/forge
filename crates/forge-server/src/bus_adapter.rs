@@ -571,16 +571,75 @@ mod tests {
     async fn promoted_overlay(
         adapter: &Arc<BusAdapter>,
         identity: &OverlayId,
+        class: OverlayClientClass,
     ) -> broadcast::Receiver<WsFrame> {
         let (handle, _initial_rx) = adapter.register_client(no_filters()).await;
         adapter
-            .promote_to_overlay(
-                handle.id,
-                identity.clone(),
-                OverlayClientClass::BrowserSource,
-            )
+            .promote_to_overlay(handle.id, identity.clone(), class)
             .await
             .expect("a just-registered client is still on the registry")
+    }
+
+    async fn promoted_source(
+        adapter: &Arc<BusAdapter>,
+        identity: &OverlayId,
+    ) -> broadcast::Receiver<WsFrame> {
+        promoted_overlay(adapter, identity, OverlayClientClass::BrowserSource).await
+    }
+
+    #[tokio::test]
+    async fn a_preview_tab_receives_the_delivery_a_browser_source_does_and_is_tallied_apart() {
+        let adapter = BusAdapter::new(make_bus());
+        let target = OverlayId::new("goal-box");
+        let mut source_rx = promoted_source(&adapter, &target).await;
+        let mut preview_rx =
+            promoted_overlay(&adapter, &target, OverlayClientClass::PreviewTab).await;
+
+        let reached = adapter
+            .deliver_overlay_content(&target, &sample_content(), None)
+            .await;
+
+        assert_eq!(
+            reached,
+            OverlayReceivers {
+                sources: 1,
+                preview_tabs: 1
+            },
+            "the two overlay-connection classes were not counted apart"
+        );
+        for (label, receiver) in [
+            ("browser source", &mut source_rx),
+            ("preview tab", &mut preview_rx),
+        ] {
+            match receiver.try_recv() {
+                Ok(WsFrame::Text(_)) => {}
+                other => panic!("the {label} was not delivered to: {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn only_the_connections_that_declared_themselves_previews_are_listed_as_preview_tabs() {
+        let adapter = BusAdapter::new(make_bus());
+        let target = OverlayId::new("goal-box");
+        let (_plain, _plain_rx) = adapter.register_client(wildcard_filter()).await;
+        let (source, _source_initial_rx) = adapter.register_client(no_filters()).await;
+        let _source_rx = adapter
+            .promote_to_overlay(source.id, target.clone(), OverlayClientClass::BrowserSource)
+            .await
+            .expect("a just-registered client is still on the registry");
+        let (preview, _preview_initial_rx) = adapter.register_client(no_filters()).await;
+        let _preview_rx = adapter
+            .promote_to_overlay(preview.id, target, OverlayClientClass::PreviewTab)
+            .await
+            .expect("a just-registered client is still on the registry");
+
+        assert_eq!(
+            adapter.preview_tabs().await,
+            HashSet::from([preview.id]),
+            "the console filters on this set, so a miscount here hides a real client or leaves a \
+             preview tab counted as one"
+        );
     }
 
     #[tokio::test]
@@ -588,8 +647,8 @@ mod tests {
         let adapter = BusAdapter::new(make_bus());
         let target = OverlayId::new("goal-box");
         let (_plain, _plain_rx) = adapter.register_client(wildcard_filter()).await;
-        let _target_rx = promoted_overlay(&adapter, &target).await;
-        let _other_rx = promoted_overlay(&adapter, &OverlayId::new("alert-box")).await;
+        let _target_rx = promoted_source(&adapter, &target).await;
+        let _other_rx = promoted_source(&adapter, &OverlayId::new("alert-box")).await;
 
         assert_eq!(
             adapter
@@ -614,7 +673,7 @@ mod tests {
     async fn delivered_content_counts_nothing_once_the_page_has_dropped_its_receiver() {
         let adapter = BusAdapter::new(make_bus());
         let target = OverlayId::new("goal-box");
-        let receiver = promoted_overlay(&adapter, &target).await;
+        let receiver = promoted_source(&adapter, &target).await;
 
         drop(receiver);
 
@@ -631,7 +690,7 @@ mod tests {
     async fn a_content_frame_names_its_shape_and_carries_a_duration_only_when_one_was_set() {
         let adapter = BusAdapter::new(make_bus());
         let target = OverlayId::new("goal-box");
-        let mut receiver = promoted_overlay(&adapter, &target).await;
+        let mut receiver = promoted_source(&adapter, &target).await;
 
         for (duration_ms, expected) in [(Some(2_000_u64), Some(2_000_u64)), (None, None)] {
             adapter

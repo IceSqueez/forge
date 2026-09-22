@@ -109,6 +109,86 @@ fn placeholder_names(line: &str) -> Vec<String> {
     names
 }
 
+fn variants_by_key(content: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let mut by_key: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut current: Option<String> = None;
+
+    for raw in content.lines() {
+        let line = raw.trim_end();
+        if !(line.starts_with(' ') || line.starts_with('\t')) {
+            current = None;
+            let Some(first) = line.chars().next() else {
+                continue;
+            };
+            if !first.is_ascii_lowercase() {
+                continue;
+            }
+            let ident_len = line
+                .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+                .unwrap_or(line.len());
+            let (key, rest) = line.split_at(ident_len);
+            if rest == " =" || rest.starts_with(" = ") {
+                current = Some(key.to_owned());
+            }
+            continue;
+        }
+        let Some(key) = current.as_ref() else {
+            continue;
+        };
+        let body = line.trim_start();
+        let (marker, rest) = match body.strip_prefix("*[") {
+            Some(rest) => ("*", rest),
+            None => match body.strip_prefix('[') {
+                Some(rest) => ("", rest),
+                None => continue,
+            },
+        };
+        let Some(end) = rest.find(']') else {
+            continue;
+        };
+        by_key
+            .entry(key.clone())
+            .or_default()
+            .insert(format!("{marker}[{}]", &rest[..end]));
+    }
+
+    by_key
+}
+
+#[test]
+fn every_counted_message_offers_the_plural_categories_its_locale_needs() {
+    for (locale, required) in [
+        ("en", &["[one]", "*[other]"][..]),
+        ("uk", &["[one]", "[few]", "*[other]"][..]),
+    ] {
+        let variants = variants_by_key(&load(locale));
+
+        assert!(
+            variants.contains_key("overlays_test_delivered")
+                && variants.contains_key("overlays_test_preview_only"),
+            "the parser found no variants for the counted delivery messages, making this vacuous"
+        );
+
+        let mut short = Vec::new();
+        for (key, offered) in &variants {
+            let missing: Vec<&str> = required
+                .iter()
+                .copied()
+                .filter(|token| !offered.contains(*token))
+                .collect();
+            if !missing.is_empty() {
+                short.push(format!("{key}: missing {missing:?} from {offered:?}"));
+            }
+        }
+
+        assert!(
+            short.is_empty(),
+            "these {locale} messages read wrong for some counts:\n  {}",
+            short.join("\n  ")
+        );
+    }
+}
+
 fn duplicates(keys: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut dups = Vec::new();

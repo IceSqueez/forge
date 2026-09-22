@@ -137,3 +137,39 @@ pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json
     }
     serde_json::Value::Object(map)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use forge_overlay::PREVIEW_CONNECTION_FIELD;
+
+    use super::{WsEnvelope, WsRequest};
+
+    #[test]
+    fn an_auth_frame_reads_its_preview_claim_from_the_field_an_overlay_page_sends() {
+        for (claimed, expected) in [(None, false), (Some(false), false), (Some(true), true)] {
+            let mut frame = serde_json::json!({
+                "id": "1",
+                "request": "auth",
+                "overlayCredential": "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d",
+            });
+            if let Some(value) = claimed {
+                frame[PREVIEW_CONNECTION_FIELD] = serde_json::Value::Bool(value);
+            }
+
+            let parsed: WsEnvelope<WsRequest> =
+                serde_json::from_value(frame).expect("an auth frame an overlay page can send");
+
+            let WsRequest::Auth {
+                preview_connection, ..
+            } = parsed.inner
+            else {
+                panic!("a frame requesting auth parsed as something else");
+            };
+            assert_eq!(
+                preview_connection, expected,
+                "a page claiming {claimed:?} was classed as previewConnection={preview_connection}"
+            );
+        }
+    }
+}

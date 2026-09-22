@@ -5,7 +5,7 @@ use std::time::Duration;
 use forge_components::{Icon, ToastAction, ToastKind, tr};
 use forge_events::Event;
 use forge_platform_core::{
-    BuiltinHealth, HealthValue, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
+    BuiltinHealth, HealthMetric, HealthValue, RateLimiter, TokenBucketRateLimiter, acquire_or_wait,
 };
 use forge_runtime::{EventBus, EventSubscription};
 use forge_storage::{DataProvider, SettingsRepo, get_bool_setting, reserved_keys};
@@ -328,12 +328,14 @@ async fn fetch_latest_release() -> Option<Release> {
 }
 
 fn obs_busy(obs: &ObsInstallSeed) -> bool {
-    obs.live().is_some_and(|client| {
-        client
-            .metrics()
-            .iter()
-            .any(|metric| matches!(metric.value, HealthValue::Status { active: true, .. }))
-    })
+    obs.live()
+        .is_some_and(|client| any_output_active(&client.metrics()))
+}
+
+fn any_output_active(metrics: &[HealthMetric]) -> bool {
+    metrics
+        .iter()
+        .any(|metric| matches!(metric.value, HealthValue::Status { active: true, .. }))
 }
 
 async fn wait_for_obs_idle(mut subscription: EventSubscription, obs: &ObsInstallSeed) -> bool {

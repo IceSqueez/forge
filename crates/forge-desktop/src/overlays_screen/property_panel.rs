@@ -795,8 +795,10 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::{Density, ThemeId};
-    use forge_overlay::OverlayKindRegistry;
-    use forge_overlay::config::{ELEMENT_WIDTH, HEADLINE, SOUND};
+    use forge_overlay::config::{
+        ACCENT_OPTIONS, ELEMENT_WIDTH, HEADLINE, ICON, ICON_OPTIONS_KEY, SOUND,
+    };
+    use forge_overlay::{OverlayKindRegistry, image_reference};
     use forge_registry::FormField;
     use forge_runtime::EventBus;
     use forge_storage::{OverlayCredential, OverlayDefinition, StorageError};
@@ -812,7 +814,6 @@ mod tests {
     const TOKEN: &str = "token";
     const DEFAULT_HEADLINE: &str = "hello";
     const EDITED_HEADLINE: &str = "goodbye";
-    const ACCENT: &str = "accent";
     const CANVAS_WIDTH: &str = "canvas_width";
     const CANVAS_HEIGHT: &str = "canvas_height";
 
@@ -939,6 +940,14 @@ mod tests {
                     label: "Width",
                     min: 40,
                     max: 1920,
+                },
+            },
+            SectionedField {
+                section: ConfigSection::Style,
+                field: FormField::Swatch {
+                    key: ACCENT,
+                    label: "Accent",
+                    options: ACCENT_OPTIONS,
                 },
             },
         ]
@@ -1365,6 +1374,180 @@ mod tests {
                 .panel()
                 .read_with(cx, |panel, _| panel.notes_for(HEADLINE).is_empty()),
             "an issue raised against the sound key was shown on another field"
+        );
+    }
+
+    const GLYPH: &str = "heart";
+    const OTHER_GLYPH: &str = "gift";
+    const IMAGE_BLOB: &str =
+        "sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8";
+    const IMPORT_REFUSAL: &str = "the file is not an image";
+
+    impl Fixture {
+        fn with_icon_field(cx: &mut gpui::TestAppContext, stored: OverlayConfig) -> Self {
+            let mut icon_specs = specs();
+            icon_specs.push(SectionedField {
+                section: ConfigSection::Style,
+                field: FormField::DynamicSelect {
+                    key: ICON,
+                    label: "Icon",
+                    options_key: ICON_OPTIONS_KEY,
+                },
+            });
+            Self::build(cx, stored, icon_specs, HashMap::new())
+        }
+
+        fn icon_selection(&self, cx: &mut gpui::TestAppContext) -> String {
+            self.panel().read_with(cx, |panel, _| {
+                panel
+                    .fields
+                    .iter()
+                    .find_map(|field| match field {
+                        ConfigField::Choice { key, selected, .. } if key == ICON => {
+                            Some(selected.clone())
+                        }
+                        _ => None,
+                    })
+                    .expect("the icon field is a choice over the curated roster")
+            })
+        }
+
+        fn icon_notes(&self, cx: &mut gpui::TestAppContext) -> Vec<String> {
+            self.panel().read_with(cx, |panel, _| panel.notes_for(ICON))
+        }
+
+        fn saved_icons(&self, cx: &mut gpui::TestAppContext) -> Vec<Option<String>> {
+            self.saves(cx)
+                .iter()
+                .map(|config| {
+                    config
+                        .get(ICON)
+                        .and_then(Variant::as_str)
+                        .map(str::to_owned)
+                })
+                .collect()
+        }
+
+        fn begin_import(&self, cx: &mut gpui::TestAppContext) {
+            self.panel()
+                .update(cx, |panel, cx| panel.begin_icon_import(ICON.to_owned(), cx));
+        }
+
+        fn pick_icon(&self, cx: &mut gpui::TestAppContext, value: &str) {
+            self.panel().update(cx, |panel, cx| {
+                panel.settle_icon_pick(
+                    ICON.to_owned(),
+                    IconPickResult::Chosen(value.to_owned()),
+                    cx,
+                );
+            });
+            cx.run_until_parked();
+        }
+
+        fn settle_import(&self, cx: &mut gpui::TestAppContext, result: IconPickResult) {
+            self.panel().update(cx, |panel, cx| {
+                panel.settle_icon_import(ICON.to_owned(), result, cx);
+            });
+            cx.run_until_parked();
+        }
+
+        fn cancel_import(&self, cx: &mut gpui::TestAppContext) {
+            self.panel().update(cx, |panel, cx| {
+                panel.cancel_icon_import(ICON.to_owned(), cx)
+            });
+            cx.run_until_parked();
+        }
+
+        fn icon_tint(&self, cx: &mut gpui::TestAppContext) -> Rgba {
+            self.panel()
+                .read_with(cx, |panel, cx| panel.accent_tint(&cx.palette()))
+        }
+    }
+
+    #[gpui::test]
+    fn a_late_import_answer_for_an_icon_the_user_moved_past_never_moves_the_field(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_icon_field(cx, OverlayConfig::new());
+        fixture.begin_import(cx);
+        fixture.pick_icon(cx, GLYPH);
+
+        fixture.settle_import(cx, IconPickResult::Chosen(image_reference(IMAGE_BLOB)));
+
+        assert_eq!(
+            fixture.icon_selection(cx),
+            GLYPH,
+            "the file the user abandoned overwrote the glyph they picked instead"
+        );
+        assert_eq!(fixture.saved_icons(cx), vec![Some(GLYPH.to_owned())]);
+    }
+
+    #[gpui::test]
+    fn an_imported_image_the_field_is_still_waiting_on_is_committed_and_saved(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_icon_field(cx, OverlayConfig::new());
+        fixture.begin_import(cx);
+
+        fixture.settle_import(cx, IconPickResult::Chosen(image_reference(IMAGE_BLOB)));
+
+        assert_eq!(fixture.icon_selection(cx), image_reference(IMAGE_BLOB));
+        assert_eq!(
+            fixture.saved_icons(cx),
+            vec![Some(image_reference(IMAGE_BLOB))]
+        );
+    }
+
+    #[gpui::test]
+    fn a_refused_icon_import_leaves_the_field_alone_and_states_the_reason(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture =
+            Fixture::with_icon_field(cx, config(&[(ICON, Variant::String(GLYPH.into()))]));
+        fixture.begin_import(cx);
+
+        fixture.settle_import(cx, IconPickResult::Refused(IMPORT_REFUSAL.to_owned()));
+
+        assert_eq!(fixture.icon_selection(cx), GLYPH);
+        assert_eq!(fixture.icon_notes(cx), vec![IMPORT_REFUSAL]);
+        assert!(fixture.saves(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_dialog_cancel_that_lands_after_a_direct_pick_leaves_the_settled_icon_alone(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture =
+            Fixture::with_icon_field(cx, config(&[(ICON, Variant::String(GLYPH.into()))]));
+        fixture.begin_import(cx);
+        fixture.pick_icon(cx, OTHER_GLYPH);
+
+        fixture.cancel_import(cx);
+
+        assert_eq!(fixture.icon_selection(cx), OTHER_GLYPH);
+        assert_eq!(fixture.saved_icons(cx), vec![Some(OTHER_GLYPH.to_owned())]);
+    }
+
+    #[gpui::test]
+    fn the_icon_tile_is_tinted_by_the_stored_accent_and_by_the_brand_when_it_names_none(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let named = Fixture::new(cx, config(&[(ACCENT, Variant::String("sky".into()))]));
+        let unknown = Fixture::new(
+            cx,
+            config(&[(ACCENT, Variant::String("chartreuse".into()))]),
+        );
+        let palette = cx.update(|cx| cx.palette());
+
+        assert_eq!(
+            named.icon_tint(cx),
+            palette.info,
+            "the icon tile ignored the accent the overlay stores"
+        );
+        assert_eq!(
+            unknown.icon_tint(cx),
+            palette.brand,
+            "an accent this palette cannot name has to fall back to the brand tint"
         );
     }
 }

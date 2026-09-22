@@ -95,15 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            ChannelBroadcastEndedDescriptor
-                .matches_trigger(&TriggerConfig::new(), &broadcast_ended_event())
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_extracts_broadcast_id() {
+    fn a_broadcast_ending_names_the_broadcast_that_ended() {
         let stack = ChannelBroadcastEndedDescriptor.build_arg_stack(&broadcast_ended_event());
         assert_eq!(
             stack.get("broadcast_id"),

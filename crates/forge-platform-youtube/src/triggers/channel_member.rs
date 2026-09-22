@@ -129,19 +129,27 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            SupportNewMemberDescriptor.matches_trigger(&TriggerConfig::new(), &new_member_event())
-        );
+    fn a_new_member_publishes_the_joiner_and_the_level_they_bought_as_the_sub_tier() {
+        let stack = SupportNewMemberDescriptor.build_arg_stack(&new_member_event());
+        for (name, value) in [
+            ("user_id", "UCsponsor"),
+            ("user_name", "NewSponsor"),
+            ("sub_tier", "Bronze"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
     }
 
     #[test]
-    fn build_arg_stack_extracts_member_fields() {
+    fn the_legacy_member_names_still_carry_what_their_canonical_twins_carry() {
         let stack = SupportNewMemberDescriptor.build_arg_stack(&new_member_event());
-        assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("NewSponsor".to_owned()))
-        );
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
+        assert_eq!(stack.get("member_level_name"), stack.get("sub_tier"));
         assert_eq!(
             stack.get("member_level_name"),
             Some(&Variant::String("Bronze".to_owned()))

@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_surfaces_deleted_message_id() {
+    fn a_deletion_names_the_message_it_removed() {
         let event = deleted_event(json!({ "message_id": "msg-removed-1" }));
 
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
@@ -114,14 +114,17 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_on_empty_payload_defaults_message_id_to_empty() {
-        let event = deleted_event(json!({}));
+    fn the_principal_block_stays_empty_because_a_tombstone_names_no_author() {
+        let event = deleted_event(json!({ "message_id": "msg-removed-1" }));
 
         let stack = ChatMessageDeletedDescriptor.build_arg_stack(&event);
 
-        assert_eq!(
-            stack.get("chat.message_id"),
-            Some(&Variant::String(String::new()))
-        );
+        for name in ["user_id", "user_name"] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
     }
 }

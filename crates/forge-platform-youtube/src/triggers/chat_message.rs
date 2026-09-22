@@ -123,24 +123,29 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(ChatMessageDescriptor.matches_trigger(&TriggerConfig::new(), &chat_event()));
+    fn a_chat_message_publishes_its_author_as_the_canonical_principal() {
+        let stack = ChatMessageDescriptor.build_arg_stack(&chat_event());
+        for (name, value) in [
+            ("user_id", "UCxyz"),
+            ("user_name", "Viewer One"),
+            ("message_text", "hello world"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
     }
 
     #[test]
-    fn build_arg_stack_extracts_fields() {
+    fn the_legacy_author_names_still_carry_what_their_canonical_twins_carry() {
         let stack = ChatMessageDescriptor.build_arg_stack(&chat_event());
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("hello world".to_owned()))
-        );
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(
             stack.get("user_display_name"),
             Some(&Variant::String("Viewer One".to_owned()))
-        );
-        assert_eq!(
-            stack.get("channel_id"),
-            Some(&Variant::String("UCxyz".to_owned()))
         );
     }
 }

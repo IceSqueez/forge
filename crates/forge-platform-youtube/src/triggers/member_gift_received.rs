@@ -152,54 +152,79 @@ mod tests {
         )
     }
 
-    #[test]
-    fn build_arg_stack_surfaces_level_recipient_and_absent_gifter_as_empty() {
-        let event = received_event(json!({
+    fn as_the_poller_sends_it() -> Event {
+        received_event(json!({
             "level_name": "Gold",
             "recipient": { "channel_id": "UCrecipient", "display_name": "LuckyViewer" },
-        }));
+            "gifter": { "channel_id": "UCgifter", "display_name": null },
+        }))
+    }
 
-        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
+    #[test]
+    fn the_recipient_is_published_as_both_the_principal_and_the_recipient_role() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&as_the_poller_sends_it());
+        for (name, value) in [
+            ("user_id", "UCrecipient"),
+            ("user_name", "LuckyViewer"),
+            ("recipient_id", "UCrecipient"),
+            ("recipient_name", "LuckyViewer"),
+            ("sub_tier", "Gold"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
 
+    #[test]
+    fn the_gifter_keeps_the_id_the_wire_names_and_the_display_name_it_never_sends_stays_empty() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&as_the_poller_sends_it());
         assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String("Gold".to_owned()))
+            stack.get("gifter_id"),
+            Some(&Variant::String("UCgifter".to_owned()))
         );
         assert_eq!(
-            stack.get("recipient.channel_id"),
-            Some(&Variant::String("UCrecipient".to_owned()))
-        );
-        assert_eq!(
-            stack.get("recipient.display_name"),
-            Some(&Variant::String("LuckyViewer".to_owned()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
+            stack.get("gifter_name"),
             Some(&Variant::String(String::new()))
         );
     }
 
     #[test]
-    fn build_arg_stack_on_empty_payload_defaults_every_key_to_empty() {
-        let event = received_event(json!({}));
-
-        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
-
+    fn the_legacy_gift_received_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&as_the_poller_sends_it());
+        assert_eq!(stack.get("gift.level_name"), stack.get("sub_tier"));
+        assert_eq!(stack.get("gifter.channel_id"), stack.get("gifter_id"));
+        assert_eq!(stack.get("gifter.display_name"), stack.get("gifter_name"));
+        assert_eq!(stack.get("recipient.channel_id"), stack.get("recipient_id"));
         assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
-            Some(&Variant::String(String::new()))
+            stack.get("recipient.display_name"),
+            stack.get("recipient_name")
         );
         assert_eq!(
             stack.get("recipient.channel_id"),
-            Some(&Variant::String(String::new()))
+            Some(&Variant::String("UCrecipient".to_owned()))
         );
-        assert_eq!(
-            stack.get("recipient.display_name"),
-            Some(&Variant::String(String::new()))
-        );
+    }
+
+    #[test]
+    fn a_gift_the_wire_leaves_blank_names_neither_side() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&received_event(json!({})));
+        for name in [
+            "user_id",
+            "user_name",
+            "recipient_id",
+            "recipient_name",
+            "gifter_id",
+            "gifter_name",
+            "sub_tier",
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
     }
 }

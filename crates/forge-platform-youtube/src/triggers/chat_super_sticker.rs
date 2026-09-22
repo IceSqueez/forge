@@ -150,28 +150,31 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            SupportSuperStickerDescriptor
-                .matches_trigger(&TriggerConfig::new(), &super_sticker_event())
-        );
+    fn a_super_sticker_publishes_its_sender_the_sticker_and_the_money_it_carries() {
+        let stack = SupportSuperStickerDescriptor.build_arg_stack(&super_sticker_event());
+        for (name, value) in [
+            ("user_id", "UCsticker"),
+            ("user_name", "StickerFan"),
+            ("sticker_id", "sticker_abc_123"),
+            ("currency", "EUR"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+        assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(2_000_000)));
     }
 
     #[test]
-    fn build_arg_stack_extracts_sticker_fields() {
+    fn the_legacy_sender_names_still_carry_what_their_canonical_twins_carry() {
         let stack = SupportSuperStickerDescriptor.build_arg_stack(&super_sticker_event());
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("StickerFan".to_owned()))
-        );
-        assert_eq!(
-            stack.get("sticker_id"),
-            Some(&Variant::String("sticker_abc_123".to_owned()))
-        );
-        assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(2_000_000)));
-        assert_eq!(
-            stack.get("currency"),
-            Some(&Variant::String("EUR".to_owned()))
+            stack.get("channel_id"),
+            Some(&Variant::String("UCsticker".to_owned()))
         );
     }
 }

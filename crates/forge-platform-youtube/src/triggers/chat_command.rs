@@ -210,35 +210,55 @@ mod tests {
     }
 
     #[test]
-    fn matches_case_insensitive_prefix() {
-        let cfg = make_config("!roll", false);
-        assert!(ChatCommandDescriptor.matches_trigger(&cfg, &command_event("!Roll 1d6")));
+    fn a_phrase_matches_only_at_the_start_and_only_ignores_case_when_told_to() {
+        for (phrase, case_sensitive, message, expected) in [
+            ("!roll", false, "!Roll 1d6", true),
+            ("!roll", false, "!roll", true),
+            ("!roll", true, "!roll 1d6", true),
+            ("!roll", true, "!Roll 1d6", false),
+            ("!roll", false, "please !roll", false),
+            ("", false, "!anything", false),
+        ] {
+            assert_eq!(
+                ChatCommandDescriptor.matches_trigger(
+                    &make_config(phrase, case_sensitive),
+                    &command_event(message)
+                ),
+                expected,
+                "phrase {phrase:?} case_sensitive {case_sensitive} message {message:?}"
+            );
+        }
     }
 
     #[test]
-    fn does_not_match_empty_phrase() {
-        let cfg = make_config("", false);
-        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &command_event("!anything")));
-    }
-
-    #[test]
-    fn build_arg_stack_extracts_command_fields() {
+    fn a_command_publishes_its_sender_its_name_and_its_arguments() {
         let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!roll 1d6"));
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("!roll 1d6".to_owned()))
-        );
-        assert_eq!(
-            stack.get("command_name"),
-            Some(&Variant::String("roll".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "UCabc"),
+            ("user_name", "Viewer"),
+            ("message_text", "!roll 1d6"),
+            ("command_name", "roll"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(
             stack.get("args"),
             Some(&Variant::Array(vec![Variant::String("1d6".to_owned())]))
         );
+    }
+
+    #[test]
+    fn the_legacy_sender_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!roll 1d6"));
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("Viewer".to_owned()))
+            stack.get("channel_id"),
+            Some(&Variant::String("UCabc".to_owned()))
         );
     }
 }

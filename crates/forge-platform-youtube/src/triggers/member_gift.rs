@@ -136,49 +136,80 @@ mod tests {
         Event::new(EventSource::YouTube, "youtube.channel.member_gift", payload)
     }
 
-    #[test]
-    fn build_arg_stack_surfaces_count_level_and_gifter() {
-        let event = gift_event(json!({
+    fn a_batch_of_five() -> Event {
+        gift_event(json!({
             "count": 5_i64,
             "level_name": "Diamond",
             "gifter": { "channel_id": "UCgifter", "display_name": "Generous" },
-        }));
-
-        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
-
-        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(5)));
-        assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String("Diamond".to_owned()))
-        );
-        assert_eq!(
-            stack.get("gifter.channel_id"),
-            Some(&Variant::String("UCgifter".to_owned()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
-            Some(&Variant::String("Generous".to_owned()))
-        );
+        }))
     }
 
     #[test]
-    fn build_arg_stack_on_empty_payload_defaults_count_to_zero_and_strings_empty() {
-        let event = gift_event(json!({}));
+    fn the_gifter_is_published_as_both_the_principal_and_the_gifter_role() {
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&a_batch_of_five());
+        for (name, value) in [
+            ("user_id", "UCgifter"),
+            ("user_name", "Generous"),
+            ("gifter_id", "UCgifter"),
+            ("gifter_name", "Generous"),
+            ("sub_tier", "Diamond"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
 
-        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
+    #[test]
+    fn the_gift_count_comes_from_the_batch_size_the_wire_reports() {
+        for (wire_count, expected) in [
+            (json!(5_i64), 5),
+            (json!(1_i64), 1),
+            (json!(null), 0),
+            (json!("5"), 0),
+        ] {
+            let event = gift_event(json!({
+                "count": wire_count.clone(),
+                "level_name": "Diamond",
+            }));
+            assert_eq!(
+                ChannelMemberGiftDescriptor
+                    .build_arg_stack(&event)
+                    .get("gift_count"),
+                Some(&Variant::Int(expected)),
+                "wire count {wire_count}"
+            );
+        }
+    }
 
-        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(0)));
-        assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("gifter.channel_id"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
-            Some(&Variant::String(String::new()))
-        );
+    #[test]
+    fn the_legacy_gift_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&a_batch_of_five());
+        assert_eq!(stack.get("gift.count"), stack.get("gift_count"));
+        assert_eq!(stack.get("gift.level_name"), stack.get("sub_tier"));
+        assert_eq!(stack.get("gifter.channel_id"), stack.get("gifter_id"));
+        assert_eq!(stack.get("gifter.display_name"), stack.get("gifter_name"));
+        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(5)));
+    }
+
+    #[test]
+    fn a_gift_batch_the_wire_leaves_blank_names_nobody_and_counts_nothing() {
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&gift_event(json!({})));
+        for name in [
+            "user_id",
+            "user_name",
+            "gifter_id",
+            "gifter_name",
+            "sub_tier",
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
+        assert_eq!(stack.get("gift_count"), Some(&Variant::Int(0)));
     }
 }

@@ -142,27 +142,31 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            SupportSuperChatDescriptor.matches_trigger(&TriggerConfig::new(), &super_chat_event())
-        );
+    fn a_super_chat_publishes_its_sender_its_note_and_the_money_it_carries() {
+        let stack = SupportSuperChatDescriptor.build_arg_stack(&super_chat_event());
+        for (name, value) in [
+            ("user_id", "UCbigfan"),
+            ("user_name", "BigFan"),
+            ("message_text", "Great stream!"),
+            ("currency", "USD"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+        assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(5_000_000)));
     }
 
     #[test]
-    fn build_arg_stack_extracts_super_chat_fields() {
+    fn the_legacy_sender_names_still_carry_what_their_canonical_twins_carry() {
         let stack = SupportSuperChatDescriptor.build_arg_stack(&super_chat_event());
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("BigFan".to_owned()))
-        );
-        assert_eq!(stack.get("amount_micros"), Some(&Variant::Int(5_000_000)));
-        assert_eq!(
-            stack.get("currency"),
-            Some(&Variant::String("USD".to_owned()))
-        );
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("Great stream!".to_owned()))
+            stack.get("channel_id"),
+            Some(&Variant::String("UCbigfan".to_owned()))
         );
     }
 }

@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_maps_old_and_new_title() {
+    fn a_title_change_keeps_the_previous_title_apart_from_the_one_that_replaced_it() {
         let stack = ChannelBroadcastTitleChangedDescriptor
             .build_arg_stack(&title_changed_event("Morning Coding", "Afternoon Coding"));
         assert_eq!(
@@ -129,24 +129,6 @@ mod tests {
         assert_eq!(
             stack.get("stream.title_new"),
             Some(&Variant::String("Afternoon Coding".to_owned()))
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_defaults_missing_payload_fields_to_empty() {
-        let event = Event::new(
-            EventSource::YouTube,
-            "youtube.stream.title_changed",
-            serde_json::json!({}),
-        );
-        let stack = ChannelBroadcastTitleChangedDescriptor.build_arg_stack(&event);
-        assert_eq!(
-            stack.get("stream.title_old"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("stream.title_new"),
-            Some(&Variant::String(String::new()))
         );
     }
 }

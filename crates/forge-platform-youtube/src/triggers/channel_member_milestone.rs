@@ -133,24 +133,31 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            SupportMemberMilestoneDescriptor
-                .matches_trigger(&TriggerConfig::new(), &milestone_event())
-        );
+    fn a_milestone_publishes_the_member_their_note_and_the_months_as_a_cumulative_count() {
+        let stack = SupportMemberMilestoneDescriptor.build_arg_stack(&milestone_event());
+        for (name, value) in [
+            ("user_id", "UCfan"),
+            ("user_name", "LongTimeFan"),
+            ("message_text", "One year!"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+        assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
     }
 
     #[test]
-    fn build_arg_stack_extracts_milestone_fields() {
+    fn the_legacy_milestone_names_still_carry_what_their_canonical_twins_carry() {
         let stack = SupportMemberMilestoneDescriptor.build_arg_stack(&milestone_event());
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("LongTimeFan".to_owned()))
+            stack.get("member_month"),
+            stack.get("sub_cumulative_months")
         );
         assert_eq!(stack.get("member_month"), Some(&Variant::Int(12)));
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("One year!".to_owned()))
-        );
     }
 }

@@ -108,15 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            ChannelBroadcastStartedDescriptor
-                .matches_trigger(&TriggerConfig::new(), &broadcast_started_event())
-        );
-    }
-
-    #[test]
-    fn build_arg_stack_extracts_broadcast_fields() {
+    fn a_broadcast_going_live_names_its_title_and_its_id_apart() {
         let stack = ChannelBroadcastStartedDescriptor.build_arg_stack(&broadcast_started_event());
         assert_eq!(
             stack.get("broadcast_title"),

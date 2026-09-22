@@ -1,22 +1,18 @@
 use std::collections::BTreeMap;
 
 use forge_events::{Event, EventSource};
+use forge_registry::KindPlatformContract;
 use forge_runtime::{EventBus, QueueSchedulerHandle, SchedulerRequest};
 use forge_types::{
-    ActionId, ArgStack, DeclaredVariable, QueueId, SynthesisHint, VariableSchema, Variant,
-    VariantKind,
+    ActionId, ActorRole, ActorSlot, ArgStack, CanonicalVariable, DeclaredVariable, PlatformId,
+    QueueId, SynthesisHint, VariableStanding, Variant, VariantKind,
 };
 use rand::RngExt;
 use serde_json::json;
 use time::OffsetDateTime;
 
-const USERNAME_POOL: &[&str] = &[
-    "test_user",
-    "stream_fan_42",
-    "lurker_99",
-    "night_owl",
-    "pixel_pal",
-];
+use super::trigger_variables::ListedVariable;
+
 const DISPLAY_NAME_POOL: &[&str] = &[
     "TestUser",
     "StreamFan42",
@@ -24,6 +20,7 @@ const DISPLAY_NAME_POOL: &[&str] = &[
     "PixelPal",
     "CoolViewer",
 ];
+const ACTOR_ID_POOL: &[&str] = &["37402112", "51938264", "60114873", "72840591", "84025617"];
 const MESSAGE_POOL: &[&str] = &[
     "hey, great stream!",
     "this is a test message",
@@ -31,66 +28,198 @@ const MESSAGE_POOL: &[&str] = &[
     "what game is this?",
     "first time here, hi!",
 ];
+const SUB_TIER_POOL: &[&str] = &["1000", "2000", "3000"];
+const NO_PLATFORM: &str = "";
+const FALLBACK_TOKEN: &str = "sample";
+const GENERIC_INT_MIN: i64 = 1;
+const GENERIC_INT_MAX: i64 = 100;
+const GENERIC_FLOAT_MIN: f64 = 0.01;
+const GENERIC_FLOAT_MAX: f64 = 99.99;
+const RATIO_RESOLUTION: i64 = 1_000;
 
-pub(super) fn synthesize_args(schema: &VariableSchema) -> ArgStack {
+pub(super) struct SynthesisSample {
+    platform: Option<PlatformId>,
+    name_index: usize,
+    message_index: usize,
+    tier_index: usize,
+    ratio_step: i64,
+    flag: bool,
+    now: OffsetDateTime,
+}
+
+impl SynthesisSample {
+    pub(super) fn random(contract: KindPlatformContract) -> Self {
+        let mut rng = rand::rng();
+        SynthesisSample {
+            platform: match contract {
+                KindPlatformContract::PlatformSpecific(platform) => Some(platform),
+                KindPlatformContract::Universal => None,
+            },
+            name_index: rng.random_range(0..DISPLAY_NAME_POOL.len()),
+            message_index: rng.random_range(0..MESSAGE_POOL.len()),
+            tier_index: rng.random_range(0..SUB_TIER_POOL.len()),
+            ratio_step: rng.random_range(0..=RATIO_RESOLUTION),
+            flag: rng.random_range(0..=1) == 1,
+            now: OffsetDateTime::now_utc(),
+        }
+    }
+
+    fn display_name(&self, role: ActorRole) -> &'static str {
+        rotated(DISPLAY_NAME_POOL, self.name_index, role as usize)
+    }
+
+    fn actor_id(&self, role: ActorRole) -> &'static str {
+        rotated(ACTOR_ID_POOL, self.name_index, role as usize)
+    }
+
+    fn message(&self) -> &'static str {
+        rotated(MESSAGE_POOL, self.message_index, 0)
+    }
+
+    fn sub_tier(&self) -> &'static str {
+        rotated(SUB_TIER_POOL, self.tier_index, 0)
+    }
+
+    fn platform_name(&self) -> &'static str {
+        self.platform.map_or(NO_PLATFORM, PlatformId::as_str)
+    }
+
+    fn ratio(&self) -> f64 {
+        self.ratio_step as f64 / RATIO_RESOLUTION as f64
+    }
+
+    fn bounded_int(&self, min: i64, max: i64) -> i64 {
+        let (lo, hi) = if min <= max { (min, max) } else { (max, min) };
+        lo + ((hi - lo) as f64 * self.ratio()).round() as i64
+    }
+
+    fn bounded_float(&self, min: f64, max: f64) -> f64 {
+        min + (max - min) * self.ratio()
+    }
+}
+
+pub(super) fn synthesize_args(variables: &[ListedVariable], sample: &SynthesisSample) -> ArgStack {
+    let mut minted: BTreeMap<CanonicalVariable, Variant> = BTreeMap::new();
     let mut stack = ArgStack::new();
-    for var in &schema.variables {
-        stack = stack.set(var.name.clone(), synthesize_value(var));
+    for variable in variables {
+        let value = match canonical_slot(variable.standing) {
+            Some(canonical) => minted
+                .entry(canonical)
+                .or_insert_with(|| canonical_value(canonical, sample))
+                .clone(),
+            None => event_specific_value(&variable.declared, sample),
+        };
+        stack = stack.set(variable.declared.name.clone(), value);
     }
     stack
 }
 
-fn synthesize_value(var: &DeclaredVariable) -> Variant {
-    let mut rng = rand::rng();
-    if let Some(hint) = &var.synthesis {
-        return match hint {
-            SynthesisHint::Username => Variant::String(pick(USERNAME_POOL).to_owned()),
-            SynthesisHint::DisplayName => Variant::String(pick(DISPLAY_NAME_POOL).to_owned()),
-            SynthesisHint::Message => Variant::String(pick(MESSAGE_POOL).to_owned()),
-            SynthesisHint::BoundedInt { min, max } => {
-                let (lo, hi) = if min <= max {
-                    (*min, *max)
-                } else {
-                    (*max, *min)
-                };
-                Variant::Int(rng.random_range(lo..=hi))
-            }
-        };
+fn canonical_slot(standing: VariableStanding) -> Option<CanonicalVariable> {
+    match standing {
+        VariableStanding::Canonical(canonical) | VariableStanding::Legacy(canonical) => {
+            Some(canonical)
+        }
+        VariableStanding::EventSpecific => None,
     }
-    match var.kind {
-        VariantKind::String => Variant::String(sample_token(var)),
-        VariantKind::Int => Variant::Int(rng.random_range(1..=100)),
-        VariantKind::Float => Variant::Float(f64::from(rng.random_range(1..=9_999)) / 100.0),
-        VariantKind::Bool => Variant::Bool(rng.random_range(0..=1) == 1),
-        VariantKind::Datetime => Variant::Datetime(OffsetDateTime::now_utc()),
+}
+
+fn canonical_value(canonical: CanonicalVariable, sample: &SynthesisSample) -> Variant {
+    match canonical {
+        CanonicalVariable::Actor { role, slot } => Variant::String(actor_value(role, slot, sample)),
+        CanonicalVariable::SubTier => Variant::String(sample.sub_tier().to_owned()),
+        CanonicalVariable::MessageText | CanonicalVariable::Count(_) => hinted_value(
+            canonical.synthesis().as_ref(),
+            canonical.kind(),
+            canonical.name(),
+            sample,
+        ),
+    }
+}
+
+fn actor_value(role: ActorRole, slot: ActorSlot, sample: &SynthesisSample) -> String {
+    match slot {
+        ActorSlot::Id => sample.actor_id(role).to_owned(),
+        ActorSlot::Name => sample.display_name(role).to_owned(),
+        ActorSlot::Login => login_of(sample.display_name(role)),
+        ActorSlot::Platform => sample.platform_name().to_owned(),
+    }
+}
+
+fn login_of(display_name: &str) -> String {
+    display_name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .map(|c| c.to_ascii_lowercase())
+        .collect()
+}
+
+fn event_specific_value(declared: &DeclaredVariable, sample: &SynthesisSample) -> Variant {
+    let token_base = if declared.label.is_empty() {
+        &declared.name
+    } else {
+        &declared.label
+    };
+    hinted_value(
+        declared.synthesis.as_ref(),
+        declared.kind,
+        token_base,
+        sample,
+    )
+}
+
+fn hinted_value(
+    hint: Option<&SynthesisHint>,
+    kind: VariantKind,
+    token_base: &str,
+    sample: &SynthesisSample,
+) -> Variant {
+    match hint {
+        Some(SynthesisHint::Username) => {
+            Variant::String(login_of(sample.display_name(ActorRole::Principal)))
+        }
+        Some(SynthesisHint::DisplayName) => {
+            Variant::String(sample.display_name(ActorRole::Principal).to_owned())
+        }
+        Some(SynthesisHint::Message) => Variant::String(sample.message().to_owned()),
+        Some(SynthesisHint::BoundedInt { min, max }) => {
+            Variant::Int(sample.bounded_int(*min, *max))
+        }
+        None => untyped_value(kind, token_base, sample),
+    }
+}
+
+fn untyped_value(kind: VariantKind, token_base: &str, sample: &SynthesisSample) -> Variant {
+    match kind {
+        VariantKind::String => Variant::String(sample_token(token_base)),
+        VariantKind::Int => Variant::Int(sample.bounded_int(GENERIC_INT_MIN, GENERIC_INT_MAX)),
+        VariantKind::Float => {
+            Variant::Float(sample.bounded_float(GENERIC_FLOAT_MIN, GENERIC_FLOAT_MAX))
+        }
+        VariantKind::Bool => Variant::Bool(sample.flag),
+        VariantKind::Datetime => Variant::Datetime(sample.now),
         VariantKind::Array => Variant::Array(vec![
-            Variant::String(sample_token(var)),
-            Variant::String(pick(USERNAME_POOL).to_owned()),
+            Variant::String(sample_token(token_base)),
+            Variant::String(login_of(sample.display_name(ActorRole::Principal))),
         ]),
         VariantKind::Object => Variant::Object(BTreeMap::new()),
     }
 }
 
-fn pick(pool: &[&'static str]) -> &'static str {
-    pool[rand::rng().random_range(0..pool.len())]
+fn rotated(pool: &[&'static str], index: usize, offset: usize) -> &'static str {
+    pool[(index + offset) % pool.len()]
 }
 
-fn sample_token(var: &DeclaredVariable) -> String {
-    let base = if var.label.is_empty() {
-        &var.name
-    } else {
-        &var.label
-    };
+fn sample_token(base: &str) -> String {
     let slug: String = base
         .split_whitespace()
         .next()
-        .unwrap_or("sample")
+        .unwrap_or(FALLBACK_TOKEN)
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .map(|c| c.to_ascii_lowercase())
         .collect();
     if slug.is_empty() {
-        "sample".to_owned()
+        FALLBACK_TOKEN.to_owned()
     } else {
         format!("{slug}_sample")
     }

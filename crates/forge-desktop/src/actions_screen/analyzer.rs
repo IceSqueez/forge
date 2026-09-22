@@ -6,7 +6,7 @@ use forge_types::{
     normalize_var_name,
 };
 
-use super::nav;
+use super::{nav, trigger_variables};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum HealthSeverity {
@@ -154,8 +154,13 @@ fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Opt
     }
     let mut schemas: Vec<HashSet<String>> = Vec::with_capacity(triggers.len());
     for instance in triggers {
-        let schema = registry.get(&instance.kind_id)?.output_schema()?;
-        schemas.push(schema.variables.into_iter().map(|v| v.name).collect());
+        let declared = trigger_variables::declared_variables(registry.get(&instance.kind_id)?)?;
+        schemas.push(
+            declared
+                .into_iter()
+                .map(|variable| variable.declared.name)
+                .collect(),
+        );
     }
     let mut all = HashSet::new();
     for names in &schemas {

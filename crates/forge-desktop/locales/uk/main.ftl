@@ -199,6 +199,13 @@ settings_diagnostics_level_error = Error
 settings_version_title = Версія та оновлення
 settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
+settings_version_notify_label = Сповіщати про нові версії
+settings_version_notify_hint = Показує одноразове сповіщення, коли виходить новіший реліз. Ніколи під час трансляції чи запису в OBS.
+
+## Сповіщення про оновлення
+
+update_toast_available = Доступна forge { $version }
+update_toast_open_action = Відкрити реліз
 
 ## Налаштування → панель сховища
 

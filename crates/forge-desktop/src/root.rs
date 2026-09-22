@@ -150,6 +150,10 @@ pub fn run_boot(
                 let chat_feed_for_history = chat_feed.clone();
                 let backend_for_history = Arc::clone(&handles.backend);
                 let rt_handle_for_history = handles.rt_handle.clone();
+                let backend_for_updates = Arc::clone(&handles.backend);
+                let rt_handle_for_updates = handles.rt_handle.clone();
+                let obs_for_updates = handles.obs_install_seed.clone();
+                let bus_for_updates = Arc::clone(&handles.bus);
                 let applied = window.update(cx, |root, window, cx| {
                     // Render-thread install: the fluent bundle is thread-local and must be set before the shell's first render resolves any translated string.
                     crate::i18n::install_language(handles.startup_language);
@@ -213,6 +217,13 @@ pub fn run_boot(
                     start_uptime_clock(cx, status_for_clock);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
+                    crate::update_check::start_update_check(
+                        cx,
+                        backend_for_updates,
+                        rt_handle_for_updates,
+                        obs_for_updates,
+                        bus_for_updates,
+                    );
                     if let Some(events) = speak_events {
                         start_speak_bridge(cx, speak_for_bridge, events);
                     }

@@ -87,6 +87,7 @@ mod tts_dashboard;
 mod tts_engines;
 mod tts_filters;
 mod unavailable_builtin;
+mod update_check;
 mod voice_aliases;
 mod voice_gate;
 mod vtube_connect;

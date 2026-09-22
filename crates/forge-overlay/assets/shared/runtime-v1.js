@@ -31,12 +31,16 @@
  * then on it only receives. It opens ws://<this host>/ws/v1/ and, when config.json
  * carries a top-level credential, presents it as the first frame:
  *
- *   { "id": "1", "request": "auth", "overlayCredential": "<credential>" }
+ *   { "id": "1", "request": "auth", "overlayCredential": "<credential>",
+ *     "previewConnection": false }
  *
  * forge derives the overlay identity from that credential, so nothing arriving
- * here is addressed by an id the page claimed. A config.json without a credential
- * sends no first frame. The connection reconnects on its own with a capped
- * backoff, so a browser source that was closed and reopened recovers unhelped.
+ * here is addressed by an id the page claimed. previewConnection is true only on
+ * a page opened with the preview flag, and forge counts such a connection apart
+ * from a browser source while still delivering to it. A config.json without a
+ * credential sends no first frame. The connection reconnects on its own with a
+ * capped backoff, so a browser source that was closed and reopened recovers
+ * unhelped.
  *
  * Three frame shapes arrive, all addressed to this overlay by the connection
  * itself:
@@ -60,9 +64,9 @@
  * checkerboard behind the page so transparent areas are visible; and it never
  * hides anything on a timer, so a transient overlay stays up to be looked at.
  * Nothing else changes: a preview page connects, identifies and receives exactly
- * like the page a browser source loads, so forge counts it among this overlay's
- * connections. Without the flag the page is transparent and shows nothing until
- * content arrives.
+ * like the page a browser source loads; it only says so in its auth frame, so
+ * forge counts it apart from this overlay's browser sources. Without the flag the
+ * page is transparent and shows nothing until content arrives.
  *
  * A reload frame is handled here rather than by the page. forge sends it after
  * rewriting an overlay's files, which is why hand-edited pages pick up regenerated
@@ -83,6 +87,7 @@
   var SAMPLE_FILE = "./sample.json";
   var PREVIEW_PARAM = "preview";
   var PREVIEW_VALUE = "1";
+  var PREVIEW_CONNECTION_FIELD = "previewConnection";
   var CHECKER_TILE_PX = 24;
   var CHECKER_BASE = "#15151c";
   var CHECKER_SQUARE = "#23232e";
@@ -306,13 +311,13 @@
     if (!credential || !socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    socket.send(
-      JSON.stringify({
-        id: AUTH_REQUEST_ID,
-        request: "auth",
-        overlayCredential: credential,
-      }),
-    );
+    var frame = {
+      id: AUTH_REQUEST_ID,
+      request: "auth",
+      overlayCredential: credential,
+    };
+    frame[PREVIEW_CONNECTION_FIELD] = previewing;
+    socket.send(JSON.stringify(frame));
   }
 
   function receive(raw) {

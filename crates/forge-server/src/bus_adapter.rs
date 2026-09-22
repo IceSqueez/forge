@@ -6,7 +6,7 @@ use std::sync::{
 };
 
 use forge_events::{Event, EventSource, EventsError};
-use forge_runtime::{EventBus, OverlayConnectListener};
+use forge_runtime::{EventBus, OverlayConnectListener, OverlayReceivers};
 use forge_storage::OverlayId;
 use forge_types::EventId;
 use serde::Serialize;
@@ -81,11 +81,32 @@ pub struct ClientHandle {
     pub drop_counter: Arc<AtomicU64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayClientClass {
+    BrowserSource,
+    PreviewTab,
+}
+
+impl OverlayClientClass {
+    pub fn from_frame_flag(preview_connection: bool) -> Self {
+        if preview_connection {
+            Self::PreviewTab
+        } else {
+            Self::BrowserSource
+        }
+    }
+}
+
+struct OverlayConnection {
+    identity: OverlayId,
+    class: OverlayClientClass,
+}
+
 struct ConnectedClient {
     id: ClientId,
     sender: broadcast::Sender<WsFrame>,
     filters: ClientFilterSet,
-    overlay_identity: Option<OverlayId>,
+    overlay: Option<OverlayConnection>,
 }
 
 pub struct BusAdapter {
@@ -168,7 +189,7 @@ async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
     {
         let reg = registry.read().await;
         for client in reg.iter() {
-            if client.overlay_identity.is_some() {
+            if client.overlay.is_some() {
                 continue;
             }
             if client.filters.matches(event) && client.sender.send(frame.clone()).is_err() {
@@ -186,26 +207,30 @@ async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
 }
 
 /// `identity: None` addresses every overlay-class connection; a non-overlay client never
-/// matches, since its `overlay_identity` is `None`. Returns how many targeted connections still
-/// had a live receiver on the other end.
+/// matches, since it carries no overlay connection at all.
 async fn send_to_overlay(
     registry: &RwLock<Vec<ConnectedClient>>,
     identity: Option<&OverlayId>,
     frame: WsFrame,
-) -> usize {
+) -> OverlayReceivers {
     let reg = registry.read().await;
-    let mut delivered = 0;
+    let mut reached = OverlayReceivers::default();
     for client in reg.iter() {
-        let targeted = match (&client.overlay_identity, identity) {
-            (Some(client_identity), Some(target)) => client_identity == target,
-            (Some(_), None) => true,
-            (None, _) => false,
+        let Some(overlay) = &client.overlay else {
+            continue;
         };
-        if targeted && client.sender.send(frame.clone()).is_ok() {
-            delivered += 1;
+        if identity.is_some_and(|target| &overlay.identity != target) {
+            continue;
+        }
+        if client.sender.send(frame.clone()).is_err() {
+            continue;
+        }
+        match overlay.class {
+            OverlayClientClass::BrowserSource => reached.sources += 1,
+            OverlayClientClass::PreviewTab => reached.preview_tabs += 1,
         }
     }
-    delivered
+    reached
 }
 
 impl BusAdapter {
@@ -243,16 +268,16 @@ impl BusAdapter {
         });
     }
 
-    /// Addressed at the connections belonging to one overlay identity. Returns the number of
-    /// connections that still had a live receiver when the frame was sent.
+    /// Addressed at the connections belonging to one overlay identity; a preview tab is counted
+    /// apart from a browser source but is delivered to exactly the same way.
     pub async fn deliver_overlay_content(
         &self,
         identity: &OverlayId,
         content: &serde_json::Value,
         duration_ms: Option<u64>,
-    ) -> usize {
+    ) -> OverlayReceivers {
         let Some(json) = serialize_content_frame(content, duration_ms) else {
-            return 0;
+            return OverlayReceivers::default();
         };
         send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await
     }
@@ -272,14 +297,14 @@ impl BusAdapter {
     /// channel, so the two always arrive in that order even though this issues two sends.
     /// Returns how many connections still had a live receiver for the clear frame.
     pub async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
-        let delivered = send_to_overlay(
+        let reached = send_to_overlay(
             &self.registry,
             Some(identity),
             WsFrame::Text(CLEAR_FRAME_JSON.to_owned()),
         )
         .await;
         send_to_overlay(&self.registry, Some(identity), WsFrame::Close).await;
-        delivered
+        reached.sources + reached.preview_tabs
     }
 
     pub async fn register_client(
@@ -293,7 +318,7 @@ impl BusAdapter {
             id,
             sender,
             filters,
-            overlay_identity: None,
+            overlay: None,
         });
         let handle = ClientHandle { id, drop_counter };
         (handle, receiver)
@@ -306,14 +331,29 @@ impl BusAdapter {
         &self,
         id: ClientId,
         identity: OverlayId,
+        class: OverlayClientClass,
     ) -> Option<broadcast::Receiver<WsFrame>> {
         let mut reg = self.registry.write().await;
         let client = reg.iter_mut().find(|c| c.id == id)?;
         let (sender, receiver) = broadcast::channel(OVERLAY_CHANNEL_CAP);
         client.sender = sender;
-        client.overlay_identity = Some(identity);
+        client.overlay = Some(OverlayConnection { identity, class });
         client.filters = ClientFilterSet::new(HashSet::new());
         Some(receiver)
+    }
+
+    pub async fn preview_tabs(&self) -> HashSet<ClientId> {
+        self.registry
+            .read()
+            .await
+            .iter()
+            .filter(|c| {
+                c.overlay
+                    .as_ref()
+                    .is_some_and(|o| o.class == OverlayClientClass::PreviewTab)
+            })
+            .map(|c| c.id)
+            .collect()
     }
 
     pub async fn unregister_client(&self, id: ClientId) {
@@ -534,7 +574,11 @@ mod tests {
     ) -> broadcast::Receiver<WsFrame> {
         let (handle, _initial_rx) = adapter.register_client(no_filters()).await;
         adapter
-            .promote_to_overlay(handle.id, identity.clone())
+            .promote_to_overlay(
+                handle.id,
+                identity.clone(),
+                OverlayClientClass::BrowserSource,
+            )
             .await
             .expect("a just-registered client is still on the registry")
     }
@@ -551,14 +595,17 @@ mod tests {
             adapter
                 .deliver_overlay_content(&target, &sample_content(), None)
                 .await,
-            1,
+            OverlayReceivers {
+                sources: 1,
+                preview_tabs: 0
+            },
             "content addressed at one overlay reached a different number of pages"
         );
         assert_eq!(
             adapter
                 .deliver_overlay_content(&OverlayId::new("nobody"), &sample_content(), None)
                 .await,
-            0,
+            OverlayReceivers::default(),
             "content addressed at an overlay with no page open was counted as delivered"
         );
     }
@@ -575,7 +622,7 @@ mod tests {
             adapter
                 .deliver_overlay_content(&target, &sample_content(), None)
                 .await,
-            0,
+            OverlayReceivers::default(),
             "a closed browser source was still counted, so the step reports a delivery that never landed"
         );
     }
@@ -615,7 +662,11 @@ mod tests {
         adapter.spawn();
         let (handle, _initial_rx) = adapter.register_client(no_filters()).await;
         let mut overlay_rx = adapter
-            .promote_to_overlay(handle.id, OverlayId::new("goal-box"))
+            .promote_to_overlay(
+                handle.id,
+                OverlayId::new("goal-box"),
+                OverlayClientClass::BrowserSource,
+            )
             .await
             .expect("a just-registered client is still on the registry");
         adapter

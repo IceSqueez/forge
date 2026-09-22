@@ -8,7 +8,7 @@ use forge_storage::{
 use tokio::sync::{Mutex, broadcast};
 
 use crate::auth::AuthState;
-use crate::bus_adapter::{BusAdapter, WsFrame};
+use crate::bus_adapter::{BusAdapter, OverlayClientClass, WsFrame};
 use crate::server_info::ServerInfo;
 use crate::ws_client::WsClient;
 
@@ -50,11 +50,12 @@ pub(super) fn unauthenticated() -> WsResponse {
 pub(super) async fn handle_authenticate(
     token: Option<String>,
     overlay_credential: Option<String>,
+    preview_connection: bool,
     ctx: &DispatchContext,
 ) -> WsResponse {
     match (token, overlay_credential) {
         (Some(token), None) => authenticate_bearer(token, ctx).await,
-        (None, Some(credential)) => authenticate_overlay(credential, ctx).await,
+        (None, Some(credential)) => authenticate_overlay(credential, preview_connection, ctx).await,
         (Some(_), Some(_)) => auth_failed("token and overlayCredential cannot both be presented"),
         (None, None) => auth_failed("token or overlayCredential is required"),
     }
@@ -71,7 +72,11 @@ async fn authenticate_bearer(token: String, ctx: &DispatchContext) -> WsResponse
 
 /// Never sets `client.authenticated`: the overlay credential grants directed delivery only, and
 /// every mutating and read-gated method stays refused exactly as for an unauthenticated client.
-async fn authenticate_overlay(credential: String, ctx: &DispatchContext) -> WsResponse {
+async fn authenticate_overlay(
+    credential: String,
+    preview_connection: bool,
+    ctx: &DispatchContext,
+) -> WsResponse {
     let lookup = ctx
         .overlays
         .get_by_credential(&OverlayCredential::new(credential))
@@ -87,7 +92,11 @@ async fn authenticate_overlay(credential: String, ctx: &DispatchContext) -> WsRe
     let identity = definition.id;
     if let Some(receiver) = ctx
         .bus_adapter
-        .promote_to_overlay(ctx.client.id, identity.clone())
+        .promote_to_overlay(
+            ctx.client.id,
+            identity.clone(),
+            OverlayClientClass::from_frame_flag(preview_connection),
+        )
         .await
     {
         *ctx.overlay_channel_swap.lock().await = Some(receiver);

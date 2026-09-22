@@ -31,7 +31,8 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         WsRequest::Auth {
             token,
             overlay_credential,
-        } => handle_authenticate(token, overlay_credential, ctx).await,
+            preview_connection,
+        } => handle_authenticate(token, overlay_credential, preview_connection, ctx).await,
 
         WsRequest::Subscribe { events } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
@@ -1185,6 +1186,7 @@ mod tests {
             inner: WsRequest::Auth {
                 token: Some("test-token".to_owned()),
                 overlay_credential: None,
+                preview_connection: false,
             },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1205,6 +1207,7 @@ mod tests {
             inner: WsRequest::Auth {
                 token: Some("wrong-token".to_owned()),
                 overlay_credential: None,
+                preview_connection: false,
             },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1357,6 +1360,7 @@ mod tests {
             inner: WsRequest::Auth {
                 token: token.map(str::to_owned),
                 overlay_credential: overlay_credential.map(str::to_owned),
+                preview_connection: false,
             },
         }
     }
@@ -1437,6 +1441,7 @@ mod tests {
             inner: WsRequest::Auth {
                 token: Some(String::new()),
                 overlay_credential: None,
+                preview_connection: false,
             },
         };
         let resp = dispatch(req, &ctx).await;

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_platform_core::paths;
-use forge_runtime::OverlayConnectListener;
+use forge_runtime::{OverlayConnectListener, OverlayReceivers};
 use forge_storage::OverlayId;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, watch};
@@ -231,13 +231,12 @@ impl ServerHandle {
     }
 
     /// Addressed at the connections identified as `identity`; never reaches any other client.
-    /// Returns the number of connections whose receiver was still alive when sent.
     pub async fn deliver_overlay_content(
         &self,
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) -> usize {
+    ) -> OverlayReceivers {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
         adapter
             .deliver_overlay_content(identity, &content, duration_ms)

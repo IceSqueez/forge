@@ -8,7 +8,7 @@ use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
-use crate::overlay_service::OverlayServiceCell;
+use crate::overlay_service::{OverlayDelivery, OverlayServiceCell};
 
 const DURATION_KEY: &str = "duration_secs";
 
@@ -48,11 +48,11 @@ impl OverlaySendRunner {
             )
             .await
         {
-            Ok(true) => SubActionOutcome::Success,
-            Ok(false) => {
+            Ok(OverlayDelivery::NoPage) => {
                 tracing::debug!(overlay = %identity, "overlay content had no page to reach");
                 SubActionOutcome::Success
             }
+            Ok(_) => SubActionOutcome::Success,
             Err(error) => SubActionOutcome::Failed(format!("overlay.send: {error}")),
         }
     }

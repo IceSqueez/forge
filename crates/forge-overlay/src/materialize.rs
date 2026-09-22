@@ -10,7 +10,7 @@ use crate::media::{GENERATED_MEDIA_DIRECTORY, MediaIssue, ResolvedMedia};
 use crate::registry::OverlayKindRegistry;
 
 /// Stamped into every config document so a stale record can be spotted and regenerated.
-pub const GENERATOR_VERSION: u32 = 2;
+pub const GENERATOR_VERSION: u32 = 3;
 
 const MAX_IDENTITY_LEN: usize = 64;
 

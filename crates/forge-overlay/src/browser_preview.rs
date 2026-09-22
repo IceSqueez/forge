@@ -1,5 +1,6 @@
 pub const PREVIEW_PARAM: &str = "preview";
 pub const PREVIEW_VALUE: &str = "1";
+pub const PREVIEW_CONNECTION_FIELD: &str = "previewConnection";
 
 const QUERY_START: char = '?';
 const QUERY_JOIN: char = '&';

@@ -51,16 +51,39 @@ pub enum OverlayServiceError {
     Interrupted,
 }
 
+/// Counts only connections whose receiver was still alive; a page that closed counts for nothing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OverlayReceivers {
+    pub sources: usize,
+    pub preview_tabs: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayDelivery {
+    Delivered { sources: usize },
+    OnlyPreview { tabs: usize },
+    NoPage,
+}
+
+impl OverlayReceivers {
+    pub fn outcome(self) -> OverlayDelivery {
+        match (self.sources, self.preview_tabs) {
+            (0, 0) => OverlayDelivery::NoPage,
+            (0, tabs) => OverlayDelivery::OnlyPreview { tabs },
+            (sources, _) => OverlayDelivery::Delivered { sources },
+        }
+    }
+}
+
 /// Addressed at one overlay identity and never at the bus, so nothing delivered here runs an action.
 #[async_trait]
 pub trait OverlayFrameSink: Send + Sync {
-    /// Returns how many connections for `identity` still had a live receiver when sent.
     async fn deliver_content(
         &self,
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) -> usize;
+    ) -> OverlayReceivers;
 
     async fn deliver_reload(&self, identity: &OverlayId);
 
@@ -79,8 +102,7 @@ pub trait OverlayConnectListener: Send + Sync {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestFire {
     pub content: OverlayConfig,
-    /// False when no connected overlay page received it, so the caller can say the preview ran alone.
-    pub delivered: bool,
+    pub delivery: OverlayDelivery,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -302,14 +324,14 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// `Ok(false)` when nothing is serving. Replace content is persisted before it is sent, so a
-    /// page that reconnects is handed the same values it was showing.
+    /// Replace content is persisted before it is sent, so a page that reconnects is handed the
+    /// same values it was showing.
     pub async fn deliver_content(
         &self,
         id: &OverlayId,
         content: OverlayConfig,
         duration_ms: Option<u64>,
-    ) -> Result<bool, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, OverlayServiceError> {
         let definition = self.load(id).await?;
         let disposition = self.disposition_of(&definition)?;
         self.push(&definition.id, disposition, &content, duration_ms)
@@ -317,14 +339,14 @@ impl OverlayServiceHandle {
     }
 
     /// The send-to-overlay step's funnel: the supplied fields are laid over the overlay's own
-    /// content, both expanded against the run's arguments. `Ok(false)` when nothing is serving.
+    /// content, both expanded against the run's arguments.
     pub async fn send_to(
         &self,
         id: &OverlayId,
         supplied: &OverlayConfig,
         args: &ArgStack,
         duration_ms: Option<u64>,
-    ) -> Result<bool, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, OverlayServiceError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
             return Err(OverlayServiceError::UnavailableKind {
@@ -368,19 +390,20 @@ impl OverlayServiceHandle {
             json!({ OVERLAY_ID_KEY: definition.id.as_str() }),
         ));
 
-        let delivered = self
+        let delivery = self
             .push(&definition.id, disposition, &content, None)
             .await?;
 
-        Ok(TestFire { content, delivered })
+        Ok(TestFire { content, delivery })
     }
 
     /// Only a Replace kind ever has a retained row, so what is stored is what may be replayed.
-    async fn replay_retained(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
+    async fn replay_retained(&self, id: &OverlayId) -> Result<(), OverlayServiceError> {
         let Some(content) = self.inner.repo.get_retained_content(id).await? else {
-            return Ok(false);
+            return Ok(());
         };
-        Ok(self.send(id, &content, None).await)
+        self.send(id, &content, None).await;
+        Ok(())
     }
 
     async fn push(
@@ -389,7 +412,7 @@ impl OverlayServiceHandle {
         disposition: DeliveryDisposition,
         content: &OverlayConfig,
         duration_ms: Option<u64>,
-    ) -> Result<bool, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, OverlayServiceError> {
         if disposition.retains_last_content() {
             self.inner.repo.set_retained_content(id, content).await?;
         }
@@ -401,14 +424,14 @@ impl OverlayServiceHandle {
         id: &OverlayId,
         content: &OverlayConfig,
         duration_ms: Option<u64>,
-    ) -> bool {
+    ) -> OverlayDelivery {
         let Some(frames) = &self.inner.frames else {
-            return false;
+            return OverlayDelivery::NoPage;
         };
         frames
             .deliver_content(id, content_json(content), duration_ms)
             .await
-            > 0
+            .outcome()
     }
 
     fn disposition_of(

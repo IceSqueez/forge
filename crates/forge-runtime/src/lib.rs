@@ -44,8 +44,8 @@ pub use event_log_bridge::spawn_event_log_bridge;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{
-    MaterializePass, OverlayConnectListener, OverlayFrameSink, OverlayServiceCell,
-    OverlayServiceError, OverlayServiceHandle, TestFire,
+    MaterializePass, OverlayConnectListener, OverlayDelivery, OverlayFrameSink, OverlayReceivers,
+    OverlayServiceCell, OverlayServiceError, OverlayServiceHandle, TestFire,
 };
 pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,

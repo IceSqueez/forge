@@ -18,6 +18,8 @@ pub enum WsRequest {
         token: Option<String>,
         #[serde(rename = "overlayCredential", default)]
         overlay_credential: Option<String>,
+        #[serde(rename = "previewConnection", default)]
+        preview_connection: bool,
     },
     Subscribe {
         events: Vec<WireEventFilter>,

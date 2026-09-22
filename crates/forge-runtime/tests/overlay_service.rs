@@ -13,8 +13,8 @@ use forge_overlay::{
 use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
-    EventBus, MaterializePass, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink,
-    OverlayServiceError, OverlayServiceHandle,
+    EventBus, MaterializePass, NullEventLogRepo, OverlayConnectListener, OverlayDelivery,
+    OverlayFrameSink, OverlayReceivers, OverlayServiceError, OverlayServiceHandle,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -87,13 +87,16 @@ impl OverlayFrameSink for RecordingSink {
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) -> usize {
+    ) -> OverlayReceivers {
         self.frames.lock().unwrap().push(ContentFrame {
             identity: identity.clone(),
             content,
             duration_ms,
         });
-        1
+        OverlayReceivers {
+            sources: 1,
+            preview_tabs: 0,
+        }
     }
 
     async fn deliver_reload(&self, identity: &OverlayId) {
@@ -375,7 +378,7 @@ async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
         ]),
         "the caller previews content the page never received"
     );
-    assert!(fired.delivered);
+    assert_eq!(fired.delivery, OverlayDelivery::Delivered { sources: 1 });
 }
 
 #[tokio::test]
@@ -389,8 +392,9 @@ async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_l
 
     let fired = harness.service.test_fire(&stored.id).await.expect("fire");
 
-    assert!(
-        !fired.delivered,
+    assert_eq!(
+        fired.delivery,
+        OverlayDelivery::NoPage,
         "nothing is serving, so the caller must be told the preview ran alone"
     );
     assert_eq!(
@@ -736,7 +740,11 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
         .await
         .expect("a bound overlay of a shipped kind accepts a send");
 
-    assert!(delivered, "a connected page was not counted as reached");
+    assert_eq!(
+        delivered,
+        OverlayDelivery::Delivered { sources: 1 },
+        "a connected page was not counted as reached"
+    );
     let expected = text_config(&[
         (LABEL_KEY, "Sub goal"),
         (VALUE_KEY, "42"),
@@ -778,8 +786,9 @@ async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_conn
         .await
         .expect("a send does not fail merely because no page is connected");
 
-    assert!(
-        !delivered,
+    assert_eq!(
+        delivered,
+        OverlayDelivery::NoPage,
         "nothing is serving, so the caller must be told the content landed nowhere"
     );
     assert!(
@@ -860,7 +869,11 @@ async fn a_direct_delivery_to_a_machine_filled_overlay_reaches_the_page_and_is_n
         .await
         .expect("the sink that fills this overlay's content is not the step funnel");
 
-    assert!(delivered, "a connected page was not counted as reached");
+    assert_eq!(
+        delivered,
+        OverlayDelivery::Delivered { sources: 1 },
+        "a connected page was not counted as reached"
+    );
     assert_eq!(
         harness.sink.frames(),
         vec![ContentFrame {

@@ -21,7 +21,9 @@ pub use assets::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, PageAssets, RESERVED_DIRECTORY,
     RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE, STYLE_FILE,
 };
-pub use browser_preview::{PREVIEW_PARAM, PREVIEW_VALUE, preview_page_url};
+pub use browser_preview::{
+    PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, preview_page_url,
+};
 pub use config::{effective_overlay_config, validate_overlay_config};
 pub use content::delivered_content;
 pub use descriptor::{

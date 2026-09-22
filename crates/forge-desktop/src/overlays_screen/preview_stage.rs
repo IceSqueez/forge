@@ -9,7 +9,7 @@ use forge_overlay::{
     OverlayConfig, PreviewCanvas, PreviewComposition, PreviewPosition, effective_overlay_config,
     preview_page_url,
 };
-use forge_runtime::TestFire;
+use forge_runtime::{OverlayDelivery, TestFire};
 use forge_storage::{OverlayDefinition, OverlayId};
 use forge_types::Variant;
 use gpui::{
@@ -210,7 +210,7 @@ impl OverlaysView {
                     overlay,
                     phase: TestFirePhase::Landed {
                         content: fired.content,
-                        delivered: fired.delivered,
+                        delivered: !matches!(fired.delivery, OverlayDelivery::NoPage),
                     },
                 });
                 self.sync_preview();

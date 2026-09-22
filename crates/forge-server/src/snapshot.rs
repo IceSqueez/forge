@@ -58,10 +58,12 @@ async fn connected_clients_snapshot(
     server_info: &ServerInfo,
     bus_adapter: &BusAdapter,
 ) -> Vec<ConnectedClientSnapshot> {
+    let preview_tabs = bus_adapter.preview_tabs().await;
     let rows: Vec<_> = {
         let clients = server_info.connected_clients.read().await;
         clients
             .iter()
+            .filter(|(id, _)| !preview_tabs.contains(id))
             .map(|(id, client)| {
                 (
                     *id,

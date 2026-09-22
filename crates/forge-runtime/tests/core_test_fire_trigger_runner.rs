@@ -17,6 +17,7 @@ use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMode, Queue, QueueId, SubActionConfig,
     SubActionOutcome, SubActionStep, TriggerInstanceId, Variant,
 };
+use tempfile::TempDir;
 
 struct NullPublisher;
 impl EventPublisher for NullPublisher {
@@ -30,6 +31,7 @@ struct Harness {
     cell: SchedulerCell,
     handle: QueueSchedulerHandle,
     bus: Arc<EventBus>,
+    _media: TempDir,
 }
 
 fn nonblocking(id: QueueId) -> Queue {
@@ -50,16 +52,20 @@ fn blocking(id: QueueId) -> Queue {
     }
 }
 
-async fn backend() -> Arc<SqliteBackend> {
-    Arc::new(
-        SqliteBackend::open_with_key(":memory:", [0x5a; 32])
-            .await
-            .unwrap(),
+async fn backend() -> (Arc<SqliteBackend>, TempDir) {
+    let media = tempfile::tempdir().unwrap();
+    let backend = SqliteBackend::open_with_key_and_media_root(
+        ":memory:",
+        [0x5a; 32],
+        media.path().join("media"),
     )
+    .await
+    .unwrap();
+    (Arc::new(backend), media)
 }
 
 async fn harness(queue: Queue) -> Harness {
-    let backend = backend().await;
+    let (backend, media) = backend().await;
     backend.queue_repo().save(&queue).await.unwrap();
 
     let globals: Arc<dyn GlobalsRepo> = Arc::clone(&backend) as Arc<dyn GlobalsRepo>;
@@ -86,6 +92,7 @@ async fn harness(queue: Queue) -> Harness {
         cell,
         handle,
         bus,
+        _media: media,
     }
 }
 
@@ -264,7 +271,7 @@ async fn unknown_trigger_instance_id_fails() {
 
 #[tokio::test]
 async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
-    let backend = backend().await;
+    let (backend, _media) = backend().await;
     let trigger_instances = backend.trigger_instance_repo();
     let instance_id = trigger_instances
         .upsert_default("test.kind", "Test Trigger")
@@ -291,7 +298,7 @@ async fn fire_with_empty_scheduler_cell_reports_scheduler_not_ready() {
 #[tokio::test]
 async fn unparseable_trigger_instance_id_fails() {
     const SENTINEL: &str = "not-an-instance-id-a-viewer-typed-this";
-    let backend = backend().await;
+    let (backend, _media) = backend().await;
     let runner = CoreTestFireTriggerRunner::new(
         backend.trigger_instance_repo(),
         backend.action_repo(),

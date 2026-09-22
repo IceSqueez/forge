@@ -18,6 +18,7 @@ use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMode, ExecutionOutcome, QueueId, SubActionConfig,
     SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
 };
+use tempfile::TempDir;
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
@@ -86,12 +87,16 @@ impl SubActionRunner for GateRunner {
     }
 }
 
-async fn make_dp() -> Arc<dyn DataProvider> {
-    Arc::new(
-        SqliteBackend::open_with_key(":memory:", [0xcd; 32])
-            .await
-            .unwrap(),
+async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
+    let media = tempfile::tempdir().unwrap();
+    let backend = SqliteBackend::open_with_key_and_media_root(
+        ":memory:",
+        [0xcd; 32],
+        media.path().join("media"),
     )
+    .await
+    .unwrap();
+    (Arc::new(backend), media)
 }
 
 fn default_queue() -> QueueId {
@@ -137,7 +142,7 @@ async fn await_history(dp: &Arc<dyn DataProvider>, id: ActionId) -> ExecutionOut
 
 #[tokio::test]
 async fn cancel_runner_aborts_a_live_in_flight_execution() {
-    let dp = make_dp().await;
+    let (dp, _media) = make_dp().await;
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
 
@@ -203,7 +208,7 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
 
 #[tokio::test]
 async fn cancel_guard_deregisters_after_a_run_completes() {
-    let dp = make_dp().await;
+    let (dp, _media) = make_dp().await;
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
 

@@ -21,6 +21,7 @@ use forge_types::{
     TriggerInstanceId, UserBadge, Variant,
 };
 use serde_json::json;
+use tempfile::TempDir;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 const CHAT_COMMAND_KIND: &str = "test.chat.command";
@@ -183,15 +184,21 @@ struct Harness {
     bus: Arc<EventBus>,
     sub: EventSubscription,
     _evaluator: forge_runtime::TriggerEvaluatorHandle,
+    _media: TempDir,
 }
 
 /// Wires action, queue and trigger-instance rows into an in-memory backend and starts the
 /// evaluator against a registry that owns nothing but the fake chat / non-chat descriptors.
 async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
+    let media = tempfile::tempdir().unwrap();
     let backend = Arc::new(
-        SqliteBackend::open_with_key(":memory:", TEST_KEY)
-            .await
-            .unwrap(),
+        SqliteBackend::open_with_key_and_media_root(
+            ":memory:",
+            TEST_KEY,
+            media.path().join("media"),
+        )
+        .await
+        .unwrap(),
     );
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 
@@ -271,6 +278,7 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
         bus,
         sub,
         _evaluator: evaluator,
+        _media: media,
     }
 }
 

@@ -24,16 +24,21 @@ use forge_types::{
     SubActionStep, SubActionTelemetry, TriggerInstance, TriggerInstanceId, Variant,
 };
 use serde_json::json;
+use tempfile::TempDir;
 use time::OffsetDateTime;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
-async fn make_backend() -> Arc<SqliteBackend> {
-    Arc::new(
-        SqliteBackend::open_with_key(":memory:", TEST_KEY)
-            .await
-            .unwrap(),
+async fn make_backend() -> (Arc<SqliteBackend>, TempDir) {
+    let media = tempfile::tempdir().unwrap();
+    let backend = SqliteBackend::open_with_key_and_media_root(
+        ":memory:",
+        TEST_KEY,
+        media.path().join("media"),
     )
+    .await
+    .unwrap();
+    (Arc::new(backend), media)
 }
 
 fn make_queue(id: QueueId) -> Queue {
@@ -223,7 +228,7 @@ impl SubActionRunner for RecordingRunner {
 
 #[tokio::test]
 async fn trigger_evaluator_applies_effective_config_overrides() {
-    let backend = make_backend().await;
+    let (backend, _media) = make_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 
     let q_id = QueueId::new();
@@ -303,7 +308,7 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
 
 #[tokio::test]
 async fn sub_action_runner_sees_merged_default_and_override() {
-    let backend = make_backend().await;
+    let (backend, _media) = make_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 
     let q_id = QueueId::new();
@@ -404,7 +409,7 @@ async fn sub_action_runner_sees_merged_default_and_override() {
 
 #[tokio::test]
 async fn linked_action_executes_via_join_table_only() {
-    let backend = make_backend().await;
+    let (backend, _media) = make_backend().await;
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 
     let q_id = QueueId::new();

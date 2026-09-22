@@ -15,18 +15,23 @@ use forge_runtime::{
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ArgStack, EventId, Queue, QueueId, SubActionConfig, SubActionOutcome, Variant};
+use tempfile::TempDir;
 
 struct NullPublisher;
 impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-async fn make_dp() -> Arc<dyn DataProvider> {
-    Arc::new(
-        SqliteBackend::open_with_key(":memory:", [0xcd; 32])
-            .await
-            .unwrap(),
+async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
+    let media = tempfile::tempdir().unwrap();
+    let backend = SqliteBackend::open_with_key_and_media_root(
+        ":memory:",
+        [0xcd; 32],
+        media.path().join("media"),
     )
+    .await
+    .unwrap();
+    (Arc::new(backend), media)
 }
 
 fn nonblocking(id: QueueId) -> Queue {
@@ -39,7 +44,7 @@ fn nonblocking(id: QueueId) -> Queue {
 }
 
 async fn live_scheduler(queue: Queue) -> (SchedulerCell, QueueSchedulerHandle, Arc<EventBus>) {
-    let dp = make_dp().await;
+    let (dp, _media) = make_dp().await;
     dp.queue_repo().save(&queue).await.unwrap();
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));

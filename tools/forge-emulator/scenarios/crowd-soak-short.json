@@ -1,0 +1,68 @@
+{
+  "name": "a two-minute crowd soak at the crowd model's ceiling",
+  "purpose": "One thousand viewers send nine chatter lines each and one command each, ten thousand messages in all - the most the crowd model allows - spread twelve milliseconds apart so the load is sustained for roughly two minutes rather than burst. Nothing here is about one message: the point is that forge matches exactly one command per sender, finishes every action it starts, issues no failing platform request for the whole run, and asks the fake Twitch for nothing it was not asked for. This is the short seed of the long soak; lengthen the run by raising the spacing, not the message count, which is already at the ceiling.",
+  "fixture": {
+    "twitch": {},
+    "chat_commands": [{ "phrase": "!ping", "action_name": "Ping" }]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "crowd": {
+          "viewers": 1000,
+          "chatter": [
+            "hello from {login}",
+            "gg number {n}",
+            "what a play",
+            "that was clean",
+            "chat is moving",
+            "nice one",
+            "hype",
+            "still here",
+            "good stream"
+          ],
+          "chatter_per_viewer": 9,
+          "command_senders": 1000,
+          "commands": ["!ping"],
+          "spacing_ms": 12
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "core",
+            "kind": "command.matched",
+            "count": { "exactly": 1000 },
+            "within_ms": 20000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Ping" } },
+            "count": { "exactly": 1000 },
+            "within_ms": 20000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.done",
+            "count": { "exactly": 1000 },
+            "within_ms": 20000
+          }
+        },
+        { "event_absent": { "kind": "request.fail", "window_ms": 20000 } },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

@@ -191,6 +191,33 @@ content arriving as tagged `Variant` JSON fails them.
 chat command: a `channel.subscribe` notification runs the action bound to the new-subscriber
 trigger instance, and the page is judged on the headline it receives.
 
+Four more follow that shape, one per Twitch event a live channel produces without a chat
+command, so a regression in any of them is caught off-stream:
+
+| Scenario | Notification | Trigger descriptor | Headline |
+| :--- | :--- | :--- | :--- |
+| `follow-raises-an-alert.json` | `channel.follow` | `twitch.channel.follow` | `%user_name%` |
+| `raid-raises-an-alert.json` | `channel.raid` | `twitch.channel.raid_received` | `%user_name%`, `%viewer_count%` |
+| `cheer-raises-an-alert.json` | `channel.cheer` | `twitch.support.cheer` | `%user_name%`, `%bits_amount%` |
+| `reward-redemption-raises-an-alert.json` | `channel.channel_points_custom_reward_redemption.add` | `twitch.channel_points.redemption` | `%user_name%`, `%reward.title%` |
+
+Each injects the payload the EventSub reference documents for that subscription type, pins two
+or three pointers into the bus event forge publishes from it, and judges the connected page on
+a headline whose every token is a canonical variable. In each one a display name that is not
+the login, and a reward title that is not the reward id, keep a page that renders the wrong
+field from passing. Two carry a trigger condition the injected event has to satisfy: the cheer
+instance sets `min_bits`, and the redemption instance sets `reward_id` - both plain text fields
+on the trigger, so no reward has to exist in storage for the fixture to be complete. The raid
+is delivered as received rather than sent only because its `to_broadcaster_user_id` is the
+seeded account's, which is what forge reads to tell the two directions apart on the one topic.
+
+`crowd-soak-short.json` is the load case rather than a feature case: a thousand viewers send
+nine chatter lines and one command each, ten thousand messages - the ceiling the crowd model
+allows - twelve milliseconds apart, so the load is sustained for about two minutes instead of
+bursting. It asserts one command match and one finished action per sender, no `request.fail`
+for the whole run, and no unexpected request to the fake. Lengthen it by raising `spacing_ms`,
+never the message count, which has no room left.
+
 `reconnect-keeps-subscriptions.json` was the first defect this harness found - forge ran a
 second full subscription pass on a successor EventSub session - and was kept red as evidence
 until that was fixed. It has passed since; if it ever fails again, the regression is forge's.

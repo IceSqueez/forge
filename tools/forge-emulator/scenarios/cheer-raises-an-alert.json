@@ -1,0 +1,110 @@
+{
+  "name": "a cheer over the trigger's bits floor raises an alert on a connected overlay page",
+  "purpose": "One channel.cheer notification reaches forge's EventSub session, becomes the bus event twitch.channel.cheer, and runs the action bound to a cheer trigger instance whose minimum-bits condition the cheer clears. The headline carries the cheerer's display name and the bits amount, so a page that renders the tagged Variant for the count, or the cheerer's login, fails here.",
+  "fixture": {
+    "twitch": {},
+    "overlays": [
+      {
+        "display_name": "Alert Box",
+        "kind_id": "overlay.alert",
+        "config": {
+          "headline": { "type": "string", "value": "stored headline" }
+        }
+      }
+    ],
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.support.cheer",
+        "action_name": "Announce Cheer",
+        "config": {
+          "min_bits": { "type": "int", "value": 100 }
+        },
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": { "type": "string", "value": "Alert Box" },
+              "headline": {
+                "type": "string",
+                "value": "%user_name% cheered %bits_amount% bits"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.cheer"], "within_ms": 30000 } }
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Alert Box", "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "twitch_event": {
+          "subscription_type": "channel.cheer",
+          "event": {
+            "is_anonymous": false,
+            "user_id": "200000304",
+            "user_login": "generous_one",
+            "user_name": "GenerousOne",
+            "broadcaster_user_id": "100000001",
+            "broadcaster_user_login": "forge_emulator",
+            "broadcaster_user_name": "forge_emulator",
+            "message": "cheer500 take my bits",
+            "bits": 500
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "cheered",
+            "source": "twitch",
+            "kind": "twitch.channel.cheer",
+            "payload": {
+              "/bits": { "equals": 500 },
+              "/is_anonymous": { "equals": false },
+              "/user/login": { "equals": "generous_one" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Announce Cheer" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } },
+        {
+          "overlay_content": {
+            "overlay": "Alert Box",
+            "values": { "headline": "GenerousOne cheered 500 bits" },
+            "within_ms": 5000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

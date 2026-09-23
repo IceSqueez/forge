@@ -1,0 +1,105 @@
+{
+  "name": "an incoming raid raises an alert on a connected overlay page",
+  "purpose": "One channel.raid notification whose to-broadcaster is the seeded account reaches forge's EventSub session, becomes the bus event twitch.channel.raid with direction `received`, and runs the action bound to the raid-received trigger instance. channel.raid carries both directions on one topic, so the payload's direction is what separates this trigger from the raid-sent one. The headline carries the raider's display name and the raid's viewer count, so a page that renders the tagged Variant for the count, or the raider's login, fails here.",
+  "fixture": {
+    "twitch": {},
+    "overlays": [
+      {
+        "display_name": "Alert Box",
+        "kind_id": "overlay.alert",
+        "config": {
+          "headline": { "type": "string", "value": "stored headline" }
+        }
+      }
+    ],
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.channel.raid_received",
+        "action_name": "Announce Raid",
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": { "type": "string", "value": "Alert Box" },
+              "headline": {
+                "type": "string",
+                "value": "%user_name% raided with %viewer_count% viewers"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.raid"], "within_ms": 30000 } }
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Alert Box", "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "twitch_event": {
+          "subscription_type": "channel.raid",
+          "event": {
+            "from_broadcaster_user_id": "200000203",
+            "from_broadcaster_user_login": "big_streamer",
+            "from_broadcaster_user_name": "BigStreamer",
+            "to_broadcaster_user_id": "100000001",
+            "to_broadcaster_user_login": "forge_emulator",
+            "to_broadcaster_user_name": "forge_emulator",
+            "viewers": 250
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "raided",
+            "source": "twitch",
+            "kind": "twitch.channel.raid",
+            "payload": {
+              "/direction": { "equals": "received" },
+              "/viewer_count": { "equals": 250 },
+              "/from_broadcaster/login": { "equals": "big_streamer" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Announce Raid" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } },
+        {
+          "overlay_content": {
+            "overlay": "Alert Box",
+            "values": { "headline": "BigStreamer raided with 250 viewers" },
+            "within_ms": 5000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "name": "a new follower raises an alert on a connected overlay page",
+  "purpose": "One channel.follow notification reaches forge's EventSub session, becomes the bus event twitch.channel.follow, and runs the action bound to the follow trigger instance. The follow trigger carries no condition at all, so this is the narrowest path from an EventSub frame to an overlay frame. The follower's display name differs from the login in more than casing, so a page that shows the login instead of %user_name% fails here.",
+  "fixture": {
+    "twitch": {},
+    "overlays": [
+      {
+        "display_name": "Alert Box",
+        "kind_id": "overlay.alert",
+        "config": {
+          "headline": { "type": "string", "value": "stored headline" }
+        }
+      }
+    ],
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.channel.follow",
+        "action_name": "Announce Follower",
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": { "type": "string", "value": "Alert Box" },
+              "headline": { "type": "string", "value": "%user_name% just followed" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.follow"], "within_ms": 30000 } }
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Alert Box", "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "twitch_event": {
+          "subscription_type": "channel.follow",
+          "event": {
+            "user_id": "200000112",
+            "user_login": "fresh_follower",
+            "user_name": "FreshFollower",
+            "broadcaster_user_id": "100000001",
+            "broadcaster_user_login": "forge_emulator",
+            "broadcaster_user_name": "forge_emulator",
+            "followed_at": "2026-09-24T10:05:00Z"
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "followed",
+            "source": "twitch",
+            "kind": "twitch.channel.follow",
+            "payload": {
+              "/user/login": { "equals": "fresh_follower" },
+              "/user/display_name": { "equals": "FreshFollower" },
+              "/followed_at": { "equals": "2026-09-24T10:05:00Z" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Announce Follower" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } },
+        {
+          "overlay_content": {
+            "overlay": "Alert Box",
+            "values": { "headline": "FreshFollower just followed" },
+            "within_ms": 5000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

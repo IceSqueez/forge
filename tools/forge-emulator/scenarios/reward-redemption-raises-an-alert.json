@@ -1,0 +1,119 @@
+{
+  "name": "a channel point redemption raises an alert on a connected overlay page",
+  "purpose": "One channel.channel_points_custom_reward_redemption.add notification reaches forge's EventSub session, becomes the bus event twitch.channel.channel_points_custom_reward_redemption.add, and runs the action bound to a redemption trigger instance scoped to one reward id. The action's only step sends to an alert overlay, and the connected browser source receives a headline built from the redeemer's display name and the reward title. The redeemer's display name is not the login, and the reward title is not the reward id, so a page that renders either identifier instead of the canonical variable fails here.",
+  "fixture": {
+    "twitch": {},
+    "overlays": [
+      {
+        "display_name": "Alert Box",
+        "kind_id": "overlay.alert",
+        "config": {
+          "headline": { "type": "string", "value": "stored headline" }
+        }
+      }
+    ],
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.channel_points.redemption",
+        "action_name": "Announce Redemption",
+        "config": {
+          "reward_id": { "type": "string", "value": "reward-hydrate" }
+        },
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": { "type": "string", "value": "Alert Box" },
+              "headline": { "type": "string", "value": "%user_name% redeemed %reward.title%" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": {
+        "twitch_subscribed": {
+          "types": ["channel.channel_points_custom_reward_redemption.add"],
+          "within_ms": 30000
+        }
+      }
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Alert Box", "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "twitch_event": {
+          "subscription_type": "channel.channel_points_custom_reward_redemption.add",
+          "event": {
+            "id": "redemption-9001",
+            "broadcaster_user_id": "100000001",
+            "broadcaster_user_login": "forge_emulator",
+            "broadcaster_user_name": "forge_emulator",
+            "user_id": "200000091",
+            "user_login": "thirstyviewer",
+            "user_name": "ThirstyViewer",
+            "user_input": "drink up",
+            "status": "unfulfilled",
+            "reward": {
+              "id": "reward-hydrate",
+              "title": "Hydrate",
+              "cost": 500,
+              "prompt": "Make the streamer drink water"
+            },
+            "redeemed_at": "2026-09-24T10:00:00Z"
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "redeemed",
+            "source": "twitch",
+            "kind": "twitch.channel.channel_points_custom_reward_redemption.add",
+            "payload": {
+              "/user/login": { "equals": "thirstyviewer" },
+              "/reward/id": { "equals": "reward-hydrate" },
+              "/reward/title": { "equals": "Hydrate" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Announce Redemption" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } },
+        {
+          "overlay_content": {
+            "overlay": "Alert Box",
+            "values": { "headline": "ThirstyViewer redeemed Hydrate" },
+            "within_ms": 5000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

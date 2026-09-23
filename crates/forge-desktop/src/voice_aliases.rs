@@ -376,6 +376,7 @@ impl Render for AliasForm {
         let view = cx.entity();
         overlay(card, &palette)
             .position(OverlayPosition::Center)
+            .busy(self.saving)
             .on_dismiss("va-form-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel(cx));
             })

@@ -427,6 +427,7 @@ impl Render for AddModal {
         let view = cx.entity();
         overlay(card, &palette)
             .position(OverlayPosition::Center)
+            .busy(self.saving)
             .on_dismiss("sb-modal-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel(cx));
             })

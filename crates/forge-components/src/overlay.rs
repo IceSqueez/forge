@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    Anchor, AnchoredPositionMode, Animation, AnimationExt, AnyElement, App, Div, ElementId,
+    Anchor, AnchoredPositionMode, Animation, AnimationExt, AnyElement, App, Div, ElementId, Entity,
     FocusHandle, InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
     ParentElement, Pixels, Point, RenderOnce, Rgba, SharedString, Styled, Window, anchored,
     deferred, div, point, px,
@@ -27,6 +27,8 @@ pub fn drive_overlay_focus(
         window.focus(&prev, cx);
     }
 }
+
+const ESCAPE_KEY: &str = "escape";
 
 const ENTER_MS: u64 = 200;
 
@@ -58,7 +60,7 @@ pub struct Overlay {
     scrim: Rgba,
     dismiss_id: ElementId,
     on_dismiss: Option<DismissHandler>,
-    escape_focus: Option<FocusHandle>,
+    busy: bool,
 }
 
 /// Defaults to centred with no dismissal wired; add position and dismissal via the builder methods.
@@ -69,7 +71,7 @@ pub fn overlay(content: impl IntoElement, palette: &ForgePalette) -> Overlay {
         scrim: palette.scrim,
         dismiss_id: ElementId::Name(SharedString::new_static("forge-overlay")),
         on_dismiss: None,
-        escape_focus: None,
+        busy: false,
     }
 }
 
@@ -80,7 +82,7 @@ impl Overlay {
         self
     }
 
-    /// Wires scrim-click dismissal; Escape also dismisses only once [`Overlay::dismiss_on_escape`] is set.
+    /// Wires both scrim-click and Escape dismissal; `id` must be unique among the overlays alive in one frame.
     #[must_use]
     pub fn on_dismiss(
         mut self,
@@ -92,11 +94,36 @@ impl Overlay {
         self
     }
 
-    /// The caller must focus `focus_handle` when the overlay opens or Escape stays inert (gpui routes keys only down the focus path); scrim-click dismissal is unaffected.
+    /// Suppresses Escape dismissal while the overlay is mid-write; scrim-click dismissal is unaffected.
     #[must_use]
-    pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
-        self.escape_focus = Some(focus_handle.clone());
+    pub fn busy(mut self, busy: bool) -> Self {
+        self.busy = busy;
         self
+    }
+
+    /// Element state, so the handle outlives the per-frame [`Overlay`] value that installs it. The
+    /// claim is deferred a frame because [`FocusHandle::contains_focused`] reads the previously
+    /// rendered dispatch tree: checked during this render it would steal focus from an input the
+    /// opener just focused inside the overlay.
+    fn escape_focus(&self, window: &mut Window, cx: &mut App) -> FocusHandle {
+        let handle: Entity<FocusHandle> = window.use_keyed_state(
+            ElementId::NamedChild(
+                Arc::new(self.dismiss_id.clone()),
+                SharedString::new_static("escape"),
+            ),
+            cx,
+            |window, cx| {
+                let handle = cx.focus_handle();
+                let claim = handle.clone();
+                window.on_next_frame(move |window, cx| {
+                    if !claim.contains_focused(window, cx) {
+                        window.focus(&claim, cx);
+                    }
+                });
+                handle
+            },
+        );
+        handle.read(cx).clone()
     }
 
     fn render_scrim(&self, animate_alpha: bool) -> gpui::AnyElement {
@@ -136,7 +163,11 @@ impl Overlay {
 }
 
 impl RenderOnce for Overlay {
-    fn render(mut self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let escape_focus = self
+            .on_dismiss
+            .is_some()
+            .then(|| self.escape_focus(window, cx));
         let position = self.position;
         let content = std::mem::replace(&mut self.content, div().into_any_element());
 
@@ -209,12 +240,16 @@ impl RenderOnce for Overlay {
         };
 
         let mut root = root;
-        if let (Some(handle), Some(handler)) = (self.escape_focus.as_ref(), self.on_dismiss.clone())
-        {
+        if let (Some(handle), Some(handler)) = (escape_focus.as_ref(), self.on_dismiss.clone()) {
+            let busy = self.busy;
             root = root
                 .track_focus(handle)
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    if event.keystroke.key.as_str() == "escape" {
+                    if event.keystroke.key.as_str() != ESCAPE_KEY {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    if !busy {
                         handler(window, cx);
                     }
                 });
@@ -326,7 +361,7 @@ impl RenderOnce for AnchoredPopover {
             root = root
                 .track_focus(handle)
                 .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                    if event.keystroke.key.as_str() == "escape" {
+                    if event.keystroke.key.as_str() == ESCAPE_KEY {
                         dismiss(window, cx);
                     }
                 });

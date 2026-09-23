@@ -97,6 +97,7 @@ impl EventWiringView {
         let view = cx.entity();
         overlay(card, palette)
             .position(OverlayPosition::Center)
+            .busy(stage.writing)
             .on_dismiss("overlays-wire-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.close(cx));
             })

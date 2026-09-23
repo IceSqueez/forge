@@ -419,7 +419,6 @@ impl TriggersRegistryView {
         .subtitle(form.kind_id.clone())
         .size(ModalSize::Md)
         .footer(footer)
-        .kbd_hint(tr!("triggers_create_kbd_hint"))
         .on_close(
             "triggers-create-close",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_create(cx)),
@@ -428,6 +427,7 @@ impl TriggersRegistryView {
         let view = cx.entity();
         overlay(card, palette)
             .position(OverlayPosition::Center)
+            .busy(form.saving)
             .on_dismiss("triggers-create-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel_create(cx));
             })

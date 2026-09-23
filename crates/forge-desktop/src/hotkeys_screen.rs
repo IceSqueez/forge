@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ConfirmTone, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
     MenuPlacement, OverlayPosition, ToastKind, badge, body_family, card, confirm_modal,
-    drive_overlay_focus, fmt_relative_time, icon, menu_button, menu_divider, menu_item,
-    mono_family, overlay, pad_tile, page_frame, status_dot, toggle, tr,
+    fmt_relative_time, icon, menu_button, menu_divider, menu_item, mono_family, overlay, pad_tile,
+    page_frame, status_dot, toggle, tr,
 };
 use forge_events::Event;
 use forge_hotkey::HotkeyClient;
@@ -13,8 +13,8 @@ use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, StorageError, set_bool_setting};
 use forge_types::{ActionId, TriggerInstanceId};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FocusHandle, Keystroke, Pixels, Point, SharedString,
-    Subscription, Task, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, Keystroke, Pixels, Point, SharedString, Subscription,
+    Task, Window, div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
@@ -192,8 +192,6 @@ pub struct HotkeysScreenView {
     app_modal: Option<OpenAppModal>,
     menu_open: Option<RowKey>,
     menu_click_pos: Option<Point<Pixels>>,
-    overlay_focus: FocusHandle,
-    focus_restore: Option<FocusHandle>,
     _bus_bridge: Task<()>,
 }
 
@@ -226,8 +224,6 @@ impl HotkeysScreenView {
             app_modal: None,
             menu_open: None,
             menu_click_pos: None,
-            overlay_focus: cx.focus_handle(),
-            focus_restore: None,
             _bus_bridge: bus_bridge,
         };
         view.load(cx);
@@ -1705,7 +1701,6 @@ impl HotkeysScreenView {
         let weak = cx.entity().downgrade();
         overlay(card, palette)
             .position(OverlayPosition::Center)
-            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("hotkeys-delete-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.cancel_delete(cx));
             })
@@ -1742,7 +1737,6 @@ impl HotkeysScreenView {
         let weak = cx.entity().downgrade();
         overlay(card, palette)
             .position(OverlayPosition::Center)
-            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("hotkeys-conflict-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.conflict_cancel(cx));
             })
@@ -1858,17 +1852,9 @@ fn section_label(label: &str, palette: &ForgePalette, right: AnyElement) -> impl
 }
 
 impl Render for HotkeysScreenView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-
-        drive_overlay_focus(
-            self.conflict.is_some() || self.delete_prompt.is_some(),
-            &self.overlay_focus,
-            &mut self.focus_restore,
-            window,
-            cx,
-        );
 
         let header_right = div()
             .flex()

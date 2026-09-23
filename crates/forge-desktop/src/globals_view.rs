@@ -1413,7 +1413,6 @@ impl Render for GlobalEditor {
             .header_icon(Icon::Variable, palette.warning)
             .size(ModalSize::Md)
             .footer(footer)
-            .kbd_hint(tr!("globals_editor_kbd_hint"))
             .on_close(
                 "globals-editor-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
@@ -1422,6 +1421,7 @@ impl Render for GlobalEditor {
         let view = cx.entity();
         overlay(card, palette)
             .position(OverlayPosition::Center)
+            .busy(self.saving)
             .on_dismiss("globals-editor-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel(cx));
             })

@@ -478,6 +478,7 @@ impl Render for EditQueueModal {
         let view = cx.entity();
         overlay(card, &palette)
             .position(OverlayPosition::Center)
+            .busy(self.saving)
             .on_dismiss("q-modal-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel(cx));
             })
@@ -594,7 +595,7 @@ impl QueuesView {
             load_queues(queue_repo, action_repo, scheduler),
             |this, result, cx| match result {
                 Ok(rows) => this.apply_rows(rows, cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(message) => this.on_load_error(&message, cx),
             },
             cx,
         );
@@ -607,9 +608,9 @@ impl QueuesView {
         cx.notify();
     }
 
-    fn on_repo_error(&mut self, message: &str, cx: &mut Context<Self>) {
-        eprintln!("forge-desktop: queues operation failed: {message}");
+    fn on_load_error(&mut self, message: &str, cx: &mut Context<Self>) {
         self.loading = false;
+        cx.push_toast(ToastKind::Error, tr!("queues_load_failed", error = message));
         cx.notify();
     }
 
@@ -771,7 +772,9 @@ impl QueuesView {
             delete_queue(queue_repo, action_repo, scheduler, deleted_id),
             |this, result, cx| match result {
                 Ok(()) => this.reload(cx),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(message) => {
+                    this.on_scheduler_error(tr!("queues_delete_failed", error = message), cx)
+                }
             },
             cx,
         );

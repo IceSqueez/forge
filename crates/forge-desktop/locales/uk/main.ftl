@@ -333,7 +333,6 @@ actions_menu_delete = Видалити...
 
 ## Дії - підказка ESC
 
-actions_esc_hint = ESC - скасувати
 
 ## Дії - модальне вікно нової дії
 
@@ -451,6 +450,7 @@ action_stat_execution = ВИКОНАННЯ
 action_editor_run_history = Історія запусків...
 action_editor_run_history_title = Історія запусків
 action_editor_run_history_loading = Завантаження історії запусків...
+action_editor_run_history_failed = Не вдалося завантажити історію запусків: { $error }
 action_editor_run_history_empty_title = Запусків ще немає
 action_editor_run_history_empty_hint = Ця дія ще не виконувалася
 action_editor_run_history_duration_ms = { $count } мс
@@ -649,7 +649,6 @@ triggers_create_section_name = НАЗВА
 triggers_create_name_placeholder = Назва екземпляра (обов'язково)
 triggers_create_section_config = КОНФІГУРАЦІЯ
 triggers_create_btn = Створити
-triggers_create_kbd_hint = ENTER щоб створити · ESC щоб скасувати
 
 ## Налаштування → панель скриптів
 
@@ -1176,6 +1175,8 @@ queues_free_feedback = Прибрано { $count } дій з очікуванн�
 queues_free_failed = Не вдалося звільнити чергу: { $error }
 queues_mode_change_failed = Не вдалося змінити режим черги: { $error }
 queues_pause_all_failed = Не вдалося поставити на паузу всі черги: { $error }
+queues_delete_failed = Не вдалося видалити чергу: { $error }
+queues_load_failed = Не вдалося завантажити черги: { $error }
 queues_mode_running_caption = Виконується - дії обробляються щойно надходять
 queues_mode_drain_caption = Спустошення - накопичене завершується, нові дії пропускаються
 queues_mode_hold_caption = Утримано - обробку зупинено, нові дії далі стають у чергу
@@ -1571,7 +1572,6 @@ globals_editor_persist_desc = Збережені глобальні вижива
 globals_editor_cancel = Скасувати
 globals_editor_save = Зберегти
 globals_editor_saving = Збереження...
-globals_editor_kbd_hint = ⌘ Enter - зберегти
 globals_editor_name_placeholder = my_variable
 globals_error_invalid_int = Некоректне ціле число
 globals_error_invalid_float = Некоректне число з рухомою комою

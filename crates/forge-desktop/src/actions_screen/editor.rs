@@ -1587,7 +1587,6 @@ impl ScreenActionsView {
         .subtitle(form.kind_id.clone())
         .size(ModalSize::Md)
         .footer(footer)
-        .kbd_hint(tr!("triggers_create_kbd_hint"))
         .on_close(
             "actions-trigger-fill-close",
             cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_trigger_picker(cx)),
@@ -1596,6 +1595,7 @@ impl ScreenActionsView {
         let view = cx.entity();
         overlay(card, palette)
             .position(OverlayPosition::Center)
+            .busy(form.saving)
             .on_dismiss("actions-trigger-fill-scrim", move |_window, cx| {
                 view.update(cx, |this, cx| this.cancel_trigger_picker(cx));
             })

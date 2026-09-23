@@ -400,6 +400,7 @@ impl SettingsWebSocketView {
         };
         ghost_button_with_icon(Icon::Refresh, label, palette)
             .disabled(self.restart_disabled())
+            .busy(self.restarting)
             .on_click(
                 "settings-ws-restart",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.restart_server(cx)),

@@ -8,6 +8,7 @@ pub mod confirm;
 pub mod confirm_state;
 pub mod data;
 pub mod date_time_picker;
+pub mod error_row;
 pub mod fonts;
 pub mod footer;
 pub mod glyph;
@@ -63,6 +64,7 @@ pub use data::{
     hover_reveal, virtual_table,
 };
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
+pub use error_row::error_row;
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use glyph::{GlyphArt, glyph_art};

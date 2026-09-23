@@ -126,12 +126,6 @@ impl Modal {
         self
     }
 
-    /// Retained for call-site compatibility; keyboard hints are no longer rendered.
-    #[must_use]
-    pub fn kbd_hint(self, _hint: impl Into<SharedString>) -> Self {
-        self
-    }
-
     #[must_use]
     pub fn on_close(
         mut self,

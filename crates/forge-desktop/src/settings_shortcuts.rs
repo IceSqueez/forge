@@ -2,16 +2,15 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputEvent, OverlayPosition, Radius, Spacing, TextInput, body_family, confirm_modal,
-    drive_overlay_focus, ghost_button, icon, mono_family, overlay, radius, spacing, toggle, tr,
-    with_alpha,
+    InputEvent, OverlayPosition, Radius, Spacing, TextInput, body_family, confirm_modal, error_row,
+    ghost_button, icon, mono_family, overlay, radius, spacing, toggle, tr, with_alpha,
 };
 use forge_hotkey::{DEFAULT_HOLD_CEILING_SECS, HotkeyClient};
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FocusHandle, FontWeight, Keystroke, Pixels,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Keystroke, Pixels, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::actions::{SHORTCUTS, ShortcutEntry, shortcut_entry};
@@ -45,8 +44,6 @@ pub struct SettingsShortcutsView {
     hold_ceiling_invalid: bool,
     hold_ceiling_debounce: async_bridge::Debounced,
     capture_sub: Option<Subscription>,
-    overlay_focus: FocusHandle,
-    focus_restore: Option<FocusHandle>,
     _subs: Vec<Subscription>,
 }
 
@@ -92,8 +89,6 @@ impl SettingsShortcutsView {
                 async_bridge::SLIDER_PERSIST_DEBOUNCE,
             ),
             capture_sub: None,
-            overlay_focus: cx.focus_handle(),
-            focus_restore: None,
             _subs: subs,
         };
         view.load(cx);
@@ -335,27 +330,7 @@ impl SettingsShortcutsView {
 
     fn error_banner(&self, palette: &ForgePalette) -> Option<AnyElement> {
         let message = self.rebind_error.as_ref().or(self.save_error.as_ref())?;
-        Some(
-            div()
-                .flex()
-                .items_center()
-                .gap(spacing(Spacing::Xs, Density::Cozy))
-                .px(spacing(Spacing::Sm, Density::Cozy))
-                .py(px(6.0))
-                .rounded(radius(Radius::Sm))
-                .bg(with_alpha(palette.random, 0.1))
-                .border(BORDER_THIN)
-                .border_color(palette.random)
-                .child(icon(Icon::AlertTriangle, px(13.0), palette.random))
-                .child(
-                    div()
-                        .font_family(body_family())
-                        .text_size(FONT_SM)
-                        .text_color(palette.random)
-                        .child(message.clone()),
-                )
-                .into_any_element(),
-        )
+        Some(error_row(message.clone(), palette).into_any_element())
     }
 
     fn chord_chip(&self, label: impl Into<SharedString>, palette: &ForgePalette) -> AnyElement {
@@ -621,7 +596,6 @@ impl SettingsShortcutsView {
         let weak = cx.entity().downgrade();
         overlay(card, palette)
             .position(OverlayPosition::Center)
-            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("shortcut-conflict-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.conflict_cancel(cx));
             })
@@ -630,17 +604,9 @@ impl SettingsShortcutsView {
 }
 
 impl Render for SettingsShortcutsView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-
-        drive_overlay_focus(
-            self.conflict.is_some(),
-            &self.overlay_focus,
-            &mut self.focus_restore,
-            window,
-            cx,
-        );
 
         let mut list = div().flex().flex_col();
         for entry in SHORTCUTS {

@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use gpui::{
     App, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement, ParentElement, Pixels,
     RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px, svg,
 };
 
-use crate::icons::{Icon, icon};
+use crate::icons::{Icon, icon, spinner};
 use crate::palette::{ForgePalette, with_alpha};
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_XS, Radius, Spacing, body_family, radius, spacing,
@@ -109,6 +111,7 @@ pub struct Button {
     colors: ButtonColors,
     density: Density,
     disabled: bool,
+    busy: bool,
     full_width: bool,
     height: Option<Pixels>,
     id: Option<ElementId>,
@@ -133,6 +136,7 @@ impl Button {
             colors: variant.colors(palette),
             density: Density::default(),
             disabled: false,
+            busy: false,
             full_width: false,
             height: None,
             id: None,
@@ -161,6 +165,12 @@ impl Button {
         self
     }
 
+    /// Disables the button and spins its leading glyph while the work behind the click runs; needs the id from [`Button::on_click`] to drive the animation.
+    pub fn busy(mut self, busy: bool) -> Self {
+        self.busy = busy;
+        self
+    }
+
     /// Overrides resting and hover ink so an outline variant can carry a semantic tint.
     pub fn ink(mut self, color: Rgba) -> Self {
         self.colors.text = color;
@@ -184,14 +194,15 @@ impl RenderOnce for Button {
         let c = self.colors;
         let d = self.density;
         let icon_only = self.variant == ButtonVariant::Icon;
+        let disabled = self.disabled || self.busy;
 
-        let (fill, text, border) = if self.disabled {
+        let (fill, text, border) = if disabled {
             (c.disabled_fill, c.disabled_text, c.disabled_border)
         } else {
             (c.fill, c.text, c.border)
         };
 
-        let gap = if self.leading.is_some() {
+        let gap = if self.busy || self.leading.is_some() {
             ICON_LABEL_GAP
         } else if self.trailing.is_some() {
             spacing(Spacing::Xs, d)
@@ -234,8 +245,15 @@ impl RenderOnce for Button {
             root = root.border(BORDER_THIN).border_color(border);
         }
 
-        if let Some(leading) = self.leading {
-            root = if icon_only && !self.disabled {
+        if self.busy {
+            let clock = self
+                .id
+                .clone()
+                .map(|id| ElementId::NamedChild(Arc::new(id), SharedString::new_static("busy")))
+                .unwrap_or_else(|| ElementId::Name(SharedString::new_static("forge-button-busy")));
+            root = root.child(spinner(clock, Icon::Loader2, glyph_size, text));
+        } else if let Some(leading) = self.leading {
+            root = if icon_only && !disabled {
                 let hover_text = c.hover_text;
                 root.group(ICON_BUTTON_GROUP).child(
                     svg()
@@ -256,7 +274,7 @@ impl RenderOnce for Button {
             root = root.child(icon(trailing, glyph_size, text));
         }
 
-        if self.disabled {
+        if disabled {
             return root.into_any_element();
         }
 

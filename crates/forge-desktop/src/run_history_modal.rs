@@ -2,8 +2,8 @@ use crate::actions_screen::parse_variable_segments;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
-    Spacing, body_family, fmt_relative_time, icon, json_highlighted, modal, mono_family, overlay,
-    radius, spacing, status_dot, tr,
+    Spacing, body_family, error_row, fmt_relative_time, icon, json_highlighted, modal, mono_family,
+    overlay, radius, spacing, status_dot, tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{
@@ -30,10 +30,16 @@ const HALF_BORDER: Pixels = px(0.5);
 
 pub struct RunHistoryDismissed;
 
+enum Load {
+    Pending,
+    Failed(SharedString),
+    Ready(Vec<ExecutionContext>),
+}
+
 pub struct RunHistoryModal {
     subtitle: SharedString,
     trigger_registry: Arc<TriggerRegistry>,
-    runs: Option<Vec<ExecutionContext>>,
+    load: Load,
     selected: usize,
 }
 
@@ -44,13 +50,19 @@ impl RunHistoryModal {
         Self {
             subtitle: subtitle.into(),
             trigger_registry,
-            runs: None,
+            load: Load::Pending,
             selected: 0,
         }
     }
 
     pub fn set_runs(&mut self, runs: Vec<ExecutionContext>, cx: &mut Context<Self>) {
-        self.runs = Some(runs);
+        self.load = Load::Ready(runs);
+        self.selected = 0;
+        cx.notify();
+    }
+
+    pub fn set_error(&mut self, message: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.load = Load::Failed(message.into());
         self.selected = 0;
         cx.notify();
     }
@@ -75,6 +87,14 @@ impl RunHistoryModal {
             .text_size(FONT_SM)
             .text_color(palette.text_muted)
             .child(tr!("action_editor_run_history_loading"))
+            .into_any_element()
+    }
+
+    fn render_failed(&self, message: &SharedString, palette: &ForgePalette) -> AnyElement {
+        div()
+            .w_full()
+            .p(spacing(Spacing::Md, Density::Cozy))
+            .child(error_row(message.clone(), palette))
             .into_any_element()
     }
 
@@ -587,18 +607,18 @@ impl Render for RunHistoryModal {
         let palette = cx.palette();
         let palette = &palette;
 
-        let has_runs = matches!(&self.runs, Some(runs) if !runs.is_empty());
-        let body = match &self.runs {
-            None => self.render_loading(palette),
-            Some(runs) if runs.is_empty() => self.render_empty(palette),
-            Some(runs) => self.render_master_detail(runs, self.selected, palette, cx),
+        let has_runs = matches!(&self.load, Load::Ready(runs) if !runs.is_empty());
+        let body = match &self.load {
+            Load::Pending => self.render_loading(palette),
+            Load::Failed(message) => self.render_failed(message, palette),
+            Load::Ready(runs) if runs.is_empty() => self.render_empty(palette),
+            Load::Ready(runs) => self.render_master_detail(runs, self.selected, palette, cx),
         };
 
         let mut card = modal(tr!("action_editor_run_history_title"), body, palette)
             .size(ModalSize::Lg)
             .header_icon(Icon::History, palette.brand)
             .subtitle(self.subtitle.clone())
-            .kbd_hint(tr!("actions_esc_hint"))
             .on_close(
                 "actions-history-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss(cx)),

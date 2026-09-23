@@ -1092,7 +1092,6 @@ impl ScreenActionsView {
         let card = modal(modal_title, body, palette)
             .size(ModalSize::Md)
             .footer(footer)
-            .kbd_hint(tr!("actions_esc_hint"))
             .on_close(
                 "actions-modal-close",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_action_modal(cx)),

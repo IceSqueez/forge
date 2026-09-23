@@ -28,7 +28,15 @@ impl ScreenActionsView {
             async move { service.recent_runs(id, 50).await.map_err(|e| e.to_string()) },
             move |this, result, cx| match result {
                 Ok(runs) => view.update(cx, |modal, cx| modal.set_runs(runs, cx)),
-                Err(message) => this.on_repo_error(&message, cx),
+                Err(message) => {
+                    view.update(cx, |modal, cx| {
+                        modal.set_error(
+                            tr!("action_editor_run_history_failed", error = message.as_str()),
+                            cx,
+                        );
+                    });
+                    this.on_repo_error(&message, cx);
+                }
             },
             cx,
         );

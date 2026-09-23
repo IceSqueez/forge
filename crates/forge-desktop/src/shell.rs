@@ -96,6 +96,7 @@ impl AppShell {
         cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
 
         window.focus(&focus, cx);
+        cx.on_focus_lost(window, Self::restore_focus).detach();
 
         Self {
             router: Router { screen, content },
@@ -104,6 +105,15 @@ impl AppShell {
             topics,
             handles,
         }
+    }
+
+    /// gpui leaves the window unfocused when the focused element stops rendering, which strands
+    /// every shell key binding until something takes focus again.
+    fn restore_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let target = window
+            .focus_lost_restore_target(cx)
+            .unwrap_or_else(|| self.focus.clone());
+        window.focus(&target, cx);
     }
 
     fn content_for(

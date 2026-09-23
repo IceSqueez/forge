@@ -333,7 +333,6 @@ actions_menu_delete = Delete...
 
 ## Actions - ESC hint
 
-actions_esc_hint = ESC to cancel
 
 ## Actions - add-action modal
 
@@ -451,6 +450,7 @@ action_stat_execution = EXECUTION
 action_editor_run_history = Run history...
 action_editor_run_history_title = Run history
 action_editor_run_history_loading = Loading run history...
+action_editor_run_history_failed = Could not load run history: { $error }
 action_editor_run_history_empty_title = No runs yet
 action_editor_run_history_empty_hint = This action has not run yet
 action_editor_run_history_duration_ms = { $count } ms
@@ -647,7 +647,6 @@ triggers_create_section_name = NAME
 triggers_create_name_placeholder = Instance name (required)
 triggers_create_section_config = CONFIGURATION
 triggers_create_btn = Create
-triggers_create_kbd_hint = ENTER to create · ESC to cancel
 
 ## Settings → Scripting pane
 
@@ -1165,6 +1164,8 @@ queues_free_feedback = Dropped { $count } waiting actions in “{ $name }”.
 queues_free_failed = Could not free the queue: { $error }
 queues_mode_change_failed = Could not change the queue mode: { $error }
 queues_pause_all_failed = Could not pause every queue: { $error }
+queues_delete_failed = Could not delete the queue: { $error }
+queues_load_failed = Could not load the queues: { $error }
 queues_mode_running_caption = Running - processing actions as they arrive
 queues_mode_drain_caption = Draining - finishing the backlog, new actions are skipped
 queues_mode_hold_caption = Held - processing stopped, new actions still queue up
@@ -1551,7 +1552,6 @@ globals_editor_persist_desc = Persisted globals survive app close; session-only 
 globals_editor_cancel = Cancel
 globals_editor_save = Save
 globals_editor_saving = Saving...
-globals_editor_kbd_hint = ⌘ Enter to save
 globals_editor_name_placeholder = my_variable
 globals_error_invalid_int = Invalid integer
 globals_error_invalid_float = Invalid float

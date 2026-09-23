@@ -3,9 +3,9 @@ use std::time::Duration;
 
 use forge_components::{
     ConfirmTone, Density, FONT_LG, FONT_SM, FONT_XS, ForgePalette, Icon, ModalSize,
-    OverlayPosition, Spacing, ToastKind, body_family, card, confirm_modal, drive_overlay_focus,
-    field_hint, ghost_button, ghost_button_with_icon, icon, modal, mono_family, overlay,
-    primary_button, segment, segmented, setting_row, spacing, tr,
+    OverlayPosition, Spacing, ToastKind, body_family, card, confirm_modal, field_hint,
+    ghost_button, ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button,
+    segment, segmented, setting_row, spacing, tr,
 };
 use forge_storage::{
     DEFAULT_DIAGNOSTIC_LOG_LEVEL, DataProvider, SettingsRepo, diagnostic_log_level, disclosure,
@@ -15,8 +15,8 @@ use forge_types::LogLevel;
 use forge_types::redaction::STAMP;
 use forge_types::run_disclosure::DisclosedRun;
 use gpui::{
-    AnyElement, ClickEvent, Context, FocusHandle, FontWeight, Pixels, Rgba, ScrollHandle,
-    SharedString, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, ScrollHandle, SharedString, Window,
+    div, prelude::*, px,
 };
 use tracing::Level;
 
@@ -49,11 +49,10 @@ pub struct SettingsDiagnosticsView {
     scroll: ScrollHandle,
     active: bool,
     clear_pending: bool,
+    clearing: bool,
     preparing_export: bool,
     /// Assembled and held here so the preview describes the exact bytes the confirm then writes.
     pending_export: Option<Bundle>,
-    overlay_focus: FocusHandle,
-    focus_restore: Option<FocusHandle>,
 }
 
 impl SettingsDiagnosticsView {
@@ -77,10 +76,9 @@ impl SettingsDiagnosticsView {
             scroll: ScrollHandle::new(),
             active: initial_active,
             clear_pending: false,
+            clearing: false,
             preparing_export: false,
             pending_export: None,
-            overlay_focus: cx.focus_handle(),
-            focus_restore: None,
         };
         view.load_level(cx);
         if initial_active {
@@ -287,12 +285,17 @@ impl SettingsDiagnosticsView {
     }
 
     fn clear_logs(&mut self, cx: &mut Context<Self>) {
+        if self.clearing {
+            return;
+        }
         self.clear_pending = false;
+        self.clearing = true;
         let dir = Self::log_dir();
         async_bridge::run_blocking(
             &self.rt_handle,
             move || log_archive::clear(&dir),
             |this, result, cx| {
+                this.clearing = false;
                 match result {
                     Ok(()) => {
                         this.tail.clear();
@@ -369,7 +372,7 @@ impl SettingsDiagnosticsView {
                     palette,
                 )
                 .density(density)
-                .disabled(self.preparing_export)
+                .busy(self.preparing_export)
                 .on_click(
                     "settings-diagnostics-export",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.prepare_export(cx)),
@@ -383,6 +386,7 @@ impl SettingsDiagnosticsView {
                 )
                 .density(density)
                 .ink(palette.random)
+                .busy(self.clearing)
                 .on_click(
                     "settings-diagnostics-clear",
                     cx.listener(|this, _: &ClickEvent, _, cx| this.request_clear(cx)),
@@ -533,7 +537,6 @@ impl SettingsDiagnosticsView {
         Some(
             overlay(card, palette)
                 .position(OverlayPosition::Center)
-                .dismiss_on_escape(&self.overlay_focus)
                 .on_dismiss("settings-diagnostics-export-dismiss", move |_window, cx| {
                     let _ = weak.update(cx, |this, cx| this.cancel_export(cx));
                 })
@@ -567,7 +570,6 @@ impl SettingsDiagnosticsView {
         Some(
             overlay(modal, palette)
                 .position(OverlayPosition::Center)
-                .dismiss_on_escape(&self.overlay_focus)
                 .on_dismiss("settings-diagnostics-clear-dismiss", move |_window, cx| {
                     let _ = weak.update(cx, |this, cx| this.cancel_clear(cx));
                 })
@@ -577,17 +579,9 @@ impl SettingsDiagnosticsView {
 }
 
 impl Render for SettingsDiagnosticsView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let density = cx.density();
-
-        drive_overlay_focus(
-            self.clear_pending || self.pending_export.is_some(),
-            &self.overlay_focus,
-            &mut self.focus_restore,
-            window,
-            cx,
-        );
 
         let body = div()
             .flex()

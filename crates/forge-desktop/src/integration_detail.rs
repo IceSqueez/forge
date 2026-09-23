@@ -687,6 +687,12 @@ impl IntegrationDetail {
                 Ok(runs) => modal.update(cx, |modal, cx| modal.set_runs(runs, cx)),
                 Err(message) => {
                     tracing::warn!(error = %message, "quick action run history load failed");
+                    modal.update(cx, |modal, cx| {
+                        modal.set_error(
+                            tr!("action_editor_run_history_failed", error = message.as_str()),
+                            cx,
+                        );
+                    });
                     cx.push_toast(ToastKind::Error, tr!("integration_run_history_failed"));
                 }
             },

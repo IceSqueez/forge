@@ -98,10 +98,6 @@ impl CodeState {
             _sub: sub,
         }
     }
-
-    pub(super) fn is_pending(&self) -> bool {
-        self.pending_revert.is_pending() || self.pending_leave.is_pending()
-    }
 }
 
 fn first_file() -> &'static str {
@@ -507,7 +503,8 @@ impl OverlaysView {
             row.child(
                 primary_button_with_icon(Icon::DeviceFloppy, tr!("overlays_code_save"), palette)
                     .height(ACTION_H)
-                    .disabled(self.code.saving || !self.code_dirty(cx))
+                    .disabled(!self.code_dirty(cx))
+                    .busy(self.code.saving)
                     .on_click(
                         element_id("overlays-code-save", file),
                         cx.listener(|this, _: &ClickEvent, _, cx| this.save_source(cx)),
@@ -717,7 +714,6 @@ impl OverlaysView {
         let weak = cx.entity().downgrade();
         overlay(card, palette)
             .position(OverlayPosition::Center)
-            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("overlays-code-revert-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.cancel_revert(cx));
             })
@@ -746,7 +742,6 @@ impl OverlaysView {
         let weak = cx.entity().downgrade();
         overlay(card, palette)
             .position(OverlayPosition::Center)
-            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("overlays-code-discard-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.cancel_leave(cx));
             })

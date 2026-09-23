@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use forge_components::{
     BreadcrumbCrumb, Confirm, ConfirmTone, FONT_XS, ForgePalette, Icon, OverlayPosition, ToastKind,
-    body_family, confirm_modal, drive_overlay_focus, icon, overlay, page_frame, tr,
+    body_family, confirm_modal, icon, overlay, page_frame, tr,
 };
 use forge_overlay::config::SOUND_OPTIONS_KEY;
 use forge_overlay::{
@@ -30,8 +30,8 @@ use forge_storage::{
     MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StoredClip,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Pixels, Point,
-    SharedString, Subscription, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -155,8 +155,6 @@ pub struct OverlaysView {
     fire: Option<TestFireRun>,
     fire_epoch: u64,
     stage: StageState,
-    overlay_focus: FocusHandle,
-    focus_restore: Option<FocusHandle>,
     wiring: WiringLink,
 }
 
@@ -230,8 +228,6 @@ impl OverlaysView {
             fire: None,
             fire_epoch: 0,
             stage: StageState::default(),
-            overlay_focus: cx.focus_handle(),
-            focus_restore: None,
             wiring: WiringLink {
                 view: wiring,
                 _nav: nav,
@@ -971,7 +967,6 @@ impl OverlaysView {
         let weak = cx.entity().downgrade();
         overlay(card, palette)
             .position(OverlayPosition::Center)
-            .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss("overlays-delete-dismiss", move |_window, cx| {
                 let _ = weak.update(cx, |this, cx| this.cancel_delete(cx));
             })
@@ -984,13 +979,6 @@ impl Render for OverlaysView {
         let palette = cx.palette();
         let density = cx.density();
 
-        drive_overlay_focus(
-            self.pending_delete.is_pending() || self.code.is_pending(),
-            &self.overlay_focus,
-            &mut self.focus_restore,
-            window,
-            cx,
-        );
         self.focus_icon_picker(window, cx);
 
         let body = div()

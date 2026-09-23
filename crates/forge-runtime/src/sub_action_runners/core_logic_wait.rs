@@ -81,6 +81,10 @@ mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_types::{EventId, SubActionOutcome};
 
+    // Why: the timer wheel rounds a deadline up to its next tick, so the virtual clock
+    // can land a hair past the requested delay.
+    const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
+
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
         fn publish(&self, _event: Event) {}
@@ -90,31 +94,33 @@ mod tests {
         RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
-    #[tokio::test]
-    async fn wait_zero_ms_succeeds() {
-        let runner = CoreLogicWaitRunner;
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("ms".to_owned(), Variant::Int(0));
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (telemetry, updated) = runner.execute(&cfg, &ctx).await;
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
-        assert!(updated.is_none());
-    }
+    #[tokio::test(start_paused = true)]
+    async fn a_wait_holds_for_its_own_delay_up_to_the_cap_and_never_past_it() {
+        for (configured_ms, held_ms) in [
+            (-5_i64, 0_u64),
+            (0, 0),
+            (1_500, 1_500),
+            (MAX_DELAY_MS as i64, MAX_DELAY_MS),
+            (MAX_DELAY_MS as i64 + 1, MAX_DELAY_MS),
+            (120_000, MAX_DELAY_MS),
+        ] {
+            let runner = CoreLogicWaitRunner;
+            let mut cfg = SubActionConfig::new();
+            cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(configured_ms));
+            let stack = ArgStack::new();
+            let ctx = make_ctx(&stack);
 
-    #[tokio::test]
-    async fn wait_above_cap_is_clamped() {
-        let runner = CoreLogicWaitRunner;
-        let mut cfg = SubActionConfig::new();
-        cfg.insert("ms".to_owned(), Variant::Int(120_000));
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let before = std::time::Instant::now();
-        let (telemetry, _) = runner.execute(&cfg, &ctx).await;
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
-        assert!(
-            before.elapsed().as_millis() < 65_000,
-            "clamped delay must not exceed 60s + tolerance"
-        );
+            let before = tokio::time::Instant::now();
+            let (telemetry, updated) = runner.execute(&cfg, &ctx).await;
+            let held = before.elapsed();
+
+            assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+            assert!(updated.is_none(), "a wait produces no arguments");
+            assert!(
+                held >= Duration::from_millis(held_ms)
+                    && held < Duration::from_millis(held_ms) + TIMER_GRANULARITY,
+                "{configured_ms} ms held {held:?}, expected about {held_ms} ms",
+            );
+        }
     }
 }

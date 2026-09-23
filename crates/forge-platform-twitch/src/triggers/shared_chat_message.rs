@@ -1,13 +1,13 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
-use super::chat_arg_stack::{base_chat_args, base_chat_schema};
+use super::chat_arg_stack::base_chat_variables;
 use crate::payload_fields::chat as chat_fields;
 
 pub(crate) struct SharedChatMessageDescriptor;
@@ -70,48 +70,50 @@ impl TriggerKindDescriptor for SharedChatMessageDescriptor {
             .unwrap_or(false)
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let from_login = event
-            .payload
-            .get(chat_fields::FROM_CHANNEL)
-            .and_then(|fc| fc.get(chat_fields::FROM_CHANNEL_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let from_display_name = event
-            .payload
-            .get(chat_fields::FROM_CHANNEL)
-            .and_then(|fc| fc.get(chat_fields::FROM_CHANNEL_DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            base_chat_variables()
+                .event_specific(
+                    DeclaredVariable {
+                        name: "chat.from_channel.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Source channel login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    |event| {
+                        Variant::String(from_channel_field(event, chat_fields::FROM_CHANNEL_LOGIN))
+                    },
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "chat.from_channel.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Source channel display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    |event| {
+                        Variant::String(from_channel_field(
+                            event,
+                            chat_fields::FROM_CHANNEL_DISPLAY_NAME,
+                        ))
+                    },
+                ),
+        )
+    }
 
-        base_chat_args(event)
-            .set(
-                "chat.from_channel.login".to_owned(),
-                Variant::String(from_login),
-            )
-            .set(
-                "chat.from_channel.display_name".to_owned(),
-                Variant::String(from_display_name),
-            )
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        let mut schema = base_chat_schema();
-        schema.variables.push(DeclaredVariable {
-            name: "chat.from_channel.login".to_owned(),
-            kind: VariantKind::String,
-            label: "Source channel login".to_owned(),
-            synthesis: Some(SynthesisHint::Username),
-        });
-        schema.variables.push(DeclaredVariable {
-            name: "chat.from_channel.display_name".to_owned(),
-            kind: VariantKind::String,
-            label: "Source channel display name".to_owned(),
-            synthesis: Some(SynthesisHint::DisplayName),
-        });
-        Some(schema)
-    }
+}
+
+fn from_channel_field(event: &Event, key: &str) -> String {
+    event
+        .payload
+        .get(chat_fields::FROM_CHANNEL)
+        .and_then(|from_channel| from_channel.get(key))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 #[cfg(test)]

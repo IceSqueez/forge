@@ -58,6 +58,10 @@ impl TtsSection {
             TtsSection::Filters => "filters",
         }
     }
+
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|section| section.key() == key)
+    }
 }
 
 pub struct TtsView {
@@ -79,6 +83,7 @@ impl TtsView {
         rt_handle: tokio::runtime::Handle,
         pipeline_config: Option<PipelineConfigHandle>,
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
+        preselect: Option<TtsSection>,
         cx: &mut Context<Self>,
     ) -> Self {
         let credentials: Arc<dyn CredentialsRepo> =
@@ -123,7 +128,7 @@ impl TtsView {
             )
         });
         Self {
-            section: TtsSection::Dashboard,
+            section: preselect.unwrap_or(TtsSection::Dashboard),
             dashboard,
             engines,
             aliases,

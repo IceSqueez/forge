@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{entity, gift as fields};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::gift as fields;
 
 pub(crate) struct ChannelMemberGiftReceivedDescriptor;
 
@@ -63,92 +65,77 @@ impl TriggerKindDescriptor for ChannelMemberGiftReceivedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let level_name = event
-            .payload
-            .get(fields::LEVEL_NAME)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let gifter = event.payload.get(fields::GIFTER);
-        let gifter_channel_id = gifter
-            .and_then(|g| g.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let gifter_display_name = gifter
-            .and_then(|g| g.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let recipient = event.payload.get(fields::RECIPIENT);
-        let recipient_channel_id = recipient
-            .and_then(|r| r.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let recipient_display_name = recipient
-            .and_then(|r| r.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("gift.level_name".to_owned(), Variant::String(level_name))
-            .set(
-                "gifter.channel_id".to_owned(),
-                Variant::String(gifter_channel_id),
-            )
-            .set(
-                "gifter.display_name".to_owned(),
-                Variant::String(gifter_display_name),
-            )
-            .set(
-                "recipient.channel_id".to_owned(),
-                Variant::String(recipient_channel_id),
-            )
-            .set(
-                "recipient.display_name".to_owned(),
-                Variant::String(recipient_display_name),
-            )
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), recipient_identity)
+                .actor(youtube_actor(ActorRole::Recipient), recipient_identity)
+                .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
+                .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
+                .legacy(
+                    DeclaredVariable {
+                        name: "gift.level_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Membership level name".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::SubTier,
+                    |event| Variant::String(payload_read::text(event, fields::LEVEL_NAME)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gifter.channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
+                    |event| Variant::String(gifter_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gifter.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter display name".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
+                    |event| Variant::String(gifter_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "recipient.channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Recipient channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Id),
+                    |event| Variant::String(recipient_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "recipient.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Recipient display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Recipient, ActorSlot::Name),
+                    |event| Variant::String(recipient_identity(event).display_name),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "gift.level_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Membership level name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "gifter.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "gifter.display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter display name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "recipient.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Recipient channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "recipient.display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Recipient display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Gifter, ActorRole::Recipient])
     }
+}
+
+fn gifter_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::GIFTER))
+}
+
+fn recipient_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::RECIPIENT))
 }
 
 #[cfg(test)]
@@ -165,54 +152,79 @@ mod tests {
         )
     }
 
-    #[test]
-    fn build_arg_stack_surfaces_level_recipient_and_absent_gifter_as_empty() {
-        let event = received_event(json!({
+    fn as_the_poller_sends_it() -> Event {
+        received_event(json!({
             "level_name": "Gold",
             "recipient": { "channel_id": "UCrecipient", "display_name": "LuckyViewer" },
-        }));
+            "gifter": { "channel_id": "UCgifter", "display_name": null },
+        }))
+    }
 
-        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
+    #[test]
+    fn the_recipient_is_published_as_both_the_principal_and_the_recipient_role() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&as_the_poller_sends_it());
+        for (name, value) in [
+            ("user_id", "UCrecipient"),
+            ("user_name", "LuckyViewer"),
+            ("recipient_id", "UCrecipient"),
+            ("recipient_name", "LuckyViewer"),
+            ("sub_tier", "Gold"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
 
+    #[test]
+    fn the_gifter_keeps_the_id_the_wire_names_and_the_display_name_it_never_sends_stays_empty() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&as_the_poller_sends_it());
         assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String("Gold".to_owned()))
+            stack.get("gifter_id"),
+            Some(&Variant::String("UCgifter".to_owned()))
         );
         assert_eq!(
-            stack.get("recipient.channel_id"),
-            Some(&Variant::String("UCrecipient".to_owned()))
-        );
-        assert_eq!(
-            stack.get("recipient.display_name"),
-            Some(&Variant::String("LuckyViewer".to_owned()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
+            stack.get("gifter_name"),
             Some(&Variant::String(String::new()))
         );
     }
 
     #[test]
-    fn build_arg_stack_on_empty_payload_defaults_every_key_to_empty() {
-        let event = received_event(json!({}));
-
-        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&event);
-
+    fn the_legacy_gift_received_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&as_the_poller_sends_it());
+        assert_eq!(stack.get("gift.level_name"), stack.get("sub_tier"));
+        assert_eq!(stack.get("gifter.channel_id"), stack.get("gifter_id"));
+        assert_eq!(stack.get("gifter.display_name"), stack.get("gifter_name"));
+        assert_eq!(stack.get("recipient.channel_id"), stack.get("recipient_id"));
         assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
-            Some(&Variant::String(String::new()))
+            stack.get("recipient.display_name"),
+            stack.get("recipient_name")
         );
         assert_eq!(
             stack.get("recipient.channel_id"),
-            Some(&Variant::String(String::new()))
+            Some(&Variant::String("UCrecipient".to_owned()))
         );
-        assert_eq!(
-            stack.get("recipient.display_name"),
-            Some(&Variant::String(String::new()))
-        );
+    }
+
+    #[test]
+    fn a_gift_the_wire_leaves_blank_names_neither_side() {
+        let stack = ChannelMemberGiftReceivedDescriptor.build_arg_stack(&received_event(json!({})));
+        for name in [
+            "user_id",
+            "user_name",
+            "recipient_id",
+            "recipient_name",
+            "gifter_id",
+            "gifter_name",
+            "sub_tier",
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
     }
 }

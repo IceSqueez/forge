@@ -259,7 +259,7 @@ impl QuickActionModal {
                 self.revalidate(index, text, cx);
                 cx.notify();
             }
-            InputEvent::Submitted(_) => {}
+            InputEvent::Submitted(_) | InputEvent::Blurred(_) => {}
         }
     }
 

@@ -4,8 +4,9 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Rgba, ShapedLine, SharedString, Style, TextAlign, TextRun, UTF16Selection,
-    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, size,
+    Pixels, Point, Rgba, ShapedLine, SharedString, Style, Subscription, TextAlign, TextRun,
+    UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative,
+    size,
 };
 
 use crate::icons::{Icon, icon};
@@ -91,6 +92,8 @@ pub fn bind_text_input_keys(cx: &mut App) {
 pub enum InputEvent {
     Changed(SharedString),
     Submitted(SharedString),
+    /// Focus left the field and the text differs from the last commit; an untouched field stays silent.
+    Blurred(SharedString),
     Cancelled,
 }
 
@@ -121,6 +124,8 @@ pub struct TextInput {
     invalid: bool,
     blink_visible: bool,
     focused_cached: bool,
+    committed: SharedString,
+    blur_sub: Option<Subscription>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
@@ -155,6 +160,8 @@ impl TextInput {
             invalid: false,
             blink_visible: true,
             focused_cached: false,
+            committed: SharedString::default(),
+            blur_sub: None,
         }
     }
 
@@ -255,6 +262,7 @@ impl TextInput {
 
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.content = text.into();
+        self.committed = self.content.clone();
         let end = self.content.len();
         self.selected_range = end..end;
         self.selection_reversed = false;
@@ -264,6 +272,11 @@ impl TextInput {
 
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.set_content("", cx);
+    }
+
+    pub fn restore_committed(&mut self, cx: &mut Context<Self>) {
+        let committed = self.committed.clone();
+        self.set_content(committed, cx);
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
@@ -308,7 +321,16 @@ impl TextInput {
     }
 
     fn submit(&mut self, _: &Submit, _: &mut Window, cx: &mut Context<Self>) {
+        self.committed = self.content.clone();
         cx.emit(InputEvent::Submitted(self.content.clone()));
+    }
+
+    fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if self.content == self.committed {
+            return;
+        }
+        self.committed = self.content.clone();
+        cx.emit(InputEvent::Blurred(self.content.clone()));
     }
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
@@ -860,6 +882,10 @@ impl Focusable for TextInput {
 
 impl Render for TextInput {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.blur_sub.is_none() {
+            let handle = self.focus_handle.clone();
+            self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
+        }
         let focused = self.focus_handle.is_focused(window);
         self.focused_cached = focused;
         let (border_color, corner) = match self.static_chrome {
@@ -1108,5 +1134,128 @@ mod tests {
                 );
             }
         });
+    }
+
+    const SEED: &str = "amy";
+    const TYPED: &str = "!";
+
+    struct Commits {
+        seen: Vec<String>,
+        _sub: gpui::Subscription,
+    }
+
+    fn commit_label(event: &InputEvent) -> Option<String> {
+        match event {
+            InputEvent::Submitted(text) => Some(format!("submitted:{text}")),
+            InputEvent::Blurred(text) => Some(format!("blurred:{text}")),
+            InputEvent::Cancelled => Some("cancelled".to_owned()),
+            InputEvent::Changed(_) => None,
+        }
+    }
+
+    /// Why: the blur listener is registered on first render, the focus path is rebuilt only at draw
+    /// time, and gpui drops the previous path from the event while the window is inactive - so the
+    /// field needs a drawn, activated test window rather than a bare app context.
+    fn commits_while(
+        cx: &mut gpui::TestAppContext,
+        act: impl FnOnce(&Entity<TextInput>, &mut gpui::VisualTestContext),
+    ) -> Vec<String> {
+        let (input, vcx) = cx.add_window_view(|_window, cx| TextInput::new("placeholder", cx));
+        vcx.update(|window, _cx| window.activate_window());
+        let commits = vcx.update(|_window, cx| {
+            cx.new(|cx| Commits {
+                seen: Vec::new(),
+                _sub: cx.subscribe(&input, |this: &mut Commits, _field, event, _cx| {
+                    if let Some(label) = commit_label(event) {
+                        this.seen.push(label);
+                    }
+                }),
+            })
+        });
+        vcx.update(|_window, cx| input.update(cx, |field, cx| field.set_content(SEED, cx)));
+        vcx.update(|window, cx| input.update(cx, |field, cx| field.focus(window, cx)));
+        vcx.run_until_parked();
+
+        act(&input, vcx);
+        vcx.run_until_parked();
+
+        vcx.update(|_window, cx| commits.read(cx).seen.clone())
+    }
+
+    fn type_more(input: &Entity<TextInput>, vcx: &mut gpui::VisualTestContext) {
+        vcx.update(|window, cx| {
+            input.update(cx, |field, cx| {
+                field.replace_text_in_range(None, TYPED, window, cx);
+            });
+        });
+    }
+
+    fn leave(vcx: &mut gpui::VisualTestContext) {
+        vcx.update(|window, cx| window.blur(cx));
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn a_field_nobody_edited_stays_silent_when_focus_leaves(cx: &mut gpui::TestAppContext) {
+        let seen = commits_while(cx, |_input, vcx| leave(vcx));
+
+        assert!(seen.is_empty(), "expected no commit, saw {seen:?}");
+    }
+
+    #[gpui::test]
+    fn an_edited_field_commits_once_and_the_blur_after_that_is_silent(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seen = commits_while(cx, |input, vcx| {
+            type_more(input, vcx);
+            leave(vcx);
+            vcx.update(|window, cx| input.update(cx, |field, cx| field.focus(window, cx)));
+            vcx.run_until_parked();
+            leave(vcx);
+        });
+
+        assert_eq!(seen, ["blurred:amy!"]);
+    }
+
+    #[gpui::test]
+    fn enter_commits_so_the_blur_that_follows_it_emits_nothing(cx: &mut gpui::TestAppContext) {
+        let seen = commits_while(cx, |input, vcx| {
+            type_more(input, vcx);
+            vcx.update(|window, cx| {
+                input.update(cx, |field, cx| field.submit(&Submit, window, cx));
+            });
+            leave(vcx);
+        });
+
+        assert_eq!(seen, ["submitted:amy!"]);
+    }
+
+    #[gpui::test]
+    fn set_content_moves_the_baseline_so_the_text_it_installed_never_commits(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seen = commits_while(cx, |input, vcx| {
+            type_more(input, vcx);
+            vcx.update(|_window, cx| input.update(cx, |field, cx| field.set_content("alan", cx)));
+            leave(vcx);
+        });
+
+        assert!(seen.is_empty(), "expected no commit, saw {seen:?}");
+    }
+
+    #[gpui::test]
+    fn restore_committed_puts_back_the_last_commit_without_a_commit_of_its_own(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut restored = String::new();
+        let seen = commits_while(cx, |input, vcx| {
+            type_more(input, vcx);
+            vcx.update(|_window, cx| input.update(cx, |field, cx| field.restore_committed(cx)));
+            restored = vcx.update(|_window, cx| input.read(cx).content().to_string());
+            leave(vcx);
+        });
+
+        assert_eq!(restored, SEED);
+        assert!(seen.is_empty(), "expected no commit, saw {seen:?}");
     }
 }

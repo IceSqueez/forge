@@ -2666,10 +2666,14 @@ dependencies = [
 name = "forge-overlay"
 version = "0.5.2"
 dependencies = [
+ "forge-platform-kick",
+ "forge-platform-twitch",
+ "forge-platform-youtube",
  "forge-registry",
  "forge-types",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.20",
 ]
@@ -2779,6 +2783,8 @@ dependencies = [
  "async-trait",
  "forge-events",
  "forge-types",
+ "rand 0.10.2",
+ "serde_json",
  "thiserror 2.0.20",
  "time",
  "tokio",
@@ -2849,6 +2855,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "forge-events",
+ "forge-overlay",
  "forge-platform-core",
  "forge-registry",
  "forge-runtime",

@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::chat_mod as chat_mod_fields;
 
 pub(crate) struct ChatMessageDeletedDescriptor;
@@ -63,65 +65,66 @@ impl TriggerKindDescriptor for ChatMessageDeletedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let message_id = event
-            .payload
-            .get(chat_mod_fields::MESSAGE_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let target_user_login = event
-            .payload
-            .get(chat_mod_fields::TARGET_USER)
-            .and_then(|u| u.get(chat_mod_fields::TARGET_USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let target_user_id = event
-            .payload
-            .get(chat_mod_fields::TARGET_USER)
-            .and_then(|u| u.get(chat_mod_fields::TARGET_USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("chat.message_id".to_owned(), Variant::String(message_id))
-            .set(
-                "chat.target_user.login".to_owned(),
-                Variant::String(target_user_login),
-            )
-            .set(
-                "chat.target_user.id".to_owned(),
-                Variant::String(target_user_id),
-            )
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), deleted_author_identity)
+                .event_specific(
                     DeclaredVariable {
                         name: "chat.message_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Deleted message ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| Variant::String(payload_read::text(event, chat_mod_fields::MESSAGE_ID)),
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "chat.target_user.login".to_owned(),
                         kind: VariantKind::String,
                         label: "Message author login".to_owned(),
                         synthesis: Some(SynthesisHint::Username),
                     },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            chat_mod_fields::TARGET_USER,
+                            chat_mod_fields::TARGET_USER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "chat.target_user.id".to_owned(),
                         kind: VariantKind::String,
                         label: "Message author ID".to_owned(),
                         synthesis: None,
                     },
-                ],
-            }
-        })
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            chat_mod_fields::TARGET_USER,
+                            chat_mod_fields::TARGET_USER_ID,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn deleted_author_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(chat_mod_fields::TARGET_USER),
+        chat_mod_fields::TARGET_USER_ID,
+        chat_mod_fields::TARGET_USER_LOGIN,
+        chat_mod_fields::TARGET_USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

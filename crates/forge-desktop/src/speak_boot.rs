@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_audio::{NullAudioEventSink, NullSink};
+use forge_audio::{DeviceSink, NullAudioEventSink, OutputDeviceHandle, stored_output_device};
 use forge_events::EventPublisher;
 use forge_platform_core::paths;
 use forge_runtime::EventBus;
@@ -221,6 +221,7 @@ pub async fn build_speak_queue(
     Option<SpeakEventStream>,
     Option<PipelineConfigHandle>,
     Option<Arc<std::sync::RwLock<TtsRegistry>>>,
+    Arc<DeviceSink>,
 ) {
     let mut registry = TtsRegistry::new();
     register_local_engines(&mut registry).await;
@@ -249,28 +250,16 @@ pub async fn build_speak_queue(
             None
         }
     };
-    let audio_sink: Arc<dyn forge_audio::AudioSink> =
-        match forge_audio::resolve_output_device(stored_device_id).await {
-            Ok(device_id) => {
-                eprintln!(
-                    "forge-desktop: speak queue audio sink ready on device {}",
-                    device_id.0
-                );
-                forge_audio::build_cpal_sink(device_id, Arc::new(NullAudioEventSink))
-            }
-            Err(e) => {
-                eprintln!(
-                    "forge-desktop: no audio output device found; speak queue using NullSink: {e}"
-                );
-                Arc::new(NullSink)
-            }
-        };
+    let speech_output = Arc::new(DeviceSink::new(
+        OutputDeviceHandle::new(stored_output_device(stored_device_id)),
+        Arc::new(NullAudioEventSink),
+    ));
 
     let deps = QueueDeps {
         registry: Arc::clone(&registry),
         resolver,
         pipeline: pipeline.clone(),
-        audio_sink,
+        audio_sink: Arc::clone(&speech_output) as Arc<dyn forge_audio::AudioSink>,
         event_bus: Arc::clone(bus) as Arc<dyn EventPublisher>,
         disabled_engines,
         engine_gains,
@@ -280,5 +269,11 @@ pub async fn build_speak_queue(
         ..QueueConfig::default()
     };
     let (handle, stream) = forge_speak_queue::spawn(queue_config, deps);
-    (Some(handle), Some(stream), Some(pipeline), Some(registry))
+    (
+        Some(handle),
+        Some(stream),
+        Some(pipeline),
+        Some(registry),
+        speech_output,
+    )
 }

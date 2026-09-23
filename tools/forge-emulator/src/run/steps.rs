@@ -8,6 +8,7 @@ use super::outcome::{ActionDetail, LedgerExcerpt};
 use crate::EmulatorError;
 use crate::control::ControlClient;
 use crate::fixture::SeedReport;
+use crate::overlay::OverlayPages;
 use crate::scenario::{Crowd, StepAction};
 use crate::twitch::FakeTwitch;
 
@@ -43,6 +44,7 @@ pub(crate) struct Stimuli<'a> {
     pub(crate) client: &'a ControlClient,
     pub(crate) twitch: Option<&'a FakeTwitch>,
     pub(crate) actions: &'a ActionIndex,
+    pub(crate) pages: &'a OverlayPages,
 }
 
 impl Stimuli<'_> {
@@ -65,6 +67,15 @@ impl Stimuli<'_> {
             }
             StepAction::Crowd(crowd) => self.send_crowd(crowd).await,
             StepAction::SessionReconnect { within_ms } => self.reconnect(*within_ms).await,
+            StepAction::OverlayPage { overlay, within_ms } => self
+                .pages
+                .open_page(overlay, Duration::from_millis(*within_ms))
+                .await
+                .map(|identity| ActionDetail::OverlayPageOpened {
+                    overlay: overlay.clone(),
+                    identity,
+                })
+                .map_err(refused),
             StepAction::Pause { ms, .. } => {
                 tokio::time::sleep(Duration::from_millis(*ms)).await;
                 Ok(ActionDetail::Paused)

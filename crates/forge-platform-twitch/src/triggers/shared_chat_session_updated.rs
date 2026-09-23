@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::shared_chat as shared_chat_fields;
 
 pub(crate) struct SharedChatSessionUpdatedDescriptor;
@@ -63,48 +65,56 @@ impl TriggerKindDescriptor for SharedChatSessionUpdatedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let shared_chat = event.payload.get(shared_chat_fields::SHARED_CHAT);
-        let host = event.payload.get(shared_chat_fields::HOST);
-
-        let session_id = shared_chat
-            .and_then(|s| s.get(shared_chat_fields::SESSION_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let host_login = host
-            .and_then(|h| h.get(shared_chat_fields::HOST_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "shared_chat.session_id".to_owned(),
-                Variant::String(session_id),
-            )
-            .set("host_login".to_owned(), Variant::String(host_login))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), session_host_identity)
+                .event_specific(
                     DeclaredVariable {
                         name: "shared_chat.session_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Shared chat session ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            shared_chat_fields::SHARED_CHAT,
+                            shared_chat_fields::SESSION_ID,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "host_login".to_owned(),
                         kind: VariantKind::String,
                         label: "Host channel login".to_owned(),
                         synthesis: Some(SynthesisHint::Username),
                     },
-                ],
-            }
-        })
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            shared_chat_fields::HOST,
+                            shared_chat_fields::HOST_LOGIN,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn session_host_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(shared_chat_fields::HOST),
+        shared_chat_fields::HOST_ID,
+        shared_chat_fields::HOST_LOGIN,
+        shared_chat_fields::HOST_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]
@@ -112,6 +122,7 @@ impl TriggerKindDescriptor for SharedChatSessionUpdatedDescriptor {
 mod tests {
     use super::*;
     use forge_events::Event;
+    use forge_types::ArgStack;
 
     fn str_var(stack: &ArgStack, key: &str) -> String {
         match stack.get(key) {

@@ -1,6 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{
     ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
@@ -96,6 +97,10 @@ impl TriggerKindDescriptor for HypeTrainProgressDescriptor {
             .unwrap_or(0);
 
         level >= min_level
+    }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actorless
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

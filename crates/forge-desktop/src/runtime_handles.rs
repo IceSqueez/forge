@@ -54,6 +54,8 @@ pub struct RuntimeHandles {
     pub speak_events: Option<forge_speak_queue::SpeakEventStream>,
     /// `None` in lockstep with `speak` (absent when the speak subsystem doesn't build).
     pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
+    /// The same sink instance the speak queue plays through; swapping its device handle reroutes the next utterance.
+    pub speech_output: Arc<forge_audio::DeviceSink>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
     pub voice_gate: Arc<VoiceGateOwner>,

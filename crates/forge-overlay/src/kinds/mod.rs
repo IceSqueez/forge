@@ -1,4 +1,5 @@
 pub mod alert;
+pub mod audio;
 pub mod chat;
 pub mod frame;
 pub mod goal;
@@ -9,6 +10,7 @@ use crate::registry::OverlayKindRegistry;
 
 pub fn register_builtin_kinds(reg: &mut OverlayKindRegistry) -> Result<(), OverlayError> {
     reg.register(Box::new(alert::AlertOverlayKind))?;
+    reg.register(Box::new(audio::AudioOverlayKind))?;
     reg.register(Box::new(chat::ChatOverlayKind))?;
     reg.register(Box::new(frame::FrameOverlayKind))?;
     reg.register(Box::new(goal::GoalOverlayKind))?;
@@ -24,7 +26,7 @@ mod tests {
     use forge_registry::FormField;
 
     use super::*;
-    use crate::config::validate_overlay_config;
+    use crate::config::{ELEMENT_HEIGHT, ELEMENT_WIDTH, validate_overlay_config};
     use crate::preview::PreviewShape;
 
     const BUILTIN_IDS: &[&str] = &[
@@ -80,7 +82,9 @@ mod tests {
     }
 
     #[test]
-    fn every_builtin_defaults_exactly_the_keys_its_form_declares() {
+    fn every_builtin_defaults_the_keys_its_form_declares_apart_from_the_sides_a_page_may_size() {
+        let optional: BTreeSet<&str> = BTreeSet::from([ELEMENT_WIDTH, ELEMENT_HEIGHT]);
+
         for descriptor in registry().all() {
             let declared: BTreeSet<&str> = descriptor
                 .config_fields()
@@ -90,10 +94,19 @@ mod tests {
             let defaults = descriptor.default_config();
             let defaulted: BTreeSet<&str> = defaults.keys().map(String::as_str).collect();
 
+            let undeclared: Vec<&&str> = defaulted.difference(&declared).collect();
+            assert!(
+                undeclared.is_empty(),
+                "{} defaults {undeclared:?}, which no form field offers",
+                descriptor.id()
+            );
+
+            let undefaulted: BTreeSet<&str> = declared.difference(&defaulted).copied().collect();
+            let expected: BTreeSet<&str> = declared.intersection(&optional).copied().collect();
             assert_eq!(
-                defaulted,
-                declared,
-                "{} defaults and form fields disagree",
+                undefaulted,
+                expected,
+                "{} leaves a field without a default, or hands one to a side the page sizes itself",
                 descriptor.id()
             );
         }

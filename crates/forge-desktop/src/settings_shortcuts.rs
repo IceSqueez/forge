@@ -71,7 +71,7 @@ impl SettingsShortcutsView {
                 InputEvent::Changed(text) | InputEvent::Submitted(text) => {
                     this.commit_hold_ceiling(text.as_ref(), cx)
                 }
-                InputEvent::Cancelled => {}
+                InputEvent::Cancelled | InputEvent::Blurred(_) => {}
             },
         )];
 

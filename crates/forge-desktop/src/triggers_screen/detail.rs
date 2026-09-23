@@ -45,6 +45,8 @@ const FOOTER_PAD_H: Pixels = px(16.0);
 const PLACEHOLDER_PAD_V: Pixels = px(14.0);
 const PLACEHOLDER_PAD_H: Pixels = px(12.0);
 
+const RELEASE_PERSIST_CONTEXT: &str = "trigger detail teardown";
+
 impl TriggersRegistryView {
     pub(super) fn load_detail(&self, id: TriggerInstanceId, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
@@ -83,6 +85,7 @@ impl TriggersRegistryView {
 
         let fold = FoldContext {
             config: &effective,
+            defaults: &default,
             palette: &palette,
             choices: ChoiceSupport::Text,
             on_committed: Self::on_config_committed,
@@ -122,19 +125,23 @@ impl TriggersRegistryView {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Submitted(_) = event {
+        if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
             self.commit_config(cx);
         }
     }
 
     fn on_cooldown_committed(
         &mut self,
-        _field: Entity<TextInput>,
+        field: Entity<TextInput>,
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Submitted(_) = event {
-            self.commit_config(cx);
+        match event {
+            InputEvent::Submitted(_) | InputEvent::Blurred(_) => self.commit_config(cx),
+            InputEvent::Cancelled => {
+                field.update(cx, |input, cx| input.restore_committed(cx));
+            }
+            InputEvent::Changed(_) => {}
         }
     }
 
@@ -222,26 +229,38 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    fn commit_config(&mut self, cx: &mut Context<Self>) {
-        let Some(detail) = self.detail.as_ref() else {
-            return;
-        };
-        let kind_id = detail.instance.kind_id.clone();
+    /// An unparseable number contributes nothing, so the record keeps the value it already had.
+    fn pending_instance(&self, cx: &App) -> Option<TriggerInstance> {
+        let detail = self.detail.as_ref()?;
         let default = self
             .registry
-            .get(&kind_id)
+            .get(&detail.instance.kind_id)
             .map(|d| d.default_config())
             .unwrap_or_default();
         let mut buffer = effective_config(&default, &detail.instance.overrides);
         collect_field_values(&detail.fields, &mut buffer, cx);
 
-        let sparse = sparse_overrides(&default, &buffer);
-        let cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
         let mut instance = detail.instance.clone();
-        instance.overrides = sparse;
-        instance.cooldown_secs = cooldown_secs;
+        instance.overrides = sparse_overrides(&default, &buffer);
+        instance.cooldown_secs = parse_cooldown(detail.cooldown_input.read(cx).content());
         instance.cooldown_global = !detail.cooldown_per_user;
         instance.permission_rung = detail.permission_rung;
+        Some(instance)
+    }
+
+    /// The sheet's own Save button also unfocuses the field the click left, so the write is skipped
+    /// once the sheet already holds what the form says.
+    fn commit_config(&mut self, cx: &mut Context<Self>) {
+        let Some(instance) = self.pending_instance(cx) else {
+            return;
+        };
+        let Some(detail) = self.detail.as_mut() else {
+            return;
+        };
+        if detail.instance == instance {
+            return;
+        }
+        detail.instance = instance.clone();
         let repo = Arc::clone(&self.repo);
         self.spawn_reload(
             async move {
@@ -250,6 +269,25 @@ impl TriggersRegistryView {
             },
             cx,
         );
+    }
+
+    /// The sheet can go away in the same tick as the click that unfocused a field, so the value a
+    /// blur would have committed is written straight through the repo with no reload to land on.
+    pub(super) fn persist_detail_on_release(&mut self, cx: &mut App) {
+        let Some(instance) = self.pending_instance(cx) else {
+            return;
+        };
+        if self
+            .detail
+            .as_ref()
+            .is_some_and(|detail| detail.instance == instance)
+        {
+            return;
+        }
+        let repo = Arc::clone(&self.repo);
+        async_bridge::detached(&self.rt_handle, RELEASE_PERSIST_CONTEXT, async move {
+            repo.save(&instance).await.map_err(|e| e.to_string())
+        });
     }
 
     fn revert_config_field(&mut self, key: String, cx: &mut Context<Self>) {
@@ -966,4 +1004,244 @@ async fn load_detail_data(
         used_in.push((action_id, name));
     }
     Ok(Some(TriggerDetailData { instance, used_in }))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Mutex;
+
+    use forge_components::ThemeId;
+    use forge_registry::TriggerRegistry;
+    use forge_storage::StorageError;
+    use forge_types::{PlatformScope, TriggerInstance, TriggerInstanceId};
+
+    use super::*;
+    use crate::presentation::Presentation;
+    use crate::test_support::{StubActions, pump, runtime, test_backend};
+
+    const KIND: &str = "midi.input.note_on";
+    const NAME: &str = "Note on";
+    const SEEDED_COOLDOWN: u32 = 30;
+
+    struct RecordingTriggers {
+        instance: Mutex<TriggerInstance>,
+        saved: Mutex<Vec<u32>>,
+    }
+
+    impl RecordingTriggers {
+        fn new(instance: TriggerInstance) -> Arc<Self> {
+            Arc::new(Self {
+                instance: Mutex::new(instance),
+                saved: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn saved_cooldowns(&self) -> Vec<u32> {
+            self.saved.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl TriggerInstanceRepo for RecordingTriggers {
+        async fn list_all(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+            Ok(vec![self.instance.lock().unwrap().clone()])
+        }
+
+        async fn list_user_defined(&self) -> Result<Vec<TriggerInstance>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_for_action(&self, _: ActionId) -> Result<Vec<TriggerInstance>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn actions_using(&self, _: TriggerInstanceId) -> Result<Vec<ActionId>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn link_action(
+            &self,
+            _: ActionId,
+            _: TriggerInstanceId,
+            _: i64,
+        ) -> Result<(), StorageError> {
+            unreachable!("the detail sheet never links an action")
+        }
+
+        async fn unlink_action(
+            &self,
+            _: ActionId,
+            _: TriggerInstanceId,
+        ) -> Result<bool, StorageError> {
+            unreachable!("the detail sheet never unlinks an action")
+        }
+
+        async fn get(&self, _: TriggerInstanceId) -> Result<Option<TriggerInstance>, StorageError> {
+            Ok(Some(self.instance.lock().unwrap().clone()))
+        }
+
+        async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
+            self.saved.lock().unwrap().push(instance.cooldown_secs);
+            *self.instance.lock().unwrap() = instance.clone();
+            Ok(())
+        }
+
+        async fn delete(&self, _: TriggerInstanceId) -> Result<bool, StorageError> {
+            unreachable!("the detail sheet never deletes an instance")
+        }
+
+        async fn upsert_default(
+            &self,
+            _: &str,
+            _: &str,
+        ) -> Result<TriggerInstanceId, StorageError> {
+            unreachable!("the detail sheet never upserts a default")
+        }
+
+        async fn set_enabled(&self, _: TriggerInstanceId, _: bool) -> Result<(), StorageError> {
+            unreachable!("the detail sheet never toggles an instance")
+        }
+    }
+
+    struct Fixture {
+        view: Option<Entity<TriggersRegistryView>>,
+        repo: Arc<RecordingTriggers>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl Fixture {
+        fn new(cx: &mut gpui::TestAppContext) -> Self {
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let id = TriggerInstanceId::new();
+            let instance = TriggerInstance {
+                id,
+                kind_id: KIND.to_owned(),
+                name: NAME.to_owned(),
+                overrides: Default::default(),
+                enabled: true,
+                user_defined: false,
+                platform_scope: PlatformScope::Any,
+                cooldown_secs: SEEDED_COOLDOWN,
+                cooldown_global: true,
+                permission_rung: PermissionRung::Everyone,
+            };
+            let repo = RecordingTriggers::new(instance.clone());
+            let (backend, _writes) = test_backend();
+            let view = cx.update(|cx| {
+                cx.new(|cx| {
+                    TriggersRegistryView::new(
+                        Arc::clone(&repo) as Arc<dyn TriggerInstanceRepo>,
+                        Arc::new(StubActions),
+                        Arc::new(TriggerRegistry::new()),
+                        backend as Arc<dyn forge_storage::SettingsRepo>,
+                        rt.handle().clone(),
+                        None,
+                        cx,
+                    )
+                })
+            });
+            let mut fixture = Self {
+                view: Some(view),
+                repo,
+                rt,
+            };
+            fixture.settle(cx);
+            fixture.view().update(cx, |view, cx| {
+                view.selected = Some(id);
+                view.apply_detail(
+                    id,
+                    TriggerDetailData {
+                        instance,
+                        used_in: Vec::new(),
+                    },
+                    cx,
+                );
+            });
+            fixture
+        }
+
+        fn view(&self) -> &Entity<TriggersRegistryView> {
+            self.view.as_ref().unwrap()
+        }
+
+        /// Why: the reload bridge parks a strong handle on the view until its tokio half answers,
+        /// so both halves have to drain before a drop can reach the release callback.
+        fn settle(&mut self, cx: &mut gpui::TestAppContext) {
+            pump(&self.rt);
+            cx.update(|_cx| {});
+            cx.run_until_parked();
+            pump(&self.rt);
+            cx.run_until_parked();
+        }
+
+        fn type_cooldown(&self, cx: &mut gpui::TestAppContext, text: &str) {
+            self.view().update(cx, |view, cx| {
+                let input = view.detail.as_ref().unwrap().cooldown_input.clone();
+                input.update(cx, |field, cx| field.set_content(text.to_owned(), cx));
+            });
+        }
+
+        fn commit(&mut self, cx: &mut gpui::TestAppContext) {
+            self.view().update(cx, |view, cx| view.commit_config(cx));
+            self.settle(cx);
+        }
+
+        fn release(&mut self, cx: &mut gpui::TestAppContext) {
+            self.view = None;
+            cx.update(|_cx| {});
+            cx.run_until_parked();
+            pump(&self.rt);
+        }
+    }
+
+    #[gpui::test]
+    fn a_sheet_torn_down_over_an_uncommitted_cooldown_writes_it_through_the_repo(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx);
+        fixture.type_cooldown(cx, "5");
+
+        fixture.release(cx);
+
+        assert_eq!(fixture.repo.saved_cooldowns(), [5]);
+    }
+
+    #[gpui::test]
+    fn a_sheet_torn_down_over_an_untouched_form_writes_nothing(cx: &mut gpui::TestAppContext) {
+        let mut fixture = Fixture::new(cx);
+
+        fixture.release(cx);
+
+        assert!(fixture.repo.saved_cooldowns().is_empty());
+    }
+
+    #[gpui::test]
+    fn a_sheet_torn_down_after_its_commit_landed_writes_nothing_more(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx);
+        fixture.type_cooldown(cx, "5");
+        fixture.commit(cx);
+        fixture.commit(cx);
+
+        fixture.release(cx);
+
+        assert_eq!(fixture.repo.saved_cooldowns(), [5]);
+    }
+
+    #[gpui::test]
+    fn an_unreadable_cooldown_is_written_as_zero_rather_than_left_alone(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx);
+        fixture.type_cooldown(cx, "later");
+
+        fixture.release(cx);
+
+        assert_eq!(fixture.repo.saved_cooldowns(), [0]);
+    }
 }

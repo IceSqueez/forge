@@ -27,7 +27,7 @@ use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::midi_screen::MidiScreenView;
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
-use crate::overlays_screen::OverlaysView;
+use crate::overlays_screen::{OverlaysLaunch, OverlaysView};
 use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
@@ -73,10 +73,11 @@ impl AppShell {
         status: Entity<RuntimeStatus>,
         topics: Topics,
         handles: Arc<RuntimeHandles>,
+        initial_screen: Screen,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let screen = Screen::Home;
+        let screen = initial_screen;
         let content = Self::content_for(&screen, &topics, &handles, cx);
         let focus = cx.focus_handle();
         let chrome = Chrome::new(status, topics.platforms.clone(), screen.clone(), cx);
@@ -296,17 +297,15 @@ impl AppShell {
             }
             Screen::Soundboard => {
                 let player = handles.soundboard_player.clone();
-                let clips_repo = handles.backend.soundboard_clips_repo();
                 let settings_repo =
                     Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
                 let bus = Arc::clone(&handles.bus);
-                cx.new(|cx| {
-                    SoundboardView::new(player, clips_repo, settings_repo, rt_handle, bus, cx)
-                })
-                .into()
+                cx.new(|cx| SoundboardView::new(player, settings_repo, rt_handle, bus, cx))
+                    .into()
             }
-            Screen::Tts => {
+            Screen::Tts(preselect) => {
+                let preselect = *preselect;
                 let speak_state = topics.speak.clone();
                 let speak = handles.speak.clone();
                 let backend = Arc::clone(&handles.backend);
@@ -321,19 +320,38 @@ impl AppShell {
                         rt_handle,
                         pipeline_config,
                         tts_registry,
+                        preselect,
                         cx,
                     )
                 })
                 .into()
             }
             Screen::Overlays => {
-                let repo = handles.backend.overlay_repo();
-                let server = handles.server.clone();
-                let rt_handle = handles.rt_handle.clone();
-                let kinds = Arc::clone(&handles.overlay_kinds);
-                let overlays = handles.overlays.clone();
-                cx.new(|cx| OverlaysView::new(repo, server, rt_handle, kinds, overlays, cx))
-                    .into()
+                let launch = OverlaysLaunch {
+                    repo: handles.backend.overlay_repo(),
+                    server: handles.server.clone(),
+                    rt_handle: handles.rt_handle.clone(),
+                    kinds: Arc::clone(&handles.overlay_kinds),
+                    service: handles.overlays.clone(),
+                    library: Arc::clone(handles.soundboard_player.library()),
+                    media: handles.backend.media_repo(),
+                    actions: Arc::new(forge_runtime::actions::ActionsService::new(
+                        handles.backend.action_repo(),
+                        handles.backend.queue_repo(),
+                        handles.backend.history_repo(),
+                        handles.backend.trigger_instance_repo(),
+                        handles.backend.soundboard_clips_repo(),
+                    )),
+                    triggers: handles.trigger_registry.clone(),
+                    sub_actions: handles.sub_action_registry.clone(),
+                    scheduler: handles.scheduler.clone(),
+                };
+                let view = cx.new(|cx| OverlaysView::new(launch, cx));
+                cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                view.into()
             }
             Screen::Server => {
                 let server = handles.server.clone();

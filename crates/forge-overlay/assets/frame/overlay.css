@@ -2,6 +2,7 @@
   --accent: #fab387;
   --font: sans-serif;
   --reveal: 0.4s;
+  --text-scale: calc(var(--text-size, 13) / 13);
 }
 
 html,
@@ -26,24 +27,24 @@ body {
 .corner {
   position: absolute;
   left: 22px;
-  bottom: -13px;
+  bottom: calc(-13px * var(--text-scale));
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 14px;
+  gap: calc(8px * var(--text-scale));
+  padding: calc(3px * var(--text-scale)) calc(14px * var(--text-scale));
   border: 1px solid var(--accent);
   border-radius: 999px;
   background: rgba(20, 20, 28, 0.92);
 }
 
 body[data-position="top"] .corner {
-  top: -13px;
+  top: calc(-13px * var(--text-scale));
   bottom: auto;
 }
 
 .headline {
   color: #fff;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   font-weight: 600;
 }
 
@@ -53,7 +54,7 @@ body[data-position="top"] .corner {
 
 .subline {
   color: var(--accent);
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale));
   font-weight: 700;
   letter-spacing: 0.12em;
 }

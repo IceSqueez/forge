@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
+    SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{chat as chat_fields, entity, member as fields};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::{chat as chat_fields, member as fields};
 
 pub(crate) struct SupportMemberMilestoneDescriptor;
 
@@ -63,70 +65,54 @@ impl TriggerKindDescriptor for SupportMemberMilestoneDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let author = event.payload.get(chat_fields::AUTHOR);
-        let user_display_name = author
-            .and_then(|a| a.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let channel_id = author
-            .and_then(|a| a.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let member_month = event
-            .payload
-            .get(fields::MEMBER_MONTH)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let message_text = event
-            .payload
-            .get(chat_fields::MESSAGE_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "user_display_name".to_owned(),
-                Variant::String(user_display_name),
-            )
-            .set("channel_id".to_owned(), Variant::String(channel_id))
-            .set("member_month".to_owned(), Variant::Int(member_month))
-            .set("message_text".to_owned(), Variant::String(message_text))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), member_identity)
+                .message_text(|event| payload_read::text(event, chat_fields::MESSAGE_TEXT))
+                .count(CanonicalCount::SubCumulativeMonths, |event| {
+                    payload_read::number(event, fields::MEMBER_MONTH)
+                })
+                .legacy(
+                    DeclaredVariable {
+                        name: "user_display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Member display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| Variant::String(member_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Member channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(member_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "member_month".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Membership length in months".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 120 }),
+                    },
+                    CanonicalVariable::Count(CanonicalCount::SubCumulativeMonths),
+                    |event| Variant::Int(payload_read::number(event, fields::MEMBER_MONTH)),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "user_display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Member display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-                DeclaredVariable {
-                    name: "channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Member channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "member_month".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Membership length in months".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 120 }),
-                },
-                DeclaredVariable {
-                    name: "message_text".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Milestone message text".to_owned(),
-                    synthesis: Some(SynthesisHint::Message),
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
+}
+
+fn member_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(chat_fields::AUTHOR))
 }
 
 #[cfg(test)]
@@ -147,24 +133,31 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            SupportMemberMilestoneDescriptor
-                .matches_trigger(&TriggerConfig::new(), &milestone_event())
-        );
+    fn a_milestone_publishes_the_member_their_note_and_the_months_as_a_cumulative_count() {
+        let stack = SupportMemberMilestoneDescriptor.build_arg_stack(&milestone_event());
+        for (name, value) in [
+            ("user_id", "UCfan"),
+            ("user_name", "LongTimeFan"),
+            ("message_text", "One year!"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+        assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
     }
 
     #[test]
-    fn build_arg_stack_extracts_milestone_fields() {
+    fn the_legacy_milestone_names_still_carry_what_their_canonical_twins_carry() {
         let stack = SupportMemberMilestoneDescriptor.build_arg_stack(&milestone_event());
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("LongTimeFan".to_owned()))
+            stack.get("member_month"),
+            stack.get("sub_cumulative_months")
         );
         assert_eq!(stack.get("member_month"), Some(&Variant::Int(12)));
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("One year!".to_owned()))
-        );
     }
 }

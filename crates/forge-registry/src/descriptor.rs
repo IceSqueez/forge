@@ -6,6 +6,7 @@ use crate::evaluator::EventFilter;
 use crate::form::FormField;
 use crate::kind_platform_contract::KindPlatformContract;
 use crate::refinement::FormRefinement;
+use crate::variables::{ActorDeclaration, TriggerVariables};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatTriggerFamily {
@@ -29,9 +30,18 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn condition_display(&self, config: &TriggerConfig) -> String;
     fn event_filter(&self) -> EventFilter;
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool;
-    fn build_arg_stack(&self, event: &Event) -> ArgStack;
-    fn output_schema(&self) -> Option<VariableSchema> {
+    fn variables(&self) -> Option<TriggerVariables> {
         None
+    }
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Undeclared
+    }
+    fn build_arg_stack(&self, event: &Event) -> ArgStack {
+        self.variables()
+            .map_or_else(ArgStack::new, |variables| variables.arg_stack(event))
+    }
+    fn output_schema(&self) -> Option<VariableSchema> {
+        self.variables().map(|variables| variables.schema())
     }
     /// `Some` only where the event carries a genuine chatter role signal - the chat envelopes
     /// attached to cheer, sub, gift and raid events do not qualify.

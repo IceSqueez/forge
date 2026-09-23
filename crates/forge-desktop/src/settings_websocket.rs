@@ -107,7 +107,7 @@ impl SettingsWebSocketView {
         let mut subs = Vec::new();
         subs.push(
             cx.subscribe(&port_input, |this, _input, event: &InputEvent, cx| {
-                if let InputEvent::Submitted(_) = event {
+                if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
                     this.commit_port(cx);
                 }
             }),

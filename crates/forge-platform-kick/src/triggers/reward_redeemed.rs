@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, kick_actor};
 use crate::payload_fields::reward as fields;
 
 pub(crate) struct RewardRedeemedDescriptor;
@@ -63,95 +65,82 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let redemption_id = event
-            .payload
-            .get(fields::ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let reward = event.payload.get(fields::REWARD);
-        let reward_id = reward
-            .and_then(|r| r.get(fields::ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let reward_title = reward
-            .and_then(|r| r.get(fields::REWARD_TITLE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let redeemer = event.payload.get(fields::REDEEMER);
-        let user_id = redeemer
-            .and_then(|r| r.get(fields::REDEEMER_USER_ID))
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
-        let username = redeemer
-            .and_then(|r| r.get(fields::REDEEMER_USERNAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let user_input = event
-            .payload
-            .get(fields::USER_INPUT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("redemption_id".to_owned(), Variant::String(redemption_id))
-            .set("reward_id".to_owned(), Variant::String(reward_id))
-            .set("reward_title".to_owned(), Variant::String(reward_title))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("username".to_owned(), Variant::String(username))
-            .set("user_input".to_owned(), Variant::String(user_input))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(kick_actor(ActorRole::Principal), redeemer_identity)
+                .message_text(|event| payload_read::text(event, fields::USER_INPUT))
+                .event_specific(
+                    DeclaredVariable {
+                        name: "redemption_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Redemption ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::ID)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "reward_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event.payload.get(fields::REWARD),
+                            fields::ID,
+                        ))
+                    },
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "reward_title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Reward title".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event.payload.get(fields::REWARD),
+                            fields::REWARD_TITLE,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "username".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Redeeming username".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| Variant::String(payload_read::login_of(redeemer_identity(event))),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "user_input".to_owned(),
+                        kind: VariantKind::String,
+                        label: "User input text".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    CanonicalVariable::MessageText,
+                    |event| Variant::String(payload_read::text(event, fields::USER_INPUT)),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "redemption_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Redemption ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "reward_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Reward ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "reward_title".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Reward title".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "user_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Redeeming user ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "username".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Redeeming username".to_owned(),
-                    synthesis: Some(SynthesisHint::Username),
-                },
-                DeclaredVariable {
-                    name: "user_input".to_owned(),
-                    kind: VariantKind::String,
-                    label: "User input text".to_owned(),
-                    synthesis: Some(SynthesisHint::Message),
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
+}
+
+fn redeemer_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity_keyed(
+        event.payload.get(fields::REDEEMER),
+        fields::REDEEMER_USER_ID,
+        fields::REDEEMER_USERNAME,
+    )
 }
 
 #[cfg(test)]
@@ -159,63 +148,68 @@ impl TriggerKindDescriptor for RewardRedeemedDescriptor {
 mod tests {
     use super::*;
 
-    #[test]
-    fn build_arg_stack_extracts_nested_reward_and_redeemer_fields() {
-        let event = Event::new(
+    use serde_json::json;
+
+    fn redemption_event(payload: serde_json::Value) -> Event {
+        Event::new(
             EventSource::Kick,
-            "kick.channel.reward_redeemed",
-            serde_json::json!({
-                "id": "rdm-1",
-                "reward": { "id": "rwd-2", "title": "Hydrate" },
-                "redeemer": { "user_id": 123, "username": "v" },
-                "user_input": "text"
-            }),
-        );
+            "kick.channel.reward.redemption.updated",
+            payload,
+        )
+    }
 
-        let stack = RewardRedeemedDescriptor.build_arg_stack(&event);
-
-        assert_eq!(
-            stack.get("redemption_id"),
-            Some(&Variant::String("rdm-1".to_owned()))
-        );
-        assert_eq!(
-            stack.get("reward_id"),
-            Some(&Variant::String("rwd-2".to_owned()))
-        );
-        assert_eq!(
-            stack.get("reward_title"),
-            Some(&Variant::String("Hydrate".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_id"),
-            Some(&Variant::String("123".to_owned()))
-        );
-        assert_eq!(
-            stack.get("username"),
-            Some(&Variant::String("v".to_owned()))
-        );
-        assert_eq!(
-            stack.get("user_input"),
-            Some(&Variant::String("text".to_owned()))
-        );
+    fn a_redemption_with_a_note() -> Event {
+        redemption_event(json!({
+            "id": "rdm-1",
+            "reward": { "id": "rwd-2", "title": "Hydrate" },
+            "redeemer": { "user_id": 123, "username": "v" },
+            "user_input": "drink up"
+        }))
     }
 
     #[test]
-    fn build_arg_stack_leaves_redeemer_fields_empty_when_object_absent() {
-        let event = Event::new(
-            EventSource::Kick,
-            "kick.channel.reward_redeemed",
-            serde_json::json!({
-                "id": "rdm-9",
-                "reward": { "id": "rwd-9", "title": "Anonymous reward" },
-                "user_input": ""
-            }),
+    fn the_redeemer_is_read_through_the_official_api_key_names() {
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&a_redemption_with_a_note());
+        for (name, value) in [
+            ("user_id", "123"),
+            ("user_login", "v"),
+            ("redemption_id", "rdm-1"),
+            ("reward_id", "rwd-2"),
+            ("reward_title", "Hydrate"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
+
+    #[test]
+    fn the_user_input_is_published_as_the_canonical_message_text() {
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&a_redemption_with_a_note());
+        assert_eq!(
+            stack.get("message_text"),
+            Some(&Variant::String("drink up".to_owned()))
         );
+        assert_eq!(stack.get("user_input"), stack.get("message_text"));
+        assert_eq!(stack.get("username"), stack.get("user_login"));
+    }
 
-        let stack = RewardRedeemedDescriptor.build_arg_stack(&event);
-
-        assert_eq!(stack.get("user_id"), Some(&Variant::String(String::new())));
-        assert_eq!(stack.get("username"), Some(&Variant::String(String::new())));
+    #[test]
+    fn a_redemption_the_wire_attributes_to_nobody_names_an_empty_redeemer() {
+        let stack = RewardRedeemedDescriptor.build_arg_stack(&redemption_event(json!({
+            "id": "rdm-9",
+            "reward": { "id": "rwd-9", "title": "Anonymous reward" },
+            "user_input": ""
+        })));
+        for name in ["user_id", "user_login", "user_name", "message_text"] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
         assert_eq!(
             stack.get("reward_id"),
             Some(&Variant::String("rwd-9".to_owned()))

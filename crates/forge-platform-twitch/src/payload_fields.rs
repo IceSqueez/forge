@@ -3,6 +3,7 @@ pub(crate) mod chat {
     pub(crate) const USER: &str = "user";
     pub(crate) const USER_LOGIN: &str = "login";
     pub(crate) const USER_ID: &str = "id";
+    pub(crate) const USER_DISPLAY_NAME: &str = "display_name";
     pub(crate) const USER_ROLES: &str = "roles";
     pub(crate) const MESSAGE: &str = "message";
     pub(crate) const BADGES: &str = "badges";
@@ -101,6 +102,7 @@ pub(crate) mod support {
     pub(crate) const RECIPIENT_LOGIN: &str = "login";
     pub(crate) const RECIPIENT_ID: &str = "id";
     pub(crate) const RECIPIENT_DISPLAY_NAME: &str = "display_name";
+    pub(crate) const GIFT_TOTAL: &str = "gift_total";
     pub(crate) const BITS: &str = "bits";
 }
 
@@ -352,7 +354,9 @@ pub(crate) mod ad_break {
     pub(crate) const IS_AUTOMATIC: &str = "is_automatic";
     pub(crate) const STARTED_AT: &str = "started_at";
     pub(crate) const REQUESTER: &str = "requester";
+    pub(crate) const REQUESTER_ID: &str = "id";
     pub(crate) const REQUESTER_LOGIN: &str = "login";
+    pub(crate) const REQUESTER_DISPLAY_NAME: &str = "display_name";
 }
 
 pub(crate) mod chat_mod {

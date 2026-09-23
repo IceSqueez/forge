@@ -49,7 +49,7 @@ impl InlineEdit {
         let sub = cx.subscribe(&input, |this, _f, event: &InputEvent, cx| match event {
             InputEvent::Submitted(_) => this.commit(cx),
             InputEvent::Cancelled => cx.emit(InlineEditEvent::Cancel),
-            InputEvent::Changed(_) => {}
+            InputEvent::Changed(_) | InputEvent::Blurred(_) => {}
         });
         Self {
             input,

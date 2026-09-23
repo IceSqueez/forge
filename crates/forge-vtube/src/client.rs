@@ -20,6 +20,7 @@ pub(crate) type VtsWs =
 
 pub(crate) const DEFAULT_VTS_HOST: &str = "127.0.0.1";
 pub(crate) const DEFAULT_VTS_PORT: u16 = 8001;
+pub(crate) const VTUBE_PLATFORM_ID: &str = "vtube";
 
 #[derive(Debug, Clone)]
 pub struct VTubeConfig {
@@ -135,7 +136,7 @@ impl VTubeClient {
 
         Self {
             config: cfg,
-            vtube_id: BuiltinId::new("vtube"),
+            vtube_id: BuiltinId::new(VTUBE_PLATFORM_ID),
             state,
             auth_state,
             shutdown,
@@ -227,7 +228,7 @@ impl VTubeClient {
             config: VTubeConfig {
                 endpoint: endpoint.into(),
             },
-            vtube_id: BuiltinId::new("vtube"),
+            vtube_id: BuiltinId::new(VTUBE_PLATFORM_ID),
             state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
             auth_state: Arc::new(RwLock::new(AuthState::Cold)),
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
@@ -270,7 +271,7 @@ impl Drop for VTubeClient {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub(crate) mod tests {
     use std::sync::atomic::{AtomicU32, Ordering as AO};
     use std::time::Duration;
@@ -282,6 +283,7 @@ pub(crate) mod tests {
 
     use super::*;
     use forge_events::{Event, EventPublisher};
+    use forge_platform_core::BuiltinControl;
 
     pub(crate) struct MockPublisher {
         pub events: Arc<std::sync::Mutex<Vec<Event>>>,
@@ -1078,5 +1080,191 @@ pub(crate) mod tests {
             "a cold start must announce the pending approval popup"
         );
         assert_eq!(client.auth_state(), AuthState::AwaitingApproval);
+    }
+
+    const UNREACHABLE_VTS: &str = "ws://192.0.2.1:8001/";
+
+    const PROMPT_DISCONNECT: Duration = Duration::from_secs(2);
+
+    const RETRY_BUDGET: Duration = Duration::from_secs(600);
+
+    const ATTEMPTS_BEFORE_VERDICT: usize = 3;
+
+    const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
+
+    async fn serve_refused_handshakes(
+        listener: tokio::net::TcpListener,
+        accepted: mpsc::UnboundedSender<()>,
+    ) {
+        while let Ok((stream, _)) = listener.accept().await {
+            drop(stream);
+            if accepted.send(()).is_err() {
+                return;
+            }
+        }
+    }
+
+    async fn serve_auth_then_announced_close(
+        listener: tokio::net::TcpListener,
+        gate: tokio::sync::oneshot::Receiver<()>,
+        settled: tokio::sync::oneshot::Sender<()>,
+    ) {
+        let Ok((stream, _)) = listener.accept().await else {
+            return;
+        };
+        let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+            return;
+        };
+        serve_full_auth(&mut ws).await;
+        if gate.await.is_err() {
+            return;
+        }
+        let _ = ws.close(None).await;
+        let _ = settled.send(());
+        while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
+    }
+
+    fn announced_states(publisher: &MockPublisher) -> Vec<String> {
+        publisher
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == forge_platform_core::CONNECTION_STATE_CHANGED_KIND)
+            .map(|e| {
+                e.payload["state"]
+                    .as_str()
+                    .unwrap_or("<missing>")
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
+        tokio::time::pause();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (accept_tx, mut accept_rx) = mpsc::unbounded_channel();
+        let server = tokio::spawn(serve_refused_handshakes(listener, accept_tx));
+        let publisher = MockPublisher::new();
+
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            publisher.publisher(),
+            MockCreds::new().creds(),
+        );
+
+        for attempt in 1..=ATTEMPTS_BEFORE_VERDICT {
+            tokio::time::timeout(RETRY_BUDGET, accept_rx.recv())
+                .await
+                .unwrap_or_else(|_| {
+                    panic!("the supervisor stopped retrying before attempt {attempt}")
+                })
+                .unwrap_or_else(|| panic!("the mock server stopped before attempt {attempt}"));
+        }
+        client.disconnect().await.unwrap();
+        server.abort();
+
+        assert_eq!(
+            announced_states(&publisher),
+            vec!["reconnecting".to_owned(), "disconnected".to_owned()],
+            "{ATTEMPTS_BEFORE_VERDICT} refused attempts must announce one retry, then the shutdown"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_reports_each_step_on_the_vtube_feed_as_well_as_the_shared_one() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
+        let (settled_tx, _settled_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_auth_then_announced_close(
+            listener, gate_rx, settled_tx,
+        ));
+        let publisher = MockPublisher::new();
+
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            publisher.publisher(),
+            MockCreds::new().creds(),
+        );
+        assert!(wait_for_connected(&publisher).await, "expected connected");
+        assert_eq!(
+            announced_states(&publisher),
+            vec!["connected".to_owned()],
+            "reaching a live session must also announce it on the shared feed"
+        );
+
+        let _ = gate_tx.send(());
+        assert!(
+            wait_for(|| publisher.disconnected_with_reason("socket_closed")).await,
+            "a dropped socket must still name socket_closed on the vtube feed"
+        );
+
+        let states = announced_states(&publisher);
+        server.abort();
+        drop(client);
+        assert_eq!(
+            states,
+            vec!["connected".to_owned(), "reconnecting".to_owned()],
+            "the shared feed must follow the same session steps the vtube feed reports"
+        );
+    }
+
+    #[tokio::test]
+    async fn disconnecting_during_an_unreachable_connect_does_not_wait_out_the_tcp_timeout() {
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: UNREACHABLE_VTS.to_owned(),
+            },
+            MockPublisher::new().publisher(),
+            MockCreds::new().creds(),
+        );
+        tokio::task::yield_now().await;
+
+        let outcome = tokio::time::timeout(PROMPT_DISCONNECT, client.disconnect()).await;
+
+        assert!(
+            outcome.is_ok(),
+            "disconnect queued behind the connect instead of cancelling it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (gate_tx, gate_rx) = tokio::sync::oneshot::channel();
+        let (settled_tx, settled_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(serve_auth_then_announced_close(
+            listener, gate_rx, settled_tx,
+        ));
+        let publisher = MockPublisher::new();
+
+        let client = VTubeClient::connect(
+            VTubeConfig {
+                endpoint: format!("ws://{addr}"),
+            },
+            publisher.publisher(),
+            MockCreds::new().creds(),
+        );
+        assert!(wait_for_connected(&publisher).await, "expected connected");
+        client.disconnect().await.unwrap();
+        publisher.events.lock().unwrap().clear();
+
+        let _ = gate_tx.send(());
+        let _ = tokio::time::timeout(PEER_SPEAKS_WINDOW, settled_rx).await;
+        tokio::task::yield_now().await;
+        server.abort();
+
+        assert!(
+            publisher.events.lock().unwrap().is_empty(),
+            "a client whose disconnect already returned published again"
+        );
     }
 }

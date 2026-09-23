@@ -3,15 +3,21 @@ use forge_types::Variant;
 
 use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
+use crate::metrics::ElementSizing;
+use crate::preview::{CANVAS_HEIGHT_PX, CANVAS_WIDTH_PX};
 
 pub const HEADLINE: &str = "headline";
 pub const SUBLINE: &str = "subline";
 pub const ACCENT: &str = "accent";
 pub const FONT: &str = "font";
 pub const POSITION: &str = "position";
+pub const ELEMENT_WIDTH: &str = "element_width";
+pub const ELEMENT_HEIGHT: &str = "element_height";
+pub const TEXT_SIZE: &str = "text_size";
 pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
+pub const ICON: &str = "icon";
 
 pub const AUTHOR: &str = "author";
 pub const AUTHOR_COLOR: &str = "author_color";
@@ -21,6 +27,18 @@ pub const MESSAGE: &str = "message";
 pub const LABEL: &str = "label";
 pub const VALUE: &str = "value";
 pub const TARGET: &str = "target";
+
+pub const CLIP_ID: &str = "clip_id";
+pub const CLIP_PATH: &str = "clip_path";
+pub const REPORT_PATH: &str = "report_path";
+pub const CLIP_MEDIA_TYPE: &str = "clip_media_type";
+pub const CLIP_DURATION_MS: &str = "clip_duration_ms";
+pub const COMMAND: &str = "command";
+
+pub const SOUND_OPTIONS_KEY: &str = "soundboard.clips";
+pub const ICON_OPTIONS_KEY: &str = "overlay.icons";
+
+pub const DEFAULT_ICON: &str = "star-filled";
 
 pub const ACCENT_OPTIONS: &[&str] = &["mauve", "sky", "green", "peach", "yellow", "red"];
 pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas Neue"];
@@ -36,6 +54,21 @@ pub const ANIMATION_OPTIONS: &[&str] = &[
 
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
+
+/// Sized the browser source itself; every page now fills the reference canvas, and a record that
+/// still names them is rewritten without them the next time it is saved.
+pub const RETIRED_KEYS: &[&str] = &["canvas_width", "canvas_height"];
+
+/// Width and height are absent while the element sizes itself, so neither carries a default.
+pub const ELEMENT_SIZE_MIN_PX: i64 = 40;
+pub const ELEMENT_WIDTH_MAX_PX: i64 = CANVAS_WIDTH_PX as i64;
+pub const ELEMENT_HEIGHT_MAX_PX: i64 = CANVAS_HEIGHT_PX as i64;
+
+pub const TEXT_SIZE_MIN_PX: i64 = 8;
+pub const TEXT_SIZE_MAX_PX: i64 = 200;
+
+pub const CLIP_DURATION_MIN_MS: i64 = 0;
+pub const CLIP_DURATION_MAX_MS: i64 = 60 * 60 * 1_000;
 
 pub fn effective_overlay_config(
     descriptor: &dyn OverlayKindDescriptor,
@@ -146,7 +179,7 @@ pub(crate) fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
 }
 
-pub(crate) fn shared_fields() -> Vec<SectionedField> {
+pub(crate) fn shared_fields(sizing: ElementSizing) -> Vec<SectionedField> {
     let mut fields = vec![
         in_section(
             ConfigSection::Content,
@@ -165,12 +198,12 @@ pub(crate) fn shared_fields() -> Vec<SectionedField> {
             },
         ),
     ];
-    fields.extend(shared_style_fields());
+    fields.extend(shared_style_fields(sizing));
     fields
 }
 
-pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
-    vec![
+pub(crate) fn shared_style_fields(sizing: ElementSizing) -> Vec<SectionedField> {
+    let mut fields = vec![
         in_section(
             ConfigSection::Style,
             FormField::Swatch {
@@ -195,15 +228,49 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
                 options: POSITION_OPTIONS,
             },
         ),
-        in_section(
-            ConfigSection::Behavior,
-            FormField::Select {
-                key: ANIMATION,
-                label: "Animation",
-                options: ANIMATION_OPTIONS,
+    ];
+
+    if sizing.width.is_some() {
+        fields.push(in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: ELEMENT_WIDTH,
+                label: "Width",
+                min: ELEMENT_SIZE_MIN_PX,
+                max: ELEMENT_WIDTH_MAX_PX,
             },
-        ),
-    ]
+        ));
+    }
+    if sizing.height.is_some() {
+        fields.push(in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: ELEMENT_HEIGHT,
+                label: "Height",
+                min: ELEMENT_SIZE_MIN_PX,
+                max: ELEMENT_HEIGHT_MAX_PX,
+            },
+        ));
+    }
+
+    fields.push(in_section(
+        ConfigSection::Style,
+        FormField::Integer {
+            key: TEXT_SIZE,
+            label: "Text size",
+            min: TEXT_SIZE_MIN_PX,
+            max: TEXT_SIZE_MAX_PX,
+        },
+    ));
+    fields.push(in_section(
+        ConfigSection::Behavior,
+        FormField::Select {
+            key: ANIMATION,
+            label: "Animation",
+            options: ANIMATION_OPTIONS,
+        },
+    ));
+    fields
 }
 
 pub(crate) fn author_field() -> SectionedField {
@@ -283,6 +350,74 @@ pub(crate) fn target_field() -> SectionedField {
     )
 }
 
+pub(crate) fn audio_content_fields() -> Vec<SectionedField> {
+    vec![
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: CLIP_ID,
+                label: "Clip",
+                placeholder: "",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: CLIP_PATH,
+                label: "Clip address",
+                placeholder: "",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: REPORT_PATH,
+                label: "Verdict address",
+                placeholder: "",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: CLIP_MEDIA_TYPE,
+                label: "Clip media type",
+                placeholder: "audio/wav",
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Integer {
+                key: CLIP_DURATION_MS,
+                label: "Clip length",
+                min: CLIP_DURATION_MIN_MS,
+                max: CLIP_DURATION_MAX_MS,
+            },
+        ),
+        in_section(
+            ConfigSection::Content,
+            FormField::Text {
+                key: COMMAND,
+                label: "Transport command",
+                placeholder: "stop",
+            },
+        ),
+    ]
+}
+
+pub(crate) fn audio_content_defaults() -> OverlayConfig {
+    OverlayConfig::from([
+        (CLIP_ID.to_owned(), text("")),
+        (CLIP_PATH.to_owned(), text("")),
+        (REPORT_PATH.to_owned(), text("")),
+        (CLIP_MEDIA_TYPE.to_owned(), text("")),
+        (
+            CLIP_DURATION_MS.to_owned(),
+            Variant::Int(CLIP_DURATION_MIN_MS),
+        ),
+        (COMMAND.to_owned(), text("")),
+    ])
+}
+
 pub(crate) fn duration_field() -> SectionedField {
     in_section(
         ConfigSection::Behavior,
@@ -296,13 +431,24 @@ pub(crate) fn duration_field() -> SectionedField {
     )
 }
 
+pub(crate) fn icon_field() -> SectionedField {
+    in_section(
+        ConfigSection::Style,
+        FormField::DynamicSelect {
+            key: ICON,
+            label: "Icon",
+            options_key: ICON_OPTIONS_KEY,
+        },
+    )
+}
+
 pub(crate) fn sound_field() -> SectionedField {
     in_section(
         ConfigSection::Behavior,
-        FormField::Text {
+        FormField::DynamicSelect {
             key: SOUND,
             label: "Sound",
-            placeholder: "fanfare.mp3",
+            options_key: SOUND_OPTIONS_KEY,
         },
     )
 }
@@ -316,8 +462,9 @@ pub(crate) fn shared_defaults(
     font: &str,
     position: &str,
     animation: &str,
+    sizing: ElementSizing,
 ) -> OverlayConfig {
-    let mut defaults = shared_style_defaults(accent, font, position, animation);
+    let mut defaults = shared_style_defaults(accent, font, position, animation, sizing);
     defaults.insert(SOUND.to_owned(), text(""));
     defaults
 }
@@ -327,12 +474,17 @@ pub(crate) fn shared_style_defaults(
     font: &str,
     position: &str,
     animation: &str,
+    sizing: ElementSizing,
 ) -> OverlayConfig {
     OverlayConfig::from([
         (ACCENT.to_owned(), text(accent)),
         (FONT.to_owned(), text(font)),
         (POSITION.to_owned(), text(position)),
         (ANIMATION.to_owned(), text(animation)),
+        (
+            TEXT_SIZE.to_owned(),
+            Variant::Int(i64::from(sizing.default_text_size_px())),
+        ),
     ])
 }
 

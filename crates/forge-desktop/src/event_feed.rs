@@ -252,7 +252,7 @@ impl EventFeedView {
             async move {
                 let filter = async_bridge::DialogFilter {
                     name: "JSON".to_owned(),
-                    extensions: &["json"],
+                    extensions: vec!["json"],
                 };
                 let path =
                     async_bridge::save_file(Some(filter), Some("forge-events.json".to_owned()))

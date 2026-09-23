@@ -1,3 +1,4 @@
+use forge_types::Variant;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -6,8 +7,13 @@ use crate::descriptor::OverlayKindDescriptor;
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
 use crate::materialize::GENERATOR_VERSION;
+use crate::media::{EmittedIcon, MediaSlot, emitted_icon, emitted_media_value, media_slot};
+use crate::sample::sample_content;
 
 pub const DOCUMENT_VERSION: u32 = 1;
+
+pub const ICON_FILE_FIELD: &str = "file";
+pub const ICON_TINTABLE_FIELD: &str = "tintable";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,7 +37,7 @@ pub fn config_document(
     let effective = effective_overlay_config(descriptor, &instance.config);
     let config = effective
         .iter()
-        .map(|(key, value)| (key.clone(), value.to_plain_json()))
+        .map(|(key, value)| (key.clone(), page_value(instance, key, value)))
         .collect();
 
     let document = ConfigDocument {
@@ -43,6 +49,60 @@ pub fn config_document(
         kind_id: descriptor.id(),
         config_schema_version: descriptor.config_schema_version(),
         config,
+    };
+
+    Ok(serde_json::to_string_pretty(&document)?)
+}
+
+fn page_value(instance: &OverlayInstance, key: &str, value: &Variant) -> Value {
+    let Some(stored) = value.as_str() else {
+        return value.to_plain_json();
+    };
+    let resolved = instance.media.for_key(key);
+    match media_slot(key) {
+        Some(MediaSlot::Icon) => icon_value(&emitted_icon(stored, resolved)),
+        Some(MediaSlot::Sound) => match emitted_media_value(key, stored, resolved) {
+            Some(emitted) => Value::String(emitted),
+            None => value.to_plain_json(),
+        },
+        None => value.to_plain_json(),
+    }
+}
+
+fn icon_value(icon: &EmittedIcon) -> Value {
+    Value::Object(Map::from_iter([
+        (ICON_FILE_FIELD.to_owned(), Value::String(icon.file.clone())),
+        (ICON_TINTABLE_FIELD.to_owned(), Value::Bool(icon.tintable)),
+    ]))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SampleDocument<'a> {
+    document_version: u32,
+    generator_version: u32,
+    overlay_id: &'a str,
+    kind_id: &'a str,
+    content: Map<String, Value>,
+}
+
+/// Carries no credential: this is the content a test delivery would send, and the page reads it
+/// only when it was opened as its own preview.
+pub fn sample_document(
+    instance: &OverlayInstance,
+    descriptor: &dyn OverlayKindDescriptor,
+) -> Result<String, OverlayError> {
+    let content = sample_content(descriptor, &instance.config, &instance.sample)
+        .into_iter()
+        .map(|(key, value)| (key, value.to_plain_json()))
+        .collect();
+
+    let document = SampleDocument {
+        document_version: DOCUMENT_VERSION,
+        generator_version: GENERATOR_VERSION,
+        overlay_id: instance.id.as_str(),
+        kind_id: descriptor.id(),
+        content,
     };
 
     Ok(serde_json::to_string_pretty(&document)?)

@@ -1,6 +1,7 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor,
 };
 use forge_types::{ArgStack, PlatformId, TriggerConfig, VariableSchema};
 
@@ -58,6 +59,10 @@ impl TriggerKindDescriptor for CharityStoppedDescriptor {
 
     fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
         true
+    }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actorless
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

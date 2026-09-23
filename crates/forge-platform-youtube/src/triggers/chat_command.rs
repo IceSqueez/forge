@@ -1,14 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, ChatTriggerFamily, EventFilter, FormField,
+    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{chat as fields, entity};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::chat as fields;
 
 pub(crate) struct ChatCommandDescriptor;
 
@@ -124,94 +125,63 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
         }
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let message_text = event
-            .payload
-            .get(fields::MESSAGE_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let command_name = event
-            .payload
-            .get(fields::COMMAND_NAME)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let args = event
-            .payload
-            .get(fields::ARGS)
-            .and_then(|v| v.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|s| Variant::String(s.to_owned()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let author = event.payload.get(fields::AUTHOR);
-        let user_display_name = author
-            .and_then(|a| a.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let channel_id = author
-            .and_then(|a| a.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("message_text".to_owned(), Variant::String(message_text))
-            .set("command_name".to_owned(), Variant::String(command_name))
-            .set("args".to_owned(), Variant::Array(args))
-            .set(
-                "user_display_name".to_owned(),
-                Variant::String(user_display_name),
-            )
-            .set("channel_id".to_owned(), Variant::String(channel_id))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), author_identity)
+                .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
+                .event_specific(
+                    DeclaredVariable {
+                        name: "command_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Command name".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::COMMAND_NAME)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "args".to_owned(),
+                        kind: VariantKind::Array,
+                        label: "Command arguments".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| payload_read::text_list(event, fields::ARGS),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "user_display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| Variant::String(author_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(author_identity(event).id),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "message_text".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Message text".to_owned(),
-                    synthesis: Some(SynthesisHint::Message),
-                },
-                DeclaredVariable {
-                    name: "command_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Command name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "args".to_owned(),
-                    kind: VariantKind::Array,
-                    label: "Command arguments".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "user_display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-                DeclaredVariable {
-                    name: "channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Sender channel ID".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
 
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         Some(ChatTriggerFamily::Command)
     }
+}
+
+fn author_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::AUTHOR))
 }
 
 #[cfg(test)]
@@ -240,35 +210,55 @@ mod tests {
     }
 
     #[test]
-    fn matches_case_insensitive_prefix() {
-        let cfg = make_config("!roll", false);
-        assert!(ChatCommandDescriptor.matches_trigger(&cfg, &command_event("!Roll 1d6")));
+    fn a_phrase_matches_only_at_the_start_and_only_ignores_case_when_told_to() {
+        for (phrase, case_sensitive, message, expected) in [
+            ("!roll", false, "!Roll 1d6", true),
+            ("!roll", false, "!roll", true),
+            ("!roll", true, "!roll 1d6", true),
+            ("!roll", true, "!Roll 1d6", false),
+            ("!roll", false, "please !roll", false),
+            ("", false, "!anything", false),
+        ] {
+            assert_eq!(
+                ChatCommandDescriptor.matches_trigger(
+                    &make_config(phrase, case_sensitive),
+                    &command_event(message)
+                ),
+                expected,
+                "phrase {phrase:?} case_sensitive {case_sensitive} message {message:?}"
+            );
+        }
     }
 
     #[test]
-    fn does_not_match_empty_phrase() {
-        let cfg = make_config("", false);
-        assert!(!ChatCommandDescriptor.matches_trigger(&cfg, &command_event("!anything")));
-    }
-
-    #[test]
-    fn build_arg_stack_extracts_command_fields() {
+    fn a_command_publishes_its_sender_its_name_and_its_arguments() {
         let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!roll 1d6"));
-        assert_eq!(
-            stack.get("message_text"),
-            Some(&Variant::String("!roll 1d6".to_owned()))
-        );
-        assert_eq!(
-            stack.get("command_name"),
-            Some(&Variant::String("roll".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "UCabc"),
+            ("user_name", "Viewer"),
+            ("message_text", "!roll 1d6"),
+            ("command_name", "roll"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(
             stack.get("args"),
             Some(&Variant::Array(vec![Variant::String("1d6".to_owned())]))
         );
+    }
+
+    #[test]
+    fn the_legacy_sender_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = ChatCommandDescriptor.build_arg_stack(&command_event("!roll 1d6"));
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
         assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("Viewer".to_owned()))
+            stack.get("channel_id"),
+            Some(&Variant::String("UCabc".to_owned()))
         );
     }
 }

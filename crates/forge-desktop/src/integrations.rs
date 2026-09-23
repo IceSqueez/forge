@@ -107,6 +107,17 @@ impl ObsInstallSeed {
         *guard = None;
     }
 
+    /// Returns once the retired client's supervisor has joined, so it can no longer publish.
+    pub async fn disconnect_live(&self) {
+        let previous = {
+            let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+            guard.take()
+        };
+        if let Some(client) = previous {
+            let _ = client.disconnect().await;
+        }
+    }
+
     pub fn live(&self) -> Option<Arc<forge_obs::ObsClient>> {
         let guard = self.live.read().unwrap_or_else(|e| e.into_inner());
         guard.clone()
@@ -1214,6 +1225,46 @@ mod tests {
             expect_send(&mut twitch_rx).await,
             ("twitch".to_string(), "sentinel".to_string()),
             "a platform-sourced request must be ignored so bridges cannot re-enter"
+        );
+    }
+
+    struct SilentPublisher;
+
+    impl EventPublisher for SilentPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    async fn listening_but_silent_port() -> (tokio::net::TcpListener, u16) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        (listener, port)
+    }
+
+    #[tokio::test]
+    async fn retiring_the_live_client_empties_the_slot_and_leaves_it_disconnected() {
+        let (_listener, port) = listening_but_silent_port().await;
+        let seed = ObsInstallSeed::new(forge_obs::SwitchableObsSink::new());
+        let client = Arc::new(
+            forge_obs::ObsClient::connect(
+                &format!("127.0.0.1:{port}"),
+                None,
+                Arc::new(SilentPublisher),
+            )
+            .await
+            .unwrap(),
+        );
+        seed.install(Arc::clone(&client));
+
+        seed.disconnect_live().await;
+
+        assert!(
+            seed.live().is_none(),
+            "a reconnect whose new connect fails must leave no live client behind"
+        );
+        assert_eq!(
+            client.connection_state(),
+            ConnectionState::Disconnected,
+            "the retired client was released before its supervisor joined"
         );
     }
 }

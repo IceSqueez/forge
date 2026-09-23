@@ -213,6 +213,41 @@ pub(crate) fn actual(
             summary: "the run has no fake Twitch (the scenario needs both `fixture.twitch` and `fakes.twitch`), so the check could not run".to_owned(),
             details: Vec::new(),
         },
+        (FailureCause::NoOverlayPage { overlay }, _) => Actual {
+            summary: format!(
+                "no page is open for overlay {}, so forge had nowhere to deliver content",
+                code(overlay)
+            ),
+            details: Vec::new(),
+        },
+        (
+            FailureCause::NoOverlayContent { observed },
+            Expectation::OverlayContent(content),
+        ) => Actual {
+            summary: if *observed == 0 {
+                format!(
+                    "the page for {} received no content frame within {}",
+                    code(&content.overlay),
+                    span_ms(content.within_ms)
+                )
+            } else {
+                format!(
+                    "the page for {} received {} within {}, none carrying those values",
+                    code(&content.overlay),
+                    plural(*observed as u64, "content frame"),
+                    span_ms(content.within_ms)
+                )
+            },
+            details: overlay_details(&outcome.evidence),
+        },
+        (FailureCause::TaggedOverlayValue { pointers }, _) => Actual {
+            summary: format!(
+                "the content frame carries tagged Variant JSON at {}; a page renders that as {}",
+                pointers.iter().map(|p| code(p)).collect::<Vec<_>>().join(", "),
+                code("[object Object]")
+            ),
+            details: overlay_details(&outcome.evidence),
+        },
         (FailureCause::NoLogLine, Expectation::LogLine(line)) => Actual {
             summary: format!(
                 "no line on target {} carried those fields within {}",
@@ -401,6 +436,39 @@ fn subscription_details(ledger: &LedgerExcerpt, expected: &TwitchSubscription) -
         details.push(format!(
             "{} failed the fake's credential check",
             plural(refused as u64, "request")
+        ));
+    }
+    details
+}
+
+/// The raw frames, so the reader judges what the page had to render rather than a summary of it.
+fn overlay_details(evidence: &Evidence) -> Vec<String> {
+    let Evidence::Overlay(overlay) = evidence else {
+        return Vec::new();
+    };
+    let mut details = Vec::new();
+    if !overlay.mismatched.is_empty() {
+        details.push(format!(
+            "closest frame differs at {}",
+            overlay
+                .mismatched
+                .iter()
+                .map(|key| code(key))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    details.extend(overlay.frames.iter().take(LISTED).map(|frame| {
+        format!(
+            "at +{} ms the page received {}",
+            frame.arrived_ms,
+            code(&compact(&frame.content, VALUE_CHARS))
+        )
+    }));
+    if overlay.frames.len() > LISTED {
+        details.push(format!(
+            "{} further content frame(s) are in the machine-readable report",
+            overlay.frames.len() - LISTED
         ));
     }
     details

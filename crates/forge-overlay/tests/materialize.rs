@@ -3,9 +3,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use forge_overlay::config::SOUND;
 use forge_overlay::{
-    BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OverlayConfig, OverlayError, OverlayInstance,
-    OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE, ensure_shared_directory,
+    BEHAVIOR_FILE, CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MARKUP_FILE, OverlayConfig,
+    OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia, RESERVED_DIRECTORY,
+    RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE, STYLE_FILE, SampleContext, ensure_shared_directory,
     materialize_overlay, register_builtin_kinds, remove_overlay_directory,
 };
 use forge_types::Variant;
@@ -43,7 +45,38 @@ fn instance(source_overrides: &[&str]) -> OverlayInstance {
         config: OverlayConfig::new(),
         source_overrides: source_overrides.iter().map(|n| (*n).to_owned()).collect(),
         credential: None,
+        media: OverlayMedia::default(),
+        sample: SampleContext::neutral(),
     }
+}
+
+const BLOB_IDENTITY: &str =
+    "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
+const OTHER_IDENTITY: &str =
+    "sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8";
+const MEDIA_FORMAT: &str = "wav";
+const MEDIA_BYTES: &[u8] = b"RIFF\x04\x00\x00\x00WAVE";
+
+fn media_file(identity: &str) -> String {
+    format!("{identity}.{MEDIA_FORMAT}")
+}
+
+fn resolved_media(identity: &str) -> ResolvedMedia {
+    ResolvedMedia::new(SOUND, identity, MEDIA_FORMAT, MEDIA_BYTES.to_vec())
+        .expect("a content id is a safe token")
+}
+
+fn instance_holding(resolved: Vec<ResolvedMedia>) -> OverlayInstance {
+    let mut held = instance(&[]);
+    held.media = OverlayMedia {
+        resolved,
+        issues: Vec::new(),
+    };
+    held
+}
+
+fn namespace_of(directory: &Path) -> PathBuf {
+    directory.join(GENERATED_MEDIA_DIRECTORY)
 }
 
 fn unborn_root(home: &TempDir) -> PathBuf {
@@ -77,6 +110,7 @@ fn generated_page() -> Vec<String> {
         STYLE_FILE.to_owned(),
         BEHAVIOR_FILE.to_owned(),
         CONFIG_FILE.to_owned(),
+        SAMPLE_FILE.to_owned(),
     ])
 }
 
@@ -163,13 +197,15 @@ fn an_overridden_file_survives_every_regeneration_byte_for_byte() {
 }
 
 #[test]
-fn the_config_document_is_rewritten_even_when_every_source_file_is_overridden() {
+fn the_generated_documents_are_rewritten_even_when_every_source_file_is_overridden() {
     let home = TempDir::new().unwrap();
     let root = unborn_root(&home);
     let reg = registry();
 
     let first = materialize_overlay(&root, &instance(&[]), &reg).expect("first materialize");
-    fs::write(first.directory.join(CONFIG_FILE), "stale document").unwrap();
+    for name in [CONFIG_FILE, SAMPLE_FILE] {
+        fs::write(first.directory.join(name), "stale document").unwrap();
+    }
     for name in [MARKUP_FILE, STYLE_FILE, BEHAVIOR_FILE] {
         fs::write(first.directory.join(name), format!("user body for {name}")).unwrap();
     }
@@ -183,14 +219,16 @@ fn the_config_document_is_rewritten_even_when_every_source_file_is_overridden() 
 
     assert_eq!(
         report.written,
-        vec![CONFIG_FILE.to_owned()],
-        "the config document is data and can never be user owned"
+        vec![CONFIG_FILE.to_owned(), SAMPLE_FILE.to_owned()],
+        "a generated document is data and can never be user owned"
     );
-    assert_ne!(
-        fs::read_to_string(first.directory.join(CONFIG_FILE)).unwrap(),
-        "stale document",
-        "a fully overridden overlay still needs fresh configuration"
-    );
+    for name in [CONFIG_FILE, SAMPLE_FILE] {
+        assert_ne!(
+            fs::read_to_string(first.directory.join(name)).unwrap(),
+            "stale document",
+            "a fully overridden overlay still needs a fresh {name}"
+        );
+    }
     for name in [MARKUP_FILE, STYLE_FILE, BEHAVIOR_FILE] {
         assert_eq!(
             fs::read_to_string(first.directory.join(name)).unwrap(),
@@ -228,6 +266,7 @@ fn override_names_outside_the_overridable_set_are_ignored() {
         &root,
         &instance(&[
             CONFIG_FILE,
+            SAMPLE_FILE,
             "overlay.CSS",
             "../../etc/passwd",
             "styles.css",
@@ -503,5 +542,258 @@ fn removing_an_overlay_directory_that_is_a_symbolic_link_leaves_its_target_alone
         fs::read_to_string(elsewhere.join("keep.txt")).unwrap(),
         "victim content",
         "the removal followed a link out of the overlay root"
+    );
+}
+
+#[test]
+fn resolved_media_is_written_under_the_generated_namespace_beside_the_untouched_page() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+
+    let report = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &registry(),
+    )
+    .expect("an overlay carrying media materializes");
+
+    let namespace = namespace_of(&report.directory);
+    assert_eq!(report.media_written, vec![media_file(BLOB_IDENTITY)]);
+    assert_eq!(names_in(&namespace), vec![media_file(BLOB_IDENTITY)]);
+    assert_eq!(
+        fs::read(namespace.join(media_file(BLOB_IDENTITY))).unwrap(),
+        MEDIA_BYTES,
+        "the generated file did not receive the clip bytes"
+    );
+    let mut expected = generated_page();
+    expected.push(GENERATED_MEDIA_DIRECTORY.to_owned());
+    assert_eq!(
+        names_in(&report.directory),
+        sorted(&expected),
+        "media writing added or removed something beside the namespace"
+    );
+}
+
+#[test]
+fn a_content_named_file_already_on_disk_is_never_rewritten() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+    let held = instance_holding(vec![resolved_media(BLOB_IDENTITY)]);
+
+    let first = materialize_overlay(&root, &held, &reg).expect("first pass");
+    let landed = namespace_of(&first.directory).join(media_file(BLOB_IDENTITY));
+    let cached = b"the body a browser already cached under this name";
+    fs::write(&landed, cached).unwrap();
+
+    let second = materialize_overlay(&root, &held, &reg).expect("second pass");
+
+    assert!(
+        second.media_written.is_empty(),
+        "a content-named file that is already there must not be reported written again"
+    );
+    assert_eq!(
+        fs::read(&landed).unwrap(),
+        cached,
+        "the content-named file was rewritten, so its cached body could go stale"
+    );
+}
+
+#[test]
+fn a_generated_file_the_config_no_longer_names_is_swept_from_the_namespace() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+
+    let first = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    )
+    .expect("first pass");
+    let namespace = namespace_of(&first.directory);
+
+    let second = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(OTHER_IDENTITY)]),
+        &reg,
+    )
+    .expect("second pass");
+
+    assert_eq!(second.media_removed, vec![media_file(BLOB_IDENTITY)]);
+    assert_eq!(
+        names_in(&namespace),
+        vec![media_file(OTHER_IDENTITY)],
+        "replacing the clip must leave exactly the file the config now names"
+    );
+}
+
+#[test]
+fn the_sweep_never_reaches_a_file_of_the_same_name_outside_the_namespace() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+
+    let first = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    )
+    .expect("first pass");
+    let twin = first.directory.join(media_file(BLOB_IDENTITY));
+    fs::write(&twin, b"a file the user put in the overlay directory").unwrap();
+
+    let second =
+        materialize_overlay(&root, &instance_holding(Vec::new()), &reg).expect("second pass");
+
+    assert_eq!(second.media_removed, vec![media_file(BLOB_IDENTITY)]);
+    assert!(
+        names_in(&namespace_of(&first.directory)).is_empty(),
+        "dropping the reference must empty the namespace"
+    );
+    assert_eq!(
+        fs::read(&twin).unwrap(),
+        b"a file the user put in the overlay directory",
+        "the sweep matched on the name and reached outside the namespace"
+    );
+}
+
+#[test]
+fn a_subdirectory_planted_in_the_namespace_is_reported_and_left_standing() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+
+    let first = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    )
+    .expect("first pass");
+    let planted = namespace_of(&first.directory).join("nested");
+    fs::create_dir(&planted).unwrap();
+    fs::write(planted.join("keep.txt"), b"planted").unwrap();
+
+    let second =
+        materialize_overlay(&root, &instance_holding(Vec::new()), &reg).expect("second pass");
+
+    assert!(
+        second
+            .media_sweep_failures
+            .iter()
+            .any(|path| path.ends_with("nested")),
+        "a directory the sweep cannot remove must be reported: {:?}",
+        second.media_sweep_failures
+    );
+    assert!(
+        planted.join("keep.txt").exists(),
+        "the sweep recursed into a planted directory"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_planted_in_the_namespace_is_reported_and_its_target_is_left_alone() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+    let outside = home.path().join("victim.wav");
+    fs::write(&outside, b"victim content").unwrap();
+
+    let first = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    )
+    .expect("first pass");
+    let planted = namespace_of(&first.directory).join(media_file(OTHER_IDENTITY));
+    std::os::unix::fs::symlink(&outside, &planted).unwrap();
+
+    let second = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    )
+    .expect("second pass");
+
+    assert!(
+        second
+            .media_sweep_failures
+            .iter()
+            .any(|path| path.ends_with(&media_file(OTHER_IDENTITY))),
+        "a linked entry the sweep refuses must be reported: {:?}",
+        second.media_sweep_failures
+    );
+    assert_eq!(
+        fs::read(&outside).unwrap(),
+        b"victim content",
+        "the sweep deleted through a link and out of the overlay root"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_namespace_that_cannot_be_read_is_reported_without_failing_the_pass() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+
+    let first = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    )
+    .expect("first pass");
+    let namespace = namespace_of(&first.directory);
+    fs::set_permissions(&namespace, fs::Permissions::from_mode(0o300)).unwrap();
+
+    let second = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    );
+    fs::set_permissions(&namespace, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let second = second.expect("an unsweepable namespace must not fail the overlay");
+    assert_eq!(
+        second.media_sweep_failures,
+        vec![namespace.to_string_lossy().into_owned()],
+        "an unreadable namespace must be named in the report"
+    );
+    assert_eq!(
+        sorted(&second.written),
+        generated_page(),
+        "an unsweepable namespace stopped the pass from writing the page"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_namespace_that_is_a_symbolic_link_is_refused_without_writing_through_it() {
+    let home = TempDir::new().unwrap();
+    let root = unborn_root(&home);
+    let reg = registry();
+    let elsewhere = home.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+
+    let first = materialize_overlay(&root, &instance(&[]), &reg).expect("first pass");
+    std::os::unix::fs::symlink(&elsewhere, namespace_of(&first.directory)).unwrap();
+
+    let err = materialize_overlay(
+        &root,
+        &instance_holding(vec![resolved_media(BLOB_IDENTITY)]),
+        &reg,
+    )
+    .expect_err("a linked media namespace must be refused");
+
+    assert!(
+        matches!(&err, OverlayError::SymlinkedPath { .. }),
+        "{err:?}"
+    );
+    assert!(
+        names_in(&elsewhere).is_empty(),
+        "the link target received the generated media"
     );
 }

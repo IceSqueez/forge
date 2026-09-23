@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use forge_registry::{FormField, SubActionRegistry, TriggerRegistry};
+use forge_registry::{FormField, SubActionRegistry, TriggerRegistry, declared_variables};
 use forge_types::{
     Action, ExecutionMode, SubActionOutcome, SubActionStep, TriggerInstance, Variant,
     normalize_var_name,
@@ -50,28 +50,15 @@ impl StepHealth {
     }
 }
 
-const OVERLAY_SEND_KIND: &str = "overlay.send";
-const OVERLAY_TARGET_KEY: &str = "overlay_id";
-
 pub(super) fn sends_order_sensitive_overlay(
     steps: &[SubActionStep],
     registry: &SubActionRegistry,
     order_sensitive: &dyn Fn(&str) -> bool,
 ) -> bool {
-    steps.iter().any(|step| {
-        if !step.enabled {
-            return false;
-        }
-        let hits = step.kind_id == OVERLAY_SEND_KIND
-            && step
-                .config
-                .get(OVERLAY_TARGET_KEY)
-                .and_then(Variant::as_str)
-                .is_some_and(order_sensitive);
-        hits || nested_chains(step, registry)
-            .iter()
-            .any(|chain| sends_order_sensitive_overlay(chain, registry, order_sensitive))
-    })
+    forge_runtime::overlay_send_targets(steps, registry)
+        .iter()
+        .filter_map(forge_runtime::OverlaySendTarget::overlay)
+        .any(order_sensitive)
 }
 
 struct TriggerSeed {
@@ -154,8 +141,13 @@ fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Opt
     }
     let mut schemas: Vec<HashSet<String>> = Vec::with_capacity(triggers.len());
     for instance in triggers {
-        let schema = registry.get(&instance.kind_id)?.output_schema()?;
-        schemas.push(schema.variables.into_iter().map(|v| v.name).collect());
+        let declared = declared_variables(registry.get(&instance.kind_id)?)?;
+        schemas.push(
+            declared
+                .into_iter()
+                .map(|variable| variable.declared.name)
+                .collect(),
+        );
     }
     let mut all = HashSet::new();
     for names in &schemas {
@@ -419,17 +411,102 @@ fn fixed_after_outputs(kind_id: &str) -> &'static [&'static str] {
 mod tests {
     use std::sync::Arc;
 
-    use forge_registry::SubActionRegistry;
+    use forge_events::Event;
+    use forge_registry::{
+        ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
+        SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    };
     use forge_runtime::sub_action_runners::CoreLogicIfThenElseRunner;
     use forge_runtime::{ConditionGate, Config};
-    use forge_types::SubActionConfig;
+    use forge_types::{
+        ActionId, ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PermissionRung,
+        PlatformId, PlatformScope, QueueId, SubActionConfig, TriggerConfig, TriggerInstanceId,
+        VariableSchema, VariantKind,
+    };
 
     use super::*;
+
+    struct StubTrigger {
+        id: &'static str,
+        variables: fn() -> TriggerVariables,
+    }
+
+    impl StubTrigger {
+        fn declaring(id: &'static str, variables: fn() -> TriggerVariables) -> Self {
+            StubTrigger { id, variables }
+        }
+    }
+
+    impl TriggerKindDescriptor for StubTrigger {
+        fn id(&self) -> &str {
+            self.id
+        }
+
+        fn category(&self) -> TriggerCategory {
+            TriggerCategory::Chat
+        }
+
+        fn label(&self) -> &str {
+            self.id
+        }
+
+        fn summary(&self) -> &str {
+            self.id
+        }
+
+        fn search_text(&self) -> &str {
+            self.id
+        }
+
+        fn icon_name(&self) -> &str {
+            "chat"
+        }
+
+        fn platform_contract(&self) -> KindPlatformContract {
+            KindPlatformContract::PlatformSpecific(PlatformId::Kick)
+        }
+
+        fn default_config(&self) -> TriggerConfig {
+            TriggerConfig::new()
+        }
+
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+
+        fn condition_display(&self, _config: &TriggerConfig) -> String {
+            String::new()
+        }
+
+        fn event_filter(&self) -> EventFilter {
+            EventFilter {
+                source: None,
+                kind_prefix: None,
+            }
+        }
+
+        fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
+            true
+        }
+
+        fn variables(&self) -> Option<TriggerVariables> {
+            Some((self.variables)())
+        }
+
+        fn output_schema(&self) -> Option<VariableSchema> {
+            self.variables().map(|variables| variables.schema())
+        }
+    }
 
     const BRANCH_KIND: &str = "core.logic.if_then_else";
     const THEN_CHAIN_KEY: &str = "then_chain";
     const ORDERED: &str = "chat-wall";
     const UNORDERED: &str = "alert-box";
+    const CONSUMER_KIND: &str = "chat.send";
+    const MESSAGE_KEY: &str = "message";
+    const LEGACY_TRIGGER: &str = "stub.chat_with_legacy";
+    const CANONICAL_TRIGGER: &str = "stub.chat_canonical";
+    const LEGACY_NAME: &str = "username";
 
     fn registry() -> SubActionRegistry {
         let mut reg = SubActionRegistry::new();
@@ -451,65 +528,45 @@ mod tests {
         }
     }
 
-    fn send(identity: &str, enabled: bool) -> SubActionStep {
+    fn send(identity: &str) -> SubActionStep {
         step(
-            OVERLAY_SEND_KIND,
+            forge_runtime::OVERLAY_SEND_KIND_ID,
             SubActionConfig::from([(
-                OVERLAY_TARGET_KEY.to_owned(),
+                forge_runtime::OVERLAY_TARGET_KEY.to_owned(),
                 Variant::String(identity.to_owned()),
             )]),
-            enabled,
+            true,
         )
     }
 
-    fn branch(body: Vec<SubActionStep>, enabled: bool) -> SubActionStep {
+    fn branch(body: Vec<SubActionStep>) -> SubActionStep {
         step(
             BRANCH_KIND,
             SubActionConfig::from([(THEN_CHAIN_KEY.to_owned(), nav::encode_chain(&body))]),
-            enabled,
+            true,
         )
     }
 
     #[test]
-    fn an_ordered_overlay_counts_through_nested_branches_and_never_through_a_disabled_step() {
+    fn only_a_resolved_order_sensitive_target_raises_the_warning() {
         for (steps, expected, label) in [
             (
-                vec![send(ORDERED, true)],
+                vec![send(ORDERED)],
                 true,
                 "a step sending to an overlay whose delivery order matters",
             ),
             (
-                vec![send(UNORDERED, true)],
+                vec![send(UNORDERED)],
                 false,
                 "a step sending to an overlay whose delivery order does not matter",
             ),
             (
-                vec![send(ORDERED, false)],
-                false,
-                "a disabled step that will never deliver anything",
-            ),
-            (
-                vec![branch(vec![send(ORDERED, true)], true)],
+                vec![branch(vec![send(ORDERED)])],
                 true,
-                "an ordered overlay one branch deep",
+                "an ordered overlay inside a branch this screen encoded itself",
             ),
             (
-                vec![branch(vec![branch(vec![send(ORDERED, true)], true)], true)],
-                true,
-                "an ordered overlay two branches deep",
-            ),
-            (
-                vec![branch(vec![send(ORDERED, true)], false)],
-                false,
-                "an ordered overlay inside a disabled branch",
-            ),
-            (
-                vec![branch(vec![send(ORDERED, false)], true)],
-                false,
-                "a disabled step inside a live branch",
-            ),
-            (
-                vec![send("%overlay_target%", true)],
+                vec![send("%overlay_target%")],
                 false,
                 "an overlay named by a variable no stored identity matches",
             ),
@@ -520,5 +577,134 @@ mod tests {
                 "{label}"
             );
         }
+    }
+
+    fn chatter(_event: &forge_events::Event) -> ActorIdentity {
+        ActorIdentity {
+            id: "51938264".to_owned(),
+            display_name: "StreamFan42".to_owned(),
+            login: Some("streamfan42".to_owned()),
+        }
+    }
+
+    fn principal_block() -> ActorBlock {
+        ActorBlock {
+            role: ActorRole::Principal,
+            platform: PlatformId::Kick,
+            login: LoginSlot::Declared,
+        }
+    }
+
+    fn canonical_actor_only() -> TriggerVariables {
+        TriggerVariables::new().actor(principal_block(), chatter)
+    }
+
+    fn canonical_actor_plus_legacy_username() -> TriggerVariables {
+        canonical_actor_only().legacy(
+            DeclaredVariable {
+                name: LEGACY_NAME.to_owned(),
+                kind: VariantKind::String,
+                label: "Username".to_owned(),
+                synthesis: None,
+            },
+            CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+            |_| Variant::String("streamfan42".to_owned()),
+        )
+    }
+
+    fn triggers(descriptors: Vec<StubTrigger>) -> TriggerRegistry {
+        let mut reg = TriggerRegistry::new();
+        for descriptor in descriptors {
+            reg.register(Box::new(descriptor))
+                .expect("each stub trigger registers under its own id");
+        }
+        reg
+    }
+
+    fn instance(kind_id: &str) -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: kind_id.to_owned(),
+            name: kind_id.to_owned(),
+            overrides: TriggerConfig::new(),
+            enabled: true,
+            user_defined: false,
+            platform_scope: PlatformScope::Any,
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::default(),
+        }
+    }
+
+    fn action_consuming(templates: &[&str]) -> Action {
+        Action {
+            id: ActionId::new(),
+            name: "stub action".to_owned(),
+            group: None,
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: ExecutionMode::Sequential,
+            description: None,
+            sub_actions: templates
+                .iter()
+                .map(|template| {
+                    step(
+                        CONSUMER_KIND,
+                        SubActionConfig::from([(
+                            MESSAGE_KEY.to_owned(),
+                            Variant::String((*template).to_owned()),
+                        )]),
+                        true,
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_legacy_name_a_step_consumes_is_never_reported_as_unknown() {
+        let health = analyze(
+            &action_consuming(&["%username%", "%not_declared_anywhere%"]),
+            &[instance(LEGACY_TRIGGER)],
+            &[None, None],
+            &registry(),
+            &triggers(vec![StubTrigger::declaring(
+                LEGACY_TRIGGER,
+                canonical_actor_plus_legacy_username,
+            )]),
+        );
+
+        assert_eq!(
+            health,
+            vec![
+                StepHealth::default(),
+                StepHealth {
+                    findings: vec![Finding::UnknownVariable("not_declared_anywhere".to_owned())],
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn a_legacy_name_only_one_of_two_triggers_declares_is_reported_as_some_triggers_only() {
+        let health = analyze(
+            &action_consuming(&["%username%"]),
+            &[instance(LEGACY_TRIGGER), instance(CANONICAL_TRIGGER)],
+            &[None],
+            &registry(),
+            &triggers(vec![
+                StubTrigger::declaring(LEGACY_TRIGGER, canonical_actor_plus_legacy_username),
+                StubTrigger::declaring(CANONICAL_TRIGGER, canonical_actor_only),
+            ]),
+        );
+
+        assert_eq!(
+            health,
+            vec![StepHealth {
+                findings: vec![Finding::SomeTriggersOnly(LEGACY_NAME.to_owned())],
+            }],
+        );
     }
 }

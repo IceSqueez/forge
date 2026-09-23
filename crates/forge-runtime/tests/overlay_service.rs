@@ -1,19 +1,20 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use forge_overlay::{
-    CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry, RESERVED_DIRECTORY,
-    STYLE_FILE, register_builtin_kinds, sample_content,
+    AudioAnnouncement, CONFIG_FILE, GENERATOR_VERSION, MARKUP_FILE, OverlayKindRegistry,
+    RESERVED_DIRECTORY, STYLE_FILE, announcement_content, register_builtin_kinds,
 };
 use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
-    EventBus, MaterializePass, NullEventLogRepo, OverlayConnectListener, OverlayFrameSink,
-    OverlayServiceError, OverlayServiceHandle,
+    EventBus, MaterializePass, NullEventLogRepo, OverlayConnectListener, OverlayDelivery,
+    OverlayFrameSink, OverlayReceivers, OverlayServiceError, OverlayServiceHandle,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -25,14 +26,31 @@ use tempfile::TempDir;
 use time::OffsetDateTime;
 
 const ALERT_KIND: &str = "overlay.alert";
+const AUDIO_KIND: &str = "overlay.audio";
 const CHAT_KIND: &str = "overlay.chat";
 const GOAL_KIND: &str = "overlay.goal";
 const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
+
+const CLIP_ID: &str = "5f2a";
+const CLIP_PATH: &str = "/audio/v1/clip/n3Zq";
+const REPORT_PATH: &str = "/audio/v1/report/n3Zq";
+const CLIP_MEDIA_TYPE: &str = "audio/wav";
+const CLIP_DURATION_MS: u64 = 2_500;
 
 const LABEL_KEY: &str = "label";
 const VALUE_KEY: &str = "value";
 const TARGET_KEY: &str = "target";
 const ACCENT_KEY: &str = "accent";
+const HEADLINE_KEY: &str = "headline";
+const SUBLINE_KEY: &str = "subline";
+
+const TAG_KEY: &str = "type";
+const TAGGED_VALUE_KEY: &str = "value";
+
+const SAMPLE_HEADLINE: &str = "Thanks for the raid";
+const SAMPLE_SUBLINE: &str = "200 viewers arrived";
+const SAMPLE_UNIX_SECONDS: i64 = 1_700_000_000;
+const SAMPLE_RFC3339: &str = "2023-11-14T22:13:20Z";
 
 #[derive(Debug, Clone, PartialEq)]
 struct ContentFrame {
@@ -69,13 +87,16 @@ impl OverlayFrameSink for RecordingSink {
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) -> usize {
+    ) -> OverlayReceivers {
         self.frames.lock().unwrap().push(ContentFrame {
             identity: identity.clone(),
             content,
             duration_ms,
         });
-        1
+        OverlayReceivers {
+            sources: 1,
+            preview_tabs: 0,
+        }
     }
 
     async fn deliver_reload(&self, identity: &OverlayId) {
@@ -87,13 +108,25 @@ impl OverlayFrameSink for RecordingSink {
     }
 }
 
-fn content_json(content: &OverlayConfig) -> serde_json::Value {
-    serde_json::Value::Object(
-        content
-            .iter()
-            .map(|(key, value)| (key.clone(), value.to_json()))
-            .collect(),
-    )
+fn tagged_variant_nodes(value: &serde_json::Value) -> Vec<serde_json::Value> {
+    let mut found = Vec::new();
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.len() == 2 && map.contains_key(TAG_KEY) && map.contains_key(TAGGED_VALUE_KEY) {
+                found.push(value.clone());
+            }
+            for nested in map.values() {
+                found.extend(tagged_variant_nodes(nested));
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for nested in items {
+                found.extend(tagged_variant_nodes(nested));
+            }
+        }
+        _ => {}
+    }
+    found
 }
 
 fn definition(id: &str) -> OverlayDefinition {
@@ -312,9 +345,53 @@ async fn test_fire_records_its_origin_without_broadcasting_anything() {
     );
 }
 
+#[test]
+fn a_tally_of_receivers_reports_browser_sources_first_and_preview_tabs_only_alone() {
+    for (reached, expected) in [
+        (
+            OverlayReceivers {
+                sources: 0,
+                preview_tabs: 0,
+            },
+            OverlayDelivery::NoPage,
+        ),
+        (
+            OverlayReceivers {
+                sources: 0,
+                preview_tabs: 2,
+            },
+            OverlayDelivery::OnlyPreview { tabs: 2 },
+        ),
+        (
+            OverlayReceivers {
+                sources: 3,
+                preview_tabs: 0,
+            },
+            OverlayDelivery::Delivered { sources: 3 },
+        ),
+        (
+            OverlayReceivers {
+                sources: 3,
+                preview_tabs: 2,
+            },
+            OverlayDelivery::Delivered { sources: 3 },
+        ),
+    ] {
+        assert_eq!(
+            reached.outcome(),
+            expected,
+            "{reached:?} was worded to the user as something other than {expected:?}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
-    let stored = definition("sub-alert");
+    let mut stored = definition("sub-alert");
+    stored.config = text_config(&[
+        (HEADLINE_KEY, SAMPLE_HEADLINE),
+        (SUBLINE_KEY, SAMPLE_SUBLINE),
+    ]);
     let harness = harness(vec![stored.clone()], true);
 
     let fired = harness.service.test_fire(&stored.id).await.expect("fire");
@@ -327,29 +404,45 @@ async fn test_fire_delivers_one_frame_carrying_the_content_it_returns() {
     );
     assert_eq!(
         frames[0].content,
-        content_json(&fired.content),
+        serde_json::json!({
+            HEADLINE_KEY: SAMPLE_HEADLINE,
+            SUBLINE_KEY: SAMPLE_SUBLINE,
+        }),
+        "the page received something other than the previewed content as plain values"
+    );
+    assert_eq!(
+        fired.content,
+        text_config(&[
+            (HEADLINE_KEY, SAMPLE_HEADLINE),
+            (SUBLINE_KEY, SAMPLE_SUBLINE),
+        ]),
         "the caller previews content the page never received"
     );
-    assert!(fired.delivered);
+    assert_eq!(fired.delivery, OverlayDelivery::Delivered { sources: 1 });
 }
 
 #[tokio::test]
 async fn test_fire_without_a_serving_sink_still_returns_the_sample_and_says_it_landed_nowhere() {
-    let stored = definition("sub-alert");
+    let mut stored = definition("sub-alert");
+    stored.config = text_config(&[
+        (HEADLINE_KEY, SAMPLE_HEADLINE),
+        (SUBLINE_KEY, SAMPLE_SUBLINE),
+    ]);
     let harness = harness(vec![stored.clone()], false);
 
     let fired = harness.service.test_fire(&stored.id).await.expect("fire");
 
-    assert!(
-        !fired.delivered,
+    assert_eq!(
+        fired.delivery,
+        OverlayDelivery::NoPage,
         "nothing is serving, so the caller must be told the preview ran alone"
     );
     assert_eq!(
         fired.content,
-        sample_content(
-            registry().get(&stored.kind_id).expect("a shipped kind"),
-            &stored.config
-        ),
+        text_config(&[
+            (HEADLINE_KEY, SAMPLE_HEADLINE),
+            (SUBLINE_KEY, SAMPLE_SUBLINE),
+        ]),
         "the caller still needs the very content a connected page would have received"
     );
 }
@@ -564,6 +657,59 @@ async fn delivered_content_is_kept_for_replay_only_by_a_kind_whose_delivery_is_t
 }
 
 #[tokio::test]
+async fn every_variant_kind_reaches_the_page_as_a_plain_json_value() {
+    let stored = definition_of_kind("goal-box", GOAL_KIND);
+    let harness = harness(vec![stored.clone()], true);
+    let moment = OffsetDateTime::from_unix_timestamp(SAMPLE_UNIX_SECONDS).unwrap();
+
+    for (held, expected) in [
+        (Variant::Int(42), serde_json::json!(42)),
+        (Variant::Float(0.5), serde_json::json!(0.5)),
+        (Variant::Bool(true), serde_json::json!(true)),
+        (
+            Variant::String("Sub goal".to_owned()),
+            serde_json::json!("Sub goal"),
+        ),
+        (Variant::Datetime(moment), serde_json::json!(SAMPLE_RFC3339)),
+        (
+            Variant::Array(vec![Variant::Int(1), Variant::Bool(false)]),
+            serde_json::json!([1, false]),
+        ),
+        (
+            Variant::Object(BTreeMap::from([
+                ("target".to_owned(), Variant::Int(100)),
+                ("live".to_owned(), Variant::Bool(true)),
+            ])),
+            serde_json::json!({ "target": 100, "live": true }),
+        ),
+    ] {
+        let content = OverlayConfig::from([(VALUE_KEY.to_owned(), held.clone())]);
+
+        harness
+            .service
+            .deliver_content(&stored.id, content, None)
+            .await
+            .expect("a bound overlay accepts content");
+
+        let frame = harness
+            .sink
+            .frames()
+            .pop()
+            .expect("the delivery reached the sink");
+        assert_eq!(
+            frame.content,
+            serde_json::json!({ VALUE_KEY: expected }),
+            "{held:?} reached the page in a shape its runtime renders as something else"
+        );
+        assert_eq!(
+            tagged_variant_nodes(&frame.content),
+            Vec::<serde_json::Value>::new(),
+            "{held:?} reached the page wrapped in its stored form, which renders as [object Object]"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
     let stored = definition_of_kind("goal-box", GOAL_KIND);
     let harness = harness(vec![stored.clone()], true);
@@ -587,7 +733,7 @@ async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
         frames[1],
         ContentFrame {
             identity: stored.id.clone(),
-            content: content_json(&content),
+            content: serde_json::json!({ LABEL_KEY: "Sub goal", VALUE_KEY: "42" }),
             duration_ms: None,
         },
         "the replay must restore the display without re-running the original timer"
@@ -634,7 +780,11 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
         .await
         .expect("a bound overlay of a shipped kind accepts a send");
 
-    assert!(delivered, "a connected page was not counted as reached");
+    assert_eq!(
+        delivered,
+        OverlayDelivery::Delivered { sources: 1 },
+        "a connected page was not counted as reached"
+    );
     let expected = text_config(&[
         (LABEL_KEY, "Sub goal"),
         (VALUE_KEY, "42"),
@@ -644,7 +794,11 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
         harness.sink.frames(),
         vec![ContentFrame {
             identity: stored.id.clone(),
-            content: content_json(&expected),
+            content: serde_json::json!({
+                LABEL_KEY: "Sub goal",
+                VALUE_KEY: "42",
+                TARGET_KEY: "100",
+            }),
             duration_ms: Some(2_000),
         }],
         "the page received something other than the funnelled content"
@@ -672,8 +826,9 @@ async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_conn
         .await
         .expect("a send does not fail merely because no page is connected");
 
-    assert!(
-        !delivered,
+    assert_eq!(
+        delivered,
+        OverlayDelivery::NoPage,
         "nothing is serving, so the caller must be told the content landed nowhere"
     );
     assert!(
@@ -683,9 +838,10 @@ async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_conn
 }
 
 #[tokio::test]
-async fn sending_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolve() {
+async fn sending_content_refuses_an_identity_or_an_overlay_type_no_step_may_author() {
     let unshipped = definition_of_kind("vendor-box", UNSHIPPED_KIND);
-    let harness = harness(vec![unshipped.clone()], true);
+    let audio = definition_of_kind("clip-player", AUDIO_KIND);
+    let harness = harness(vec![unshipped.clone(), audio.clone()], true);
 
     type Check = fn(&OverlayServiceError) -> bool;
     for (id, matches_expected, label) in [
@@ -699,6 +855,13 @@ async fn sending_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolv
             (|e: &OverlayServiceError| matches!(e, OverlayServiceError::UnavailableKind { .. }))
                 as Check,
             "an overlay type this build lacks",
+        ),
+        (
+            audio.id.clone(),
+            (|e: &OverlayServiceError| {
+                matches!(e, OverlayServiceError::ContentNotAuthorable { .. })
+            }) as Check,
+            "an overlay type that fills its own content",
         ),
     ] {
         let err = harness
@@ -718,6 +881,91 @@ async fn sending_content_refuses_an_identity_or_an_overlay_type_it_cannot_resolv
     assert!(
         harness.sink.frames().is_empty(),
         "a refused send still pushed a frame to connected pages"
+    );
+    assert!(
+        harness.retained_for(&audio.id).is_none(),
+        "a refused send left content behind for the next connection to replay"
+    );
+}
+
+#[tokio::test]
+async fn a_direct_delivery_to_a_machine_filled_overlay_reaches_the_page_and_is_never_retained() {
+    let audio = definition_of_kind("clip-player", AUDIO_KIND);
+    let harness = harness(vec![audio.clone()], true);
+
+    let delivered = harness
+        .service
+        .deliver_content(
+            &audio.id,
+            announcement_content(&AudioAnnouncement {
+                clip_id: CLIP_ID,
+                clip_path: CLIP_PATH,
+                report_path: REPORT_PATH,
+                media_type: CLIP_MEDIA_TYPE,
+                duration_ms: CLIP_DURATION_MS,
+            }),
+            None,
+        )
+        .await
+        .expect("the sink that fills this overlay's content is not the step funnel");
+
+    assert_eq!(
+        delivered,
+        OverlayDelivery::Delivered { sources: 1 },
+        "a connected page was not counted as reached"
+    );
+    assert_eq!(
+        harness.sink.frames(),
+        vec![ContentFrame {
+            identity: audio.id.clone(),
+            content: serde_json::json!({
+                "clip_id": CLIP_ID,
+                "clip_path": CLIP_PATH,
+                "report_path": REPORT_PATH,
+                "clip_media_type": CLIP_MEDIA_TYPE,
+                "clip_duration_ms": CLIP_DURATION_MS,
+            }),
+            duration_ms: None,
+        }],
+        "the page received something other than the announcement, or received it tagged"
+    );
+    assert!(
+        harness.retained_for(&audio.id).is_none(),
+        "an announcement was retained, so a reconnect replays a capability already spent"
+    );
+}
+
+#[tokio::test]
+async fn a_test_fire_on_a_machine_filled_overlay_announces_no_clip_and_no_address() {
+    let audio = definition_of_kind("clip-player", AUDIO_KIND);
+    let harness = harness(vec![audio.clone()], true);
+
+    let fired = harness
+        .service
+        .test_fire(&audio.id)
+        .await
+        .expect("a test fire builds a sample for every shipped kind");
+
+    assert_eq!(
+        harness.sink.frames(),
+        vec![ContentFrame {
+            identity: audio.id.clone(),
+            content: serde_json::json!({
+                "clip_id": "",
+                "clip_path": "",
+                "report_path": "",
+                "clip_media_type": "",
+                "clip_duration_ms": 0,
+                "command": "",
+            }),
+            duration_ms: None,
+        }],
+        "a test fire reached the page with something a browser source would act on"
+    );
+    assert_eq!(
+        fired.content.get("clip_path").and_then(Variant::as_str),
+        Some(""),
+        "the previewed sample names an address the caller could read back"
     );
 }
 

@@ -31,7 +31,8 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         WsRequest::Auth {
             token,
             overlay_credential,
-        } => handle_authenticate(token, overlay_credential, ctx).await,
+            preview_connection,
+        } => handle_authenticate(token, overlay_credential, preview_connection, ctx).await,
 
         WsRequest::Subscribe { events } => {
             if ctx.auth_required_for_reads && !is_authenticated(ctx) {
@@ -1185,6 +1186,7 @@ mod tests {
             inner: WsRequest::Auth {
                 token: Some("test-token".to_owned()),
                 overlay_credential: None,
+                preview_connection: false,
             },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1205,6 +1207,7 @@ mod tests {
             inner: WsRequest::Auth {
                 token: Some("wrong-token".to_owned()),
                 overlay_credential: None,
+                preview_connection: false,
             },
         };
         let resp = dispatch(req, &ctx).await;
@@ -1351,12 +1354,17 @@ mod tests {
         }
     }
 
-    fn auth_frame(token: Option<&str>, overlay_credential: Option<&str>) -> WsEnvelope<WsRequest> {
+    fn auth_frame(
+        token: Option<&str>,
+        overlay_credential: Option<&str>,
+        preview_connection: bool,
+    ) -> WsEnvelope<WsRequest> {
         WsEnvelope {
             id: Some("auth".to_owned()),
             inner: WsRequest::Auth {
                 token: token.map(str::to_owned),
                 overlay_credential: overlay_credential.map(str::to_owned),
+                preview_connection,
             },
         }
     }
@@ -1375,7 +1383,7 @@ mod tests {
         ] {
             let ctx = make_ctx(false, true);
 
-            let resp = dispatch(auth_frame(token, overlay_credential), &ctx).await;
+            let resp = dispatch(auth_frame(token, overlay_credential, false), &ctx).await;
 
             match resp.inner {
                 WsResponse::Error {
@@ -1394,7 +1402,7 @@ mod tests {
     async fn an_overlay_credential_opens_directed_delivery_without_authenticating_the_session() {
         let ctx = make_overlay_credential_ctx(true).await;
 
-        let resp = dispatch(auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL)), &ctx).await;
+        let resp = dispatch(auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL), false), &ctx).await;
 
         assert!(
             matches!(resp.inner, WsResponse::Ok(_)),
@@ -1412,10 +1420,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_page_that_declares_itself_a_preview_is_promoted_apart_yet_addressed_the_same() {
+        for (preview_connection, expected) in [
+            (
+                false,
+                forge_runtime::OverlayReceivers {
+                    sources: 1,
+                    preview_tabs: 0,
+                },
+            ),
+            (
+                true,
+                forge_runtime::OverlayReceivers {
+                    sources: 0,
+                    preview_tabs: 1,
+                },
+            ),
+        ] {
+            let ctx = make_overlay_credential_ctx(true).await;
+
+            let resp = dispatch(
+                auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL), preview_connection),
+                &ctx,
+            )
+            .await;
+
+            assert!(
+                matches!(resp.inner, WsResponse::Ok(_)),
+                "previewConnection={preview_connection} was refused: {:?}",
+                resp.inner
+            );
+            assert_eq!(
+                ctx.bus_adapter
+                    .deliver_overlay_content(
+                        &forge_storage::OverlayId::new("goal-box"),
+                        &serde_json::json!({ "value": "42" }),
+                        None,
+                    )
+                    .await,
+                expected,
+                "previewConnection={preview_connection} was tallied as the other class"
+            );
+            assert_eq!(
+                ctx.bus_adapter
+                    .preview_tabs()
+                    .await
+                    .contains(&ctx.client.id),
+                preview_connection,
+                "previewConnection={preview_connection} put the wrong row in front of the console"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn an_overlay_credential_no_record_carries_is_refused_and_promotes_nothing() {
         let ctx = make_overlay_credential_ctx(false).await;
 
-        let resp = dispatch(auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL)), &ctx).await;
+        let resp = dispatch(auth_frame(None, Some(OVERLAY_PAGE_CREDENTIAL), false), &ctx).await;
 
         match resp.inner {
             WsResponse::Error {
@@ -1437,6 +1498,7 @@ mod tests {
             inner: WsRequest::Auth {
                 token: Some(String::new()),
                 overlay_credential: None,
+                preview_connection: false,
             },
         };
         let resp = dispatch(req, &ctx).await;

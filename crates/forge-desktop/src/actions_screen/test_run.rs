@@ -6,6 +6,7 @@ use forge_components::{
     primary_button, radius, spacing,
 };
 use forge_events::Event;
+use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
 use forge_types::{ArgStack, EventId};
 use gpui::{Rgba, Task, relative};
 use std::time::Duration;
@@ -924,16 +925,19 @@ impl ScreenActionsView {
 
             let selected_inst = selected.and_then(|i| detail.trigger_instances.get(i));
             let trigger_kind = selected_inst.map(|inst| inst.kind_id.clone());
-            let (initial_args, note) = match selected_inst {
-                Some(inst) => match self
-                    .trigger_registry
-                    .get(&inst.kind_id)
-                    .and_then(|desc| desc.output_schema())
-                {
-                    Some(schema) => (super::test_trigger::synthesize_args(&schema), None),
-                    None => (ArgStack::new(), Some(TestRunNote::NoSchema)),
-                },
-                None => (ArgStack::new(), Some(TestRunNote::NoTriggers)),
+            let declared = selected_inst
+                .and_then(|inst| self.trigger_registry.get(&inst.kind_id))
+                .and_then(|descriptor| {
+                    declared_variables(descriptor)
+                        .map(|variables| (variables, descriptor.platform_contract()))
+                });
+            let (initial_args, note) = match (selected_inst, declared) {
+                (Some(_), Some((variables, contract))) => (
+                    synthesize_args(&variables, &SynthesisSample::random(contract)),
+                    None,
+                ),
+                (Some(_), None) => (ArgStack::new(), Some(TestRunNote::NoSchema)),
+                (None, _) => (ArgStack::new(), Some(TestRunNote::NoTriggers)),
             };
 
             TestRunLaunch {

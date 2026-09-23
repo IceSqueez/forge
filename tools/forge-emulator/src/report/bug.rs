@@ -143,6 +143,17 @@ fn title(cause: &FailureCause, expectation: &Expectation, action: &StepAction) -
         (FailureCause::NoFakeTwitch, _) => {
             format!("{} check has no fake Twitch", code(expectation.keyword()))
         }
+        (FailureCause::NoOverlayPage { overlay }, _) => {
+            format!("No page open for overlay {} after {after}", code(overlay))
+        }
+        (FailureCause::NoOverlayContent { .. }, Expectation::OverlayContent(content)) => format!(
+            "Overlay {} showed nothing after {after}",
+            code(&content.overlay)
+        ),
+        (FailureCause::TaggedOverlayValue { .. }, Expectation::OverlayContent(content)) => format!(
+            "Overlay {} received tagged values after {after}",
+            code(&content.overlay)
+        ),
         (FailureCause::NoLogLine, Expectation::LogLine(line)) => {
             format!("No {} log line after {after}", code(&line.target))
         }

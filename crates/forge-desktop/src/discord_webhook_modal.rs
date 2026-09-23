@@ -115,6 +115,7 @@ impl DiscordWebhookModal {
             InputEvent::Cancelled => self.cancel(cx),
             InputEvent::Submitted(_) => self.save(cx),
             InputEvent::Changed(_) => cx.notify(),
+            InputEvent::Blurred(_) => {}
         }
     }
 

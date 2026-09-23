@@ -1,11 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, TriggerConfig, VariableSchema, Variant, VariantKind,
-};
+use forge_types::{DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read;
 use crate::payload_fields::stream as fields;
 
 pub(crate) struct LivestreamStatusDescriptor;
@@ -62,67 +62,60 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let is_live = event
-            .payload
-            .get(fields::IS_LIVE)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let stream_title = event
-            .payload
-            .get(fields::STREAM_TITLE)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let category = event.payload.get(fields::CATEGORY);
-        let category_id = category
-            .and_then(|c| c.get(fields::CATEGORY_ID))
-            .and_then(|v| v.as_u64())
-            .map_or_else(String::new, |n| n.to_string());
-        let category_name = category
-            .and_then(|c| c.get(fields::CATEGORY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("is_live".to_owned(), Variant::Bool(is_live))
-            .set("stream_title".to_owned(), Variant::String(stream_title))
-            .set("category_id".to_owned(), Variant::String(category_id))
-            .set("category_name".to_owned(), Variant::String(category_name))
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .event_specific(
+                    DeclaredVariable {
+                        name: "is_live".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Is live".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::Bool(payload_read::flag(event, fields::IS_LIVE)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "stream_title".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Stream title".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| Variant::String(payload_read::text(event, fields::STREAM_TITLE)),
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "category_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Category ID".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::numeric_id(
+                            event.payload.get(fields::CATEGORY),
+                            fields::CATEGORY_ID,
+                        ))
+                    },
+                )
+                .event_specific(
+                    DeclaredVariable {
+                        name: "category_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Category name".to_owned(),
+                        synthesis: None,
+                    },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event.payload.get(fields::CATEGORY),
+                            fields::CATEGORY_NAME,
+                        ))
+                    },
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "is_live".to_owned(),
-                    kind: VariantKind::Bool,
-                    label: "Is live".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "stream_title".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Stream title".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "category_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Category ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "category_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Category name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actorless
     }
 }
 
@@ -131,56 +124,58 @@ impl TriggerKindDescriptor for LivestreamStatusDescriptor {
 mod tests {
     use super::*;
 
-    #[test]
-    fn build_arg_stack_extracts_status_fields_with_nested_category() {
-        let event = Event::new(
-            EventSource::Kick,
-            "kick.channel.livestream_status",
-            serde_json::json!({
-                "is_live": true,
-                "stream_title": "Late night coding",
-                "category": { "id": 42, "name": "Just Chatting" }
-            }),
-        );
-
-        let stack = LivestreamStatusDescriptor.build_arg_stack(&event);
-
-        assert_eq!(stack.get("is_live"), Some(&Variant::Bool(true)));
-        assert_eq!(
-            stack.get("stream_title"),
-            Some(&Variant::String("Late night coding".to_owned()))
-        );
-        assert_eq!(
-            stack.get("category_id"),
-            Some(&Variant::String("42".to_owned()))
-        );
-        assert_eq!(
-            stack.get("category_name"),
-            Some(&Variant::String("Just Chatting".to_owned()))
-        );
-    }
+    use serde_json::json;
 
     #[test]
-    fn build_arg_stack_leaves_category_fields_empty_when_object_absent() {
-        let event = Event::new(
-            EventSource::Kick,
-            "kick.channel.livestream_status",
-            serde_json::json!({
-                "is_live": false,
-                "stream_title": "Offline"
-            }),
-        );
-
-        let stack = LivestreamStatusDescriptor.build_arg_stack(&event);
-
-        assert_eq!(stack.get("is_live"), Some(&Variant::Bool(false)));
-        assert_eq!(
-            stack.get("category_id"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("category_name"),
-            Some(&Variant::String(String::new()))
-        );
+    fn the_status_and_the_nested_category_are_read_from_the_payload() {
+        for (payload, live, title, category_id, category_name) in [
+            (
+                json!({
+                    "is_live": true,
+                    "stream_title": "Late night coding",
+                    "category": { "id": 42, "name": "Just Chatting" }
+                }),
+                true,
+                "Late night coding",
+                "42",
+                "Just Chatting",
+            ),
+            (
+                json!({ "is_live": false, "stream_title": "Offline" }),
+                false,
+                "Offline",
+                "",
+                "",
+            ),
+            (
+                json!({ "is_live": true, "category": { "name": "Software & Game Dev" } }),
+                true,
+                "",
+                "",
+                "Software & Game Dev",
+            ),
+        ] {
+            let stack = LivestreamStatusDescriptor.build_arg_stack(&Event::new(
+                EventSource::Kick,
+                "kick.livestream.status.updated",
+                payload.clone(),
+            ));
+            assert_eq!(
+                stack.get("is_live"),
+                Some(&Variant::Bool(live)),
+                "{payload}"
+            );
+            for (name, value) in [
+                ("stream_title", title),
+                ("category_id", category_id),
+                ("category_name", category_name),
+            ] {
+                assert_eq!(
+                    stack.get(name),
+                    Some(&Variant::String(value.to_owned())),
+                    "'{name}' for {payload}"
+                );
+            }
+        }
     }
 }

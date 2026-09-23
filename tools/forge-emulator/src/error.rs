@@ -73,6 +73,18 @@ pub enum EmulatorError {
     #[error("seeder process failed: {reason}")]
     SeederProcess { reason: String },
 
+    #[error("the fixture seeded no overlay named `{overlay}`")]
+    OverlayNotSeeded { overlay: String },
+
+    #[error("config.json for overlay `{identity}` could not be read: {reason}")]
+    OverlayConfigUnreadable { identity: String, reason: String },
+
+    #[error("config.json for overlay `{identity}` carries no page credential")]
+    OverlayCredentialMissing { identity: String },
+
+    #[error("forge refused the page credential of overlay `{identity}`: {message}")]
+    OverlayAuthRefused { identity: String, message: String },
+
     #[error("fake platform could not listen on loopback: {reason}")]
     FakeBind { reason: String },
 

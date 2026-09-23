@@ -2,6 +2,7 @@
   --accent: #a6e3a1;
   --font: sans-serif;
   --reveal: 0.4s;
+  --text-scale: calc(var(--text-size, 14) / 14);
 }
 
 html,
@@ -32,12 +33,14 @@ body[data-position="bottom"] {
 #stage {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  width: 320px;
+  justify-content: center;
+  gap: calc(8px * var(--text-scale));
+  width: var(--element-width, 320px);
+  min-height: var(--element-height, auto);
   box-sizing: border-box;
-  padding: 14px 18px;
+  padding: calc(14px * var(--text-scale)) calc(18px * var(--text-scale));
   border: 1px solid var(--accent);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--text-scale));
   background: rgba(20, 20, 28, 0.86);
   font-family: var(--font);
   transition:
@@ -47,13 +50,15 @@ body[data-position="bottom"] {
 
 .label {
   color: #fff;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale));
   font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .track {
   position: relative;
-  height: 10px;
+  height: calc(10px * var(--text-scale));
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   overflow: hidden;
@@ -69,13 +74,15 @@ body[data-position="bottom"] {
 
 .figure {
   color: var(--accent);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale));
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .sep {
   color: rgba(255, 255, 255, 0.5);
-  margin: 0 4px;
+  margin: 0 calc(4px * var(--text-scale));
 }
 
 #stage.hidden {

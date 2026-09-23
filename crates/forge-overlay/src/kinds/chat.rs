@@ -3,6 +3,7 @@ use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.chat";
@@ -39,14 +40,17 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn default_config(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults("sky", "Inter", "bottom", "slide-up");
-        defaults.insert(
-            config::AUTHOR.to_owned(),
-            config::text("%user.display_name%"),
+        let mut defaults = config::shared_style_defaults(
+            "sky",
+            "Inter",
+            "bottom",
+            "slide-up",
+            metrics::CHAT_SIZING,
         );
+        defaults.insert(config::AUTHOR.to_owned(), config::text("%user_login%"));
         defaults.insert(config::AUTHOR_COLOR.to_owned(), config::text("#89dceb"));
         defaults.insert(config::BADGES.to_owned(), config::text(""));
-        defaults.insert(config::MESSAGE.to_owned(), config::text("%message%"));
+        defaults.insert(config::MESSAGE.to_owned(), config::text("%message_text%"));
         defaults
     }
 
@@ -57,7 +61,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
             config::badges_field(),
             config::message_field(),
         ];
-        fields.extend(config::shared_style_fields());
+        fields.extend(config::shared_style_fields(metrics::CHAT_SIZING));
         fields
     }
 

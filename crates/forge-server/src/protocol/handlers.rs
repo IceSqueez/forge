@@ -1,6 +1,6 @@
 use forge_events::{Event, EventSource};
 use forge_runtime::{BusError, ExecutionRequest};
-use forge_storage::{GlobalsRepo, UserGlobalsRepo};
+use forge_storage::{GlobalsRepo, MediaFormat, UserGlobalsRepo};
 use forge_types::{ActionId, EventId};
 
 use super::context::DispatchContext;
@@ -9,19 +9,17 @@ use super::helpers::{build_arg_stack, valid_code_event_name, variant_to_wire_val
 use super::introspect::{build_connected_accounts, build_connected_clients};
 
 pub(crate) fn mime_for_extension(ext: &str) -> Option<&'static str> {
-    match ext.to_ascii_lowercase().as_str() {
+    let lowered = ext.to_ascii_lowercase();
+    if let Some(format) = MediaFormat::parse(&lowered) {
+        return Some(format.media_type());
+    }
+    match lowered.as_str() {
         "html" | "htm" => Some("text/html"),
         "js" | "mjs" => Some("application/javascript"),
         "css" => Some("text/css"),
         "json" => Some("application/json"),
-        "png" => Some("image/png"),
         "jpg" | "jpeg" => Some("image/jpeg"),
-        "svg" => Some("image/svg+xml"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
         "woff2" => Some("font/woff2"),
-        "wav" => Some("audio/wav"),
-        "mp3" => Some("audio/mpeg"),
         _ => None,
     }
 }
@@ -461,7 +459,22 @@ pub(crate) async fn handle_replay_event(event_id: String, ctx: &DispatchContext)
 
 #[cfg(test)]
 mod tests {
+    use forge_storage::MediaFormat;
+
     use super::mime_for_extension;
+
+    #[test]
+    fn every_accepted_media_format_is_served_with_its_own_media_type() {
+        for format in MediaFormat::ACCEPTED {
+            assert_eq!(
+                mime_for_extension(format.as_str()),
+                Some(format.media_type()),
+                "the overlay host does not serve .{} as {}",
+                format.as_str(),
+                format.media_type()
+            );
+        }
+    }
 
     #[test]
     fn mime_for_extension_is_case_insensitive_for_every_served_asset_type() {

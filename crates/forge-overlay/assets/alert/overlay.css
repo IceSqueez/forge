@@ -2,6 +2,7 @@
   --accent: #cba6f7;
   --font: sans-serif;
   --reveal: 0.4s;
+  --text-scale: calc(var(--text-size, 20) / 20);
 }
 
 html,
@@ -31,11 +32,14 @@ body[data-position="bottom"] {
 
 #stage {
   display: flex;
-  gap: 14px;
+  box-sizing: border-box;
+  gap: calc(14px * var(--text-scale));
   align-items: center;
-  padding: 16px 22px;
+  width: var(--element-width, auto);
+  min-height: var(--element-height, auto);
+  padding: calc(16px * var(--text-scale)) calc(22px * var(--text-scale));
   border: 1px solid var(--accent);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--text-scale));
   background: rgba(20, 20, 28, 0.86);
   font-family: var(--font);
   transition:
@@ -44,20 +48,38 @@ body[data-position="bottom"] {
 }
 
 .icon {
-  color: var(--accent);
-  font-size: 26px;
-  line-height: 1;
+  flex: none;
+  height: calc(26px * var(--text-scale));
+  aspect-ratio: 1;
+}
+
+.icon.tinted {
+  background-color: var(--accent);
+  -webkit-mask: var(--icon-source) center / contain no-repeat;
+  mask: var(--icon-source) center / contain no-repeat;
+}
+
+.icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.body {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .headline {
   color: #fff;
-  font-size: 20px;
+  font-size: calc(20px * var(--text-scale));
   font-weight: 700;
 }
 
 .subline {
   color: var(--accent);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 
 #stage.hidden {

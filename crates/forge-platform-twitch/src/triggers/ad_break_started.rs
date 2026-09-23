@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::ad_break as ad_break_fields;
 
 pub(crate) struct AdBreakStartedDescriptor;
@@ -63,79 +65,86 @@ impl TriggerKindDescriptor for AdBreakStartedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let ad_break = event.payload.get(ad_break_fields::AD_BREAK);
-        let requester = event.payload.get(ad_break_fields::REQUESTER);
-
-        let duration_seconds = ad_break
-            .and_then(|a| a.get(ad_break_fields::DURATION_SECONDS))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let is_automatic = ad_break
-            .and_then(|a| a.get(ad_break_fields::IS_AUTOMATIC))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let started_at = ad_break
-            .and_then(|a| a.get(ad_break_fields::STARTED_AT))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let requester_login = requester
-            .and_then(|r| r.get(ad_break_fields::REQUESTER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "ad_break.duration_seconds".to_owned(),
-                Variant::Int(duration_seconds),
-            )
-            .set(
-                "ad_break.is_automatic".to_owned(),
-                Variant::Bool(is_automatic),
-            )
-            .set(
-                "ad_break.started_at".to_owned(),
-                Variant::String(started_at),
-            )
-            .set(
-                "requester_login".to_owned(),
-                Variant::String(requester_login),
-            )
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), requester_identity)
+                .event_specific(
                     DeclaredVariable {
                         name: "ad_break.duration_seconds".to_owned(),
                         kind: VariantKind::Int,
                         label: "Ad break duration (seconds)".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 180 }),
                     },
+                    |event| {
+                        Variant::Int(payload_read::nested_number(
+                            event,
+                            ad_break_fields::AD_BREAK,
+                            ad_break_fields::DURATION_SECONDS,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "ad_break.is_automatic".to_owned(),
                         kind: VariantKind::Bool,
                         label: "Automatic ad break".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::Bool(payload_read::nested_flag(
+                            event,
+                            ad_break_fields::AD_BREAK,
+                            ad_break_fields::IS_AUTOMATIC,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "ad_break.started_at".to_owned(),
                         kind: VariantKind::String,
                         label: "Ad break start time".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            ad_break_fields::AD_BREAK,
+                            ad_break_fields::STARTED_AT,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "requester_login".to_owned(),
                         kind: VariantKind::String,
                         label: "Requester login".to_owned(),
                         synthesis: Some(SynthesisHint::Username),
                     },
-                ],
-            }
-        })
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            ad_break_fields::REQUESTER,
+                            ad_break_fields::REQUESTER_LOGIN,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn requester_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(ad_break_fields::REQUESTER),
+        ad_break_fields::REQUESTER_ID,
+        ad_break_fields::REQUESTER_LOGIN,
+        ad_break_fields::REQUESTER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]
@@ -149,7 +158,11 @@ mod tests {
                 "is_automatic": true,
                 "started_at": "2026-06-13T10:00:00Z",
             },
-            "requester": { "login": "broadcaster_one" },
+            "requester": {
+                "id": "1",
+                "login": "broadcaster_one",
+                "display_name": "BroadcasterOne",
+            },
         });
         Event::new(
             EventSource::Twitch,
@@ -169,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn an_ad_break_publishes_whoever_requested_it_as_the_canonical_actor() {
+        let stack = AdBreakStartedDescriptor.build_arg_stack(&ad_break_event());
+        for (name, value) in [
+            ("user_id", "1"),
+            ("user_name", "BroadcasterOne"),
+            ("user_login", "broadcaster_one"),
+            ("user_platform", "twitch"),
+            ("requester_login", "broadcaster_one"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
+
+    #[test]
     fn build_arg_stack_types_duration_as_int_and_is_automatic_as_bool() {
         let stack = AdBreakStartedDescriptor.build_arg_stack(&ad_break_event());
         assert_eq!(
@@ -182,10 +213,6 @@ mod tests {
         assert_eq!(
             stack.get("ad_break.started_at"),
             Some(&Variant::String("2026-06-13T10:00:00Z".to_owned()))
-        );
-        assert_eq!(
-            stack.get("requester_login"),
-            Some(&Variant::String("broadcaster_one".to_owned()))
         );
     }
 

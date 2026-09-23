@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::unban_request as unban_request_fields;
 
 pub(crate) struct UnbanRequestCreatedDescriptor;
@@ -63,59 +65,68 @@ impl TriggerKindDescriptor for UnbanRequestCreatedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let request_id = event
-            .payload
-            .get(unban_request_fields::REQUEST_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let user = event.payload.get(unban_request_fields::USER);
-        let user_login = user
-            .and_then(|u| u.get(unban_request_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let reason_text = event
-            .payload
-            .get(unban_request_fields::REASON_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("unban.request_id".to_owned(), Variant::String(request_id))
-            .set("unban.target.login".to_owned(), Variant::String(user_login))
-            .set("unban.reason_text".to_owned(), Variant::String(reason_text))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), unban_target_identity)
+                .message_text(|event| payload_read::text(event, unban_request_fields::REASON_TEXT))
+                .event_specific(
                     DeclaredVariable {
                         name: "unban.request_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Unban request ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::text(event, unban_request_fields::REQUEST_ID))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "unban.target.login".to_owned(),
                         kind: VariantKind::String,
                         label: "Target user login".to_owned(),
                         synthesis: Some(SynthesisHint::Username),
                     },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            unban_request_fields::USER,
+                            unban_request_fields::USER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
                     DeclaredVariable {
                         name: "unban.reason_text".to_owned(),
                         kind: VariantKind::String,
                         label: "Requester reason".to_owned(),
                         synthesis: Some(SynthesisHint::Message),
                     },
-                ],
-            }
-        })
+                    CanonicalVariable::MessageText,
+                    |event| {
+                        Variant::String(payload_read::text(
+                            event,
+                            unban_request_fields::REASON_TEXT,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn unban_target_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(unban_request_fields::USER),
+        unban_request_fields::USER_ID,
+        unban_request_fields::USER_LOGIN,
+        unban_request_fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

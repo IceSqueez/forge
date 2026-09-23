@@ -7,9 +7,9 @@ use forge_registry::{
 use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
-use crate::overlay_service::OverlayServiceCell;
+use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
+use crate::overlay_service::{OverlayDelivery, OverlayServiceCell};
 
-const OVERLAY_KEY: &str = "overlay_id";
 const DURATION_KEY: &str = "duration_secs";
 
 /// Names the catalog a host resolves `overlay_id` in to get the target type's content fields.
@@ -27,7 +27,7 @@ impl OverlaySendRunner {
     async fn send(&self, config: &SubActionConfig, ctx: &RunContext<'_>) -> SubActionOutcome {
         let target = ctx
             .arg_stack
-            .interpolate(config.str(OVERLAY_KEY).unwrap_or_default());
+            .interpolate(config.str(OVERLAY_TARGET_KEY).unwrap_or_default());
         let identity = target.trim();
         if identity.is_empty() {
             return SubActionOutcome::Failed("overlay.send: no overlay is selected".to_owned());
@@ -48,11 +48,11 @@ impl OverlaySendRunner {
             )
             .await
         {
-            Ok(true) => SubActionOutcome::Success,
-            Ok(false) => {
+            Ok(OverlayDelivery::NoPage) => {
                 tracing::debug!(overlay = %identity, "overlay content had no page to reach");
                 SubActionOutcome::Success
             }
+            Ok(_) => SubActionOutcome::Success,
             Err(error) => SubActionOutcome::Failed(format!("overlay.send: {error}")),
         }
     }
@@ -61,7 +61,7 @@ impl OverlaySendRunner {
 #[async_trait]
 impl SubActionRunner for OverlaySendRunner {
     fn id(&self) -> &str {
-        "overlay.send"
+        OVERLAY_SEND_KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -86,14 +86,17 @@ impl SubActionRunner for OverlaySendRunner {
 
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
-        cfg.insert(OVERLAY_KEY.to_owned(), Variant::String(String::new()));
+        cfg.insert(
+            OVERLAY_TARGET_KEY.to_owned(),
+            Variant::String(String::new()),
+        );
         cfg
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::DynamicSelect {
-                key: OVERLAY_KEY,
+                key: OVERLAY_TARGET_KEY,
                 label: "Overlay",
                 options_key: "overlay.ids",
             },
@@ -113,13 +116,13 @@ impl SubActionRunner for OverlaySendRunner {
 
     fn config_refinement(&self) -> Option<FormRefinement> {
         Some(FormRefinement {
-            selector_key: OVERLAY_KEY,
+            selector_key: OVERLAY_TARGET_KEY,
             schema_key: CONTENT_SCHEMA_KEY,
         })
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        config.require_str(OVERLAY_KEY).map(|_| ())
+        config.require_str(OVERLAY_TARGET_KEY).map(|_| ())
     }
 
     async fn execute(
@@ -127,7 +130,7 @@ impl SubActionRunner for OverlaySendRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        let timer = StepTimer::start(ctx, "overlay.send");
+        let timer = StepTimer::start(ctx, OVERLAY_SEND_KIND_ID);
         let outcome = self.send(config, ctx).await;
         (timer.finish(outcome), None)
     }
@@ -138,7 +141,7 @@ impl SubActionRunner for OverlaySendRunner {
 fn supplied_content(config: &SubActionConfig) -> OverlayConfig {
     config
         .iter()
-        .filter(|(key, _)| key.as_str() != OVERLAY_KEY && key.as_str() != DURATION_KEY)
+        .filter(|(key, _)| key.as_str() != OVERLAY_TARGET_KEY && key.as_str() != DURATION_KEY)
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
 }
@@ -228,7 +231,7 @@ mod tests {
     #[test]
     fn the_runners_own_fields_are_never_offered_to_the_overlay_as_content() {
         let cfg = config(&[
-            (OVERLAY_KEY, Variant::String("goal-box".to_owned())),
+            (OVERLAY_TARGET_KEY, Variant::String("goal-box".to_owned())),
             (DURATION_KEY, Variant::Int(5)),
             ("value", Variant::String("42".to_owned())),
             ("target", Variant::Int(100)),
@@ -259,15 +262,15 @@ mod tests {
                 "a step saved before an overlay was picked",
             ),
             (
-                config(&[(OVERLAY_KEY, Variant::String(String::new()))]),
+                config(&[(OVERLAY_TARGET_KEY, Variant::String(String::new()))]),
                 "an overlay selection cleared back to nothing",
             ),
             (
-                config(&[(OVERLAY_KEY, Variant::String("   ".to_owned()))]),
+                config(&[(OVERLAY_TARGET_KEY, Variant::String("   ".to_owned()))]),
                 "an overlay selection holding only blank space",
             ),
             (
-                config(&[(OVERLAY_KEY, Variant::String("goal-box".to_owned()))]),
+                config(&[(OVERLAY_TARGET_KEY, Variant::String("goal-box".to_owned()))]),
                 "an overlay service that is not running yet",
             ),
         ] {

@@ -9,14 +9,15 @@ use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Config, EventBus, OverlayConnectListener,
-    OverlayFrameSink, OverlayServiceCell, OverlayServiceHandle, QueueScheduler, SchedulerCell,
-    ScriptRegistry, SoundPlayer, SpeakDispatcher, register_audio_sub_actions,
-    register_core_sub_actions, register_core_triggers, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_chat_moderation_persistence, spawn_event_log_bridge,
-    spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
+    OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle,
+    QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer, SpeakDispatcher,
+    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    spawn_action_engine, spawn_chat_history_persistence, spawn_chat_moderation_persistence,
+    spawn_event_log_bridge, spawn_live_viewer_aggregator, spawn_trigger_evaluator,
+    spawn_viewer_tracker,
 };
 use forge_soundboard::{
-    BusAudioEventSink, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
+    BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
     load_soundboard_settings,
 };
 use forge_storage::{
@@ -166,7 +167,7 @@ pub async fn build_runtime(
     spawn_viewer_tracker(Arc::clone(&bus), backend.viewer_repo());
     spawn_chat_moderation_persistence(Arc::clone(&bus), backend.chat_history_repo());
 
-    let (speak, speak_events, pipeline_config, tts_registry) =
+    let (speak, speak_events, pipeline_config, tts_registry, speech_output) =
         build_speak_queue(&bus, &backend).await;
     let voice_gate = build_voice_gate(settings_repo.as_ref(), speak.clone()).await;
     let speak_bridge = speak
@@ -215,10 +216,14 @@ pub async fn build_runtime(
     let soundboard_settings = SoundboardSettingsHandle::new(
         load_soundboard_settings(soundboard_settings_repo.as_ref()).await,
     );
+    let soundboard_library = Arc::new(ClipLibrary::new(
+        backend.soundboard_clips_repo(),
+        backend.media_repo(),
+    ));
     let soundboard_player = Arc::new(SoundboardPlayer::with_settings(
         Arc::new(CpalSinkFactory),
         Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),
-        backend.soundboard_clips_repo(),
+        soundboard_library,
         soundboard_settings,
     ));
     match speak_dispatcher {
@@ -311,6 +316,21 @@ pub async fn build_runtime(
         Arc::clone(&overlay_kinds),
         Arc::clone(&bus),
         overlay_frames,
+    )
+    .with_media_library(OverlayMediaLibrary::new(
+        backend.media_repo(),
+        backend.soundboard_clips_repo(),
+    ))
+    .with_event_wiring(
+        Arc::new(forge_runtime::actions::ActionsService::new(
+            backend.action_repo(),
+            backend.queue_repo(),
+            backend.history_repo(),
+            backend.trigger_instance_repo(),
+            backend.soundboard_clips_repo(),
+        )),
+        Arc::clone(&sub_action_registry),
+        Arc::clone(&trigger_registry),
     );
     overlay_service_cell.set(overlays.clone());
     if let Some(handle) = server.clone() {
@@ -359,6 +379,7 @@ pub async fn build_runtime(
         speak_events,
         pipeline_config,
         tts_registry,
+        speech_output,
         soundboard_player,
         voice_gate,
     })

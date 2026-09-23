@@ -6,8 +6,10 @@ use gpui::{
     Subscription, Window, div, list, prelude::*, px, relative,
 };
 
+use crate::glyph::{GlyphArt, glyph_art};
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
+use crate::picker::{PICKER_CONTEXT, SelectNext, SelectPrev};
 use crate::status::badge;
 use crate::text_input::{InputEvent, TextInput};
 use crate::tokens::{
@@ -66,13 +68,16 @@ pub enum GridPickerItemState {
     Disabled,
 }
 
+pub type GridItemQuery = Box<dyn Fn(&str) -> bool>;
+
 pub struct GridPickerItem {
     pub id: SharedString,
-    pub icon: Icon,
-    pub icon_color: Rgba,
+    pub glyph: GlyphArt,
+    pub tint: Rgba,
     pub name: SharedString,
     pub desc: SharedString,
     pub state: GridPickerItemState,
+    pub matches: Option<GridItemQuery>,
 }
 
 pub struct GridPickerGroup {
@@ -119,12 +124,13 @@ enum RailSel {
 #[derive(Clone)]
 struct CardData {
     id: SharedString,
-    icon: Icon,
-    icon_color: Rgba,
+    glyph: GlyphArt,
+    tint: Rgba,
     name: SharedString,
     desc: SharedString,
     state: GridPickerItemState,
     favorite: bool,
+    cursored: bool,
 }
 
 enum PickerRow {
@@ -145,9 +151,17 @@ pub struct GridPicker {
     config: GridPickerConfig,
     palette: ForgePalette,
     rows: Vec<PickerRow>,
+    matched: Vec<MatchedItem>,
+    cursor: usize,
     match_total: usize,
     list_state: ListState,
     _search_sub: Subscription,
+}
+
+#[derive(Clone)]
+struct MatchedItem {
+    id: SharedString,
+    row: usize,
 }
 
 impl EventEmitter<GridPickerEvent> for GridPicker {}
@@ -179,6 +193,8 @@ impl GridPicker {
             config,
             palette,
             rows: Vec::new(),
+            matched: Vec::new(),
+            cursor: 0,
             match_total: 0,
             list_state: ListState::new(0, ListAlignment::Top, px(320.0)),
             _search_sub: search_sub,
@@ -191,8 +207,7 @@ impl GridPicker {
         let searching = !self.query.trim().is_empty();
         let query = self.query.trim().to_lowercase();
 
-        let mut rows: Vec<PickerRow> = Vec::new();
-        let mut total = 0usize;
+        let mut shown: Vec<(&GridPickerGroup, Vec<&GridPickerItem>)> = Vec::new();
         for group in &self.groups {
             let show_group = searching
                 || matches!(self.rail, RailSel::All | RailSel::Favorites)
@@ -204,9 +219,7 @@ impl GridPicker {
                 .items
                 .iter()
                 .filter(|it| {
-                    let matches_query = !searching
-                        || it.name.to_lowercase().contains(&query)
-                        || it.desc.to_lowercase().contains(&query);
+                    let matches_query = !searching || item_hit(it, &query);
                     let matches_fav =
                         !matches!(self.rail, RailSel::Favorites) || self.favorites.contains(&it.id);
                     matches_query && matches_fav
@@ -215,31 +228,92 @@ impl GridPicker {
             if items.is_empty() {
                 continue;
             }
-            total += items.len();
+            shown.push((group, items));
+        }
+
+        let total: usize = shown.iter().map(|(_, items)| items.len()).sum();
+        let cursor = if reset_scroll {
+            0
+        } else {
+            self.cursor.min(total.saturating_sub(1))
+        };
+
+        let mut rows: Vec<PickerRow> = Vec::new();
+        let mut matched: Vec<MatchedItem> = Vec::new();
+        for (group, items) in shown {
             rows.push(PickerRow::Header {
                 label: group.label.clone(),
                 dot: group.dot_color,
                 count: items.len(),
             });
             for chunk in items.chunks(2) {
-                let left = self.card_data(chunk[0]);
-                let right = chunk.get(1).map(|it| self.card_data(it));
-                rows.push(PickerRow::Cards([Some(left), right]));
+                let row = rows.len();
+                let mut cards: [Option<CardData>; 2] = [None, None];
+                for (slot, item) in chunk.iter().enumerate() {
+                    cards[slot] = Some(self.card_data(item, matched.len() == cursor));
+                    matched.push(MatchedItem {
+                        id: item.id.clone(),
+                        row,
+                    });
+                }
+                rows.push(PickerRow::Cards(cards));
             }
         }
 
         let count_changed = rows.len() != self.list_state.item_count();
         let new_count = rows.len();
         self.rows = rows;
+        self.matched = matched;
+        self.cursor = cursor;
         self.match_total = total;
         if reset_scroll || count_changed {
             self.list_state.reset(new_count);
         }
     }
 
+    fn move_cursor(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if self.matched.is_empty() {
+            return;
+        }
+        let last = self.matched.len() - 1;
+        self.cursor = match (forward, self.cursor) {
+            (true, position) if position >= last => 0,
+            (true, position) => position + 1,
+            (false, 0) => last,
+            (false, position) => position - 1,
+        };
+        self.rebuild_rows(false);
+        if let Some(item) = self.matched.get(self.cursor) {
+            self.list_state.scroll_to_reveal_item(item.row);
+        }
+        cx.notify();
+    }
+
+    fn select_next(&mut self, _: &SelectNext, _window: &mut Window, cx: &mut Context<Self>) {
+        self.move_cursor(true, cx);
+    }
+
+    fn select_prev(&mut self, _: &SelectPrev, _window: &mut Window, cx: &mut Context<Self>) {
+        self.move_cursor(false, cx);
+    }
+
+    fn confirm_cursored(&mut self, cx: &mut Context<Self>) {
+        let Some(item) = self.matched.get(self.cursor) else {
+            return;
+        };
+        let id = item.id.clone();
+        self.emit_picked(id, cx);
+    }
+
     /// The caller must call this when the picker opens; gpui delivers key events only down the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.search.update(cx, |f, cx| f.focus(window, cx));
+    }
+
+    pub fn set_groups(&mut self, groups: Vec<GridPickerGroup>, cx: &mut Context<Self>) {
+        self.groups = groups;
+        self.rebuild_rows(false);
+        cx.notify();
     }
 
     pub fn set_favorites(&mut self, favorites: HashSet<SharedString>, cx: &mut Context<Self>) {
@@ -270,7 +344,8 @@ impl GridPicker {
                 cx.notify();
             }
             InputEvent::Cancelled => cx.emit(GridPickerEvent::Dismissed),
-            InputEvent::Submitted(_) => {}
+            InputEvent::Submitted(_) => self.confirm_cursored(cx),
+            InputEvent::Blurred(_) => {}
         }
     }
 
@@ -598,15 +673,16 @@ impl GridPicker {
         }
     }
 
-    fn card_data(&self, item: &GridPickerItem) -> CardData {
+    fn card_data(&self, item: &GridPickerItem, cursored: bool) -> CardData {
         CardData {
             id: item.id.clone(),
-            icon: item.icon,
-            icon_color: item.icon_color,
+            glyph: item.glyph.clone(),
+            tint: item.tint,
             name: item.name.clone(),
             desc: item.desc.clone(),
             state: item.state,
             favorite: self.favorites.contains(&item.id),
+            cursored,
         }
     }
 
@@ -647,6 +723,9 @@ impl Render for GridPicker {
             .child(self.render_cards(cx));
 
         div()
+            .key_context(PICKER_CONTEXT)
+            .on_action(cx.listener(Self::select_next))
+            .on_action(cx.listener(Self::select_prev))
             .w(GRID_W)
             .h(GRID_H)
             .flex()
@@ -750,7 +829,12 @@ fn render_card_el(
         .size(GRID_CARD_TILE)
         .rounded(GRID_CARD_TILE_RADIUS)
         .bg(p.surface_overlay)
-        .child(icon(card.icon, GRID_CARD_ICON, card.icon_color));
+        .child(glyph_art(
+            &card.glyph,
+            GRID_CARD_ICON,
+            card.tint,
+            SharedString::from(format!("forge-grid-art-{}", card.id)),
+        ));
 
     let name = div()
         .flex_1()
@@ -821,6 +905,11 @@ fn render_card_el(
         .text_color(p.text_muted)
         .child(card.desc.clone());
 
+    let edge = if card.cursored {
+        accent
+    } else {
+        p.border_regular
+    };
     let base = div()
         .flex_1()
         .min_w(px(0.0))
@@ -831,7 +920,7 @@ fn render_card_el(
         .px(GRID_CARD_PAD_H)
         .rounded(radius(Radius::Md))
         .border(BORDER_ACCENT)
-        .border_color(p.border_regular)
+        .border_color(edge)
         .bg(p.shell)
         .child(top)
         .child(desc);
@@ -850,6 +939,15 @@ fn render_card_el(
             move |this, _: &ClickEvent, _, cx| this.emit_picked(id.clone(), cx)
         }))
         .into_any_element()
+}
+
+fn item_hit(item: &GridPickerItem, query: &str) -> bool {
+    match &item.matches {
+        Some(test) => test(query),
+        None => {
+            item.name.to_lowercase().contains(query) || item.desc.to_lowercase().contains(query)
+        }
+    }
 }
 
 fn scope_label(group_label: &str) -> String {
@@ -907,4 +1005,251 @@ fn grid_rail_entry(
                 .child(label.into()),
         )
         .into_any_element()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use gpui::VisualTestContext;
+
+    use super::*;
+    use crate::palette::FORGE_DEFAULT;
+
+    const ALPHA: &str = "alpha";
+    const BETA: &str = "beta";
+    const GAMMA: &str = "gamma";
+    const SHARED_WORD: &str = "pickable";
+
+    struct Picked {
+        seen: Vec<String>,
+        _sub: Subscription,
+    }
+
+    fn settings() -> GridPickerConfig {
+        GridPickerConfig {
+            accent: FORGE_DEFAULT.brand,
+            header_icon: Icon::Photo,
+            title: "Choose".into(),
+            subtitle: GridPickerSubtitle::Plain("subtitle".into()),
+            footer_hint: "hint".into(),
+            search_placeholder: "search".into(),
+            favorites_label: "Favorites".into(),
+            favorites_empty: "empty".into(),
+        }
+    }
+
+    fn item(id: &str, name: &str, desc: &str, matches: Option<GridItemQuery>) -> GridPickerItem {
+        GridPickerItem {
+            id: SharedString::from(id.to_owned()),
+            glyph: GlyphArt::Icon(Icon::Photo),
+            tint: FORGE_DEFAULT.brand,
+            name: SharedString::from(name.to_owned()),
+            desc: SharedString::from(desc.to_owned()),
+            state: GridPickerItemState::Normal,
+            matches,
+        }
+    }
+
+    fn band(scope: &str, items: Vec<GridPickerItem>) -> GridPickerGroup {
+        GridPickerGroup {
+            label: SharedString::from(scope.to_owned()),
+            dot_color: FORGE_DEFAULT.brand,
+            scope: SharedString::from(scope.to_owned()),
+            items,
+        }
+    }
+
+    fn plain_roster() -> Vec<GridPickerGroup> {
+        vec![
+            band(
+                "first",
+                vec![
+                    item(ALPHA, "Alpha", SHARED_WORD, None),
+                    item(BETA, "Beta", SHARED_WORD, None),
+                ],
+            ),
+            band("second", vec![item(GAMMA, "Gamma", SHARED_WORD, None)]),
+        ]
+    }
+
+    fn open(
+        cx: &mut gpui::TestAppContext,
+        groups: Vec<GridPickerGroup>,
+    ) -> (Entity<GridPicker>, Entity<Picked>, &mut VisualTestContext) {
+        let (picker, vcx) = cx.add_window_view(|_window, cx| {
+            GridPicker::new(settings(), groups, HashSet::new(), FORGE_DEFAULT, cx)
+        });
+        let picked = vcx.update(|_window, cx| {
+            cx.new(|cx| Picked {
+                seen: Vec::new(),
+                _sub: cx.subscribe(&picker, |this: &mut Picked, _view, event, _cx| {
+                    if let GridPickerEvent::Picked(id) = event {
+                        this.seen.push(id.to_string());
+                    }
+                }),
+            })
+        });
+        (picker, picked, vcx)
+    }
+
+    fn search(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext, event: InputEvent) {
+        vcx.update(|_window, cx| {
+            picker.update(cx, |view, cx| {
+                let field = view.search.clone();
+                view.on_search_event(field, &event, cx);
+            });
+        });
+        vcx.run_until_parked();
+    }
+
+    fn type_query(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext, text: &str) {
+        search(
+            picker,
+            vcx,
+            InputEvent::Changed(SharedString::from(text.to_owned())),
+        );
+    }
+
+    fn press_enter(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext) {
+        search(picker, vcx, InputEvent::Submitted(SharedString::default()));
+    }
+
+    fn arrow(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext, forward: bool) {
+        vcx.update(|window, cx| {
+            picker.update(cx, |view, cx| {
+                if forward {
+                    view.select_next(&SelectNext, window, cx);
+                } else {
+                    view.select_prev(&SelectPrev, window, cx);
+                }
+            });
+        });
+    }
+
+    fn matched_ids(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext) -> Vec<String> {
+        vcx.update(|_window, cx| {
+            picker
+                .read(cx)
+                .matched
+                .iter()
+                .map(|entry| entry.id.to_string())
+                .collect()
+        })
+    }
+
+    fn cursored(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext) -> Option<String> {
+        vcx.update(|_window, cx| {
+            let view = picker.read(cx);
+            view.matched
+                .get(view.cursor)
+                .map(|entry| entry.id.to_string())
+        })
+    }
+
+    fn picks(picked: &Entity<Picked>, vcx: &mut VisualTestContext) -> Vec<String> {
+        vcx.update(|_window, cx| picked.read(cx).seen.clone())
+    }
+
+    #[gpui::test]
+    fn an_item_that_carries_its_own_test_is_searched_through_it_instead_of_its_words(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let groups = vec![band(
+            "only",
+            vec![
+                item("own-hit", "zzz", "zzz", Some(Box::new(|q| q == "glow"))),
+                item("own-miss", "Glowing", "glow", Some(Box::new(|_| false))),
+                item("words", "Glow ring", "", None),
+            ],
+        )];
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        type_query(&picker, vcx, "glow");
+
+        assert_eq!(matched_ids(&picker, vcx), vec!["own-hit", "words"]);
+    }
+
+    #[gpui::test]
+    fn the_cursor_wraps_forward_through_every_match_in_display_order(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+
+        let mut walked = vec![cursored(&picker, vcx)];
+        for _ in 0..3 {
+            arrow(&picker, vcx, true);
+            walked.push(cursored(&picker, vcx));
+        }
+
+        assert_eq!(
+            walked,
+            vec![
+                Some(ALPHA.to_owned()),
+                Some(BETA.to_owned()),
+                Some(GAMMA.to_owned()),
+                Some(ALPHA.to_owned()),
+            ],
+        );
+    }
+
+    #[gpui::test]
+    fn the_cursor_wraps_backward_from_the_first_match_to_the_last(cx: &mut gpui::TestAppContext) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+
+        arrow(&picker, vcx, false);
+
+        assert_eq!(cursored(&picker, vcx), Some(GAMMA.to_owned()));
+    }
+
+    #[gpui::test]
+    fn a_new_query_puts_the_cursor_back_on_the_first_match(cx: &mut gpui::TestAppContext) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+        arrow(&picker, vcx, true);
+        arrow(&picker, vcx, true);
+
+        type_query(&picker, vcx, SHARED_WORD);
+
+        assert_eq!(cursored(&picker, vcx), Some(ALPHA.to_owned()));
+    }
+
+    #[gpui::test]
+    fn enter_picks_the_item_the_cursor_rests_on(cx: &mut gpui::TestAppContext) {
+        let (picker, picked, vcx) = open(cx, plain_roster());
+        arrow(&picker, vcx, true);
+
+        press_enter(&picker, vcx);
+
+        assert_eq!(picks(&picked, vcx), vec![BETA.to_owned()]);
+    }
+
+    #[gpui::test]
+    fn enter_over_a_query_that_matches_nothing_picks_nothing(cx: &mut gpui::TestAppContext) {
+        let (picker, picked, vcx) = open(cx, plain_roster());
+        type_query(&picker, vcx, "no-such-card");
+
+        press_enter(&picker, vcx);
+
+        assert!(picks(&picked, vcx).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_roster_that_arrives_after_the_search_was_typed_is_still_filtered_by_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+        type_query(&picker, vcx, BETA);
+
+        vcx.update(|_window, cx| {
+            picker.update(cx, |view, cx| {
+                let mut grown = plain_roster();
+                grown.push(band("late", vec![item("betamax", "Betamax", "", None)]));
+                view.set_groups(grown, cx);
+            });
+        });
+
+        assert_eq!(
+            matched_ids(&picker, vcx),
+            vec![BETA.to_owned(), "betamax".to_owned()],
+        );
+    }
 }

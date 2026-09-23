@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 use regex::Regex;
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::whisper as whisper_fields;
 
 pub(crate) struct WhisperReceivedDescriptor;
@@ -143,101 +145,117 @@ impl TriggerKindDescriptor for WhisperReceivedDescriptor {
         }
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user = event.payload.get(whisper_fields::USER);
-
-        let user_id = user
-            .and_then(|u| u.get(whisper_fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_login = user
-            .and_then(|u| u.get(whisper_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_display_name = user
-            .and_then(|u| u.get(whisper_fields::USER_DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_color = user
-            .and_then(|u| u.get(whisper_fields::USER_COLOR))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        let whisper = event.payload.get(whisper_fields::WHISPER);
-        let whisper_text = whisper
-            .and_then(|w| w.get(whisper_fields::WHISPER_TEXT))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let whisper_thread_id = event
-            .payload
-            .get(whisper_fields::WHISPER_THREAD_ID)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("whisper.text".to_owned(), Variant::String(whisper_text))
-            .set(
-                "whisper.thread_id".to_owned(),
-                Variant::String(whisper_thread_id),
-            )
-            .set("user.id".to_owned(), Variant::String(user_id))
-            .set("user.login".to_owned(), Variant::String(user_login))
-            .set(
-                "user.display_name".to_owned(),
-                Variant::String(user_display_name),
-            )
-            .set("user.color".to_owned(), Variant::String(user_color))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "whisper.text".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Whisper text".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), sender_identity)
+                .message_text(whisper_text)
+                .event_specific(
                     DeclaredVariable {
                         name: "whisper.thread_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Whisper thread ID".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "user.id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender ID".to_owned(),
-                        synthesis: None,
+                    |event| {
+                        Variant::String(payload_read::text(
+                            event,
+                            whisper_fields::WHISPER_THREAD_ID,
+                        ))
                     },
-                    DeclaredVariable {
-                        name: "user.login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "user.display_name".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Sender display name".to_owned(),
-                        synthesis: Some(SynthesisHint::DisplayName),
-                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "user.color".to_owned(),
                         kind: VariantKind::String,
                         label: "Sender name color".to_owned(),
                         synthesis: None,
                     },
-                ],
-            }
-        })
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            whisper_fields::USER,
+                            whisper_fields::USER_COLOR,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "whisper.text".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Whisper text".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
+                    },
+                    CanonicalVariable::MessageText,
+                    |event| Variant::String(whisper_text(event)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "user.id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            whisper_fields::USER,
+                            whisper_fields::USER_ID,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "user.login".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender login".to_owned(),
+                        synthesis: Some(SynthesisHint::Username),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Login),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            whisper_fields::USER,
+                            whisper_fields::USER_LOGIN,
+                        ))
+                    },
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "user.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Sender display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            whisper_fields::USER,
+                            whisper_fields::USER_DISPLAY_NAME,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn sender_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(whisper_fields::USER),
+        whisper_fields::USER_ID,
+        whisper_fields::USER_LOGIN,
+        whisper_fields::USER_DISPLAY_NAME,
+    )
+}
+
+fn whisper_text(event: &Event) -> String {
+    payload_read::nested_text(event, whisper_fields::WHISPER, whisper_fields::WHISPER_TEXT)
 }
 
 #[cfg(test)]

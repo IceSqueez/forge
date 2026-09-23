@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -6,10 +7,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink, PcmBuffer, PlaybackHandle};
 use forge_runtime::{SoundPlayer, SoundPlayerError};
-use forge_storage::SoundboardClipsRepo;
 use forge_types::{ClipId, OutputDevice};
 
 use crate::error::SoundboardError;
+use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 use crate::sink_factory::AudioSinkFactory;
 
@@ -53,7 +54,7 @@ type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, StopToken, String)>>>>
 pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
     event_sink: Arc<dyn AudioEventSink>,
-    clips_repo: Arc<dyn SoundboardClipsRepo>,
+    library: Arc<ClipLibrary>,
     /// The `u64` tags one concrete play so concurrent plays of the same clip differ.
     active: ActiveRegistry,
     next_play_id: AtomicU64,
@@ -65,19 +66,23 @@ impl SoundboardPlayer {
     pub fn with_settings(
         sink_factory: Arc<dyn AudioSinkFactory>,
         event_sink: Arc<dyn AudioEventSink>,
-        clips_repo: Arc<dyn SoundboardClipsRepo>,
+        library: Arc<ClipLibrary>,
         settings: SoundboardSettingsHandle,
     ) -> Self {
         let master_volume = settings.load().master_volume.clamp(0.0, MAX_MASTER_GAIN);
         Self {
             sink_factory,
             event_sink,
-            clips_repo,
+            library,
             active: Arc::new(Mutex::new(HashMap::new())),
             next_play_id: AtomicU64::new(0),
             master_gain_bits: AtomicU32::new(master_volume.to_bits()),
             settings,
         }
+    }
+
+    pub fn library(&self) -> &Arc<ClipLibrary> {
+        &self.library
     }
 
     pub fn settings_handle(&self) -> SoundboardSettingsHandle {
@@ -135,27 +140,31 @@ impl SoundboardPlayer {
         clip_id: ClipId,
     ) -> Result<Option<f32>, SoundboardError> {
         let mut clip = self
-            .clips_repo
+            .library
             .get(clip_id)
-            .await
-            .map_err(|e| SoundboardError::Storage(e.to_string()))?
+            .await?
             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
 
         if clip.duration_secs.is_some() {
             return Ok(clip.duration_secs);
         }
 
-        let path = clip.file_path.clone();
+        let Some(path) = self
+            .library
+            .source_of(&clip)
+            .await
+            .path()
+            .map(Path::to_path_buf)
+        else {
+            return Err(SoundboardError::SourceMissing(clip.name.clone()));
+        };
         let probed =
             tokio::task::spawn_blocking(move || crate::duration::probe_clip_duration_secs(&path))
                 .await
                 .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
 
         clip.duration_secs = Some(probed);
-        self.clips_repo
-            .save(&clip)
-            .await
-            .map_err(|e| SoundboardError::Storage(e.to_string()))?;
+        self.library.save_clip(&clip).await?;
 
         Ok(Some(probed))
     }
@@ -172,11 +181,27 @@ impl SoundboardPlayer {
         }
 
         let clip = self
-            .clips_repo
+            .library
             .get(clip_id)
-            .await
-            .map_err(|e| SoundboardError::Storage(e.to_string()))?
+            .await?
             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
+
+        let path = match self.library.source_of(&clip).await {
+            ClipSource::Managed(path) => path,
+            ClipSource::Legacy(path) => {
+                self.library.adopt_in_background(clip.id, path.clone());
+                path
+            }
+            ClipSource::Missing => {
+                let failure = SoundboardError::SourceMissing(clip.name.clone());
+                self.event_sink.emit(AudioEvent::PlaybackFailed {
+                    clip_id: Some(clip_id),
+                    clip_label: Some(clip.name.clone()),
+                    error: failure.to_string(),
+                });
+                return Err(failure);
+            }
+        };
 
         let device = resolve_device(&clip.output_device, override_device, &settings);
         let device_label = device_label(&device);
@@ -193,7 +218,6 @@ impl SoundboardPlayer {
             }
         };
 
-        let path = clip.file_path.clone();
         let buffer = match tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
             .await
             .map_err(|e| SoundboardError::JoinError(e.to_string()))
@@ -447,6 +471,7 @@ fn device_label(device: &OutputDevice) -> String {
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
+    clippy::panic,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )]
@@ -459,11 +484,114 @@ mod tests {
 
     use async_trait::async_trait;
     use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink, PcmBuffer};
-    use forge_storage::{SoundboardClipsRepo, StorageError, StoredClip};
+    use forge_storage::{
+        MediaBlob, MediaBlobId, MediaReferrer, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
+        StorageError, StoredClip,
+    };
     use forge_types::{ClipId, OutputDevice};
 
     use super::*;
     use crate::sink_factory::AudioSinkFactory;
+
+    struct NoManagedMedia {
+        imports: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl MediaRepo for NoManagedMedia {
+        async fn store(&self, _label: &str, _bytes: Vec<u8>) -> Result<MediaBlob, StorageError> {
+            Err(StorageError::NotReady)
+        }
+
+        async fn import_file(&self, _source: &Path) -> Result<MediaBlob, StorageError> {
+            self.imports.fetch_add(1, Ordering::Relaxed);
+            Err(StorageError::NotReady)
+        }
+
+        async fn get(&self, _id: &MediaBlobId) -> Result<Option<MediaBlob>, StorageError> {
+            Ok(None)
+        }
+
+        async fn list(&self) -> Result<Vec<MediaBlob>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn total_bytes(&self) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn resolve(&self, id: &MediaBlobId) -> Result<PathBuf, StorageError> {
+            Err(StorageError::NotFound {
+                key: id.as_str().to_owned(),
+            })
+        }
+
+        async fn read(&self, id: &MediaBlobId) -> Result<Vec<u8>, StorageError> {
+            Err(StorageError::NotFound {
+                key: id.as_str().to_owned(),
+            })
+        }
+
+        async fn delete(&self, _id: &MediaBlobId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn retain(
+            &self,
+            _referrer: &MediaReferrer,
+            _id: &MediaBlobId,
+        ) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn release(&self, _referrer: &MediaReferrer) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn release_all(
+            &self,
+            _kind: MediaReferrerKind,
+            _referrer_id: &str,
+        ) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn referrers(&self, _id: &MediaBlobId) -> Result<Vec<MediaReferrer>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn blob_of(
+            &self,
+            _referrer: &MediaReferrer,
+        ) -> Result<Option<MediaBlobId>, StorageError> {
+            Ok(None)
+        }
+    }
+
+    fn unadopted_library(clip: Option<StoredClip>) -> Arc<ClipLibrary> {
+        counted_unadopted_library(clip).0
+    }
+
+    fn counted_unadopted_library(
+        clip: Option<StoredClip>,
+    ) -> (Arc<ClipLibrary>, Arc<std::sync::atomic::AtomicUsize>) {
+        let imports = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let library = Arc::new(ClipLibrary::new(
+            Arc::new(MockClipsRepo { clip }),
+            Arc::new(NoManagedMedia {
+                imports: Arc::clone(&imports),
+            }),
+        ));
+        (library, imports)
+    }
+
+    async fn settle_background_work() {
+        for _ in 0..BACKGROUND_SETTLE_POLLS {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    const BACKGROUND_SETTLE_POLLS: usize = 8;
 
     struct CountingSink {
         count: Arc<Mutex<usize>>,
@@ -633,11 +761,10 @@ mod tests {
 
         let (factory, _count, last_buf) = CountingFactory::new();
         let (event_sink, _events) = RecordingEventSink::new();
-        let clips_repo = MockClipsRepo { clip: Some(clip) };
         let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
-            Arc::new(clips_repo),
+            unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
         );
 
@@ -673,12 +800,11 @@ mod tests {
 
         let (factory, play_count, _last_buf) = CountingFactory::new();
         let (event_sink, events) = RecordingEventSink::new();
-        let clips_repo = MockClipsRepo { clip: Some(clip) };
 
         let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
-            Arc::new(clips_repo),
+            unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
         );
 
@@ -766,7 +892,7 @@ mod tests {
         let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
-            Arc::new(MockClipsRepo { clip: None }),
+            unadopted_library(None),
             SoundboardSettingsHandle::default(),
         );
 
@@ -779,12 +905,11 @@ mod tests {
         let clip_id = ClipId::new();
         let (factory, _count, _buf) = CountingFactory::new();
         let (event_sink, events) = RecordingEventSink::new();
-        let clips_repo = MockClipsRepo { clip: None };
 
         let player = SoundboardPlayer::with_settings(
             Arc::new(factory),
             Arc::new(event_sink),
-            Arc::new(clips_repo),
+            unadopted_library(None),
             SoundboardSettingsHandle::default(),
         );
 
@@ -823,13 +948,12 @@ mod tests {
         }
 
         let (event_sink, _events) = RecordingEventSink::new();
-        let clips_repo = MockClipsRepo { clip: Some(clip) };
         let player = SoundboardPlayer::with_settings(
             Arc::new(DeviceCapturingFactory {
                 captured: received_device_clone,
             }),
             Arc::new(event_sink),
-            Arc::new(clips_repo),
+            unadopted_library(Some(clip)),
             SoundboardSettingsHandle::default(),
         );
 
@@ -843,5 +967,140 @@ mod tests {
 
         let captured = received_device.lock().unwrap();
         assert_eq!(*captured, Some(override_dev));
+    }
+
+    #[tokio::test]
+    async fn play_reports_a_missing_source_when_neither_copy_of_the_clip_resolves() {
+        let clip_id = ClipId::new();
+        let clip = make_stored_clip(clip_id, PathBuf::from("/forge-qa/never-written.wav"));
+        let (event_sink, _events) = RecordingEventSink::new();
+        let (factory, play_count, _last_buf) = CountingFactory::new();
+
+        let player = SoundboardPlayer::with_settings(
+            Arc::new(factory),
+            Arc::new(event_sink),
+            unadopted_library(Some(clip)),
+            SoundboardSettingsHandle::default(),
+        );
+
+        let error = player.play(clip_id, None).await.unwrap_err();
+
+        assert!(
+            matches!(error, SoundboardError::SourceMissing(ref name) if name == "test clip"),
+            "a clip with no readable source did not name itself: {error:?}"
+        );
+        assert_eq!(*play_count.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn play_names_the_clip_in_the_failure_it_emits_for_a_missing_source() {
+        let clip_id = ClipId::new();
+        let clip = make_stored_clip(clip_id, PathBuf::from("/forge-qa/never-written.wav"));
+        let (event_sink, events) = RecordingEventSink::new();
+
+        let player = SoundboardPlayer::with_settings(
+            Arc::new(CountingFactory::new().0),
+            Arc::new(event_sink),
+            unadopted_library(Some(clip)),
+            SoundboardSettingsHandle::default(),
+        );
+
+        let _ = player.play(clip_id, None).await;
+
+        let recorded = events.lock().unwrap();
+        let [AudioEvent::PlaybackFailed { error, .. }] = recorded.as_slice() else {
+            panic!("expected a single PlaybackFailed, got {recorded:?}");
+        };
+        assert!(
+            error.contains("test clip"),
+            "the emitted failure does not name the clip: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn play_starts_a_clip_that_is_not_in_the_managed_library_yet() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, 100);
+        let clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
+        let (event_sink, events) = RecordingEventSink::new();
+        let (factory, play_count, _last_buf) = CountingFactory::new();
+
+        let player = SoundboardPlayer::with_settings(
+            Arc::new(factory),
+            Arc::new(event_sink),
+            unadopted_library(Some(clip)),
+            SoundboardSettingsHandle::default(),
+        );
+
+        player.play(clip_id, None).await.unwrap();
+
+        assert_eq!(*play_count.lock().unwrap(), 1);
+        assert!(matches!(
+            events.lock().unwrap().first(),
+            Some(AudioEvent::PlaybackStarted { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn play_schedules_the_import_of_a_clip_that_is_not_in_the_managed_library_yet() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, 100);
+        let clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
+        let (event_sink, _events) = RecordingEventSink::new();
+        let (library, imports) = counted_unadopted_library(Some(clip));
+
+        let player = SoundboardPlayer::with_settings(
+            Arc::new(CountingFactory::new().0),
+            Arc::new(event_sink),
+            library,
+            SoundboardSettingsHandle::default(),
+        );
+
+        player.play(clip_id, None).await.unwrap();
+        settle_background_work().await;
+
+        assert_eq!(imports.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn play_reports_playback_failed_when_no_output_device_can_be_built() {
+        struct NoDeviceFactory;
+
+        #[async_trait]
+        impl AudioSinkFactory for NoDeviceFactory {
+            async fn build(
+                &self,
+                _device: &OutputDevice,
+            ) -> Result<Arc<dyn AudioSink>, AudioError> {
+                Err(AudioError::NoDefaultDevice)
+            }
+        }
+
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, 100);
+        let clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
+        let (event_sink, events) = RecordingEventSink::new();
+
+        let player = SoundboardPlayer::with_settings(
+            Arc::new(NoDeviceFactory),
+            Arc::new(event_sink),
+            unadopted_library(Some(clip)),
+            SoundboardSettingsHandle::default(),
+        );
+
+        let error = player.play(clip_id, None).await.unwrap_err();
+
+        assert!(
+            matches!(error, SoundboardError::Audio(AudioError::NoDefaultDevice)),
+            "a sink that cannot be built did not surface as an audio failure: {error:?}"
+        );
+        let recorded = events.lock().unwrap();
+        assert!(
+            matches!(
+                recorded.as_slice(),
+                [AudioEvent::PlaybackFailed { clip_id: Some(id), .. }] if *id == clip_id
+            ),
+            "expected a single PlaybackFailed for the clip, got {recorded:?}"
+        );
     }
 }

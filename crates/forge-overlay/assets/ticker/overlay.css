@@ -2,6 +2,7 @@
   --accent: #f9e2af;
   --font: sans-serif;
   --reveal: 0.4s;
+  --text-scale: calc(var(--text-size, 19) / 19);
 }
 
 html,
@@ -31,10 +32,11 @@ body[data-position="bottom"] {
 #stage {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: calc(14px * var(--text-scale));
   width: 100%;
+  min-height: var(--element-height, auto);
   box-sizing: border-box;
-  padding: 10px 26px;
+  padding: calc(10px * var(--text-scale)) calc(26px * var(--text-scale));
   border-top: 1px solid var(--accent);
   border-bottom: 1px solid var(--accent);
   background: rgba(20, 20, 28, 0.9);
@@ -47,30 +49,30 @@ body[data-position="bottom"] {
 
 .mark {
   flex: none;
-  width: 6px;
-  height: 22px;
-  border-radius: 3px;
+  width: calc(6px * var(--text-scale));
+  height: calc(22px * var(--text-scale));
+  border-radius: calc(3px * var(--text-scale));
   background: var(--accent);
 }
 
 .body {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: calc(12px * var(--text-scale));
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .headline {
   color: #fff;
-  font-size: 19px;
+  font-size: calc(19px * var(--text-scale));
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
 .subline {
   color: var(--accent);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
 }
 
 #stage.hidden {

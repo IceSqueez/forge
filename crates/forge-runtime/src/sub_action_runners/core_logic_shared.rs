@@ -1,6 +1,8 @@
 use forge_registry::{ChainSignal, ControlSignal, RunContext};
 use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant};
 
+pub(super) const CASE_CHAIN_KEY: &str = "chain";
+
 /// A missing or malformed value yields an empty chain, so an unset branch is a no-op, not an error.
 pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubActionStep> {
     decode_steps(config.get(key))

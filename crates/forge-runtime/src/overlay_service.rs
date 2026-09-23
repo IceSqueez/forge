@@ -6,10 +6,14 @@ use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_overlay::{
     DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
-    OverlayKindRegistry, delivered_content, ensure_shared_directory, materialize_overlay,
-    read_overlay_source, remove_overlay_directory, sample_content, write_overlay_source,
+    OverlayKindRegistry, OverlayMedia, SampleContext, SampleTrigger, delivered_content,
+    ensure_shared_directory, materialize_overlay, read_overlay_source, remove_overlay_directory,
+    sample_content, sample_context, write_overlay_source,
 };
 use forge_platform_core::paths;
+use forge_registry::{
+    KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
+};
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     reserved_keys,
@@ -17,7 +21,9 @@ use forge_storage::{
 use forge_types::ArgStack;
 use serde_json::json;
 
+use crate::actions::ActionsService;
 use crate::bus::EventBus;
+use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -32,6 +38,9 @@ pub enum OverlayServiceError {
     #[error("overlay '{id}' needs an overlay type this build does not carry: {kind_id}")]
     UnavailableKind { id: OverlayId, kind_id: String },
 
+    #[error("overlay '{id}' of type {kind_id} fills its own content and cannot take a send")]
+    ContentNotAuthorable { id: OverlayId, kind_id: String },
+
     #[error(transparent)]
     Storage(#[from] StorageError),
 
@@ -42,16 +51,39 @@ pub enum OverlayServiceError {
     Interrupted,
 }
 
+/// Counts only connections whose receiver was still alive; a page that closed counts for nothing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OverlayReceivers {
+    pub sources: usize,
+    pub preview_tabs: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverlayDelivery {
+    Delivered { sources: usize },
+    OnlyPreview { tabs: usize },
+    NoPage,
+}
+
+impl OverlayReceivers {
+    pub fn outcome(self) -> OverlayDelivery {
+        match (self.sources, self.preview_tabs) {
+            (0, 0) => OverlayDelivery::NoPage,
+            (0, tabs) => OverlayDelivery::OnlyPreview { tabs },
+            (sources, _) => OverlayDelivery::Delivered { sources },
+        }
+    }
+}
+
 /// Addressed at one overlay identity and never at the bus, so nothing delivered here runs an action.
 #[async_trait]
 pub trait OverlayFrameSink: Send + Sync {
-    /// Returns how many connections for `identity` still had a live receiver when sent.
     async fn deliver_content(
         &self,
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) -> usize;
+    ) -> OverlayReceivers;
 
     async fn deliver_reload(&self, identity: &OverlayId);
 
@@ -70,8 +102,7 @@ pub trait OverlayConnectListener: Send + Sync {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestFire {
     pub content: OverlayConfig,
-    /// False when no connected overlay page received it, so the caller can say the preview ran alone.
-    pub delivered: bool,
+    pub delivery: OverlayDelivery,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -87,6 +118,15 @@ struct OverlayService {
     kinds: Arc<OverlayKindRegistry>,
     bus: Arc<EventBus>,
     frames: Option<Arc<dyn OverlayFrameSink>>,
+    media: Option<OverlayMediaLibrary>,
+    wiring: Option<EventWiring>,
+}
+
+#[derive(Clone)]
+struct EventWiring {
+    actions: Arc<ActionsService>,
+    sub_actions: Arc<SubActionRegistry>,
+    triggers: Arc<TriggerRegistry>,
 }
 
 #[derive(Clone)]
@@ -109,7 +149,48 @@ impl OverlayServiceHandle {
                 kinds,
                 bus,
                 frames,
+                media: None,
+                wiring: None,
             }),
+        }
+    }
+
+    pub fn with_media_library(self, library: OverlayMediaLibrary) -> Self {
+        Self {
+            inner: Arc::new(OverlayService {
+                media: Some(library),
+                ..self.parts()
+            }),
+        }
+    }
+
+    pub fn with_event_wiring(
+        self,
+        actions: Arc<ActionsService>,
+        sub_actions: Arc<SubActionRegistry>,
+        triggers: Arc<TriggerRegistry>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(OverlayService {
+                wiring: Some(EventWiring {
+                    actions,
+                    sub_actions,
+                    triggers,
+                }),
+                ..self.parts()
+            }),
+        }
+    }
+
+    fn parts(&self) -> OverlayService {
+        OverlayService {
+            repo: Arc::clone(&self.inner.repo),
+            settings: Arc::clone(&self.inner.settings),
+            kinds: Arc::clone(&self.inner.kinds),
+            bus: Arc::clone(&self.inner.bus),
+            frames: self.inner.frames.clone(),
+            media: self.inner.media.clone(),
+            wiring: self.inner.wiring.clone(),
         }
     }
 
@@ -205,6 +286,13 @@ impl OverlayServiceHandle {
         Ok(blocking(move || write_overlay_source(&root, &identity, &name, &body)).await??)
     }
 
+    pub async fn release_media(&self, id: &OverlayId) -> Result<u64, OverlayServiceError> {
+        let Some(library) = &self.inner.media else {
+            return Ok(0);
+        };
+        Ok(library.release(id).await?)
+    }
+
     /// `Ok(false)` when the directory was already gone.
     pub async fn remove_folder(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
         let root = self.root().await;
@@ -236,14 +324,14 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// `Ok(false)` when nothing is serving. Replace content is persisted before it is sent, so a
-    /// page that reconnects is handed the same values it was showing.
+    /// Replace content is persisted before it is sent, so a page that reconnects is handed the
+    /// same values it was showing.
     pub async fn deliver_content(
         &self,
         id: &OverlayId,
         content: OverlayConfig,
         duration_ms: Option<u64>,
-    ) -> Result<bool, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, OverlayServiceError> {
         let definition = self.load(id).await?;
         let disposition = self.disposition_of(&definition)?;
         self.push(&definition.id, disposition, &content, duration_ms)
@@ -251,14 +339,14 @@ impl OverlayServiceHandle {
     }
 
     /// The send-to-overlay step's funnel: the supplied fields are laid over the overlay's own
-    /// content, both expanded against the run's arguments. `Ok(false)` when nothing is serving.
+    /// content, both expanded against the run's arguments.
     pub async fn send_to(
         &self,
         id: &OverlayId,
         supplied: &OverlayConfig,
         args: &ArgStack,
         duration_ms: Option<u64>,
-    ) -> Result<bool, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, OverlayServiceError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
             return Err(OverlayServiceError::UnavailableKind {
@@ -266,6 +354,12 @@ impl OverlayServiceHandle {
                 kind_id: definition.kind_id,
             });
         };
+        if descriptor.content_is_machine_filled() {
+            return Err(OverlayServiceError::ContentNotAuthorable {
+                id: definition.id,
+                kind_id: definition.kind_id,
+            });
+        }
 
         let content = delivered_content(descriptor, &definition.config, supplied, args);
         let disposition = descriptor.delivery_disposition();
@@ -284,7 +378,11 @@ impl OverlayServiceHandle {
             });
         };
 
-        let content = sample_content(descriptor, &definition.config);
+        let content = sample_content(
+            descriptor,
+            &definition.config,
+            &self.sample_pass(&definition.id).await,
+        );
         let disposition = descriptor.delivery_disposition();
         self.inner.bus.record(Event::new(
             EventSource::Core,
@@ -292,19 +390,20 @@ impl OverlayServiceHandle {
             json!({ OVERLAY_ID_KEY: definition.id.as_str() }),
         ));
 
-        let delivered = self
+        let delivery = self
             .push(&definition.id, disposition, &content, None)
             .await?;
 
-        Ok(TestFire { content, delivered })
+        Ok(TestFire { content, delivery })
     }
 
     /// Only a Replace kind ever has a retained row, so what is stored is what may be replayed.
-    async fn replay_retained(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
+    async fn replay_retained(&self, id: &OverlayId) -> Result<(), OverlayServiceError> {
         let Some(content) = self.inner.repo.get_retained_content(id).await? else {
-            return Ok(false);
+            return Ok(());
         };
-        Ok(self.send(id, &content, None).await)
+        self.send(id, &content, None).await;
+        Ok(())
     }
 
     async fn push(
@@ -313,7 +412,7 @@ impl OverlayServiceHandle {
         disposition: DeliveryDisposition,
         content: &OverlayConfig,
         duration_ms: Option<u64>,
-    ) -> Result<bool, OverlayServiceError> {
+    ) -> Result<OverlayDelivery, OverlayServiceError> {
         if disposition.retains_last_content() {
             self.inner.repo.set_retained_content(id, content).await?;
         }
@@ -325,14 +424,14 @@ impl OverlayServiceHandle {
         id: &OverlayId,
         content: &OverlayConfig,
         duration_ms: Option<u64>,
-    ) -> bool {
+    ) -> OverlayDelivery {
         let Some(frames) = &self.inner.frames else {
-            return false;
+            return OverlayDelivery::NoPage;
         };
         frames
             .deliver_content(id, content_json(content), duration_ms)
             .await
-            > 0
+            .outcome()
     }
 
     fn disposition_of(
@@ -362,9 +461,28 @@ impl OverlayServiceHandle {
         definition: &OverlayDefinition,
     ) -> Result<MaterializeReport, OverlayServiceError> {
         let root = self.root().await;
-        let instance = instance_of(definition);
+        let instance = instance_of(
+            definition,
+            self.media_pass(definition).await,
+            self.sample_pass(&definition.id).await,
+        );
         let kinds = Arc::clone(&self.inner.kinds);
         let report = blocking(move || materialize_overlay(&root, &instance, &kinds)).await??;
+
+        if !report.media_sweep_failures.is_empty() {
+            tracing::warn!(
+                overlay = %definition.id,
+                paths = ?report.media_sweep_failures,
+                "generated overlay media could not be swept"
+            );
+        }
+        if !report.media_issues.is_empty() {
+            tracing::warn!(
+                overlay = %definition.id,
+                issues = ?report.media_issues,
+                "overlay media reference did not resolve; the page receives no file for it"
+            );
+        }
 
         if definition.generator_version != GENERATOR_VERSION {
             let mut stamped = definition.clone();
@@ -373,6 +491,45 @@ impl OverlayServiceHandle {
         }
 
         Ok(report)
+    }
+
+    async fn sample_pass(&self, id: &OverlayId) -> SampleContext {
+        let Some(wiring) = &self.inner.wiring else {
+            return SampleContext::neutral();
+        };
+        let feeds = match wiring.actions.overlay_feeds(id, &wiring.sub_actions).await {
+            Ok(feeds) => feeds,
+            Err(error) => {
+                tracing::warn!(overlay = %id, %error, "what feeds this overlay is unreadable; its sample stays neutral");
+                return SampleContext::neutral();
+            }
+        };
+
+        let feeding: Vec<SampleTrigger> = feeds
+            .iter()
+            .flat_map(|feed| feed.triggers.iter())
+            .map(|instance| feeding_trigger(&wiring.triggers, &instance.kind_id))
+            .collect();
+        sample_context(&feeding)
+    }
+
+    async fn media_pass(&self, definition: &OverlayDefinition) -> OverlayMedia {
+        let config = match self
+            .inner
+            .kinds
+            .effective_config(&definition.kind_id, &definition.config)
+        {
+            Ok(config) => config,
+            Err(_) => definition.config.clone(),
+        };
+
+        let Some(library) = &self.inner.media else {
+            return unresolvable(&config).media;
+        };
+
+        let pass = library.resolve(&config).await;
+        library.record(&definition.id, &pass).await;
+        pass.media
     }
 }
 
@@ -410,12 +567,27 @@ fn content_json(content: &OverlayConfig) -> serde_json::Value {
     serde_json::Value::Object(
         content
             .iter()
-            .map(|(key, value)| (key.clone(), value.to_json()))
+            .map(|(key, value)| (key.clone(), value.to_plain_json()))
             .collect(),
     )
 }
 
-fn instance_of(definition: &OverlayDefinition) -> OverlayInstance {
+fn feeding_trigger(triggers: &TriggerRegistry, kind_id: &str) -> SampleTrigger {
+    let descriptor = triggers.get(kind_id);
+    SampleTrigger {
+        kind_id: kind_id.to_owned(),
+        contract: descriptor.map_or(KindPlatformContract::Universal, |held| {
+            held.platform_contract()
+        }),
+        variables: descriptor.and_then(declared_variables).unwrap_or_default(),
+    }
+}
+
+fn instance_of(
+    definition: &OverlayDefinition,
+    media: OverlayMedia,
+    sample: SampleContext,
+) -> OverlayInstance {
     OverlayInstance {
         id: definition.id.as_str().to_owned(),
         display_name: definition.display_name.clone(),
@@ -423,6 +595,8 @@ fn instance_of(definition: &OverlayDefinition) -> OverlayInstance {
         config: definition.config.clone(),
         source_overrides: definition.source_overrides.clone(),
         credential: Some(definition.credential.as_str().to_owned()),
+        media,
+        sample,
     }
 }
 

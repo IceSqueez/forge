@@ -238,6 +238,7 @@ pub struct TriggersRegistryView {
     confirm_disable: Confirm<TriggerInstanceId>,
     create: Option<CreateStage>,
     _search_sub: Subscription,
+    _release: Subscription,
 }
 
 impl TriggersRegistryView {
@@ -253,6 +254,7 @@ impl TriggersRegistryView {
         let palette = cx.palette();
         let search = SearchState::new(cx, palette, tr!("triggers_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
+        let release = cx.on_release(|this, cx| this.persist_detail_on_release(cx));
 
         let view = Self {
             repo,
@@ -282,6 +284,7 @@ impl TriggersRegistryView {
             confirm_disable: Confirm::default(),
             create: None,
             _search_sub: search_sub,
+            _release: release,
         };
         view.reload(cx);
         view.load_favorites(cx);

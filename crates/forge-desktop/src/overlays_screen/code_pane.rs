@@ -3,7 +3,7 @@ use forge_components::{
     OverlayPosition, TextArea, body_family, confirm_modal, empty_state, ghost_button_with_icon,
     icon, mono_family, overlay, primary_button_with_icon, status_dot, tr,
 };
-use forge_overlay::OVERRIDABLE_FILES;
+use forge_overlay::{MediaIssue, OVERRIDABLE_FILES};
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, div,
@@ -314,26 +314,28 @@ impl OverlaysView {
 
         let repo = Arc::clone(&self.repo);
         let service = self.service.clone();
+        let target = id.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let Some(mut definition) = repo.get(&id).await.map_err(|e| e.to_string())? else {
-                    return Ok((false, Vec::new()));
+                    return Ok((false, Vec::new(), Vec::new()));
                 };
                 definition.source_overrides.retain(|held| held != file);
                 repo.save(&definition).await.map_err(|e| e.to_string())?;
                 let report = service.materialize(&id).await.map_err(|e| e.to_string())?;
-                Ok((true, report.missing_overrides))
+                Ok((true, report.missing_overrides, report.media_issues))
             },
-            move |this, result: Result<(bool, Vec<String>), String>, cx| {
+            move |this, result: Result<(bool, Vec<String>, Vec<MediaIssue>), String>, cx| {
                 match result {
-                    Ok((true, missing)) => {
+                    Ok((true, missing, issues)) => {
                         this.note_missing_overrides(missing);
+                        this.set_media_issues(&target, issues, cx);
                         this.code.open = None;
                         this.load(cx);
                         this.sync_source(cx);
                     }
-                    Ok((false, _)) => this.report(&tr!("overlays_toast_missing"), cx),
+                    Ok((false, _, _)) => this.report(&tr!("overlays_toast_missing"), cx),
                     Err(message) => this.report(&message, cx),
                 }
                 cx.notify();

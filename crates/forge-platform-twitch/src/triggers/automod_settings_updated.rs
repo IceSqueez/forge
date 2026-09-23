@@ -1,12 +1,13 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::automod as automod_fields;
 
 pub(crate) struct AutomodSettingsUpdatedDescriptor;
@@ -63,62 +64,43 @@ impl TriggerKindDescriptor for AutomodSettingsUpdatedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let moderator = event.payload.get(automod_fields::MODERATOR);
-
-        let moderator_login = moderator
-            .and_then(|m| m.get(automod_fields::MODERATOR_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_id = moderator
-            .and_then(|m| m.get(automod_fields::MODERATOR_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let overall_level = event
-            .payload
-            .get(automod_fields::OVERALL_LEVEL)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        ArgStack::new()
-            .set(
-                "moderator_login".to_owned(),
-                Variant::String(moderator_login),
-            )
-            .set("moderator_id".to_owned(), Variant::String(moderator_id))
-            .set(
-                "automod.overall_level".to_owned(),
-                Variant::Int(overall_level),
-            )
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "moderator_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "moderator_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator ID".to_owned(),
-                        synthesis: None,
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(
+                    twitch_actor(ActorRole::Principal),
+                    settings_moderator_identity,
+                )
+                .actor(
+                    twitch_actor(ActorRole::Moderator),
+                    settings_moderator_identity,
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.overall_level".to_owned(),
                         kind: VariantKind::Int,
                         label: "Automod overall level".to_owned(),
                         synthesis: Some(SynthesisHint::BoundedInt { min: 0, max: 4 }),
                     },
-                ],
-            }
-        })
+                    |event| {
+                        Variant::Int(payload_read::number(event, automod_fields::OVERALL_LEVEL))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
+    }
+}
+
+fn settings_moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(automod_fields::MODERATOR),
+        automod_fields::MODERATOR_ID,
+        automod_fields::MODERATOR_LOGIN,
+        automod_fields::MODERATOR_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

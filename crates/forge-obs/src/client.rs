@@ -9,11 +9,11 @@ use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 
-use forge_events::EventPublisher;
+use forge_events::{Event, EventPublisher};
 use forge_platform_core::{
     AtomicConnectionState, Backoff, BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags,
     ConnectionState, ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HeroBadge,
-    HeroBadgeTone,
+    HeroBadgeTone, connection_state_changed_event,
 };
 use forge_types::EventId;
 
@@ -21,6 +21,24 @@ use crate::catalog::ObsCatalog;
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
 use crate::source::SourceInfo;
+
+const OBS_PLATFORM_ID: &str = "obs";
+
+fn connection_state_transition(previous: ConnectionState, next: ConnectionState) -> Option<Event> {
+    (previous != next).then(|| connection_state_changed_event(OBS_PLATFORM_ID, next))
+}
+
+fn settle_connection_state(
+    state: &AtomicConnectionState,
+    publisher: &dyn EventPublisher,
+    next: ConnectionState,
+) {
+    let previous = state.load();
+    state.store(next);
+    if let Some(event) = connection_state_transition(previous, next) {
+        publisher.publish(event);
+    }
+}
 
 pub struct ObsClient {
     pub(crate) inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
@@ -103,7 +121,7 @@ impl ObsClient {
             shutdown,
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
-            obs_id: BuiltinId::new("obs"),
+            obs_id: BuiltinId::new(OBS_PLATFORM_ID),
             obs_version,
             obs_ws_version,
             health_state,
@@ -154,7 +172,7 @@ impl ObsClient {
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
-            obs_id: BuiltinId::new("obs"),
+            obs_id: BuiltinId::new(OBS_PLATFORM_ID),
             obs_version: Arc::new(OnceLock::new()),
             obs_ws_version: Arc::new(OnceLock::new()),
             health_state,
@@ -255,7 +273,11 @@ impl BuiltinControl for ObsClient {
         *slot = Arc::clone(&new_notify);
         drop(slot);
 
-        self.state.store(ConnectionState::Connecting);
+        settle_connection_state(
+            &self.state,
+            &*self.reconnect_publisher,
+            ConnectionState::Connecting,
+        );
         clear_connected_at(&self.connected_at);
 
         let ctx = SupervisorContext {
@@ -297,6 +319,11 @@ impl BuiltinControl for ObsClient {
         if let Some(h) = handle {
             let _ = h.await;
         }
+        settle_connection_state(
+            &self.state,
+            &*self.reconnect_publisher,
+            ConnectionState::Disconnected,
+        );
         Ok(())
     }
 
@@ -357,17 +384,21 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             tokio::select! {
                 () = tokio::time::sleep(delay) => {}
                 () = shutdown.notified() => {
-                    state.store(ConnectionState::Disconnected);
+                    settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
                     return;
                 }
             }
         }
 
-        state.store(if reconnecting {
-            ConnectionState::Reconnecting
-        } else {
-            ConnectionState::Connecting
-        });
+        settle_connection_state(
+            &state,
+            &*publisher,
+            if reconnecting {
+                ConnectionState::Reconnecting
+            } else {
+                ConnectionState::Connecting
+            },
+        );
         tracing::debug!(host = %host, port, "attempting OBS connection");
 
         let connect_config = obws::client::ConnectConfig {
@@ -380,10 +411,15 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             dangerous: None,
         };
 
-        match obws::Client::connect_with_config(connect_config)
-            .await
-            .map_err(map_obws_error)
-        {
+        let attempt = tokio::select! {
+            outcome = obws::Client::connect_with_config(connect_config) => outcome.map_err(map_obws_error),
+            () = shutdown.notified() => {
+                settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
+                return;
+            }
+        };
+
+        match attempt {
             Ok(client) => {
                 let client = Arc::new(client);
                 match client.general().version().await {
@@ -412,7 +448,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                     *g = Some(OffsetDateTime::now_utc());
                 }
 
-                state.store(ConnectionState::Connected);
+                settle_connection_state(&state, &*publisher, ConnectionState::Connected);
                 tracing::info!(host = %host, port, "connected to OBS");
                 publisher.publish(crate::events::make_connection_connected());
 
@@ -438,7 +474,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                                 stats_handle.abort();
                                 inner.write().await.take();
                                 clear_connected_at(&connected_at);
-                                state.store(ConnectionState::Disconnected);
+                                settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
                                 tracing::info!("OBS supervisor shutting down");
                                 return;
                             }
@@ -502,7 +538,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                         stats_handle.abort();
                         inner.write().await.take();
                         clear_connected_at(&connected_at);
-                        state.store(ConnectionState::Disconnected);
+                        settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
                         return;
                     }
                 }
@@ -514,11 +550,15 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 inner.write().await.take();
                 clear_connected_at(&connected_at);
                 let retry = auto_reconnect.load(Ordering::Relaxed);
-                state.store(if retry {
-                    ConnectionState::Reconnecting
-                } else {
-                    ConnectionState::Disconnected
-                });
+                settle_connection_state(
+                    &state,
+                    &*publisher,
+                    if retry {
+                        ConnectionState::Reconnecting
+                    } else {
+                        ConnectionState::Disconnected
+                    },
+                );
                 publisher.publish(crate::events::make_connection_disconnected(
                     crate::payload_fields::connection::reason::CONNECTION_LOST,
                     None,
@@ -533,7 +573,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
 
             Err(ObsError::Authentication) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
-                state.store(ConnectionState::Disconnected);
+                settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
                 publisher.publish(crate::events::make_connection_auth_failed(
                     "authentication rejected",
                 ));
@@ -1101,6 +1141,47 @@ pub(crate) fn map_obws_error(e: obws::error::Error) -> ObsError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use forge_platform_core::CONNECTION_STATE_CHANGED_KIND;
+
+    const EVERY_CONNECTION_STATE: [ConnectionState; 4] = [
+        ConnectionState::Disconnected,
+        ConnectionState::Connecting,
+        ConnectionState::Connected,
+        ConnectionState::Reconnecting,
+    ];
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn a_state_transition_announces_the_new_state_only_when_it_actually_changed() {
+        for previous in EVERY_CONNECTION_STATE {
+            for next in EVERY_CONNECTION_STATE {
+                match connection_state_transition(previous, next) {
+                    None => assert_eq!(
+                        previous, next,
+                        "{previous:?} -> {next:?} never reached the bus"
+                    ),
+                    Some(event) => {
+                        assert_ne!(
+                            previous, next,
+                            "{previous:?} -> {next:?} re-announced a state that did not change"
+                        );
+                        assert_eq!(event.kind, CONNECTION_STATE_CHANGED_KIND);
+                        assert_eq!(
+                            event.payload["platform_id"].as_str(),
+                            Some(OBS_PLATFORM_ID),
+                            "{previous:?} -> {next:?} was announced for another platform"
+                        );
+                        assert_eq!(
+                            event.payload["state"],
+                            serde_json::to_value(next).unwrap(),
+                            "{previous:?} -> {next:?} announced the wrong state"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     #[allow(clippy::unwrap_used)]

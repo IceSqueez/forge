@@ -10,6 +10,7 @@ pub mod data;
 pub mod date_time_picker;
 pub mod fonts;
 pub mod footer;
+pub mod glyph;
 pub mod grid_picker;
 pub mod icons;
 pub mod inline_edit;
@@ -64,8 +65,9 @@ pub use data::{
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
+pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
-    GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
+    GridItemQuery, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
     GridPickerItemState, GridPickerSubtitle,
 };
 pub use icons::{Icon, IconAssets, icon, spinner};

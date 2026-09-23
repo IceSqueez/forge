@@ -7,6 +7,7 @@ pub mod error;
 pub mod event_log;
 pub mod globals;
 pub mod history;
+pub mod media;
 pub mod overlay;
 pub mod provider;
 pub mod queue;
@@ -27,6 +28,11 @@ pub use error::StorageError;
 pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
+pub use media::{
+    AcceptedMedia, MAX_AUDIO_BLOB_BYTES, MAX_IMAGE_BLOB_BYTES, MEDIA_BLOB_HARD_CEILING_BYTES,
+    MEDIA_CONTENT_DIGEST_BYTES, MEDIA_CONTENT_HASH, MediaBlob, MediaBlobId, MediaFormat, MediaKind,
+    MediaReferrer, MediaReferrerKind, MediaRepo, accept_media, sanitize_label, sniff,
+};
 pub use overlay::{OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo};
 pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION};
 pub use queue::QueueRepo;
@@ -45,7 +51,7 @@ pub use settings::{
     soundboard_enabled, soundboard_master_volume, soundboard_output_device, synthesis_defaults,
     voice_gate_settings,
 };
-pub use soundboard::{SoundboardClipsRepo, StoredClip};
+pub use soundboard::{CLIP_SOURCE_SLOT, SoundboardClipsRepo, StoredClip, clip_source_referrer};
 pub use transit::{CURRENT_FORMAT_VERSION, GlobalTransit, GlobalsExport};
 pub use trigger_instance::TriggerInstanceRepo;
 pub use tts_filters::{
@@ -55,6 +61,8 @@ pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};
 
+#[cfg(feature = "test-mocks")]
+pub use media::MockMediaRepo;
 #[cfg(feature = "test-mocks")]
 pub use overlay::MockOverlayRepo;
 #[cfg(feature = "test-mocks")]

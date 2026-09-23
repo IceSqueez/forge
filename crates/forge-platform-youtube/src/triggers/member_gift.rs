@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId,
+    SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{entity, gift as fields};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::gift as fields;
 
 pub(crate) struct ChannelMemberGiftDescriptor;
 
@@ -63,73 +65,65 @@ impl TriggerKindDescriptor for ChannelMemberGiftDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let count = event
-            .payload
-            .get(fields::COUNT)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let level_name = event
-            .payload
-            .get(fields::LEVEL_NAME)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let gifter = event.payload.get(fields::GIFTER);
-        let gifter_channel_id = gifter
-            .and_then(|g| g.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let gifter_display_name = gifter
-            .and_then(|g| g.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("gift.count".to_owned(), Variant::Int(count))
-            .set("gift.level_name".to_owned(), Variant::String(level_name))
-            .set(
-                "gifter.channel_id".to_owned(),
-                Variant::String(gifter_channel_id),
-            )
-            .set(
-                "gifter.display_name".to_owned(),
-                Variant::String(gifter_display_name),
-            )
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), gifter_identity)
+                .actor(youtube_actor(ActorRole::Gifter), gifter_identity)
+                .count(CanonicalCount::GiftCount, |event| {
+                    payload_read::number(event, fields::COUNT)
+                })
+                .sub_tier(|event| payload_read::text(event, fields::LEVEL_NAME))
+                .legacy(
+                    DeclaredVariable {
+                        name: "gift.count".to_owned(),
+                        kind: VariantKind::Int,
+                        label: "Memberships gifted count".to_owned(),
+                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 100 }),
+                    },
+                    CanonicalVariable::Count(CanonicalCount::GiftCount),
+                    |event| Variant::Int(payload_read::number(event, fields::COUNT)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gift.level_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Membership level name".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::SubTier,
+                    |event| Variant::String(payload_read::text(event, fields::LEVEL_NAME)),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gifter.channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Id),
+                    |event| Variant::String(gifter_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "gifter.display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Gifter display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Gifter, ActorSlot::Name),
+                    |event| Variant::String(gifter_identity(event).display_name),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "gift.count".to_owned(),
-                    kind: VariantKind::Int,
-                    label: "Memberships gifted count".to_owned(),
-                    synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 100 }),
-                },
-                DeclaredVariable {
-                    name: "gift.level_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Membership level name".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "gifter.channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "gifter.display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Gifter display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Gifter])
     }
+}
+
+fn gifter_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(fields::GIFTER))
 }
 
 #[cfg(test)]
@@ -142,49 +136,80 @@ mod tests {
         Event::new(EventSource::YouTube, "youtube.channel.member_gift", payload)
     }
 
-    #[test]
-    fn build_arg_stack_surfaces_count_level_and_gifter() {
-        let event = gift_event(json!({
+    fn a_batch_of_five() -> Event {
+        gift_event(json!({
             "count": 5_i64,
             "level_name": "Diamond",
             "gifter": { "channel_id": "UCgifter", "display_name": "Generous" },
-        }));
-
-        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
-
-        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(5)));
-        assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String("Diamond".to_owned()))
-        );
-        assert_eq!(
-            stack.get("gifter.channel_id"),
-            Some(&Variant::String("UCgifter".to_owned()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
-            Some(&Variant::String("Generous".to_owned()))
-        );
+        }))
     }
 
     #[test]
-    fn build_arg_stack_on_empty_payload_defaults_count_to_zero_and_strings_empty() {
-        let event = gift_event(json!({}));
+    fn the_gifter_is_published_as_both_the_principal_and_the_gifter_role() {
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&a_batch_of_five());
+        for (name, value) in [
+            ("user_id", "UCgifter"),
+            ("user_name", "Generous"),
+            ("gifter_id", "UCgifter"),
+            ("gifter_name", "Generous"),
+            ("sub_tier", "Diamond"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
+    }
 
-        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&event);
+    #[test]
+    fn the_gift_count_comes_from_the_batch_size_the_wire_reports() {
+        for (wire_count, expected) in [
+            (json!(5_i64), 5),
+            (json!(1_i64), 1),
+            (json!(null), 0),
+            (json!("5"), 0),
+        ] {
+            let event = gift_event(json!({
+                "count": wire_count.clone(),
+                "level_name": "Diamond",
+            }));
+            assert_eq!(
+                ChannelMemberGiftDescriptor
+                    .build_arg_stack(&event)
+                    .get("gift_count"),
+                Some(&Variant::Int(expected)),
+                "wire count {wire_count}"
+            );
+        }
+    }
 
-        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(0)));
-        assert_eq!(
-            stack.get("gift.level_name"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("gifter.channel_id"),
-            Some(&Variant::String(String::new()))
-        );
-        assert_eq!(
-            stack.get("gifter.display_name"),
-            Some(&Variant::String(String::new()))
-        );
+    #[test]
+    fn the_legacy_gift_names_still_carry_what_their_canonical_twins_carry() {
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&a_batch_of_five());
+        assert_eq!(stack.get("gift.count"), stack.get("gift_count"));
+        assert_eq!(stack.get("gift.level_name"), stack.get("sub_tier"));
+        assert_eq!(stack.get("gifter.channel_id"), stack.get("gifter_id"));
+        assert_eq!(stack.get("gifter.display_name"), stack.get("gifter_name"));
+        assert_eq!(stack.get("gift.count"), Some(&Variant::Int(5)));
+    }
+
+    #[test]
+    fn a_gift_batch_the_wire_leaves_blank_names_nobody_and_counts_nothing() {
+        let stack = ChannelMemberGiftDescriptor.build_arg_stack(&gift_event(json!({})));
+        for name in [
+            "user_id",
+            "user_name",
+            "gifter_id",
+            "gifter_name",
+            "sub_tier",
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(String::new())),
+                "'{name}'"
+            );
+        }
+        assert_eq!(stack.get("gift_count"), Some(&Variant::Int(0)));
     }
 }

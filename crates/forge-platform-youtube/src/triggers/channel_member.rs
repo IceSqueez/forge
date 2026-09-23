@@ -1,13 +1,15 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
-use crate::payload_fields::{chat as chat_fields, entity, member as fields};
+use super::payload_read::{self, youtube_actor};
+use crate::payload_fields::{chat as chat_fields, member as fields};
 
 pub(crate) struct SupportNewMemberDescriptor;
 
@@ -63,61 +65,51 @@ impl TriggerKindDescriptor for SupportNewMemberDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let author = event.payload.get(chat_fields::AUTHOR);
-        let user_display_name = author
-            .and_then(|a| a.get(entity::DISPLAY_NAME))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let channel_id = author
-            .and_then(|a| a.get(entity::CHANNEL_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let member_level_name = event
-            .payload
-            .get(fields::MEMBER_LEVEL_NAME)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set(
-                "user_display_name".to_owned(),
-                Variant::String(user_display_name),
-            )
-            .set("channel_id".to_owned(), Variant::String(channel_id))
-            .set(
-                "member_level_name".to_owned(),
-                Variant::String(member_level_name),
-            )
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(youtube_actor(ActorRole::Principal), member_identity)
+                .sub_tier(|event| payload_read::text(event, fields::MEMBER_LEVEL_NAME))
+                .legacy(
+                    DeclaredVariable {
+                        name: "user_display_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "New member display name".to_owned(),
+                        synthesis: Some(SynthesisHint::DisplayName),
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name),
+                    |event| Variant::String(member_identity(event).display_name),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "channel_id".to_owned(),
+                        kind: VariantKind::String,
+                        label: "New member channel ID".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Id),
+                    |event| Variant::String(member_identity(event).id),
+                )
+                .legacy(
+                    DeclaredVariable {
+                        name: "member_level_name".to_owned(),
+                        kind: VariantKind::String,
+                        label: "Membership level name".to_owned(),
+                        synthesis: None,
+                    },
+                    CanonicalVariable::SubTier,
+                    |event| Variant::String(payload_read::text(event, fields::MEMBER_LEVEL_NAME)),
+                ),
+        )
     }
 
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(VariableSchema {
-            variables: vec![
-                DeclaredVariable {
-                    name: "user_display_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "New member display name".to_owned(),
-                    synthesis: Some(SynthesisHint::DisplayName),
-                },
-                DeclaredVariable {
-                    name: "channel_id".to_owned(),
-                    kind: VariantKind::String,
-                    label: "New member channel ID".to_owned(),
-                    synthesis: None,
-                },
-                DeclaredVariable {
-                    name: "member_level_name".to_owned(),
-                    kind: VariantKind::String,
-                    label: "Membership level name".to_owned(),
-                    synthesis: None,
-                },
-            ],
-        })
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
+}
+
+fn member_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(event.payload.get(chat_fields::AUTHOR))
 }
 
 #[cfg(test)]
@@ -137,19 +129,27 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        assert!(
-            SupportNewMemberDescriptor.matches_trigger(&TriggerConfig::new(), &new_member_event())
-        );
+    fn a_new_member_publishes_the_joiner_and_the_level_they_bought_as_the_sub_tier() {
+        let stack = SupportNewMemberDescriptor.build_arg_stack(&new_member_event());
+        for (name, value) in [
+            ("user_id", "UCsponsor"),
+            ("user_name", "NewSponsor"),
+            ("sub_tier", "Bronze"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
     }
 
     #[test]
-    fn build_arg_stack_extracts_member_fields() {
+    fn the_legacy_member_names_still_carry_what_their_canonical_twins_carry() {
         let stack = SupportNewMemberDescriptor.build_arg_stack(&new_member_event());
-        assert_eq!(
-            stack.get("user_display_name"),
-            Some(&Variant::String("NewSponsor".to_owned()))
-        );
+        assert_eq!(stack.get("user_display_name"), stack.get("user_name"));
+        assert_eq!(stack.get("channel_id"), stack.get("user_id"));
+        assert_eq!(stack.get("member_level_name"), stack.get("sub_tier"));
         assert_eq!(
             stack.get("member_level_name"),
             Some(&Variant::String("Bronze".to_owned()))

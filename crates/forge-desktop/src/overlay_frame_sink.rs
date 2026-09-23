@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_runtime::OverlayFrameSink;
+use forge_runtime::{OverlayFrameSink, OverlayReceivers};
 use forge_server::ServerHandle;
 use forge_storage::OverlayId;
 
@@ -20,7 +20,7 @@ impl OverlayFrameSink for ServerOverlayFrameSink {
         identity: &OverlayId,
         content: serde_json::Value,
         duration_ms: Option<u64>,
-    ) -> usize {
+    ) -> OverlayReceivers {
         self.server
             .deliver_overlay_content(identity, content, duration_ms)
             .await

@@ -12,6 +12,7 @@ pub enum Expectation {
     TwitchSubscription(TwitchSubscription),
     TwitchNoUnexpectedRequests {},
     TwitchRequestCount(RequestCount),
+    OverlayContent(OverlayContent),
     LogLine(LogLine),
 }
 
@@ -98,6 +99,18 @@ pub struct RequestCount {
     pub max: Option<u32>,
 }
 
+/// Holds when the page open for `overlay` receives a content frame carrying every named key as
+/// exactly that plain JSON string. A frame whose content holds a tagged `{"type","value"}` object
+/// anywhere fails this expectation even when the named keys read correctly: a page renders what
+/// the wire gives it, and a tagged object renders as `[object Object]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverlayContent {
+    pub overlay: String,
+    pub values: UniqueMap<String>,
+    pub within_ms: u64,
+}
+
 /// Matches structured field values as rendered in the log; never the message prose.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -136,6 +149,7 @@ impl Expectation {
             Self::TwitchSubscription(_) => "twitch_subscription",
             Self::TwitchNoUnexpectedRequests {} => "twitch_no_unexpected_requests",
             Self::TwitchRequestCount(_) => "twitch_request_count",
+            Self::OverlayContent(_) => "overlay_content",
             Self::LogLine(_) => "log_line",
         }
     }
@@ -146,7 +160,10 @@ impl Expectation {
             Self::TwitchSubscription(_)
             | Self::TwitchNoUnexpectedRequests {}
             | Self::TwitchRequestCount(_) => true,
-            Self::EventAbsent(_) | Self::CausedBy(_) | Self::LogLine(_) => false,
+            Self::EventAbsent(_)
+            | Self::CausedBy(_)
+            | Self::OverlayContent(_)
+            | Self::LogLine(_) => false,
         }
     }
 }

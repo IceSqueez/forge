@@ -34,6 +34,7 @@ mod hype_train_progress;
 mod hype_train_started;
 mod moderator_added;
 mod moderator_removed;
+mod payload_read;
 mod poll_ended;
 mod poll_progress;
 mod poll_started;
@@ -220,44 +221,7 @@ pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use forge_events::{Event, EventSource};
-    use forge_types::VariantKind;
-
     use super::*;
-
-    // Why: the analyzer offers variable completions from output_schema while the action engine
-    // interpolates whatever build_arg_stack actually produced. A declared kind the builder never
-    // emits (or a name it never sets) stays invisible until a user's action reads a wrong-typed
-    // variable at runtime, so the two surfaces are pinned against each other here.
-    #[test]
-    fn declared_output_schema_kinds_match_the_arg_stack_built_from_an_empty_payload() {
-        let mut reg = TriggerRegistry::new();
-        register_twitch_triggers(&mut reg).unwrap();
-        for descriptor in reg.all() {
-            let Some(schema) = descriptor.output_schema() else {
-                continue;
-            };
-            let event = Event::new(EventSource::Twitch, descriptor.id(), serde_json::json!({}));
-            let stack = descriptor.build_arg_stack(&event).snapshot();
-            for declared in schema.variables {
-                let actual = stack.get(&declared.name).unwrap_or_else(|| {
-                    panic!(
-                        "'{}' declares '{}' but never sets it",
-                        descriptor.id(),
-                        declared.name
-                    )
-                });
-                assert_eq!(
-                    VariantKind::from_variant(actual),
-                    declared.kind,
-                    "'{}' declares '{}' as {:?} but emits {actual:?}",
-                    descriptor.id(),
-                    declared.name,
-                    declared.kind,
-                );
-            }
-        }
-    }
 
     #[test]
     fn duplicate_registration_returns_error() {

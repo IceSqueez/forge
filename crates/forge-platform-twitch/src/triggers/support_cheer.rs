@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::support as fields;
 
 pub(crate) struct SupportCheerDescriptor;
@@ -97,83 +99,52 @@ impl TriggerKindDescriptor for SupportCheerDescriptor {
         bits >= min_bits
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let bits = event
-            .payload
-            .get(fields::BITS)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let message = event
-            .payload
-            .get(fields::MESSAGE)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let is_anonymous = event
-            .payload
-            .get(fields::IS_ANONYMOUS)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let user_login = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("bits_amount".to_owned(), Variant::Int(bits))
-            .set("cheer_message".to_owned(), Variant::String(message))
-            .set("cheer_is_anonymous".to_owned(), Variant::Bool(is_anonymous))
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "bits_amount".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Bits amount".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 10000 }),
-                    },
-                    DeclaredVariable {
-                        name: "cheer_message".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Cheer message".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), cheerer_identity)
+                .message_text(cheer_message)
+                .count(CanonicalCount::BitsAmount, |event| {
+                    payload_read::number(event, fields::BITS)
+                })
+                .event_specific(
                     DeclaredVariable {
                         name: "cheer_is_anonymous".to_owned(),
                         kind: VariantKind::Bool,
                         label: "Anonymous cheer".to_owned(),
                         synthesis: None,
                     },
+                    |event| Variant::Bool(payload_read::flag(event, fields::IS_ANONYMOUS)),
+                )
+                .legacy(
                     DeclaredVariable {
-                        name: "user_login".to_owned(),
+                        name: "cheer_message".to_owned(),
                         kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
+                        label: "Cheer message".to_owned(),
+                        synthesis: Some(SynthesisHint::Message),
                     },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
-                ],
-            }
-        })
+                    CanonicalVariable::MessageText,
+                    |event| Variant::String(cheer_message(event)),
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn cheerer_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::USER),
+        fields::USER_ID,
+        fields::USER_LOGIN,
+        fields::USER_DISPLAY_NAME,
+    )
+}
+
+fn cheer_message(event: &Event) -> String {
+    payload_read::text(event, fields::MESSAGE)
 }
 
 #[cfg(test)]
@@ -230,13 +201,31 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_cheer_fields() {
+    fn a_cheer_publishes_the_canonical_actor_block_the_bits_and_the_cheer_message() {
         let stack = SupportCheerDescriptor.build_arg_stack(&cheer_event(200));
+        for (name, value) in [
+            ("user_id", "555"),
+            ("user_name", "Cheerer"),
+            ("user_login", "cheerer"),
+            ("user_platform", "twitch"),
+            ("message_text", "PogChamp PogChamp PogChamp"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(stack.get("bits_amount"), Some(&Variant::Int(200)));
         assert_eq!(stack.get("cheer_is_anonymous"), Some(&Variant::Bool(false)));
+    }
+
+    #[test]
+    fn the_legacy_cheer_message_still_carries_the_line_message_text_now_carries() {
+        let stack = SupportCheerDescriptor.build_arg_stack(&cheer_event(200));
         assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("cheerer".to_owned()))
+            stack.get("cheer_message"),
+            Some(&Variant::String("PogChamp PogChamp PogChamp".to_owned()))
         );
     }
 }

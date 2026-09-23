@@ -54,7 +54,7 @@ impl PlaybackHandle {
 
 enum Completion {
     Ready,
-    Handle(tokio::task::JoinHandle<()>),
+    Handle(tokio::task::JoinHandle<Result<(), AudioError>>),
     Merged(Pin<Box<dyn Future<Output = Result<(), AudioError>> + Send>>),
 }
 
@@ -64,6 +64,16 @@ pub struct ControlledPlayback {
 }
 
 impl ControlledPlayback {
+    pub fn resolved(outcome: Result<(), AudioError>) -> Self {
+        Self::from_future(std::future::ready(outcome))
+    }
+
+    pub fn from_future(
+        completion: impl Future<Output = Result<(), AudioError>> + Send + 'static,
+    ) -> Self {
+        Self::merged(PlaybackHandle::default(), Box::pin(completion))
+    }
+
     pub(crate) fn completed() -> Self {
         Self {
             playback: PlaybackHandle::default(),
@@ -73,7 +83,7 @@ impl ControlledPlayback {
 
     pub(crate) fn from_handle(
         playback: PlaybackHandle,
-        completion: tokio::task::JoinHandle<()>,
+        completion: tokio::task::JoinHandle<Result<(), AudioError>>,
     ) -> Self {
         Self {
             playback,
@@ -115,10 +125,41 @@ impl Future for ControlledPlayback {
         let this = self.get_mut();
         match &mut this.completion {
             Completion::Ready => Poll::Ready(Ok(())),
-            Completion::Handle(handle) => Pin::new(handle)
-                .poll(cx)
-                .map(|res| res.map_err(|e| AudioError::JoinFailed(e.to_string()))),
+            Completion::Handle(handle) => Pin::new(handle).poll(cx).map(|res| {
+                res.map_err(|e| AudioError::JoinFailed(e.to_string()))
+                    .and_then(|played| played)
+            }),
             Completion::Merged(future) => future.as_mut().poll(cx),
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    const DEVICE_REFUSAL: &str = "no output device accepted the stream";
+
+    #[tokio::test]
+    async fn a_controlled_playback_carries_the_verdict_its_device_task_returned() {
+        let played = ControlledPlayback::from_handle(
+            PlaybackHandle::default(),
+            tokio::spawn(async { Ok::<(), AudioError>(()) }),
+        );
+        assert!(
+            played.await.is_ok(),
+            "a device that played the clip to the end must finish the utterance"
+        );
+
+        let refused = ControlledPlayback::from_handle(
+            PlaybackHandle::default(),
+            tokio::spawn(async { Err(AudioError::Host(DEVICE_REFUSAL.to_owned())) }),
+        );
+        let outcome = refused.await;
+        assert!(
+            matches!(&outcome, Err(AudioError::Host(reason)) if reason == DEVICE_REFUSAL),
+            "a device that never opened must reach the caller, got {outcome:?}"
+        );
     }
 }

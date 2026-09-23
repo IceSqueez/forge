@@ -1,94 +1,48 @@
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, ForgePalette, Icon, body_family, empty_state, ghost_button_with_icon, icon,
-    mono_family, section_label, tr, with_alpha,
+    BORDER_THIN, ForgePalette, GlyphArt, Icon, body_family, empty_state, ghost_button_with_icon,
+    icon, mono_family, section_label, segment, segmented, tr,
 };
 use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_overlay::{
-    OverlayConfig, PreviewComposition, PreviewFont, PreviewLineRole, PreviewPosition, PreviewShape,
-    effective_overlay_config,
+    OverlayConfig, PreviewCanvas, PreviewComposition, PreviewPosition, effective_overlay_config,
+    preview_page_url,
 };
-use forge_runtime::TestFire;
+use forge_runtime::{OverlayDelivery, TestFire};
 use forge_storage::{OverlayDefinition, OverlayId};
 use forge_types::Variant;
 use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, Pixels, Rgba, SharedString, div, prelude::*, px,
-    relative,
+    AnyElement, Bounds, ClickEvent, Context, Pixels, Rgba, Size, Window, canvas, div, fill, point,
+    prelude::*, px, size,
 };
 
-use crate::async_bridge;
+use crate::async_bridge::{self, ErrorSink};
 
 use super::OverlaysView;
-use super::kind_visuals::accent_color;
+use super::event_wiring;
+use super::preview_shapes::{
+    ElementPlan, Scale, StageGlyphs, body_padding, centers_horizontally, fills_canvas,
+    render_composition,
+};
 
 const REGION_PAD: Pixels = px(20.0);
 const HEAD_GAP: Pixels = px(10.0);
 
 const STAGE_MIN_H: Pixels = px(300.0);
 const STAGE_RADIUS: Pixels = px(10.0);
-const STAGE_PAD: Pixels = px(24.0);
 const CANVAS_NOTE_TOP: Pixels = px(8.0);
 const CANVAS_NOTE_LEFT: Pixels = px(10.0);
 const CANVAS_NOTE_FS: Pixels = px(9.0);
 const CANVAS_NOTE_OPACITY: f32 = 0.6;
+const CHECKER_CELL: Pixels = px(11.0);
 
 const HINT_TOP: Pixels = px(8.0);
-const HINT_GAP: Pixels = px(6.0);
-const HINT_FS: Pixels = px(10.5);
-const HINT_GLYPH: Pixels = px(12.0);
+pub(super) const HINT_GAP: Pixels = px(6.0);
+pub(super) const HINT_FS: Pixels = px(10.5);
+pub(super) const HINT_GLYPH: Pixels = px(12.0);
 
-const BANNER_GAP: Pixels = px(14.0);
-const BANNER_PAD_V: Pixels = px(16.0);
-const BANNER_PAD_H: Pixels = px(22.0);
-const BANNER_RADIUS: Pixels = px(12.0);
-const BADGE: Pixels = px(46.0);
-const BADGE_RADIUS: Pixels = px(10.0);
-const BADGE_GLYPH: Pixels = px(22.0);
-const HEADLINE_FS: Pixels = px(20.0);
-const SUBLINE_FS: Pixels = px(13.0);
-const SURFACE_ALPHA: f32 = 0.86;
-
-const FRAME_W: f32 = 0.7;
-const FRAME_H: Pixels = px(180.0);
-const FRAME_BORDER: Pixels = px(3.0);
-const FRAME_RADIUS: Pixels = px(14.0);
-const FRAME_LABEL_FS: Pixels = px(13.0);
-const FRAME_LABEL_PAD_V: Pixels = px(3.0);
-const FRAME_LABEL_PAD_H: Pixels = px(12.0);
-const FRAME_LABEL_CORNER_TR: Pixels = px(10.0);
-const FRAME_LABEL_CORNER_BL: Pixels = px(12.0);
-const FRAME_WASH_ALPHA: f32 = 0.15;
-
-const FEED_W: Pixels = px(300.0);
-const FEED_PAD: Pixels = px(12.0);
-const FEED_RADIUS: Pixels = px(10.0);
-const FEED_ROW_GAP: Pixels = px(5.0);
-const FEED_NAME_GAP: Pixels = px(5.0);
-const FEED_FS: Pixels = px(13.0);
-const FEED_ALPHA: f32 = 0.7;
-
-const BAR_W: f32 = 0.8;
-const BAR_PAD_V: Pixels = px(14.0);
-const BAR_PAD_H: Pixels = px(16.0);
-const BAR_RADIUS: Pixels = px(10.0);
-const BAR_HEAD_GAP: Pixels = px(8.0);
-const BAR_LABEL_FS: Pixels = px(15.0);
-const BAR_TALLY_FS: Pixels = px(14.0);
-const BAR_ALPHA: f32 = 0.82;
-const TRACK_H: Pixels = px(12.0);
-const TRACK_RADIUS: Pixels = px(6.0);
-const TRACK_ALPHA: f32 = 0.1;
-
-const STRIP_PAD_V: Pixels = px(10.0);
-const STRIP_PAD_H: Pixels = px(18.0);
-const STRIP_RADIUS: Pixels = px(8.0);
-const STRIP_GAP: Pixels = px(6.0);
-const STRIP_FS: Pixels = px(16.0);
-const STRIP_SUB_OPACITY: f32 = 0.7;
-
-const PLACEHOLDER: &str = "-";
-const LABEL_JOIN: &str = " - ";
+const ZOOM_FACTOR: f32 = 1.0;
 
 const UNTIMED_DECAY: Duration = Duration::from_secs(5);
 
@@ -96,14 +50,15 @@ enum TestFirePhase {
     Sending,
     Landed {
         content: OverlayConfig,
-        delivered: bool,
+        delivery: OverlayDelivery,
     },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeliveryHint {
     Sending,
-    Delivered,
+    Delivered { sources: usize },
+    OnlyPreview { tabs: usize },
     NoBrowserSource,
     Undelivered,
 }
@@ -111,15 +66,12 @@ enum DeliveryHint {
 fn delivery_hint(phase: &TestFirePhase, server_running: bool) -> DeliveryHint {
     match phase {
         TestFirePhase::Sending => DeliveryHint::Sending,
-        TestFirePhase::Landed {
-            delivered: true, ..
-        } => DeliveryHint::Delivered,
-        TestFirePhase::Landed {
-            delivered: false, ..
-        } if server_running => DeliveryHint::NoBrowserSource,
-        TestFirePhase::Landed {
-            delivered: false, ..
-        } => DeliveryHint::Undelivered,
+        TestFirePhase::Landed { delivery, .. } => match *delivery {
+            OverlayDelivery::Delivered { sources } => DeliveryHint::Delivered { sources },
+            OverlayDelivery::OnlyPreview { tabs } => DeliveryHint::OnlyPreview { tabs },
+            OverlayDelivery::NoPage if server_running => DeliveryHint::NoBrowserSource,
+            OverlayDelivery::NoPage => DeliveryHint::Undelivered,
+        },
     }
 }
 
@@ -128,10 +80,84 @@ pub(super) struct TestFireRun {
     phase: TestFirePhase,
 }
 
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PreviewScale {
+    #[default]
+    Zoom,
+    True,
+}
+
+struct StagePreview {
+    overlay: OverlayId,
+    composition: PreviewComposition,
+    plan: ElementPlan,
+    icon: Option<GlyphArt>,
+}
+
+#[derive(Default)]
+pub(super) struct StageState {
+    scale: PreviewScale,
+    area: Option<Size<Pixels>>,
+    preview: Option<StagePreview>,
+}
+
+impl StageState {
+    fn preview_for(&self, id: &OverlayId) -> Option<&StagePreview> {
+        self.preview
+            .as_ref()
+            .filter(|preview| &preview.overlay == id)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CanvasFit {
+    width: Pixels,
+    height: Pixels,
+    scale: f32,
+}
+
+fn fit_canvas(area: Size<Pixels>, canvas: PreviewCanvas) -> Option<CanvasFit> {
+    let available_width = f32::from(area.width);
+    let available_height = f32::from(area.height);
+    if available_width <= 0.0 || available_height <= 0.0 {
+        return None;
+    }
+
+    let canvas_width = canvas.width as f32;
+    let canvas_height = canvas.height as f32;
+    if canvas_width <= 0.0 || canvas_height <= 0.0 {
+        return None;
+    }
+
+    let scale = (available_width / canvas_width).min(available_height / canvas_height);
+    Some(CanvasFit {
+        width: px(canvas_width * scale),
+        height: px(canvas_height * scale),
+        scale,
+    })
+}
+
 impl OverlaysView {
     pub(super) fn clear_test(&mut self) {
         self.fire_epoch = self.fire_epoch.wrapping_add(1);
         self.fire = None;
+        self.sync_preview();
+    }
+
+    /// The composition and the sizing it resolves only move when the record, the selection or a
+    /// landed sample does, so both are rebuilt at those edges rather than on every drawn frame.
+    pub(super) fn sync_preview(&mut self) {
+        let next = self.selected_definition().and_then(|definition| {
+            let composition = self.preview_composition(definition)?;
+            let plan = ElementPlan::of(&definition.kind_id, composition.element);
+            Some(StagePreview {
+                overlay: definition.id.clone(),
+                composition,
+                plan,
+                icon: self.preview_icon(definition),
+            })
+        });
+        self.stage.preview = next;
     }
 
     fn send_test(&mut self, cx: &mut Context<Self>) {
@@ -182,9 +208,10 @@ impl OverlaysView {
                     overlay,
                     phase: TestFirePhase::Landed {
                         content: fired.content,
-                        delivered: fired.delivered,
+                        delivery: fired.delivery,
                     },
                 });
+                self.sync_preview();
             }
             Err(message) => self.report(&message, cx),
         }
@@ -204,6 +231,7 @@ impl OverlaysView {
             return;
         }
         self.fire = None;
+        self.sync_preview();
         cx.notify();
     }
 
@@ -253,6 +281,41 @@ impl OverlaysView {
         }
     }
 
+    fn set_scale(&mut self, scale: PreviewScale, cx: &mut Context<Self>) {
+        if self.stage.scale == scale {
+            return;
+        }
+        self.stage.scale = scale;
+        cx.notify();
+    }
+
+    /// Measured during layout, so an unchanged area must not repaint or the stage never settles.
+    fn set_stage_area(&mut self, area: Size<Pixels>, cx: &mut Context<Self>) {
+        if self.stage.area == Some(area) {
+            return;
+        }
+        self.stage.area = Some(area);
+        cx.notify();
+    }
+
+    fn preview_address(&self) -> Option<String> {
+        let id = self.selected.as_ref()?;
+        Some(preview_page_url(&self.overlay_url(id)?))
+    }
+
+    fn open_preview_page(&mut self, cx: &mut Context<Self>) {
+        let Some(address) = self.preview_address() else {
+            return;
+        };
+        async_bridge::open_external(
+            &self.rt_handle,
+            address,
+            ErrorSink::Toast,
+            tr!("overlays_preview_open_failed"),
+            cx,
+        );
+    }
+
     pub(super) fn render_design_stage(
         &self,
         definition: &OverlayDefinition,
@@ -267,7 +330,7 @@ impl OverlaysView {
             .flex()
             .flex_col();
 
-        let Some(composition) = self.preview_composition(definition) else {
+        let Some(preview) = self.stage.preview_for(&definition.id) else {
             return region
                 .items_center()
                 .justify_center()
@@ -279,30 +342,89 @@ impl OverlaysView {
         };
 
         let visuals = self.visuals(definition, palette);
+        let served = self.preview_address().is_some();
 
         region
-            .child(self.render_stage_head(palette, cx))
-            .child(render_canvas(&composition, visuals.icon, palette))
-            .child(self.render_hints(definition, palette))
+            .child(self.render_stage_head(
+                preview.composition.canvas,
+                definition,
+                served,
+                palette,
+                cx,
+            ))
+            .child(self.render_arena(
+                &preview.composition,
+                preview.plan,
+                StageGlyphs {
+                    badge: visuals.icon,
+                    icon: preview.icon.clone(),
+                },
+                palette,
+                cx,
+            ))
+            .child(self.render_hints(definition, served, palette))
+            .children(event_wiring::render_readout(&self.wiring.view, palette, cx))
             .into_any_element()
     }
 
-    fn render_stage_head(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+    fn render_stage_head(
+        &self,
+        canvas: PreviewCanvas,
+        definition: &OverlayDefinition,
+        served: bool,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let descriptor = self.kinds.get(&definition.kind_id);
+        let page = descriptor.is_some_and(|d| d.has_visual_page());
+        let test_fire_ok = descriptor.is_some_and(|d| !d.content_is_machine_filled());
+        let wire_button = self
+            .wiring
+            .view
+            .read(cx)
+            .accepts(&definition.kind_id)
+            .then(|| {
+                event_wiring::entry_button(&self.wiring.view, "overlays-wire-entry-head", palette)
+            });
+
+        let size_label = page.then(|| {
+            let width = canvas.width.to_string();
+            let height = canvas.height.to_string();
+            let label = tr!(
+                "overlays_preview_label",
+                width = width.as_str(),
+                height = height.as_str()
+            );
+            div()
+                .flex_none()
+                .child(section_label(label.to_uppercase(), palette))
+        });
+        let scale_switch = page.then(|| self.render_scale_switch(palette, cx));
+        let open_button = page.then(|| {
+            ghost_button_with_icon(Icon::ExternalLink, tr!("overlays_preview_open"), palette)
+                .disabled(!served)
+                .on_click(
+                    "overlays-open-preview",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.open_preview_page(cx)),
+                )
+        });
+
         div()
             .flex_none()
             .w_full()
             .flex()
             .items_center()
-            .justify_between()
+            .gap(HEAD_GAP)
             .pb(HEAD_GAP)
-            .child(section_label(
-                tr!("overlays_preview_label").to_uppercase(),
-                palette,
-            ))
+            .children(size_label)
+            .children(scale_switch)
+            .child(div().flex_1().min_w(px(0.0)))
+            .children(wire_button)
+            .children(open_button)
             .child(
                 ghost_button_with_icon(Icon::PlayerPlay, tr!("overlays_test_send"), palette)
                     .ink(palette.brand)
-                    .disabled(self.is_sending())
+                    .disabled(self.is_sending() || !test_fire_ok)
                     .on_click(
                         "overlays-send-test",
                         cx.listener(|this, _: &ClickEvent, _, cx| this.send_test(cx)),
@@ -311,7 +433,114 @@ impl OverlaysView {
             .into_any_element()
     }
 
-    fn render_hints(&self, definition: &OverlayDefinition, palette: &ForgePalette) -> AnyElement {
+    fn render_scale_switch(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let zoom = cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.set_scale(PreviewScale::Zoom, cx);
+        });
+        let truthful = cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.set_scale(PreviewScale::True, cx);
+        });
+
+        div()
+            .flex_none()
+            .child(
+                segmented(
+                    vec![
+                        segment(
+                            "overlays-scale-true",
+                            tr!("overlays_preview_scale_true"),
+                            self.stage.scale == PreviewScale::True,
+                            truthful,
+                        ),
+                        segment(
+                            "overlays-scale-zoom",
+                            tr!("overlays_preview_scale_zoom"),
+                            self.stage.scale == PreviewScale::Zoom,
+                            zoom,
+                        ),
+                    ],
+                    palette,
+                )
+                .subtle(palette),
+            )
+            .into_any_element()
+    }
+
+    fn render_arena(
+        &self,
+        composition: &PreviewComposition,
+        plan: ElementPlan,
+        glyphs: StageGlyphs,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let view = cx.entity().downgrade();
+        let arena = div()
+            .flex_1()
+            .min_h(STAGE_MIN_H)
+            .w_full()
+            .relative()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                canvas(
+                    move |bounds: Bounds<Pixels>, _window, cx| {
+                        let _ = view.update(cx, |this, cx| this.set_stage_area(bounds.size, cx));
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .size_full(),
+            );
+
+        let Some(fit) = self
+            .stage
+            .area
+            .and_then(|area| fit_canvas(area, composition.canvas))
+        else {
+            return arena.into_any_element();
+        };
+
+        arena
+            .child(render_canvas(
+                composition,
+                plan,
+                fit,
+                self.stage.scale,
+                &glyphs,
+                palette,
+            ))
+            .into_any_element()
+    }
+
+    fn render_hints(
+        &self,
+        definition: &OverlayDefinition,
+        served: bool,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let test_fire_ok = self
+            .kinds
+            .get(&definition.kind_id)
+            .is_some_and(|d| !d.content_is_machine_filled());
+        let stopped = (!served).then(|| {
+            hint_row(
+                Icon::AlertTriangle,
+                palette.text_faint,
+                tr!("overlays_url_not_served"),
+                palette.text_faint,
+            )
+        });
+        let test_unavailable = (!test_fire_ok).then(|| {
+            hint_row(
+                Icon::InfoCircle,
+                palette.text_faint,
+                tr!("overlays_test_unavailable"),
+                palette.text_faint,
+            )
+        });
+
         div()
             .flex_none()
             .w_full()
@@ -325,6 +554,14 @@ impl OverlaysView {
                 tr!("overlays_preview_approximate"),
                 palette.text_faint,
             ))
+            .child(hint_row(
+                Icon::Browser,
+                palette.text_faint,
+                tr!("overlays_preview_browser_counts"),
+                palette.text_faint,
+            ))
+            .children(stopped)
+            .children(test_unavailable)
             .children(self.render_delivery_hint(definition, palette))
             .into_any_element()
     }
@@ -345,10 +582,15 @@ impl OverlaysView {
                 palette.text_muted,
                 tr!("overlays_test_sending"),
             ),
-            DeliveryHint::Delivered => (
+            DeliveryHint::Delivered { sources } => (
                 Icon::CircleCheck,
                 palette.success,
-                tr!("overlays_test_delivered"),
+                tr!("overlays_test_delivered", count = sources as i64),
+            ),
+            DeliveryHint::OnlyPreview { tabs } => (
+                Icon::InfoCircle,
+                palette.warning,
+                tr!("overlays_test_preview_only", count = tabs as i64),
             ),
             DeliveryHint::NoBrowserSource => (
                 Icon::AlertTriangle,
@@ -366,23 +608,28 @@ impl OverlaysView {
     }
 }
 
-fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<SharedString> {
-    composition
-        .lines
-        .iter()
-        .find(|line| line.role == role)
-        .map(|line| SharedString::from(line.text.clone()))
-}
-
 fn render_canvas(
     composition: &PreviewComposition,
-    badge: Icon,
+    plan: ElementPlan,
+    fit: CanvasFit,
+    mode: PreviewScale,
+    glyphs: &StageGlyphs,
     palette: &ForgePalette,
 ) -> AnyElement {
-    let canvas = div()
-        .flex_1()
-        .min_h(STAGE_MIN_H)
-        .w_full()
+    let scale = Scale::new(
+        match mode {
+            PreviewScale::Zoom => ZOOM_FACTOR,
+            PreviewScale::True => fit.scale,
+        },
+        plan.text_scale(),
+    );
+    let shape = composition.shape;
+    let tint = palette.base;
+
+    let mut stage = div()
+        .flex_none()
+        .w(fit.width)
+        .h(fit.height)
         .relative()
         .overflow_hidden()
         .rounded(STAGE_RADIUS)
@@ -390,17 +637,17 @@ fn render_canvas(
         .border_color(palette.border_regular)
         .bg(palette.shell)
         .flex()
-        .flex_col()
-        .items_center()
-        .p(STAGE_PAD);
-
-    let canvas = match composition.position {
-        PreviewPosition::Top => canvas.justify_start(),
-        PreviewPosition::Center => canvas.justify_center(),
-        PreviewPosition::Bottom => canvas.justify_end(),
-    };
-
-    canvas
+        .flex_row()
+        .child(
+            canvas(
+                |_, _, _| {},
+                move |bounds: Bounds<Pixels>, _prepaint, window, _cx| {
+                    paint_checkerboard(bounds, tint, window);
+                },
+            )
+            .absolute()
+            .size_full(),
+        )
         .child(
             div()
                 .absolute()
@@ -411,299 +658,65 @@ fn render_canvas(
                 .text_color(palette.text_faint)
                 .opacity(CANVAS_NOTE_OPACITY)
                 .child(tr!("overlays_preview_canvas_note")),
-        )
-        .child(render_composition(composition, badge, palette))
-        .into_any_element()
-}
+        );
 
-fn render_composition(
-    composition: &PreviewComposition,
-    badge: Icon,
-    palette: &ForgePalette,
-) -> AnyElement {
-    let accent = accent_color(composition.accent, palette);
-    let family = match composition.font {
-        PreviewFont::Sans => body_family(),
-        PreviewFont::Mono => mono_family(),
-    };
-
-    match composition.shape {
-        PreviewShape::BadgeBanner => {
-            render_badge_banner(composition, accent, family, badge, palette)
+    if !fills_canvas(shape) {
+        stage = match composition.position {
+            PreviewPosition::Top => stage.items_start(),
+            PreviewPosition::Center => stage.items_center(),
+            PreviewPosition::Bottom => stage.items_end(),
+        };
+        stage = if centers_horizontally(shape) {
+            stage.justify_center()
+        } else {
+            stage.justify_start()
+        };
+        if let Some(padding) = body_padding(shape) {
+            stage = stage.p(scale.at(padding));
         }
-        PreviewShape::BorderedFrame => render_bordered_frame(composition, accent, family, palette),
-        PreviewShape::MessageFeed => render_message_feed(composition, accent, family, palette),
-        PreviewShape::ProgressBar => render_progress_bar(composition, accent, family, palette),
-        PreviewShape::Strip => render_strip(composition, accent, family, palette),
-    }
-}
-
-fn render_badge_banner(
-    composition: &PreviewComposition,
-    accent: Rgba,
-    family: SharedString,
-    badge: Icon,
-    palette: &ForgePalette,
-) -> AnyElement {
-    let mut lines = div().flex().flex_col().min_w(px(0.0));
-
-    if let Some(text) = line_text(composition, PreviewLineRole::Headline) {
-        lines = lines.child(headline_text(text, family.clone(), palette));
-    }
-    if let Some(text) = line_text(composition, PreviewLineRole::Subline) {
-        lines = lines.child(
-            div()
-                .font_family(family.clone())
-                .text_size(SUBLINE_FS)
-                .text_color(accent)
-                .child(text),
-        );
-    }
-    if composition.lines.is_empty() {
-        lines = lines.child(headline_text(PLACEHOLDER.into(), family, palette));
     }
 
-    div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .gap(BANNER_GAP)
-        .py(BANNER_PAD_V)
-        .px(BANNER_PAD_H)
-        .rounded(BANNER_RADIUS)
-        .border(BORDER_THIN)
-        .border_color(accent)
-        .bg(with_alpha(palette.shell, SURFACE_ALPHA))
-        .child(
-            div()
-                .flex_none()
-                .size(BADGE)
-                .rounded(BADGE_RADIUS)
-                .bg(accent)
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(icon(badge, BADGE_GLYPH, palette.shell)),
-        )
-        .child(lines)
+    stage
+        .child(render_composition(
+            composition,
+            plan,
+            scale,
+            glyphs,
+            palette,
+        ))
         .into_any_element()
 }
 
-fn headline_text(
-    text: SharedString,
-    family: SharedString,
-    palette: &ForgePalette,
-) -> impl IntoElement {
-    div()
-        .font_family(family)
-        .font_weight(FontWeight::BOLD)
-        .text_size(HEADLINE_FS)
-        .text_color(palette.text_primary)
-        .child(text)
-}
+fn paint_checkerboard(bounds: Bounds<Pixels>, tint: Rgba, window: &mut Window) {
+    let cell = f32::from(CHECKER_CELL);
+    let width = f32::from(bounds.size.width);
+    let height = f32::from(bounds.size.height);
+    if cell <= 0.0 || width <= 0.0 || height <= 0.0 {
+        return;
+    }
 
-fn render_bordered_frame(
-    composition: &PreviewComposition,
-    accent: Rgba,
-    family: SharedString,
-    palette: &ForgePalette,
-) -> AnyElement {
-    let joined = composition
-        .lines
-        .iter()
-        .map(|line| line.text.as_str())
-        .collect::<Vec<_>>()
-        .join(LABEL_JOIN);
-    let label = if joined.is_empty() {
-        PLACEHOLDER.to_owned()
-    } else {
-        joined
-    };
+    let columns = (width / cell).ceil() as usize;
+    let rows = (height / cell).ceil() as usize;
+    let left = f32::from(bounds.origin.x);
+    let top = f32::from(bounds.origin.y);
 
-    div()
-        .flex_none()
-        .w(relative(FRAME_W))
-        .h(FRAME_H)
-        .relative()
-        .rounded(FRAME_RADIUS)
-        .border(FRAME_BORDER)
-        .border_color(accent)
-        .bg(with_alpha(palette.base, FRAME_WASH_ALPHA))
-        .child(
-            div()
-                .absolute()
-                .bottom_0()
-                .left_0()
-                .max_w(relative(1.0))
-                .truncate()
-                .py(FRAME_LABEL_PAD_V)
-                .px(FRAME_LABEL_PAD_H)
-                .rounded_tr(FRAME_LABEL_CORNER_TR)
-                .rounded_bl(FRAME_LABEL_CORNER_BL)
-                .bg(accent)
-                .font_family(family)
-                .font_weight(FontWeight::BOLD)
-                .text_size(FRAME_LABEL_FS)
-                .text_color(palette.shell)
-                .child(label),
-        )
-        .into_any_element()
-}
-
-fn render_message_feed(
-    composition: &PreviewComposition,
-    accent: Rgba,
-    family: SharedString,
-    palette: &ForgePalette,
-) -> AnyElement {
-    let author = line_text(composition, PreviewLineRole::Headline);
-    let message = line_text(composition, PreviewLineRole::Subline)
-        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
-
-    let row = div()
-        .w_full()
-        .flex()
-        .items_baseline()
-        .gap(FEED_NAME_GAP)
-        .font_family(family)
-        .text_size(FEED_FS)
-        .children(author.map(|name| {
-            div()
-                .flex_none()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(accent)
-                .child(name)
-        }))
-        .child(
-            div()
-                .flex_1()
-                .min_w(px(0.0))
-                .truncate()
-                .text_color(palette.text_primary)
-                .child(message),
-        );
-
-    div()
-        .flex_none()
-        .w_full()
-        .flex()
-        .justify_start()
-        .child(
-            div()
-                .flex_none()
-                .w(FEED_W)
-                .flex()
-                .flex_col()
-                .gap(FEED_ROW_GAP)
-                .p(FEED_PAD)
-                .rounded(FEED_RADIUS)
-                .border(BORDER_THIN)
-                .border_color(accent)
-                .bg(with_alpha(palette.shell, FEED_ALPHA))
-                .child(row),
-        )
-        .into_any_element()
-}
-
-fn render_progress_bar(
-    composition: &PreviewComposition,
-    accent: Rgba,
-    family: SharedString,
-    palette: &ForgePalette,
-) -> AnyElement {
-    let label = line_text(composition, PreviewLineRole::Headline)
-        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
-    let tally = line_text(composition, PreviewLineRole::Subline)
-        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
-
-    let track = div()
-        .w_full()
-        .h(TRACK_H)
-        .overflow_hidden()
-        .rounded(TRACK_RADIUS)
-        .bg(with_alpha(palette.text_primary, TRACK_ALPHA))
-        .children(
-            composition
-                .fill
-                .map(|share| div().h_full().w(relative(share)).bg(accent)),
-        );
-
-    div()
-        .flex_none()
-        .w(relative(BAR_W))
-        .flex()
-        .flex_col()
-        .py(BAR_PAD_V)
-        .px(BAR_PAD_H)
-        .rounded(BAR_RADIUS)
-        .border(BORDER_THIN)
-        .border_color(accent)
-        .bg(with_alpha(palette.shell, BAR_ALPHA))
-        .font_family(family)
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(BAR_HEAD_GAP)
-                .pb(BAR_HEAD_GAP)
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .truncate()
-                        .font_weight(FontWeight::BOLD)
-                        .text_size(BAR_LABEL_FS)
-                        .text_color(palette.text_primary)
-                        .child(label),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(BAR_TALLY_FS)
-                        .text_color(accent)
-                        .child(tally),
+    for row in 0..rows {
+        for column in 0..columns {
+            if (row + column).is_multiple_of(2) {
+                continue;
+            }
+            let offset_x = column as f32 * cell;
+            let offset_y = row as f32 * cell;
+            let square = Bounds {
+                origin: point(px(left + offset_x), px(top + offset_y)),
+                size: size(
+                    px(cell.min(width - offset_x)),
+                    px(cell.min(height - offset_y)),
                 ),
-        )
-        .child(track)
-        .into_any_element()
-}
-
-fn render_strip(
-    composition: &PreviewComposition,
-    accent: Rgba,
-    family: SharedString,
-    palette: &ForgePalette,
-) -> AnyElement {
-    let headline = line_text(composition, PreviewLineRole::Headline)
-        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
-    let subline = line_text(composition, PreviewLineRole::Subline);
-
-    div()
-        .flex_none()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap(STRIP_GAP)
-        .py(STRIP_PAD_V)
-        .px(STRIP_PAD_H)
-        .rounded(STRIP_RADIUS)
-        .bg(accent)
-        .font_family(family)
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_size(STRIP_FS)
-        .text_color(palette.shell)
-        .child(div().flex_none().truncate().child(headline))
-        .children(subline.map(|text| {
-            div()
-                .flex_1()
-                .min_w(px(0.0))
-                .truncate()
-                .opacity(STRIP_SUB_OPACITY)
-                .child(text)
-        }))
-        .into_any_element()
+            };
+            window.paint_quad(fill(square, tint));
+        }
+    }
 }
 
 fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl IntoElement {
@@ -728,18 +741,25 @@ fn hint_row(glyph: Icon, tint: Rgba, message: String, text_color: Rgba) -> impl 
 mod tests {
     use super::*;
 
-    fn landed(delivered: bool) -> TestFirePhase {
+    fn landed(delivery: OverlayDelivery) -> TestFirePhase {
         TestFirePhase::Landed {
             content: OverlayConfig::new(),
-            delivered,
+            delivery,
         }
     }
 
     #[test]
-    fn a_fire_in_flight_or_already_delivered_reads_the_same_whether_the_server_runs() {
+    fn a_fire_that_reached_a_page_reads_the_same_whether_the_server_runs() {
         for (phase, expected) in [
             (TestFirePhase::Sending, DeliveryHint::Sending),
-            (landed(true), DeliveryHint::Delivered),
+            (
+                landed(OverlayDelivery::Delivered { sources: 3 }),
+                DeliveryHint::Delivered { sources: 3 },
+            ),
+            (
+                landed(OverlayDelivery::OnlyPreview { tabs: 2 }),
+                DeliveryHint::OnlyPreview { tabs: 2 },
+            ),
         ] {
             for server_running in [false, true] {
                 assert_eq!(
@@ -752,13 +772,13 @@ mod tests {
     }
 
     #[test]
-    fn an_undelivered_landing_blames_the_browser_source_only_while_the_server_runs() {
+    fn a_landing_no_page_received_blames_the_browser_source_only_while_the_server_runs() {
         assert_eq!(
-            delivery_hint(&landed(false), true),
+            delivery_hint(&landed(OverlayDelivery::NoPage), true),
             DeliveryHint::NoBrowserSource
         );
         assert_eq!(
-            delivery_hint(&landed(false), false),
+            delivery_hint(&landed(OverlayDelivery::NoPage), false),
             DeliveryHint::Undelivered
         );
     }

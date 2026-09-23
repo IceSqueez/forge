@@ -68,6 +68,7 @@ mod file_sandbox;
 pub(crate) mod interpolate;
 mod os_ports;
 mod overlay_send;
+mod overlay_targets;
 mod script_emit_event;
 mod script_run_inline;
 mod script_run_named;
@@ -102,7 +103,7 @@ pub use core_logic_if_then_else::CoreLogicIfThenElseRunner;
 pub use core_logic_loop::CoreLogicLoopRunner;
 pub use core_logic_stop::CoreLogicStopRunner;
 pub use core_logic_switch_case::CoreLogicSwitchCaseRunner;
-pub use core_logic_wait::CoreLogicWaitRunner;
+pub use core_logic_wait::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 pub use core_logic_wait_until::CoreLogicWaitUntilRunner;
 pub use core_math_evaluate::CoreMathEvaluateRunner;
 pub use core_notify_show::CoreNotifyShowRunner;
@@ -142,6 +143,10 @@ pub use os_ports::{
     SystemNotifyPort, SystemUrlOpenPort, UrlOpenPort,
 };
 pub use overlay_send::{CONTENT_SCHEMA_KEY, OverlaySendRunner};
+pub use overlay_targets::{
+    OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
+    overlay_send_targets,
+};
 pub use script_emit_event::ScriptEmitEventRunner;
 pub use script_run_inline::ScriptRunInlineRunner;
 pub use script_run_named::ScriptRunNamedRunner;

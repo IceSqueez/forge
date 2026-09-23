@@ -215,7 +215,7 @@ impl SidebarNav {
             NavEntry::FlatIconLeaf {
                 icon: Icon::Message2Share,
                 label: NavText::Key("nav_item_tts"),
-                screen: Screen::Tts,
+                screen: Screen::Tts(None),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Music,

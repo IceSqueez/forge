@@ -37,6 +37,12 @@ pub enum ServerError {
 
     #[error("the server is switched off in settings")]
     Disabled,
+
+    #[error("audio clip of {bytes} bytes is over the {ceiling} byte per-clip ceiling")]
+    ClipTooLarge { bytes: usize, ceiling: usize },
+
+    #[error("audio clip of {bytes} bytes does not fit the {budget} byte clip budget")]
+    ClipBudgetExhausted { bytes: usize, budget: usize },
 }
 
 #[cfg(test)]

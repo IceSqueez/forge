@@ -70,6 +70,7 @@ ulid = { workspace = true }
 unic-langid = { workspace = true }
 
 [dev-dependencies]
+forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
 gpui = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true }
 

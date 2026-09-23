@@ -31,6 +31,12 @@ impl OverlayContentSchema {
             .and_then(|kind_id| self.kinds.get(kind_id))
             .is_some_and(|descriptor| descriptor.order_sensitive())
     }
+
+    pub(super) fn is_sendable_kind(&self, kind_id: &str) -> bool {
+        self.kinds
+            .get(kind_id)
+            .is_none_or(|descriptor| !descriptor.content_is_machine_filled())
+    }
 }
 
 impl FormSchemaSource for OverlayContentSchema {
@@ -50,5 +56,42 @@ impl FormSchemaSource for OverlayContentSchema {
                     .collect()
             })
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_overlay::register_builtin_kinds;
+
+    use super::*;
+
+    fn schema() -> OverlayContentSchema {
+        let mut kinds = OverlayKindRegistry::new();
+        register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
+        OverlayContentSchema::new(Arc::new(kinds))
+    }
+
+    #[test]
+    fn only_a_kind_that_fills_its_own_content_is_withheld_from_the_send_target_picker() {
+        let schema = schema();
+
+        for (kind_id, sendable) in [
+            ("overlay.alert", true),
+            ("overlay.audio", false),
+            ("overlay.chat", true),
+            ("overlay.frame", true),
+            ("overlay.goal", true),
+            ("overlay.ticker", true),
+            ("overlay.written.by.a.newer.build", true),
+            ("", true),
+        ] {
+            assert_eq!(
+                schema.is_sendable_kind(kind_id),
+                sendable,
+                "kind {kind_id:?} is offered to a step that cannot address it, or hidden from one \
+                 that can"
+            );
+        }
     }
 }

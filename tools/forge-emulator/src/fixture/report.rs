@@ -9,6 +9,8 @@ pub struct SeedReport {
     pub data_dir: PathBuf,
     pub server: SeededServer,
     pub twitch: Option<SeededTwitch>,
+    #[serde(default)]
+    pub overlays: Vec<SeededOverlay>,
     pub chat_commands: Vec<SeededCommand>,
 }
 
@@ -35,6 +37,27 @@ pub struct SeededTwitch {
     pub login: String,
 }
 
+/// `id` is the slug forge minted from the display name; `credential` is what a page presents to
+/// the control socket to be addressed as this overlay.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeededOverlay {
+    pub id: String,
+    pub display_name: String,
+    pub kind_id: String,
+    pub credential: String,
+}
+
+impl fmt::Debug for SeededOverlay {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SeededOverlay")
+            .field("id", &self.id)
+            .field("display_name", &self.display_name)
+            .field("kind_id", &self.kind_id)
+            .field("credential", &"<redacted>")
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeededCommand {
     pub phrase: String,
@@ -56,5 +79,20 @@ mod tests {
         };
         let rendered = format!("{server:?}");
         assert!(!rendered.contains("secret-bearer-value"), "{rendered}");
+    }
+
+    #[test]
+    fn debug_output_never_carries_an_overlay_page_credential() {
+        let overlay = SeededOverlay {
+            id: "alert-box".to_owned(),
+            display_name: "Alert Box".to_owned(),
+            kind_id: "overlay.alert".to_owned(),
+            credential: "secret-overlay-credential".to_owned(),
+        };
+        let rendered = format!("{overlay:?}");
+        assert!(
+            !rendered.contains("secret-overlay-credential"),
+            "{rendered}"
+        );
     }
 }

@@ -12,16 +12,21 @@ use forge_runtime::{
 use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Action, ActionId, ArgStack, SubActionStep};
+use tempfile::TempDir;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 const PIPELINE_TIMEOUT_MS: u64 = 2_000;
 
-async fn make_dp() -> Arc<dyn DataProvider> {
-    Arc::new(
-        SqliteBackend::open_with_key(":memory:", TEST_KEY)
-            .await
-            .unwrap(),
+async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
+    let media = tempfile::tempdir().unwrap();
+    let backend = SqliteBackend::open_with_key_and_media_root(
+        ":memory:",
+        TEST_KEY,
+        media.path().join("media"),
     )
+    .await
+    .unwrap();
+    (Arc::new(backend), media)
 }
 
 async fn collect_until_kind(
@@ -71,7 +76,7 @@ struct PipelineFixture {
 }
 
 async fn spawn_pipeline() -> PipelineFixture {
-    let dp = make_dp().await;
+    let (dp, _media) = make_dp().await;
 
     let queue = dp
         .queue_repo()

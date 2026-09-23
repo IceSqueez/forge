@@ -5,7 +5,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionStep, SubActionTelemetry, Variant};
 
-use super::core_logic_shared::{decode_chain, decode_steps, propagate, retag};
+use super::core_logic_shared::{CASE_CHAIN_KEY, decode_chain, decode_steps, propagate, retag};
 
 pub struct CoreLogicSwitchCaseRunner;
 
@@ -115,7 +115,7 @@ fn select_case(config: &SubActionConfig, value: &str) -> (i64, Vec<SubActionStep
                 continue;
             };
             if case_matches(case.get("match"), value) {
-                return (index as i64, decode_steps(case.get("chain")));
+                return (index as i64, decode_steps(case.get(CASE_CHAIN_KEY)));
             }
         }
     }

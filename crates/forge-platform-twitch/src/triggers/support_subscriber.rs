@@ -1,12 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::support as fields;
 
 pub(crate) struct SupportSubscriberDescriptor;
@@ -63,71 +62,35 @@ impl TriggerKindDescriptor for SupportSubscriberDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user_login = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let tier = event
-            .payload
-            .get(fields::TIER)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let is_gift = event
-            .payload
-            .get(fields::IS_GIFT)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        ArgStack::new()
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("sub_tier".to_owned(), Variant::String(tier))
-            .set("sub_is_gift".to_owned(), Variant::Bool(is_gift))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "sub_tier".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Subscription tier".to_owned(),
-                        synthesis: None,
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), subscriber_identity)
+                .sub_tier(|event| payload_read::text(event, fields::TIER))
+                .event_specific(
                     DeclaredVariable {
                         name: "sub_is_gift".to_owned(),
                         kind: VariantKind::Bool,
                         label: "Gifted subscription".to_owned(),
                         synthesis: None,
                     },
-                ],
-            }
-        })
+                    |event| Variant::Bool(payload_read::flag(event, fields::IS_GIFT)),
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn subscriber_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::USER),
+        fields::USER_ID,
+        fields::USER_LOGIN,
+        fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]
@@ -155,16 +118,21 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_sub_fields() {
+    fn a_new_subscriber_publishes_the_canonical_actor_block_and_the_platform_native_tier() {
         let stack = SupportSubscriberDescriptor.build_arg_stack(&subscribe_event());
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("newbie".to_owned()))
-        );
-        assert_eq!(
-            stack.get("sub_tier"),
-            Some(&Variant::String("1000".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "111"),
+            ("user_name", "Newbie"),
+            ("user_login", "newbie"),
+            ("user_platform", "twitch"),
+            ("sub_tier", "1000"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(stack.get("sub_is_gift"), Some(&Variant::Bool(false)));
     }
 }

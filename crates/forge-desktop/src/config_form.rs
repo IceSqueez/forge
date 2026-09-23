@@ -25,9 +25,11 @@ const SWATCH_SIZE: Pixels = px(22.0);
 const SWATCH_RADIUS: Pixels = px(6.0);
 const SWATCH_RING: Pixels = px(2.0);
 
-const CHOICE_PAD_V: Pixels = px(6.0);
-const CHOICE_PAD_H: Pixels = px(9.0);
-const CHOICE_GLYPH: Pixels = px(12.0);
+pub(crate) const CHOICE_PAD_V: Pixels = px(6.0);
+pub(crate) const CHOICE_PAD_H: Pixels = px(9.0);
+pub(crate) const CHOICE_GLYPH: Pixels = px(12.0);
+
+const INTEGER_PLACEHOLDER: &str = "0";
 
 type FieldConfig = BTreeMap<String, Variant>;
 
@@ -35,6 +37,9 @@ pub(crate) enum ConfigField {
     Input {
         key: String,
         integer: bool,
+        /// Set for a declared key the kind gives no default: emptying it drops the key entirely
+        /// rather than writing a number the user never chose.
+        optional: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
         _sub: Subscription,
@@ -118,9 +123,26 @@ pub(crate) fn sparse_overrides(default: &FieldConfig, buffer: &FieldConfig) -> F
 /// Everything a fold needs beyond the field itself, so the walk stays one call per spec.
 pub(crate) struct FoldContext<'a, V: 'static> {
     pub(crate) config: &'a FieldConfig,
+    pub(crate) defaults: &'a FieldConfig,
     pub(crate) palette: &'a ForgePalette,
     pub(crate) choices: ChoiceSupport<'a>,
     pub(crate) on_committed: ConfigCommitHandler<V>,
+}
+
+struct InputSpec<'a> {
+    key: &'a str,
+    placeholder: SharedString,
+    integer: bool,
+    optional: bool,
+}
+
+fn free_text(key: &str, placeholder: SharedString) -> InputSpec<'_> {
+    InputSpec {
+        key,
+        placeholder,
+        integer: false,
+        optional: false,
+    }
 }
 
 pub(crate) fn fold_config_field<V: 'static>(
@@ -130,38 +152,35 @@ pub(crate) fn fold_config_field<V: 'static>(
     out: &mut Vec<ConfigField>,
     cx: &mut Context<V>,
 ) {
-    let FoldContext {
-        config,
-        palette,
-        choices,
-        on_committed,
-    } = ctx;
-    let on_committed = *on_committed;
+    let choices = &ctx.choices;
     match spec {
         FormField::Text {
             key, placeholder, ..
         } => out.push(build_config_input(
-            key,
-            placeholder,
-            false,
+            free_text(key, (*placeholder).into()),
             gate,
-            config,
-            palette,
-            on_committed,
+            ctx,
             cx,
         )),
         FormField::TextArea { key, .. } | FormField::Code { key, .. } => out.push(
-            build_config_input(key, "", false, gate, config, palette, on_committed, cx),
+            build_config_input(free_text(key, SharedString::default()), gate, ctx, cx),
         ),
         FormField::Integer { key, .. } => {
+            let optional = !ctx.defaults.contains_key(*key);
+            let placeholder = if optional {
+                SharedString::from(tr!("config_form_auto_placeholder"))
+            } else {
+                SharedString::from(INTEGER_PLACEHOLDER)
+            };
             out.push(build_config_input(
-                key,
-                "0",
-                true,
+                InputSpec {
+                    key,
+                    placeholder,
+                    integer: true,
+                    optional,
+                },
                 gate,
-                config,
-                palette,
-                on_committed,
+                ctx,
                 cx,
             ));
         }
@@ -177,7 +196,7 @@ pub(crate) fn fold_config_field<V: 'static>(
             min: *min,
             max: *max,
             unit,
-            value: read_int(config, key).unwrap_or(*min).clamp(*min, *max),
+            value: read_int(ctx.config, key).unwrap_or(*min).clamp(*min, *max),
         }),
         FormField::Swatch { key, options, .. } => out.push(ConfigField::Swatch {
             key: (*key).to_owned(),
@@ -185,21 +204,17 @@ pub(crate) fn fold_config_field<V: 'static>(
             options: options
                 .iter()
                 .map(|name| {
-                    let tint = accent_swatch(name, palette).unwrap_or(palette.text_faint);
+                    let tint = accent_swatch(name, ctx.palette).unwrap_or(ctx.palette.text_faint);
                     ((*name).to_owned(), tint)
                 })
                 .collect(),
-            selected: read_text(config, key),
+            selected: read_text(ctx.config, key),
         }),
         FormField::Select { key, options, .. } => match choices {
             ChoiceSupport::Text => out.push(build_config_input(
-                key,
-                "",
-                false,
+                free_text(key, SharedString::default()),
                 gate,
-                config,
-                palette,
-                on_committed,
+                ctx,
                 cx,
             )),
             ChoiceSupport::Picker(_) => out.push(ConfigField::Choice {
@@ -209,7 +224,7 @@ pub(crate) fn fold_config_field<V: 'static>(
                     .iter()
                     .map(|opt| ((*opt).to_owned(), (*opt).to_owned()))
                     .collect(),
-                selected: read_text(config, key),
+                selected: read_text(ctx.config, key),
                 dependency: None,
             }),
         },
@@ -217,20 +232,16 @@ pub(crate) fn fold_config_field<V: 'static>(
             key, options_key, ..
         } => match choices {
             ChoiceSupport::Text => out.push(build_config_input(
-                key,
-                "",
-                false,
+                free_text(key, SharedString::default()),
                 gate,
-                config,
-                palette,
-                on_committed,
+                ctx,
                 cx,
             )),
             ChoiceSupport::Picker(map) => out.push(ConfigField::Choice {
                 key: (*key).to_owned(),
                 gate,
                 options: map.get(*options_key).cloned().unwrap_or_default(),
-                selected: read_text(config, key),
+                selected: read_text(ctx.config, key),
                 dependency: None,
             }),
         },
@@ -241,20 +252,16 @@ pub(crate) fn fold_config_field<V: 'static>(
             ..
         } => match choices {
             ChoiceSupport::Text => out.push(build_config_input(
-                key,
-                "",
-                false,
+                free_text(key, SharedString::default()),
                 gate,
-                config,
-                palette,
-                on_committed,
+                ctx,
                 cx,
             )),
             ChoiceSupport::Picker(map) => out.push(ConfigField::Choice {
                 key: (*key).to_owned(),
                 gate,
-                options: dependent_options(map, options_prefix, &read_text(config, depends_on)),
-                selected: read_text(config, key),
+                options: dependent_options(map, options_prefix, &read_text(ctx.config, depends_on)),
+                selected: read_text(ctx.config, key),
                 dependency: Some(ChoiceDependency {
                     options_prefix: (*options_prefix).to_owned(),
                     depends_on: (*depends_on).to_owned(),
@@ -262,13 +269,13 @@ pub(crate) fn fold_config_field<V: 'static>(
             }),
         },
         FormField::FilePicker { key, .. } | FormField::DateTime { key, .. } => out.push(
-            build_config_input(key, "", false, gate, config, palette, on_committed, cx),
+            build_config_input(free_text(key, SharedString::default()), gate, ctx, cx),
         ),
         FormField::Toggle { key, .. } => {
             out.push(ConfigField::Bool {
                 key: (*key).to_owned(),
                 gate,
-                value: matches!(config.get(*key), Some(Variant::Bool(true))),
+                value: matches!(ctx.config.get(*key), Some(Variant::Bool(true))),
             });
         }
         FormField::SubChain { key, .. } | FormField::CaseList { key, .. } => {
@@ -277,7 +284,7 @@ pub(crate) fn fold_config_field<V: 'static>(
             });
         }
         FormField::Optional { key, inner, .. } => {
-            let value = matches!(config.get(*key), Some(Variant::Bool(true)));
+            let value = matches!(ctx.config.get(*key), Some(Variant::Bool(true)));
             out.push(ConfigField::Bool {
                 key: (*key).to_owned(),
                 gate: gate.clone(),
@@ -338,30 +345,36 @@ fn read_text(config: &FieldConfig, key: &str) -> String {
         .unwrap_or_default()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_config_input<V: 'static>(
-    key: &str,
-    placeholder: &'static str,
-    integer: bool,
+    spec: InputSpec<'_>,
     gate: Option<String>,
-    config: &FieldConfig,
-    palette: &ForgePalette,
-    on_committed: ConfigCommitHandler<V>,
+    ctx: &FoldContext<'_, V>,
     cx: &mut Context<V>,
 ) -> ConfigField {
-    let seed = read_text(config, key);
-    let palette = *palette;
+    let seed = read_text(ctx.config, spec.key);
+    let palette = *ctx.palette;
     let input = cx.new(|cx| {
-        let mut input = TextInput::new(placeholder, cx).with_palette(palette);
+        let mut input = TextInput::new(spec.placeholder, cx).with_palette(palette);
         if !seed.is_empty() {
             input.set_content(seed, cx);
         }
         input
     });
-    let sub = cx.subscribe(&input, on_committed);
+    let on_committed = ctx.on_committed;
+    let sub = cx.subscribe(
+        &input,
+        move |view, field: Entity<TextInput>, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Cancelled) {
+                field.update(cx, |input, cx| input.restore_committed(cx));
+                return;
+            }
+            on_committed(view, field, event, cx);
+        },
+    );
     ConfigField::Input {
-        key: key.to_owned(),
-        integer,
+        key: spec.key.to_owned(),
+        integer: spec.integer,
+        optional: spec.optional,
         gate,
         input,
         _sub: sub,
@@ -403,20 +416,25 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                 gate,
                 selected,
                 ..
+            } => {
+                if gate_on(gate) && !selected.is_empty() {
+                    buffer.insert(key.clone(), Variant::String(selected.clone()));
+                }
             }
-            | ConfigField::Choice {
+            ConfigField::Choice {
                 key,
                 gate,
                 selected,
                 ..
             } => {
-                if gate_on(gate) && !selected.is_empty() {
+                if gate_on(gate) {
                     buffer.insert(key.clone(), Variant::String(selected.clone()));
                 }
             }
             ConfigField::Input {
                 key,
                 integer,
+                optional,
                 gate,
                 input,
                 ..
@@ -425,12 +443,15 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                     continue;
                 }
                 let text = input.read(cx).content().to_owned();
-                if *integer {
-                    if let Ok(n) = text.trim().parse::<i64>() {
-                        buffer.insert(key.clone(), Variant::Int(n));
-                    }
-                } else {
+                if !*integer {
                     buffer.insert(key.clone(), Variant::String(text));
+                    continue;
+                }
+                let typed = text.trim();
+                if let Ok(number) = typed.parse::<i64>() {
+                    buffer.insert(key.clone(), Variant::Int(number));
+                } else if *optional && typed.is_empty() {
+                    buffer.remove(key);
                 }
             }
             ConfigField::Hint { .. } => {}
@@ -785,6 +806,34 @@ mod tests {
         }
     }
 
+    #[gpui::test]
+    fn clearing_a_choice_erases_the_stored_value_while_clearing_a_swatch_keeps_it(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let seeded = config(&[
+            ("sound", Variant::String("clip:01J9P4S2M7".into())),
+            ("accent", Variant::String("mauve".into())),
+        ]);
+        let cleared = vec![
+            choice("sound", "", None),
+            ConfigField::Swatch {
+                key: "accent".to_owned(),
+                gate: None,
+                options: Vec::new(),
+                selected: String::new(),
+            },
+        ];
+
+        assert_eq!(
+            collected(cx, &cleared, &seeded),
+            config(&[
+                ("sound", Variant::String(String::new())),
+                ("accent", Variant::String("mauve".into())),
+            ]),
+            "picking the empty option must unset the value, while a swatch with nothing selected keeps it"
+        );
+    }
+
     fn choice(key: &str, selected: &str, depends_on: Option<&str>) -> ConfigField {
         ConfigField::Choice {
             key: key.to_owned(),
@@ -866,5 +915,134 @@ mod tests {
                 "reoffering options must not silently rewrite or clear what the user picked"
             );
         });
+    }
+
+    const NOTE_KEY: &str = "note";
+    const SEEDED: i64 = 9;
+
+    struct Host;
+
+    fn ignore_commit(_: &mut Host, _: Entity<TextInput>, _: &InputEvent, _: &mut Context<Host>) {}
+
+    fn integer_spec(key: &'static str) -> FormField {
+        FormField::Integer {
+            key,
+            label: "Note",
+            min: 0,
+            max: 127,
+        }
+    }
+
+    fn optional_integer_spec(key: &'static str) -> FormField {
+        FormField::Optional {
+            key,
+            label: "Note",
+            inner: Box::new(integer_spec(key)),
+        }
+    }
+
+    fn build(
+        cx: &mut gpui::TestAppContext,
+        spec: &FormField,
+        defaults: &FieldConfig,
+        config: &FieldConfig,
+        typed: &str,
+    ) -> (gpui::Entity<Host>, Vec<ConfigField>) {
+        let host = cx.update(|cx| cx.new(|_| Host));
+        let fields = host.update(cx, |_, cx| {
+            let palette = forge_components::ThemeId::ForgeDefault.palette();
+            let ctx = FoldContext {
+                config,
+                defaults,
+                palette: &palette,
+                choices: ChoiceSupport::Text,
+                on_committed: ignore_commit as ConfigCommitHandler<Host>,
+            };
+            let mut fields = Vec::new();
+            fold_config_field(spec, None, &ctx, &mut fields, cx);
+            for field in &fields {
+                if let ConfigField::Input { input, .. } = field {
+                    input.update(cx, |field, cx| field.set_content(typed.to_owned(), cx));
+                }
+            }
+            fields
+        });
+        (host, fields)
+    }
+
+    fn collected(
+        cx: &mut gpui::TestAppContext,
+        fields: &[ConfigField],
+        seed: &FieldConfig,
+    ) -> FieldConfig {
+        let mut buffer = seed.clone();
+        cx.update(|cx| collect_field_values(fields, &mut buffer, cx));
+        buffer
+    }
+
+    #[gpui::test]
+    fn an_integer_field_writes_only_a_parsed_number_and_clears_only_an_optional_key(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (declared_default, typed, expected) in [
+            (false, "48", Some(Variant::Int(48))),
+            (false, "", None),
+            (false, "   ", None),
+            (false, "abc", Some(Variant::Int(SEEDED))),
+            (false, "4.5", Some(Variant::Int(SEEDED))),
+            (true, "48", Some(Variant::Int(48))),
+            (true, "", Some(Variant::Int(SEEDED))),
+            (true, "abc", Some(Variant::Int(SEEDED))),
+        ] {
+            let defaults = if declared_default {
+                config(&[(NOTE_KEY, Variant::Int(0))])
+            } else {
+                FieldConfig::new()
+            };
+            let seeded = config(&[(NOTE_KEY, Variant::Int(SEEDED))]);
+            let (_host, fields) = build(cx, &integer_spec(NOTE_KEY), &defaults, &seeded, typed);
+
+            assert_eq!(
+                collected(cx, &fields, &seeded).get(NOTE_KEY),
+                expected.as_ref(),
+                "declared default: {declared_default}, typed: {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn emptying_an_optional_number_leaves_every_other_key_standing(cx: &mut gpui::TestAppContext) {
+        let seeded = config(&[
+            (NOTE_KEY, Variant::Int(SEEDED)),
+            ("device", Variant::String("Launchkey".into())),
+        ]);
+        let (_host, fields) = build(
+            cx,
+            &integer_spec(NOTE_KEY),
+            &FieldConfig::new(),
+            &seeded,
+            "",
+        );
+
+        assert_eq!(
+            collected(cx, &fields, &seeded),
+            config(&[("device", Variant::String("Launchkey".into()))])
+        );
+    }
+
+    #[gpui::test]
+    fn an_optional_number_sharing_its_key_with_its_own_gate_erases_that_gate_when_emptied(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let gated_on = config(&[(NOTE_KEY, Variant::Bool(true))]);
+        let (_host, fields) = build(
+            cx,
+            &optional_integer_spec(NOTE_KEY),
+            &FieldConfig::new(),
+            &gated_on,
+            "",
+        );
+
+        assert_eq!(collected(cx, &fields, &gated_on), FieldConfig::new());
     }
 }

@@ -1,12 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
-};
+use forge_types::{ActorRole, DeclaredVariable, PlatformId, TriggerConfig, Variant, VariantKind};
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::automod as automod_fields;
 
 pub(crate) struct AutomodMessageUpdatedDescriptor;
@@ -109,132 +108,93 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
         event_status.to_lowercase() == filter
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let automod = event.payload.get(automod_fields::AUTOMOD);
-        let user = event.payload.get(automod_fields::USER);
-        let moderator = event.payload.get(automod_fields::MODERATOR);
-
-        let message_id = automod
-            .and_then(|a| a.get(automod_fields::MESSAGE_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let status = automod
-            .and_then(|a| a.get(automod_fields::STATUS))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_login = user
-            .and_then(|u| u.get(automod_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let message_text = event
-            .payload
-            .get(automod_fields::MESSAGE_TEXT)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_id = moderator
-            .and_then(|m| m.get(automod_fields::MODERATOR_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let moderator_login = moderator
-            .and_then(|m| m.get(automod_fields::MODERATOR_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let reason = event
-            .payload
-            .get(automod_fields::REASON)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let terms_found = event
-            .payload
-            .get(automod_fields::BLOCKED_TERM)
-            .and_then(|b| b.get(automod_fields::TERMS_FOUND))
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                Variant::Array(
-                    arr.iter()
-                        .filter_map(|t| t.as_str())
-                        .map(|s| Variant::String(s.to_owned()))
-                        .collect(),
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), updated_author_identity)
+                .actor(
+                    twitch_actor(ActorRole::Moderator),
+                    automod_moderator_identity,
                 )
-            })
-            .unwrap_or_else(|| Variant::Array(vec![]));
-
-        ArgStack::new()
-            .set("automod.message_id".to_owned(), Variant::String(message_id))
-            .set("automod.status".to_owned(), Variant::String(status))
-            .set("automod.reason".to_owned(), Variant::String(reason))
-            .set("automod.terms_found".to_owned(), terms_found)
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("message_text".to_owned(), Variant::String(message_text))
-            .set("moderator_id".to_owned(), Variant::String(moderator_id))
-            .set(
-                "moderator_login".to_owned(),
-                Variant::String(moderator_login),
-            )
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+                .message_text(|event| payload_read::text(event, automod_fields::MESSAGE_TEXT))
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.message_id".to_owned(),
                         kind: VariantKind::String,
                         label: "Automod message ID".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            automod_fields::AUTOMOD,
+                            automod_fields::MESSAGE_ID,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.status".to_owned(),
                         kind: VariantKind::String,
                         label: "Automod status".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            automod_fields::AUTOMOD,
+                            automod_fields::STATUS,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.reason".to_owned(),
                         kind: VariantKind::String,
                         label: "Hold reason".to_owned(),
                         synthesis: None,
                     },
+                    |event| Variant::String(payload_read::text(event, automod_fields::REASON)),
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "automod.terms_found".to_owned(),
                         kind: VariantKind::Array,
                         label: "Blocked term IDs".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
+                    |event| {
+                        payload_read::nested_text_list(
+                            event,
+                            automod_fields::BLOCKED_TERM,
+                            automod_fields::TERMS_FOUND,
+                        )
                     },
-                    DeclaredVariable {
-                        name: "message_text".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Message text".to_owned(),
-                        synthesis: Some(SynthesisHint::Message),
-                    },
-                    DeclaredVariable {
-                        name: "moderator_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "moderator_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Moderator login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                ],
-            }
-        })
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::Actors(&[ActorRole::Moderator])
+    }
+}
+
+fn updated_author_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(automod_fields::USER),
+        automod_fields::USER_ID,
+        automod_fields::USER_LOGIN,
+        automod_fields::USER_DISPLAY_NAME,
+    )
+}
+
+fn automod_moderator_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(automod_fields::MODERATOR),
+        automod_fields::MODERATOR_ID,
+        automod_fields::MODERATOR_LOGIN,
+        automod_fields::MODERATOR_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

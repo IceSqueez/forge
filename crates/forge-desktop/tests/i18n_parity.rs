@@ -109,6 +109,86 @@ fn placeholder_names(line: &str) -> Vec<String> {
     names
 }
 
+fn variants_by_key(content: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let mut by_key: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut current: Option<String> = None;
+
+    for raw in content.lines() {
+        let line = raw.trim_end();
+        if !(line.starts_with(' ') || line.starts_with('\t')) {
+            current = None;
+            let Some(first) = line.chars().next() else {
+                continue;
+            };
+            if !first.is_ascii_lowercase() {
+                continue;
+            }
+            let ident_len = line
+                .find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'))
+                .unwrap_or(line.len());
+            let (key, rest) = line.split_at(ident_len);
+            if rest == " =" || rest.starts_with(" = ") {
+                current = Some(key.to_owned());
+            }
+            continue;
+        }
+        let Some(key) = current.as_ref() else {
+            continue;
+        };
+        let body = line.trim_start();
+        let (marker, rest) = match body.strip_prefix("*[") {
+            Some(rest) => ("*", rest),
+            None => match body.strip_prefix('[') {
+                Some(rest) => ("", rest),
+                None => continue,
+            },
+        };
+        let Some(end) = rest.find(']') else {
+            continue;
+        };
+        by_key
+            .entry(key.clone())
+            .or_default()
+            .insert(format!("{marker}[{}]", &rest[..end]));
+    }
+
+    by_key
+}
+
+#[test]
+fn every_counted_message_offers_the_plural_categories_its_locale_needs() {
+    for (locale, required) in [
+        ("en", &["[one]", "*[other]"][..]),
+        ("uk", &["[one]", "[few]", "*[other]"][..]),
+    ] {
+        let variants = variants_by_key(&load(locale));
+
+        assert!(
+            variants.contains_key("overlays_test_delivered")
+                && variants.contains_key("overlays_test_preview_only"),
+            "the parser found no variants for the counted delivery messages, making this vacuous"
+        );
+
+        let mut short = Vec::new();
+        for (key, offered) in &variants {
+            let missing: Vec<&str> = required
+                .iter()
+                .copied()
+                .filter(|token| !offered.contains(*token))
+                .collect();
+            if !missing.is_empty() {
+                short.push(format!("{key}: missing {missing:?} from {offered:?}"));
+            }
+        }
+
+        assert!(
+            short.is_empty(),
+            "these {locale} messages read wrong for some counts:\n  {}",
+            short.join("\n  ")
+        );
+    }
+}
+
 fn duplicates(keys: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut dups = Vec::new();
@@ -194,10 +274,8 @@ fn en_and_uk_reference_the_same_placeholders_in_every_message() {
     );
 }
 
-/// Scan a Rust source tree for `tr!("key"` literals, tolerating the multi-line call
-/// form the view code uses.
-fn literal_tr_keys(root: &Path) -> BTreeSet<String> {
-    let mut keys = BTreeSet::new();
+fn tr_calls(root: &Path) -> BTreeMap<String, BTreeSet<String>> {
+    let mut calls: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -211,46 +289,134 @@ fn literal_tr_keys(root: &Path) -> BTreeSet<String> {
                 let Ok(content) = std::fs::read_to_string(&path) else {
                     continue;
                 };
-                collect_tr_keys(&content, &mut keys);
+                collect_tr_calls(&content, &mut calls);
             }
         }
     }
-    keys
+    calls
 }
 
-fn collect_tr_keys(content: &str, keys: &mut BTreeSet<String>) {
+fn collect_tr_calls(content: &str, calls: &mut BTreeMap<String, BTreeSet<String>>) {
     let bytes = content.as_bytes();
     for (index, _) in content.match_indices("tr!(") {
         // Skip the tail of a longer identifier such as `include_str!(`.
         if index > 0 && (bytes[index - 1].is_ascii_alphanumeric() || bytes[index - 1] == b'_') {
             continue;
         }
-        let mut cursor = index + "tr!(".len();
-        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
-            cursor += 1;
-        }
-        if cursor >= bytes.len() || bytes[cursor] != b'"' {
+        let Some(body) = call_body(content, index + "tr!(".len()) else {
+            continue;
+        };
+        let mut cursor = body.trim_start();
+        let leading = body.len() - cursor.len();
+        if !cursor.starts_with('"') {
             continue;
         }
-        cursor += 1;
-        let start = cursor;
-        while cursor < bytes.len() && bytes[cursor] != b'"' {
-            cursor += 1;
+        cursor = &cursor[1..];
+        let Some(end) = cursor.find('"') else {
+            continue;
+        };
+        let key = cursor[..end].to_owned();
+        if key.is_empty()
+            || !key
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        {
+            continue;
         }
-        if cursor < bytes.len() && cursor > start {
-            keys.insert(content[start..cursor].to_owned());
+        let rest = &body[leading + 1 + end + 1..];
+        let entry = calls.entry(key).or_default();
+        for argument in argument_names(rest) {
+            entry.insert(argument);
         }
     }
 }
 
+fn call_body(content: &str, start: usize) -> Option<&str> {
+    let bytes = content.as_bytes();
+    let mut cursor = start;
+    let mut depth = 1usize;
+    while cursor < bytes.len() {
+        match bytes[cursor] {
+            b'"' => {
+                cursor += 1;
+                while cursor < bytes.len() && bytes[cursor] != b'"' {
+                    cursor += if bytes[cursor] == b'\\' { 2 } else { 1 };
+                }
+            }
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&content[start..cursor]);
+                }
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    None
+}
+
+fn argument_names(rest: &str) -> Vec<String> {
+    let bytes = rest.as_bytes();
+    let mut names = Vec::new();
+    let mut depth = 0usize;
+    let mut cursor = 0usize;
+    let mut at_argument_start = true;
+    while cursor < bytes.len() {
+        match bytes[cursor] {
+            b'"' => {
+                at_argument_start = false;
+                cursor += 1;
+                while cursor < bytes.len() && bytes[cursor] != b'"' {
+                    cursor += if bytes[cursor] == b'\\' { 2 } else { 1 };
+                }
+            }
+            b'(' | b'[' | b'{' => {
+                at_argument_start = false;
+                depth += 1;
+            }
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            b',' if depth == 0 => at_argument_start = true,
+            b' ' | b'\n' | b'\r' | b'\t' => {}
+            _ if at_argument_start => {
+                at_argument_start = false;
+                let start = cursor;
+                while cursor < bytes.len()
+                    && (bytes[cursor].is_ascii_alphanumeric() || bytes[cursor] == b'_')
+                {
+                    cursor += 1;
+                }
+                let name = &rest[start..cursor];
+                let tail = rest[cursor..].trim_start();
+                if !name.is_empty()
+                    && tail.starts_with('=')
+                    && !tail.starts_with("==")
+                    && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+                {
+                    names.push(name.to_owned());
+                }
+                continue;
+            }
+            _ => {}
+        }
+        cursor += 1;
+    }
+    names
+}
+
+fn source_tr_calls() -> BTreeMap<String, BTreeSet<String>> {
+    let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut calls = tr_calls(&crates.join("forge-desktop").join("src"));
+    for (key, args) in tr_calls(&crates.join("forge-components").join("src")) {
+        calls.entry(key).or_default().extend(args);
+    }
+    calls
+}
+
 #[test]
 fn every_tr_key_used_in_the_source_tree_exists_in_the_catalogs() {
-    let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-
-    let mut used = literal_tr_keys(&crates.join("forge-desktop").join("src"));
-    used.extend(literal_tr_keys(
-        &crates.join("forge-components").join("src"),
-    ));
+    let used: BTreeSet<String> = source_tr_calls().into_keys().collect();
 
     // A parser that matched nothing would make the assertion below vacuous.
     assert!(
@@ -265,5 +431,36 @@ fn every_tr_key_used_in_the_source_tree_exists_in_the_catalogs() {
     assert!(
         missing.is_empty(),
         "these keys are used in code but absent from the catalog: {missing:?}"
+    );
+}
+
+#[test]
+fn every_tr_call_site_passes_exactly_the_arguments_its_message_declares() {
+    let calls = source_tr_calls();
+    let declared = placeholders_by_key(&load("en"));
+
+    let anchor = calls
+        .get("overlays_icon_import_not_image")
+        .map(|args| args.iter().cloned().collect::<Vec<_>>());
+    assert_eq!(
+        anchor,
+        Some(vec!["file".to_owned(), "format".to_owned()]),
+        "the parser failed to read a known multi-argument call, making this test vacuous"
+    );
+
+    let mut diverging = Vec::new();
+    for (key, passed) in &calls {
+        let Some(expected) = declared.get(key) else {
+            continue;
+        };
+        if passed != expected {
+            diverging.push(format!("{key}: code={passed:?} catalog={expected:?}"));
+        }
+    }
+
+    assert!(
+        diverging.is_empty(),
+        "these messages are called with arguments they do not declare:\n  {}",
+        diverging.join("\n  ")
     );
 }

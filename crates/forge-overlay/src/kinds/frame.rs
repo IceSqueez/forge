@@ -3,6 +3,7 @@ use crate::config;
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.frame";
@@ -39,14 +40,15 @@ impl OverlayKindDescriptor for FrameOverlayKind {
     }
 
     fn default_config(&self) -> OverlayConfig {
-        let mut defaults = config::shared_defaults("peach", "Inter", "center", "fade");
+        let mut defaults =
+            config::shared_defaults("peach", "Inter", "center", "fade", metrics::FRAME_SIZING);
         defaults.insert(config::HEADLINE.to_owned(), config::text(""));
         defaults.insert(config::SUBLINE.to_owned(), config::text("LIVE"));
         defaults
     }
 
     fn config_fields(&self) -> Vec<SectionedField> {
-        let mut fields = config::shared_fields();
+        let mut fields = config::shared_fields(metrics::FRAME_SIZING);
         fields.push(config::sound_field());
         fields
     }

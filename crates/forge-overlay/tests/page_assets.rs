@@ -4,10 +4,13 @@ use std::collections::BTreeSet;
 
 use forge_overlay::config::{ANIMATION_OPTIONS, POSITION_OPTIONS};
 use forge_overlay::{
-    BEHAVIOR_FILE, OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET, STYLE_FILE,
-    register_builtin_kinds,
+    BEHAVIOR_FILE, ConfigSection, OverlayKindRegistry, RESERVED_DIRECTORY, RUNTIME_ASSET,
+    STYLE_FILE, register_builtin_kinds,
 };
 use forge_registry::FormField;
+
+const ALERT_KIND: &str = "overlay.alert";
+const ICON_BOX_MARKER: &str = "class=\"icon\"";
 
 fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
@@ -84,7 +87,7 @@ fn every_kind_markup_loads_the_shared_runtime_and_its_own_sibling_files() {
 }
 
 #[test]
-fn a_page_only_binds_config_keys_its_own_form_declares() {
+fn a_page_binds_config_keys_its_own_form_declares_and_binds_none_when_it_draws_nothing() {
     for descriptor in registry().all() {
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
@@ -93,10 +96,13 @@ fn a_page_only_binds_config_keys_its_own_form_declares() {
             .collect();
         let bindings = quoted_after(descriptor.page_assets().markup, "data-bind=\"");
 
-        assert!(
+        assert_eq!(
             !bindings.is_empty(),
-            "{} markup declares no bindings at all",
-            descriptor.id()
+            descriptor.has_visual_page(),
+            "{} declares has_visual_page()={} but binds {} config keys into its markup",
+            descriptor.id(),
+            descriptor.has_visual_page(),
+            bindings.len()
         );
         for bound in &bindings {
             assert!(
@@ -109,7 +115,7 @@ fn a_page_only_binds_config_keys_its_own_form_declares() {
 }
 
 #[test]
-fn a_page_only_reads_config_members_its_own_form_declares() {
+fn a_page_reads_config_members_its_own_form_declares_and_reads_none_when_it_draws_nothing() {
     for descriptor in registry().all() {
         let declared: BTreeSet<&str> = descriptor
             .config_fields()
@@ -119,10 +125,13 @@ fn a_page_only_reads_config_members_its_own_form_declares() {
         let behavior = without_line_comments(descriptor.page_assets().behavior);
         let members = members_after(&behavior, "config.");
 
-        assert!(
+        assert_eq!(
             !members.is_empty(),
-            "{} behavior reads nothing from its config",
-            descriptor.id()
+            descriptor.has_visual_page(),
+            "{} declares has_visual_page()={} but reads {} members off its config document",
+            descriptor.id(),
+            descriptor.has_visual_page(),
+            members.len()
         );
         for member in &members {
             assert!(
@@ -135,8 +144,8 @@ fn a_page_only_reads_config_members_its_own_form_declares() {
 }
 
 #[test]
-fn every_kind_stylesheet_takes_its_accent_and_font_from_runtime_custom_properties() {
-    for descriptor in registry().all() {
+fn every_kind_that_draws_a_page_takes_its_accent_and_font_from_runtime_custom_properties() {
+    for descriptor in registry().all().filter(|d| d.has_visual_page()) {
         let style = descriptor.page_assets().style;
 
         for property in ["var(--accent)", "var(--font)"] {
@@ -147,6 +156,91 @@ fn every_kind_stylesheet_takes_its_accent_and_font_from_runtime_custom_propertie
             );
         }
     }
+}
+
+#[test]
+fn a_kind_that_draws_no_page_declares_no_style_or_behavior_field_to_draw_with() {
+    for descriptor in registry().all().filter(|d| !d.has_visual_page()) {
+        for sectioned in descriptor.config_fields() {
+            assert_eq!(
+                sectioned.section,
+                ConfigSection::Content,
+                "{} declares {} outside its content group, which nothing on a silent page reads",
+                descriptor.id(),
+                field_key(&sectioned.field)
+            );
+        }
+    }
+}
+
+#[test]
+fn the_icon_box_carries_no_glyph_of_its_own() {
+    let markup = registry()
+        .get(ALERT_KIND)
+        .expect("the alert kind ships in this build")
+        .page_assets()
+        .markup;
+
+    let at = markup
+        .find(ICON_BOX_MARKER)
+        .expect("the alert markup has an icon box");
+    let rest = &markup[at..];
+    let opened = rest.find('>').expect("the icon box tag is closed") + 1;
+    let closed = rest.find("</div>").expect("the icon box element is closed");
+
+    assert_eq!(
+        rest[opened..closed].trim(),
+        "",
+        "the icon box ships a glyph of its own, so the recorded choice is not what a viewer sees"
+    );
+}
+
+#[test]
+fn no_page_behavior_parses_a_media_file_into_the_document() {
+    for descriptor in registry().all() {
+        let behavior = without_line_comments(descriptor.page_assets().behavior);
+
+        for sink in [
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "eval(",
+            "new Function",
+            "createContextualFragment",
+        ] {
+            assert!(
+                !behavior.contains(sink),
+                "{} reaches for {sink}, which can run whatever a fetched file carries",
+                descriptor.id()
+            );
+        }
+    }
+}
+
+#[test]
+fn the_page_tints_an_icon_through_the_very_property_and_class_its_script_sets() {
+    let assets = registry()
+        .get(ALERT_KIND)
+        .expect("the alert kind ships in this build")
+        .page_assets();
+    let behavior = without_line_comments(assets.behavior);
+
+    let property = quoted_after(&behavior, "ICON_SOURCE_PROPERTY = \"")
+        .pop()
+        .expect("the behavior names the custom property it sets the icon source on");
+    let class = quoted_after(&behavior, "TINTED_CLASS = \"")
+        .pop()
+        .expect("the behavior names the class it marks a tintable icon with");
+
+    assert!(
+        assets.style.contains(&format!("var({property})")),
+        "the script sets {property} and the stylesheet never reads it, so a glyph stays invisible"
+    );
+    assert!(
+        assets.style.contains(&format!(".icon.{class} {{")),
+        "the script marks a tintable icon '{class}' and the stylesheet has no rule for it"
+    );
 }
 
 #[test]

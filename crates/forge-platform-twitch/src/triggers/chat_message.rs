@@ -1,11 +1,11 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    ChatTriggerFamily, EventFilter, FormField, KindPlatformContract, TriggerCategory,
-    TriggerKindDescriptor,
+    ActorDeclaration, ChatTriggerFamily, EventFilter, FormField, KindPlatformContract,
+    TriggerCategory, TriggerKindDescriptor, TriggerVariables,
 };
-use forge_types::{ArgStack, PlatformId, TriggerConfig, VariableSchema};
+use forge_types::{PlatformId, TriggerConfig};
 
-use super::chat_arg_stack::{base_chat_args, base_chat_schema};
+use super::chat_arg_stack::base_chat_variables;
 
 pub(crate) struct ChatMessageDescriptor;
 
@@ -61,11 +61,12 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        base_chat_args(event)
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(base_chat_variables())
     }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some(base_chat_schema())
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
     }
 
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {

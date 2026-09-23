@@ -25,6 +25,7 @@ use crate::presentation::{ActivePresentation, Presentation};
 use crate::queue_health::QueueHealth;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
+use crate::screen::Screen;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::topics::Topics;
@@ -46,6 +47,7 @@ pub struct RootView {
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
+    initial_screen: Screen,
     window: Option<WindowHandle<RootView>>,
 }
 
@@ -54,6 +56,7 @@ impl RootView {
         rt_handle: tokio::runtime::Handle,
         log_tail: LogTail,
         endpoints: PlatformEndpoints,
+        initial_screen: Screen,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
@@ -63,6 +66,7 @@ impl RootView {
             rt_handle,
             log_tail,
             endpoints,
+            initial_screen,
             window: None,
         }
     }
@@ -86,9 +90,10 @@ impl RootView {
         let rt_handle = self.rt_handle.clone();
         let log_tail = self.log_tail.clone();
         let endpoints = self.endpoints.clone();
+        let initial_screen = self.initial_screen.clone();
         self.state = BootState::Booting;
         cx.notify();
-        run_boot(rt_handle, log_tail, endpoints, window, cx);
+        run_boot(rt_handle, log_tail, endpoints, initial_screen, window, cx);
     }
 }
 
@@ -96,6 +101,7 @@ pub fn run_boot(
     rt_handle: tokio::runtime::Handle,
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
+    initial_screen: Screen,
     window: WindowHandle<RootView>,
     cx: &mut App,
 ) {
@@ -144,6 +150,10 @@ pub fn run_boot(
                 let chat_feed_for_history = chat_feed.clone();
                 let backend_for_history = Arc::clone(&handles.backend);
                 let rt_handle_for_history = handles.rt_handle.clone();
+                let backend_for_updates = Arc::clone(&handles.backend);
+                let rt_handle_for_updates = handles.rt_handle.clone();
+                let obs_for_updates = handles.obs_install_seed.clone();
+                let bus_for_updates = Arc::clone(&handles.bus);
                 let applied = window.update(cx, |root, window, cx| {
                     // Render-thread install: the fluent bundle is thread-local and must be set before the shell's first render resolves any translated string.
                     crate::i18n::install_language(handles.startup_language);
@@ -163,8 +173,16 @@ pub fn run_boot(
                         speak,
                         queue_health,
                     );
-                    let shell =
-                        cx.new(|cx| AppShell::new(status, topics, handles_for_shell, window, cx));
+                    let shell = cx.new(|cx| {
+                        AppShell::new(
+                            status,
+                            topics,
+                            handles_for_shell,
+                            initial_screen,
+                            window,
+                            cx,
+                        )
+                    });
                     let mut shutdown =
                         Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
                     cx.on_app_quit(move |_root, _cx| {
@@ -199,6 +217,13 @@ pub fn run_boot(
                     start_uptime_clock(cx, status_for_clock);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
+                    crate::update_check::start_update_check(
+                        cx,
+                        backend_for_updates,
+                        rt_handle_for_updates,
+                        obs_for_updates,
+                        bus_for_updates,
+                    );
                     if let Some(events) = speak_events {
                         start_speak_bridge(cx, speak_for_bridge, events);
                     }

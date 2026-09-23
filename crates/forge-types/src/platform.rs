@@ -10,6 +10,16 @@ pub enum PlatformId {
     Kick,
 }
 
+impl PlatformId {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            PlatformId::Twitch => "twitch",
+            PlatformId::YouTube => "youtube",
+            PlatformId::Kick => "kick",
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

@@ -1,0 +1,23 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+.hidden {
+  display: none;
+}
+
+#note {
+  max-width: 420px;
+  margin: 32px;
+  padding: 16px 20px;
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 20, 28, 0.86);
+  color: #cdd6f4;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}

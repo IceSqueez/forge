@@ -940,7 +940,7 @@ fn grow_col(grow: f32, child: impl IntoElement) -> impl IntoElement {
 async fn import_action(dp: Arc<dyn DataProvider>) -> Result<String, String> {
     let filter = async_bridge::DialogFilter {
         name: "JSON".to_owned(),
-        extensions: &["json"],
+        extensions: vec!["json"],
     };
     let path = async_bridge::pick_file(Some(filter)).await?;
     let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;

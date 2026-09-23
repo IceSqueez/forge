@@ -144,6 +144,7 @@ impl Picker {
             }
             InputEvent::Cancelled => cx.emit(PickerEvent::Cancelled),
             InputEvent::Submitted(_) => self.confirm_selected(cx),
+            InputEvent::Blurred(_) => {}
         }
     }
 

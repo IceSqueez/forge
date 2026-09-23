@@ -5,6 +5,8 @@ pub const BEHAVIOR_FILE: &str = "overlay.js";
 /// The config document is data, so it is regenerated even when every source file is overridden.
 pub const CONFIG_FILE: &str = "config.json";
 
+pub const SAMPLE_FILE: &str = "sample.json";
+
 pub const OVERRIDABLE_FILES: &[&str] = &[MARKUP_FILE, STYLE_FILE, BEHAVIOR_FILE];
 
 pub const RESERVED_DIRECTORY: &str = "forge-shared";

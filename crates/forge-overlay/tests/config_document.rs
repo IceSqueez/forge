@@ -1,19 +1,24 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use forge_overlay::config::{
-    ACCENT, ANIMATION, DURATION, FONT, HEADLINE, POSITION, SOUND, SUBLINE,
+    ACCENT, ANIMATION, DEFAULT_ICON, DURATION, FONT, HEADLINE, ICON, POSITION, SOUND, SUBLINE,
 };
 use forge_overlay::{
-    OverlayConfig, OverlayInstance, OverlayKindRegistry, config_document, register_builtin_kinds,
+    GENERATED_MEDIA_DIRECTORY, ICON_FILE_FIELD, ICON_TINTABLE_FIELD, OverlayConfig,
+    OverlayInstance, OverlayKindRegistry, OverlayMedia, ResolvedMedia, SampleContext,
+    config_document, image_reference, register_builtin_kinds,
 };
 use forge_types::Variant;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const ALERT_KIND: &str = "overlay.alert";
 
 const PAGE_CREDENTIAL: &str = "7c1e4a90b2d84f36a5c0e9b71d3f8a24";
+const BLOB_IDENTITY: &str =
+    "sha256-1fe5a351bf0314c8a1840b023fd1e4cab3f0f123468940c241bd7bf20e989ab8";
+const SVG: &str = "svg";
 
-fn raw_document(config: OverlayConfig, credential: Option<&str>) -> String {
+fn raw_document(config: OverlayConfig, credential: Option<&str>, media: OverlayMedia) -> String {
     let mut reg = OverlayKindRegistry::new();
     register_builtin_kinds(&mut reg).expect("the builtin overlay kinds register");
     let descriptor = reg
@@ -26,13 +31,25 @@ fn raw_document(config: OverlayConfig, credential: Option<&str>) -> String {
         config,
         source_overrides: Vec::new(),
         credential: credential.map(str::to_owned),
+        media,
+        sample: SampleContext::neutral(),
     };
 
     config_document(&instance, descriptor).expect("the config document builds")
 }
 
 fn document(config: OverlayConfig) -> Value {
-    serde_json::from_str(&raw_document(config, None)).expect("the config document is valid JSON")
+    serde_json::from_str(&raw_document(config, None, OverlayMedia::default()))
+        .expect("the config document is valid JSON")
+}
+
+fn document_with_media(config: OverlayConfig, media: OverlayMedia) -> Value {
+    serde_json::from_str(&raw_document(config, None, media))
+        .expect("the config document is valid JSON")
+}
+
+fn icon_config(stored: &str) -> OverlayConfig {
+    OverlayConfig::from([(ICON.to_owned(), Variant::String(stored.to_owned()))])
 }
 
 #[test]
@@ -114,14 +131,54 @@ fn config_values_arrive_as_plain_json_rather_than_the_tagged_variant_form() {
     );
 }
 
+#[test]
+fn the_icon_reaches_the_page_as_a_file_and_a_fill_decision_rather_than_a_bare_string() {
+    let media = OverlayMedia {
+        resolved: vec![
+            ResolvedMedia::new(ICON, BLOB_IDENTITY, SVG, b"<svg/>".to_vec())
+                .expect("a content id is a token"),
+        ],
+        issues: Vec::new(),
+    };
+    let path = format!("{GENERATED_MEDIA_DIRECTORY}/{BLOB_IDENTITY}.{SVG}");
+
+    for (stored, tintable, label) in [
+        (DEFAULT_ICON.to_owned(), true, "a curated glyph"),
+        (image_reference(BLOB_IDENTITY), false, "an imported image"),
+    ] {
+        let doc = document_with_media(icon_config(&stored), media.clone());
+
+        assert_eq!(
+            doc["config"][ICON],
+            json!({ ICON_FILE_FIELD: path, ICON_TINTABLE_FIELD: tintable }),
+            "{label} reached the page as something the script cannot place"
+        );
+    }
+}
+
+#[test]
+fn an_icon_that_did_not_resolve_reaches_the_page_as_an_empty_file_rather_than_a_missing_key() {
+    let doc = document(icon_config("no-such-glyph"));
+
+    assert_eq!(
+        doc["config"][ICON][ICON_FILE_FIELD].as_str(),
+        Some(""),
+        "the page reads config.icon.file unconditionally and got {:?}",
+        doc["config"][ICON]
+    );
+}
+
 /// The page authenticates its own socket with this value, so the slot is deliberate; what must
 /// never happen is the credential appearing when the instance carries none, or leaking into the
 /// `config` map every kind renders field by field.
 #[test]
 fn the_page_credential_is_a_top_level_slot_present_only_when_the_instance_holds_one() {
-    let bound: Value =
-        serde_json::from_str(&raw_document(OverlayConfig::new(), Some(PAGE_CREDENTIAL)))
-            .expect("the config document is valid JSON");
+    let bound: Value = serde_json::from_str(&raw_document(
+        OverlayConfig::new(),
+        Some(PAGE_CREDENTIAL),
+        OverlayMedia::default(),
+    ))
+    .expect("the config document is valid JSON");
 
     assert_eq!(
         bound["credential"].as_str(),

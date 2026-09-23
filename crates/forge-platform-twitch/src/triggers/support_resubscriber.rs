@@ -1,12 +1,14 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
+    TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::support as fields;
 
 pub(crate) struct SupportResubscriberDescriptor;
@@ -63,99 +65,47 @@ impl TriggerKindDescriptor for SupportResubscriberDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let user_login = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = event
-            .payload
-            .get(fields::USER)
-            .and_then(|u| u.get(fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let tier = event
-            .payload
-            .get(fields::TIER)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let cumulative_months = event
-            .payload
-            .get(fields::CUMULATIVE_MONTHS)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let streak_months = event
-            .payload
-            .get(fields::STREAK_MONTHS)
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let message = event
-            .payload
-            .get(fields::MESSAGE)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-
-        ArgStack::new()
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("sub_tier".to_owned(), Variant::String(tier))
-            .set(
-                "sub_cumulative_months".to_owned(),
-                Variant::Int(cumulative_months),
-            )
-            .set("sub_streak_months".to_owned(), Variant::Int(streak_months))
-            .set("sub_message".to_owned(), Variant::String(message))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
-                    },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "sub_tier".to_owned(),
-                        kind: VariantKind::String,
-                        label: "Subscription tier".to_owned(),
-                        synthesis: None,
-                    },
-                    DeclaredVariable {
-                        name: "sub_cumulative_months".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Cumulative months".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 24 }),
-                    },
-                    DeclaredVariable {
-                        name: "sub_streak_months".to_owned(),
-                        kind: VariantKind::Int,
-                        label: "Streak months".to_owned(),
-                        synthesis: Some(SynthesisHint::BoundedInt { min: 1, max: 24 }),
-                    },
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), resubscriber_identity)
+                .message_text(resub_message)
+                .count(CanonicalCount::SubCumulativeMonths, |event| {
+                    payload_read::number(event, fields::CUMULATIVE_MONTHS)
+                })
+                .count(CanonicalCount::SubStreakMonths, |event| {
+                    payload_read::number(event, fields::STREAK_MONTHS)
+                })
+                .sub_tier(|event| payload_read::text(event, fields::TIER))
+                .legacy(
                     DeclaredVariable {
                         name: "sub_message".to_owned(),
                         kind: VariantKind::String,
                         label: "Resub message".to_owned(),
                         synthesis: Some(SynthesisHint::Message),
                     },
-                ],
-            }
-        })
+                    CanonicalVariable::MessageText,
+                    |event| Variant::String(resub_message(event)),
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn resubscriber_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(fields::USER),
+        fields::USER_ID,
+        fields::USER_LOGIN,
+        fields::USER_DISPLAY_NAME,
+    )
+}
+
+fn resub_message(event: &Event) -> String {
+    payload_read::text(event, fields::MESSAGE)
 }
 
 #[cfg(test)]
@@ -186,14 +136,29 @@ mod tests {
     }
 
     #[test]
-    fn build_arg_stack_extracts_resub_fields() {
+    fn a_resubscriber_publishes_the_canonical_actor_block_the_tier_and_the_resub_message() {
         let stack = SupportResubscriberDescriptor.build_arg_stack(&resub_event());
-        assert_eq!(
-            stack.get("user_login"),
-            Some(&Variant::String("loyalfan".to_owned()))
-        );
+        for (name, value) in [
+            ("user_id", "222"),
+            ("user_name", "LoyalFan"),
+            ("user_login", "loyalfan"),
+            ("user_platform", "twitch"),
+            ("sub_tier", "1000"),
+            ("message_text", "Love this channel!"),
+        ] {
+            assert_eq!(
+                stack.get(name),
+                Some(&Variant::String(value.to_owned())),
+                "'{name}'"
+            );
+        }
         assert_eq!(stack.get("sub_cumulative_months"), Some(&Variant::Int(12)));
         assert_eq!(stack.get("sub_streak_months"), Some(&Variant::Int(6)));
+    }
+
+    #[test]
+    fn the_legacy_resub_message_still_carries_the_line_message_text_now_carries() {
+        let stack = SupportResubscriberDescriptor.build_arg_stack(&resub_event());
         assert_eq!(
             stack.get("sub_message"),
             Some(&Variant::String("Love this channel!".to_owned()))

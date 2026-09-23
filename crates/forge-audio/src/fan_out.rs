@@ -81,21 +81,51 @@ impl AudioSink for FanOutSink {
             .collect();
 
         let mut started = Vec::new();
-        let mut reasons = Vec::new();
+        let mut start_reasons: Vec<Option<String>> = Vec::with_capacity(self.sinks.len());
         for result in futures::future::join_all(futures).await {
             match result {
-                Ok(playback) => started.push(playback),
-                Err(e) => reasons.push(e.to_string()),
+                Ok(playback) => {
+                    started.push(playback);
+                    start_reasons.push(None);
+                }
+                Err(e) => start_reasons.push(Some(e.to_string())),
             }
         }
 
         if started.is_empty() {
-            return Err(route_failure(reasons));
+            return Err(route_failure(start_reasons.into_iter().flatten().collect()));
         }
-        warn_failed_routes(&reasons);
+        warn_failed_routes(start_reasons.iter().filter_map(Option::as_deref));
 
         let handle = PlaybackHandle::merge(started.iter().map(ControlledPlayback::handle));
-        let completion = async move { settle(futures::future::join_all(started).await) };
+        let completion = async move {
+            let mut outcomes = futures::future::join_all(started).await.into_iter();
+            let verdicts: Vec<(bool, Result<(), String>)> = start_reasons
+                .into_iter()
+                .map(|slot| match slot {
+                    Some(reason) => (false, Err(reason)),
+                    None => (
+                        true,
+                        outcomes.next().unwrap_or(Ok(())).map_err(|e| e.to_string()),
+                    ),
+                })
+                .collect();
+
+            if verdicts.iter().any(|(_, verdict)| verdict.is_ok()) {
+                let settled_failures = verdicts.iter().filter_map(|(is_settled, verdict)| {
+                    is_settled.then(|| verdict.as_ref().err()).flatten()
+                });
+                warn_failed_routes(settled_failures.map(String::as_str));
+                Ok(())
+            } else {
+                Err(route_failure(
+                    verdicts
+                        .into_iter()
+                        .filter_map(|(_, verdict)| verdict.err())
+                        .collect(),
+                ))
+            }
+        };
         Ok(ControlledPlayback::merged(handle, Box::pin(completion)))
     }
 }
@@ -115,14 +145,14 @@ fn settle(outcomes: Vec<Result<(), AudioError>>) -> Result<(), AudioError> {
     }
 
     if played {
-        warn_failed_routes(&reasons);
+        warn_failed_routes(reasons.iter().map(String::as_str));
         Ok(())
     } else {
         Err(route_failure(reasons))
     }
 }
 
-fn warn_failed_routes(reasons: &[String]) {
+fn warn_failed_routes<'a>(reasons: impl IntoIterator<Item = &'a str>) {
     for reason in reasons {
         tracing::warn!(error = %reason, "audio route failed; playback continues on the surviving routes");
     }
@@ -137,7 +167,7 @@ fn route_failure(reasons: Vec<String>) -> AudioError {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::panic, clippy::unwrap_used)]
 mod tests {
     use std::pin::pin;
     use std::sync::Mutex;
@@ -439,6 +469,73 @@ mod tests {
                 );
             } else {
                 assert_every_reason_survives(case, &outcome.unwrap_err(), &expected);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_start_refusal_is_still_named_when_the_route_that_started_fails_to_settle() {
+        for (case, plan, expected) in [
+            (
+                "the route that refused to start comes first",
+                vec![
+                    (Some(START_REFUSAL_A), None),
+                    (None, Some(VERDICT_FAILURE_B)),
+                ],
+                Some(vec![START_REFUSAL_A, VERDICT_FAILURE_B]),
+            ),
+            (
+                "the route that refused to start comes last",
+                vec![
+                    (None, Some(VERDICT_FAILURE_A)),
+                    (Some(START_REFUSAL_B), None),
+                ],
+                Some(vec![VERDICT_FAILURE_A, START_REFUSAL_B]),
+            ),
+            (
+                "the route that started plays to the end",
+                vec![(Some(START_REFUSAL_A), None), (None, None)],
+                None,
+            ),
+        ] {
+            let mut probes: Vec<Probe> = plan.iter().map(|(refusal, _)| route(*refusal)).collect();
+            let playback = fan(&probes)
+                .play_controlled(clip())
+                .await
+                .unwrap_or_else(|e| panic!("{case}: a surviving route must start, got {e:?}"));
+            let playback = pin!(playback);
+
+            for (probe, (refusal, verdict)) in probes.iter_mut().zip(&plan) {
+                if refusal.is_none() {
+                    assert!(
+                        probe.finish(verdict.map_or(Ok(()), |reason| Err(reason.to_owned()))),
+                        "{case}: a started route was dropped"
+                    );
+                }
+            }
+
+            let outcome = playback.await;
+            match expected {
+                None => assert!(
+                    outcome.is_ok(),
+                    "{case}: a route that played must finish the utterance, got {outcome:?}"
+                ),
+                Some(reasons) => {
+                    let err = outcome.unwrap_err();
+                    assert!(
+                        matches!(&err, AudioError::AllRoutesFailed(_)),
+                        "{case}: every route failed yet the fan-out reported {err:?}"
+                    );
+                    assert_eq!(
+                        reported_reasons(&err),
+                        reasons
+                            .iter()
+                            .map(|reason| AudioError::Host((*reason).to_owned()).to_string())
+                            .collect::<Vec<_>>()
+                            .join(ROUTE_REASON_SEPARATOR),
+                        "{case}: every reason must survive, in route order"
+                    );
+                }
             }
         }
     }

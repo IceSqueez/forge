@@ -29,6 +29,7 @@ impl BuiltinControl for VTubeClient {
         crate::supervisor::set_connection_state(
             &self.state,
             &self.health_state,
+            &*self.reconnect_publisher,
             ConnectionState::Connecting,
         );
         if let Ok(mut g) = self.connected_at.write() {
@@ -74,6 +75,12 @@ impl BuiltinControl for VTubeClient {
         if let Some(h) = handle {
             let _ = h.await;
         }
+        crate::supervisor::set_connection_state(
+            &self.state,
+            &self.health_state,
+            &*self.reconnect_publisher,
+            ConnectionState::Disconnected,
+        );
 
         Ok(())
     }

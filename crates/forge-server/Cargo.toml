@@ -16,6 +16,7 @@ forge-runtime = { path = "../forge-runtime" }
 forge-registry = { path = "../forge-registry" }
 forge-platform-core = { path = "../forge-platform-core" }
 forge-storage = { path = "../forge-storage" }
+forge-overlay = { path = "../forge-overlay" }
 axum = { workspace = true }
 tower-http = { workspace = true }
 tokio-tungstenite = { workspace = true }

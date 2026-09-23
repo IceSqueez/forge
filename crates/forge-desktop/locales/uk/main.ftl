@@ -199,6 +199,13 @@ settings_diagnostics_level_error = Error
 settings_version_title = Версія та оновлення
 settings_version_license = Відкритий код · MIT OR Apache-2.0
 settings_version_check_updates = Перевірити оновлення
+settings_version_notify_label = Сповіщати про нові версії
+settings_version_notify_hint = Показує одноразове сповіщення, коли виходить новіший реліз. Ніколи під час трансляції чи запису в OBS.
+
+## Сповіщення про оновлення
+
+update_toast_available = Доступна forge { $version }
+update_toast_open_action = Відкрити реліз
 
 ## Налаштування → панель сховища
 
@@ -1044,6 +1051,11 @@ soundboard_breadcrumb_soundboard = Звукова панель
 soundboard_loading = Завантаження кліпів…
 soundboard_empty_title = Кліпів ще немає
 soundboard_playback_error_prefix = Помилка відтворення: { $error }
+soundboard_error_source_missing = Вихідний файл для { $name } зник.
+soundboard_error_clip_gone = Цього звуку вже немає у звуковій панелі.
+soundboard_import_unsupported = { $file } - не той формат звуку, який forge вміє програвати.
+soundboard_import_type_mismatch = { $file } має розширення { $named }, але вміст файлу - { $detected }.
+soundboard_import_too_large = { $file } важить { $size }, а ліміт для звуків - { $limit }.
 
 ## Звукова панель - модальне вікно
 
@@ -1085,6 +1097,10 @@ soundboard_category_music = Стингери
 soundboard_category_voice = Голос
 soundboard_stop_all = Зупинити все
 soundboard_pad_playing = грає…
+soundboard_pad_source_missing = файл зник
+soundboard_pad_source_missing_hint = Вихідний файл зник. Відредагуй цей звук і вкажи файл ще раз.
+soundboard_pad_adopt_blocked = не копіюється
+soundboard_pad_not_in_library = ще не в бібліотеці
 soundboard_no_matches = Немає звуків за фільтром
 soundboard_library_section = Бібліотека
 soundboard_library_import = Імпорт
@@ -1101,6 +1117,26 @@ soundboard_routing_hint = Додайте цей пристрій як Audio Inpu
 soundboard_routing_volume = ГОЛОСНІСТЬ · { $pct }%
 soundboard_routing_headphones = Також відтворювати в навушниках
 soundboard_footer_left = { $sounds } звуків · { $categories } категорій · { $size }
+soundboard_footer_unadopted =
+    { $count ->
+        [one] { $count } звук досі грає зі своєї початкової теки
+        [few] { $count } звуки досі грають зі своєї початкової теки
+        [many] { $count } звуків досі грають зі своєї початкової теки
+       *[other] { $count } звуків досі грають зі своєї початкової теки
+    }
+soundboard_footer_adopt_action =
+    { $count ->
+        [one] Скопіювати { $count } кліп у бібліотеку
+        [few] Скопіювати { $count } кліпи у бібліотеку
+        [many] Скопіювати { $count } кліпів у бібліотеку
+       *[other] Скопіювати { $count } кліпів у бібліотеку
+    }
+soundboard_footer_adopt_busy = Копіюю...
+soundboard_adopt_copied = скопійовано: { $count }
+soundboard_adopt_refused = відхилено: { $count }
+soundboard_adopt_missing = зникло: { $count }
+soundboard_adopt_unfinished = незавершено: { $count }
+soundboard_adopt_nothing = Нічого не змінилось
 soundboard_output_ready = Пристрій виходу готовий
 soundboard_output_missing = Пристрій виходу відсутній
 
@@ -2260,15 +2296,34 @@ overlays_code_discard_title = Відкинути незбережені прав
 overlays_code_discard_body = У цьому файлі є правки, які так і не збережено. Продовжити й втратити їх або лишитися та редагувати далі.
 overlays_code_discard_confirm = Відкинути
 overlays_code_discard_cancel = Редагувати далі
-overlays_preview_label = Живий перегляд - 1920x1080
+overlays_preview_label = Живий перегляд - { $width }x{ $height }
+overlays_preview_scale_true = Реальний масштаб
+overlays_preview_scale_zoom = Збільшено
+overlays_preview_open = Відкрити в браузері
+overlays_preview_open_failed = forge не зміг відкрити сторінку цього оверлея у браузері.
+overlays_preview_browser_counts = Вкладка перегляду все одно отримує зразок, але вона не рахується як браузерне джерело.
 overlays_preview_canvas_note = прозоро - браузерне джерело OBS
 overlays_preview_approximate = Приблизний перегляд. Справжній оверлей малює браузерне джерело OBS на прозорому тлі.
 overlays_preview_unavailable = У цій збірці немає типу оверлея для цього запису, тож переглядати нічого.
+overlays_preview_audio_silent = Нічого не малює в OBS - лише відтворює звук.
+overlays_preview_audio_needs_source = Додайте його як браузерне джерело OBS - звичайна вкладка блокує автовідтворення.
 overlays_test_send = Надіслати тест
 overlays_test_sending = Готуємо зразок для прив'язаної події...
-overlays_test_delivered = Зразок надіслано в усі браузерні джерела, що показують цей оверлей.
+overlays_test_delivered = { $count ->
+    [one] Зразок доставлено в { $count } браузерне джерело
+    [few] Зразок доставлено в { $count } браузерні джерела
+    [many] Зразок доставлено в { $count } браузерних джерел
+   *[other] Зразок доставлено в { $count } браузерних джерел
+}
+overlays_test_preview_only = { $count ->
+    [one] Підключена лише вкладка перегляду - відкрийте URL оверлея в OBS, щоб побачити його там
+    [few] Підключено лише { $count } вкладки перегляду - відкрийте URL оверлея в OBS, щоб побачити його там
+    [many] Підключено лише { $count } вкладок перегляду - відкрийте URL оверлея в OBS, щоб побачити його там
+   *[other] Підключено лише { $count } вкладок перегляду - відкрийте URL оверлея в OBS, щоб побачити його там
+}
 overlays_test_undelivered = Сервер зупинено, тому жодне браузерне джерело не отримало цей зразок. Перегляд вище відпрацював локально.
 overlays_test_no_browser_source = Сервер працює, але до цього оверлея не підключене жодне браузерне джерело. Перевірте URL оверлея в OBS і оновіть джерело.
+overlays_test_unavailable = Надіслати тест поки недоступно - вміст цього оверлея заповнюється лише тоді, коли forge виконує реальний крок.
 overlays_bindings_pending = Довідник прив'язок для редактора джерела ще не побудовано.
 overlays_panel_section_content = Вміст
 overlays_panel_section_style = Стиль
@@ -2276,5 +2331,87 @@ overlays_panel_section_behavior = Поведінка
 overlays_panel_no_properties = Цей тип оверлея не оголошує властивостей.
 overlays_panel_unavailable = У цій збірці немає типу оверлея для цього запису, тож налаштовувати нічого.
 overlays_panel_choice_empty = Немає доступних варіантів.
+overlays_sound_none = Без звуку
+overlays_sound_custom_file = Власний файл: { $name }
+overlays_sound_adopting = Копіюю звук до бібліотеки...
+overlays_sound_issue_unknown_clip = Обраного звуку вже немає у звуковій панелі, тож цей оверлей нічого не програє.
+overlays_sound_issue_outside_library = Обраний звук ще не скопійовано до бібліотеки, тож цей оверлей нічого не програє. Відкрий Звукову панель і додай його до бібліотеки.
+overlays_sound_issue_bytes_missing = Копія обраного звуку зникла з бібліотеки, тож цей оверлей нічого не програє.
+overlays_sound_issue_kind_mismatch = Обраний звук збережено як { $format }, а це не аудіо, тож цей оверлей нічого не програє.
+overlays_sound_issue_lookup_failed = forge не зміг прочитати те, на що вказує це поле: { $reason }
+overlays_icon_issue_unknown_glyph = Обраної іконки немає в наборі цієї збірки, тож цей оверлей не покаже іконку.
+overlays_icon_issue_unknown_image = Обраного зображення вже немає в бібліотеці, тож цей оверлей не покаже іконку.
+overlays_icon_issue_bytes_missing = Копія обраного зображення зникла з бібліотеки, тож цей оверлей не покаже іконку.
+overlays_icon_issue_kind_mismatch = Обране зображення збережено як { $format }, а це не зображення, тож цей оверлей не покаже іконку.
+overlays_icon_none = Без іконки
+overlays_icon_none_desc = Сповіщення покаже лише текст.
+overlays_icon_group_none = Без іконки
+overlays_icon_group_imported = Імпортовані
+overlays_icon_import = Імпортувати зображення...
+overlays_icon_import_desc = Обери файл на цьому комп'ютері ({ $formats }).
+overlays_icon_import_not_image = { $file } збережено як { $format }, а це не зображення, тож воно не може бути іконкою.
+overlays_icon_importing = Імпортую зображення до бібліотеки...
+overlays_icon_file_filter = Зображення
+overlays_icon_picker_title = Обери іконку
+overlays_icon_picker_subtitle = Добірний гліф бере акцент оверлея; імпорт показується як є.
+overlays_icon_picker_hint = Друкуй для пошуку, стрілки - рух, Enter - вибір, Esc - закрити.
+overlays_icon_picker_search = Пошук іконок
+overlays_icon_category_support = Підтримка
+overlays_icon_category_celebration = Святкування
+overlays_icon_category_community = Спільнота
+overlays_icon_category_stream = Стрім
+overlays_icon_category_play = Ігри
+overlays_icon_category_goals = Цілі
+overlays_icon_category_nature = Природа
 overlays_panel_override_notice = Ці файли тепер ваші, тож вони ніколи не перегенеровуються: { $files }. Зміни дизайну, яким потрібна згенерована розмітка чи стилі, більше до них не доходять.
 config_form_choice_placeholder = Не задано
+config_form_auto_placeholder = авто
+
+## Оверлеї - привʼязка до події
+
+overlays_wire_open = Показати на подію...
+overlays_wire_empty = До цього оверлея ще ніщо не надсилає.
+overlays_wire_picker_title = Показати цей оверлей на подію
+overlays_wire_picker_lead = для
+overlays_wire_picker_count = { $count ->
+    [one] { $count } подія
+    [few] { $count } події
+    [many] { $count } подій
+   *[other] { $count } подій
+}
+overlays_wire_picker_search = Пошук подій
+overlays_wire_picker_hint = Введіть текст для пошуку - стрілки для переходу - Enter для вибору
+overlays_wire_scope_suggested = Рекомендовані
+overlays_wire_confirm_title = Показувати { $overlay } на цю подію
+overlays_wire_checking = Перевіряємо, що вже надсилає до цього оверлея...
+overlays_wire_section_creates = Буде створено
+overlays_wire_section_wording = У трансляції це читається як
+overlays_wire_record_action = Дія
+overlays_wire_record_trigger = Тригер
+overlays_wire_record_queue = Черга
+overlays_wire_wording_empty = Цей тип оверлея не має тексту, який можна заповнити.
+overlays_wire_create = Створити
+overlays_wire_back = Назад
+overlays_wire_open_action = Відкрити дію
+overlays_wire_already_body = Цей оверлей уже показується на цю подію. Відкрийте дію замість створення другої.
+overlays_wire_refused_overlay = Цей тип оверлея не приймає привʼязку до події.
+overlays_wire_refused_trigger = Ця подія не оголошує нічого, що оверлей міг би показати.
+overlays_wire_toast_created = Оверлей привʼязано до події
+overlays_wire_toast_already = Цей оверлей уже показується на цю подію.
+overlays_wire_toast_incomplete = Привʼязка обірвалася на півдорозі. Записано: { $landed }.
+overlays_wire_toast_missing = У цій збірці більше немає цього типу оверлея або цієї події.
+overlays_wire_landed_action = дію
+overlays_wire_landed_trigger = тригер
+overlays_wire_landed_link = звʼязок між ними
+overlays_wire_landed_nothing = нічого
+overlays_wire_queue_not_live = Черга { $queue } ще не працює. Перезапустіть forge, щоб це сповіщення програлося.
+overlays_wire_fires_on = Спрацьовує на { $triggers }
+overlays_wire_fires_untriggered = Дії надсилають до цього оверлея, але жодна подія їх ще не запускає.
+overlays_wire_action_disabled = вимкнено
+overlays_wire_overlay_off = Цей оверлей вимкнено, тож поки він вимкнений, нічого не показується.
+overlays_confirm_delete_feeds = { $count ->
+    [one] До нього надсилає { $count } дія.
+    [few] До нього надсилають { $count } дії.
+    [many] До нього надсилають { $count } дій.
+   *[other] До нього надсилають { $count } дій.
+}

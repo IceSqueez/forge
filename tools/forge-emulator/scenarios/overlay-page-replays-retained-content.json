@@ -1,0 +1,90 @@
+{
+  "name": "an overlay page opened after a delivery is handed the retained content",
+  "purpose": "A goal overlay keeps its last delivery, so a browser source that was not connected when the command ran is handed that content the moment its credential validates. The replayed frame must carry the same plain strings a live delivery would: a page has no way to tell a replay from a first delivery, so tagged Variant JSON would render as [object Object] there too.",
+  "fixture": {
+    "twitch": {},
+    "overlays": [
+      {
+        "display_name": "Sub Goal",
+        "kind_id": "overlay.goal",
+        "config": {
+          "label": { "type": "string", "value": "stored label" },
+          "value": { "type": "string", "value": "0" },
+          "target": { "type": "string", "value": "100" }
+        }
+      }
+    ],
+    "chat_commands": [
+      {
+        "phrase": "!goal",
+        "action_name": "Update Goal",
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": { "type": "string", "value": "Sub Goal" },
+              "label": { "type": "string", "value": "Goal raised by %user_login%" },
+              "value": { "type": "string", "value": "7" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": { "user_id": "200000043", "login": "bob" },
+          "text": "!goal"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Update Goal" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } }
+      ]
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Sub Goal", "within_ms": 30000 } },
+      "expect": [
+        {
+          "overlay_content": {
+            "overlay": "Sub Goal",
+            "values": {
+              "label": "Goal raised by bob",
+              "value": "7",
+              "target": "100"
+            },
+            "within_ms": 5000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

@@ -1,12 +1,13 @@
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    EventFilter, FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor,
+    ActorDeclaration, ActorIdentity, EventFilter, FormField, KindPlatformContract, TriggerCategory,
+    TriggerKindDescriptor, TriggerVariables,
 };
 use forge_types::{
-    ArgStack, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, VariableSchema, Variant,
-    VariantKind,
+    ActorRole, DeclaredVariable, PlatformId, SynthesisHint, TriggerConfig, Variant, VariantKind,
 };
 
+use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::automatic_reward as automatic_reward_fields;
 
 pub(crate) struct AutomaticRewardRedeemedDescriptor;
@@ -65,71 +66,41 @@ impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
         true
     }
 
-    fn build_arg_stack(&self, event: &Event) -> ArgStack {
-        let redemption = event.payload.get(automatic_reward_fields::REDEMPTION);
-        let user = event.payload.get(automatic_reward_fields::USER);
-        let reward = event.payload.get(automatic_reward_fields::REWARD);
-
-        let redemption_id = redemption
-            .and_then(|r| r.get(automatic_reward_fields::REDEMPTION_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_login = user
-            .and_then(|u| u.get(automatic_reward_fields::USER_LOGIN))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let user_id = user
-            .and_then(|u| u.get(automatic_reward_fields::USER_ID))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let reward_type = reward
-            .and_then(|r| r.get(automatic_reward_fields::REWARD_TYPE))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        let reward_cost = reward
-            .and_then(|r| r.get(automatic_reward_fields::REWARD_COST))
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        ArgStack::new()
-            .set("redemption.id".to_owned(), Variant::String(redemption_id))
-            .set("user_login".to_owned(), Variant::String(user_login))
-            .set("user_id".to_owned(), Variant::String(user_id))
-            .set("reward.type".to_owned(), Variant::String(reward_type))
-            .set("reward.cost".to_owned(), Variant::Int(reward_cost))
-    }
-    fn output_schema(&self) -> Option<VariableSchema> {
-        Some({
-            VariableSchema {
-                variables: vec![
+    fn variables(&self) -> Option<TriggerVariables> {
+        Some(
+            TriggerVariables::new()
+                .actor(twitch_actor(ActorRole::Principal), redeemer_identity)
+                .event_specific(
                     DeclaredVariable {
                         name: "redemption.id".to_owned(),
                         kind: VariantKind::String,
                         label: "Redemption ID".to_owned(),
                         synthesis: None,
                     },
-                    DeclaredVariable {
-                        name: "user_login".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User login".to_owned(),
-                        synthesis: Some(SynthesisHint::Username),
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            automatic_reward_fields::REDEMPTION,
+                            automatic_reward_fields::REDEMPTION_ID,
+                        ))
                     },
-                    DeclaredVariable {
-                        name: "user_id".to_owned(),
-                        kind: VariantKind::String,
-                        label: "User ID".to_owned(),
-                        synthesis: None,
-                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "reward.type".to_owned(),
                         kind: VariantKind::String,
                         label: "Reward type".to_owned(),
                         synthesis: None,
                     },
+                    |event| {
+                        Variant::String(payload_read::nested_text(
+                            event,
+                            automatic_reward_fields::REWARD,
+                            automatic_reward_fields::REWARD_TYPE,
+                        ))
+                    },
+                )
+                .event_specific(
                     DeclaredVariable {
                         name: "reward.cost".to_owned(),
                         kind: VariantKind::Int,
@@ -139,10 +110,29 @@ impl TriggerKindDescriptor for AutomaticRewardRedeemedDescriptor {
                             max: 1000000,
                         }),
                     },
-                ],
-            }
-        })
+                    |event| {
+                        Variant::Int(payload_read::nested_number(
+                            event,
+                            automatic_reward_fields::REWARD,
+                            automatic_reward_fields::REWARD_COST,
+                        ))
+                    },
+                ),
+        )
     }
+
+    fn actors(&self) -> ActorDeclaration {
+        ActorDeclaration::principal()
+    }
+}
+
+fn redeemer_identity(event: &Event) -> ActorIdentity {
+    payload_read::identity(
+        event.payload.get(automatic_reward_fields::USER),
+        automatic_reward_fields::USER_ID,
+        automatic_reward_fields::USER_LOGIN,
+        automatic_reward_fields::USER_DISPLAY_NAME,
+    )
 }
 
 #[cfg(test)]

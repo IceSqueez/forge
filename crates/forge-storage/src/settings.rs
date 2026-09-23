@@ -52,6 +52,8 @@ pub mod reserved_keys {
     pub const SOUNDBOARD_MASTER_VOLUME: &str = "soundboard.master_volume";
     pub const SOUNDBOARD_ALSO_HEADPHONES: &str = "soundboard.also_headphones";
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
+    pub const UPDATES_NOTIFY: &str = "updates.notify";
+    pub const UPDATES_DISMISSED_VERSION: &str = "updates.dismissed_version";
 }
 
 /// How each settings key may appear in the publicly-attachable diagnostic bundle.
@@ -108,7 +110,9 @@ pub mod disclosure {
             | reserved_keys::TTS_MASTER_VOLUME
             | reserved_keys::SOUNDBOARD_ENABLED
             | reserved_keys::SOUNDBOARD_MASTER_VOLUME
-            | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES => Verbatim,
+            | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES
+            | reserved_keys::UPDATES_NOTIFY
+            | reserved_keys::UPDATES_DISMISSED_VERSION => Verbatim,
 
             reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS
             | reserved_keys::SERVER_ADDITIONAL_ORIGINS
@@ -963,6 +967,8 @@ mod tests {
             (reserved_keys::DIAGNOSTICS_LOG_LEVEL, "trace"),
             (reserved_keys::SERVER_PORT, "8080"),
             (reserved_keys::SERVER_ENABLED, "true"),
+            (reserved_keys::UPDATES_NOTIFY, "false"),
+            (reserved_keys::UPDATES_DISMISSED_VERSION, "v0.6.0"),
             ("tts.engine_params.piper.speed", "1.25"),
         ] {
             assert_eq!(disclosure::class_of(key), SettingDisclosure::Verbatim);

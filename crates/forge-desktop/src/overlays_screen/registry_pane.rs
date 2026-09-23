@@ -1,6 +1,6 @@
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Icon, MenuPlacement, body_family, icon, menu_button,
-    menu_divider, menu_item, mono_family, pad_tile, toggle, tr,
+    menu_divider, menu_item, mono_family, pad_tile, toggle, tooltip_builder, tr,
 };
 use forge_storage::{OverlayDefinition, OverlayId};
 use gpui::{
@@ -30,6 +30,7 @@ const ROW_TILE_RADIUS: Pixels = px(7.0);
 const ROW_GLYPH: Pixels = px(14.0);
 const ROW_NAME_FS: Pixels = px(12.5);
 const ROW_KIND_FS: Pixels = px(9.5);
+const ROW_BADGE_GLYPH: Pixels = px(12.0);
 
 const EMPTY_PAD_V: Pixels = px(14.0);
 const EMPTY_PAD_H: Pixels = px(10.0);
@@ -217,9 +218,27 @@ impl OverlaysView {
             )
             .child(tile)
             .child(labels)
+            .children(self.render_media_badge(index, &id, palette))
             .child(switch)
             .child(self.render_row_menu(index, &id, palette, cx))
             .into_any_element()
+    }
+
+    fn render_media_badge(
+        &self,
+        index: usize,
+        id: &OverlayId,
+        palette: &ForgePalette,
+    ) -> Option<AnyElement> {
+        let note = self.media_badge(id)?;
+        Some(
+            div()
+                .id(("overlay-media-issue", index))
+                .flex_none()
+                .tooltip(tooltip_builder(note, palette))
+                .child(icon(Icon::AlertTriangle, ROW_BADGE_GLYPH, palette.warning))
+                .into_any_element(),
+        )
     }
 
     fn render_row_menu(

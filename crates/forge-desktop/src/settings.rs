@@ -5,9 +5,9 @@ use forge_components::{
     ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
     Spacing, ThemeId, badge, body_family, card, field_hint, field_label, field_title,
     ghost_button_with_icon, icon, mono_family, overlay, page_frame, primary_button_with_icon,
-    radius, set_body_family, set_mono_family, spacing, tr, with_alpha,
+    radius, set_body_family, set_mono_family, setting_row, spacing, toggle, tr, with_alpha,
 };
-use forge_storage::{Language, SettingsRepo, reserved_keys};
+use forge_storage::{Language, SettingsRepo, get_bool_setting, reserved_keys};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
     Window, div, prelude::*, px,
@@ -22,6 +22,7 @@ use crate::settings_scripting::SettingsScriptingView;
 use crate::settings_shortcuts::SettingsShortcutsView;
 use crate::settings_storage::SettingsStorageView;
 use crate::settings_websocket::SettingsWebSocketView;
+use crate::update_check::NOTIFY_DEFAULT;
 
 const RELEASES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases");
 
@@ -117,6 +118,14 @@ impl SettingsSection {
             SettingsSection::Diagnostics => "diagnostics",
         }
     }
+
+    pub(crate) fn from_key(key: &str) -> Option<Self> {
+        NAV_GROUPS
+            .iter()
+            .flat_map(|(_, sections)| sections.iter())
+            .copied()
+            .find(|section| section.key() == key)
+    }
 }
 
 fn theme_meta(theme: ThemeId) -> (String, String) {
@@ -177,6 +186,7 @@ pub struct SettingsView {
     storage: Entity<SettingsStorageView>,
     diagnostics: Entity<SettingsDiagnosticsView>,
     font_picker: Option<FontPicker>,
+    notify_updates: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -204,6 +214,7 @@ impl SettingsView {
             SettingsAudioView::new(
                 Arc::clone(&handles.backend),
                 handles.rt_handle.clone(),
+                Arc::clone(&handles.speech_output),
                 Arc::clone(&handles.voice_gate),
                 section == SettingsSection::Audio,
                 cx,
@@ -242,7 +253,7 @@ impl SettingsView {
                 cx,
             )
         });
-        Self {
+        let mut view = Self {
             section,
             handles,
             language: cx.global::<ActiveLanguage>().0,
@@ -253,7 +264,44 @@ impl SettingsView {
             storage,
             diagnostics,
             font_picker: None,
-        }
+            notify_updates: NOTIFY_DEFAULT,
+        };
+        view.load_notify_updates(cx);
+        view
+    }
+
+    fn load_notify_updates(&mut self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::run_async(
+            &self.handles.rt_handle,
+            async move {
+                get_bool_setting(repo.as_ref(), reserved_keys::UPDATES_NOTIFY, NOTIFY_DEFAULT).await
+            },
+            |this, enabled, cx| {
+                this.notify_updates = enabled;
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn toggle_notify_updates(&mut self, cx: &mut Context<Self>) {
+        self.notify_updates = !self.notify_updates;
+        let enabled = self.notify_updates;
+        let repo = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;
+        async_bridge::detached(
+            &self.handles.rt_handle,
+            "persist the update notification preference",
+            async move {
+                forge_storage::set_bool_setting(
+                    repo.as_ref(),
+                    reserved_keys::UPDATES_NOTIFY,
+                    enabled,
+                )
+                .await
+            },
+        );
+        cx.notify();
     }
 
     fn select_section(&mut self, section: SettingsSection, cx: &mut Context<Self>) {
@@ -1012,6 +1060,17 @@ impl SettingsView {
                 ),
             );
 
+        let notify_row = setting_row(
+            tr!("settings_version_notify_label"),
+            Some(tr!("settings_version_notify_hint").into()),
+            toggle(self.notify_updates, palette).on_click(
+                "settings-version-notify",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_notify_updates(cx)),
+            ),
+            palette,
+            density,
+        );
+
         div()
             .flex()
             .flex_col()
@@ -1022,6 +1081,7 @@ impl SettingsView {
                 palette,
             ))
             .child(card(identity, palette))
+            .child(card(notify_row, palette))
             .into_any_element()
     }
 

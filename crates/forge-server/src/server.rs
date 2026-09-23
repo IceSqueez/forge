@@ -15,10 +15,11 @@ use forge_storage::{
     ActionRepo, CredentialsRepo, GlobalsRepo, OverlayRepo, SettingsRepo, UserGlobalsRepo,
 };
 
+use crate::audio_clips::AudioClipStore;
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
 use crate::origin::build_allowed_origins;
-use crate::routes::{api_v1, overlays, ws};
+use crate::routes::{api_v1, audio, overlays, ws};
 use crate::server_info::ServerInfo;
 use crate::{ServerConfig, ServerError, ServerHandle};
 
@@ -35,6 +36,7 @@ pub struct AppState {
     pub settings: Arc<dyn SettingsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
+    pub audio_clips: Arc<AudioClipStore>,
     pub overlay_root: Arc<std::path::PathBuf>,
     pub overlay_cors_any_origin: bool,
     pub bind_addr: std::net::SocketAddr,
@@ -90,6 +92,7 @@ async fn build_state(config: ServerConfig, bind_addr: SocketAddr) -> Result<AppS
         settings: config.settings,
         server_info: ServerInfo::new(),
         action_engine: config.action_engine,
+        audio_clips: AudioClipStore::new(),
         overlay_root: Arc::new(config.overlay_root),
         overlay_cors_any_origin: config.overlay_cors_any_origin,
         bind_addr,
@@ -190,6 +193,7 @@ fn build_router(state: AppState) -> Router {
         .route("/ws/v1/", get(ws::ws_handler))
         .nest("/api/v1", api_routes)
         .route("/overlays/{*path}", get(overlays::serve_overlay_file))
+        .merge(audio::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             metrics_middleware,
@@ -262,7 +266,7 @@ mod tests {
     use crate::ServerError;
     use crate::bus_adapter::{ClientFilterSet, EventFilter, WsFrame};
     use crate::server_info::ServerInfo;
-    use crate::test_helpers::test_dp;
+    use crate::test_helpers::{log_capture, test_dp};
     use crate::ws_client::WsClient;
 
     struct MemCreds(Mutex<HashMap<String, String>>);
@@ -393,6 +397,7 @@ mod tests {
             settings,
             server_info: ServerInfo::new(),
             action_engine,
+            audio_clips: crate::audio_clips::AudioClipStore::new(),
             overlay_root: Arc::new(std::path::PathBuf::from("/tmp/forge-test-overlays")),
             overlay_cors_any_origin: true,
             bind_addr: "127.0.0.1:9515".parse().expect("addr"),
@@ -1349,6 +1354,111 @@ mod tests {
         assert!(matches!(err, ServerError::NoTokenForLanBind { .. }));
     }
 
+    const OVERLAY_IDENTITY: &str = "goal-box";
+    const OVERLAY_PAGE_CREDENTIAL: &str = "2f8b1d0c9a7e6f5b4c3d2e1f0a9b8c7d";
+    const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+    fn served_overlay() -> forge_storage::OverlayDefinition {
+        forge_storage::OverlayDefinition {
+            id: forge_storage::OverlayId::new(OVERLAY_IDENTITY),
+            display_name: "Sub goal".to_owned(),
+            kind_id: "overlay.goal".to_owned(),
+            enabled: true,
+            position: 0,
+            config: forge_storage::OverlayConfig::new(),
+            config_schema_version: 1,
+            generator_version: 0,
+            source_overrides: Vec::new(),
+            credential: forge_storage::OverlayCredential::new(OVERLAY_PAGE_CREDENTIAL),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        }
+    }
+
+    async fn make_server_serving_one_overlay() -> (ServerHandle, std::net::SocketAddr) {
+        let creds = MemCreds::new();
+        let auth = AuthState::load(false, &*creds).await.expect("auth load");
+        let creds_dyn: Arc<dyn CredentialsRepo> = creds;
+        let mut state = make_app_state(auth, creds_dyn);
+
+        let mut overlays = forge_storage::overlay::MockOverlayRepo::new();
+        overlays.expect_get_by_credential().returning(|credential| {
+            Ok((credential.as_str() == OVERLAY_PAGE_CREDENTIAL).then(served_overlay))
+        });
+        state.overlays = Arc::new(overlays);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        (serve_on(listener, state), addr)
+    }
+
+    async fn next_text_frame(
+        socket: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+    ) -> String {
+        let message = tokio::time::timeout(FRAME_BUDGET, futures_util::StreamExt::next(socket))
+            .await
+            .expect("timeout waiting for a frame")
+            .expect("the socket closed before a frame arrived")
+            .expect("ws error");
+        match message {
+            tokio_tungstenite::tungstenite::Message::Text(text) => Some(text.to_string()),
+            _ => None,
+        }
+        .expect("the page received a frame that is not text")
+    }
+
+    #[tokio::test]
+    async fn content_delivered_to_an_overlay_page_arrives_as_a_plain_content_frame() {
+        let (handle, addr) = make_server_serving_one_overlay().await;
+        let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws/v1/"))
+            .await
+            .expect("ws connect");
+
+        futures_util::SinkExt::send(
+            &mut socket,
+            tokio_tungstenite::tungstenite::Message::Text(
+                serde_json::json!({
+                    "id": "1",
+                    "request": "auth",
+                    "overlayCredential": OVERLAY_PAGE_CREDENTIAL,
+                })
+                .to_string()
+                .into(),
+            ),
+        )
+        .await
+        .expect("the page sends its credential");
+        let ack: serde_json::Value =
+            serde_json::from_str(&next_text_frame(&mut socket).await).expect("json response");
+        assert_eq!(
+            ack["status"], "ok",
+            "the page never became an overlay connection, so nothing below is proven"
+        );
+
+        handle
+            .deliver_overlay_content(
+                &forge_storage::OverlayId::new(OVERLAY_IDENTITY),
+                serde_json::json!({ "label": "Sub goal", "value": 42, "live": true }),
+                None,
+            )
+            .await;
+
+        let delivered: serde_json::Value =
+            serde_json::from_str(&next_text_frame(&mut socket).await).expect("json frame");
+        assert_eq!(
+            delivered,
+            serde_json::json!({
+                "frame": "content",
+                "content": { "label": "Sub goal", "value": 42, "live": true },
+            }),
+            "the page's runtime reads frame and content exactly as written here"
+        );
+
+        handle.abort();
+    }
+
     #[test]
     fn a_refused_handshake_logs_one_warning_and_withholds_a_malformed_origin() {
         const WELL_FORMED: &str = "https://evil.example.com";
@@ -1395,159 +1505,6 @@ mod tests {
                     "{case}: the refusal put attacker-controlled text in the log"
                 );
             }
-        }
-    }
-
-    /// Thread-local tracing capture; the runtime shares the capturing thread so spawned
-    /// connection tasks reach the subscriber, which is why callers are plain `#[test]` fns.
-    mod log_capture {
-        use std::collections::BTreeMap;
-        use std::future::Future;
-        use std::sync::{Arc, Mutex, OnceLock};
-
-        use tracing::Level;
-        use tracing::field::{Field, Visit};
-        use tracing::span;
-        use tracing::subscriber::Interest;
-
-        pub(super) struct CapturedLine {
-            target: String,
-            level: Level,
-            fields: BTreeMap<String, String>,
-        }
-
-        impl CapturedLine {
-            pub(super) fn field(&self, name: &str) -> Option<&str> {
-                self.fields.get(name).map(String::as_str)
-            }
-
-            pub(super) fn mentions(&self, needle: &str) -> bool {
-                self.fields.values().any(|value| value.contains(needle))
-            }
-        }
-
-        #[derive(Default)]
-        struct FieldCollector(BTreeMap<String, String>);
-
-        impl Visit for FieldCollector {
-            fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-                self.0.insert(field.name().to_owned(), format!("{value:?}"));
-            }
-
-            fn record_str(&mut self, field: &Field, value: &str) {
-                self.0.insert(field.name().to_owned(), value.to_owned());
-            }
-        }
-
-        // Why: the callsite interest cache is process-global while a capture subscriber is
-        // thread-local. Other tests in this binary reach the same callsites with no subscriber
-        // installed, which caches `Interest::never()` - and `never` short-circuits the event
-        // before `enabled()` is consulted, so a capture running in parallel records nothing.
-        // This floor is installed once as the process-wide global default and answers
-        // `sometimes` for every callsite. It captures nothing itself.
-        struct InterestFloor;
-
-        impl tracing::Subscriber for InterestFloor {
-            fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
-                Interest::sometimes()
-            }
-
-            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
-                false
-            }
-
-            fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
-                span::Id::from_u64(1)
-            }
-
-            fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
-
-            fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
-
-            fn event(&self, _: &tracing::Event<'_>) {}
-
-            fn enter(&self, _: &span::Id) {}
-
-            fn exit(&self, _: &span::Id) {}
-        }
-
-        fn install_interest_floor() {
-            static INSTALLED: OnceLock<()> = OnceLock::new();
-            INSTALLED.get_or_init(|| {
-                let _ = tracing::subscriber::set_global_default(InterestFloor);
-                tracing::callsite::rebuild_interest_cache();
-            });
-        }
-
-        // Why: `register_callsite` answers `sometimes` on purpose - a cached `always` from
-        // another capture running in parallel would hand a TRACE line to a WARN-only assertion.
-        struct CaptureSubscriber {
-            lines: Arc<Mutex<Vec<CapturedLine>>>,
-            max: Level,
-        }
-
-        impl tracing::Subscriber for CaptureSubscriber {
-            fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
-                Interest::sometimes()
-            }
-
-            fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-                *metadata.level() <= self.max
-            }
-
-            fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
-                span::Id::from_u64(1)
-            }
-
-            fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
-
-            fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
-
-            fn event(&self, event: &tracing::Event<'_>) {
-                let mut collector = FieldCollector::default();
-                event.record(&mut collector);
-                self.lines
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .push(CapturedLine {
-                        target: event.metadata().target().to_owned(),
-                        level: *event.metadata().level(),
-                        fields: collector.0,
-                    });
-            }
-
-            fn enter(&self, _: &span::Id) {}
-
-            fn exit(&self, _: &span::Id) {}
-        }
-
-        pub(super) fn capture_blocking<F: Future>(
-            max: Level,
-            future: F,
-        ) -> (F::Output, Vec<CapturedLine>) {
-            let lines = Arc::new(Mutex::new(Vec::new()));
-            let subscriber = CaptureSubscriber {
-                lines: Arc::clone(&lines),
-                max,
-            };
-            install_interest_floor();
-            let output = tracing::subscriber::with_default(subscriber, || {
-                tracing::callsite::rebuild_interest_cache();
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .expect("current-thread runtime must build");
-                runtime.block_on(future)
-            });
-            let captured = std::mem::take(&mut *lines.lock().unwrap_or_else(|e| e.into_inner()));
-            (output, captured)
-        }
-
-        pub(super) fn forge_warnings(lines: &[CapturedLine]) -> Vec<&CapturedLine> {
-            lines
-                .iter()
-                .filter(|line| line.target.starts_with("forge_") && line.level == Level::WARN)
-                .collect()
         }
     }
 }

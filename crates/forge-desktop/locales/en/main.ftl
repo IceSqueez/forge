@@ -199,6 +199,13 @@ settings_diagnostics_level_error = Error
 settings_version_title = Version & updates
 settings_version_license = Open-source · MIT OR Apache-2.0
 settings_version_check_updates = Check for updates
+settings_version_notify_label = Notify about new versions
+settings_version_notify_hint = Shows a one-off toast when a newer release is published. Never while OBS is streaming or recording.
+
+## Update notification
+
+update_toast_available = forge { $version } is available
+update_toast_open_action = Open release
 
 ## Settings → Storage pane
 
@@ -1037,6 +1044,11 @@ soundboard_breadcrumb_soundboard = Soundboard
 soundboard_loading = Loading clips…
 soundboard_empty_title = No clips yet
 soundboard_playback_error_prefix = Playback error: { $error }
+soundboard_error_source_missing = The source file for { $name } is gone.
+soundboard_error_clip_gone = That sound is no longer in the soundboard.
+soundboard_import_unsupported = { $file } is not a sound format forge can play.
+soundboard_import_type_mismatch = { $file } has the extension { $named } but its content is { $detected }.
+soundboard_import_too_large = { $file } is { $size }, over the { $limit } limit for sounds.
 
 ## Soundboard - modal
 
@@ -1078,6 +1090,10 @@ soundboard_category_music = Stingers
 soundboard_category_voice = Voice
 soundboard_stop_all = Stop all
 soundboard_pad_playing = playing…
+soundboard_pad_source_missing = file missing
+soundboard_pad_source_missing_hint = The source file is gone. Edit this sound and pick the file again.
+soundboard_pad_adopt_blocked = cannot be copied
+soundboard_pad_not_in_library = not in library yet
 soundboard_no_matches = No sounds match your filter
 soundboard_library_section = Library
 soundboard_library_import = Import
@@ -1094,6 +1110,22 @@ soundboard_routing_hint = Add this device as an Audio Input Capture in OBS.
 soundboard_routing_volume = MASTER VOLUME · { $pct }%
 soundboard_routing_headphones = Also play in headphones
 soundboard_footer_left = { $sounds } sounds · { $categories } categories · { $size }
+soundboard_footer_unadopted =
+    { $count ->
+        [one] { $count } sound still plays from its original folder
+       *[other] { $count } sounds still play from their original folder
+    }
+soundboard_footer_adopt_action =
+    { $count ->
+        [one] Copy { $count } clip into the library
+       *[other] Copy { $count } clips into the library
+    }
+soundboard_footer_adopt_busy = Copying...
+soundboard_adopt_copied = { $count } copied
+soundboard_adopt_refused = { $count } refused
+soundboard_adopt_missing = { $count } missing
+soundboard_adopt_unfinished = { $count } unfinished
+soundboard_adopt_nothing = Nothing changed
 soundboard_output_ready = Output device ready
 soundboard_output_missing = Output device missing
 
@@ -2235,15 +2267,30 @@ overlays_code_discard_title = Discard unsaved edits?
 overlays_code_discard_body = This file has edits that were never saved. Continue and lose them, or stay to keep editing.
 overlays_code_discard_confirm = Discard
 overlays_code_discard_cancel = Keep editing
-overlays_preview_label = Live preview - 1920x1080
+overlays_preview_label = Live preview - { $width }x{ $height }
+overlays_preview_scale_true = To scale
+overlays_preview_scale_zoom = Zoom
+overlays_preview_open = Open in browser
+overlays_preview_open_failed = forge could not open this overlay page in your browser.
+overlays_preview_browser_counts = A preview tab still receives the sample, but it does not count as a browser source.
 overlays_preview_canvas_note = transparent - OBS browser source
 overlays_preview_approximate = Approximate preview. The real overlay is drawn by the OBS browser source on a transparent background.
 overlays_preview_unavailable = This build has no overlay type for this record, so there is nothing to preview.
+overlays_preview_audio_silent = Draws nothing in OBS - it only plays audio there.
+overlays_preview_audio_needs_source = Add it as an OBS browser source - an ordinary tab blocks autoplay.
 overlays_test_send = Send test
 overlays_test_sending = Building a sample for the bound event...
-overlays_test_delivered = Sample sent to every browser source showing this overlay.
+overlays_test_delivered = { $count ->
+    [one] Sample delivered to { $count } browser source
+   *[other] Sample delivered to { $count } browser sources
+}
+overlays_test_preview_only = { $count ->
+    [one] Only a preview tab is connected - open the overlay URL in OBS to see it there
+   *[other] Only { $count } preview tabs are connected - open the overlay URL in OBS to see it there
+}
 overlays_test_undelivered = The server is stopped, so no browser source received this sample. The preview above ran on its own.
 overlays_test_no_browser_source = The server is running, but no browser source is connected to this overlay. Check the overlay URL in OBS and refresh the source.
+overlays_test_unavailable = Send test is not available yet - this overlay's content is filled in only when forge fires a real step.
 overlays_bindings_pending = The bindings reference for the source editor is not built yet.
 overlays_panel_section_content = Content
 overlays_panel_section_style = Style
@@ -2251,5 +2298,83 @@ overlays_panel_section_behavior = Behavior
 overlays_panel_no_properties = This overlay type declares no properties.
 overlays_panel_unavailable = This build has no overlay type for this record, so there is nothing to configure.
 overlays_panel_choice_empty = No choices available.
+overlays_sound_none = No sound
+overlays_sound_custom_file = Custom file: { $name }
+overlays_sound_adopting = Copying the sound into the library...
+overlays_sound_issue_unknown_clip = The chosen sound is no longer in the soundboard, so this overlay plays nothing.
+overlays_sound_issue_outside_library = The chosen sound has not been copied into the library yet, so this overlay plays nothing. Open the Soundboard and add it to the library.
+overlays_sound_issue_bytes_missing = The library copy of the chosen sound is gone, so this overlay plays nothing.
+overlays_sound_issue_kind_mismatch = The chosen sound is stored as { $format }, which is not audio, so this overlay plays nothing.
+overlays_sound_issue_lookup_failed = forge could not read what this field points at: { $reason }
+overlays_icon_issue_unknown_glyph = The chosen icon is not in this build's icon set, so this overlay shows no icon.
+overlays_icon_issue_unknown_image = The chosen image is no longer in the library, so this overlay shows no icon.
+overlays_icon_issue_bytes_missing = The library copy of the chosen image is gone, so this overlay shows no icon.
+overlays_icon_issue_kind_mismatch = The chosen icon is stored as { $format }, which is not an image, so this overlay shows no icon.
+overlays_icon_none = No icon
+overlays_icon_none_desc = The alert shows text only.
+overlays_icon_group_none = No icon
+overlays_icon_group_imported = Imported
+overlays_icon_import = Import image...
+overlays_icon_import_desc = Pick a file from this machine ({ $formats }).
+overlays_icon_import_not_image = { $file } is stored as { $format }, which is not an image, so it cannot be an icon.
+overlays_icon_importing = Importing the image into the library...
+overlays_icon_file_filter = Images
+overlays_icon_picker_title = Choose an icon
+overlays_icon_picker_subtitle = A curated glyph takes the overlay accent; an import is shown as it is.
+overlays_icon_picker_hint = Type to search, arrows to move, Enter to choose, Esc to close.
+overlays_icon_picker_search = Search icons
+overlays_icon_category_support = Support
+overlays_icon_category_celebration = Celebration
+overlays_icon_category_community = Community
+overlays_icon_category_stream = Stream
+overlays_icon_category_play = Play
+overlays_icon_category_goals = Goals
+overlays_icon_category_nature = Nature
 overlays_panel_override_notice = You own these files now, so they are never regenerated: { $files }. Design changes that need generated markup or styling no longer reach them.
 config_form_choice_placeholder = Not set
+config_form_auto_placeholder = auto
+
+## Overlays - event wiring
+
+overlays_wire_open = Show on event...
+overlays_wire_empty = Nothing sends to this overlay yet.
+overlays_wire_picker_title = Show this overlay on an event
+overlays_wire_picker_lead = for
+overlays_wire_picker_count = { $count ->
+    [one] { $count } event
+   *[other] { $count } events
+}
+overlays_wire_picker_search = Search events
+overlays_wire_picker_hint = Type to search - arrows to move - Enter to pick
+overlays_wire_scope_suggested = Suggested
+overlays_wire_confirm_title = Show { $overlay } on this event
+overlays_wire_checking = Checking what already sends to this overlay...
+overlays_wire_section_creates = Creates
+overlays_wire_section_wording = On stream it reads
+overlays_wire_record_action = Action
+overlays_wire_record_trigger = Trigger
+overlays_wire_record_queue = Queue
+overlays_wire_wording_empty = This overlay type has no wording to fill in.
+overlays_wire_create = Create
+overlays_wire_back = Back
+overlays_wire_open_action = Open action
+overlays_wire_already_body = This overlay is already shown on that event. Open the action instead of creating a second one.
+overlays_wire_refused_overlay = This overlay type does not take event wiring.
+overlays_wire_refused_trigger = This event declares nothing an overlay could show.
+overlays_wire_toast_created = Overlay wired to the event
+overlays_wire_toast_already = This overlay is already shown on that event.
+overlays_wire_toast_incomplete = Wiring stopped part-way. Written so far: { $landed }.
+overlays_wire_toast_missing = This build no longer has that overlay type or that event.
+overlays_wire_landed_action = the action
+overlays_wire_landed_trigger = the trigger
+overlays_wire_landed_link = the link between them
+overlays_wire_landed_nothing = nothing
+overlays_wire_queue_not_live = The queue { $queue } is not running yet. Restart forge so this alert plays.
+overlays_wire_fires_on = Fires on { $triggers }
+overlays_wire_fires_untriggered = Actions send to this overlay, but no event drives them yet.
+overlays_wire_action_disabled = disabled
+overlays_wire_overlay_off = This overlay is off, so nothing is displayed while it stays off.
+overlays_confirm_delete_feeds = { $count ->
+    [one] { $count } action sends to it.
+   *[other] { $count } actions send to it.
+}

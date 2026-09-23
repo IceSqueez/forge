@@ -17,6 +17,7 @@ pub mod dashboard;
 mod egress;
 pub mod event_log_bridge;
 pub mod live_viewers;
+pub mod overlay_media;
 pub mod overlay_service;
 pub mod queue_scheduler;
 pub mod script_registry;
@@ -41,9 +42,10 @@ pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
+pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{
-    MaterializePass, OverlayConnectListener, OverlayFrameSink, OverlayServiceCell,
-    OverlayServiceError, OverlayServiceHandle, TestFire,
+    MaterializePass, OverlayConnectListener, OverlayDelivery, OverlayFrameSink, OverlayReceivers,
+    OverlayServiceCell, OverlayServiceError, OverlayServiceHandle, TestFire,
 };
 pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
@@ -53,7 +55,10 @@ pub use queue_scheduler::{
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
 pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
-pub use sub_action_runners::{CONTENT_SCHEMA_KEY, register_core_sub_actions};
+pub use sub_action_runners::{
+    CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
+    overlay_send_targets, register_core_sub_actions,
+};
 pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
 pub use viewer_tracker::spawn_viewer_tracker;

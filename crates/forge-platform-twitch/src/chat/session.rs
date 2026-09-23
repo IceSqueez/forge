@@ -480,6 +480,12 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let user_display = event_data
+            .get("chatter_user_name")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(user_login.as_str())
+            .to_owned();
         let message = event_data
             .get("message")
             .and_then(|m| m.get("text"))
@@ -510,6 +516,7 @@ impl ChatSession {
             (chat_fields::USER): {
                 (chat_fields::USER_LOGIN): user_login,
                 (chat_fields::USER_ID): user_id,
+                (chat_fields::USER_DISPLAY_NAME): user_display,
                 (chat_fields::USER_ROLES): roles,
             },
             (chat_fields::MESSAGE): message,
@@ -723,6 +730,10 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let gift_total = event_data
+            .get("total")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1);
 
         debug!(gifter_id = %gifter_id, "gift sub event received");
 
@@ -730,6 +741,7 @@ impl ChatSession {
         let mut forge_payload = serde_json::json!({
             (support_fields::TIER): tier,
             (support_fields::IS_ANONYMOUS): is_anonymous,
+            (support_fields::GIFT_TOTAL): gift_total,
             (support_fields::GIFTER): {
                 (support_fields::GIFTER_ID): gifter_id,
                 (support_fields::GIFTER_LOGIN): gifter_login,
@@ -3511,6 +3523,16 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
+        let requester_id = event_data
+            .get("requester_user_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
+        let requester_name = event_data
+            .get("requester_user_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_owned();
 
         debug!(
             duration_seconds,
@@ -3527,7 +3549,9 @@ impl ChatSession {
                     (ad_break_fields::STARTED_AT): started_at,
                 },
                 (ad_break_fields::REQUESTER): {
+                    (ad_break_fields::REQUESTER_ID): requester_id,
                     (ad_break_fields::REQUESTER_LOGIN): requester_login,
+                    (ad_break_fields::REQUESTER_DISPLAY_NAME): requester_name,
                 },
             }),
         ));
@@ -4393,6 +4417,121 @@ mod tests {
             ),
             "expected Subscription {{ tier: 1, months: None, message: None }}"
         );
+    }
+
+    async fn published(mut sub: EventStream) -> Event {
+        tokio::time::timeout(Duration::from_millis(100), sub.recv())
+            .await
+            .expect("the ingest must publish within the wait")
+            .expect("the bus must stay open")
+    }
+
+    #[tokio::test]
+    async fn a_chat_message_carries_the_chatters_display_name_into_the_bus_payload() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let sub = bus.subscribe();
+
+        session.publish_chat_message(&serde_json::json!({
+            "broadcaster_user_login": "streamer",
+            "chatter_user_id": "222",
+            "chatter_user_login": "loyalfan",
+            "chatter_user_name": "LoyalFan",
+            "message": { "text": "hello there" },
+        }));
+
+        let event = published(sub).await;
+        assert_eq!(
+            event.payload["user"]["display_name"].as_str(),
+            Some("LoyalFan")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_chat_message_without_a_display_name_carries_the_login_in_its_place() {
+        for absent in [serde_json::json!(""), serde_json::json!(null)] {
+            let bus = Arc::new(PlatformEventChannel::new());
+            let session = make_session(&bus);
+            let sub = bus.subscribe();
+
+            session.publish_chat_message(&serde_json::json!({
+                "broadcaster_user_login": "streamer",
+                "chatter_user_id": "222",
+                "chatter_user_login": "loyalfan",
+                "chatter_user_name": absent,
+                "message": { "text": "hello there" },
+            }));
+
+            let event = published(sub).await;
+            assert_eq!(
+                event.payload["user"]["display_name"].as_str(),
+                Some("loyalfan"),
+                "display name {absent}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_gift_sub_carries_the_number_of_gifts_and_counts_a_silent_wire_as_one() {
+        for (wire, expected) in [
+            (serde_json::json!({ "total": 5 }), 5),
+            (serde_json::json!({}), 1),
+        ] {
+            let bus = Arc::new(PlatformEventChannel::new());
+            let session = make_session(&bus);
+            let sub = bus.subscribe();
+
+            let mut event_data = serde_json::json!({
+                "user_id": "333",
+                "user_login": "generous_viewer",
+                "user_name": "GenerousViewer",
+                "tier": "1000",
+                "is_anonymous": false,
+            });
+            if let Some(total) = wire.get("total") {
+                event_data["total"] = total.clone();
+            }
+            session.publish_gift_sub_event(&event_data, "meta-gift-001");
+
+            let event = published(sub).await;
+            assert_eq!(
+                event.payload["gift_total"].as_i64(),
+                Some(expected),
+                "wire {wire}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_ad_break_carries_the_identity_of_whoever_requested_it() {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let sub = bus.subscribe();
+
+        session.publish_ad_break_begin_event(
+            &serde_json::json!({
+                "duration_seconds": 90,
+                "is_automatic": true,
+                "started_at": "2026-09-21T10:00:00Z",
+                "requester_user_id": "1",
+                "requester_user_login": "broadcaster_one",
+                "requester_user_name": "BroadcasterOne",
+            }),
+            "meta-ad-001",
+        );
+
+        let event = published(sub).await;
+        for (key, value) in [
+            ("id", "1"),
+            ("login", "broadcaster_one"),
+            ("display_name", "BroadcasterOne"),
+        ] {
+            assert_eq!(
+                event.payload["requester"][key].as_str(),
+                Some(value),
+                "requester.{key}"
+            );
+        }
     }
 
     #[tokio::test]

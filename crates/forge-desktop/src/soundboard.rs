@@ -9,16 +9,19 @@ use forge_components::{
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput,
     body_family, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, ghost_button_with_icon,
     icon, modal, mono_family, overlay, pad_tile, page_frame, primary_button, radius,
-    secondary_button, slider, spacing, status_dot, toggle, tr, with_alpha,
+    secondary_button, slider, spacing, status_dot, toggle, tooltip_builder, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
 use forge_soundboard::builtin_library::{
     BUILTIN_SOUNDS, BuiltinSoundEntry, builtin_availability, resolve_builtin_path,
 };
-use forge_soundboard::{SoundboardPlayer, SoundboardSettings};
+use forge_soundboard::{
+    AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, SoundboardError, SoundboardPlayer,
+    SoundboardSettings,
+};
 use forge_storage::{
-    SettingsRepo, SoundboardClipsRepo, StoredClip, set_soundboard_also_headphones,
+    MediaFormat, MediaKind, SettingsRepo, StoredClip, set_soundboard_also_headphones,
     set_soundboard_enabled, set_soundboard_master_volume, set_soundboard_output_device,
 };
 use forge_types::{ClipId, OutputDevice};
@@ -29,6 +32,7 @@ use gpui::{
 use time::OffsetDateTime;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::clip_messages::{clip_refusal_message, failure_message};
 use crate::presentation::ActivePresentation;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
@@ -67,10 +71,13 @@ const FOOTER_FS: Pixels = px(10.5);
 const FOOTER_DOT: Pixels = px(6.0);
 const FOOTER_PAD_Y: Pixels = px(7.0);
 const FOOTER_PAD_X: Pixels = px(14.0);
+const ADOPT_SUMMARY_SEPARATOR: &str = " · ";
 const HOTKEY_SEQUENCE: &[&str] = &[
     "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Q", "W", "E", "R", "T", "Y",
 ];
 const CATEGORY_ORDER: &[&str] = &["memes", "alerts", "music", "voice"];
+
+type AdoptionResults = Vec<(ClipId, Result<AdoptionVerdict, SoundboardError>)>;
 
 struct SoundClip {
     id: ClipId,
@@ -141,6 +148,7 @@ impl AddModal {
                 InputEvent::Submitted(_) => this.submit(cx),
                 InputEvent::Cancelled => this.cancel(cx),
                 InputEvent::Changed(_) => cx.notify(),
+                InputEvent::Blurred(_) => {}
             },
         );
         AddModal {
@@ -173,7 +181,7 @@ impl AddModal {
     fn browse_file(&mut self, cx: &mut Context<Self>) {
         let filter = async_bridge::DialogFilter {
             name: tr!("soundboard_file_filter_audio"),
-            extensions: &["mp3", "wav", "ogg", "flac", "aac", "m4a"],
+            extensions: audio_dialog_extensions(),
         };
         async_bridge::spawn_dialog(
             &self.rt_handle,
@@ -433,6 +441,9 @@ pub struct SoundboardView {
     devices: Vec<DeviceInfo>,
     importable: Vec<BuiltinSoundEntry>,
     total_size: Option<u64>,
+    availability: HashMap<ClipId, ClipAvailability>,
+    adopting_all: bool,
+    adopt_summary: Option<SharedString>,
     playing: HashMap<ClipId, PlaybackProgress>,
     ticking: bool,
     settings: SoundboardSettings,
@@ -444,18 +455,18 @@ pub struct SoundboardView {
     pending_delete: Confirm<ClipId>,
     _search_sub: Subscription,
     player: Arc<SoundboardPlayer>,
-    clips_repo: Arc<dyn SoundboardClipsRepo>,
+    library: Arc<ClipLibrary>,
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
     master_volume_debounce: async_bridge::Debounced,
     reload_gen: async_bridge::Generation,
+    availability_gen: async_bridge::Generation,
     _event_bridge: Task<()>,
 }
 
 impl SoundboardView {
     pub fn new(
         player: Arc<SoundboardPlayer>,
-        clips_repo: Arc<dyn SoundboardClipsRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,
         bus: Arc<EventBus>,
@@ -480,6 +491,7 @@ impl SoundboardView {
             .await;
         });
 
+        let library = Arc::clone(player.library());
         let view = Self {
             clips: Vec::new(),
             loading: true,
@@ -487,6 +499,9 @@ impl SoundboardView {
             devices: Vec::new(),
             importable: Vec::new(),
             total_size: None,
+            availability: HashMap::new(),
+            adopting_all: false,
+            adopt_summary: None,
             playing: HashMap::new(),
             ticking: false,
             settings,
@@ -498,13 +513,14 @@ impl SoundboardView {
             pending_delete: Confirm::default(),
             _search_sub: search_sub,
             player,
-            clips_repo,
+            library,
             settings_repo,
             rt_handle,
             master_volume_debounce: async_bridge::Debounced::new(
                 async_bridge::SLIDER_PERSIST_DEBOUNCE,
             ),
             reload_gen: async_bridge::Generation::default(),
+            availability_gen: async_bridge::Generation::default(),
             _event_bridge: event_bridge,
         };
         view.reload(cx);
@@ -545,7 +561,17 @@ impl SoundboardView {
                 self.ensure_ticker(cx);
                 cx.notify();
             }
-            "playback.finished" | "playback.failed" => {
+            "playback.finished" => {
+                let pending_adoption = matches!(
+                    self.availability.get(&clip_id),
+                    Some(ClipAvailability::Unadopted { .. })
+                );
+                self.clear_playing(clip_id, cx);
+                if pending_adoption {
+                    self.reload_availability(cx);
+                }
+            }
+            "playback.failed" => {
                 self.clear_playing(clip_id, cx);
             }
             _ => {}
@@ -595,17 +621,17 @@ impl SoundboardView {
 
     fn reload(&self, cx: &mut Context<Self>) {
         let ticket = self.reload_gen.next();
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.list().await.map_err(|e| e.to_string()) },
+            async move { library.list().await },
             move |this, result, cx| {
                 if !this.reload_gen.is_current(ticket) {
                     return;
                 }
                 match result {
                     Ok(clips) => this.apply_clips(clips, cx),
-                    Err(message) => this.on_load_error(message, cx),
+                    Err(error) => this.on_load_error(failure_message(&error), cx),
                 }
             },
             cx,
@@ -613,9 +639,11 @@ impl SoundboardView {
     }
 
     fn apply_clips(&mut self, clips: Vec<StoredClip>, cx: &mut Context<Self>) {
+        self.refresh_availability(clips.clone(), cx);
         self.clips = clips.into_iter().map(stored_to_clip).collect();
         self.loading = false;
         self.error = None;
+        self.adopt_summary = None;
         if self
             .category_filter
             .as_ref()
@@ -623,7 +651,7 @@ impl SoundboardView {
         {
             self.category_filter = None;
         }
-        self.recompute_size(cx);
+        self.refresh_library_size(cx);
         self.refresh_builtins(cx);
         cx.notify();
     }
@@ -634,22 +662,116 @@ impl SoundboardView {
         cx.notify();
     }
 
-    fn recompute_size(&self, cx: &mut Context<Self>) {
-        let paths: Vec<PathBuf> = self.clips.iter().map(|c| c.file_path.clone()).collect();
-        async_bridge::run_blocking(
+    fn refresh_library_size(&self, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
+        async_bridge::run_async(
             &self.rt_handle,
-            move || {
-                paths
-                    .iter()
-                    .filter_map(|p| std::fs::metadata(p).ok().map(|m| m.len()))
-                    .sum::<u64>()
-            },
-            |this, total, cx| {
-                this.total_size = Some(total);
+            async move { library.total_bytes().await },
+            |this, result, cx| {
+                this.total_size = match result {
+                    Ok(total) => Some(total),
+                    Err(error) => {
+                        tracing::warn!(error = %error, "media library size unavailable");
+                        None
+                    }
+                };
                 cx.notify();
             },
             cx,
         );
+    }
+
+    fn refresh_availability(&self, clips: Vec<StoredClip>, cx: &mut Context<Self>) {
+        let ticket = self.availability_gen.next();
+        let library = Arc::clone(&self.library);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { library.availability_of(&clips).await },
+            move |this, states, cx| {
+                if !this.availability_gen.is_current(ticket) {
+                    return;
+                }
+                this.availability = states.into_iter().collect();
+                cx.notify();
+            },
+            cx,
+        );
+    }
+
+    fn reload_availability(&self, cx: &mut Context<Self>) {
+        let ticket = self.availability_gen.next();
+        let library = Arc::clone(&self.library);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let clips = library.list().await?;
+                Ok::<_, SoundboardError>(library.availability_of(&clips).await)
+            },
+            move |this, result, cx| {
+                if !this.availability_gen.is_current(ticket) {
+                    return;
+                }
+                match result {
+                    Ok(states) => {
+                        this.availability = states.into_iter().collect();
+                        cx.notify();
+                    }
+                    Err(error) => {
+                        tracing::warn!(error = %error, "clip availability refresh failed");
+                    }
+                }
+            },
+            cx,
+        );
+    }
+
+    fn adopt_all(&mut self, cx: &mut Context<Self>) {
+        let targets: HashSet<ClipId> = unadopted_ids(&self.clips, &self.availability)
+            .into_iter()
+            .collect();
+        if self.adopting_all || targets.is_empty() {
+            return;
+        }
+        self.adopting_all = true;
+        self.adopt_summary = None;
+        cx.notify();
+
+        let library = Arc::clone(&self.library);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let clips: Vec<StoredClip> = library
+                    .list()
+                    .await?
+                    .into_iter()
+                    .filter(|clip| targets.contains(&clip.id))
+                    .collect();
+                Ok::<_, SoundboardError>(library.adopt_all_now(&clips).await)
+            },
+            |this, result, cx| this.on_adopted(&result, cx),
+            cx,
+        );
+    }
+
+    fn on_adopted(
+        &mut self,
+        result: &Result<AdoptionResults, SoundboardError>,
+        cx: &mut Context<Self>,
+    ) {
+        self.adopting_all = false;
+        self.adopt_summary = Some(match result {
+            Ok(verdicts) => {
+                adoption_summary(&tally_adoption(verdicts.iter().map(|(_, r)| r))).into()
+            }
+            Err(error) => failure_message(error).into(),
+        });
+        self.reload_availability(cx);
+        self.refresh_library_size(cx);
+        cx.notify();
+    }
+
+    fn source_is_missing(&self, id: ClipId) -> bool {
+        matches!(self.availability.get(&id), Some(ClipAvailability::Missing))
     }
 
     fn refresh_builtins(&self, cx: &mut Context<Self>) {
@@ -723,12 +845,12 @@ impl SoundboardView {
         cx.spawn(async move |this, cx| {
             let (tx, rx) = tokio::sync::oneshot::channel();
             rt.spawn(async move {
-                let _ = tx.send(player_play.play(id, None).await.map_err(|e| e.to_string()));
+                let _ = tx.send(player_play.play(id, None).await);
             });
             match rx.await {
                 Ok(Ok(())) => {}
-                Ok(Err(message)) => {
-                    let _ = this.update(cx, |this, cx| this.on_play_error(id, message, cx));
+                Ok(Err(error)) => {
+                    let _ = this.update(cx, |this, cx| this.on_play_error(id, &error, cx));
                     return;
                 }
                 Err(_) => return,
@@ -742,8 +864,12 @@ impl SoundboardView {
         .detach();
     }
 
-    fn on_play_error(&mut self, id: ClipId, message: String, cx: &mut Context<Self>) {
+    fn on_play_error(&mut self, id: ClipId, error: &SoundboardError, cx: &mut Context<Self>) {
         self.playing.remove(&id);
+        if let Some(availability) = availability_after_play_error(error) {
+            self.availability.insert(id, availability);
+        }
+        let message = failure_message(error);
         self.error = Some(tr!("soundboard_playback_error_prefix", error = message.as_str()).into());
         cx.notify();
     }
@@ -832,14 +958,14 @@ impl SoundboardView {
         let name = entry.display_name.to_owned();
         let category = entry.category.to_owned();
         let loop_playback = entry.loop_playback;
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         let player = Arc::clone(&self.player);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let data_dir = forge_platform_core::paths::data_dir();
                 let Some(path) = resolve_builtin_path(&data_dir, &builtin_id) else {
-                    return Err("builtin audio file missing".to_owned());
+                    return Err(SoundboardError::SourceMissing(name));
                 };
                 let clip_id = ClipId::new();
                 let clip = StoredClip {
@@ -855,15 +981,13 @@ impl SoundboardView {
                     duration_secs: None,
                     builtin_id: Some(builtin_id),
                 };
-                let result = repo.save(&clip).await.map_err(|e| e.to_string());
-                if result.is_ok() {
-                    let _ = player.ensure_clip_duration(clip_id).await;
-                }
-                result
+                library.save_clip(&clip).await?;
+                let _ = player.ensure_clip_duration(clip_id).await;
+                Ok(())
             },
             |this, result, cx| match result {
                 Ok(()) => this.reload(cx),
-                Err(message) => this.on_load_error(message, cx),
+                Err(error) => this.on_load_error(failure_message(&error), cx),
             },
             cx,
         );
@@ -957,13 +1081,13 @@ impl SoundboardView {
         self.player.stop(id);
         self.playing.remove(&id);
         cx.notify();
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         async_bridge::run_async(
             &self.rt_handle,
-            async move { repo.delete(id).await.map_err(|e| e.to_string()) },
+            async move { library.delete_clip(id).await },
             |this, result, cx| match result {
                 Ok(_) => this.reload(cx),
-                Err(message) => this.on_load_error(message, cx),
+                Err(error) => this.on_load_error(failure_message(&error), cx),
             },
             cx,
         );
@@ -989,17 +1113,16 @@ impl SoundboardView {
                 cx.notify();
             });
         }
-        let repo = Arc::clone(&self.clips_repo);
+        let library = Arc::clone(&self.library);
         let player = Arc::clone(&self.player);
-        let missing_msg = tr!("soundboard_modal_validation_error").to_string();
         let new_hotkey = self.next_free_hotkey();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let (clip, target_id) = match edit_id {
                     Some(id) => {
-                        let Some(mut clip) = repo.get(id).await.map_err(|e| e.to_string())? else {
-                            return Err(missing_msg);
+                        let Some(mut clip) = library.get(id).await? else {
+                            return Err(SoundboardError::ClipNotFound(id.to_string()));
                         };
                         clip.name = name;
                         if clip.file_path != file_path {
@@ -1028,15 +1151,13 @@ impl SoundboardView {
                         (clip, clip_id)
                     }
                 };
-                let result = repo.save(&clip).await.map_err(|e| e.to_string());
-                if result.is_ok() {
-                    let _ = player.ensure_clip_duration(target_id).await;
-                }
-                result
+                library.save_clip(&clip).await?;
+                let _ = player.ensure_clip_duration(target_id).await;
+                Ok(())
             },
             |this, result, cx| match result {
                 Ok(()) => this.on_saved(cx),
-                Err(message) => this.on_save_error(message, cx),
+                Err(error) => this.on_save_error(failure_message(&error), cx),
             },
             cx,
         );
@@ -1349,9 +1470,49 @@ impl SoundboardView {
         };
         let readout_color = if playing { color } else { palette.text_faint };
 
+        let missing = self.source_is_missing(id);
         let mut status = div().flex().flex_1().min_w_0().items_center().gap(px(5.0));
         if clip.loop_playback {
             status = status.child(icon(Icon::Repeat, LOOP_ICON, palette.text_faint));
+        }
+        if missing {
+            status = status
+                .child(icon(Icon::AlertTriangle, LOOP_ICON, palette.warning))
+                .child(
+                    div()
+                        .flex_none()
+                        .font_family(mono_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.warning)
+                        .child(tr!("soundboard_pad_source_missing")),
+                );
+        }
+        match adoption_badge(self.availability.get(&id)) {
+            Some(AdoptionBadge::Blocked(refusal)) => {
+                status = status
+                    .child(icon(Icon::AlertTriangle, LOOP_ICON, palette.warning))
+                    .child(
+                        div()
+                            .id(("sb-pad-refused", index))
+                            .flex_none()
+                            .font_family(mono_family())
+                            .text_size(FONT_XXS)
+                            .text_color(palette.warning)
+                            .tooltip(tooltip_builder(clip_refusal_message(&refusal), palette))
+                            .child(tr!("soundboard_pad_adopt_blocked")),
+                    );
+            }
+            Some(AdoptionBadge::Pending) => {
+                status = status.child(
+                    div()
+                        .flex_none()
+                        .font_family(mono_family())
+                        .text_size(FONT_XXS)
+                        .text_color(palette.text_faint)
+                        .child(tr!("soundboard_pad_not_in_library")),
+                );
+            }
+            None => {}
         }
         if playing {
             status = status.child(
@@ -1379,9 +1540,10 @@ impl SoundboardView {
                     .child(readout),
             );
 
+        let glyph_color = if missing { palette.warning } else { color };
         let mut pad = pad_tile(
             (gpui::ElementId::from("sb-pad"), id.to_string()),
-            icon(glyph, PAD_GLYPH, color),
+            icon(glyph, PAD_GLYPH, glyph_color),
             clip.name.clone(),
             palette,
         )
@@ -1404,7 +1566,18 @@ impl SoundboardView {
             };
             pad = pad.progress(fraction, color);
         }
-        pad.into_any_element()
+        if !missing {
+            return pad.into_any_element();
+        }
+        div()
+            .id(("sb-pad-missing", index))
+            .w_full()
+            .tooltip(tooltip_builder(
+                tr!("soundboard_pad_source_missing_hint"),
+                palette,
+            ))
+            .child(pad)
+            .into_any_element()
     }
 
     fn pad_action_button(
@@ -1749,7 +1922,82 @@ impl SoundboardView {
             .into_any_element()
     }
 
-    fn render_footer(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_adoption_strip(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let pending = unadopted_ids(&self.clips, &self.availability).len();
+        if pending == 0 && self.adopt_summary.is_none() {
+            return None;
+        }
+        let mut row = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(spacing(Spacing::Sm, density))
+            .py(FOOTER_PAD_Y)
+            .px(FOOTER_PAD_X);
+
+        let mut left = div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .items_center()
+            .gap(spacing(Spacing::Xs, density));
+        if pending > 0 {
+            left = left
+                .child(icon(Icon::Copy, LOOP_ICON, palette.text_muted))
+                .child(
+                    div()
+                        .font_family(mono_family())
+                        .text_size(FOOTER_FS)
+                        .text_color(palette.text_muted)
+                        .child(tr!("soundboard_footer_unadopted", count = pending as i64)),
+                );
+        }
+        if let Some(summary) = self.adopt_summary.clone() {
+            left = left.child(
+                div()
+                    .ml(spacing(Spacing::Sm, density))
+                    .min_w_0()
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .font_family(mono_family())
+                    .text_size(FOOTER_FS)
+                    .text_color(palette.text_faint)
+                    .child(summary),
+            );
+        }
+        row = row.child(left);
+
+        if pending > 0 {
+            let label = if self.adopting_all {
+                tr!("soundboard_footer_adopt_busy")
+            } else {
+                tr!("soundboard_footer_adopt_action", count = pending as i64)
+            };
+            row = row.child(
+                secondary_button(label, palette)
+                    .density(density)
+                    .disabled(self.adopting_all)
+                    .on_click(
+                        "sb-adopt-all",
+                        cx.listener(|this, _: &ClickEvent, _, cx| this.adopt_all(cx)),
+                    ),
+            );
+        }
+        Some(row.into_any_element())
+    }
+
+    fn render_footer(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let category_count = self.categories_present().len();
         let size_label = self
             .total_size
@@ -1761,16 +2009,13 @@ impl SoundboardView {
         } else {
             (palette.warning, tr!("soundboard_output_missing"))
         };
-        div()
+        let counts = div()
             .w_full()
             .flex()
             .items_center()
             .justify_between()
             .py(FOOTER_PAD_Y)
             .px(FOOTER_PAD_X)
-            .border_t(BORDER_THIN)
-            .border_color(palette.surface_overlay)
-            .bg(palette.shell)
             .child(
                 div()
                     .font_family(mono_family())
@@ -1796,7 +2041,17 @@ impl SoundboardView {
                             .text_color(palette.text_faint)
                             .child(status_text),
                     ),
-            )
+            );
+
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .border_t(BORDER_THIN)
+            .border_color(palette.surface_overlay)
+            .bg(palette.shell)
+            .children(self.render_adoption_strip(palette, density, cx))
+            .child(counts)
             .into_any_element()
     }
 
@@ -1886,7 +2141,7 @@ impl Render for SoundboardView {
                 .children(self.render_library(&palette, density, cx))
                 .child(self.render_add_bar(&palette, cx))
                 .child(self.render_routing(&palette, density, cx))
-                .child(self.render_footer(&palette))
+                .child(self.render_footer(&palette, density, cx))
                 .into_any_element()
         };
 
@@ -1951,6 +2206,122 @@ fn field_lite_label(label: impl Into<SharedString>, palette: &ForgePalette) -> i
         .text_size(HOTKEY_FS)
         .text_color(palette.text_muted)
         .child(label.into())
+}
+
+fn audio_dialog_extensions() -> Vec<&'static str> {
+    MediaFormat::ACCEPTED
+        .iter()
+        .copied()
+        .filter(|format| format.kind() == MediaKind::Audio)
+        .map(MediaFormat::as_str)
+        .collect()
+}
+
+fn availability_after_play_error(error: &SoundboardError) -> Option<ClipAvailability> {
+    match error {
+        SoundboardError::SourceMissing(_) => Some(ClipAvailability::Missing),
+        _ => None,
+    }
+}
+
+enum AdoptionBadge {
+    Blocked(ClipRefusal),
+    Pending,
+}
+
+fn adoption_badge(availability: Option<&ClipAvailability>) -> Option<AdoptionBadge> {
+    match availability {
+        Some(ClipAvailability::Unadopted {
+            refusal: Some(refusal),
+        }) => Some(AdoptionBadge::Blocked(refusal.clone())),
+        Some(ClipAvailability::Unadopted { refusal: None }) => Some(AdoptionBadge::Pending),
+        _ => None,
+    }
+}
+
+fn unadopted_ids(
+    clips: &[SoundClip],
+    availability: &HashMap<ClipId, ClipAvailability>,
+) -> Vec<ClipId> {
+    clips
+        .iter()
+        .map(|clip| clip.id)
+        .filter(|id| {
+            matches!(
+                availability.get(id),
+                Some(ClipAvailability::Unadopted { .. })
+            )
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AdoptionOutcome {
+    Copied,
+    Refused,
+    Missing,
+    Unfinished,
+}
+
+fn classify_adoption(result: &Result<AdoptionVerdict, SoundboardError>) -> AdoptionOutcome {
+    match result {
+        Ok(AdoptionVerdict::Adopted | AdoptionVerdict::AlreadyManaged) => AdoptionOutcome::Copied,
+        Ok(AdoptionVerdict::Refused(_)) => AdoptionOutcome::Refused,
+        Ok(AdoptionVerdict::SourceMissing) => AdoptionOutcome::Missing,
+        Ok(AdoptionVerdict::InFlight) | Err(_) => AdoptionOutcome::Unfinished,
+    }
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
+struct AdoptionTally {
+    copied: usize,
+    refused: usize,
+    missing: usize,
+    unfinished: usize,
+}
+
+fn tally_adoption<'a>(
+    results: impl IntoIterator<Item = &'a Result<AdoptionVerdict, SoundboardError>>,
+) -> AdoptionTally {
+    let mut tally = AdoptionTally::default();
+    for result in results {
+        match classify_adoption(result) {
+            AdoptionOutcome::Copied => tally.copied += 1,
+            AdoptionOutcome::Refused => tally.refused += 1,
+            AdoptionOutcome::Missing => tally.missing += 1,
+            AdoptionOutcome::Unfinished => tally.unfinished += 1,
+        }
+    }
+    tally
+}
+
+fn adoption_summary(tally: &AdoptionTally) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if tally.copied > 0 {
+        parts.push(tr!("soundboard_adopt_copied", count = tally.copied as i64));
+    }
+    if tally.refused > 0 {
+        parts.push(tr!(
+            "soundboard_adopt_refused",
+            count = tally.refused as i64
+        ));
+    }
+    if tally.missing > 0 {
+        parts.push(tr!(
+            "soundboard_adopt_missing",
+            count = tally.missing as i64
+        ));
+    }
+    if tally.unfinished > 0 {
+        parts.push(tr!(
+            "soundboard_adopt_unfinished",
+            count = tally.unfinished as i64
+        ));
+    }
+    if parts.is_empty() {
+        return tr!("soundboard_adopt_nothing");
+    }
+    parts.join(ADOPT_SUMMARY_SEPARATOR)
 }
 
 fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
@@ -2053,8 +2424,53 @@ fn time_readout(elapsed_secs: f64, total_secs: Option<f64>) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use forge_storage::StorageError;
+
     use super::*;
+
+    fn sound_clip(id: ClipId) -> SoundClip {
+        SoundClip {
+            id,
+            name: String::new(),
+            file_path: PathBuf::new(),
+            hotkey: None,
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
+            glyph: Icon::Music,
+        }
+    }
+
+    fn unsupported(label: &str) -> ClipRefusal {
+        ClipRefusal::Unsupported {
+            label: label.to_owned(),
+        }
+    }
+
+    fn catalog_entry(locale: &str, key: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("locales")
+            .join(locale)
+            .join("main.ftl");
+        let catalog = std::fs::read_to_string(&path).unwrap();
+        let head = format!("{key} =");
+        let mut lines = catalog.lines().skip_while(|line| !line.starts_with(&head));
+        let mut entry = lines
+            .next()
+            .unwrap_or_else(|| panic!("{locale}/main.ftl is missing {key}"))
+            .to_owned();
+        for line in lines {
+            if line.trim().is_empty() || !line.starts_with(char::is_whitespace) {
+                break;
+            }
+            entry.push('\n');
+            entry.push_str(line);
+        }
+        entry
+    }
 
     fn progress(duration_secs: Option<f64>, looped: bool) -> PlaybackProgress {
         PlaybackProgress {
@@ -2138,6 +2554,285 @@ mod tests {
                 expected,
                 "playing {duration_secs:?} looped {looped}"
             );
+        }
+    }
+
+    #[test]
+    fn the_import_dialog_offers_every_accepted_audio_format_and_nothing_else() {
+        let mut offered = audio_dialog_extensions();
+        offered.sort_unstable();
+        assert_eq!(offered, ["flac", "m4a", "mp3", "ogg", "wav"]);
+    }
+
+    #[test]
+    fn failure_message_routes_each_typed_reason_to_its_own_catalog_key() {
+        for (error, expected_key) in [
+            (
+                SoundboardError::SourceMissing("Fanfare".to_owned()),
+                "soundboard_error_source_missing",
+            ),
+            (
+                SoundboardError::ClipNotFound("01J0".to_owned()),
+                "soundboard_error_clip_gone",
+            ),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaUnsupported {
+                    label: "notes.txt".to_owned(),
+                }),
+                "soundboard_import_unsupported",
+            ),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaTypeMismatch {
+                    label: "logo.mp3".to_owned(),
+                    claimed: MediaFormat::Mp3,
+                    detected: MediaFormat::Png,
+                }),
+                "soundboard_import_type_mismatch",
+            ),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaTooLarge {
+                    label: "huge.wav".to_owned(),
+                    size: 60 * 1024 * 1024,
+                    limit: 50 * 1024 * 1024,
+                    kind: MediaKind::Audio,
+                }),
+                "soundboard_import_too_large",
+            ),
+        ] {
+            assert_eq!(failure_message(&error), expected_key, "{error}");
+        }
+    }
+
+    #[test]
+    fn failure_message_falls_back_to_the_error_text_when_no_key_covers_the_reason() {
+        let error = SoundboardError::Storage("disk is busy".to_owned());
+        assert_eq!(failure_message(&error), error.to_string());
+    }
+
+    #[test]
+    fn a_refusal_from_outside_the_admission_gate_falls_back_to_its_own_text() {
+        let refusal = StorageError::NotFound {
+            key: "sha256-abc".to_owned(),
+        };
+        let expected = refusal.to_string();
+
+        assert_eq!(
+            failure_message(&SoundboardError::ImportRefused(refusal)),
+            expected
+        );
+    }
+
+    #[test]
+    fn every_media_message_is_defined_in_both_catalogs_with_the_arguments_the_code_passes() {
+        for (key, arguments) in [
+            ("soundboard_error_source_missing", &["name"][..]),
+            ("soundboard_error_clip_gone", &[][..]),
+            ("soundboard_import_unsupported", &["file"][..]),
+            (
+                "soundboard_import_type_mismatch",
+                &["file", "named", "detected"][..],
+            ),
+            (
+                "soundboard_import_too_large",
+                &["file", "size", "limit"][..],
+            ),
+            ("soundboard_pad_source_missing", &[][..]),
+            ("soundboard_pad_source_missing_hint", &[][..]),
+            ("soundboard_pad_adopt_blocked", &[][..]),
+            ("soundboard_pad_not_in_library", &[][..]),
+            ("soundboard_footer_unadopted", &["count"][..]),
+            ("soundboard_footer_adopt_action", &["count"][..]),
+            ("soundboard_footer_adopt_busy", &[][..]),
+            ("soundboard_adopt_copied", &["count"][..]),
+            ("soundboard_adopt_refused", &["count"][..]),
+            ("soundboard_adopt_missing", &["count"][..]),
+            ("soundboard_adopt_unfinished", &["count"][..]),
+            ("soundboard_adopt_nothing", &[][..]),
+        ] {
+            for locale in ["en", "uk"] {
+                let entry = catalog_entry(locale, key);
+                for argument in arguments {
+                    assert!(
+                        entry.contains(&format!("${argument}")),
+                        "{locale}/main.ftl defines {key} without ${argument}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_counted_adoption_message_offers_the_plural_categories_its_locale_needs() {
+        for key in [
+            "soundboard_footer_unadopted",
+            "soundboard_footer_adopt_action",
+        ] {
+            for (locale, categories) in [
+                ("en", &["[one]", "*[other]"][..]),
+                ("uk", &["[one]", "[few]", "[many]", "*[other]"][..]),
+            ] {
+                let entry = catalog_entry(locale, key);
+                assert!(
+                    entry.contains("$count ->"),
+                    "{locale}/main.ftl states {key} without selecting on $count"
+                );
+                for category in categories {
+                    assert!(
+                        entry.contains(category),
+                        "{locale}/main.ftl defines {key} without the {category} plural form"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_vanished_source_rewrites_the_row_state_after_a_failed_play() {
+        for (error, expected) in [
+            (
+                SoundboardError::SourceMissing("Fanfare".to_owned()),
+                Some(ClipAvailability::Missing),
+            ),
+            (SoundboardError::ClipNotFound("01J0".to_owned()), None),
+            (
+                SoundboardError::ImportRefused(StorageError::MediaUnsupported {
+                    label: "notes.txt".to_owned(),
+                }),
+                None,
+            ),
+            (SoundboardError::Storage("disk is busy".to_owned()), None),
+            (SoundboardError::JoinError("panicked".to_owned()), None),
+            (
+                SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice),
+                None,
+            ),
+        ] {
+            assert_eq!(availability_after_play_error(&error), expected, "{error}");
+        }
+    }
+
+    #[test]
+    fn only_an_unadopted_row_is_badged_and_a_blocked_one_carries_its_reason() {
+        for (availability, expected) in [
+            (None, None),
+            (Some(ClipAvailability::Managed), None),
+            (Some(ClipAvailability::Missing), None),
+            (
+                Some(ClipAvailability::Unadopted { refusal: None }),
+                Some(None),
+            ),
+            (
+                Some(ClipAvailability::Unadopted {
+                    refusal: Some(unsupported("notes.txt")),
+                }),
+                Some(Some(unsupported("notes.txt"))),
+            ),
+        ] {
+            let badge = adoption_badge(availability.as_ref()).map(|badge| match badge {
+                AdoptionBadge::Blocked(reason) => Some(reason),
+                AdoptionBadge::Pending => None,
+            });
+            assert_eq!(badge, expected, "{availability:?}");
+        }
+    }
+
+    #[test]
+    fn unadopted_ids_names_every_row_the_library_has_not_taken_in() {
+        let ids: Vec<ClipId> = (0..5).map(|_| ClipId::new()).collect();
+        let clips: Vec<SoundClip> = ids.iter().copied().map(sound_clip).collect();
+        let availability = HashMap::from([
+            (ids[0], ClipAvailability::Managed),
+            (ids[1], ClipAvailability::Unadopted { refusal: None }),
+            (ids[2], ClipAvailability::Missing),
+            (
+                ids[3],
+                ClipAvailability::Unadopted {
+                    refusal: Some(unsupported("notes.txt")),
+                },
+            ),
+        ]);
+
+        assert_eq!(unadopted_ids(&clips, &availability), vec![ids[1], ids[3]]);
+    }
+
+    #[test]
+    fn a_run_of_adoptions_is_counted_by_what_each_verdict_means_for_the_user() {
+        let results = [
+            Ok(AdoptionVerdict::Adopted),
+            Ok(AdoptionVerdict::AlreadyManaged),
+            Ok(AdoptionVerdict::Refused(unsupported("notes.txt"))),
+            Ok(AdoptionVerdict::SourceMissing),
+            Ok(AdoptionVerdict::InFlight),
+            Err(SoundboardError::Storage("disk is busy".to_owned())),
+        ];
+
+        assert_eq!(
+            tally_adoption(results.iter()),
+            AdoptionTally {
+                copied: 2,
+                refused: 1,
+                missing: 1,
+                unfinished: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn the_adoption_summary_names_only_the_outcomes_that_happened() {
+        for (tally, expected) in [
+            (
+                AdoptionTally {
+                    copied: 2,
+                    refused: 1,
+                    missing: 1,
+                    unfinished: 1,
+                },
+                "soundboard_adopt_copied · soundboard_adopt_refused · soundboard_adopt_missing · soundboard_adopt_unfinished",
+            ),
+            (
+                AdoptionTally {
+                    copied: 3,
+                    ..AdoptionTally::default()
+                },
+                "soundboard_adopt_copied",
+            ),
+            (
+                AdoptionTally {
+                    refused: 1,
+                    unfinished: 2,
+                    ..AdoptionTally::default()
+                },
+                "soundboard_adopt_refused · soundboard_adopt_unfinished",
+            ),
+            (AdoptionTally::default(), "soundboard_adopt_nothing"),
+        ] {
+            assert_eq!(adoption_summary(&tally), expected, "{tally:?}");
+        }
+    }
+
+    #[test]
+    fn a_blocked_badge_explains_itself_with_the_key_that_matches_the_refusal() {
+        for (refusal, expected_key) in [
+            (unsupported("notes.txt"), "soundboard_import_unsupported"),
+            (
+                ClipRefusal::TypeMismatch {
+                    label: "logo.mp3".to_owned(),
+                    claimed: MediaFormat::Mp3,
+                    detected: MediaFormat::Png,
+                },
+                "soundboard_import_type_mismatch",
+            ),
+            (
+                ClipRefusal::TooLarge {
+                    label: "huge.wav".to_owned(),
+                    size: 60 * 1024 * 1024,
+                    limit: 50 * 1024 * 1024,
+                    kind: MediaKind::Audio,
+                },
+                "soundboard_import_too_large",
+            ),
+        ] {
+            assert_eq!(clip_refusal_message(&refusal), expected_key, "{refusal:?}");
         }
     }
 }

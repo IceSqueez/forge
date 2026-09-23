@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_soundboard::{
     AdoptionVerdict, ClipAvailability, ClipLibrary, ClipRefusal, ClipSource, SoundboardError,
 };
@@ -13,11 +14,13 @@ use forge_storage::{
     SoundboardClipsRepo, StorageError, StoredClip,
 };
 use forge_types::{ClipId, OutputDevice};
+use serde_json::{Value, json};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 const SETTLE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+const ADOPTION_EVENT: &str = "soundboard.clip.adopted";
 const CLIP_SOURCE_SLOT: &str = "source";
 const FANFARE: &str = "/home/streamer/sounds/fanfare.wav";
 const AIRHORN: &str = "/home/streamer/sounds/airhorn.wav";
@@ -276,6 +279,36 @@ impl SoundboardClipsRepo for FakeClips {
     }
 }
 
+/// Captures everything the library announces so a test can assert both WHICH events fired and
+/// that no extra one did.
+#[derive(Default)]
+struct RecordingPublisher {
+    events: Mutex<Vec<Event>>,
+}
+
+impl EventPublisher for RecordingPublisher {
+    fn publish(&self, event: Event) {
+        self.events.lock().unwrap().push(event);
+    }
+}
+
+impl RecordingPublisher {
+    /// Payloads of the adoption announcements, in the order they were published.
+    fn settled(&self) -> Vec<Value> {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event.source == EventSource::Audio && event.kind == ADOPTION_EVENT)
+            .map(|event| event.payload.clone())
+            .collect()
+    }
+
+    fn published(&self) -> usize {
+        self.events.lock().unwrap().len()
+    }
+}
+
 struct Harness {
     library: Arc<ClipLibrary>,
     clips: Arc<FakeClips>,
@@ -299,6 +332,15 @@ fn harness_with_gate(gate: Option<Arc<Notify>>) -> Harness {
         clips,
         media,
         calls,
+    }
+}
+
+impl Harness {
+    fn listen(&self) -> Arc<RecordingPublisher> {
+        let publisher = Arc::new(RecordingPublisher::default());
+        self.library
+            .install_event_publisher(Arc::clone(&publisher) as Arc<dyn EventPublisher>);
+        publisher
     }
 }
 
@@ -720,4 +762,177 @@ async fn availability_of_returns_nothing_for_an_empty_list() {
     let fx = harness();
 
     assert!(fx.library.availability_of(&[]).await.is_empty());
+}
+
+#[tokio::test]
+async fn adopting_a_list_announces_one_settled_event_per_row_carrying_its_verdict() {
+    let fx = harness();
+    let bus = fx.listen();
+    let managed_source = legacy_source(".wav");
+    let adoptable_source = legacy_source(".wav");
+    let refused_source = legacy_source(".txt");
+
+    let managed = clip_at("Managed", managed_source.path());
+    fx.media.knows(
+        &managed_source.path().to_string_lossy(),
+        FANFARE_BLOB,
+        &managed_source.path().to_string_lossy(),
+    );
+    fx.media.already_retained(managed.id, FANFARE_BLOB);
+
+    let adoptable = clip_at("Adoptable", adoptable_source.path());
+    fx.media.knows(
+        &adoptable_source.path().to_string_lossy(),
+        AIRHORN_BLOB,
+        MANAGED_AIRHORN,
+    );
+
+    let refused = clip_at("Refused", refused_source.path());
+    let gone = clip("Gone", FANFARE);
+
+    fx.library
+        .adopt_all_now(&[
+            managed.clone(),
+            adoptable.clone(),
+            refused.clone(),
+            gone.clone(),
+        ])
+        .await;
+
+    let announced = bus.settled();
+    assert_eq!(
+        announced,
+        vec![
+            json!({ "clip_id": managed.id.to_string(), "verdict": "already_managed" }),
+            json!({ "clip_id": adoptable.id.to_string(), "verdict": "adopted" }),
+            json!({
+                "clip_id": refused.id.to_string(),
+                "verdict": "refused",
+                "reason": ClipRefusal::Unsupported {
+                    label: file_name(refused_source.path()),
+                }
+                .to_string(),
+            }),
+            json!({ "clip_id": gone.id.to_string(), "verdict": "source_missing" }),
+        ],
+    );
+    assert_eq!(
+        bus.published(),
+        announced.len(),
+        "the library published something other than an adoption verdict",
+    );
+}
+
+#[tokio::test]
+async fn a_refused_adoption_names_the_reason_without_leaking_the_source_path() {
+    let fx = harness();
+    let bus = fx.listen();
+    let source = legacy_source(".txt");
+    let row = clip_at("Notes", source.path());
+
+    fx.library
+        .adopt_now(&row)
+        .await
+        .expect("an unsupported source settles with a verdict");
+
+    let announced = bus.settled();
+    let [payload] = announced.as_slice() else {
+        panic!("expected exactly one settled event, got {announced:?}");
+    };
+    let text = payload.to_string();
+    let directory = source.path().parent().expect("a temp file has a parent");
+    assert!(
+        !text.contains(&*source.path().to_string_lossy()),
+        "the refusal event carried the full source path: {text}",
+    );
+    assert!(
+        !text.contains(&*directory.to_string_lossy()),
+        "the refusal event carried the source directory: {text}",
+    );
+}
+
+#[tokio::test]
+async fn an_adoption_already_running_announces_nothing_for_the_second_caller() {
+    let gate = Arc::new(Notify::new());
+    let mut fx = harness_with_gate(Some(Arc::clone(&gate)));
+    let bus = fx.listen();
+    let source = legacy_source(".wav");
+    fx.media.knows(
+        &source.path().to_string_lossy(),
+        FANFARE_BLOB,
+        MANAGED_FANFARE,
+    );
+    let row = clip_at("Alert", source.path());
+
+    fx.library
+        .adopt_in_background(row.id, source.path().to_path_buf());
+    assert_eq!(
+        fx.calls.recv().await,
+        Some(MediaCall::Import(source.path().to_path_buf()))
+    );
+
+    let verdict = tokio::time::timeout(SETTLE_DEADLINE, fx.library.adopt_now(&row))
+        .await
+        .expect("the second caller must not wait on the running import")
+        .expect("the second caller settles");
+    assert_eq!(verdict, AdoptionVerdict::InFlight);
+
+    assert!(
+        bus.settled().is_empty(),
+        "an unsettled adoption was announced: {:?}",
+        bus.settled(),
+    );
+}
+
+#[tokio::test]
+async fn a_recorded_refusal_silences_the_background_path_but_not_an_explicit_retry() {
+    let fx = harness();
+    let bus = fx.listen();
+    let source = legacy_source(".txt");
+    let row = clip_at("Notes", source.path());
+
+    fx.library
+        .adopt_now(&row)
+        .await
+        .expect("the first attempt settles");
+    assert_eq!(bus.settled().len(), 1, "the refusal was not announced");
+
+    fx.library
+        .adopt_in_background(row.id, source.path().to_path_buf());
+    settle_background_work().await;
+    assert_eq!(
+        bus.settled().len(),
+        1,
+        "the background path announced a refusal it never retried",
+    );
+
+    fx.library
+        .adopt_now(&row)
+        .await
+        .expect("the explicit retry settles");
+    assert_eq!(
+        bus.settled().len(),
+        2,
+        "the explicit retry settled without announcing it",
+    );
+}
+
+#[tokio::test]
+async fn an_adoption_settles_normally_while_no_publisher_is_installed() {
+    let fx = harness();
+    let source = legacy_source(".wav");
+    fx.media.knows(
+        &source.path().to_string_lossy(),
+        FANFARE_BLOB,
+        MANAGED_FANFARE,
+    );
+    let row = clip_at("Alert", source.path());
+
+    assert_eq!(
+        fx.library
+            .adopt_now(&row)
+            .await
+            .expect("the adoption settles without a bus to announce on"),
+        AdoptionVerdict::Adopted
+    );
 }

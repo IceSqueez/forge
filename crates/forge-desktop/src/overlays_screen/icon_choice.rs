@@ -640,6 +640,22 @@ mod tests {
         }
     }
 
+    fn rust_sources(dir: &Path) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        let mut pending = vec![dir.to_path_buf()];
+        while let Some(next) = pending.pop() {
+            for entry in std::fs::read_dir(&next).expect("a readable source directory") {
+                let path = entry.expect("a readable directory entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                    found.push(path);
+                }
+            }
+        }
+        found
+    }
+
     fn pick_name(pick: &IconPick) -> String {
         match pick {
             IconPick::Import => "import".to_owned(),
@@ -728,6 +744,73 @@ mod tests {
                 "stored {stored:?}",
             );
         }
+    }
+
+    #[test]
+    fn a_remembered_icon_is_kept_only_while_a_card_still_answers_to_it() {
+        let kept = known_icon_favorites(vec![
+            GLYPH.to_owned(),
+            GLYPH.to_owned(),
+            NO_ICON_ID.to_owned(),
+            IMPORT_ICON_ID.to_owned(),
+            image_reference(BLOB_A),
+            // An import the library no longer holds: favorites are read before the library is,
+            // so an imported reference is kept on trust and simply draws no card.
+            image_reference(GONE),
+            NOT_A_GLYPH.to_owned(),
+            String::new(),
+        ]);
+
+        let expected: HashSet<SharedString> = [
+            GLYPH.to_owned(),
+            NO_ICON_ID.to_owned(),
+            IMPORT_ICON_ID.to_owned(),
+            image_reference(BLOB_A),
+            image_reference(GONE),
+        ]
+        .into_iter()
+        .map(SharedString::from)
+        .collect();
+        assert_eq!(kept, expected);
+    }
+
+    #[test]
+    fn the_icon_grid_asks_for_a_bigger_tile_than_the_shared_card_art() {
+        let shared = GridPickerArt::default();
+
+        assert!(
+            PICK_TILE > shared.tile,
+            "an icon is the whole card here, so its tile outgrows the shared one",
+        );
+        assert!(
+            PICK_ART > shared.glyph,
+            "an icon is the whole card here, so its art outgrows the shared one",
+        );
+    }
+
+    /// Why: the card art is a shared design decision and the icon grid is the one screen that
+    /// departs from it, so a second departure is a design drift and not a local choice. The
+    /// needles are assembled at run time so this test does not read itself as a picker.
+    #[test]
+    fn the_icon_grid_is_the_only_picker_that_departs_from_the_shared_card_art() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let opens_a_picker = format!("{}Config {{", "GridPicker");
+        let keeps_the_shared_art = format!("art: {}::default()", "GridPickerArt");
+
+        let mut departures: Vec<PathBuf> = Vec::new();
+        for file in rust_sources(&src) {
+            let text = std::fs::read_to_string(&file).expect("a readable source file");
+            let pickers = text.matches(&opens_a_picker).count();
+            if pickers > 0 && pickers != text.matches(&keeps_the_shared_art).count() {
+                departures.push(file.strip_prefix(&src).unwrap_or(&file).to_path_buf());
+            }
+        }
+        departures.sort();
+
+        assert_eq!(
+            departures,
+            vec![Path::new("overlays_screen").join("icon_choice.rs")],
+        );
     }
 
     #[test]

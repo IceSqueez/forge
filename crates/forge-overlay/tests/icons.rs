@@ -139,7 +139,7 @@ fn every_category_is_reachable_and_the_icon_an_untouched_overlay_draws_is_in_the
 }
 
 #[test]
-fn a_search_matches_a_glyph_by_name_category_or_keyword_whatever_its_case_and_padding() {
+fn a_search_reaches_a_glyph_through_any_name_it_carries_whatever_the_case_and_padding() {
     let icon = curated_icon("heart-handshake").expect("the roster carries heart-handshake");
 
     for query in [
@@ -148,6 +148,10 @@ fn a_search_matches_a_glyph_by_name_category_or_keyword_whatever_its_case_and_pa
         "heart",
         "HEART",
         "  Heart  ",
+        "heart-hand",
+        "heart hand",
+        "Heart Handshake",
+        "rt handsh",
         "support",
         "charity",
         "CARE",
@@ -157,10 +161,39 @@ fn a_search_matches_a_glyph_by_name_category_or_keyword_whatever_its_case_and_pa
             "{query:?} did not reach heart-handshake"
         );
     }
-    for query in ["rocket", "nature", "zzz", "handshakes"] {
+    for query in ["rocket", "nature", "zzz", "handshakes", "heart  handshake"] {
         assert!(
             !icon.matches(query),
             "{query:?} reached a glyph it does not describe"
+        );
+    }
+}
+
+#[test]
+fn every_curated_row_prints_a_phrase_the_picker_can_put_under_a_card() {
+    for icon in CURATED_ICONS {
+        let label = icon.label();
+
+        assert!(
+            !label.is_empty(),
+            "{} prints nothing under its card",
+            icon.name
+        );
+        assert!(
+            !label.contains('-'),
+            "{} prints the stored spelling {label:?} instead of a phrase",
+            icon.name
+        );
+        assert!(
+            !label.contains("  "),
+            "{} prints {label:?}, which opens a gap under its card",
+            icon.name
+        );
+        assert_eq!(
+            label.chars().next().map(char::is_uppercase),
+            Some(true),
+            "{} prints {label:?}, which starts in lower case",
+            icon.name
         );
     }
 }

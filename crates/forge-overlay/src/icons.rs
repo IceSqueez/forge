@@ -1085,3 +1085,21 @@ pub const CURATED_ICONS: &[CuratedIcon] = &[
         source: include_bytes!("../assets/icons/compass.svg"),
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::humanize;
+
+    #[test]
+    fn a_glyph_name_reads_as_a_phrase_with_its_hyphens_spent_as_spaces() {
+        for (name, expected) in [
+            ("heart", "Heart"),
+            ("star-filled", "Star filled"),
+            ("device-gamepad-2", "Device gamepad 2"),
+            ("Compass", "Compass"),
+            ("", ""),
+        ] {
+            assert_eq!(humanize(name), expected, "name {name:?}");
+        }
+    }
+}

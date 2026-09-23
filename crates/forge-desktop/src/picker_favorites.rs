@@ -31,14 +31,4 @@ mod tests {
             assert_eq!(restored, original);
         }
     }
-
-    #[test]
-    fn to_set_deduplicates_repeated_ids() {
-        let favorites = to_set(vec![
-            "sub.enable".to_owned(),
-            "sub.enable".to_owned(),
-            "trigger.chat".to_owned(),
-        ]);
-        assert_eq!(favorites, set(&["sub.enable", "trigger.chat"]));
-    }
 }

@@ -925,10 +925,11 @@ mod tests {
         }
     }
 
-    /// Why: R4 - no account, channel, host or path value appears anywhere in the bundle. Moving
-    /// any key on this list into the verbatim arm publishes it, so the class is pinned per key.
+    /// Why: R4 - no account, channel, host, path or imported-file value appears anywhere in the
+    /// bundle, and a remembered favorite can name an imported image. Moving any key on this list
+    /// into the verbatim arm publishes it, so the class is pinned per key.
     #[test]
-    fn keys_that_can_name_a_host_a_path_or_a_device_are_never_verbatim() {
+    fn keys_that_can_name_a_host_a_path_a_device_or_an_import_are_never_verbatim() {
         for (key, expected) in [
             (
                 reserved_keys::SERVER_OVERLAY_ROOT,
@@ -958,6 +959,18 @@ mod tests {
             ),
             (
                 reserved_keys::SERVER_ADDITIONAL_ORIGINS,
+                SettingDisclosure::Kind,
+            ),
+            (
+                reserved_keys::PICKER_FAVORITES_SUB_ACTIONS,
+                SettingDisclosure::Kind,
+            ),
+            (
+                reserved_keys::PICKER_FAVORITES_TRIGGERS,
+                SettingDisclosure::Kind,
+            ),
+            (
+                reserved_keys::PICKER_FAVORITES_ICONS,
                 SettingDisclosure::Kind,
             ),
         ] {

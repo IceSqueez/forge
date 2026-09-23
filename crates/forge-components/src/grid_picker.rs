@@ -1178,6 +1178,66 @@ mod tests {
         vcx.update(|_window, cx| picked.read(cx).seen.clone())
     }
 
+    // Why: the art knob was carved out of three fixed card constants, so the default has to
+    // reproduce the card the three untouched pickers drew before the knob existed, to the pixel.
+    #[test]
+    fn the_default_card_art_draws_the_card_the_pickers_had_before_it_was_a_knob() {
+        let art = GridPickerArt::default();
+
+        assert_eq!((art.tile, art.glyph), (px(26.0), px(13.0)));
+        assert_eq!(art.card_height(), px(72.0));
+        assert_eq!(art.row_height(), px(80.0));
+    }
+
+    #[test]
+    fn a_taller_tile_grows_the_card_and_its_row_by_what_the_tile_gained() {
+        let base = GridPickerArt::default();
+
+        for extra in [px(4.0), px(18.0)] {
+            let grown = GridPickerArt {
+                tile: base.tile + extra,
+                ..base
+            };
+
+            assert_eq!(
+                grown.card_height(),
+                base.card_height() + extra,
+                "a tile {extra:?} taller",
+            );
+            assert_eq!(
+                grown.row_height(),
+                base.row_height() + extra,
+                "a tile {extra:?} taller",
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn the_rail_lists_the_scopes_in_the_order_the_caller_pushed_its_groups(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let groups = vec![
+            band("zebra", vec![item(ALPHA, "Alpha", SHARED_WORD, None)]),
+            band("alpha", vec![item(BETA, "Beta", SHARED_WORD, None)]),
+            band("mid", vec![item(GAMMA, "Gamma", SHARED_WORD, None)]),
+        ];
+        let (picker, _picked, vcx) = open(cx, groups);
+
+        let rail = vcx.update(|_window, cx| {
+            picker
+                .read(cx)
+                .scope_entries()
+                .into_iter()
+                .map(|(_, label, _)| label)
+                .collect::<Vec<_>>()
+        });
+
+        assert_eq!(
+            rail,
+            ["zebra".to_owned(), "alpha".to_owned(), "mid".to_owned()]
+        );
+    }
+
     #[gpui::test]
     fn an_item_that_carries_its_own_test_is_searched_through_it_instead_of_its_words(
         cx: &mut gpui::TestAppContext,

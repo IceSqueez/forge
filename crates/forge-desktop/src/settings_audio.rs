@@ -16,8 +16,9 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
+use crate::runtime_handles::RuntimeHandles;
+use crate::settings_audio_routing::SettingsAudioRoutingView;
 use crate::settings_voice_gate::SettingsVoiceGateView;
-use crate::voice_gate::VoiceGateOwner;
 
 const PANEL_WIDTH: Pixels = px(360.0);
 
@@ -68,23 +69,30 @@ pub struct SettingsAudioView {
     overlay_focus: FocusHandle,
     focus_restore: Option<FocusHandle>,
     devices_gen: async_bridge::Generation,
+    routing: Entity<SettingsAudioRoutingView>,
     voice_gate: Entity<SettingsVoiceGateView>,
 }
 
 impl SettingsAudioView {
-    pub fn new(
-        backend: Arc<dyn DataProvider>,
-        rt_handle: tokio::runtime::Handle,
-        speech_output: Arc<DeviceSink>,
-        voice_gate_owner: Arc<VoiceGateOwner>,
-        initial_active: bool,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    pub fn new(handles: &RuntimeHandles, initial_active: bool, cx: &mut Context<Self>) -> Self {
+        let backend = Arc::clone(&handles.backend);
+        let rt_handle = handles.rt_handle.clone();
+        let speech_output = Arc::clone(&handles.speech_output);
+        let routing = cx.new(|cx| {
+            SettingsAudioRoutingView::new(
+                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                backend.overlay_repo(),
+                rt_handle.clone(),
+                Arc::clone(&handles.speech_sink),
+                handles.server.is_some(),
+                cx,
+            )
+        });
         let voice_gate = cx.new(|cx| {
             SettingsVoiceGateView::new(
                 Arc::clone(&backend),
                 rt_handle.clone(),
-                voice_gate_owner,
+                Arc::clone(&handles.voice_gate),
                 initial_active,
                 cx,
             )
@@ -105,6 +113,7 @@ impl SettingsAudioView {
             overlay_focus: cx.focus_handle(),
             focus_restore: None,
             devices_gen: async_bridge::Generation::default(),
+            routing,
             voice_gate,
         };
         view.load_devices(false, cx);
@@ -536,6 +545,7 @@ impl Render for SettingsAudioView {
             .flex_col()
             .gap(spacing(Spacing::Md, density))
             .child(output_card)
+            .child(self.routing.clone())
             .child(self.voice_gate.clone())
     }
 }
@@ -582,7 +592,7 @@ async fn enumerate_devices_and_preference(
     Ok((devices, preference))
 }
 
-fn test_tone() -> PcmBuffer {
+pub(crate) fn test_tone() -> PcmBuffer {
     let num_samples = (TEST_TONE_SAMPLE_RATE * TEST_TONE_DURATION_MS / MILLIS_PER_SEC) as usize;
     let samples: Vec<i16> = (0..num_samples)
         .map(|i| {

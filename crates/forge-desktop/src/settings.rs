@@ -210,16 +210,8 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let section = preselect.unwrap_or(SettingsSection::Appearance);
-        let audio = cx.new(|cx| {
-            SettingsAudioView::new(
-                Arc::clone(&handles.backend),
-                handles.rt_handle.clone(),
-                Arc::clone(&handles.speech_output),
-                Arc::clone(&handles.voice_gate),
-                section == SettingsSection::Audio,
-                cx,
-            )
-        });
+        let audio =
+            cx.new(|cx| SettingsAudioView::new(&handles, section == SettingsSection::Audio, cx));
         let scripting = cx.new(|cx| {
             SettingsScriptingView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
         });

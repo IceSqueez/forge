@@ -405,6 +405,7 @@ pub async fn build_runtime(
         pipeline_config,
         tts_registry,
         speech_output,
+        speech_sink: speech_sink as Arc<dyn AudioSink>,
         soundboard_player,
         voice_gate,
     })

@@ -1762,6 +1762,29 @@ settings_audio_test_playing = Playing…
 settings_audio_test_error = Test tone error: { $error }
 settings_audio_persist_error = Failed to save device selection: { $error }
 
+## Settings - audio routing
+
+settings_audio_routing_title = Routing
+settings_audio_routing_loading = Reading routing settings
+settings_audio_routing_load_error = Failed to read routing settings: { $error }
+settings_audio_routing_speech_label = Speech plays on
+settings_audio_routing_speech_hint = Where synthesized speech is heard.
+settings_audio_routing_clips_label = Sound clips play on
+settings_audio_routing_clips_hint = Where soundboard clips are heard.
+settings_audio_route_local = Local device
+settings_audio_route_overlay = Audio overlay
+settings_audio_route_both = Both
+settings_audio_routing_destination = AUDIO OVERLAY
+settings_audio_routing_destination_none = None
+settings_audio_routing_no_overlays = Create an Audio overlay on the Overlays screen first.
+settings_audio_routing_restart_note = Routing changes take effect after forge restarts.
+settings_audio_routing_test = Test on overlay
+settings_audio_routing_testing = Playing
+settings_audio_routing_test_error = Overlay test failed: { $error }
+settings_audio_routing_persist_error = Failed to save routing: { $error }
+settings_audio_routing_in_effect = IN EFFECT NOW
+settings_audio_routing_in_effect_fallback = { $route } - { $reason }
+
 ## Settings - voice gate
 
 settings_voice_gate_title = Voice gate

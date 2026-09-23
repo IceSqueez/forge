@@ -64,6 +64,7 @@ mod server_console;
 mod server_restart;
 mod settings;
 mod settings_audio;
+mod settings_audio_routing;
 mod settings_diagnostics;
 mod settings_scripting;
 mod settings_shortcuts;

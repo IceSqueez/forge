@@ -1783,6 +1783,29 @@ settings_audio_test_playing = Відтворення…
 settings_audio_test_error = Помилка тестового тону: { $error }
 settings_audio_persist_error = Не вдалося зберегти вибір пристрою: { $error }
 
+## Settings - маршрутизація аудіо
+
+settings_audio_routing_title = Маршрутизація
+settings_audio_routing_loading = Читання налаштувань маршрутизації
+settings_audio_routing_load_error = Не вдалося прочитати налаштування маршрутизації: { $error }
+settings_audio_routing_speech_label = Мовлення відтворюється на
+settings_audio_routing_speech_hint = Де чути синтезоване мовлення.
+settings_audio_routing_clips_label = Звукові кліпи відтворюються на
+settings_audio_routing_clips_hint = Де чути кліпи саундборду.
+settings_audio_route_local = Локальний пристрій
+settings_audio_route_overlay = Аудіооверлей
+settings_audio_route_both = Обидва
+settings_audio_routing_destination = АУДІООВЕРЛЕЙ
+settings_audio_routing_destination_none = Немає
+settings_audio_routing_no_overlays = Спочатку створи аудіооверлей на екрані оверлеїв.
+settings_audio_routing_restart_note = Зміни маршрутизації набувають чинності після перезапуску forge.
+settings_audio_routing_test = Тест на оверлеї
+settings_audio_routing_testing = Відтворення
+settings_audio_routing_test_error = Тест оверлея не вдався: { $error }
+settings_audio_routing_persist_error = Не вдалося зберегти маршрутизацію: { $error }
+settings_audio_routing_in_effect = ЗАРАЗ ДІЄ
+settings_audio_routing_in_effect_fallback = { $route } - { $reason }
+
 ## Settings - voice gate
 
 settings_voice_gate_title = Голосовий гейт

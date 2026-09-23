@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use forge_audio::{AudioRoute, AudioSink, FanOutSink};
 use forge_overlay::kinds::audio::KIND_ID as AUDIO_OVERLAY_KIND;
-use forge_storage::{OverlayId, OverlayRepo, SettingsRepo, reserved_keys};
+use forge_storage::{OverlayId, OverlayRepo, SettingsRepo, StorageError, reserved_keys};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioDomain {
@@ -41,6 +41,28 @@ pub async fn load_audio_routes(repo: &dyn SettingsRepo) -> AudioRoutes {
         speech: stored_route(repo, AudioDomain::Speech).await,
         clips: stored_route(repo, AudioDomain::Clips).await,
         destination: stored_destination(repo).await,
+    }
+}
+
+pub async fn set_route(
+    repo: &dyn SettingsRepo,
+    domain: AudioDomain,
+    route: AudioRoute,
+) -> Result<(), StorageError> {
+    repo.set_string(domain.key(), route.as_str()).await
+}
+
+/// `None` removes the key, which is how "no audio overlay chosen" is stored.
+pub async fn set_destination(
+    repo: &dyn SettingsRepo,
+    destination: Option<&OverlayId>,
+) -> Result<(), StorageError> {
+    match destination.map(OverlayId::as_str).map(str::trim) {
+        Some(id) if !id.is_empty() => repo.set_string(reserved_keys::AUDIO_OVERLAY_ID, id).await,
+        _ => repo
+            .delete(reserved_keys::AUDIO_OVERLAY_ID)
+            .await
+            .map(|_| ()),
     }
 }
 

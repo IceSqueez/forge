@@ -445,9 +445,12 @@ async fn play_target(
     sinks: &[Arc<dyn AudioSink>],
     buffer: PcmBuffer,
 ) -> Result<PlaybackHandle, AudioError> {
-    let (handle, mut outcomes) = forge_audio::fan_out_stoppable(buffer, sinks).await;
-    let main = outcomes.remove(0);
-    for (idx, outcome) in outcomes.into_iter().enumerate() {
+    let (handle, outcomes) = forge_audio::fan_out_stoppable(buffer, sinks).await;
+    let mut outcomes = outcomes.into_iter();
+    let Some(main) = outcomes.next() else {
+        return Err(AudioError::NoRoute);
+    };
+    for (idx, outcome) in outcomes.enumerate() {
         if let Err(e) = outcome {
             tracing::warn!(sink_index = idx + 1, error = %e, "secondary output sink failed");
         }

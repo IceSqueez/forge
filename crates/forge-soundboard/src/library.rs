@@ -2,11 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::{
     MediaBlobId, MediaFormat, MediaKind, MediaReferrerKind, MediaRepo, SoundboardClipsRepo,
     StorageError, StoredClip,
 };
-use forge_types::ClipId;
+use forge_types::{ClipId, Shared};
+use serde_json::json;
 
 pub use forge_storage::clip_source_referrer;
 
@@ -65,6 +67,33 @@ pub enum ClipRefusal {
         limit: u64,
         kind: MediaKind,
     },
+}
+
+impl std::fmt::Display for ClipRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unsupported { label } => {
+                write!(f, "'{label}' is not an accepted audio or image file")
+            }
+            Self::TypeMismatch {
+                label,
+                claimed,
+                detected,
+            } => write!(
+                f,
+                "'{label}' is named {claimed} but its content is {detected}"
+            ),
+            Self::TooLarge {
+                label,
+                size,
+                limit,
+                kind,
+            } => write!(
+                f,
+                "'{label}' is {size} bytes, over the {limit} byte limit for {kind} files"
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +228,7 @@ pub struct ClipLibrary {
     media: Arc<dyn MediaRepo>,
     adopting: Mutex<HashSet<ClipId>>,
     refused: Mutex<HashMap<ClipId, ClipRefusal>>,
+    publisher: Shared<Option<Arc<dyn EventPublisher>>>,
 }
 
 impl ClipLibrary {
@@ -208,7 +238,13 @@ impl ClipLibrary {
             media,
             adopting: Mutex::new(HashSet::new()),
             refused: Mutex::new(HashMap::new()),
+            publisher: Shared::new(None),
         }
+    }
+
+    /// Installed once at boot; an adoption already settled before the install stays silent.
+    pub fn install_event_publisher(&self, publisher: Arc<dyn EventPublisher>) {
+        self.publisher.store(Some(publisher));
     }
 
     pub async fn list(&self) -> Result<Vec<StoredClip>, SoundboardError> {
@@ -312,7 +348,10 @@ impl ClipLibrary {
 
     pub async fn adopt_now(&self, clip: &StoredClip) -> Result<AdoptionVerdict, SoundboardError> {
         match plan_adoption(self.source_of(clip).await) {
-            AdoptionStep::Settled(verdict) => Ok(verdict),
+            AdoptionStep::Settled(verdict) => {
+                self.publish_settled(clip.id, &verdict);
+                Ok(verdict)
+            }
             AdoptionStep::Import(path) => self.adopt_source(clip.id, &path).await,
         }
     }
@@ -346,19 +385,49 @@ impl ClipLibrary {
         clip_id: ClipId,
         source: &Path,
     ) -> Result<AdoptionVerdict, SoundboardError> {
-        match self.media.import_file(source).await {
+        let verdict = match self.media.import_file(source).await {
             Ok(blob) => {
                 self.retain(clip_id, &blob.id).await?;
                 self.clear_refusal(clip_id);
-                Ok(AdoptionVerdict::Adopted)
+                AdoptionVerdict::Adopted
             }
             Err(error) => match final_refusal(&error) {
                 Some(refusal) => {
                     self.record_refusal(clip_id, refusal.clone());
-                    Ok(AdoptionVerdict::Refused(refusal))
+                    AdoptionVerdict::Refused(refusal)
                 }
-                None => Err(storage_failed(error)),
+                None => return Err(storage_failed(error)),
             },
+        };
+        self.publish_settled(clip_id, &verdict);
+        Ok(verdict)
+    }
+
+    fn publish_settled(&self, clip_id: ClipId, verdict: &AdoptionVerdict) {
+        let payload = match verdict {
+            AdoptionVerdict::InFlight => return,
+            AdoptionVerdict::Adopted => {
+                json!({ "clip_id": clip_id.to_string(), "verdict": "adopted" })
+            }
+            AdoptionVerdict::AlreadyManaged => {
+                json!({ "clip_id": clip_id.to_string(), "verdict": "already_managed" })
+            }
+            AdoptionVerdict::SourceMissing => {
+                json!({ "clip_id": clip_id.to_string(), "verdict": "source_missing" })
+            }
+            AdoptionVerdict::Refused(refusal) => json!({
+                "clip_id": clip_id.to_string(),
+                "verdict": "refused",
+                "reason": refusal.to_string(),
+            }),
+        };
+        let snapshot = self.publisher.load();
+        if let Some(publisher) = snapshot.as_ref() {
+            publisher.publish(Event::new(
+                EventSource::Audio,
+                "soundboard.clip.adopted",
+                payload,
+            ));
         }
     }
 

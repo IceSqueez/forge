@@ -272,6 +272,7 @@ mod tests {
         let results: Vec<Result<(), ObsError>> = vec![
             sink.set_scene("scene").await,
             sink.set_source_visible("scene", "src", true).await,
+            sink.set_source_locked("scene", "src", true).await,
             sink.set_input_mute("mic", true).await,
             sink.start_record().await,
             sink.stop_record().await,

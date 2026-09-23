@@ -148,6 +148,7 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
+    use crate::ObsError;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
 
     /// Runners whose only config is an `on` flag that picks between two sink calls.
@@ -164,6 +165,13 @@ mod tests {
             "start_replay_buffer",
             "stop_replay_buffer",
         ),
+    ];
+
+    /// Runners that name a scene item and forward one bool flag, as
+    /// `(runner id, flag key, sink call)`.
+    const SCENE_ITEM_FLAG_RUNNERS: &[(&str, &str, &str)] = &[
+        ("obs.sources.set_visible", "visible", "set_source_visible"),
+        ("obs.sources.set_locked", "locked", "set_source_locked"),
     ];
 
     /// Runners whose only config is one interpolated string forwarded to one sink call.
@@ -215,6 +223,8 @@ mod tests {
             "source",
             &[("scene", "Gameplay")],
         ),
+        ("obs.sources.set_locked", "scene", &[("source", "Cam")]),
+        ("obs.sources.set_locked", "source", &[("scene", "Gameplay")]),
         ("obs.filter.set_enabled", "source", &[("filter", "Blur")]),
         ("obs.filter.set_enabled", "filter", &[("source", "Cam")]),
         (
@@ -245,6 +255,7 @@ mod tests {
             "obs.scenes.set_preview",
             "obs.scenes.set_transition",
             "obs.sources.set_visible",
+            "obs.sources.set_locked",
             "obs.sources.set_input_settings",
             "obs.audio.set_mute",
             "obs.audio.set_volume",
@@ -429,6 +440,8 @@ mod tests {
             ("obs.virtualcam.set_active", on_flag(true)),
             ("obs.replay.set_active", on_flag(false)),
             ("obs.studio.set_enabled", on_flag(true)),
+            ("obs.sources.set_visible", scene_item("visible", true)),
+            ("obs.sources.set_locked", scene_item("locked", true)),
             ("obs.browser.refresh", one_string("source", "Overlay")),
             ("obs.media.restart", one_string("source", "Intro Video")),
             ("obs.record.set_directory", one_string("path", "/tmp/rec")),
@@ -456,14 +469,83 @@ mod tests {
             let stack = ArgStack::new();
             let runner = reg.get(id).unwrap();
             let (telemetry, extra) = runner.execute(&config, &make_ctx(&stack)).await;
-            assert!(
-                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
-                "{id} reported {:?} for a failing sink",
+            assert_eq!(
                 telemetry.outcome,
+                SubActionOutcome::Failed(ObsError::Disconnected.to_string()),
+                "{id} dropped the reason OBS gave for the failure",
             );
             assert_eq!(telemetry.kind, id);
             assert!(extra.is_none(), "{id} produced an arg stack");
         }
+    }
+
+    #[tokio::test]
+    async fn scene_item_flag_runners_forward_the_interpolated_names_and_the_flag() {
+        for (id, flag_key, sink_call) in SCENE_ITEM_FLAG_RUNNERS {
+            for flag in [true, false] {
+                let sink = RecordingSink::new();
+                let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+                let stack = ArgStack::new()
+                    .set("where".to_owned(), Variant::String("Gameplay".to_owned()))
+                    .set("what".to_owned(), Variant::String("Face Cam".to_owned()));
+                let mut config = scene_item(flag_key, flag);
+                config.insert("scene".to_owned(), Variant::String("%where%".to_owned()));
+                config.insert("source".to_owned(), Variant::String("%what%".to_owned()));
+
+                reg.get(id)
+                    .unwrap()
+                    .execute(&config, &make_ctx(&stack))
+                    .await;
+
+                assert_eq!(
+                    sink.calls(),
+                    vec![format!("{sink_call}(Gameplay,Face Cam,{flag})")],
+                    "{id} did not forward the interpolated scene item with {flag_key}={flag}",
+                );
+            }
+        }
+    }
+
+    /// Validation lets a config through without the flag, so the runner has to settle on one.
+    #[tokio::test]
+    async fn scene_item_flag_runners_treat_an_absent_or_non_bool_flag_as_off() {
+        for (id, flag_key, sink_call) in SCENE_ITEM_FLAG_RUNNERS {
+            for unusable in [
+                None,
+                Some(Variant::String("true".to_owned())),
+                Some(Variant::Int(1)),
+            ] {
+                let sink = RecordingSink::new();
+                let reg = registry_with(Arc::clone(&sink) as Arc<dyn ObsSink>);
+                let stack = ArgStack::new();
+                let mut config = BTreeMap::from([
+                    ("scene".to_owned(), Variant::String("Gameplay".to_owned())),
+                    ("source".to_owned(), Variant::String("Face Cam".to_owned())),
+                ]);
+                if let Some(value) = unusable.clone() {
+                    config.insert((*flag_key).to_owned(), value);
+                }
+
+                reg.get(id)
+                    .unwrap()
+                    .execute(&config, &make_ctx(&stack))
+                    .await;
+
+                assert_eq!(
+                    sink.calls(),
+                    vec![format!("{sink_call}(Gameplay,Face Cam,false)")],
+                    "{id} read {flag_key} = {unusable:?} as on",
+                );
+            }
+        }
+    }
+
+    fn scene_item(flag_key: &str, flag: bool) -> BTreeMap<String, Variant> {
+        BTreeMap::from([
+            ("scene".to_owned(), Variant::String("Gameplay".to_owned())),
+            ("source".to_owned(), Variant::String("Face Cam".to_owned())),
+            (flag_key.to_owned(), Variant::Bool(flag)),
+        ])
     }
 
     fn on_flag(on: bool) -> BTreeMap<String, Variant> {

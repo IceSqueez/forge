@@ -615,9 +615,10 @@ mod tests {
             art_name(icon_art(&icon_choice(GLYPH, &images))),
             format!("svg:{}", heart.bytes().len()),
         );
+        let expected = Path::new("/library").join(format!("{BLOB_B}.gif"));
         assert_eq!(
             art_name(icon_art(&icon_choice(&image_reference(BLOB_B), &images))),
-            format!("file:/library/{BLOB_B}.gif"),
+            format!("file:{}", expected.display()),
         );
     }
 

@@ -971,7 +971,7 @@ impl SettingsWebSocketView {
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_primary)
-                    .child(" Authorization: Bearer …"),
+                    .child(" Authorization: Bearer ..."),
             );
 
         div()

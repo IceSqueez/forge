@@ -1,6 +1,6 @@
 ## Boot - splash and data-open failure screens
 
-boot_starting = Запуск…
+boot_starting = Запуск...
 boot_upgrade_title = Потрібне оновлення
 boot_upgrade_body = Ваші дані forge використовують схему версії { $found }, новішу за версію цієї збірки { $expected }. Оновіть forge до останнього випуску, щоб відкрити їх.
 boot_upgrade_reassure = Ваші дані у безпеці й недоторкані.
@@ -323,11 +323,11 @@ actions_detail_empty_hint = Оберіть дію зі списку, щоб пе
 
 ## Дії - контекстне меню
 
-actions_menu_rename = Перейменувати…
+actions_menu_rename = Перейменувати...
 actions_menu_duplicate = Дублювати
 actions_menu_enable = Увімкнути
 actions_menu_disable = Вимкнути
-actions_menu_delete = Видалити…
+actions_menu_delete = Видалити...
 
 ## Дії - нижній рядок
 
@@ -390,7 +390,7 @@ sub_cat_util = Утиліти
 
 ## Редактор дій - хлібні крихти / дерево / деталі
 
-action_editor_loading = Завантаження дії…
+action_editor_loading = Завантаження дії...
 action_editor_no_description = Без опису
 action_editor_test_run = Тестовий запуск
 action_editor_duplicate = Дублювати
@@ -448,9 +448,9 @@ action_stat_execution = ВИКОНАННЯ
 
 ## Редактор дій - історія запусків
 
-action_editor_run_history = Історія запусків…
+action_editor_run_history = Історія запусків...
 action_editor_run_history_title = Історія запусків
-action_editor_run_history_loading = Завантаження історії запусків…
+action_editor_run_history_loading = Завантаження історії запусків...
 action_editor_run_history_empty_title = Запусків ще немає
 action_editor_run_history_empty_hint = Ця дія ще не виконувалася
 action_editor_run_history_duration_ms = { $count } мс
@@ -467,7 +467,7 @@ action_editor_run_history_step_produced = @out
 
 ## Редактор дій - меню кроку
 
-action_editor_step_menu_edit = Редагувати крок…
+action_editor_step_menu_edit = Редагувати крок...
 action_editor_step_menu_duplicate = Дублювати
 action_editor_step_menu_move_top = Перемістити вгору
 action_editor_step_menu_move_bottom = Перемістити вниз
@@ -493,14 +493,14 @@ action_editor_test_run_note_no_triggers = Тригер не прив'язано 
 action_editor_test_run_empty = Немає підпунктів для виконання.
 action_editor_test_run_default_error = Виконання кроку не вдалося
 action_editor_test_run_status_queued = у черзі
-action_editor_test_run_status_running = виконується…
+action_editor_test_run_status_running = виконується...
 action_editor_test_run_status_failed = помилка
 action_editor_test_run_status_skipped = пропущено
 action_editor_test_run_status_ms = { $ms } мс
 action_editor_test_run_failed_banner = Збій на кроці { $step } · { $name }
 action_editor_test_run_completed = Виконано кроків: { $count } · помилок: { $errors }
 action_editor_test_run_notstarted = Дію не запущено · можливо, чергу призупинено
-action_editor_test_run_foot_simulating = Моделювання…
+action_editor_test_run_foot_simulating = Моделювання...
 action_editor_test_run_foot_finished = Запуск завершено
 action_editor_test_run_foot_halted = Зупинено через помилку
 action_editor_test_run_foot_notstarted = Не запущено
@@ -517,7 +517,7 @@ action_editor_picker_add_sub_title = Додати підпункт
 action_editor_picker_inserting_into = Вставлення у
 action_editor_picker_sub_count = · { $count } підпунктів
 action_editor_picker_footer_hint = Додається з розумними типовими значеннями - редагуйте на місці
-action_editor_picker_search = Пошук серед { $count } підпунктів…
+action_editor_picker_search = Пошук серед { $count } підпунктів...
 action_editor_picker_fires = Запускає
 action_editor_picker_available_count = · { $count } доступно
 action_editor_trigger_picker_footer_hint = Створює новий тригер обраного типу та прив'язує його
@@ -541,7 +541,7 @@ action_editor_kind_sub_action = Підпункт
 
 triggers_breadcrumb_automation = Автоматизація
 triggers_breadcrumb_triggers = Тригери
-triggers_search_placeholder = Пошук тригерів…
+triggers_search_placeholder = Пошук тригерів...
 triggers_filter_hotkey = Гарячі клавіші
 triggers_usage_used = Використовуються
 triggers_usage_unused = Не використовуються
@@ -579,9 +579,9 @@ triggers_empty_create_first = Створити перший тригер
 
 ## Реєстр тригерів - меню рядка
 
-triggers_menu_rename = Перейменувати…
+triggers_menu_rename = Перейменувати...
 triggers_menu_template = Використати як шаблон
-triggers_menu_delete = Видалити…
+triggers_menu_delete = Видалити...
 triggers_template_copy_name = { $name } копія
 
 ## Реєстр тригерів - деталі у бічній панелі
@@ -608,7 +608,7 @@ triggers_permission_suffix = { " · доступ=" }{ $rung }
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_delete_btn = Видалити
 triggers_sheet_save_btn = Зберегти
-triggers_detail_loading = Завантаження тригера…
+triggers_detail_loading = Завантаження тригера...
 triggers_sheet_config_authored = Задається на кроці
 triggers_sheet_section_used_in_count = ВИКОРИСТОВУЄТЬСЯ В ({ $count })
 triggers_sheet_used_in_empty_title = Ще не пов'язано з жодною дією.
@@ -636,7 +636,7 @@ triggers_toast_deleted = Видалено '{ $name }'
 
 triggers_create_cancel = Скасувати
 triggers_create_type_count = типів тригерів: { $count }
-triggers_create_search_types = Пошук серед { $count } типів тригерів…
+triggers_create_search_types = Пошук серед { $count } типів тригерів...
 triggers_create_footer_hint = Оберіть джерело подій - налаштуйте далі
 triggers_create_cat_server = Сервер
 triggers_create_cat_timer = Таймер
@@ -698,12 +698,12 @@ trigger_cat_other = Інше
 
 actions_name_placeholder = Моя автоматизація
 actions_group_placeholder = Приклади
-actions_description_placeholder = Відтворює звук, показує сповіщення…
+actions_description_placeholder = Відтворює звук, показує сповіщення...
 
 ## Actions - list states, toasts, delete confirm
 
-actions_tree_loading = Завантаження дій…
-actions_loading_queues = Завантаження черг…
+actions_tree_loading = Завантаження дій...
+actions_loading_queues = Завантаження черг...
 actions_no_queue = Немає доступної черги
 actions_toast_error = Дії: { $message }
 actions_rename_taken = Назву '{ $name }' вже зайнято
@@ -736,7 +736,7 @@ tts_dash_stop_all_btn = Зупинити все
 tts_dash_voice_gate_held = Утримано голосовим гейтом
 tts_dash_stop_all_confirm_name = Зупинити всю озвучку
 tts_dash_stop_all_confirm_hint = Повідомлення, що зараз озвучується, буде обірвано, а всі повідомлення в черзі - скинуто. Рушії залишаться готові обробляти нові повідомлення.
-tts_dash_test_placeholder = Введіть текст для тестування…
+tts_dash_test_placeholder = Введіть текст для тестування...
 tts_dash_speak_btn = Озвучити
 tts_dash_test_speaker_name = Тест
 
@@ -931,7 +931,7 @@ tts_filters_modal_replace_note = Залиште заміну порожньою,
 
 tts_filters_preview_header = Живий перегляд
 tts_filters_preview_input_label = ВХІДНЕ ПОВІДОМЛЕННЯ
-tts_filters_preview_input_placeholder = Введіть повідомлення для перегляду…
+tts_filters_preview_input_placeholder = Введіть повідомлення для перегляду...
 tts_filters_preview_empty = Введіть повідомлення вище для перегляду
 tts_filters_preview_output_label = ВИХІД СТАДІЙ
 tts_filters_preview_final_label = РЕЗУЛЬТАТ
@@ -950,7 +950,7 @@ tts_filters_skip_reason_empty = порожнє після фільтрів
 ## Хмарні рушії - кнопки картки
 
 tts_cloud_test_connection_btn = Перевірити підключення
-tts_cloud_testing_btn = Перевірка…
+tts_cloud_testing_btn = Перевірка...
 tts_cloud_save_credentials_btn = Зберегти облікові дані
 
 ## Хмарні рушії - бейджі статусу
@@ -978,7 +978,7 @@ tts_aliases_strategy_single = Один голос
 
 ## Псевдоніми голосів - панель інструментів
 
-tts_aliases_search_placeholder = Пошук глядачів…
+tts_aliases_search_placeholder = Пошук глядачів...
 tts_aliases_count = { $count ->
     [one] { $count } псевдонім
     [few] { $count } псевдоніми
@@ -998,7 +998,7 @@ tts_aliases_col_actions = ДІЇ
 ## Псевдоніми голосів - порожній стан
 
 tts_aliases_empty = Псевдонімів голосів ще немає
-tts_aliases_loading = Завантаження псевдонімів голосів…
+tts_aliases_loading = Завантаження псевдонімів голосів...
 
 ## Псевдоніми голосів - заблокований рядок
 
@@ -1048,7 +1048,7 @@ soundboard_breadcrumb_soundboard = Звукова панель
 
 ## Звукова панель - заголовок / модальне вікно
 
-soundboard_loading = Завантаження кліпів…
+soundboard_loading = Завантаження кліпів...
 soundboard_empty_title = Кліпів ще немає
 soundboard_playback_error_prefix = Помилка відтворення: { $error }
 soundboard_error_source_missing = Вихідний файл для { $name } зник.
@@ -1084,7 +1084,7 @@ soundboard_device_system_default = Системний за замовчуван�
 
 ## Soundboard - redesigned screen
 
-soundboard_search_placeholder = Пошук звуків…
+soundboard_search_placeholder = Пошук звуків...
 soundboard_header_summary = Вихід { $device } · { $count } звуків
 soundboard_hero_title = Звукова панель
 soundboard_hero_blurb = Запускайте звукові кліпи з падів, гарячих клавіш або дій. Спрямовується на віртуальний вихід, який може захопити OBS.
@@ -1096,7 +1096,7 @@ soundboard_category_alerts = Сповіщення
 soundboard_category_music = Стингери
 soundboard_category_voice = Голос
 soundboard_stop_all = Зупинити все
-soundboard_pad_playing = грає…
+soundboard_pad_playing = грає...
 soundboard_pad_source_missing = файл зник
 soundboard_pad_source_missing_hint = Вихідний файл зник. Відредагуй цей звук і вкажи файл ще раз.
 soundboard_pad_adopt_blocked = не копіюється
@@ -1151,8 +1151,8 @@ queues_stat_queues = черг
 queues_stat_running = активні
 queues_stat_paused = на паузі
 queues_empty = Черг не налаштовано.
-queues_loading = Завантаження черг…
-queues_search_placeholder = Пошук черг…
+queues_loading = Завантаження черг...
+queues_search_placeholder = Пошук черг...
 queues_no_filter_match = Жодна черга не відповідає активному фільтру.
 queues_filter_all = Усі
 queues_filter_running = Активні
@@ -1185,11 +1185,11 @@ queues_overflow_badge = { $count } пропущено понад ліміт { $c
 
 ## Черги - меню картки
 
-queues_menu_configure = Налаштувати…
+queues_menu_configure = Налаштувати...
 queues_menu_pause = Пауза
 queues_menu_resume = Продовжити
 queues_menu_free = Звільнити чергу
-queues_menu_delete = Видалити…
+queues_menu_delete = Видалити...
 queues_delete_confirm_title = Видалити чергу
 queues_delete_confirm_body = Дії з цієї черги перейдуть до черги Default. Це не можна скасувати.
 
@@ -1327,10 +1327,10 @@ oauth_step_approve_caption = Forge очікує код авторизації н
 oauth_step_exchange_title = Обмін коду на токен (+ verifier)
 oauth_step_exchange_caption = PKCE code_verifier підтверджує запит; токени зберігаються зашифрованими на цьому пристрої.
 oauth_step_connected_title = Підключено
-oauth_progress_launching = Запуск браузера…
-oauth_progress_waiting = Очікування підтвердження на { $name }…
+oauth_progress_launching = Запуск браузера...
+oauth_progress_waiting = Очікування підтвердження на { $name }...
 oauth_progress_subline = loopback :{ $port } · scopes: { $scopes }
-oauth_done_authorized = Авторизовано - завершуємо…
+oauth_done_authorized = Авторизовано - завершуємо...
 oauth_footer_choose_different = Обрати іншу платформу
 oauth_footer_signin = Увійти через { $name }
 oauth_btn_retry = Повторити
@@ -1350,8 +1350,8 @@ twitch_device_copy = Копіювати
 twitch_device_copied = Скопійовано
 twitch_device_expires_in = Спливає через
 twitch_device_get_new_code = Отримати новий код
-twitch_device_waiting = Очікування підтвердження на { $name }…
-twitch_device_requesting = Запитуємо код у { $name }…
+twitch_device_waiting = Очікування підтвердження на { $name }...
+twitch_device_requesting = Запитуємо код у { $name }...
 twitch_device_polling_subline = опитування кожні { $interval }с · scopes: { $scopes }
 twitch_device_do_later = Зроблю це пізніше
 twitch_device_expired_title = Цей код сплив, перш ніж ви завершили
@@ -1374,10 +1374,10 @@ server_not_running = Не запущено
 server_console_disabled_hint = Сервер вимкнено
 server_console_disabled_hint_link = Увімкнути в Налаштуваннях -> WebSocket
 server_bind_address = АДРЕСА ПРИВ'ЯЗКИ
-server_bind_address_loading = Читаємо адресу…
+server_bind_address_loading = Читаємо адресу...
 server_bearer_token = BEARER-ТОКЕН
 server_btn_restart = Перезапуск
-server_btn_restarting = Перезапуск…
+server_btn_restarting = Перезапуск...
 server_stat_clients = КЛІЄНТИ
 server_stat_clients_sub = +{ $count } за { $minutes } хв
 server_stat_events_rate = ПОДІЙ / С
@@ -1476,10 +1476,10 @@ chat_drawer_last_seen = Востаннє { $when }
 chat_drawer_shoutout = Shoutout
 chat_drawer_whisper = Whisper
 chat_drawer_whisper_title = Шепіт для { $recipient }
-chat_drawer_whisper_placeholder = Введіть повідомлення…
+chat_drawer_whisper_placeholder = Введіть повідомлення...
 chat_drawer_whisper_send = Надіслати
 chat_drawer_whisper_cancel = Скасувати
-chat_drawer_set_tts_voice = Встановити голос TTS…
+chat_drawer_set_tts_voice = Встановити голос TTS...
 chat_drawer_block_tts = Заблокувати TTS
 chat_drawer_timeout = Таймаут 10 хв
 chat_drawer_ban = Заблокувати в каналі
@@ -1505,7 +1505,7 @@ chat_ctx_ban = Бан
 chat_ctx_timeout_sent = Таймаут застосовано
 chat_reply = Відповісти
 chat_reply_title = Відповідь для @{ $recipient }
-chat_reply_placeholder = Введіть відповідь…
+chat_reply_placeholder = Введіть відповідь...
 chat_reply_sent = Відповідь надіслано
 chat_reply_failed = Помилка відповіді: { $error }
 
@@ -1529,7 +1529,7 @@ event_feed_breadcrumb_automation = Автоматизація
 event_feed_events_live_stream = подій · живий стрім
 event_feed_status_live = Наживо
 event_feed_status_paused = Пауза
-event_feed_search_placeholder = Пошук подій…
+event_feed_search_placeholder = Пошук подій...
 
 ## Глобальні змінні - заголовок / фільтри
 
@@ -1602,7 +1602,7 @@ script_editor_api_docs = Документація API
 script_editor_debug = Відлагодження
 script_editor_output_header = Виведення
 script_editor_api_reference = Довідка API
-script_editor_search_placeholder = Пошук скриптів…
+script_editor_search_placeholder = Пошук скриптів...
 script_editor_new_script = Новий скрипт
 script_editor_no_scripts = Скриптів ще немає
 script_editor_group_action = Скрипти дій
@@ -1612,7 +1612,7 @@ script_editor_rename_action = Перейменувати
 script_editor_enable_action = Увімкнути
 script_editor_disable_action = Вимкнути
 script_editor_delete_action = Видалити
-script_editor_running = Виконується…
+script_editor_running = Виконується...
 script_editor_run_modal_cancel = Скасувати
 script_editor_save_blocked = Збереження заблоковано - спершу виправте синтаксичні помилки
 script_editor_discard_title = Відхилити незбережені зміни?
@@ -1633,7 +1633,7 @@ script_editor_health = { $ok }/{ $total } справні
 script_editor_type_check_passed = Перевірку типів пройдено
 script_editor_type_check_failed = Перевірку типів не пройдено
 script_editor_run_modal_title = Запустити { $name }
-script_editor_run_input_placeholder = Введіть значення { $label }…
+script_editor_run_input_placeholder = Введіть значення { $label }...
 script_editor_run_input_placeholder_example = Введіть значення { $label }, напр. { $example }
 
 ## Action telemetry - stat column headers
@@ -1676,9 +1676,9 @@ integration_qa_source_visible = видиме
 integration_qa_source_hidden = приховане
 integration_qa_field_range = Дозволено: { $min }-{ $max }
 integration_qa_field_range_open = Дозволено: { $min } або більше
-integration_state_connecting_title = Підключення…
+integration_state_connecting_title = Підключення...
 integration_state_connecting_detail = Встановлення сеансу з цією інтеграцією.
-integration_state_reconnecting_title = Повторне підключення…
+integration_state_reconnecting_title = Повторне підключення...
 integration_state_reconnecting_detail = Сеанс розірвано; forge відновлює його.
 integration_state_disconnected_detail = Натисніть «Підключитися» вгорі, щоб зв'язати цю інтеграцію.
 
@@ -1747,7 +1747,7 @@ widget_confirm_delete_kind_script = скрипт
 
 widget_copied_toast = Скопійовано в буфер обміну
 widget_save_all_saved = Усі зміни збережено
-widget_save_saving = Збереження…
+widget_save_saving = Збереження...
 widget_save_unsaved = Незбережені зміни
 widget_save_failed = Помилка збереження: { $error }
 
@@ -1757,8 +1757,8 @@ widget_save_failed = Помилка збереження: { $error }
 
 ## Widget - picker modal
 
-widget_picker_search_placeholder = Пошук…
-widget_picker_loading = Завантаження…
+widget_picker_search_placeholder = Пошук...
+widget_picker_loading = Завантаження...
 widget_picker_no_results = Нічого не знайдено.
 
 ## Widget - output device picker
@@ -1774,12 +1774,12 @@ widget_quick_actions_title = Швидкі дії
 
 ## Settings - audio output
 
-settings_audio_scanning = Сканування пристроїв…
+settings_audio_scanning = Сканування пристроїв...
 settings_audio_title = Аудіо
 settings_audio_output_devices = ПРИСТРОЇ ВИВОДУ
 settings_audio_test_section = ТЕСТ
 settings_audio_test_tone = Відтворити тестовий тон 440 Гц
-settings_audio_test_playing = Відтворення…
+settings_audio_test_playing = Відтворення...
 settings_audio_test_error = Помилка тестового тону: { $error }
 settings_audio_persist_error = Не вдалося зберегти вибір пристрою: { $error }
 
@@ -1812,7 +1812,7 @@ settings_voice_gate_title = Голосовий гейт
 settings_voice_gate_enable_label = Утримувати озвучення, поки ти говориш
 settings_voice_gate_enable_hint = Призупиняє чергу озвучення, щойно мікрофон вловлює звук вище порогу.
 settings_voice_gate_input_devices = ПРИСТРІЙ ВВОДУ
-settings_voice_gate_scanning = Сканування пристроїв…
+settings_voice_gate_scanning = Сканування пристроїв...
 settings_voice_gate_threshold_label = Поріг
 settings_voice_gate_threshold_hint = Піковий рівень входу, який вважається мовленням. Індикатор показує поточний рівень.
 settings_voice_gate_hold_label = Утримання
@@ -1828,7 +1828,7 @@ settings_voice_gate_persist_error = Не вдалося зберегти нал�
 ## Script editor - API docs panel
 
 script_editor_api_no_matches = Збігів не знайдено
-script_editor_api_search_placeholder = Пошук модулів…
+script_editor_api_search_placeholder = Пошук модулів...
 
 ## Script editor - details panel
 

@@ -1,6 +1,6 @@
 ## Boot - splash and data-open failure screens
 
-boot_starting = Starting…
+boot_starting = Starting...
 boot_upgrade_title = Update required
 boot_upgrade_body = Your forge data uses schema version { $found }, newer than this build's version { $expected }. Update forge to the latest release to open it.
 boot_upgrade_reassure = Your data is safe and untouched.
@@ -323,11 +323,11 @@ actions_detail_empty_hint = Select an action from the list to view its details.
 
 ## Actions - context menu
 
-actions_menu_rename = Rename…
+actions_menu_rename = Rename...
 actions_menu_duplicate = Duplicate
 actions_menu_enable = Enable
 actions_menu_disable = Disable
-actions_menu_delete = Delete…
+actions_menu_delete = Delete...
 
 ## Actions - footer
 
@@ -390,7 +390,7 @@ sub_cat_util = Utilities
 
 ## Action editor - breadcrumb / tree pane / detail pane
 
-action_editor_loading = Loading action…
+action_editor_loading = Loading action...
 action_editor_no_description = No description
 action_editor_test_run = Test run
 action_editor_duplicate = Duplicate
@@ -448,9 +448,9 @@ action_stat_execution = EXECUTION
 
 ## Action editor - run history
 
-action_editor_run_history = Run history…
+action_editor_run_history = Run history...
 action_editor_run_history_title = Run history
-action_editor_run_history_loading = Loading run history…
+action_editor_run_history_loading = Loading run history...
 action_editor_run_history_empty_title = No runs yet
 action_editor_run_history_empty_hint = This action has not run yet
 action_editor_run_history_duration_ms = { $count } ms
@@ -467,7 +467,7 @@ action_editor_run_history_step_produced = @out
 
 ## Action editor - step menu
 
-action_editor_step_menu_edit = Edit step…
+action_editor_step_menu_edit = Edit step...
 action_editor_step_menu_duplicate = Duplicate
 action_editor_step_menu_move_top = Move to top
 action_editor_step_menu_move_bottom = Move to bottom
@@ -493,14 +493,14 @@ action_editor_test_run_note_no_triggers = No trigger attached · running with em
 action_editor_test_run_empty = No sub-actions to run.
 action_editor_test_run_default_error = Step execution failed
 action_editor_test_run_status_queued = queued
-action_editor_test_run_status_running = running…
+action_editor_test_run_status_running = running...
 action_editor_test_run_status_failed = failed
 action_editor_test_run_status_skipped = skipped
 action_editor_test_run_status_ms = { $ms } ms
 action_editor_test_run_failed_banner = Run failed at step { $step } · { $name }
 action_editor_test_run_completed = Completed { $count } steps · { $errors } errors
 action_editor_test_run_notstarted = Action did not start · the queue may be paused
-action_editor_test_run_foot_simulating = Simulating…
+action_editor_test_run_foot_simulating = Simulating...
 action_editor_test_run_foot_finished = Run finished
 action_editor_test_run_foot_halted = Halted on error
 action_editor_test_run_foot_notstarted = Did not start
@@ -517,7 +517,7 @@ action_editor_picker_add_sub_title = Add sub-action
 action_editor_picker_inserting_into = Inserting into
 action_editor_picker_sub_count = · { $count } sub-actions
 action_editor_picker_footer_hint = Added with smart defaults - edit inline after
-action_editor_picker_search = Search { $count } sub-actions…
+action_editor_picker_search = Search { $count } sub-actions...
 action_editor_picker_fires = Fires
 action_editor_picker_available_count = · { $count } available
 action_editor_trigger_picker_footer_hint = Creates a new trigger of the chosen kind and links it
@@ -541,7 +541,7 @@ action_editor_kind_sub_action = Sub-action
 
 triggers_breadcrumb_automation = Automation
 triggers_breadcrumb_triggers = Triggers
-triggers_search_placeholder = Search triggers…
+triggers_search_placeholder = Search triggers...
 triggers_filter_hotkey = Hotkey
 triggers_usage_used = Used
 triggers_usage_unused = Unused
@@ -577,9 +577,9 @@ triggers_empty_create_first = Create your first trigger
 
 ## Triggers registry - row overflow menu
 
-triggers_menu_rename = Rename…
+triggers_menu_rename = Rename...
 triggers_menu_template = Use as template
-triggers_menu_delete = Delete…
+triggers_menu_delete = Delete...
 triggers_template_copy_name = { $name } copy
 
 ## Triggers registry - sheet detail
@@ -606,7 +606,7 @@ triggers_permission_suffix = { " · perm=" }{ $rung }
 triggers_sheet_section_used_in = USED IN
 triggers_sheet_delete_btn = Delete
 triggers_sheet_save_btn = Save
-triggers_detail_loading = Loading trigger…
+triggers_detail_loading = Loading trigger...
 triggers_sheet_config_authored = Authored on the step
 triggers_sheet_section_used_in_count = USED IN ({ $count })
 triggers_sheet_used_in_empty_title = Not linked to any action yet.
@@ -634,7 +634,7 @@ triggers_toast_deleted = Deleted '{ $name }'
 
 triggers_create_cancel = Cancel
 triggers_create_type_count = { $count } trigger types
-triggers_create_search_types = Search { $count } trigger types…
+triggers_create_search_types = Search { $count } trigger types...
 triggers_create_footer_hint = Pick an event source - configure it next
 triggers_create_cat_server = Server
 triggers_create_cat_timer = Timer
@@ -696,12 +696,12 @@ trigger_cat_other = Other
 
 actions_name_placeholder = My automation
 actions_group_placeholder = Examples
-actions_description_placeholder = Plays a sound, shows overlay alert…
+actions_description_placeholder = Plays a sound, shows overlay alert...
 
 ## Actions - list states, toasts, delete confirm
 
-actions_tree_loading = Loading actions…
-actions_loading_queues = Loading queues…
+actions_tree_loading = Loading actions...
+actions_loading_queues = Loading queues...
 actions_no_queue = No queue available
 actions_toast_error = Actions: { $message }
 actions_rename_taken = Name '{ $name }' is already taken
@@ -734,7 +734,7 @@ tts_dash_stop_all_btn = Stop all
 tts_dash_voice_gate_held = Held by voice gate
 tts_dash_stop_all_confirm_name = Stop all TTS
 tts_dash_stop_all_confirm_hint = Currently speaking message will be cut off and all queued messages dropped. Engines remain ready to handle new messages.
-tts_dash_test_placeholder = Type to test a voice…
+tts_dash_test_placeholder = Type to test a voice...
 tts_dash_speak_btn = Speak
 tts_dash_test_speaker_name = Test
 
@@ -926,7 +926,7 @@ tts_filters_modal_replace_note = Leave replacement empty to strip matched text.
 
 tts_filters_preview_header = Live preview
 tts_filters_preview_input_label = INPUT MESSAGE
-tts_filters_preview_input_placeholder = Type a message to preview…
+tts_filters_preview_input_placeholder = Type a message to preview...
 tts_filters_preview_empty = Enter a message above to preview
 tts_filters_preview_output_label = STAGE OUTPUTS
 tts_filters_preview_final_label = OUTPUT
@@ -945,7 +945,7 @@ tts_filters_skip_reason_empty = empty after filters
 ## Cloud TTS Engines - card buttons
 
 tts_cloud_test_connection_btn = Test connection
-tts_cloud_testing_btn = Testing…
+tts_cloud_testing_btn = Testing...
 tts_cloud_save_credentials_btn = Save credentials
 
 ## Cloud TTS Engines - status badges
@@ -973,7 +973,7 @@ tts_aliases_strategy_single = Single voice
 
 ## Voice Aliases - toolbar
 
-tts_aliases_search_placeholder = Search viewers…
+tts_aliases_search_placeholder = Search viewers...
 tts_aliases_count = { $count ->
     [one] { $count } manual alias
    *[other] { $count } manual aliases
@@ -991,7 +991,7 @@ tts_aliases_col_actions = ACTIONS
 ## Voice Aliases - empty state
 
 tts_aliases_empty = No voice aliases configured
-tts_aliases_loading = Loading voice aliases…
+tts_aliases_loading = Loading voice aliases...
 
 ## Voice Aliases - blocked row
 
@@ -1041,7 +1041,7 @@ soundboard_breadcrumb_soundboard = Soundboard
 
 ## Soundboard - header / modal
 
-soundboard_loading = Loading clips…
+soundboard_loading = Loading clips...
 soundboard_empty_title = No clips yet
 soundboard_playback_error_prefix = Playback error: { $error }
 soundboard_error_source_missing = The source file for { $name } is gone.
@@ -1077,7 +1077,7 @@ soundboard_device_system_default = System default
 
 ## Soundboard - redesigned screen
 
-soundboard_search_placeholder = Search sounds…
+soundboard_search_placeholder = Search sounds...
 soundboard_header_summary = { $device } Output · { $count } sounds
 soundboard_hero_title = Soundboard
 soundboard_hero_blurb = Trigger sound clips from pads, hotkeys, or actions. Routed to a virtual output OBS can capture.
@@ -1089,7 +1089,7 @@ soundboard_category_alerts = Alerts
 soundboard_category_music = Stingers
 soundboard_category_voice = Voice
 soundboard_stop_all = Stop all
-soundboard_pad_playing = playing…
+soundboard_pad_playing = playing...
 soundboard_pad_source_missing = file missing
 soundboard_pad_source_missing_hint = The source file is gone. Edit this sound and pick the file again.
 soundboard_pad_adopt_blocked = cannot be copied
@@ -1140,8 +1140,8 @@ queues_stat_queues = queues
 queues_stat_running = running
 queues_stat_paused = paused
 queues_empty = No queues configured.
-queues_loading = Loading queues…
-queues_search_placeholder = Search queues…
+queues_loading = Loading queues...
+queues_search_placeholder = Search queues...
 queues_no_filter_match = No queues match the active filter.
 queues_filter_all = All
 queues_filter_running = Running
@@ -1174,11 +1174,11 @@ queues_overflow_badge = { $count } skipped over the { $cap } cap
 
 ## Queues - card menu
 
-queues_menu_configure = Configure…
+queues_menu_configure = Configure...
 queues_menu_pause = Pause
 queues_menu_resume = Resume
 queues_menu_free = Free queue
-queues_menu_delete = Delete…
+queues_menu_delete = Delete...
 queues_delete_confirm_title = Delete queue
 queues_delete_confirm_body = Actions in this queue move to Default. This cannot be undone.
 
@@ -1316,10 +1316,10 @@ oauth_step_approve_caption = Forge is listening on the loopback redirect for the
 oauth_step_exchange_title = Exchange code for token (+ verifier)
 oauth_step_exchange_caption = PKCE code_verifier proves the request; tokens are stored encrypted on this device.
 oauth_step_connected_title = Connected
-oauth_progress_launching = Launching your browser…
-oauth_progress_waiting = Waiting for you to approve on { $name }…
+oauth_progress_launching = Launching your browser...
+oauth_progress_waiting = Waiting for you to approve on { $name }...
 oauth_progress_subline = loopback :{ $port } · scopes: { $scopes }
-oauth_done_authorized = Authorized - finishing up…
+oauth_done_authorized = Authorized - finishing up...
 oauth_footer_choose_different = Choose different platform
 oauth_footer_signin = Sign in with { $name }
 oauth_btn_retry = Retry
@@ -1339,8 +1339,8 @@ twitch_device_copy = Copy
 twitch_device_copied = Copied
 twitch_device_expires_in = Expires in
 twitch_device_get_new_code = Get new code
-twitch_device_waiting = Waiting for you to authorize on { $name }…
-twitch_device_requesting = Requesting a code from { $name }…
+twitch_device_waiting = Waiting for you to authorize on { $name }...
+twitch_device_requesting = Requesting a code from { $name }...
 twitch_device_polling_subline = polling every { $interval }s · scopes: { $scopes }
 twitch_device_do_later = I'll do this later
 twitch_device_expired_title = This code expired before you finished
@@ -1361,10 +1361,10 @@ server_not_running = Not running
 server_console_disabled_hint = Server is switched off
 server_console_disabled_hint_link = Enable in Settings -> WebSocket
 server_bind_address = BIND ADDRESS
-server_bind_address_loading = Reading address…
+server_bind_address_loading = Reading address...
 server_bearer_token = BEARER TOKEN
 server_btn_restart = Restart
-server_btn_restarting = Restarting…
+server_btn_restarting = Restarting...
 server_stat_clients = CLIENTS
 server_stat_clients_sub = +{ $count } last { $minutes } min
 server_stat_events_rate = EVENTS / SEC
@@ -1456,10 +1456,10 @@ chat_drawer_last_seen = Last seen { $when }
 chat_drawer_shoutout = Shoutout
 chat_drawer_whisper = Whisper
 chat_drawer_whisper_title = Whisper to { $recipient }
-chat_drawer_whisper_placeholder = Type a message…
+chat_drawer_whisper_placeholder = Type a message...
 chat_drawer_whisper_send = Send
 chat_drawer_whisper_cancel = Cancel
-chat_drawer_set_tts_voice = Set TTS voice…
+chat_drawer_set_tts_voice = Set TTS voice...
 chat_drawer_block_tts = Block from TTS
 chat_drawer_timeout = Timeout 10 min
 chat_drawer_ban = Ban from channel
@@ -1485,7 +1485,7 @@ chat_ctx_ban = Ban
 chat_ctx_timeout_sent = Timeout applied
 chat_reply = Reply
 chat_reply_title = Replying to @{ $recipient }
-chat_reply_placeholder = Type a reply…
+chat_reply_placeholder = Type a reply...
 chat_reply_sent = Reply sent
 chat_reply_failed = Reply failed: { $error }
 
@@ -1509,7 +1509,7 @@ event_feed_breadcrumb_automation = Automation
 event_feed_events_live_stream = events · live stream
 event_feed_status_live = Live
 event_feed_status_paused = Paused
-event_feed_search_placeholder = Search events…
+event_feed_search_placeholder = Search events...
 
 ## Globals - page header / filters
 
@@ -1582,7 +1582,7 @@ script_editor_api_docs = API docs
 script_editor_debug = Debug
 script_editor_output_header = Output
 script_editor_api_reference = API reference
-script_editor_search_placeholder = Search scripts…
+script_editor_search_placeholder = Search scripts...
 script_editor_new_script = New script
 script_editor_no_scripts = No scripts yet
 script_editor_group_action = Action scripts
@@ -1592,7 +1592,7 @@ script_editor_rename_action = Rename
 script_editor_enable_action = Enable
 script_editor_disable_action = Disable
 script_editor_delete_action = Delete
-script_editor_running = Running…
+script_editor_running = Running...
 script_editor_run_modal_cancel = Cancel
 script_editor_save_blocked = Save blocked - fix syntax errors first
 script_editor_discard_title = Discard unsaved changes?
@@ -1613,7 +1613,7 @@ script_editor_health = { $ok }/{ $total } healthy
 script_editor_type_check_passed = Type-check passed
 script_editor_type_check_failed = Type-check failed
 script_editor_run_modal_title = Run { $name }
-script_editor_run_input_placeholder = Enter { $label } value…
+script_editor_run_input_placeholder = Enter { $label } value...
 script_editor_run_input_placeholder_example = Enter { $label } value, e.g. { $example }
 
 ## Action telemetry - stat column headers
@@ -1656,9 +1656,9 @@ integration_qa_source_visible = visible
 integration_qa_source_hidden = hidden
 integration_qa_field_range = Allowed: { $min }-{ $max }
 integration_qa_field_range_open = Allowed: { $min } or more
-integration_state_connecting_title = Connecting…
+integration_state_connecting_title = Connecting...
 integration_state_connecting_detail = Establishing a session with this integration.
-integration_state_reconnecting_title = Reconnecting…
+integration_state_reconnecting_title = Reconnecting...
 integration_state_reconnecting_detail = The session dropped; forge is re-establishing it.
 integration_state_disconnected_detail = Use Reconnect above to link this integration.
 
@@ -1726,7 +1726,7 @@ widget_confirm_delete_kind_script = script
 
 widget_copied_toast = Copied to clipboard
 widget_save_all_saved = All changes saved
-widget_save_saving = Saving…
+widget_save_saving = Saving...
 widget_save_unsaved = Unsaved changes
 widget_save_failed = Save failed: { $error }
 
@@ -1736,8 +1736,8 @@ widget_save_failed = Save failed: { $error }
 
 ## Widget - picker modal
 
-widget_picker_search_placeholder = Search…
-widget_picker_loading = Loading…
+widget_picker_search_placeholder = Search...
+widget_picker_loading = Loading...
 widget_picker_no_results = No results.
 
 ## Widget - output device picker
@@ -1753,12 +1753,12 @@ widget_quick_actions_title = Quick actions
 
 ## Settings - audio output
 
-settings_audio_scanning = Scanning devices…
+settings_audio_scanning = Scanning devices...
 settings_audio_title = Audio
 settings_audio_output_devices = OUTPUT DEVICES
 settings_audio_test_section = TEST
 settings_audio_test_tone = Play 440 Hz test tone
-settings_audio_test_playing = Playing…
+settings_audio_test_playing = Playing...
 settings_audio_test_error = Test tone error: { $error }
 settings_audio_persist_error = Failed to save device selection: { $error }
 
@@ -1791,7 +1791,7 @@ settings_voice_gate_title = Voice gate
 settings_voice_gate_enable_label = Hold speech while you talk
 settings_voice_gate_enable_hint = Pauses the speak queue whenever your microphone picks up sound above the threshold.
 settings_voice_gate_input_devices = INPUT DEVICE
-settings_voice_gate_scanning = Scanning devices…
+settings_voice_gate_scanning = Scanning devices...
 settings_voice_gate_threshold_label = Threshold
 settings_voice_gate_threshold_hint = Peak input level that counts as speech. The meter shows the live level.
 settings_voice_gate_hold_label = Hold
@@ -1807,7 +1807,7 @@ settings_voice_gate_persist_error = Failed to save voice gate settings: { $error
 ## Script editor - API docs panel
 
 script_editor_api_no_matches = No matches
-script_editor_api_search_placeholder = Search modules…
+script_editor_api_search_placeholder = Search modules...
 
 ## Script editor - details panel
 

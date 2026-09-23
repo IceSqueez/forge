@@ -58,7 +58,7 @@ impl SubActionRunner for UpdateCategoryRunner {
         vec![FormField::Text {
             key: "category_id",
             label: "Category ID",
-            placeholder: "20 (Gaming), 24 (Entertainment)…",
+            placeholder: "20 (Gaming), 24 (Entertainment)...",
         }]
     }
 

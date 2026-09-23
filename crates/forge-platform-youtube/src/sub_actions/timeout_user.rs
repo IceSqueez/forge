@@ -62,7 +62,7 @@ impl SubActionRunner for TimeoutUserRunner {
             FormField::Text {
                 key: "channel_id",
                 label: "Channel ID",
-                placeholder: "UC… or %user_id%",
+                placeholder: "UC... or %user_id%",
             },
             FormField::Integer {
                 key: "duration_seconds",

@@ -624,3 +624,113 @@ where
         .await
         .map_err(|_| OverlayServiceError::Interrupted)
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use forge_storage::overlay::MockOverlayRepo;
+    use forge_storage::settings::MockSettingsRepo;
+
+    use super::*;
+    use crate::bus::NullEventLogRepo;
+
+    const STAGE: &str = "stage-audio";
+
+    struct CountingSink {
+        identity: OverlayId,
+        connected: OverlayReceivers,
+    }
+
+    #[async_trait]
+    impl OverlayFrameSink for CountingSink {
+        async fn deliver_content(
+            &self,
+            _: &OverlayId,
+            _: serde_json::Value,
+            _: Option<u64>,
+        ) -> OverlayReceivers {
+            unreachable!("counting the connected pages must never push a frame")
+        }
+
+        async fn deliver_reload(&self, _: &OverlayId) {
+            unreachable!("counting the connected pages must never reload one")
+        }
+
+        async fn revoke(&self, _: &OverlayId) {
+            unreachable!("counting the connected pages must never close one")
+        }
+
+        async fn receivers(&self, identity: &OverlayId) -> OverlayReceivers {
+            if identity == &self.identity {
+                self.connected
+            } else {
+                OverlayReceivers::default()
+            }
+        }
+    }
+
+    /// Carries only what the trait demands, so its count comes from the default body.
+    struct SilentSink;
+
+    #[async_trait]
+    impl OverlayFrameSink for SilentSink {
+        async fn deliver_content(
+            &self,
+            _: &OverlayId,
+            _: serde_json::Value,
+            _: Option<u64>,
+        ) -> OverlayReceivers {
+            OverlayReceivers::default()
+        }
+
+        async fn deliver_reload(&self, _: &OverlayId) {}
+
+        async fn revoke(&self, _: &OverlayId) {}
+    }
+
+    fn handle_with(frames: Option<Arc<dyn OverlayFrameSink>>) -> OverlayServiceHandle {
+        OverlayServiceHandle::new(
+            Arc::new(MockOverlayRepo::new()),
+            Arc::new(MockSettingsRepo::new()),
+            Arc::new(OverlayKindRegistry::new()),
+            EventBus::new(Arc::new(NullEventLogRepo)),
+            frames,
+        )
+    }
+
+    #[tokio::test]
+    async fn the_connected_page_count_comes_from_the_sink_for_the_identity_asked() {
+        let connected = OverlayReceivers {
+            sources: 2,
+            preview_tabs: 1,
+        };
+        let handle = handle_with(Some(Arc::new(CountingSink {
+            identity: OverlayId::new(STAGE),
+            connected,
+        })));
+
+        assert_eq!(handle.receivers(&OverlayId::new(STAGE)).await, connected);
+        assert_eq!(
+            handle.receivers(&OverlayId::new("alert-box")).await,
+            OverlayReceivers::default(),
+            "the handle asked the sink about an identity the caller never named"
+        );
+    }
+
+    #[tokio::test]
+    async fn no_pages_are_reported_when_nothing_is_counting_them() {
+        for (label, handle) in [
+            ("a runtime with no frame sink", handle_with(None)),
+            (
+                "a sink that does not count its connections",
+                handle_with(Some(Arc::new(SilentSink))),
+            ),
+        ] {
+            assert_eq!(
+                handle.receivers(&OverlayId::new(STAGE)).await,
+                OverlayReceivers::default(),
+                "{label} reported pages that cannot exist"
+            );
+        }
+    }
+}

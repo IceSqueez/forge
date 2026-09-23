@@ -696,6 +696,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_page_count_covers_only_the_overlay_asked_and_tells_its_classes_apart() {
+        let adapter = BusAdapter::new(make_bus());
+        let target = OverlayId::new("goal-box");
+        let (_plain, _plain_rx) = adapter.register_client(wildcard_filter()).await;
+        let _first_source = promoted_source(&adapter, &target).await;
+        let _second_source = promoted_source(&adapter, &target).await;
+        let _preview = promoted_overlay(&adapter, &target, OverlayClientClass::PreviewTab).await;
+        let _elsewhere = promoted_source(&adapter, &OverlayId::new("alert-box")).await;
+
+        assert_eq!(
+            adapter.overlay_receivers(&target).await,
+            OverlayReceivers {
+                sources: 2,
+                preview_tabs: 1
+            },
+            "the count drifted from the connections this overlay actually holds"
+        );
+        assert_eq!(
+            adapter.overlay_receivers(&OverlayId::new("nobody")).await,
+            OverlayReceivers::default(),
+            "an overlay with no page open was credited with another overlay's connections"
+        );
+    }
+
+    /// The count answers from the registry, not from a send, so a page whose outbound queue is
+    /// wedged is still reported as connected.
+    #[tokio::test]
+    async fn the_page_count_holds_where_a_delivery_would_report_nothing() {
+        let adapter = BusAdapter::new(make_bus());
+        let target = OverlayId::new("goal-box");
+        let receiver = promoted_source(&adapter, &target).await;
+
+        drop(receiver);
+
+        assert_eq!(
+            adapter
+                .deliver_overlay_content(&target, &sample_content(), None)
+                .await,
+            OverlayReceivers::default(),
+            "this proves nothing unless a delivery to the same page reports no one"
+        );
+        assert_eq!(
+            adapter.overlay_receivers(&target).await,
+            OverlayReceivers {
+                sources: 1,
+                preview_tabs: 0
+            },
+            "the count went through the delivery path, so it turns on whether a frame lands"
+        );
+    }
+
+    #[tokio::test]
     async fn delivered_content_counts_nothing_once_the_page_has_dropped_its_receiver() {
         let adapter = BusAdapter::new(make_bus());
         let target = OverlayId::new("goal-box");

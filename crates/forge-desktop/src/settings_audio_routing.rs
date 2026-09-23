@@ -812,12 +812,31 @@ mod tests {
     use std::collections::BTreeSet;
 
     use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
-    use forge_storage::{MockOverlayRepo, StorageError, reserved_keys};
+    use forge_storage::{Language, MockOverlayRepo, StorageError, reserved_keys};
 
     use super::*;
+    use crate::i18n::install_language;
     use crate::test_support::{overlay_named, test_backend};
 
     const CHOSEN: &str = "stage-audio";
+
+    const EVERY_FALLBACK: [RouteFallback; 5] = [
+        RouteFallback::NoDestinationChosen,
+        RouteFallback::ServerUnavailable,
+        RouteFallback::DestinationUnreadable,
+        RouteFallback::DestinationNotFound,
+        RouteFallback::DestinationNotAudioOverlay,
+    ];
+
+    /// A key that reached the pane untranslated renders as the key itself, which every message
+    /// in this card happens to prefix the same way.
+    fn reads_as_a_raw_key(text: &str) -> bool {
+        text.starts_with("settings_audio_")
+    }
+
+    fn without_digits(text: &str) -> String {
+        text.chars().filter(|c| !c.is_ascii_digit()).collect()
+    }
 
     fn catalog(listed: Vec<forge_storage::OverlayDefinition>) -> Arc<dyn OverlayRepo> {
         let mut repo = MockOverlayRepo::new();
@@ -834,6 +853,7 @@ mod tests {
 
     #[test]
     fn every_route_is_named_from_the_catalog_rather_than_by_its_stored_token() {
+        install_language(Language::En);
         let mut labels = BTreeSet::new();
 
         for route in [AudioRoute::Local, AudioRoute::Overlay, AudioRoute::Both] {
@@ -845,8 +865,154 @@ mod tests {
                 "{route:?} fell through to its stored token"
             );
             assert!(
+                !reads_as_a_raw_key(&label),
+                "{route:?} has no catalog entry, so {label} reaches the pane"
+            );
+            assert!(
                 labels.insert(label),
                 "{route:?} shares another route's name"
+            );
+        }
+    }
+
+    #[test]
+    fn every_route_fallback_reason_is_read_out_in_the_language_the_user_reads() {
+        install_language(Language::Uk);
+        let mut reasons = BTreeSet::new();
+
+        for fallback in EVERY_FALLBACK {
+            let reason = fallback_label(fallback);
+
+            assert!(
+                !reads_as_a_raw_key(&reason),
+                "{fallback:?} has no catalog entry, so {reason} reaches the pane"
+            );
+            assert_ne!(
+                reason,
+                fallback.to_string(),
+                "{fallback:?} puts its English log wording inside a Ukrainian sentence"
+            );
+            assert!(
+                reasons.insert(reason),
+                "{fallback:?} shares another fallback's wording, so the pane cannot tell them apart"
+            );
+        }
+    }
+
+    #[test]
+    fn the_in_effect_line_names_a_reason_only_once_the_route_has_fallen_back() {
+        install_language(Language::En);
+        let standing = RoutePlan {
+            route: AudioRoute::Overlay,
+            destination: Some(OverlayId::new(CHOSEN)),
+            fallback: None,
+        };
+        let fell_back = RoutePlan {
+            route: AudioRoute::Local,
+            destination: None,
+            fallback: Some(RouteFallback::ServerUnavailable),
+        };
+
+        assert_eq!(
+            in_effect_text(&standing),
+            route_label(AudioRoute::Overlay),
+            "a plan that stands was dressed up as a fallback"
+        );
+
+        let line = in_effect_text(&fell_back);
+        assert!(
+            line.contains(&route_label(AudioRoute::Local)),
+            "the fallback line dropped the route that is actually playing: {line}"
+        );
+        assert!(
+            line.contains(&fallback_label(RouteFallback::ServerUnavailable)),
+            "the fallback line dropped the reason: {line}"
+        );
+    }
+
+    #[test]
+    fn the_empty_picker_note_shows_only_while_no_audio_overlay_exists() {
+        install_language(Language::En);
+        let offered = [OverlayChoice {
+            id: OverlayId::new(CHOSEN),
+            name: "Stage audio".to_owned(),
+        }];
+
+        let note = no_overlays_text(&[]).expect("an empty picker explains itself");
+        assert!(
+            !reads_as_a_raw_key(&note),
+            "the note has no catalog entry, so {note} reaches the pane"
+        );
+        assert_eq!(
+            no_overlays_text(&offered),
+            None,
+            "the note stayed up while an audio overlay was on offer"
+        );
+    }
+
+    #[test]
+    fn the_page_count_is_worded_for_the_count_in_both_languages() {
+        for language in [Language::En, Language::Uk] {
+            install_language(language);
+            let empty = connected_pages_text(0);
+
+            assert!(
+                !empty.contains(|c: char| c.is_ascii_digit()),
+                "{language:?} counted zero pages with a number instead of the empty wording: {empty}"
+            );
+            assert!(
+                !reads_as_a_raw_key(&empty),
+                "{language:?} has no catalog entry for an empty overlay: {empty}"
+            );
+
+            for connected in [1_usize, 2, 5] {
+                let text = connected_pages_text(connected);
+
+                assert!(
+                    text.contains(&connected.to_string()),
+                    "{language:?} lost the count of {connected}: {text}"
+                );
+            }
+        }
+    }
+
+    /// Ukrainian needs three wordings for the same sentence; a catalog that kept only the
+    /// catch-all reads wrong for every count but one.
+    #[test]
+    fn ukrainian_page_counts_are_declined_per_plural_category() {
+        install_language(Language::Uk);
+
+        let wordings: BTreeSet<String> = [1_usize, 2, 5]
+            .into_iter()
+            .map(|connected| without_digits(&connected_pages_text(connected)))
+            .collect();
+
+        assert_eq!(
+            wordings.len(),
+            3,
+            "one wording serves several plural categories: {wordings:?}"
+        );
+    }
+
+    #[test]
+    fn the_duplicate_audio_warning_waits_for_a_second_connected_page() {
+        install_language(Language::En);
+
+        for quiet in [0, SINGLE_PAGE] {
+            assert_eq!(
+                duplicate_pages_text(quiet),
+                None,
+                "{quiet} connected page(s) warned about hearing the clip more than once"
+            );
+        }
+
+        for connected in [2_usize, 7] {
+            let warning =
+                duplicate_pages_text(connected).expect("a second page is worth warning about");
+
+            assert!(
+                warning.contains(&connected.to_string()),
+                "the warning never says how many times the clip is heard: {warning}"
             );
         }
     }

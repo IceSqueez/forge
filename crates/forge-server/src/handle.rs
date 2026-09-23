@@ -320,3 +320,82 @@ impl ServerHandle {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashSet;
+
+    use forge_registry::SubActionRegistry;
+    use forge_runtime::{ActionCancelRegistry, EventBus, NullEventLogRepo, spawn_action_engine};
+    use forge_storage::credentials::MockCredentialsRepo;
+    use forge_storage::{
+        CredentialsRepo, DataProvider, GlobalsRepo, SettingsRepo, UserGlobalsRepo,
+    };
+
+    use super::*;
+    use crate::bus_adapter::{BusAdapter, ClientFilterSet, OverlayClientClass};
+    use crate::config::ServerConfig;
+    use crate::server::stopped_server;
+    use crate::test_helpers::{MemSettings, TestDataProvider};
+
+    async fn stopped_handle() -> ServerHandle {
+        let dp = Arc::new(TestDataProvider::new());
+        let mut credentials = MockCredentialsRepo::new();
+        credentials.expect_load().returning(|_| Ok(None));
+        credentials.expect_store().returning(|_, _| Ok(()));
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = Arc::new(spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(ActionCancelRegistry::new()),
+        ));
+        let config = ServerConfig::new(
+            MemSettings::new() as Arc<dyn SettingsRepo>,
+            Arc::new(credentials) as Arc<dyn CredentialsRepo>,
+            bus,
+            dp.action_repo(),
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            dp.overlay_repo(),
+            engine,
+        );
+
+        stopped_server(config).await.expect("a stopped handle")
+    }
+
+    async fn adapter_of(handle: &ServerHandle) -> Arc<BusAdapter> {
+        Arc::clone(&handle.inner.lock().await.state.bus_adapter)
+    }
+
+    /// A stopped server keeps its registry, so the pane gets a count rather than a failure.
+    #[tokio::test]
+    async fn the_handle_counts_the_pages_its_registry_holds_for_the_overlay_asked() {
+        let handle = stopped_handle().await;
+        let target = OverlayId::new("stage-audio");
+        let adapter = adapter_of(&handle).await;
+        let (client, _initial_rx) = adapter
+            .register_client(ClientFilterSet::new(HashSet::new()))
+            .await;
+        let _page = adapter
+            .promote_to_overlay(client.id, target.clone(), OverlayClientClass::BrowserSource)
+            .await
+            .expect("a just-registered client is still on the registry");
+
+        assert_eq!(
+            handle.overlay_receivers(&target).await,
+            OverlayReceivers {
+                sources: 1,
+                preview_tabs: 0
+            },
+            "the handle answered from somewhere other than the live registry"
+        );
+        assert_eq!(
+            handle.overlay_receivers(&OverlayId::new("alert-box")).await,
+            OverlayReceivers::default(),
+            "the handle credited one overlay with another overlay's pages"
+        );
+    }
+}

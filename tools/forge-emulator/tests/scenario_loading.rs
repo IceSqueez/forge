@@ -40,7 +40,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p", "fixture": {},
 "steps": [{"do": {"wait_for": {}}}]}"#,
             (2, 28),
-            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`",
+            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `twitch_event`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`",
         ),
         (
             "unknown field inside a step",
@@ -70,7 +70,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p",
 "fixture": {"twich": {}}, "steps": []}"#,
             (2, 19),
-            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`",
+            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`",
         ),
         (
             "missing deadline",

@@ -14,9 +14,12 @@ use rand::Rng as _;
 
 use super::data_dir::{DATA_DIR_VARIABLE, ForgeDataDir, KEY_FILE_VARIABLE};
 use super::port::free_loopback_port;
-use super::report::{SeedReport, SeededCommand, SeededOverlay, SeededServer, SeededTwitch};
+use super::report::{
+    SeedReport, SeededCommand, SeededEventTrigger, SeededOverlay, SeededServer, SeededTwitch,
+};
 use super::spec::{
-    ChatCommand, Fixture, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, OverlayFixture, TwitchAccount,
+    ChatCommand, EventTrigger, Fixture, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, OverlayFixture,
+    TwitchAccount,
 };
 use crate::EmulatorError;
 
@@ -49,6 +52,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
         twitch,
         overlays,
         chat_commands,
+        event_triggers,
     } = written?;
 
     Ok(SeedReport {
@@ -57,6 +61,7 @@ pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, Emu
         twitch,
         overlays,
         chat_commands,
+        event_triggers,
     })
 }
 
@@ -64,6 +69,7 @@ struct Written {
     twitch: Option<SeededTwitch>,
     overlays: Vec<SeededOverlay>,
     chat_commands: Vec<SeededCommand>,
+    event_triggers: Vec<SeededEventTrigger>,
 }
 
 async fn write_fixture(
@@ -100,10 +106,15 @@ async fn write_fixture(
     for command in &fixture.chat_commands {
         chat_commands.push(seed_chat_command(provider, command, &overlays).await?);
     }
+    let mut event_triggers = Vec::with_capacity(fixture.event_triggers.len());
+    for trigger in &fixture.event_triggers {
+        event_triggers.push(seed_event_trigger(provider, trigger, &overlays).await?);
+    }
     Ok(Written {
         twitch,
         overlays,
         chat_commands,
+        event_triggers,
     })
 }
 
@@ -206,6 +217,74 @@ async fn seed_chat_command(
     command: &ChatCommand,
     overlays: &[SeededOverlay],
 ) -> Result<SeededCommand, EmulatorError> {
+    let mut overrides = TriggerConfig::new();
+    overrides.insert("phrase".to_owned(), Variant::String(command.phrase.clone()));
+    overrides.insert("case_sensitive".to_owned(), Variant::Bool(false));
+    let triggered = seed_triggered_action(
+        provider,
+        TriggeredAction {
+            action_name: &command.action_name,
+            steps: &command.steps,
+            kind_id: CHAT_COMMAND_TRIGGER_KIND,
+            instance_name: &command.phrase,
+            overrides,
+        },
+        overlays,
+    )
+    .await?;
+
+    Ok(SeededCommand {
+        phrase: command.phrase.clone(),
+        action_name: command.action_name.clone(),
+        action_id: triggered.action_id,
+        trigger_instance_id: triggered.trigger_instance_id,
+    })
+}
+
+async fn seed_event_trigger(
+    provider: &dyn DataProvider,
+    trigger: &EventTrigger,
+    overlays: &[SeededOverlay],
+) -> Result<SeededEventTrigger, EmulatorError> {
+    let triggered = seed_triggered_action(
+        provider,
+        TriggeredAction {
+            action_name: &trigger.action_name,
+            steps: &trigger.steps,
+            kind_id: &trigger.trigger_kind,
+            instance_name: &trigger.trigger_kind,
+            overrides: trigger.config.clone(),
+        },
+        overlays,
+    )
+    .await?;
+
+    Ok(SeededEventTrigger {
+        trigger_kind: trigger.trigger_kind.clone(),
+        action_name: trigger.action_name.clone(),
+        action_id: triggered.action_id,
+        trigger_instance_id: triggered.trigger_instance_id,
+    })
+}
+
+struct TriggeredAction<'a> {
+    action_name: &'a str,
+    steps: &'a [SubActionStep],
+    kind_id: &'a str,
+    instance_name: &'a str,
+    overrides: TriggerConfig,
+}
+
+struct Triggered {
+    action_id: ActionId,
+    trigger_instance_id: TriggerInstanceId,
+}
+
+async fn seed_triggered_action(
+    provider: &dyn DataProvider,
+    spec: TriggeredAction<'_>,
+    overlays: &[SeededOverlay],
+) -> Result<Triggered, EmulatorError> {
     let queue = provider
         .queue_repo()
         .get_by_name(DEFAULT_QUEUE)
@@ -216,7 +295,7 @@ async fn seed_chat_command(
         })?;
     let action = Action {
         id: ActionId::new(),
-        name: command.action_name.clone(),
+        name: spec.action_name.to_owned(),
         group: None,
         queue_id: queue.id,
         enabled: true,
@@ -224,7 +303,7 @@ async fn seed_chat_command(
         bypass_pause: false,
         execution_mode: ExecutionMode::default(),
         description: None,
-        sub_actions: addressed_steps(&command.steps, overlays),
+        sub_actions: addressed_steps(spec.steps, overlays),
     };
     provider
         .action_repo()
@@ -232,14 +311,11 @@ async fn seed_chat_command(
         .await
         .map_err(storage_error)?;
 
-    let mut overrides = TriggerConfig::new();
-    overrides.insert("phrase".to_owned(), Variant::String(command.phrase.clone()));
-    overrides.insert("case_sensitive".to_owned(), Variant::Bool(false));
     let instance = TriggerInstance {
         id: TriggerInstanceId::new(),
-        kind_id: CHAT_COMMAND_TRIGGER_KIND.to_owned(),
-        name: command.phrase.clone(),
-        overrides,
+        kind_id: spec.kind_id.to_owned(),
+        name: spec.instance_name.to_owned(),
+        overrides: spec.overrides,
         enabled: true,
         user_defined: true,
         platform_scope: PlatformScope::Any,
@@ -254,9 +330,7 @@ async fn seed_chat_command(
         .await
         .map_err(storage_error)?;
 
-    Ok(SeededCommand {
-        phrase: command.phrase.clone(),
-        action_name: action.name,
+    Ok(Triggered {
         action_id: action.id,
         trigger_instance_id: instance.id,
     })

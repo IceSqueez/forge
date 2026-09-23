@@ -6,7 +6,9 @@ use std::process::Stdio;
 use std::sync::Arc;
 
 use forge_emulator::EmulatorError;
-use forge_emulator::fixture::{ChatCommand, Fixture, SeedReport, TwitchAccount, seed};
+use forge_emulator::fixture::{
+    ChatCommand, EventTrigger, Fixture, SeedReport, TwitchAccount, seed,
+};
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::TwitchCredentialsManager;
 use forge_registry::TriggerRegistry;
@@ -467,4 +469,82 @@ async fn an_overlay_type_this_build_does_not_carry_is_refused_rather_than_stored
         matches!(&refusal, Err(EmulatorError::SeederProcess { reason }) if reason.contains("vendor.unshipped")),
         "got {refusal:?}"
     );
+}
+
+fn subscriber_trigger(steps: Vec<SubActionStep>) -> EventTrigger {
+    EventTrigger {
+        trigger_kind: "twitch.support.subscriber".to_owned(),
+        action_name: "Announce Subscriber".to_owned(),
+        config: BTreeMap::from([("tier".to_owned(), Variant::String("1000".to_owned()))]),
+        steps,
+    }
+}
+
+#[tokio::test]
+async fn seeded_event_trigger_is_the_named_descriptor_carrying_its_config_and_bound_to_its_action()
+{
+    let fixture = Fixture {
+        event_triggers: vec![subscriber_trigger(vec![log_step("a sub")])],
+        ..Fixture::default()
+    };
+    let (dir, report) = seed_fresh(&fixture).await;
+    let seeded = &report.event_triggers[0];
+    let backend = reopen(dir.path()).await;
+    let linked = backend
+        .trigger_instance_repo()
+        .list_for_action(seeded.action_id)
+        .await
+        .unwrap();
+    backend.shutdown().await;
+
+    let [instance] = linked.as_slice() else {
+        panic!("expected exactly one linked trigger, got {linked:?}");
+    };
+    assert_eq!(instance.id, seeded.trigger_instance_id);
+    assert!(instance.enabled);
+    assert_eq!(
+        instance.overrides.get("tier"),
+        Some(&Variant::String("1000".to_owned()))
+    );
+
+    let mut registry = TriggerRegistry::new();
+    forge_platform_twitch::register_twitch_triggers(&mut registry).unwrap();
+    assert!(
+        registry.get(&instance.kind_id).is_some(),
+        "`{}` is no trigger descriptor id; trigger_instances never store event kinds",
+        instance.kind_id
+    );
+}
+
+#[tokio::test]
+async fn an_event_triggers_overlay_send_step_reaches_storage_addressed_by_the_minted_identity() {
+    let fixture = Fixture {
+        overlays: vec![forge_emulator::fixture::OverlayFixture {
+            display_name: "Alert Box".to_owned(),
+            kind_id: "overlay.alert".to_owned(),
+            config: BTreeMap::new(),
+        }],
+        event_triggers: vec![subscriber_trigger(vec![overlay_send_step(
+            "Alert Box",
+            "%user_name% just subscribed",
+        )])],
+        ..Fixture::default()
+    };
+    let (dir, report) = seed_fresh(&fixture).await;
+    let minted = report.overlays[0].id.clone();
+    let backend = reopen(dir.path()).await;
+    let action = backend
+        .action_repo()
+        .get(report.event_triggers[0].action_id)
+        .await
+        .unwrap()
+        .expect("action is stored");
+    backend.shutdown().await;
+
+    assert_eq!(
+        action.sub_actions[0].config.get("overlay_id"),
+        Some(&Variant::String(minted.clone())),
+        "forge answers to the minted slug; a display name would leave the step addressing nothing"
+    );
+    assert_ne!(minted, "Alert Box");
 }

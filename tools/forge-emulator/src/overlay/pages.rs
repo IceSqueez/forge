@@ -113,6 +113,7 @@ mod tests {
             twitch: None,
             overlays,
             chat_commands: Vec::new(),
+            event_triggers: Vec::new(),
         }
     }
 

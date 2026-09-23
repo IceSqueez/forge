@@ -36,6 +36,54 @@ Other subcommands: `scenario check <file>` validates a scenario without launchin
 `launch` boots a seeded forge and streams its events as JSON, `watch` attaches to an already
 running forge, and `seed` fills an empty data directory from a fixture on stdin.
 
+## Scenario steps
+
+| Step | What it does |
+| :--- | :--- |
+| `forge_ready` | waits until forge authenticates a control connection; always the first step |
+| `twitch_subscribed` | waits until the fake Twitch holds a subscription of every listed type |
+| `chat` | one viewer sends one chat message |
+| `crowd` | a crowd of viewers chats, a share of them sending commands |
+| `twitch_event` | delivers one EventSub notification of any type (see below) |
+| `session_reconnect` | Twitch asks forge to move to a successor EventSub session |
+| `overlay_page` | opens a browser source for a fixture overlay |
+| `pause` | a fixed wait, with a mandatory reason |
+| `run_action` | runs a fixture action by name, as a dashboard would |
+| `set_global` | sets a global over the control socket |
+
+## Triggers other than chat commands
+
+A fixture declares chat commands and event triggers side by side; both seed an action, a
+trigger instance and the binding between them, and both rewrite `overlay.send` targets from
+an overlay's display name to its minted identity.
+
+```json
+"event_triggers": [
+  { "trigger_kind": "twitch.support.subscriber", "action_name": "Announce Subscriber",
+    "config": { "tier": { "type": "string", "value": "1000" } },
+    "steps": [...] }
+]
+```
+
+`trigger_kind` is a trigger **descriptor** id, the string a trigger registry answers to, not
+the event kind that fires it: the new-subscriber trigger is `twitch.support.subscriber` and
+listens for the event `twitch.channel.subscribe`. An action name is unique across both lists,
+because `run_action` resolves an action by that name alone.
+
+The step that fires such a trigger is
+
+```json
+{ "do": { "twitch_event": { "subscription_type": "channel.subscribe",
+                            "event": { "user_login": "luckyviewer", "tier": "1000" } } } }
+```
+
+`event` is the object Twitch would put under `payload.event`, copied from the EventSub
+reference for that subscription type; the harness never invents its shape. The frame reaches
+every live session subscribed to `subscription_type`, so a `twitch_subscribed` step for that
+type belongs before it - a scenario that skips one is rejected before launch, and a type no
+live session holds fails the step with the list of the ones that are held.
+`scenarios/subscription-raises-an-alert.json` runs this path end to end.
+
 ## Overlays
 
 A fixture can declare overlays beside its chat commands:
@@ -138,6 +186,10 @@ whose step sends to an alert overlay and judges the frame a connected page recei
 `overlay-page-replays-retained-content.json` opens a page only after a goal overlay was
 already updated, so the retained content is what it has to render. Both are written so that
 content arriving as tagged `Variant` JSON fails them.
+
+`subscription-raises-an-alert.json` covers the same overlay chain from a trigger that is not a
+chat command: a `channel.subscribe` notification runs the action bound to the new-subscriber
+trigger instance, and the page is judged on the headline it receives.
 
 `reconnect-keeps-subscriptions.json` was the first defect this harness found - forge ran a
 second full subscription pass on a successor EventSub session - and was kept red as evidence

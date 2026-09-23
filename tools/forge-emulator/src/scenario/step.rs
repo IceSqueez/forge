@@ -28,6 +28,12 @@ pub enum StepAction {
     },
     Chat(ChatMessage),
     Crowd(Crowd),
+    /// Delivers one EventSub notification of `subscription_type` to every live session subscribed
+    /// to it; `event` is the payload Twitch would put under `payload.event`.
+    TwitchEvent {
+        subscription_type: String,
+        event: Value,
+    },
     /// Injects `session_reconnect`, then waits until forge opens the successor session.
     SessionReconnect {
         within_ms: u64,
@@ -94,6 +100,7 @@ impl StepAction {
             Self::TwitchSubscribed { .. } => "twitch_subscribed",
             Self::Chat(_) => "chat",
             Self::Crowd(_) => "crowd",
+            Self::TwitchEvent { .. } => "twitch_event",
             Self::SessionReconnect { .. } => "session_reconnect",
             Self::OverlayPage { .. } => "overlay_page",
             Self::Pause { .. } => "pause",
@@ -108,6 +115,7 @@ impl StepAction {
             Self::TwitchSubscribed { .. }
                 | Self::Chat(_)
                 | Self::Crowd(_)
+                | Self::TwitchEvent { .. }
                 | Self::SessionReconnect { .. }
         )
     }

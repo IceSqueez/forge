@@ -30,6 +30,7 @@ type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const DEADLINE: Duration = Duration::from_secs(20);
 const CHAT: &str = "channel.chat.message";
+const SUBSCRIBE: &str = "channel.subscribe";
 
 #[derive(Debug, Clone, Copy)]
 struct Behaviour {
@@ -135,11 +136,18 @@ impl PretendForge {
         let api = fake.api_base_url().to_owned();
         tokio::spawn(async move {
             let (mut socket, session_id) = open_session(&socket_url).await;
-            subscribe_to_chat(&api, &session_id).await;
+            for subscription_type in [CHAT, SUBSCRIBE] {
+                subscribe_session(&api, &session_id, subscription_type).await;
+            }
             while let Some(frame) = next_frame(&mut socket).await {
                 match frame["metadata"]["message_type"].as_str() {
                     Some("notification") => {
-                        for event in chat_effects(&frame["payload"]["event"], behaviour) {
+                        let event = &frame["payload"]["event"];
+                        let effects = match frame["metadata"]["subscription_type"].as_str() {
+                            Some(SUBSCRIBE) => vec![subscriber_effect(event)],
+                            _ => chat_effects(event, behaviour),
+                        };
+                        for event in effects {
                             let _ = pushes.send(push_frame(&event));
                         }
                     }
@@ -221,6 +229,21 @@ fn chat_effects(notification: &Value, behaviour: Behaviour) -> Vec<Event> {
     effects
 }
 
+/// forge's own EventSub bridge rewrites a subscriber notification into this shape.
+fn subscriber_effect(notification: &Value) -> Event {
+    Event::new(
+        EventSource::Twitch,
+        "twitch.channel.subscribe",
+        json!({
+            "user": {
+                "login": notification["user_login"],
+                "display_name": notification["user_name"],
+            },
+            "tier": notification["tier"],
+        }),
+    )
+}
+
 async fn next_frame(socket: &mut Socket) -> Option<Value> {
     loop {
         match socket.next().await? {
@@ -241,14 +264,14 @@ async fn open_session(url: &str) -> (Socket, String) {
     (socket, session_id)
 }
 
-async fn subscribe_to_chat(api: &str, session_id: &str) {
+async fn subscribe_session(api: &str, session_id: &str, subscription_type: &str) {
     let account = TwitchAccount::default();
     let status = reqwest::Client::new()
         .post(format!("{api}/helix/eventsub/subscriptions"))
         .header("Authorization", format!("Bearer {}", account.access_token))
         .header("Client-Id", account.client_id)
         .json(&json!({
-            "type": CHAT,
+            "type": subscription_type,
             "version": "1",
             "condition": { "broadcaster_user_id": account.user_id, "user_id": account.user_id },
             "transport": { "method": "websocket", "session_id": session_id },
@@ -306,6 +329,7 @@ impl Harness {
                 action_id: ping,
                 trigger_instance_id: TriggerInstanceId::new(),
             }],
+            event_triggers: Vec::new(),
         };
         let actions = ActionIndex::from_seed(&seed);
         let pages = OverlayPages::for_seed(&seed).unwrap();
@@ -366,6 +390,22 @@ fn twitch_scenario(steps: Value) -> Scenario {
         json!({ "twitch": {} }),
         steps,
     )
+}
+
+/// Skips the semantic validation `parse_scenario` runs, so a step's own runtime refusal shows.
+fn unvalidated_scenario(steps: Value) -> Scenario {
+    serde_json::from_value(json!({
+        "name": "runner test",
+        "purpose": "exercise step execution",
+        "fixture": { "twitch": {}, "chat_commands": [{ "phrase": "!ping", "action_name": "Ping" }] },
+        "fakes": { "twitch": {} },
+        "steps": steps,
+    }))
+    .unwrap()
+}
+
+fn awaiting(subscription_type: &str) -> Value {
+    json!({ "do": { "twitch_subscribed": { "types": [subscription_type], "within_ms": 5000 } } })
 }
 
 fn statuses(steps: &[StepOutcome]) -> Vec<StepStatus> {
@@ -679,4 +719,66 @@ async fn forge_closing_the_control_connection_ends_waiting_expectations_as_a_clo
         [Verdict::Failed(FailureCause::StreamClosed)]
     );
     assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[tokio::test]
+async fn twitch_event_delivers_its_notification_to_the_session_subscribed_to_that_type() {
+    let harness = Harness::start(COOPERATIVE, true).await;
+    let scenario = twitch_scenario(json!([
+        ready(),
+        awaiting(SUBSCRIBE),
+        {
+            "do": { "twitch_event": { "subscription_type": SUBSCRIBE, "event": {
+                "user_login": "luckyviewer",
+                "user_name": "LuckyViewer",
+                "tier": "1000"
+            } } },
+            "expect": [{ "event": {
+                "source": "twitch",
+                "kind": "twitch.channel.subscribe",
+                "payload": { "/user/display_name": { "equals": "LuckyViewer" } },
+                "within_ms": 5000
+            } }]
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(statuses(&steps), [StepStatus::Passed; 3]);
+    assert!(
+        matches!(
+            steps[2].action.as_ref(),
+            Some(ActionReport::Done(ActionDetail::TwitchEventDelivered {
+                subscription_type,
+                sessions,
+            })) if subscription_type == SUBSCRIBE && *sessions == 1
+        ),
+        "got {:?}",
+        steps[2].action
+    );
+}
+
+#[tokio::test]
+async fn twitch_event_no_session_holds_fails_the_step_naming_the_live_subscriptions() {
+    let harness = Harness::start(COOPERATIVE, true).await;
+    let scenario = unvalidated_scenario(json!([
+        ready(),
+        awaiting(SUBSCRIBE),
+        { "do": { "twitch_event": { "subscription_type": "channel.raid", "event": {} } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        statuses(&steps),
+        [StepStatus::Passed, StepStatus::Passed, StepStatus::Failed]
+    );
+    let Some(ActionReport::Failed { reason, .. }) = steps[2].action.as_ref() else {
+        panic!("expected a failed action, got {:?}", steps[2].action);
+    };
+    assert!(
+        reason.contains("`channel.raid`")
+            && reason.contains(&format!("live subscriptions: {CHAT}, {SUBSCRIBE}")),
+        "{reason}"
+    );
 }

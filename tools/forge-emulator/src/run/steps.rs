@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use forge_types::ActionId;
 
-use super::ledger_checks::{holds_live_subscription, subscription_excerpt};
+use super::ledger_checks::{
+    holds_live_subscription, live_subscription_types, subscription_excerpt,
+};
 use super::outcome::{ActionDetail, LedgerExcerpt};
 use crate::EmulatorError;
 use crate::control::ControlClient;
@@ -20,12 +22,16 @@ pub struct ActionIndex {
 
 impl ActionIndex {
     pub fn from_seed(seed: &SeedReport) -> Self {
+        let commands = seed
+            .chat_commands
+            .iter()
+            .map(|command| (command.action_name.clone(), command.action_id));
+        let triggers = seed
+            .event_triggers
+            .iter()
+            .map(|trigger| (trigger.action_name.clone(), trigger.action_id));
         Self {
-            by_name: seed
-                .chat_commands
-                .iter()
-                .map(|command| (command.action_name.clone(), command.action_id))
-                .collect(),
+            by_name: commands.chain(triggers).collect(),
         }
     }
 
@@ -66,6 +72,10 @@ impl Stimuli<'_> {
                     .map_err(|e| with_ledger(e.to_string(), twitch))
             }
             StepAction::Crowd(crowd) => self.send_crowd(crowd).await,
+            StepAction::TwitchEvent {
+                subscription_type,
+                event,
+            } => self.inject_event(subscription_type, event).await,
             StepAction::SessionReconnect { within_ms } => self.reconnect(*within_ms).await,
             StepAction::OverlayPage { overlay, within_ms } => self
                 .pages
@@ -104,6 +114,30 @@ impl Stimuli<'_> {
                 .map(|()| ActionDetail::GlobalSet)
                 .map_err(refused),
         }
+    }
+
+    async fn inject_event(
+        &self,
+        subscription_type: &str,
+        event: &serde_json::Value,
+    ) -> Result<ActionDetail, ActionFailure> {
+        let twitch = self.twitch()?;
+        twitch
+            .inject_notification(subscription_type, event.clone())
+            .await
+            .map(|sessions| ActionDetail::TwitchEventDelivered {
+                subscription_type: subscription_type.to_owned(),
+                sessions,
+            })
+            .map_err(|e| {
+                let reason = match e {
+                    EmulatorError::NotSubscribed { .. } => {
+                        format!("{e}; live subscriptions: {}", live_types(&twitch.ledger()))
+                    }
+                    other => other.to_string(),
+                };
+                with_ledger(reason, twitch)
+            })
     }
 
     fn twitch(&self) -> Result<&FakeTwitch, ActionFailure> {
@@ -204,6 +238,15 @@ fn plain(reason: String) -> ActionFailure {
 
 fn refused(error: EmulatorError) -> ActionFailure {
     plain(error.to_string())
+}
+
+fn live_types(ledger: &crate::twitch::Ledger) -> String {
+    let types = live_subscription_types(ledger);
+    if types.is_empty() {
+        "none".to_owned()
+    } else {
+        types.join(", ")
+    }
 }
 
 fn with_ledger(reason: String, twitch: &FakeTwitch) -> ActionFailure {

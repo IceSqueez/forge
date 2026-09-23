@@ -61,7 +61,7 @@ struct Validator<'a> {
     scenario: &'a Scenario,
     problems: Vec<ScenarioProblem>,
     fake_twitch: bool,
-    chat_subscribed: bool,
+    subscriptions_awaited: HashSet<&'a str>,
     session_subscribed: bool,
     command_matches_sent: u64,
     named_events: HashMap<&'a str, NamedEvent>,
@@ -74,7 +74,7 @@ impl<'a> Validator<'a> {
             scenario,
             problems: Vec::new(),
             fake_twitch: scenario.fakes.twitch.is_some() && scenario.fixture.twitch.is_some(),
-            chat_subscribed: false,
+            subscriptions_awaited: HashSet::new(),
             session_subscribed: false,
             command_matches_sent: 0,
             named_events: HashMap::new(),
@@ -146,19 +146,16 @@ impl<'a> Validator<'a> {
         if let Err(EmulatorError::InvalidFixture { reason }) = fixture.validate() {
             self.report("fixture", reason);
         }
-        let mut first_use: HashMap<&str, usize> = HashMap::new();
-        for (index, command) in fixture.chat_commands.iter().enumerate() {
-            if let Some(first) = first_use.get(command.action_name.as_str()) {
+        let mut first_use: HashMap<&str, String> = HashMap::new();
+        for action in fixture.actions() {
+            if let Some(first) = first_use.get(action.name) {
                 let message = format!(
-                    "`{}` is already the action of chat_commands[{first}], so run_action could not tell them apart",
-                    command.action_name
+                    "`{}` is already the action of {first}, so run_action could not tell them apart",
+                    action.name
                 );
-                self.report(
-                    format!("fixture.chat_commands[{index}].action_name"),
-                    message,
-                );
+                self.report(format!("fixture.{}.action_name", action.location), message);
             } else {
-                first_use.insert(&command.action_name, index);
+                first_use.insert(action.name, action.location);
             }
         }
     }
@@ -207,10 +204,15 @@ impl<'a> Validator<'a> {
                 self.check_subscription_types(&format!("{location}.types"), types);
                 self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
                 self.session_subscribed = true;
-                self.chat_subscribed |= types.iter().any(|kind| kind == CHAT_SUBSCRIPTION);
+                self.subscriptions_awaited
+                    .extend(types.iter().map(String::as_str));
             }
             StepAction::Chat(message) => self.check_chat(location, message),
             StepAction::Crowd(crowd) => self.check_crowd(location, crowd),
+            StepAction::TwitchEvent {
+                subscription_type,
+                event,
+            } => self.check_twitch_event(location, subscription_type, event),
             StepAction::SessionReconnect { within_ms } => {
                 if !self.session_subscribed {
                     self.report(
@@ -261,9 +263,9 @@ impl<'a> Validator<'a> {
     fn defines_action(&self, name: &str) -> bool {
         self.scenario
             .fixture
-            .chat_commands
+            .actions()
             .iter()
-            .any(|command| command.action_name == name)
+            .any(|action| action.name == name)
     }
 
     fn check_subscription_types(&mut self, location: &str, types: &[String]) {
@@ -281,13 +283,36 @@ impl<'a> Validator<'a> {
     }
 
     fn require_chat_subscription(&mut self, location: &str) {
-        if !self.chat_subscribed {
+        if !self.subscriptions_awaited.contains(CHAT_SUBSCRIPTION) {
             self.report(
                 location,
                 format!(
                     "sends chat before any twitch_subscribed step waits for {CHAT_SUBSCRIPTION}, so the fake may have nowhere to deliver it"
                 ),
             );
+        }
+    }
+
+    fn check_twitch_event(
+        &mut self,
+        location: &str,
+        subscription_type: &str,
+        event: &serde_json::Value,
+    ) {
+        self.not_blank(format!("{location}.subscription_type"), subscription_type);
+        if !event.is_object() {
+            self.report(
+                format!("{location}.event"),
+                "must be a JSON object: EventSub carries every event payload as one",
+            );
+        }
+        if !subscription_type.trim().is_empty()
+            && !self.subscriptions_awaited.contains(subscription_type)
+        {
+            let message = format!(
+                "injects `{subscription_type}` before any twitch_subscribed step waits for it, so the fake may have nowhere to deliver it"
+            );
+            self.report(location, message);
         }
     }
 

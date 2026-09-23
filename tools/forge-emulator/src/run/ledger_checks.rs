@@ -20,6 +20,20 @@ pub(crate) fn holds_live_subscription(
     })
 }
 
+/// The distinct subscription types a live session holds, in first-seen order.
+pub(crate) fn live_subscription_types(ledger: &Ledger) -> Vec<String> {
+    let mut types: Vec<String> = Vec::new();
+    for subscription in &ledger.subscriptions {
+        let live = ledger
+            .live_sessions()
+            .any(|session| session.id == subscription.session_id);
+        if live && !types.contains(&subscription.subscription_type) {
+            types.push(subscription.subscription_type.clone());
+        }
+    }
+    types
+}
+
 /// Sessions, subscriptions, and the subscription-creation requests that produced them.
 pub(crate) fn subscription_excerpt(ledger: &Ledger) -> LedgerExcerpt {
     LedgerExcerpt {
@@ -229,5 +243,28 @@ mod tests {
                 "{subscription_type} {version:?}"
             );
         }
+    }
+
+    #[test]
+    fn live_types_names_each_type_once_and_drops_the_ones_only_a_closed_session_held() {
+        let ledger = Ledger {
+            requests: Vec::new(),
+            subscriptions: vec![
+                subscription("gone", "channel.raid"),
+                subscription("live", "channel.chat.message"),
+                subscription("live", "channel.subscribe"),
+                subscription("successor", "channel.chat.message"),
+            ],
+            sessions: vec![
+                session("gone", false),
+                session("live", true),
+                session("successor", true),
+            ],
+        };
+
+        assert_eq!(
+            live_subscription_types(&ledger),
+            ["channel.chat.message", "channel.subscribe"]
+        );
     }
 }

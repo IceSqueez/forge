@@ -12,6 +12,8 @@ pub struct SeedReport {
     #[serde(default)]
     pub overlays: Vec<SeededOverlay>,
     pub chat_commands: Vec<SeededCommand>,
+    #[serde(default)]
+    pub event_triggers: Vec<SeededEventTrigger>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +63,14 @@ impl fmt::Debug for SeededOverlay {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeededCommand {
     pub phrase: String,
+    pub action_name: String,
+    pub action_id: ActionId,
+    pub trigger_instance_id: TriggerInstanceId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeededEventTrigger {
+    pub trigger_kind: String,
     pub action_name: String,
     pub action_id: ActionId,
     pub trigger_instance_id: TriggerInstanceId,

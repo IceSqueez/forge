@@ -1,5 +1,5 @@
 use forge_storage::OverlayConfig;
-use forge_types::SubActionStep;
+use forge_types::{SubActionStep, TriggerConfig};
 use serde::{Deserialize, Serialize};
 
 use crate::EmulatorError;
@@ -17,6 +17,8 @@ pub struct Fixture {
     pub overlays: Vec<OverlayFixture>,
     #[serde(default)]
     pub chat_commands: Vec<ChatCommand>,
+    #[serde(default)]
+    pub event_triggers: Vec<EventTrigger>,
 }
 
 /// Defaults are fake values that are safe to publish in a scenario report.
@@ -50,6 +52,25 @@ pub struct ChatCommand {
     pub steps: Vec<SubActionStep>,
 }
 
+/// A trigger instance of any kind wired to its own action; `trigger_kind` is a trigger descriptor
+/// id, not an event kind, and `config` fills that descriptor's own fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EventTrigger {
+    pub trigger_kind: String,
+    pub action_name: String,
+    #[serde(default)]
+    pub config: TriggerConfig,
+    #[serde(default)]
+    pub steps: Vec<SubActionStep>,
+}
+
+pub struct FixtureAction<'a> {
+    pub location: String,
+    pub name: &'a str,
+    pub steps: &'a [SubActionStep],
+}
+
 /// An overlay the fixture creates through forge's own repository, which mints its identity slug
 /// and its page credential. Scenarios and `overlay.send` steps name it by `display_name`; the
 /// seeder rewrites those names to the minted identity.
@@ -72,7 +93,31 @@ impl Fixture {
                 action_name: "Ping".to_owned(),
                 steps: Vec::new(),
             }],
+            event_triggers: Vec::new(),
         }
+    }
+
+    /// Seeding order: chat commands first, then event triggers.
+    pub fn actions(&self) -> Vec<FixtureAction<'_>> {
+        let commands = self
+            .chat_commands
+            .iter()
+            .enumerate()
+            .map(|(index, command)| FixtureAction {
+                location: format!("chat_commands[{index}]"),
+                name: &command.action_name,
+                steps: &command.steps,
+            });
+        let triggers = self
+            .event_triggers
+            .iter()
+            .enumerate()
+            .map(|(index, trigger)| FixtureAction {
+                location: format!("event_triggers[{index}]"),
+                name: &trigger.action_name,
+                steps: &trigger.steps,
+            });
+        commands.chain(triggers).collect()
     }
 
     pub fn declares_overlay(&self, display_name: &str) -> bool {
@@ -113,11 +158,21 @@ impl Fixture {
                     command.action_name
                 )));
             }
-            for target in overlay_targets(&command.steps) {
+        }
+        for trigger in &self.event_triggers {
+            if trigger.trigger_kind.trim().is_empty() {
+                return Err(invalid(format!(
+                    "event trigger for action `{}` names no trigger kind",
+                    trigger.action_name
+                )));
+            }
+        }
+        for action in self.actions() {
+            for target in overlay_targets(action.steps) {
                 if !self.declares_overlay(target) {
                     return Err(invalid(format!(
                         "action `{}` sends to overlay `{target}`, which the fixture does not declare",
-                        command.action_name
+                        action.name
                     )));
                 }
             }
@@ -172,6 +227,15 @@ mod tests {
             display_name: display_name.to_owned(),
             kind_id: "overlay.alert".to_owned(),
             config: OverlayConfig::new(),
+        }
+    }
+
+    fn event_trigger_sending_to(target: &str) -> EventTrigger {
+        EventTrigger {
+            trigger_kind: "twitch.support.subscriber".to_owned(),
+            action_name: "Announce".to_owned(),
+            config: TriggerConfig::new(),
+            steps: sends_to(target).steps,
         }
     }
 
@@ -232,7 +296,27 @@ mod tests {
                     ..Fixture::default()
                 },
                 "does not declare",
-                "a step addressing an overlay nothing seeds",
+                "a chat command step addressing an overlay nothing seeds",
+            ),
+            (
+                Fixture {
+                    overlays: vec![overlay("Alert Box")],
+                    event_triggers: vec![event_trigger_sending_to("Goal Bar")],
+                    ..Fixture::default()
+                },
+                "does not declare",
+                "an event trigger step addressing an overlay nothing seeds",
+            ),
+            (
+                Fixture {
+                    event_triggers: vec![EventTrigger {
+                        trigger_kind: "  ".to_owned(),
+                        ..event_trigger_sending_to("Alert Box")
+                    }],
+                    ..Fixture::default()
+                },
+                "names no trigger kind",
+                "an event trigger with no descriptor to fire it",
             ),
         ] {
             let refusal = fixture.validate();
@@ -271,6 +355,8 @@ mod tests {
             r#"{"twitch": {"client_secret": "x"}}"#,
             r#"{"chat_commands": [{"phrase": "!a", "action_name": "A", "cooldown": 5}]}"#,
             r#"{"overlays": [{"display_name": "A", "kind_id": "overlay.alert", "enabled": true}]}"#,
+            r#"{"event_triggers": [{"trigger_kind": "twitch.support.subscriber", "action_name": "A", "cooldown": 5}]}"#,
+            r#"{"event_triggers": [{"kind_id": "twitch.support.subscriber", "action_name": "A"}]}"#,
         ] {
             assert!(
                 serde_json::from_str::<Fixture>(json).is_err(),

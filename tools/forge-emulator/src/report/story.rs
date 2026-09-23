@@ -25,6 +25,12 @@ pub(crate) fn story(action: &StepAction) -> String {
             quoted(&message.text)
         ),
         StepAction::Crowd(crowd) => crowd_story(crowd),
+        StepAction::TwitchEvent {
+            subscription_type, ..
+        } => format!(
+            "As Twitch I deliver a {} notification to forge's EventSub session",
+            code(subscription_type)
+        ),
         StepAction::SessionReconnect { within_ms } => format!(
             "As Twitch I ask forge to reconnect its EventSub session and wait up to {} for the successor",
             span_ms(*within_ms)
@@ -68,6 +74,9 @@ pub(crate) fn step_short(action: &StepAction) -> String {
             quoted(&clip(&message.text, SHORT_TEXT_CHARS))
         ),
         StepAction::Crowd(crowd) => format!("a crowd of {} viewers", crowd.viewers),
+        StepAction::TwitchEvent {
+            subscription_type, ..
+        } => format!("a {} notification", code(subscription_type)),
         StepAction::SessionReconnect { .. } => "a Twitch reconnect request".to_owned(),
         StepAction::OverlayPage { overlay, .. } => {
             format!("opening the page for {}", code(overlay))
@@ -83,6 +92,12 @@ pub(crate) fn action_title(action: &StepAction) -> String {
         StepAction::TwitchSubscribed { .. } => "Twitch subscriptions not established".to_owned(),
         StepAction::Chat(_) => "Chat message not delivered to forge".to_owned(),
         StepAction::Crowd(_) => "Crowd not delivered to forge".to_owned(),
+        StepAction::TwitchEvent {
+            subscription_type, ..
+        } => format!(
+            "Notification {} not delivered to forge",
+            code(subscription_type)
+        ),
         StepAction::SessionReconnect { .. } => {
             "forge did not reconnect its EventSub session".to_owned()
         }
@@ -113,6 +128,12 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
         StepAction::Crowd(crowd) => format!(
             "the fake Twitch delivers all {} to forge's EventSub session",
             plural(crowd.message_count(), "message")
+        ),
+        StepAction::TwitchEvent {
+            subscription_type, ..
+        } => format!(
+            "the fake Twitch delivers the {} notification to a live session subscribed to it",
+            code(subscription_type)
         ),
         StepAction::SessionReconnect { within_ms } => format!(
             "forge opens a successor EventSub session within {}",

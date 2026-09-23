@@ -1028,3 +1028,89 @@ fn a_repeated_content_key_is_a_syntax_error_rather_than_a_silent_overwrite() {
         "a duplicate key must not silently keep only the last value"
     );
 }
+
+#[test]
+fn twitch_event_problems_are_located() {
+    let unawaited = "injects `channel.follow` before any twitch_subscribed step waits for it, so the fake may have nowhere to deliver it";
+    let not_an_object = "must be a JSON object: EventSub carries every event payload as one";
+    assert_cases(vec![
+        (
+            "a type no twitch_subscribed step waited for",
+            with_steps([step(json!({
+                "twitch_event": { "subscription_type": "channel.follow", "event": {} }
+            }))]),
+            vec![("steps[2].do.twitch_event", unawaited)],
+        ),
+        (
+            "a blank type is reported once, not also as unawaited",
+            with_steps([step(json!({
+                "twitch_event": { "subscription_type": " ", "event": {} }
+            }))]),
+            vec![(
+                "steps[2].do.twitch_event.subscription_type",
+                "must not be blank",
+            )],
+        ),
+        (
+            "an event that is not an object",
+            with_steps([
+                step(json!({
+                    "twitch_event": { "subscription_type": "channel.chat.message", "event": [] }
+                })),
+                step(json!({
+                    "twitch_event": { "subscription_type": "channel.chat.message", "event": "user" }
+                })),
+                step(json!({
+                    "twitch_event": { "subscription_type": "channel.chat.message", "event": null }
+                })),
+            ]),
+            vec![
+                ("steps[2].do.twitch_event.event", not_an_object),
+                ("steps[3].do.twitch_event.event", not_an_object),
+                ("steps[4].do.twitch_event.event", not_an_object),
+            ],
+        ),
+        (
+            "a subscribed type carrying an object",
+            with_steps([step(json!({
+                "twitch_event": {
+                    "subscription_type": "channel.chat.message",
+                    "event": { "chatter_user_login": "alice" }
+                }
+            }))]),
+            vec![],
+        ),
+    ]);
+}
+
+#[test]
+fn actions_of_both_trigger_kinds_share_one_namespace() {
+    let mut event_trigger_only = base();
+    event_trigger_only["fixture"]["chat_commands"] = json!([]);
+    event_trigger_only["fixture"]["event_triggers"] = json!([
+        { "trigger_kind": "twitch.support.subscriber", "action_name": "Announce" }
+    ]);
+    event_trigger_only["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(step(json!({ "run_action": { "action": "Announce" } })));
+    let mut clashing = base();
+    clashing["fixture"]["event_triggers"] =
+        json!([{ "trigger_kind": "twitch.support.subscriber", "action_name": "Ping" }]);
+
+    assert_cases(vec![
+        (
+            "run_action resolves an action an event trigger defines",
+            event_trigger_only,
+            vec![],
+        ),
+        (
+            "an event trigger reusing a chat command's action name",
+            clashing,
+            vec![(
+                "fixture.event_triggers[0].action_name",
+                "`Ping` is already the action of chat_commands[0], so run_action could not tell them apart",
+            )],
+        ),
+    ]);
+}

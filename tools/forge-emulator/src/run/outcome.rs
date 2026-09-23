@@ -99,6 +99,10 @@ pub enum ActionDetail {
     CrowdSent {
         messages: usize,
     },
+    TwitchEventDelivered {
+        subscription_type: String,
+        sessions: usize,
+    },
     SessionReconnected {
         from_session: String,
         to_session: String,

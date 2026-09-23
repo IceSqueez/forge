@@ -1,7 +1,4 @@
-//! Dropping a slot's `sender` closes its channel; the runner drains and exits - a drain guarantee, not a leak.
-
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
@@ -9,9 +6,9 @@ use forge_events::{Event, EventSource};
 use forge_registry::CancelSignal;
 use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId};
 use serde_json::json;
-use tokio::sync::{Semaphore, mpsc, oneshot, watch};
-use tokio::task::JoinHandle;
-use tracing::warn;
+use tokio::sync::futures::Notified;
+use tokio::sync::{Notify, Semaphore, mpsc, oneshot, watch};
+use tracing::{info, warn};
 
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
@@ -169,57 +166,77 @@ enum SchedulerCommand {
 }
 
 struct QueueSlot {
-    sender: mpsc::UnboundedSender<QueueTask>,
+    pending: PendingBuffer,
     processing: watch::Sender<QueueProcessing>,
     mode: QueueMode,
-    counters: QueueCounters,
+    overflowed: u64,
     name: String,
     concurrency: u32,
-    runner: JoinHandle<()>,
     inflight: InflightTracker,
 }
 
-#[derive(Clone, Default)]
-struct QueueCounters {
-    pending: Arc<AtomicUsize>,
-    overflowed: Arc<AtomicU64>,
+/// Owned by the slot rather than the runner task, so a rebuilt slot can carry the buffer over.
+#[derive(Clone)]
+struct PendingBuffer {
+    inner: Arc<PendingInner>,
 }
 
-impl QueueCounters {
-    fn try_reserve(&self) -> bool {
-        self.pending
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                (current < MAX_PENDING_PER_QUEUE).then_some(current + 1)
-            })
-            .is_ok()
+struct PendingInner {
+    tasks: Mutex<VecDeque<QueueTask>>,
+    arrived: Notify,
+}
+
+impl PendingBuffer {
+    fn seeded(tasks: VecDeque<QueueTask>) -> Self {
+        Self {
+            inner: Arc::new(PendingInner {
+                tasks: Mutex::new(tasks),
+                arrived: Notify::new(),
+            }),
+        }
     }
 
-    fn release(&self) {
-        let _ = self
-            .pending
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                Some(current.saturating_sub(1))
-            });
+    /// Rejects the task once the buffer sits at `MAX_PENDING_PER_QUEUE`.
+    fn push(&self, task: QueueTask) -> bool {
+        {
+            let mut tasks = self.lock();
+            if tasks.len() >= MAX_PENDING_PER_QUEUE {
+                return false;
+            }
+            tasks.push_back(task);
+        }
+        self.inner.arrived.notify_one();
+        true
     }
 
-    fn record_overflow(&self) {
-        self.overflowed.fetch_add(1, Ordering::Relaxed);
+    /// While frozen only a `bypass_pause` task is taken; the rest keep their arrival order.
+    fn take_next(&self, frozen: bool) -> Option<QueueTask> {
+        let mut tasks = self.lock();
+        if !frozen {
+            return tasks.pop_front();
+        }
+        let at = tasks.iter().position(|task| task.bypass_pause)?;
+        tasks.remove(at)
     }
 
-    fn reset_overflow(&self) {
-        self.overflowed.store(0, Ordering::Relaxed);
+    fn take_all(&self) -> VecDeque<QueueTask> {
+        std::mem::take(&mut self.lock())
     }
 
-    fn overflowed(&self) -> u64 {
-        self.overflowed.load(Ordering::Relaxed)
+    fn clear(&self) {
+        self.lock().clear();
     }
 
-    fn adopt_overflow(&self, value: u64) {
-        self.overflowed.store(value, Ordering::Relaxed);
+    fn len(&self) -> usize {
+        self.lock().len()
     }
 
-    fn pending(&self) -> usize {
-        self.pending.load(Ordering::Relaxed)
+    fn arrived(&self) -> Notified<'_> {
+        self.inner.arrived.notified()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<QueueTask>> {
+        self.inner.tasks.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -348,7 +365,12 @@ impl QueueScheduler {
         let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
         for queue in initial_queues {
             let id = queue.id;
-            let slot = Self::make_queue_slot(queue, Arc::clone(&engine), QueueMode::default());
+            let slot = Self::make_queue_slot(
+                queue,
+                Arc::clone(&engine),
+                QueueMode::default(),
+                VecDeque::new(),
+            );
             slots.insert(id, slot);
         }
 
@@ -361,46 +383,42 @@ impl QueueScheduler {
         queue: Queue,
         engine: Arc<ActionEngineHandle>,
         mode: QueueMode,
+        carried: VecDeque<QueueTask>,
     ) -> QueueSlot {
-        let (task_tx, task_rx) = mpsc::unbounded_channel::<QueueTask>();
         let (processing_tx, processing_rx) = watch::channel(mode.processing);
         let inflight = InflightTracker::default();
-        let counters = QueueCounters::default();
+        let pending = PendingBuffer::seeded(carried);
         let name = queue.name.clone();
         let concurrency = queue.concurrency.max(1);
 
         let sem = Arc::new(Semaphore::new(concurrency as usize));
-        let runner = tokio::spawn(Self::run_bounded(
-            task_rx,
+        tokio::spawn(Self::run_bounded(
+            pending.clone(),
             processing_rx,
             engine,
             sem,
             inflight.clone(),
-            counters.clone(),
         ));
 
         QueueSlot {
-            sender: task_tx,
+            pending,
             processing: processing_tx,
             mode,
-            counters,
+            overflowed: 0,
             name,
             concurrency,
-            runner,
             inflight,
         }
     }
 
+    /// Runs until the slot that owns the mode sender is dropped, which retires this runner.
     async fn run_bounded(
-        mut rx: mpsc::UnboundedReceiver<QueueTask>,
+        pending: PendingBuffer,
         mut processing: watch::Receiver<QueueProcessing>,
         engine: Arc<ActionEngineHandle>,
         sem: Arc<Semaphore>,
         inflight: InflightTracker,
-        counters: QueueCounters,
     ) {
-        let mut frozen_out: VecDeque<QueueTask> = VecDeque::new();
-
         loop {
             let permit = match Arc::clone(&sem).acquire_owned().await {
                 Ok(p) => p,
@@ -408,8 +426,9 @@ impl QueueScheduler {
             };
 
             let task = loop {
+                let arrived = pending.arrived();
                 let frozen = *processing.borrow_and_update() == QueueProcessing::Frozen;
-                if !frozen && let Some(task) = frozen_out.pop_front() {
+                if let Some(task) = pending.take_next(frozen) {
                     break task;
                 }
 
@@ -420,15 +439,9 @@ impl QueueScheduler {
                             return;
                         }
                     }
-                    received = rx.recv() => match received {
-                        Some(task) if frozen && !task.bypass_pause => frozen_out.push_back(task),
-                        Some(task) => break task,
-                        None => return,
-                    },
+                    _ = arrived => {}
                 }
             };
-
-            counters.release();
 
             let req = ExecutionRequest {
                 action_id: task.action_id,
@@ -465,14 +478,14 @@ impl QueueScheduler {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 SchedulerCommand::Enqueue(req) => {
-                    Self::enqueue(req, &slots, &bus);
+                    Self::enqueue(req, &mut slots, &bus);
                 }
                 SchedulerCommand::SetMode(queue_id, mode, reply) => {
                     let r = Self::set_mode(&queue_id, mode, &mut slots, &bus);
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Clear(queue_id, keep_current, reply) => {
-                    let r = Self::clear_queue(&mut slots, &queue_id, keep_current, &bus, &engine);
+                    let r = Self::clear_queue(&slots, &queue_id, keep_current, &bus);
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Register(queue, reply) => {
@@ -480,8 +493,12 @@ impl QueueScheduler {
                         MembershipOutcome::AlreadyRegistered
                     } else {
                         let id = queue.id;
-                        let slot =
-                            Self::make_queue_slot(queue, Arc::clone(&engine), QueueMode::default());
+                        let slot = Self::make_queue_slot(
+                            queue,
+                            Arc::clone(&engine),
+                            QueueMode::default(),
+                            VecDeque::new(),
+                        );
                         slots.insert(id, slot);
                         MembershipOutcome::Applied
                     };
@@ -495,23 +512,7 @@ impl QueueScheduler {
                     let _ = reply.send(outcome);
                 }
                 SchedulerCommand::Reconfigure(queue, reply) => {
-                    let outcome = match slots.get_mut(&queue.id) {
-                        Some(slot) if slot.concurrency == queue.concurrency => {
-                            slot.name = queue.name;
-                            MembershipOutcome::Applied
-                        }
-                        Some(old) => {
-                            // Rebuild must carry the mode forward, else the queue silently resumes.
-                            let mode = old.mode;
-                            let overflowed = old.counters.overflowed();
-                            let id = queue.id;
-                            let slot = Self::make_queue_slot(queue, Arc::clone(&engine), mode);
-                            slot.counters.adopt_overflow(overflowed);
-                            slots.insert(id, slot);
-                            MembershipOutcome::Applied
-                        }
-                        None => MembershipOutcome::NotFound,
-                    };
+                    let outcome = Self::reconfigure(queue, &mut slots, &engine);
                     let _ = reply.send(outcome);
                 }
                 SchedulerCommand::QueryStates(reply) => {
@@ -522,51 +523,74 @@ impl QueueScheduler {
         }
     }
 
-    fn enqueue(req: SchedulerRequest, slots: &HashMap<QueueId, QueueSlot>, bus: &Arc<EventBus>) {
-        let slot = match slots.get(&req.queue_id) {
-            Some(s) => s,
-            None => {
-                warn!("enqueue: queue {} not found, dropping", req.queue_id);
-                Self::publish_skip(bus, &req, "queue_not_found");
-                return;
-            }
+    fn enqueue(
+        req: SchedulerRequest,
+        slots: &mut HashMap<QueueId, QueueSlot>,
+        bus: &Arc<EventBus>,
+    ) {
+        let SchedulerRequest {
+            queue_id,
+            action_id,
+            trigger_event_id,
+            trigger_kind,
+            initial_args,
+            bypass_pause,
+        } = req;
+
+        let Some(slot) = slots.get_mut(&queue_id) else {
+            warn!("enqueue: queue {queue_id} not found, dropping");
+            Self::publish_skip(
+                bus,
+                queue_id,
+                action_id,
+                trigger_event_id,
+                "queue_not_found",
+            );
+            return;
         };
 
-        if !req.bypass_pause && slot.mode.intake == QueueIntake::Skip {
-            Self::publish_skip(bus, &req, slot.mode.skip_reason());
+        if !bypass_pause && slot.mode.intake == QueueIntake::Skip {
+            let reason = slot.mode.skip_reason();
+            Self::publish_skip(bus, queue_id, action_id, trigger_event_id, reason);
             return;
         }
 
-        if !slot.counters.try_reserve() {
-            slot.counters.record_overflow();
-            Self::publish_skip(bus, &req, "queue_pending_overflow");
-            return;
-        }
+        let accepted = slot.pending.push(QueueTask {
+            action_id,
+            trigger_event_id,
+            trigger_kind,
+            initial_args,
+            bypass_pause,
+        });
 
-        let task = QueueTask {
-            action_id: req.action_id,
-            trigger_event_id: req.trigger_event_id,
-            trigger_kind: req.trigger_kind,
-            initial_args: req.initial_args,
-            bypass_pause: req.bypass_pause,
-        };
-
-        if slot.sender.send(task).is_err() {
-            slot.counters.release();
-            warn!("queue task channel closed for queue {}", req.queue_id);
+        if !accepted {
+            slot.overflowed = slot.overflowed.saturating_add(1);
+            Self::publish_skip(
+                bus,
+                queue_id,
+                action_id,
+                trigger_event_id,
+                "queue_pending_overflow",
+            );
         }
     }
 
-    fn publish_skip(bus: &EventBus, req: &SchedulerRequest, reason: &str) {
+    fn publish_skip(
+        bus: &EventBus,
+        queue_id: QueueId,
+        action_id: ActionId,
+        trigger_event_id: EventId,
+        reason: &str,
+    ) {
         bus.publish(Event::caused_by(
             EventSource::Core,
             "action.skipped",
             json!({
-                "action_id": req.action_id.to_string(),
+                "action_id": action_id.to_string(),
                 "reason": reason,
-                "queue_id": req.queue_id.to_string(),
+                "queue_id": queue_id.to_string(),
             }),
-            req.trigger_event_id,
+            trigger_event_id,
         ));
     }
 
@@ -578,9 +602,9 @@ impl QueueScheduler {
                     *id,
                     QueueRuntimeState {
                         mode: slot.mode,
-                        pending: slot.counters.pending(),
+                        pending: slot.pending.len(),
                         in_flight: slot.inflight.len(),
-                        overflowed: slot.counters.overflowed(),
+                        overflowed: slot.overflowed,
                     },
                 )
             })
@@ -602,7 +626,7 @@ impl QueueScheduler {
         }
 
         slot.mode = mode;
-        slot.counters.reset_overflow();
+        slot.overflowed = 0;
         slot.processing.send_replace(mode.processing);
 
         bus.publish(Event::new(
@@ -619,51 +643,59 @@ impl QueueScheduler {
         Ok(())
     }
 
-    fn clear_queue(
+    fn reconfigure(
+        queue: Queue,
         slots: &mut HashMap<QueueId, QueueSlot>,
+        engine: &Arc<ActionEngineHandle>,
+    ) -> MembershipOutcome {
+        let Some(old) = slots.get_mut(&queue.id) else {
+            return MembershipOutcome::NotFound;
+        };
+
+        if old.concurrency == queue.concurrency.max(1) {
+            old.name = queue.name;
+            return MembershipOutcome::Applied;
+        }
+
+        let mode = old.mode;
+        let overflowed = old.overflowed;
+        let carried = old.pending.take_all();
+        let carried_count = carried.len();
+
+        let id = queue.id;
+        let name = queue.name.clone();
+        let mut rebuilt = Self::make_queue_slot(queue, Arc::clone(engine), mode, carried);
+        rebuilt.overflowed = overflowed;
+        slots.insert(id, rebuilt);
+
+        if carried_count > 0 {
+            info!("queue {name}: carried {carried_count} buffered executions into the new runner");
+        }
+
+        MembershipOutcome::Applied
+    }
+
+    fn clear_queue(
+        slots: &HashMap<QueueId, QueueSlot>,
         queue_id: &QueueId,
         keep_current: bool,
         bus: &Arc<EventBus>,
-        engine: &Arc<ActionEngineHandle>,
     ) -> Result<(), SchedulerError> {
-        let (mode, overflowed, name, concurrency) = {
-            let slot = slots
-                .get(queue_id)
-                .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
+        let slot = slots
+            .get(queue_id)
+            .ok_or(SchedulerError::QueueNotFound(*queue_id))?;
 
-            if !keep_current {
-                slot.inflight.cancel_all();
-            }
-            // Abort discards buffered executions; the signal above unwinds the in-flight one.
-            slot.runner.abort();
-
-            (
-                slot.mode,
-                slot.counters.overflowed(),
-                slot.name.clone(),
-                slot.concurrency,
-            )
-        };
-
-        let rebuilt = Self::make_queue_slot(
-            Queue {
-                id: *queue_id,
-                name: name.clone(),
-                description: String::new(),
-                concurrency,
-            },
-            Arc::clone(engine),
-            mode,
-        );
-        rebuilt.counters.adopt_overflow(overflowed);
-        slots.insert(*queue_id, rebuilt);
+        if !keep_current {
+            slot.inflight.cancel_all();
+        }
+        slot.pending.clear();
 
         bus.publish(Event::new(
             EventSource::Core,
             "queue.cleared",
             json!({
                 "queue_id": queue_id.to_string(),
-                "queue_name": name,
+                "queue_name": slot.name,
                 "keep_current": keep_current,
             }),
         ));

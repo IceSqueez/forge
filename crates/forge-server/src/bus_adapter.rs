@@ -233,6 +233,27 @@ async fn send_to_overlay(
     reached
 }
 
+async fn count_overlay(
+    registry: &RwLock<Vec<ConnectedClient>>,
+    identity: &OverlayId,
+) -> OverlayReceivers {
+    let reg = registry.read().await;
+    let mut reached = OverlayReceivers::default();
+    for client in reg.iter() {
+        let Some(overlay) = &client.overlay else {
+            continue;
+        };
+        if &overlay.identity != identity {
+            continue;
+        }
+        match overlay.class {
+            OverlayClientClass::BrowserSource => reached.sources += 1,
+            OverlayClientClass::PreviewTab => reached.preview_tabs += 1,
+        }
+    }
+    reached
+}
+
 impl BusAdapter {
     pub fn new(bus: Arc<EventBus>) -> Arc<Self> {
         Arc::new(Self {
@@ -280,6 +301,11 @@ impl BusAdapter {
             return OverlayReceivers::default();
         };
         send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await
+    }
+
+    /// Read-only: no frame is sent, so a client sitting on a full send buffer still counts.
+    pub async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {
+        count_overlay(&self.registry, identity).await
     }
 
     /// `identity: None` reloads every overlay-class connection.

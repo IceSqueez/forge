@@ -90,6 +90,13 @@ pub trait OverlayFrameSink: Send + Sync {
     /// Called when an overlay is disabled: existing connections for `identity` go blank and
     /// close, independent of anything retained-content bookkeeping does.
     async fn revoke(&self, identity: &OverlayId);
+
+    /// Read-only, sends nothing. The default answers zero for every identity; a sink backed by
+    /// a live registry overrides it to report real connections.
+    async fn receivers(&self, identity: &OverlayId) -> OverlayReceivers {
+        let _ = identity;
+        OverlayReceivers::default()
+    }
 }
 
 /// The server calls this when a page's credential validates, which is the only moment the
@@ -321,6 +328,13 @@ impl OverlayServiceHandle {
     pub async fn reload_page(&self, id: &OverlayId) {
         if let Some(frames) = &self.inner.frames {
             frames.deliver_reload(id).await;
+        }
+    }
+
+    pub async fn receivers(&self, id: &OverlayId) -> OverlayReceivers {
+        match &self.inner.frames {
+            Some(frames) => frames.receivers(id).await,
+            None => OverlayReceivers::default(),
         }
     }
 

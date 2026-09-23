@@ -243,6 +243,13 @@ impl ServerHandle {
             .await
     }
 
+    /// Read-only: no push. A stopped server still holds its (empty) registry, so this is zero
+    /// rather than an error.
+    pub async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {
+        let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
+        adapter.overlay_receivers(identity).await
+    }
+
     /// Survives a restart: the listener lives on the bus adapter, which the new state carries over.
     pub async fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);

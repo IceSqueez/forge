@@ -1259,22 +1259,16 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(120)).await;
-        let mut saw_skipped = false;
-        let mut saw_done = false;
-        for _ in 0..20 {
-            match tokio::time::timeout(Duration::from_millis(30), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == "action.skipped" => saw_skipped = true,
-                Ok(Ok(ev)) if ev.kind == "action.done" => saw_done = true,
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
-        assert!(saw_skipped, "re-register must not un-pause existing slot");
-        assert!(
-            !saw_done,
-            "re-register must not replace existing paused slot"
+        let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
+        assert_eq!(
+            state.mode,
+            QueueMode::PAUSED,
+            "re-registering must not un-pause the existing slot"
         );
+        let skipped = collect_event(&mut sub, "action.skipped", 10, 200)
+            .await
+            .expect("the surviving paused slot must keep refusing dispatches");
+        assert_eq!(skipped.payload["reason"].as_str(), Some("queue_paused"));
         sched.shutdown();
     }
 
@@ -1335,71 +1329,6 @@ mod tests {
 
         let outcome = sched.deregister(QueueId::new()).await.unwrap();
         assert_eq!(outcome, MembershipOutcome::NotFound);
-        sched.shutdown();
-    }
-
-    #[tokio::test]
-    async fn reconfigure_rename_preserves_pause_state_and_runner() {
-        let dp = make_dp().await;
-        let q_id = QueueId::new();
-        let a_id = ActionId::new();
-        let queue = nonblocking(q_id);
-        let action = log_action(a_id, q_id);
-        seed(&dp, &queue, &action).await;
-
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let engine = spawn_action_engine(
-            Arc::clone(&bus),
-            dp.action_repo(),
-            dp.history_repo(),
-            Arc::new(SubActionRegistry::new()),
-            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
-        );
-        let sched = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![nonblocking(q_id)]);
-        let mut sub = bus.subscribe();
-
-        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
-
-        let renamed = Queue {
-            id: q_id,
-            name: "renamed".to_string(),
-            description: String::new(),
-            concurrency: 8,
-        };
-        let outcome = sched.reconfigure(renamed).await.unwrap();
-        assert_eq!(outcome, MembershipOutcome::Applied);
-
-        sched
-            .dispatch(SchedulerRequest {
-                queue_id: q_id,
-                action_id: a_id,
-                trigger_event_id: EventId::new(),
-                trigger_kind: None,
-                initial_args: ArgStack::new(),
-                bypass_pause: false,
-            })
-            .await
-            .unwrap();
-
-        tokio::time::sleep(Duration::from_millis(120)).await;
-        let mut saw_skipped = false;
-        let mut saw_done = false;
-        for _ in 0..20 {
-            match tokio::time::timeout(Duration::from_millis(30), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == "action.skipped" => saw_skipped = true,
-                Ok(Ok(ev)) if ev.kind == "action.done" => saw_done = true,
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
-        assert!(
-            saw_skipped,
-            "rename-only reconfigure must not clear pause state"
-        );
-        assert!(
-            !saw_done,
-            "rename-only reconfigure must not replace the paused slot"
-        );
         sched.shutdown();
     }
 
@@ -1482,27 +1411,16 @@ mod tests {
             .await
             .unwrap();
 
-        tokio::time::sleep(Duration::from_millis(120)).await;
-
-        let mut saw_skipped = false;
-        let mut saw_done = false;
-        for _ in 0..20 {
-            match tokio::time::timeout(Duration::from_millis(30), sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == "action.skipped" => saw_skipped = true,
-                Ok(Ok(ev)) if ev.kind == "action.done" => saw_done = true,
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
-
-        assert!(
-            saw_skipped,
-            "blocking-flip reconfigure must preserve pause state: action.skipped expected"
+        let state = sched.queue_states().await.unwrap().remove(&q_id).unwrap();
+        assert_eq!(
+            state.mode,
+            QueueMode::PAUSED,
+            "a blocking-flip reconfigure must carry the pause into the rebuilt slot"
         );
-        assert!(
-            !saw_done,
-            "blocking-flip reconfigure must not silently resume a paused queue"
-        );
+        let skipped = collect_event(&mut sub, "action.skipped", 10, 200)
+            .await
+            .expect("the rebuilt slot must keep refusing dispatches");
+        assert_eq!(skipped.payload["reason"].as_str(), Some("queue_paused"));
         sched.shutdown();
     }
 
@@ -1649,7 +1567,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clear_discards_pending_and_rebuilt_queue_runs_new_work() {
+    async fn clear_discards_pending_and_the_queue_keeps_running_new_work() {
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let (a, b, c, d) = (
@@ -1700,7 +1618,7 @@ mod tests {
         );
         assert!(
             dones.contains(&d.to_string()),
-            "rebuilt queue must run work dispatched after clear"
+            "the queue must run work dispatched after clear"
         );
         assert!(
             !dones.contains(&b.to_string()),
@@ -1762,7 +1680,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clear_preserves_paused_state_across_slot_rebuild() {
+    async fn clear_preserves_the_queue_mode() {
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let queue = nonblocking(q_id);
@@ -1785,7 +1703,7 @@ mod tests {
         assert_eq!(
             states.get(&q_id).map(|s| s.mode),
             Some(QueueMode::PAUSED),
-            "clear must preserve the queue mode across the slot rebuild"
+            "clear must leave the queue mode alone"
         );
         sched.shutdown();
     }

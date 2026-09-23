@@ -1059,30 +1059,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn play_starts_a_clip_that_is_not_in_the_managed_library_yet() {
-        let clip_id = ClipId::new();
-        let tmp = make_wav_tempfile(22_050, 1, 100);
-        let clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
-        let (event_sink, events) = RecordingEventSink::new();
-        let (factory, play_count, _last_buf) = CountingFactory::new();
-
-        let player = SoundboardPlayer::with_settings(
-            Arc::new(factory),
-            Arc::new(event_sink),
-            unadopted_library(Some(clip)),
-            SoundboardSettingsHandle::default(),
-        );
-
-        player.play(clip_id, None).await.unwrap();
-
-        assert_eq!(*play_count.lock().unwrap(), 1);
-        assert!(matches!(
-            events.lock().unwrap().first(),
-            Some(AudioEvent::PlaybackStarted { .. })
-        ));
-    }
-
-    #[tokio::test]
     async fn play_schedules_the_import_of_a_clip_that_is_not_in_the_managed_library_yet() {
         let clip_id = ClipId::new();
         let tmp = make_wav_tempfile(22_050, 1, 100);
@@ -1142,6 +1118,228 @@ mod tests {
                 [AudioEvent::PlaybackFailed { clip_id: Some(id), .. }] if *id == clip_id
             ),
             "expected a single PlaybackFailed for the clip, got {recorded:?}"
+        );
+    }
+
+    const PRIMARY_DEVICE_ID: &str = "speakers";
+    const OVERLAY_LEG: &str = "overlay";
+
+    #[derive(Clone)]
+    struct LegLog(Arc<Mutex<Vec<String>>>);
+
+    impl LegLog {
+        fn new() -> Self {
+            Self(Arc::new(Mutex::new(Vec::new())))
+        }
+
+        fn fed(&self) -> Vec<String> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    struct LoggingSink {
+        label: String,
+        log: LegLog,
+    }
+
+    #[async_trait]
+    impl AudioSink for LoggingSink {
+        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+            self.log.0.lock().unwrap().push(self.label.clone());
+            Ok(())
+        }
+    }
+
+    struct LoggingFactory {
+        log: LegLog,
+        built: Arc<Mutex<Vec<OutputDevice>>>,
+        failing_builds: Vec<usize>,
+    }
+
+    impl LoggingFactory {
+        fn new(log: &LegLog, failing_builds: &[usize]) -> (Self, Arc<Mutex<Vec<OutputDevice>>>) {
+            let built = Arc::new(Mutex::new(Vec::new()));
+            (
+                Self {
+                    log: log.clone(),
+                    built: Arc::clone(&built),
+                    failing_builds: failing_builds.to_vec(),
+                },
+                built,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl AudioSinkFactory for LoggingFactory {
+        async fn build(&self, device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
+            let index = {
+                let mut built = self.built.lock().unwrap();
+                built.push(device.clone());
+                built.len() - 1
+            };
+            if self.failing_builds.contains(&index) {
+                return Err(AudioError::NoDefaultDevice);
+            }
+            Ok(Arc::new(LoggingSink {
+                label: format!("device:{}", device_label(device)),
+                log: self.log.clone(),
+            }))
+        }
+    }
+
+    fn overlay_sink(log: &LegLog) -> Arc<dyn AudioSink> {
+        Arc::new(LoggingSink {
+            label: OVERLAY_LEG.to_string(),
+            log: log.clone(),
+        })
+    }
+
+    fn built_labels(built: &Arc<Mutex<Vec<OutputDevice>>>) -> Vec<String> {
+        built.lock().unwrap().iter().map(device_label).collect()
+    }
+
+    fn labels(items: &[&str]) -> Vec<String> {
+        items.iter().map(|item| (*item).to_string()).collect()
+    }
+
+    /// A named primary plus `also_headphones` is the only shape that fans out to two device legs.
+    fn fan_out_settings() -> SoundboardSettingsHandle {
+        SoundboardSettingsHandle::new(SoundboardSettings {
+            output_device_id: Some(PRIMARY_DEVICE_ID.to_string()),
+            also_headphones: true,
+            ..SoundboardSettings::default()
+        })
+    }
+
+    fn fan_out_player(factory: LoggingFactory, clip: StoredClip) -> SoundboardPlayer {
+        let (event_sink, _events) = RecordingEventSink::new();
+        SoundboardPlayer::with_settings(
+            Arc::new(factory),
+            Arc::new(event_sink),
+            unadopted_library(Some(clip)),
+            fan_out_settings(),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_installed_route_selects_which_legs_receive_the_clip() {
+        for (route, expected_devices, expected_legs) in [
+            (
+                AudioRoute::Local,
+                &["speakers", "default"][..],
+                &["device:speakers", "device:default"][..],
+            ),
+            (AudioRoute::Overlay, &[][..], &["overlay"][..]),
+            (
+                AudioRoute::Both,
+                &["speakers", "default"][..],
+                &["device:speakers", "device:default", "overlay"][..],
+            ),
+        ] {
+            let clip_id = ClipId::new();
+            let tmp = make_wav_tempfile(22_050, 1, 100);
+            let log = LegLog::new();
+            let (factory, built) = LoggingFactory::new(&log, &[]);
+            let player =
+                fan_out_player(factory, make_stored_clip(clip_id, tmp.path().to_path_buf()));
+            player.install_route(ClipRoute::new(route, Some(overlay_sink(&log))));
+
+            player.play(clip_id, None).await.unwrap();
+
+            assert_eq!(
+                built_labels(&built),
+                labels(expected_devices),
+                "route {route} asked the sink factory for the wrong devices"
+            );
+            assert_eq!(
+                log.fed(),
+                labels(expected_legs),
+                "route {route} fed the wrong legs, in the wrong order"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failing_primary_device_degrades_to_the_installed_overlay_leg() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, 100);
+        let log = LegLog::new();
+        let (factory, _built) = LoggingFactory::new(&log, &[0, 1]);
+        let player = fan_out_player(factory, make_stored_clip(clip_id, tmp.path().to_path_buf()));
+        player.install_route(ClipRoute::new(AudioRoute::Both, Some(overlay_sink(&log))));
+
+        let played = player.play(clip_id, None).await;
+
+        assert!(
+            played.is_ok(),
+            "an overlay leg must keep the clip playing when no device sink builds: {played:?}"
+        );
+        assert_eq!(log.fed(), labels(&["overlay"]));
+    }
+
+    #[tokio::test]
+    async fn a_failing_secondary_fan_out_sink_still_plays_on_the_primary_device() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, 100);
+        let log = LegLog::new();
+        let (factory, _built) = LoggingFactory::new(&log, &[1]);
+        let player = fan_out_player(factory, make_stored_clip(clip_id, tmp.path().to_path_buf()));
+
+        let played = player.play(clip_id, None).await;
+
+        assert!(
+            played.is_ok(),
+            "a secondary fan-out failure must not fail the clip: {played:?}"
+        );
+        assert_eq!(log.fed(), labels(&["device:speakers"]));
+    }
+
+    #[tokio::test]
+    async fn a_route_installed_after_a_clip_started_reaches_only_the_next_clip() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, 100);
+        let log = LegLog::new();
+        let (factory, _built) = LoggingFactory::new(&log, &[]);
+        let player = fan_out_player(factory, make_stored_clip(clip_id, tmp.path().to_path_buf()));
+
+        player.play(clip_id, None).await.unwrap();
+        assert_eq!(
+            log.fed(),
+            labels(&["device:speakers", "device:default"]),
+            "a clip started before the install must stay on the device legs"
+        );
+
+        player.install_route(ClipRoute::new(AudioRoute::Both, Some(overlay_sink(&log))));
+        player.play(clip_id, None).await.unwrap();
+
+        assert_eq!(
+            log.fed(),
+            labels(&[
+                "device:speakers",
+                "device:default",
+                "device:speakers",
+                "device:default",
+                "overlay",
+            ]),
+            "the overlay leg must reach the next clip, and only that one"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_overlay_route_with_no_installed_leg_fails_the_clip_with_no_route() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, 100);
+        let log = LegLog::new();
+        let (factory, _built) = LoggingFactory::new(&log, &[]);
+        let player = fan_out_player(factory, make_stored_clip(clip_id, tmp.path().to_path_buf()));
+        player.install_route(ClipRoute::new(AudioRoute::Overlay, None));
+
+        let error = player.play(clip_id, None).await.unwrap_err();
+
+        assert!(
+            matches!(error, SoundboardError::Audio(AudioError::NoRoute)),
+            "a misconfigured overlay route did not surface as NoRoute: {error:?}"
         );
     }
 }

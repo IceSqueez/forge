@@ -213,15 +213,29 @@ async fn load_pipeline(backend: &Arc<dyn DataProvider>) -> forge_tts_pipeline::P
     }
 }
 
+pub async fn build_speech_output(backend: &Arc<dyn DataProvider>) -> Arc<DeviceSink> {
+    let stored_device_id = match backend.audio_output_device_id().await {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("forge-desktop: failed to read stored audio output device preference: {e}");
+            None
+        }
+    };
+    Arc::new(DeviceSink::new(
+        OutputDeviceHandle::new(stored_output_device(stored_device_id)),
+        Arc::new(NullAudioEventSink),
+    ))
+}
+
 pub async fn build_speak_queue(
     bus: &Arc<EventBus>,
     backend: &Arc<dyn DataProvider>,
+    audio_sink: Arc<dyn forge_audio::AudioSink>,
 ) -> (
     Option<forge_speak_queue::SpeakQueueHandle>,
     Option<SpeakEventStream>,
     Option<PipelineConfigHandle>,
     Option<Arc<std::sync::RwLock<TtsRegistry>>>,
-    Arc<DeviceSink>,
 ) {
     let mut registry = TtsRegistry::new();
     register_local_engines(&mut registry).await;
@@ -243,23 +257,11 @@ pub async fn build_speak_queue(
     let pipeline = PipelineConfigHandle::new(load_pipeline(backend).await);
     let disabled_engines = load_disabled_engines(backend).await;
 
-    let stored_device_id = match backend.audio_output_device_id().await {
-        Ok(id) => id,
-        Err(e) => {
-            eprintln!("forge-desktop: failed to read stored audio output device preference: {e}");
-            None
-        }
-    };
-    let speech_output = Arc::new(DeviceSink::new(
-        OutputDeviceHandle::new(stored_output_device(stored_device_id)),
-        Arc::new(NullAudioEventSink),
-    ));
-
     let deps = QueueDeps {
         registry: Arc::clone(&registry),
         resolver,
         pipeline: pipeline.clone(),
-        audio_sink: Arc::clone(&speech_output) as Arc<dyn forge_audio::AudioSink>,
+        audio_sink,
         event_bus: Arc::clone(bus) as Arc<dyn EventPublisher>,
         disabled_engines,
         engine_gains,
@@ -269,11 +271,5 @@ pub async fn build_speak_queue(
         ..QueueConfig::default()
     };
     let (handle, stream) = forge_speak_queue::spawn(queue_config, deps);
-    (
-        Some(handle),
-        Some(stream),
-        Some(pipeline),
-        Some(registry),
-        speech_output,
-    )
+    (Some(handle), Some(stream), Some(pipeline), Some(registry))
 }

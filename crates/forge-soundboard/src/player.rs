@@ -5,9 +5,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use forge_audio::{AudioError, AudioEvent, AudioEventSink, AudioSink, PcmBuffer, PlaybackHandle};
+use forge_audio::{
+    AudioError, AudioEvent, AudioEventSink, AudioRoute, AudioSink, PcmBuffer, PlaybackHandle,
+};
 use forge_runtime::{SoundPlayer, SoundPlayerError};
-use forge_types::{ClipId, OutputDevice};
+use forge_types::{ClipId, OutputDevice, Shared};
 
 use crate::error::SoundboardError;
 use crate::library::{ClipLibrary, ClipSource};
@@ -51,6 +53,22 @@ impl StopToken {
 
 type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, StopToken, String)>>>>;
 
+#[derive(Clone, Default)]
+pub struct ClipRoute {
+    route: AudioRoute,
+    overlay: Option<Arc<dyn AudioSink>>,
+}
+
+impl ClipRoute {
+    pub fn new(route: AudioRoute, overlay: Option<Arc<dyn AudioSink>>) -> Self {
+        Self { route, overlay }
+    }
+
+    fn overlay_leg(&self) -> Option<&Arc<dyn AudioSink>> {
+        self.overlay.as_ref().filter(|_| self.route.plays_overlay())
+    }
+}
+
 pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
     event_sink: Arc<dyn AudioEventSink>,
@@ -60,6 +78,7 @@ pub struct SoundboardPlayer {
     next_play_id: AtomicU64,
     master_gain_bits: AtomicU32,
     settings: SoundboardSettingsHandle,
+    clip_route: Shared<ClipRoute>,
 }
 
 impl SoundboardPlayer {
@@ -78,7 +97,13 @@ impl SoundboardPlayer {
             next_play_id: AtomicU64::new(0),
             master_gain_bits: AtomicU32::new(master_volume.to_bits()),
             settings,
+            clip_route: Shared::new(ClipRoute::default()),
         }
+    }
+
+    /// Installed once at boot; a later install reaches the next clip and leaves a playing one untouched.
+    pub fn install_route(&self, route: ClipRoute) {
+        self.clip_route.store(route);
     }
 
     pub fn library(&self) -> &Arc<ClipLibrary> {
@@ -278,16 +303,29 @@ impl SoundboardPlayer {
         device: &OutputDevice,
         also_headphones: bool,
     ) -> Result<Vec<Arc<dyn AudioSink>>, AudioError> {
-        let targets = forge_audio::fan_out_targets(device, also_headphones);
-        let mut sinks = Vec::with_capacity(targets.len());
-        for (idx, target) in targets.iter().enumerate() {
-            match self.sink_factory.build(target).await {
-                Ok(sink) => sinks.push(sink),
-                Err(e) if idx == 0 => return Err(e),
-                Err(e) => {
-                    tracing::warn!(error = %e, "also_headphones fan-out sink build failed, playing to primary device only");
+        let clip_route = self.clip_route.load();
+        let overlay = clip_route.overlay_leg();
+        let mut sinks: Vec<Arc<dyn AudioSink>> = Vec::new();
+
+        if clip_route.route.plays_local() {
+            for (idx, target) in forge_audio::fan_out_targets(device, also_headphones)
+                .iter()
+                .enumerate()
+            {
+                match self.sink_factory.build(target).await {
+                    Ok(sink) => sinks.push(sink),
+                    Err(e) if idx == 0 && overlay.is_none() => return Err(e),
+                    Err(e) => {
+                        tracing::warn!(error = %e, sink_index = idx, "output sink build failed, playing the remaining routes only");
+                    }
                 }
             }
+        }
+        if let Some(overlay) = overlay {
+            sinks.push(Arc::clone(overlay));
+        }
+        if sinks.is_empty() {
+            return Err(AudioError::NoRoute);
         }
 
         Ok(sinks)

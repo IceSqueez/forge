@@ -23,6 +23,6 @@ pub use library::{
     SourcePlan, choose_source, clip_source_referrer, final_refusal, plan_adoption, plan_source,
     refusal_is_final,
 };
-pub use player::SoundboardPlayer;
+pub use player::{ClipRoute, SoundboardPlayer};
 pub use settings::{SoundboardSettings, SoundboardSettingsHandle, load_soundboard_settings};
 pub use sink_factory::AudioSinkFactory;

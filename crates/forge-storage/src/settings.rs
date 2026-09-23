@@ -39,6 +39,9 @@ pub mod reserved_keys {
     pub const AUDIO_VOICE_GATE_INPUT_DEVICE_ID: &str = "audio.voice_gate_input_device_id";
     pub const AUDIO_VOICE_GATE_THRESHOLD: &str = "audio.voice_gate_threshold";
     pub const AUDIO_VOICE_GATE_HOLD_MS: &str = "audio.voice_gate_hold_ms";
+    pub const AUDIO_SPEECH_ROUTE: &str = "audio.speech_route";
+    pub const AUDIO_CLIPS_ROUTE: &str = "audio.clips_route";
+    pub const AUDIO_OVERLAY_ID: &str = "audio.overlay_id";
     pub const CHAT_HISTORY_STORE_LIMIT: &str = "chat_history.store_limit";
     pub const CHAT_HISTORY_DISPLAY_LIMIT: &str = "chat_history.display_limit";
     pub const PICKER_FAVORITES_SUB_ACTIONS: &str = "picker.favorites.sub_actions";
@@ -103,6 +106,8 @@ pub mod disclosure {
             | reserved_keys::AUDIO_VOICE_GATE_ENABLED
             | reserved_keys::AUDIO_VOICE_GATE_THRESHOLD
             | reserved_keys::AUDIO_VOICE_GATE_HOLD_MS
+            | reserved_keys::AUDIO_SPEECH_ROUTE
+            | reserved_keys::AUDIO_CLIPS_ROUTE
             | reserved_keys::CHAT_HISTORY_STORE_LIMIT
             | reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT
             | reserved_keys::TTS_DISABLED_ENGINES
@@ -126,6 +131,7 @@ pub mod disclosure {
             | reserved_keys::FONT_MONO
             | reserved_keys::AUDIO_OUTPUT_DEVICE_ID
             | reserved_keys::AUDIO_VOICE_GATE_INPUT_DEVICE_ID
+            | reserved_keys::AUDIO_OVERLAY_ID
             | reserved_keys::SOUNDBOARD_OUTPUT_DEVICE => Presence,
 
             _ => Withheld,

@@ -1,8 +1,10 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use forge_audio::{AudioError, AudioSink, ControlledPlayback, PcmBuffer, PlaybackHandle};
 use forge_events::Event;
 use forge_registry::{
     ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
@@ -532,6 +534,14 @@ pub(crate) fn overlay_definition(kind_id: &str, config: OverlayConfig) -> Overla
     }
 }
 
+pub(crate) fn overlay_named(id: &str, kind_id: &str) -> OverlayDefinition {
+    OverlayDefinition {
+        id: OverlayId::new(id),
+        display_name: format!("{id} overlay"),
+        ..overlay_definition(kind_id, OverlayConfig::new())
+    }
+}
+
 pub(crate) fn trigger_registry(stubs: Vec<StubTrigger>) -> TriggerRegistry {
     let mut registry = TriggerRegistry::new();
     for stub in stubs {
@@ -585,4 +595,55 @@ pub(crate) fn stopped_handle(
     backend: &Arc<TestBackend>,
 ) -> ServerHandle {
     rt.block_on(stopped_server_handle(backend))
+}
+
+#[derive(Default)]
+pub(crate) struct RecordingSink {
+    plays: AtomicUsize,
+    stoppables: AtomicUsize,
+    controlled: AtomicUsize,
+}
+
+impl RecordingSink {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub(crate) fn plays(&self) -> usize {
+        self.plays.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn stoppables(&self) -> usize {
+        self.stoppables.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn controlled(&self) -> usize {
+        self.controlled.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn calls(&self) -> usize {
+        self.plays() + self.stoppables() + self.controlled()
+    }
+}
+
+#[async_trait::async_trait]
+impl AudioSink for RecordingSink {
+    async fn play(&self, _: PcmBuffer) -> Result<(), AudioError> {
+        self.plays.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    async fn play_stoppable(&self, _: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
+        self.stoppables.fetch_add(1, Ordering::SeqCst);
+        Ok(PlaybackHandle::default())
+    }
+
+    async fn play_controlled(&self, _: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
+        self.controlled.fetch_add(1, Ordering::SeqCst);
+        Ok(ControlledPlayback::resolved(Ok(())))
+    }
+}
+
+pub(crate) fn tone() -> PcmBuffer {
+    PcmBuffer::new(vec![0_i16; 16], 48_000, 1)
 }

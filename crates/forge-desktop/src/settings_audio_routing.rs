@@ -686,3 +686,121 @@ async fn load_routing(
         choices,
     })
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
+    use forge_storage::{MockOverlayRepo, StorageError, reserved_keys};
+
+    use super::*;
+    use crate::audio_routes::RouteFallback;
+    use crate::test_support::{overlay_named, test_backend};
+
+    const CHOSEN: &str = "stage-audio";
+
+    fn catalog(listed: Vec<forge_storage::OverlayDefinition>) -> Arc<dyn OverlayRepo> {
+        let mut repo = MockOverlayRepo::new();
+        let held = listed.clone();
+        repo.expect_list().returning(move || Ok(held.clone()));
+        repo.expect_get().returning(move |id| {
+            Ok(listed
+                .iter()
+                .find(|definition| &definition.id == id)
+                .cloned())
+        });
+        Arc::new(repo)
+    }
+
+    #[test]
+    fn every_route_is_named_from_the_catalog_rather_than_by_its_stored_token() {
+        let mut labels = BTreeSet::new();
+
+        for route in [AudioRoute::Local, AudioRoute::Overlay, AudioRoute::Both] {
+            let label = route_label(route);
+
+            assert_ne!(
+                label,
+                route.as_str(),
+                "{route:?} fell through to its stored token"
+            );
+            assert!(
+                labels.insert(label),
+                "{route:?} shares another route's name"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn only_audio_overlays_are_offered_as_destinations() {
+        let (backend, _writes) = test_backend();
+        let overlays = catalog(vec![
+            overlay_named("alert-box", ALERT_OVERLAY_KIND),
+            overlay_named(CHOSEN, AUDIO_OVERLAY_KIND),
+        ]);
+
+        let loaded = load_routing(backend as Arc<dyn SettingsRepo>, overlays, true)
+            .await
+            .expect("the routing settings load");
+
+        assert_eq!(
+            loaded
+                .choices
+                .iter()
+                .map(|choice| choice.id.as_str().to_owned())
+                .collect::<Vec<_>>(),
+            vec![CHOSEN.to_owned()]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_overlay_list_that_cannot_be_read_fails_the_load() {
+        let (backend, _writes) = test_backend();
+        let mut repo = MockOverlayRepo::new();
+        repo.expect_list().returning(|| {
+            Err(StorageError::Connection {
+                reason: "the database went away".to_owned(),
+            })
+        });
+
+        let refused = load_routing(
+            backend as Arc<dyn SettingsRepo>,
+            Arc::new(repo) as Arc<dyn OverlayRepo>,
+            true,
+        )
+        .await;
+
+        assert!(refused.is_err());
+    }
+
+    #[tokio::test]
+    async fn the_stored_choice_stays_visible_while_the_plan_it_produced_falls_back() {
+        let (backend, _writes) = test_backend();
+        backend
+            .set_string(
+                reserved_keys::AUDIO_SPEECH_ROUTE,
+                AudioRoute::Overlay.as_str(),
+            )
+            .await
+            .expect("the stored route is written");
+        backend
+            .set_string(reserved_keys::AUDIO_OVERLAY_ID, CHOSEN)
+            .await
+            .expect("the stored destination is written");
+        let overlays = catalog(vec![overlay_named(CHOSEN, AUDIO_OVERLAY_KIND)]);
+
+        let loaded = load_routing(backend as Arc<dyn SettingsRepo>, overlays, false)
+            .await
+            .expect("the routing settings load");
+
+        assert_eq!(loaded.speech, AudioRoute::Overlay);
+        assert_eq!(loaded.destination, Some(OverlayId::new(CHOSEN)));
+        assert_eq!(loaded.speech_plan.route, AudioRoute::Local);
+        assert_eq!(
+            loaded.speech_plan.fallback,
+            Some(RouteFallback::ServerUnavailable)
+        );
+    }
+}

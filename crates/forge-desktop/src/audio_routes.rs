@@ -216,3 +216,371 @@ pub fn report_plan(domain: AudioDomain, plan: &RoutePlan) {
         ),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
+    use forge_storage::MockOverlayRepo;
+    use forge_storage::settings::MockSettingsRepo;
+
+    use super::*;
+    use crate::test_support::{RecordingSink, overlay_named, test_backend, tone};
+
+    const CHOSEN: &str = "stage-audio";
+
+    #[derive(Clone, Copy, Debug)]
+    enum Lookup {
+        AnAudioOverlay,
+        AnotherKind,
+        Nothing,
+        AFailure,
+    }
+
+    fn overlays(lookup: Lookup) -> Arc<dyn OverlayRepo> {
+        let mut repo = MockOverlayRepo::new();
+        repo.expect_get().returning(move |id| match lookup {
+            Lookup::AnAudioOverlay => Ok(Some(overlay_named(id.as_str(), AUDIO_OVERLAY_KIND))),
+            Lookup::AnotherKind => Ok(Some(overlay_named(id.as_str(), ALERT_OVERLAY_KIND))),
+            Lookup::Nothing => Ok(None),
+            Lookup::AFailure => Err(StorageError::Connection {
+                reason: "the database went away".to_owned(),
+            }),
+        });
+        Arc::new(repo)
+    }
+
+    fn unreadable_settings() -> MockSettingsRepo {
+        let mut repo = MockSettingsRepo::new();
+        repo.expect_get_string().returning(|key| {
+            Err(StorageError::NotFound {
+                key: key.to_owned(),
+            })
+        });
+        repo
+    }
+
+    #[tokio::test]
+    async fn absent_settings_leave_both_domains_on_the_local_device() {
+        let (backend, _writes) = test_backend();
+
+        assert_eq!(
+            load_audio_routes(backend.as_ref()).await,
+            AudioRoutes {
+                speech: AudioRoute::Local,
+                clips: AudioRoute::Local,
+                destination: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn each_domain_is_read_back_from_its_own_key() {
+        let (backend, _writes) = test_backend();
+        set_route(backend.as_ref(), AudioDomain::Speech, AudioRoute::Overlay)
+            .await
+            .expect("the route is stored");
+        set_route(backend.as_ref(), AudioDomain::Clips, AudioRoute::Both)
+            .await
+            .expect("the route is stored");
+
+        let routes = load_audio_routes(backend.as_ref()).await;
+
+        assert_eq!(routes.speech, AudioRoute::Overlay);
+        assert_eq!(routes.clips, AudioRoute::Both);
+    }
+
+    #[tokio::test]
+    async fn every_route_survives_a_write_and_a_read() {
+        for domain in [AudioDomain::Speech, AudioDomain::Clips] {
+            for route in [AudioRoute::Local, AudioRoute::Overlay, AudioRoute::Both] {
+                let (backend, _writes) = test_backend();
+                set_route(backend.as_ref(), domain, route)
+                    .await
+                    .expect("the route is stored");
+
+                let stored = load_audio_routes(backend.as_ref()).await;
+                let read_back = match domain {
+                    AudioDomain::Speech => stored.speech,
+                    AudioDomain::Clips => stored.clips,
+                };
+
+                assert_eq!(read_back, route, "{domain:?} lost {route:?} in storage");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stored_route_that_cannot_be_parsed_falls_back_to_the_local_device() {
+        for stored in ["", "   ", "remote", "obs", "local overlay"] {
+            let (backend, _writes) = test_backend();
+            backend
+                .set_string(reserved_keys::AUDIO_SPEECH_ROUTE, stored)
+                .await
+                .expect("the raw value is stored");
+
+            assert_eq!(
+                load_audio_routes(backend.as_ref()).await.speech,
+                AudioRoute::Local,
+                "{stored:?} was not treated as unusable"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn settings_that_cannot_be_read_still_yield_a_playable_route() {
+        assert_eq!(
+            load_audio_routes(&unreadable_settings()).await,
+            AudioRoutes::default()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stored_destination_that_names_nothing_is_read_as_no_destination() {
+        for blank in ["", "   ", "\t\n"] {
+            let (backend, _writes) = test_backend();
+            backend
+                .set_string(reserved_keys::AUDIO_OVERLAY_ID, blank)
+                .await
+                .expect("the raw value is stored");
+
+            assert_eq!(
+                load_audio_routes(backend.as_ref()).await.destination,
+                None,
+                "{blank:?} was read as a destination"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_destination_that_names_nothing_removes_the_key_rather_than_blanking_it() {
+        for cleared in [None, Some(""), Some("   ")] {
+            let (backend, _writes) = test_backend();
+            set_destination(backend.as_ref(), Some(&OverlayId::new(CHOSEN)))
+                .await
+                .expect("the destination is written");
+
+            set_destination(backend.as_ref(), cleared.map(OverlayId::new).as_ref())
+                .await
+                .expect("the destination is cleared");
+
+            assert_eq!(
+                backend
+                    .get_string(reserved_keys::AUDIO_OVERLAY_ID)
+                    .await
+                    .expect("the key is readable"),
+                None,
+                "{cleared:?} was stored instead of clearing the key"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_padded_destination_is_stored_and_read_without_its_padding() {
+        let (backend, _writes) = test_backend();
+        set_destination(backend.as_ref(), Some(&OverlayId::new("  stage-audio  ")))
+            .await
+            .expect("the destination is written");
+
+        assert_eq!(
+            load_audio_routes(backend.as_ref()).await.destination,
+            Some(OverlayId::new(CHOSEN))
+        );
+    }
+
+    #[tokio::test]
+    async fn every_lookup_state_has_its_own_destination_verdict() {
+        let chosen = OverlayId::new(CHOSEN);
+        for (server_available, destination, lookup, expected) in [
+            (true, None, Lookup::AnAudioOverlay, AudioDestination::Unset),
+            (false, None, Lookup::AnAudioOverlay, AudioDestination::Unset),
+            (
+                false,
+                Some(&chosen),
+                Lookup::AnAudioOverlay,
+                AudioDestination::ServerOff,
+            ),
+            (
+                true,
+                Some(&chosen),
+                Lookup::AFailure,
+                AudioDestination::Unreadable,
+            ),
+            (
+                true,
+                Some(&chosen),
+                Lookup::Nothing,
+                AudioDestination::NotFound,
+            ),
+            (
+                true,
+                Some(&chosen),
+                Lookup::AnotherKind,
+                AudioDestination::NotAudioOverlay,
+            ),
+            (
+                true,
+                Some(&chosen),
+                Lookup::AnAudioOverlay,
+                AudioDestination::Ready(OverlayId::new(CHOSEN)),
+            ),
+        ] {
+            let repo = overlays(lookup);
+
+            assert_eq!(
+                resolve_destination(repo.as_ref(), server_available, destination).await,
+                expected,
+                "server_available={server_available} destination={destination:?} lookup={lookup:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_ready_destination_lets_an_overlay_route_stand() {
+        let ready = OverlayId::new(CHOSEN);
+        let unusable = [
+            (AudioDestination::Unset, RouteFallback::NoDestinationChosen),
+            (
+                AudioDestination::ServerOff,
+                RouteFallback::ServerUnavailable,
+            ),
+            (
+                AudioDestination::Unreadable,
+                RouteFallback::DestinationUnreadable,
+            ),
+            (
+                AudioDestination::NotFound,
+                RouteFallback::DestinationNotFound,
+            ),
+            (
+                AudioDestination::NotAudioOverlay,
+                RouteFallback::DestinationNotAudioOverlay,
+            ),
+        ];
+
+        for requested in [AudioRoute::Overlay, AudioRoute::Both] {
+            assert_eq!(
+                plan_route(requested, &AudioDestination::Ready(ready.clone())),
+                RoutePlan {
+                    route: requested,
+                    destination: Some(ready.clone()),
+                    fallback: None,
+                },
+                "{requested:?} lost its ready destination"
+            );
+
+            for (state, fallback) in &unusable {
+                assert_eq!(
+                    plan_route(requested, state),
+                    RoutePlan {
+                        route: AudioRoute::Local,
+                        destination: None,
+                        fallback: Some(*fallback),
+                    },
+                    "{requested:?} against {state:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_local_route_never_picks_up_a_destination() {
+        for state in [
+            AudioDestination::Ready(OverlayId::new(CHOSEN)),
+            AudioDestination::Unset,
+            AudioDestination::ServerOff,
+            AudioDestination::Unreadable,
+            AudioDestination::NotFound,
+            AudioDestination::NotAudioOverlay,
+        ] {
+            assert_eq!(
+                plan_route(AudioRoute::Local, &state),
+                RoutePlan {
+                    route: AudioRoute::Local,
+                    destination: None,
+                    fallback: None,
+                },
+                "a local route reacted to {state:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plan_carries_a_destination_exactly_when_its_route_plays_the_overlay() {
+        for requested in [AudioRoute::Local, AudioRoute::Overlay, AudioRoute::Both] {
+            for state in [
+                AudioDestination::Ready(OverlayId::new(CHOSEN)),
+                AudioDestination::Unset,
+                AudioDestination::ServerOff,
+                AudioDestination::Unreadable,
+                AudioDestination::NotFound,
+                AudioDestination::NotAudioOverlay,
+            ] {
+                let plan = plan_route(requested, &state);
+
+                assert_eq!(
+                    plan.route.plays_overlay(),
+                    plan.destination.is_some(),
+                    "{requested:?} against {state:?} produced {plan:?}"
+                );
+            }
+        }
+    }
+
+    fn plan_with(route: AudioRoute, destination: Option<&str>) -> RoutePlan {
+        RoutePlan {
+            route,
+            destination: destination.map(OverlayId::new),
+            fallback: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn playback_reaches_exactly_the_legs_the_plan_names() {
+        for (route, destination, offered_overlay, local_plays, overlay_plays) in [
+            (AudioRoute::Local, None, true, 1, 0),
+            (AudioRoute::Overlay, Some(CHOSEN), true, 0, 1),
+            (AudioRoute::Both, Some(CHOSEN), true, 1, 1),
+            (AudioRoute::Overlay, Some(CHOSEN), false, 1, 0),
+            (AudioRoute::Overlay, None, true, 1, 0),
+            (AudioRoute::Both, None, true, 1, 0),
+        ] {
+            let local = RecordingSink::new();
+            let overlay = RecordingSink::new();
+            let sink = compose_sink(
+                &plan_with(route, destination),
+                Arc::clone(&local) as Arc<dyn AudioSink>,
+                offered_overlay.then(|| Arc::clone(&overlay) as Arc<dyn AudioSink>),
+            );
+
+            sink.play(tone()).await.expect("the composed sink plays");
+
+            let label = format!("{route:?}/{destination:?}/offered={offered_overlay}");
+            assert_eq!(local.calls(), local_plays, "local leg for {label}");
+            assert_eq!(overlay.calls(), overlay_plays, "overlay leg for {label}");
+        }
+    }
+
+    #[test]
+    fn a_single_leg_is_handed_back_unwrapped() {
+        let local = Arc::new(RecordingSink::default()) as Arc<dyn AudioSink>;
+        let overlay = Arc::new(RecordingSink::default()) as Arc<dyn AudioSink>;
+
+        assert!(Arc::ptr_eq(
+            &compose_sink(
+                &plan_with(AudioRoute::Local, None),
+                Arc::clone(&local),
+                Some(Arc::clone(&overlay)),
+            ),
+            &local
+        ));
+        assert!(Arc::ptr_eq(
+            &compose_sink(
+                &plan_with(AudioRoute::Overlay, Some(CHOSEN)),
+                Arc::clone(&local),
+                Some(Arc::clone(&overlay)),
+            ),
+            &overlay
+        ));
+    }
+}

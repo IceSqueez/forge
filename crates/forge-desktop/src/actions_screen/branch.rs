@@ -176,7 +176,7 @@ impl ScreenActionsView {
                 input
             });
             let sub = cx.subscribe(&field, move |this, _f, event: &InputEvent, cx| {
-                if let InputEvent::Submitted(text) = event {
+                if let InputEvent::Submitted(text) | InputEvent::Blurred(text) = event {
                     this.commit_case_match(si, ci, text.to_string(), cx);
                 }
             });

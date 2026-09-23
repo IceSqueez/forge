@@ -395,7 +395,7 @@ impl EventWiringView {
                     }
                     Err(OverlayWiringError::Incomplete { records, source }) => {
                         Landing::Incomplete {
-                            records,
+                            records: *records,
                             message: source.to_string(),
                         }
                     }

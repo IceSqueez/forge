@@ -354,10 +354,9 @@ mod tests {
                                 .bytes()
                                 .await
                                 .map_err(|e| TtsError::NetworkFailed(e.to_string()))?;
-                            let samples = bytes
-                                .chunks_exact(2)
-                                .map(|c| i16::from_le_bytes([c[0], c[1]]))
-                                .collect();
+                            let (pairs, _) = bytes.as_chunks::<2>();
+                            let samples =
+                                pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
                             Ok(PcmBuffer::new(samples, 16_000, 1))
                         }
                         s => Err(TtsError::NetworkFailed(format!("HTTP {s}"))),

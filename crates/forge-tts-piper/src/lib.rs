@@ -273,11 +273,8 @@ impl TtsEngine for PiperEngine {
             });
         }
 
-        let samples: Vec<i16> = output
-            .stdout
-            .chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        let (pairs, _) = output.stdout.as_chunks::<2>();
+        let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
 
         Ok(PcmBuffer::new(samples, sample_rate, 1))
     }

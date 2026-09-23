@@ -134,10 +134,8 @@ pub(super) async fn synthesize(
             .bytes()
             .await
             .map_err(|e| PollyError::Http(e.to_string()))?;
-        let samples: Vec<i16> = bytes
-            .chunks_exact(2)
-            .map(|c| i16::from_le_bytes([c[0], c[1]]))
-            .collect();
+        let (pairs, _) = bytes.as_chunks::<2>();
+        let samples: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
         Ok(PcmBuffer::new(samples, SAMPLE_RATE_HZ, 1))
     } else {
         let retry_after_secs = resp

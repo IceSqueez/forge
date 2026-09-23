@@ -231,17 +231,26 @@ impl ActionsService {
 
         let action = plan.action.on_queue(queue.id());
         if let Err(source) = self.actions.save(&action).await {
-            return Err(OverlayWiringError::Incomplete { records, source });
+            return Err(OverlayWiringError::Incomplete {
+                records: Box::new(records),
+                source,
+            });
         }
         records.action_id = Some(action.id);
 
         if let Err(source) = self.trigger_instances.save(&plan.trigger).await {
-            return Err(OverlayWiringError::Incomplete { records, source });
+            return Err(OverlayWiringError::Incomplete {
+                records: Box::new(records),
+                source,
+            });
         }
         records.trigger_instance_id = Some(plan.trigger.id);
 
         if let Err(source) = self.link_trigger_instance(action.id, plan.trigger.id).await {
-            return Err(OverlayWiringError::Incomplete { records, source });
+            return Err(OverlayWiringError::Incomplete {
+                records: Box::new(records),
+                source,
+            });
         }
         records.linked = true;
 

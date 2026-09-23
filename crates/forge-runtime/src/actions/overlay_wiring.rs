@@ -148,7 +148,7 @@ pub enum OverlayWiringError {
     },
     #[error("wiring stopped with {records}: {source}")]
     Incomplete {
-        records: OverlayWiringRecords,
+        records: Box<OverlayWiringRecords>,
         #[source]
         source: StorageError,
     },

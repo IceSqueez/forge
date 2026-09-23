@@ -349,7 +349,6 @@ fn mint_capability() -> String {
 mod tests {
     use std::collections::HashSet;
 
-    use base64::Engine as _;
     use tracing::Level;
 
     use super::*;

@@ -170,8 +170,8 @@ async fn read_device_events(
         };
         drop(guard);
 
-        // chunks_exact guards against acting on a partial trailing chunk.
-        for raw in buf[..read].chunks_exact(INPUT_EVENT_SIZE) {
+        let (events, _partial) = buf[..read].as_chunks::<INPUT_EVENT_SIZE>();
+        for raw in events {
             handle_key_event(raw, &modifier_state, &held_keys, &registered, &fired_tx).await;
         }
     }

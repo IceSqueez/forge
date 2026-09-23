@@ -236,10 +236,8 @@ pub(crate) mod tests {
         let buffer = PcmBuffer::new(samples.clone(), 16_000, 1);
 
         let wave = encode_wave(&buffer);
-        let decoded: Vec<i16> = wave[CANONICAL_HEADER_BYTES..]
-            .chunks_exact(size_of::<i16>())
-            .map(|pair| i16::from_le_bytes(pair.try_into().unwrap()))
-            .collect();
+        let (pairs, _) = wave[CANONICAL_HEADER_BYTES..].as_chunks::<{ size_of::<i16>() }>();
+        let decoded: Vec<i16> = pairs.iter().map(|pair| i16::from_le_bytes(*pair)).collect();
 
         assert_eq!(
             decoded, samples,

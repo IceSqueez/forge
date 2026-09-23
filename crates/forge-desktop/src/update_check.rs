@@ -393,13 +393,47 @@ fn remember_notified(tag: String, backend: Arc<dyn DataProvider>, rt_handle: &Ha
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use forge_platform_core::{HealthMetric, HealthValue};
+
     use super::{
-        CURRENT_VERSION, REPO_URL, Release, UpdateNotice, Version, is_newer, latest_release_url,
-        parse_version, release_from_json, should_notify,
+        CURRENT_VERSION, REPO_URL, Release, UpdateNotice, Version, any_output_active, is_newer,
+        latest_release_url, parse_version, release_from_json, should_notify,
     };
 
     fn version(raw: &str) -> Version {
         parse_version(raw).unwrap()
+    }
+
+    fn status(active: bool) -> HealthMetric {
+        HealthMetric {
+            label: "Stream".to_owned(),
+            value: HealthValue::Status {
+                label: if active { "Live" } else { "Off" }.to_owned(),
+                active,
+                detail: None,
+            },
+        }
+    }
+
+    fn text() -> HealthMetric {
+        HealthMetric {
+            label: "Scene".to_owned(),
+            value: HealthValue::Text {
+                primary: "Starting soon".to_owned(),
+                secondary: None,
+            },
+        }
+    }
+
+    fn ratio() -> HealthMetric {
+        HealthMetric {
+            label: "Buffer".to_owned(),
+            value: HealthValue::Ratio {
+                used: 3,
+                total: 4,
+                reset_hint: None,
+            },
+        }
     }
 
     #[test]
@@ -673,6 +707,41 @@ mod tests {
                 None,
                 "{label}",
             );
+        }
+    }
+
+    #[test]
+    fn any_output_active_holds_the_update_back_only_for_a_running_status_metric() {
+        for (label, metrics, expected) in [
+            ("no metrics at all", Vec::new(), false),
+            (
+                "every status idle",
+                vec![status(false), status(false)],
+                false,
+            ),
+            (
+                "one running status among idle ones",
+                vec![status(false), status(true), status(false)],
+                true,
+            ),
+            (
+                "a running status is the last metric",
+                vec![status(false), status(true)],
+                true,
+            ),
+            ("no status metric at all", vec![text(), ratio()], false),
+            (
+                "a running status beside non-status metrics",
+                vec![text(), status(true), ratio()],
+                true,
+            ),
+            (
+                "only idle statuses beside non-status metrics",
+                vec![text(), status(false), ratio()],
+                false,
+            ),
+        ] {
+            assert_eq!(any_output_active(&metrics), expected, "{label}");
         }
     }
 }

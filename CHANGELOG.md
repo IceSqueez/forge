@@ -1,6 +1,98 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-09-23
+### ⚡ Performance
+- *(server)* Let browsers cache content-named overlay media for good
+
+### 🐛 Bug Fixes
+- *(audio)* Carry every route's reason when all playback routes fail
+- *(overlay)* Send overlay content as plain values
+- *(overlay)* Write builtin defaults against declared trigger variables
+- *(ui)* Commit a form field when it loses focus, not only on enter
+- *(twitch)* Declare the shield mode moderator variables once
+- *(audio)* Switch the speech output device live, report a failed one
+- *(obs)* Publish connection state changes, retire client on reconnect
+- *(vtube)* Publish connection state changes to every status surface
+- *(soundboard)* Copy clips into the managed media library
+- *(soundboard)* Keep why a clip was refused and adopt it on demand
+- *(ui)* Badge clips outside the media library and copy them on demand
+- *(storage)* Bound media reads by kind and normalize the claimed type
+- *(server)* Serve every accepted media format with its own media type
+- *(ui)* Drop a late icon import answer after the user picked another
+- *(ui)* Tell apart a preview tab from a browser source after Send test
+
+### 🚀 Features
+- *(server)* Serve single-use audio clips and take a playback verdict
+- *(overlay)* Give overlays a canvas size and a self-previewing page
+- *(ui)* Preview overlays on a true-size canvas with a scale toggle
+- *(ui)* Open on a chosen screen from the command line
+- *(overlay)* Play forge audio through a visual-less overlay kind
+- *(overlay)* Size an overlay element in real canvas pixels
+- *(ui)* Draw the overlay preview at the element size the page renders
+- *(ui)* Let an optional number field return to auto
+- *(core)* Declare a canonical trigger variable vocabulary
+- *(twitch)* Publish canonical actor and text variables on triggers
+- *(storage)* Keep imported media in a content-addressed library
+- *(overlay)* Resolve a soundboard clip reference into overlay media
+- *(ui)* Pick an overlay sound from the soundboard library
+- *(overlay)* Let an alert carry a curated or imported icon
+- *(ui)* Pick an overlay icon from a grid and preview the page's icon
+- *(youtube)* Declare the canonical variable vocabulary on triggers
+- *(kick)* Declare the canonical variable vocabulary on every trigger
+- *(ui)* Give every alias of a trigger variable one value in a test run
+- *(overlay)* Suggest alert wording from a trigger's declared variables
+- *(runtime)* Wire an overlay to an event as action, trigger and queue
+- *(ui)* Show an overlay on an event from the overlays screen
+- *(server)* Count an overlay preview tab apart from a browser source
+- *(ui)* Offer the release page once when a newer version is published
+
+### 🚜 Refactor
+- *(audio)* Build the speech sink via a factory, expose outcomes
+- *(runtime)* Derive which actions and triggers feed an overlay
+- *(ui)* Read overlay targets through the shared step traversal
+- *(overlay)* Sample content from the feeding trigger's variables
+- *(ui)* Decide OBS output activity over the metric slice
+
+### 🧪 Testing
+- *(server)* Cover audio clip capabilities, budget and verdicts
+- *(audio)* Carry a start refusal into a mixed route failure
+- *(overlay)* Pin the content frame to plain values on the wire
+- *(emulator)* Drive overlay content through a live forge page
+- *(overlay)* Cover the canvas size, style guards and the page preview
+- *(overlay)* Pin builtin defaults to the variables triggers declare
+- *(overlay)* Pin the audio kind contract and its silent page
+- *(overlay)* Pin element sizing, text scale and the page size contract
+- *(ui)* Cover blur commits, optional number fields and element size
+- *(core)* Cover the canonical trigger vocabulary and its conformance
+- *(twitch)* Cover canonical actor and text variables on key triggers
+- *(emulator)* Assert the alert wording renders the display name
+- *(obs)* Cover the connection state table and the reconnect handover
+- *(audio)* Cover the live speech route and the honest device failure
+- *(vtube)* Cover the shared connection feed and cancellable connect
+- *(audio)* Cover live sink swaps and a device dying mid-utterance
+- *(soundboard)* Fold the duplicate player suites into in-crate tests
+- *(media)* Cover the managed blob layer and lazy clip adoption
+- *(obs)* Bound the retired-client handshake so a lost race fails
+- *(media)* Cover the refusal memo, adoption verdicts and bounded read
+- *(overlay)* Cover the generated media namespace and its media types
+- *(ui)* Cover the overlay sound picker, adoption race and messages
+- *(overlay)* Cover the icon choice from the curated roster to the page
+- *(overlay)* Cover the icon choice, icon grid and the alert preview
+- *(i18n)* Guard every tr! call site against its message's arguments
+- *(runtime)* Point the in-memory backends at a temporary media root
+- *(overlay)* Cover the icon import guard and the accent tint fallback
+- *(youtube)* Cover the canonical actor blocks and the three wire gaps
+- *(kick)* Cover the canonical actor blocks and the four wire gaps
+- *(actions)* Pin one value per canonical slot across trigger aliases
+- *(actions)* Cover the shared overlay.send traversal and its feeds
+- *(overlay)* Cover event-wiring suggestions and the trigger-fed sample
+- *(overlay)* Cover the event-wiring plan and its single write path
+- *(overlay)* Cover the event-wiring plan, stages and scheduler handoff
+- *(overlay)* Cover the preview-tab connection class and its count
+- *(updates)* Cover version parsing, ordering and the notice decision
+- *(overlay)* Expect the imported icon path the way the host joins it
+
 ## [0.5.2] - 2026-09-20
 ### Deps
 - *(build)* Bump dependencies
@@ -8,6 +100,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 - *(deps)* Bump actions-rust-lang/setup-rust-toolchain from 1 to 2 (#67)
 - *(deps)* Bump taiki-e/install-action from 2.87.5 to 2.87.11 (#68)
+- Release
 
 ### 🐛 Bug Fixes
 - *(twitch)* Keep subscriptions and the old socket across a session reconnect
@@ -28,6 +121,7 @@ All notable changes to this project will be documented in this file.
 
 ### 📚 Documentation
 - *(emulator)* Describe running scenarios, exit codes and the game guard
+- *(release)* Release v0.5.2
 
 ### 🚀 Features
 - *(platform)* Resolve loopback-only platform endpoint overrides

@@ -51,6 +51,7 @@ mod platforms;
 mod presentation;
 mod queue_health;
 mod queues;
+mod remote_audio;
 mod root;
 mod run_history_modal;
 mod runtime_handles;

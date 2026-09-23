@@ -87,6 +87,7 @@ pub struct RemoteDelivery {
 pub enum RemoteVerdict {
     Played,
     Refused { reason: String },
+    Unknown { reason: String },
 }
 
 #[async_trait]

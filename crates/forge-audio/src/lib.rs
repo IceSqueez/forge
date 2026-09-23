@@ -12,10 +12,12 @@ pub mod fan_out;
 pub mod handle;
 pub mod pcm;
 pub mod remote;
+pub mod remote_sink;
 pub mod route;
 pub mod sink;
 pub mod sink_factory;
 pub mod voice_gate;
+pub mod wave;
 
 pub use audio_route::AudioRoute;
 pub use cpal_sink::CpalSink;
@@ -35,9 +37,11 @@ pub use remote::{
     ClipMediaType, RemoteAudioDestination, RemoteClip, RemoteClipId, RemoteCommand, RemoteDelivery,
     RemoteDestinationId, RemoteVerdict,
 };
+pub use remote_sink::RemoteSink;
 pub use route::{
     DevicePreference, build_cpal_sink, fan_out_targets, resolve_device, resolve_output_device,
 };
 pub use sink::{AudioSink, NullSink};
 pub use sink_factory::{AudioSinkFactory, CpalSinkFactory};
 pub use voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState};
+pub use wave::encode_wave;

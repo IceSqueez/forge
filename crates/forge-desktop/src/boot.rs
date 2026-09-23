@@ -18,8 +18,8 @@ use forge_runtime::{
     spawn_viewer_tracker,
 };
 use forge_soundboard::{
-    BusAudioEventSink, ClipLibrary, ClipRoute, CpalSinkFactory, SoundboardPlayer,
-    SoundboardSettingsHandle, load_soundboard_settings,
+    BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
+    load_soundboard_settings,
 };
 use forge_storage::{
     CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo, StorageError,
@@ -28,7 +28,7 @@ use forge_storage::{
 use forge_storage_sqlite::SqliteBackend;
 
 use crate::audio_routes::{
-    AudioDomain, compose_sink, load_audio_routes, plan_route, report_plan, resolve_destination,
+    AudioDomain, compose_routes, load_audio_routes, plan_route, report_plan, resolve_destination,
 };
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
@@ -434,25 +434,25 @@ async fn install_audio_routes(
     report_plan(AudioDomain::Speech, &speech_plan);
     report_plan(AudioDomain::Clips, &clips_plan);
 
-    let overlay_sink = destination
-        .ready()
-        .filter(|_| speech_plan.route.plays_overlay() || clips_plan.route.plays_overlay())
-        .zip(server.clone())
-        .map(|(id, handle)| {
-            let destination = Arc::new(OverlayAudioDestination::new(handle, overlays.clone()))
-                as Arc<dyn RemoteAudioDestination>;
-            Arc::new(RemoteSink::new(
-                destination,
-                RemoteDestinationId::new(id.as_str()),
-            )) as Arc<dyn AudioSink>
-        });
-
-    speech_sink.install(compose_sink(
+    let install = compose_routes(
         &speech_plan,
+        &clips_plan,
+        &destination,
         speech_output,
-        overlay_sink.clone(),
-    ));
-    soundboard_player.install_route(ClipRoute::new(clips_plan.route, overlay_sink));
+        |id| {
+            server.clone().map(|handle| {
+                let destination = Arc::new(OverlayAudioDestination::new(handle, overlays.clone()))
+                    as Arc<dyn RemoteAudioDestination>;
+                Arc::new(RemoteSink::new(
+                    destination,
+                    RemoteDestinationId::new(id.as_str()),
+                )) as Arc<dyn AudioSink>
+            })
+        },
+    );
+
+    speech_sink.install(install.speech_sink);
+    soundboard_player.install_route(install.clip_route);
 }
 
 async fn build_voice_gate(

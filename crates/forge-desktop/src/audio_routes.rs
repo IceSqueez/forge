@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use forge_audio::{AudioRoute, AudioSink, FanOutSink};
 use forge_overlay::kinds::audio::KIND_ID as AUDIO_OVERLAY_KIND;
+use forge_soundboard::ClipRoute;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo, StorageError, reserved_keys};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,6 +209,31 @@ pub fn compose_sink(
         }
         Some(overlay) => overlay,
         None => local,
+    }
+}
+
+pub struct RoutesInstall {
+    pub speech_sink: Arc<dyn AudioSink>,
+    pub clip_route: ClipRoute,
+}
+
+/// `overlay_sink` runs at most once, and only when a resolved destination is ready and either
+/// plan plays it; its `None` folds back to a local-only composition exactly like a missing sink.
+pub fn compose_routes(
+    speech_plan: &RoutePlan,
+    clips_plan: &RoutePlan,
+    destination: &AudioDestination,
+    speech_local: Arc<dyn AudioSink>,
+    overlay_sink: impl FnOnce(&OverlayId) -> Option<Arc<dyn AudioSink>>,
+) -> RoutesInstall {
+    let overlay_sink = destination
+        .ready()
+        .filter(|_| speech_plan.route.plays_overlay() || clips_plan.route.plays_overlay())
+        .and_then(overlay_sink);
+
+    RoutesInstall {
+        speech_sink: compose_sink(speech_plan, speech_local, overlay_sink.clone()),
+        clip_route: ClipRoute::new(clips_plan.route, overlay_sink),
     }
 }
 

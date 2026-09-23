@@ -512,21 +512,19 @@ pub async fn relink_action(
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
-    use forge_storage_sqlite::SqliteBackend;
     use forge_types::{Action, ExecutionMode, QueueId};
     use gpui::Modifiers;
 
     use super::*;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
 
     const TEST_KEY: [u8; 32] = [0x11; 32];
     const OTHER_KIND: &str = "midi.note_on";
 
-    async fn provider() -> Arc<dyn DataProvider> {
-        Arc::new(
-            SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-                .await
-                .expect("in-memory backend opens"),
-        )
+    async fn provider() -> Sandboxed<Arc<dyn DataProvider>> {
+        sandboxed_backend("sqlite::memory:", TEST_KEY)
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
     }
 
     async fn default_queue(backend: &Arc<dyn DataProvider>) -> QueueId {

@@ -546,6 +546,8 @@ mod tests {
     use forge_events::Event;
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
+
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_types::{EventId, Variant};
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
@@ -558,12 +560,8 @@ mod tests {
         }
     }
 
-    async fn open_dp() -> Arc<SqliteBackend> {
-        Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        )
+    async fn open_dp() -> Sandboxed<Arc<SqliteBackend>> {
+        sandboxed_backend([0xab; 32]).await.map(Arc::new)
     }
 
     fn make_api_with_publisher(
@@ -573,7 +571,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
-            dp as Arc<dyn GlobalsRepo>,
+            dp.clone() as Arc<dyn GlobalsRepo>,
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );
@@ -679,7 +677,7 @@ mod tests {
         let http_client = Arc::new(new_without_tls_enforcement(config).unwrap());
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
-            dp as Arc<dyn GlobalsRepo>,
+            dp.clone() as Arc<dyn GlobalsRepo>,
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         )
@@ -694,7 +692,7 @@ mod tests {
         let config = Arc::new(ScriptHttpConfig::default());
 
         let result = tokio::task::spawn_blocking(move || {
-            let engine = build_engine_with_http_in_blocking(dp, captured, config);
+            let engine = build_engine_with_http_in_blocking(dp.clone(), captured, config);
             engine.eval_script(r#"forge::http::get("https://example.com/")"#)
         })
         .await
@@ -735,7 +733,7 @@ mod tests {
         let script = format!(r#"let r = forge::http::get("{server_url}/ping"); r"#);
 
         let result = tokio::task::spawn_blocking(move || {
-            let engine = build_engine_with_http_in_blocking(dp, captured, config);
+            let engine = build_engine_with_http_in_blocking(dp.clone(), captured, config);
             engine.eval_script(&script)
         })
         .await
@@ -797,7 +795,7 @@ mod tests {
             let script_id = ScriptId::new();
             let api = ForgeApi::new(
                 Arc::new(CapturingPublisher(Arc::clone(&captured))),
-                dp as Arc<dyn GlobalsRepo>,
+                dp.clone() as Arc<dyn GlobalsRepo>,
                 caused_by,
                 Instant::now() + std::time::Duration::from_secs(10),
             )
@@ -840,7 +838,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             Arc::new(CapturingPublisher(captured)),
-            dp as Arc<dyn GlobalsRepo>,
+            dp.clone() as Arc<dyn GlobalsRepo>,
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );
@@ -918,7 +916,7 @@ mod tests {
             });
             let cap = Arc::clone(&captured);
             tokio::task::spawn_blocking(move || {
-                let engine = build_engine_with_http_in_blocking(dp, cap, config);
+                let engine = build_engine_with_http_in_blocking(dp.clone(), cap, config);
                 let _ = engine.eval_script(&script);
             })
             .await

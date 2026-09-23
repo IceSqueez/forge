@@ -340,6 +340,7 @@ fn apply_response(arg_stack: &ArgStack, response: EgressResponse, parse_as: &str
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Event, EventPublisher};
     use forge_storage::{SettingsRepo, reserved_keys};
     use forge_storage_sqlite::SqliteBackend;
@@ -352,12 +353,8 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    async fn backend() -> Arc<SqliteBackend> {
-        Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0x11; 32])
-                .await
-                .unwrap(),
-        )
+    async fn backend() -> Sandboxed<Arc<SqliteBackend>> {
+        sandboxed_backend([0x11; 32]).await.map(Arc::new)
     }
 
     fn runner(method: HttpMethod, dp: &Arc<SqliteBackend>) -> CoreHttpRunner {

@@ -647,3 +647,47 @@ impl AudioSink for RecordingSink {
 pub(crate) fn tone() -> PcmBuffer {
     PcmBuffer::new(vec![0_i16; 16], 48_000, 1)
 }
+
+// Why: the plain `SqliteBackend` constructors hand the media repo the real user media
+// directory, so a test that reaches media would write into the maintainer's own data.
+// Test backends are opened through `sandboxed_backend` instead, with a media root that
+// lives and dies with the test.
+pub(crate) struct Sandboxed<T> {
+    inner: T,
+    _media_root: tempfile::TempDir,
+}
+
+impl<T> Sandboxed<T> {
+    pub(crate) fn map<U>(self, wrap: impl FnOnce(T) -> U) -> Sandboxed<U> {
+        Sandboxed {
+            inner: wrap(self.inner),
+            _media_root: self._media_root,
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Sandboxed<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+pub(crate) async fn sandboxed_backend(
+    url: &str,
+    key: [u8; 32],
+) -> Sandboxed<forge_storage_sqlite::SqliteBackend> {
+    let media_root = tempfile::tempdir().expect("a temporary media root");
+    let backend = forge_storage_sqlite::SqliteBackend::open_with_key_and_media_root(
+        url,
+        key,
+        media_root.path().to_owned(),
+    )
+    .await
+    .expect("a backend");
+    Sandboxed {
+        inner: backend,
+        _media_root: media_root,
+    }
+}

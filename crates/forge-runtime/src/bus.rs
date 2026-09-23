@@ -293,6 +293,7 @@ const _: () = {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::EventSource;
     use forge_storage::DataProvider;
     use forge_storage_sqlite::SqliteBackend;
@@ -339,12 +340,8 @@ mod tests {
     async fn backed_bus_with_caps(
         channel_cap: usize,
         ring_cap: usize,
-    ) -> (Arc<EventBus>, Arc<SqliteBackend>) {
-        let backend = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        );
+    ) -> (Arc<EventBus>, Sandboxed<Arc<SqliteBackend>>) {
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let event_log: Arc<dyn EventLogRepo> = Arc::new(BackedEventLog(Arc::clone(&backend)));
         let bus = EventBus::with_caps(event_log, channel_cap, ring_cap);
         (bus, backend)

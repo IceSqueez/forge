@@ -207,18 +207,15 @@ fn error_kind(err: &ScriptError) -> &'static str {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use crate::{EventBus, NullEventLogRepo, ScriptRegistry};
     use forge_events::EventPublisher;
     use forge_storage::{GlobalsRepo, SettingsRepo};
     use forge_storage_sqlite::SqliteBackend;
     use forge_types::EventId;
 
-    async fn make_backend() -> Arc<SqliteBackend> {
-        Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        )
+    async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
+        sandboxed_backend([0xab; 32]).await.map(Arc::new)
     }
 
     #[tokio::test]

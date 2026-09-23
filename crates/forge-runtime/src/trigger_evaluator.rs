@@ -475,6 +475,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Event, EventSource};
     use forge_registry::{
         EventFilter, FormField, KindPlatformContract, SubActionRegistry, TriggerCategory,
@@ -500,12 +501,8 @@ mod tests {
         sub_action_runners::register_core_sub_actions, triggers::register_core_triggers,
     };
 
-    async fn make_backend() -> Arc<SqliteBackend> {
-        Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        )
+    async fn make_backend() -> Sandboxed<Arc<SqliteBackend>> {
+        sandboxed_backend([0xab; 32]).await.map(Arc::new)
     }
 
     fn log_action(id: ActionId, queue_id: QueueId) -> Action {
@@ -632,7 +629,7 @@ mod tests {
         actions: Arc<dyn ActionRepo>,
         trigger_instances: Arc<dyn TriggerInstanceRepo>,
         scheduler: QueueSchedulerHandle,
-        _backend: Arc<SqliteBackend>,
+        _backend: Sandboxed<Arc<SqliteBackend>>,
     }
 
     async fn fixture(bus: Arc<EventBus>) -> EvaluatorFixture {

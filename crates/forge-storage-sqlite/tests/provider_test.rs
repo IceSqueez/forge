@@ -1,16 +1,15 @@
 #![allow(clippy::expect_used)]
 
 use forge_storage::{DataProvider, GlobalsRepo};
-use forge_storage_sqlite::SqliteBackend;
 use forge_types::Variant;
+
+mod common;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
 #[tokio::test]
 async fn schema_version_is_at_least_2_after_all_migrations() {
-    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("open");
+    let backend = common::sandboxed_backend("sqlite::memory:", TEST_KEY).await;
 
     let version = backend.schema_version().await.expect("schema_version");
     assert!(version >= 2, "expected at least 2 applied migrations");
@@ -20,11 +19,9 @@ async fn schema_version_is_at_least_2_after_all_migrations() {
 async fn dataprovider_action_repo_accessor_is_reachable() {
     use forge_types::{Action, ActionId};
 
-    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("open");
+    let backend = common::sandboxed_backend("sqlite::memory:", TEST_KEY).await;
 
-    let dp: &dyn DataProvider = &backend;
+    let dp: &dyn DataProvider = &*backend;
 
     let queue = dp
         .queue_repo()
@@ -61,11 +58,9 @@ async fn dataprovider_action_repo_accessor_is_reachable() {
 
 #[tokio::test]
 async fn dataprovider_globals_repo_roundtrip() {
-    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("open");
+    let backend = common::sandboxed_backend("sqlite::memory:", TEST_KEY).await;
 
-    let dp: &dyn DataProvider = &backend;
+    let dp: &dyn DataProvider = &*backend;
 
     GlobalsRepo::set(dp, "round_trip", Variant::Int(42), false)
         .await
@@ -79,14 +74,12 @@ async fn dataprovider_globals_repo_roundtrip() {
 
 #[tokio::test]
 async fn export_writes_a_non_empty_file() {
-    let pid = std::process::id();
-    let source_path = std::env::temp_dir().join(format!("forge_source_{pid}.sqlite"));
-    let export_path = std::env::temp_dir().join(format!("forge_export_{pid}.sqlite"));
+    let dir = tempfile::tempdir().expect("a temporary database directory");
+    let source_path = dir.path().join("source.sqlite");
+    let export_path = dir.path().join("export.sqlite");
 
     let url = format!("sqlite://{}", source_path.display());
-    let backend = SqliteBackend::open_with_key(&url, TEST_KEY)
-        .await
-        .expect("open file-backed db");
+    let backend = common::sandboxed_backend(&url, TEST_KEY).await;
 
     backend
         .export(&export_path)
@@ -95,20 +88,13 @@ async fn export_writes_a_non_empty_file() {
 
     let meta = std::fs::metadata(&export_path).expect("export file must exist");
     assert!(meta.len() > 0, "export file must be non-empty");
-
-    let _ = std::fs::remove_file(&source_path);
-    let _ = std::fs::remove_file(source_path.with_extension("sqlite-wal"));
-    let _ = std::fs::remove_file(source_path.with_extension("sqlite-shm"));
-    let _ = std::fs::remove_file(&export_path);
 }
 
 #[tokio::test]
 async fn shutdown_closes_the_pool_so_later_queries_fail_instead_of_hanging() {
     use forge_storage::SettingsRepo;
 
-    let backend = SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("open");
+    let backend = common::sandboxed_backend("sqlite::memory:", TEST_KEY).await;
     backend
         .set_string("theme", "catppuccin_mocha")
         .await

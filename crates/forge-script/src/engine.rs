@@ -187,6 +187,8 @@ mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_storage::GlobalsRepo;
     use forge_storage_sqlite::SqliteBackend;
+
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_types::{EventId, Variant};
     use std::sync::Arc;
 
@@ -196,18 +198,14 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    async fn open_test_dp() -> Arc<SqliteBackend> {
-        Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        )
+    async fn open_test_dp() -> Sandboxed<Arc<SqliteBackend>> {
+        sandboxed_backend([0xab; 32]).await.map(Arc::new)
     }
 
     fn make_api(dp: Arc<SqliteBackend>) -> ForgeApi {
         ForgeApi::new(
             Arc::new(MockPublisher),
-            dp as Arc<dyn GlobalsRepo>,
+            dp.clone() as Arc<dyn GlobalsRepo>,
             EventId::new(),
             Instant::now() + std::time::Duration::from_secs(10),
         )
@@ -216,7 +214,7 @@ mod tests {
     fn make_api_with_wall_ms(dp: Arc<SqliteBackend>, wall_ms: u64) -> ForgeApi {
         ForgeApi::new(
             Arc::new(MockPublisher),
-            dp as Arc<dyn GlobalsRepo>,
+            dp.clone() as Arc<dyn GlobalsRepo>,
             EventId::new(),
             Instant::now() + std::time::Duration::from_millis(wall_ms),
         )
@@ -239,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn with_api_forge_log_runs_without_error() {
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(EngineConfig::default(), make_api(dp));
+        let engine = Engine::with_api(EngineConfig::default(), make_api(dp.clone()));
         let result = tokio::task::spawn_blocking(move || {
             engine.eval_script(r#"forge::log("hello from script")"#)
         })
@@ -251,7 +249,7 @@ mod tests {
     #[tokio::test]
     async fn with_api_forge_warn_runs_without_error() {
         let dp = open_test_dp().await;
-        let engine = Engine::with_api(EngineConfig::default(), make_api(dp));
+        let engine = Engine::with_api(EngineConfig::default(), make_api(dp.clone()));
         let result = tokio::task::spawn_blocking(move || {
             engine.eval_script(r#"forge::warn("something fishy")"#)
         })
@@ -268,7 +266,7 @@ mod tests {
                 op_limit: 100_000,
                 wall_time_ms: 2_000,
             },
-            make_api_with_wall_ms(dp, 2_000),
+            make_api_with_wall_ms(dp.clone(), 2_000),
         );
         let before = std::time::Instant::now();
         tokio::task::spawn_blocking(move || {
@@ -291,7 +289,7 @@ mod tests {
                 op_limit: 100_000,
                 wall_time_ms: wall_ms,
             },
-            make_api_with_wall_ms(dp, wall_ms),
+            make_api_with_wall_ms(dp.clone(), wall_ms),
         );
         let start = std::time::Instant::now();
         let result = tokio::task::spawn_blocking(move || engine.eval_script("forge::sleep(5000)"))
@@ -318,7 +316,7 @@ mod tests {
             .unwrap();
         let api = ForgeApi::new(
             Arc::new(MockPublisher),
-            dp as Arc<dyn GlobalsRepo>,
+            dp.clone() as Arc<dyn GlobalsRepo>,
             EventId::new(),
             expired_deadline,
         );
@@ -398,7 +396,7 @@ mod tests {
                 op_limit: 100_000,
                 wall_time_ms: 200,
             },
-            make_api_with_wall_ms(dp, 200),
+            make_api_with_wall_ms(dp.clone(), 200),
         );
         let start = std::time::Instant::now();
         let result = tokio::task::spawn_blocking(move || engine.eval_script("loop {}"))
@@ -447,7 +445,7 @@ mod tests {
     async fn with_api_globals_set_writes_and_get_round_trips() {
         let dp = open_test_dp().await;
         let dp_check = Arc::clone(&dp);
-        let engine = Engine::with_api(EngineConfig::default(), make_api(dp));
+        let engine = Engine::with_api(EngineConfig::default(), make_api(dp.clone()));
         tokio::task::spawn_blocking(move || {
             let _ = engine
                 .eval_script(r#"forge::globals::set("score", 99, true)"#)
@@ -476,7 +474,7 @@ mod tests {
         let caused_by = EventId::new();
         let api = ForgeApi::new(
             publisher,
-            dp as Arc<dyn GlobalsRepo>,
+            dp.clone() as Arc<dyn GlobalsRepo>,
             caused_by,
             Instant::now() + std::time::Duration::from_secs(10),
         );

@@ -6,6 +6,9 @@ use forge_storage::{GlobalsExport, GlobalsRepo, StorageError};
 use forge_storage_sqlite::{SqliteBackend, SqliteGlobalsRepo, apply_migrations};
 use forge_types::Variant;
 
+mod common;
+use common::Sandboxed;
+
 async fn setup() -> SqliteGlobalsRepo {
     let pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
@@ -135,14 +138,14 @@ async fn set_overwrites_existing_value() {
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
-async fn setup_file_backed() -> (tempfile::TempDir, Arc<SqliteBackend>) {
+async fn setup_file_backed() -> (tempfile::TempDir, Sandboxed<Arc<SqliteBackend>>) {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let path = dir.path().join("test.sqlite");
     let url = format!("sqlite://{}", path.display());
-    let backend = SqliteBackend::open_with_key(&url, TEST_KEY)
+    let backend = common::sandboxed_backend(&url, TEST_KEY)
         .await
-        .expect("open file-backed db");
-    (dir, Arc::new(backend))
+        .map(Arc::new);
+    (dir, backend)
 }
 
 #[tokio::test]
@@ -432,9 +435,7 @@ async fn persisted_query_does_not_count_as_a_read() {
 
 #[tokio::test]
 async fn backend_persisted_delegates_to_globals_repo() {
-    let backend = SqliteBackend::open_with_key(":memory:", [0xab; 32])
-        .await
-        .expect("open backend");
+    let backend = common::sandboxed_backend(":memory:", TEST_KEY).await;
     backend
         .set("live", Variant::Int(1), true)
         .await
@@ -449,9 +450,7 @@ async fn backend_persisted_delegates_to_globals_repo() {
 
 #[tokio::test]
 async fn backend_export_all_delegates_correctly() {
-    let backend = SqliteBackend::open_with_key(":memory:", [0xab; 32])
-        .await
-        .expect("open backend");
+    let backend = common::sandboxed_backend(":memory:", TEST_KEY).await;
 
     backend
         .set("x", Variant::Int(100), true)

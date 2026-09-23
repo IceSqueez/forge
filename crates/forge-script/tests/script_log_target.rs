@@ -1,7 +1,7 @@
 //! Script-authored text must be attributable: the diagnostic bundle sections and counts the
 //! lines forge did not write by their target, so a script API native that emits on the crate's
 //! default target silently drops out of that section and out of the export preview's count.
-#![allow(clippy::unwrap_used, clippy::panic)]
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -108,11 +108,16 @@ impl EventPublisher for NullPublisher {
     fn publish(&self, _event: Event) {}
 }
 
-async fn engine() -> Engine {
+async fn engine() -> (Engine, tempfile::TempDir) {
+    let media_root = tempfile::tempdir().expect("a temporary media root");
     let backend = Arc::new(
-        SqliteBackend::open_with_key(":memory:", [0xab; 32])
-            .await
-            .unwrap(),
+        SqliteBackend::open_with_key_and_media_root(
+            ":memory:",
+            [0xab; 32],
+            media_root.path().to_owned(),
+        )
+        .await
+        .unwrap(),
     );
     let api = ForgeApi::new(
         Arc::new(NullPublisher),
@@ -120,12 +125,12 @@ async fn engine() -> Engine {
         EventId::new(),
         Instant::now() + Duration::from_secs(10),
     );
-    Engine::with_api(EngineConfig::default(), api)
+    (Engine::with_api(EngineConfig::default(), api), media_root)
 }
 
 #[tokio::test]
 async fn every_script_log_native_emits_on_the_script_target() {
-    let engine = engine().await;
+    let (engine, _media_root) = engine().await;
 
     // The natives are synchronous, so the eval runs on this thread and reaches the thread-local
     // subscriber `capture` installs.

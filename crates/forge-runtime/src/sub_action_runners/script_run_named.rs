@@ -281,9 +281,9 @@ fn body_free_message(err: &ScriptError) -> String {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::test_support::sandboxed_backend;
     use crate::{EventBus, NullEventLogRepo};
     use forge_storage::ScriptRecord;
-    use forge_storage_sqlite::SqliteBackend;
     use forge_types::{EventId, ScriptContract, ScriptId};
     use time::OffsetDateTime;
 
@@ -291,11 +291,7 @@ mod tests {
 
     #[tokio::test]
     async fn named_script_exec_and_error_carry_script_identity_and_clear_inline_flag() {
-        let backend = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        );
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
 

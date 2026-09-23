@@ -17,6 +17,8 @@ pub(crate) mod retention_task;
 pub mod script_impl;
 pub mod settings_impl;
 pub mod soundboard_impl;
+#[cfg(test)]
+mod test_support;
 pub mod trigger_instance_impl;
 pub mod tts_filters_impl;
 pub mod user_globals_impl;

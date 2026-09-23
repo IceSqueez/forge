@@ -6,6 +6,9 @@ use forge_storage::{
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteTtsFiltersRepo, apply_migrations};
 
+mod common;
+use common::Sandboxed;
+
 const TEST_KEY: [u8; 32] = [0xef; 32];
 
 async fn repo() -> SqliteTtsFiltersRepo {
@@ -16,10 +19,8 @@ async fn repo() -> SqliteTtsFiltersRepo {
     SqliteTtsFiltersRepo::new(pool)
 }
 
-async fn backend() -> SqliteBackend {
-    SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("in-memory backend")
+async fn backend() -> Sandboxed<SqliteBackend> {
+    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
 }
 
 fn literal_rule(id: &str, pos: u32) -> FilterRule {
@@ -532,7 +533,7 @@ async fn disabled_rule_enabled_field_round_trips_correctly() {
 #[tokio::test]
 async fn data_provider_tts_filters_repo_accessor_round_trips_settings() {
     let b = backend().await;
-    let dp: &dyn DataProvider = &b;
+    let dp: &dyn DataProvider = &*b;
     let repo = dp.tts_filters_repo();
 
     let s = TtsPipelineSettings {

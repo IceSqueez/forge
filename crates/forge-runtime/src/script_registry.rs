@@ -111,6 +111,7 @@ impl Default for ScriptRegistry {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use crate::{EventBus, NullEventLogRepo};
     use forge_storage::ScriptRepo;
     use forge_storage_sqlite::SqliteBackend;
@@ -118,12 +119,8 @@ mod tests {
     use std::sync::Arc;
     use time::OffsetDateTime;
 
-    async fn make_dp() -> Arc<SqliteBackend> {
-        Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        )
+    async fn make_dp() -> Sandboxed<Arc<SqliteBackend>> {
+        sandboxed_backend([0xab; 32]).await.map(Arc::new)
     }
 
     fn make_record(name: &str, body: &str, enabled: bool) -> ScriptRecord {

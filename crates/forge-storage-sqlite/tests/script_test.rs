@@ -4,12 +4,13 @@ use forge_storage::ScriptRepo;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{ScriptContract, ScriptId, ScriptInput, VariantKind};
 
+mod common;
+use common::Sandboxed;
+
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
-async fn setup() -> SqliteBackend {
-    SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("open backend")
+async fn setup() -> Sandboxed<SqliteBackend> {
+    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
 }
 
 fn make_record(name: &str, enabled: bool) -> forge_storage::ScriptRecord {

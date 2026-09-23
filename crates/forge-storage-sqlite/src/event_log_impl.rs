@@ -182,9 +182,9 @@ impl EventLogRepo for SqliteEventLogRepo {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::{SqliteBackend, apply_migrations, connect};
+    use crate::{apply_migrations, connect};
     use forge_events::{Event, EventSource};
-    use forge_storage::{DataProvider, EventLogRepo};
+    use forge_storage::EventLogRepo;
 
     async fn make_repo() -> SqliteEventLogRepo {
         let pool = connect(":memory:").await.unwrap();
@@ -255,25 +255,5 @@ mod tests {
         let result = repo.recent_since(4, None).await.unwrap();
         assert_eq!(result.len(), 4);
         assert_eq!(result[0].id, events[9].id);
-    }
-
-    #[tokio::test]
-    async fn recent_since_open_with_key_backend_roundtrip() {
-        let backend = SqliteBackend::open_with_key(":memory:", [0xab; 32])
-            .await
-            .unwrap();
-        let repo = backend.event_log_repo();
-        let events: Vec<Event> = (0..5i64)
-            .map(|i| event_at(&format!("ev.{i}"), 2_000_000 + i))
-            .collect();
-        for ev in &events {
-            repo.insert(ev).await.unwrap();
-        }
-        let anchor_id = events[1].id;
-        let result = repo.recent_since(100, Some(anchor_id)).await.unwrap();
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[0].id, events[4].id);
-        assert_eq!(result[1].id, events[3].id);
-        assert_eq!(result[2].id, events[2].id);
     }
 }

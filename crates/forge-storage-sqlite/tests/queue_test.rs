@@ -4,12 +4,13 @@ use forge_storage::DataProvider;
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{Queue, QueueId};
 
+mod common;
+use common::Sandboxed;
+
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
-async fn setup() -> SqliteBackend {
-    SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("open")
+async fn setup() -> Sandboxed<SqliteBackend> {
+    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
 }
 
 fn make_queue(name: &str, concurrency: u32) -> Queue {

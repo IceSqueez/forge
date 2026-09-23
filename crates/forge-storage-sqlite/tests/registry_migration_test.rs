@@ -1,8 +1,10 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use forge_storage::DataProvider;
-use forge_storage_sqlite::{SqliteBackend, apply_migrations, connect, registry_migration};
+use forge_storage_sqlite::{apply_migrations, connect, registry_migration};
 use forge_types::{ActionId, SubActionStep, Variant};
+
+mod common;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
@@ -118,9 +120,7 @@ async fn open_with_key_applies_action_registry_migration_on_boot() {
         .expect("insert action");
     }
 
-    let backend = SqliteBackend::open_with_key(&url, TEST_KEY)
-        .await
-        .expect("open backend");
+    let backend = common::sandboxed_backend(&url, TEST_KEY).await;
 
     let action = backend
         .action_repo()

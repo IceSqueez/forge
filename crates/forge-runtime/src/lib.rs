@@ -24,6 +24,8 @@ pub mod script_registry;
 pub mod sound_player;
 pub mod speak_dispatcher;
 pub mod sub_action_runners;
+#[cfg(test)]
+mod test_support;
 pub mod trigger_evaluator;
 pub mod triggers;
 pub mod viewer_tracker;

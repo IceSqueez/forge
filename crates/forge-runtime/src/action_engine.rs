@@ -479,11 +479,11 @@ mod tests {
     use async_trait::async_trait;
     use forge_registry::{FormField, RegistryError, SubActionCategory};
     use forge_storage::DataProvider;
-    use forge_storage_sqlite::SqliteBackend;
     use forge_types::Variant;
 
     use super::*;
     use crate::NullEventLogRepo;
+    use crate::test_support::sandboxed_backend;
 
     struct RecordingRunner {
         last_config: Arc<Mutex<Option<forge_registry::SubActionConfig>>>,
@@ -604,11 +604,9 @@ mod tests {
 
     #[tokio::test]
     async fn chain_signal_maps_to_recorded_execution_outcome() {
-        let dp: Arc<dyn DataProvider> = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xcd; 32])
-                .await
-                .unwrap(),
-        );
+        let dp = sandboxed_backend([0xcd; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
         let mut reg = SubActionRegistry::new();
@@ -699,11 +697,9 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_resolves_effective_config_before_execute() {
-        let dp: Arc<dyn DataProvider> = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        );
+        let dp = sandboxed_backend([0xab; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
 
         let last = Arc::new(Mutex::new(None));
@@ -751,11 +747,9 @@ mod tests {
 
     #[tokio::test]
     async fn quick_path_emits_action_quick_done_and_links_subaction_run_causation() {
-        let dp: Arc<dyn DataProvider> = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0x3c; 32])
-                .await
-                .unwrap(),
-        );
+        let dp = sandboxed_backend([0x3c; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -851,11 +845,9 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_run_maps_subaction_outcome_to_execution_outcome() {
-        let dp: Arc<dyn DataProvider> = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0x51; 32])
-                .await
-                .unwrap(),
-        );
+        let dp = sandboxed_backend([0x51; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
 
@@ -906,11 +898,9 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_run_records_quick_action_metadata() {
-        let dp: Arc<dyn DataProvider> = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0x52; 32])
-                .await
-                .unwrap(),
-        );
+        let dp = sandboxed_backend([0x52; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
         let engine = spawn_action_engine(
@@ -945,11 +935,9 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_runs_receive_distinct_action_ids() {
-        let dp: Arc<dyn DataProvider> = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0x53; 32])
-                .await
-                .unwrap(),
-        );
+        let dp = sandboxed_backend([0x53; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
         let engine = spawn_action_engine(
@@ -986,11 +974,9 @@ mod tests {
 
     #[tokio::test]
     async fn quick_action_history_captures_merged_config_as_args_in() {
-        let dp: Arc<dyn DataProvider> = Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0x54; 32])
-                .await
-                .unwrap(),
-        );
+        let dp = sandboxed_backend([0x54; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let (history, mut rx) = capturing_history();
 

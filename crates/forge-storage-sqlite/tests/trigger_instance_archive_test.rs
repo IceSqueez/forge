@@ -8,12 +8,13 @@ use forge_types::{
     Action, ActionId, ExecutionMode, PermissionRung, QueueId, TriggerInstance, TriggerInstanceId,
 };
 
+mod common;
+use common::Sandboxed;
+
 const TEST_KEY: [u8; 32] = [0xcd; 32];
 
-async fn setup() -> SqliteBackend {
-    SqliteBackend::open_with_key("sqlite::memory:", TEST_KEY)
-        .await
-        .expect("open")
+async fn setup() -> Sandboxed<SqliteBackend> {
+    common::sandboxed_backend("sqlite::memory:", TEST_KEY).await
 }
 
 async fn default_queue_id(backend: &SqliteBackend) -> QueueId {

@@ -151,12 +151,11 @@ impl ViewerRepo for SqliteViewerRepo {
 mod tests {
     use super::*;
     use crate::SqliteBackend;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_storage::ViewerPlatform;
 
-    async fn open() -> SqliteBackend {
-        SqliteBackend::open_with_key(":memory:", [0xab; 32])
-            .await
-            .expect("open")
+    async fn open() -> Sandboxed<SqliteBackend> {
+        sandboxed_backend([0xab; 32]).await
     }
 
     #[tokio::test]

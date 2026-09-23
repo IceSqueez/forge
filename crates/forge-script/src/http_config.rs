@@ -94,10 +94,10 @@ mod tests {
     use forge_storage::set_json_setting;
     use forge_storage_sqlite::SqliteBackend;
 
-    async fn backend() -> SqliteBackend {
-        SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32])
-            .await
-            .expect("in-memory SQLite")
+    use crate::test_support::{Sandboxed, sandboxed_backend};
+
+    async fn backend() -> Sandboxed<SqliteBackend> {
+        sandboxed_backend([0xab; 32]).await
     }
 
     #[test]
@@ -109,10 +109,8 @@ mod tests {
 
     #[tokio::test]
     async fn load_script_http_config_returns_defaults_when_keys_absent() {
-        let backend = SqliteBackend::open_with_key("sqlite::memory:", [0xab; 32])
-            .await
-            .expect("in-memory SQLite");
-        let cfg = load_script_http_config(&backend).await;
+        let backend = backend().await;
+        let cfg = load_script_http_config(&*backend).await;
         let defaults = ScriptHttpConfig::default();
         assert_eq!(cfg.allowed_domains, defaults.allowed_domains);
         assert_eq!(cfg.max_calls_per_script, defaults.max_calls_per_script);
@@ -131,7 +129,7 @@ mod tests {
             )
             .await
             .unwrap();
-        let cfg = load_script_http_config(&backend).await;
+        let cfg = load_script_http_config(&*backend).await;
         assert_eq!(cfg.allowed_domains, vec!["a.com", "b.com", "c.com"]);
     }
 
@@ -140,13 +138,13 @@ mod tests {
         let backend = backend().await;
         let domains = vec!["good.com".to_owned(), "also.com".to_owned()];
         set_json_setting(
-            &backend,
+            &*backend,
             reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS,
             &domains,
         )
         .await
         .unwrap();
-        let cfg = load_script_http_config(&backend).await;
+        let cfg = load_script_http_config(&*backend).await;
         assert_eq!(cfg.allowed_domains, domains);
     }
 
@@ -158,7 +156,7 @@ mod tests {
                 .set_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS, blank)
                 .await
                 .unwrap();
-            let cfg = load_script_http_config(&backend).await;
+            let cfg = load_script_http_config(&*backend).await;
             assert!(
                 cfg.allowed_domains.is_empty(),
                 "blank value {blank:?} must grant no domains",

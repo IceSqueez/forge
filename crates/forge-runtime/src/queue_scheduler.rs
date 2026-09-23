@@ -678,21 +678,19 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_registry::SubActionRegistry;
     use forge_storage::DataProvider;
-    use forge_storage_sqlite::SqliteBackend;
     use forge_types::{Action, ActionId, EventId, Queue, QueueId, SubActionStep, Variant};
 
     use super::*;
     use crate::sub_action_runners::CoreLogicWaitRunner;
     use crate::{EventBus, EventSubscription, NullEventLogRepo, spawn_action_engine};
 
-    async fn make_dp() -> Arc<dyn DataProvider> {
-        Arc::new(
-            SqliteBackend::open_with_key(":memory:", [0xab; 32])
-                .await
-                .unwrap(),
-        )
+    async fn make_dp() -> Sandboxed<Arc<dyn DataProvider>> {
+        sandboxed_backend([0xab; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
     }
 
     async fn seed(dp: &Arc<dyn DataProvider>, queue: &Queue, action: &Action) {
@@ -1808,7 +1806,11 @@ mod tests {
     async fn serial_queue_with_waits(
         ms: &[(ActionId, i64)],
         q_id: QueueId,
-    ) -> (Arc<dyn DataProvider>, Arc<EventBus>, QueueSchedulerHandle) {
+    ) -> (
+        Sandboxed<Arc<dyn DataProvider>>,
+        Arc<EventBus>,
+        QueueSchedulerHandle,
+    ) {
         let dp = make_dp().await;
         dp.queue_repo().save(&blocking_q(q_id)).await.unwrap();
         for (id, wait_ms) in ms {

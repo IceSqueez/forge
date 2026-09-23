@@ -12,6 +12,8 @@ pub mod http_client;
 pub mod http_config;
 pub mod math_evaluator;
 pub mod runner;
+#[cfg(test)]
+mod test_support;
 
 pub use api::{ENGINE_BOUND_NAMES, ForgeApi, SpeakRequester, is_engine_bound_name};
 pub use catalog::{MethodDescriptor, ParamDescriptor, catalog};

@@ -67,8 +67,8 @@ pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
 pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
-    GridItemQuery, GridPicker, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
-    GridPickerItemState, GridPickerSubtitle,
+    GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup,
+    GridPickerItem, GridPickerItemState, GridPickerSubtitle,
 };
 pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};

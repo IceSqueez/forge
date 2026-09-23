@@ -335,6 +335,7 @@ impl AppShell {
                     service: handles.overlays.clone(),
                     library: Arc::clone(handles.soundboard_player.library()),
                     media: handles.backend.media_repo(),
+                    settings_repo: Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>,
                     actions: Arc::new(forge_runtime::actions::ActionsService::new(
                         handles.backend.action_repo(),
                         handles.backend.queue_repo(),

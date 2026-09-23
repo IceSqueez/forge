@@ -60,12 +60,26 @@ impl CuratedIcon {
         self.source
     }
 
+    pub fn label(&self) -> String {
+        humanize(self.name)
+    }
+
     pub fn matches(&self, query: &str) -> bool {
         let needle = query.trim().to_ascii_lowercase();
         needle.is_empty()
             || self.name.contains(&needle)
+            || self.label().to_ascii_lowercase().contains(&needle)
             || self.category.as_str().contains(&needle)
             || self.words.iter().any(|word| word.contains(&needle))
+    }
+}
+
+fn humanize(name: &str) -> String {
+    let spaced = name.replace('-', " ");
+    let mut letters = spaced.chars();
+    match letters.next() {
+        Some(first) => first.to_uppercase().chain(letters).collect(),
+        None => spaced,
     }
 }
 

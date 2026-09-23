@@ -1,10 +1,12 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, GlyphArt, GridPicker, GridPickerConfig, GridPickerEvent,
-    GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle, Icon,
-    OverlayPosition, Radius, Spacing, body_family, glyph_art, icon, overlay, radius, spacing, tr,
+    BORDER_THIN, Density, ForgePalette, GlyphArt, GridPicker, GridPickerArt, GridPickerConfig,
+    GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState, GridPickerSubtitle,
+    Icon, OverlayPosition, Radius, Spacing, body_family, glyph_art, icon, overlay, radius, spacing,
+    tr,
 };
 use forge_overlay::config::ICON;
 use forge_overlay::{
@@ -12,7 +14,7 @@ use forge_overlay::{
     image_reference, read_icon_value,
 };
 use forge_storage::{
-    MediaBlob, MediaBlobId, MediaFormat, MediaKind, OverlayDefinition, StorageError,
+    MediaBlob, MediaBlobId, MediaFormat, MediaKind, OverlayDefinition, StorageError, reserved_keys,
 };
 use gpui::{
     AnyElement, Context, Div, Entity, Pixels, Rgba, SharedString, Subscription, Window, div,
@@ -36,6 +38,9 @@ const WORD_SEPARATOR: &str = ", ";
 const FIELD_TILE: Pixels = px(22.0);
 const FIELD_TILE_RADIUS: Pixels = px(6.0);
 const FIELD_ART: Pixels = px(13.0);
+
+const PICK_TILE: Pixels = px(44.0);
+const PICK_ART: Pixels = px(22.0);
 
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct IconImage {
@@ -76,7 +81,7 @@ pub(super) fn icon_art(choice: &IconChoice<'_>) -> Option<GlyphArt> {
 pub(super) fn icon_label(choice: &IconChoice<'_>) -> String {
     match choice {
         IconChoice::None => tr!("overlays_icon_none"),
-        IconChoice::Glyph(glyph) => glyph.name.to_owned(),
+        IconChoice::Glyph(glyph) => glyph.label(),
         IconChoice::Image(image) => image.label.clone(),
         IconChoice::Unresolved(value) => (*value).to_owned(),
     }
@@ -85,6 +90,24 @@ pub(super) fn icon_label(choice: &IconChoice<'_>) -> String {
 pub(super) enum IconPick {
     Import,
     Store(String),
+}
+
+pub(super) fn known_icon_favorites(stored: Vec<String>) -> HashSet<SharedString> {
+    stored
+        .into_iter()
+        .filter(|id| names_a_card(id))
+        .map(SharedString::from)
+        .collect()
+}
+
+fn names_a_card(id: &str) -> bool {
+    match read_icon_value(id) {
+        IconValue::Empty => false,
+        IconValue::Image(_) => true,
+        IconValue::Glyph(name) => {
+            matches!(name, NO_ICON_ID | IMPORT_ICON_ID) || curated_icon(name).is_some()
+        }
+    }
 }
 
 pub(super) fn picked_icon(id: &str) -> IconPick {
@@ -178,7 +201,7 @@ pub(super) fn icon_groups(
                 id: SharedString::from(glyph.name),
                 glyph: GlyphArt::Svg(glyph.bytes()),
                 tint: accent,
-                name: SharedString::from(glyph.name),
+                name: SharedString::from(glyph.label()),
                 desc: SharedString::from(glyph.words.join(WORD_SEPARATOR)),
                 state: GridPickerItemState::Normal,
                 matches: Some(Box::new(move |query: &str| glyph.matches(query))),
@@ -336,6 +359,57 @@ impl OverlaysView {
         cx.notify();
     }
 
+    pub(super) fn load_icon_favorites(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.settings_repo);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                forge_storage::get_json_setting::<Vec<String>>(
+                    repo.as_ref(),
+                    reserved_keys::PICKER_FAVORITES_ICONS,
+                )
+                .await
+                .unwrap_or_default()
+            },
+            |this, stored: Vec<String>, cx| {
+                this.apply_icon_favorites(known_icon_favorites(stored), cx);
+            },
+            cx,
+        );
+    }
+
+    fn apply_icon_favorites(&mut self, favorites: HashSet<SharedString>, cx: &mut Context<Self>) {
+        self.icon_favorites = favorites;
+        let pushed = self.icon_favorites.clone();
+        if let Some(picker) = self.icon_picker.as_ref().map(|open| open.view.clone()) {
+            picker.update(cx, |picker, cx| picker.set_favorites(pushed, cx));
+        }
+        cx.notify();
+    }
+
+    fn persist_icon_favorites(&self, cx: &mut Context<Self>) {
+        let repo = Arc::clone(&self.settings_repo);
+        let ids = crate::picker_favorites::to_ids(&self.icon_favorites);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                forge_storage::set_json_setting(
+                    repo.as_ref(),
+                    reserved_keys::PICKER_FAVORITES_ICONS,
+                    &ids,
+                )
+                .await
+                .map_err(|error| error.to_string())
+            },
+            |this, result: Result<(), String>, cx| {
+                if let Err(message) = result {
+                    this.report(&message, cx);
+                }
+            },
+            cx,
+        );
+    }
+
     fn icon_accent(&self, palette: &ForgePalette) -> Rgba {
         self.selected_definition()
             .map(|definition| self.visuals(definition, palette).accent)
@@ -359,6 +433,10 @@ impl OverlaysView {
         let groups = icon_groups(&self.icon_images, accent, &palette);
         let config = GridPickerConfig {
             accent,
+            art: GridPickerArt {
+                tile: PICK_TILE,
+                glyph: PICK_ART,
+            },
             header_icon: Icon::Photo,
             title: tr!("overlays_icon_picker_title").into(),
             subtitle: GridPickerSubtitle::Plain(tr!("overlays_icon_picker_subtitle").into()),
@@ -391,6 +469,7 @@ impl OverlaysView {
                 if !self.icon_favorites.remove(id) {
                     self.icon_favorites.insert(id.clone());
                 }
+                self.persist_icon_favorites(cx);
                 cx.notify();
             }
             GridPickerEvent::Dismissed => self.close_icon_picker(cx),
@@ -639,7 +718,7 @@ mod tests {
         let images = library();
         for (stored, expected) in [
             ("", "overlays_icon_none"),
-            (GLYPH, GLYPH),
+            (GLYPH, "Heart"),
             (&image_reference(BLOB_A), "cat.png"),
             (NOT_A_GLYPH, NOT_A_GLYPH),
         ] {

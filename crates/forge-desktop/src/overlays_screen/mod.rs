@@ -27,7 +27,7 @@ use forge_runtime::{OverlayServiceHandle, QueueSchedulerHandle};
 use forge_server::ServerHandle;
 use forge_soundboard::{ClipLibrary, SoundboardError};
 use forge_storage::{
-    MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, StoredClip,
+    MediaRepo, OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StoredClip,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Pixels, Point,
@@ -131,6 +131,7 @@ pub struct OverlaysView {
     service: OverlayServiceHandle,
     library: Arc<ClipLibrary>,
     media: Arc<dyn MediaRepo>,
+    settings_repo: Arc<dyn SettingsRepo>,
     clip_choices: Vec<(String, String)>,
     clips_gen: async_bridge::Generation,
     icon_images: Vec<IconImage>,
@@ -167,6 +168,7 @@ pub struct OverlaysLaunch {
     pub service: OverlayServiceHandle,
     pub library: Arc<ClipLibrary>,
     pub media: Arc<dyn MediaRepo>,
+    pub settings_repo: Arc<dyn SettingsRepo>,
     pub actions: Arc<ActionsService>,
     pub triggers: Arc<TriggerRegistry>,
     pub sub_actions: Arc<SubActionRegistry>,
@@ -204,6 +206,7 @@ impl OverlaysView {
             service: launch.service,
             library: launch.library,
             media: launch.media,
+            settings_repo: launch.settings_repo,
             clip_choices: Vec::new(),
             clips_gen: async_bridge::Generation::default(),
             icon_images: Vec::new(),
@@ -238,6 +241,7 @@ impl OverlaysView {
         view.load(cx);
         view.load_clips(cx);
         view.load_images(cx);
+        view.load_icon_favorites(cx);
         view.start_server_bridge(cx);
         view
     }

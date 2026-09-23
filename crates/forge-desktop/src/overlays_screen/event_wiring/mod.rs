@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    GridPicker, GridPickerConfig, GridPickerEvent, GridPickerSubtitle, Icon, OverlayPosition,
-    ToastAction, ToastKind, overlay, tr,
+    GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerSubtitle, Icon,
+    OverlayPosition, ToastAction, ToastKind, overlay, tr,
 };
 use forge_overlay::{OverlayKindRegistry, accepts_event_wiring};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -209,6 +209,7 @@ impl EventWiringView {
         let count: usize = groups.iter().map(|group| group.items.len()).sum();
         let config = GridPickerConfig {
             accent: palette.brand,
+            art: GridPickerArt::default(),
             header_icon: Icon::Bolt,
             title: tr!("overlays_wire_picker_title").into(),
             subtitle: GridPickerSubtitle::Context {

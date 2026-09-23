@@ -11,11 +11,12 @@ use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
 use forge_components::{
     BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GlyphArt, GridPicker,
-    GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
-    GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize, OverlayPosition, PlatformKind,
-    Radius, Spacing, TextInput, body_family, ghost_button_with_icon, icon, menu_button,
-    menu_divider, menu_item, modal, mono_family, overlay, platform_color, primary_button, radius,
-    row_card, secondary_button, spacing, status_dot, tooltip_lines_builder, tr, with_alpha,
+    GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
+    GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize,
+    OverlayPosition, PlatformKind, Radius, Spacing, TextInput, body_family, ghost_button_with_icon,
+    icon, menu_button, menu_divider, menu_item, modal, mono_family, overlay, platform_color,
+    primary_button, radius, row_card, secondary_button, spacing, status_dot, tooltip_lines_builder,
+    tr, with_alpha,
 };
 use forge_registry::{
     FormSchemaSource, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -1007,6 +1008,7 @@ impl ScreenActionsView {
         let count = self.sub_action_registry.all().count();
         let config = GridPickerConfig {
             accent: palette.brand,
+            art: GridPickerArt::default(),
             header_icon: Icon::LayoutGrid,
             title: tr!("action_editor_picker_add_sub_title").into(),
             subtitle: GridPickerSubtitle::Context {
@@ -1171,6 +1173,7 @@ impl ScreenActionsView {
         let count = self.trigger_registry.all().count();
         let config = GridPickerConfig {
             accent: palette.warning,
+            art: GridPickerArt::default(),
             header_icon: Icon::Bolt,
             title: tr!("action_editor_add_trigger").into(),
             subtitle: GridPickerSubtitle::Context {

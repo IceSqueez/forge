@@ -56,9 +56,8 @@ const GRID_FOOTER_PAD_V: Pixels = px(8.0);
 const GRID_EMPTY_PAD_V: Pixels = px(50.0);
 const GRID_EMPTY_GLYPH: Pixels = px(22.0);
 const GRID_BADGE_FS: Pixels = px(9.0);
+const GRID_CARD_DESC_H: Pixels = px(18.0);
 
-const GRID_CARD_H: Pixels = px(72.0);
-const GRID_ROW_H: Pixels = px(80.0);
 const GRID_HEADER_ROW_H: Pixels = px(30.0);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -96,8 +95,34 @@ pub enum GridPickerSubtitle {
     },
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub struct GridPickerArt {
+    pub tile: Pixels,
+    pub glyph: Pixels,
+}
+
+impl Default for GridPickerArt {
+    fn default() -> Self {
+        Self {
+            tile: GRID_CARD_TILE,
+            glyph: GRID_CARD_ICON,
+        }
+    }
+}
+
+impl GridPickerArt {
+    fn card_height(self) -> Pixels {
+        GRID_CARD_PAD_V + self.tile + GRID_CARD_ROW_MB + GRID_CARD_DESC_H + GRID_CARD_PAD_V
+    }
+
+    fn row_height(self) -> Pixels {
+        self.card_height() + GRID_CARD_GAP
+    }
+}
+
 pub struct GridPickerConfig {
     pub accent: Rgba,
+    pub art: GridPickerArt,
     pub header_icon: Icon,
     pub title: SharedString,
     pub subtitle: GridPickerSubtitle,
@@ -394,7 +419,6 @@ impl GridPicker {
             }
             seen.push((g.scope.clone(), scope_label(&g.label), g.dot_color));
         }
-        seen.sort_by_key(|(_, label, _)| label.to_lowercase());
         seen
     }
 
@@ -667,9 +691,10 @@ impl GridPicker {
     fn render_list_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let accent = self.config.accent;
+        let art = self.config.art;
         match &self.rows[ix] {
             PickerRow::Header { label, dot, count } => render_header_row(label, *dot, *count, &p),
-            PickerRow::Cards(cards) => render_card_row(cards, accent, &p, cx),
+            PickerRow::Cards(cards) => render_card_row(cards, accent, art, &p, cx),
         }
     }
 
@@ -789,24 +814,25 @@ fn render_header_row(
 fn render_card_row(
     cards: &[Option<CardData>; 2],
     accent: Rgba,
+    art: GridPickerArt,
     p: &ForgePalette,
     cx: &mut Context<GridPicker>,
 ) -> AnyElement {
     let row = div()
-        .h(GRID_ROW_H)
+        .h(art.row_height())
         .w_full()
         .flex()
         .items_start()
         .gap(GRID_CARD_GAP);
     match cards {
         [Some(left), Some(right)] => row
-            .child(render_card_el(left, accent, p, cx))
-            .child(render_card_el(right, accent, p, cx)),
+            .child(render_card_el(left, accent, art, p, cx))
+            .child(render_card_el(right, accent, art, p, cx)),
         [Some(left), None] => row.child(
             div()
                 .w(relative(0.5))
                 .flex()
-                .child(render_card_el(left, accent, p, cx)),
+                .child(render_card_el(left, accent, art, p, cx)),
         ),
         _ => row,
     }
@@ -816,6 +842,7 @@ fn render_card_row(
 fn render_card_el(
     card: &CardData,
     accent: Rgba,
+    art: GridPickerArt,
     p: &ForgePalette,
     cx: &mut Context<GridPicker>,
 ) -> AnyElement {
@@ -826,12 +853,12 @@ fn render_card_el(
         .flex()
         .items_center()
         .justify_center()
-        .size(GRID_CARD_TILE)
+        .size(art.tile)
         .rounded(GRID_CARD_TILE_RADIUS)
         .bg(p.surface_overlay)
         .child(glyph_art(
             &card.glyph,
-            GRID_CARD_ICON,
+            art.glyph,
             card.tint,
             SharedString::from(format!("forge-grid-art-{}", card.id)),
         ));
@@ -913,7 +940,7 @@ fn render_card_el(
     let base = div()
         .flex_1()
         .min_w(px(0.0))
-        .h(GRID_CARD_H)
+        .h(art.card_height())
         .flex()
         .flex_col()
         .py(GRID_CARD_PAD_V)
@@ -1028,6 +1055,7 @@ mod tests {
     fn settings() -> GridPickerConfig {
         GridPickerConfig {
             accent: FORGE_DEFAULT.brand,
+            art: GridPickerArt::default(),
             header_icon: Icon::Photo,
             title: "Choose".into(),
             subtitle: GridPickerSubtitle::Plain("subtitle".into()),

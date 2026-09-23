@@ -46,6 +46,7 @@ pub mod reserved_keys {
     pub const CHAT_HISTORY_DISPLAY_LIMIT: &str = "chat_history.display_limit";
     pub const PICKER_FAVORITES_SUB_ACTIONS: &str = "picker.favorites.sub_actions";
     pub const PICKER_FAVORITES_TRIGGERS: &str = "picker.favorites.triggers";
+    pub const PICKER_FAVORITES_ICONS: &str = "picker.favorites.icons";
     pub const TTS_DISABLED_ENGINES: &str = "tts.disabled_engines";
     pub const TTS_SYNTHESIS_DEFAULTS: &str = "tts.synthesis_defaults";
     pub const TTS_MASTER_VOLUME: &str = "tts.master_volume";
@@ -123,7 +124,8 @@ pub mod disclosure {
             | reserved_keys::SERVER_ADDITIONAL_ORIGINS
             | reserved_keys::KEYBOARD_SHORTCUTS
             | reserved_keys::PICKER_FAVORITES_SUB_ACTIONS
-            | reserved_keys::PICKER_FAVORITES_TRIGGERS => Kind,
+            | reserved_keys::PICKER_FAVORITES_TRIGGERS
+            | reserved_keys::PICKER_FAVORITES_ICONS => Kind,
 
             reserved_keys::SERVER_BIND_ADDRESS
             | reserved_keys::SERVER_OVERLAY_ROOT

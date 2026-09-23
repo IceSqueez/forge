@@ -82,6 +82,7 @@ impl SettingsAudioView {
             SettingsAudioRoutingView::new(
                 Arc::clone(&backend) as Arc<dyn SettingsRepo>,
                 backend.overlay_repo(),
+                handles.overlays.clone(),
                 rt_handle.clone(),
                 Arc::clone(&handles.speech_sink),
                 handles.server.is_some(),

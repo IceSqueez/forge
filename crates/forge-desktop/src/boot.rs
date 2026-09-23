@@ -434,10 +434,9 @@ async fn install_audio_routes(
     report_plan(AudioDomain::Speech, &speech_plan);
     report_plan(AudioDomain::Clips, &clips_plan);
 
-    let overlay_sink = speech_plan
-        .destination
-        .as_ref()
-        .or(clips_plan.destination.as_ref())
+    let overlay_sink = destination
+        .ready()
+        .filter(|_| speech_plan.route.plays_overlay() || clips_plan.route.plays_overlay())
         .zip(server.clone())
         .map(|(id, handle)| {
             let destination = Arc::new(OverlayAudioDestination::new(handle, overlays.clone()))

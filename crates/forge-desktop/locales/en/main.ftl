@@ -1784,6 +1784,18 @@ settings_audio_routing_test_error = Overlay test failed: { $error }
 settings_audio_routing_persist_error = Failed to save routing: { $error }
 settings_audio_routing_in_effect = IN EFFECT NOW
 settings_audio_routing_in_effect_fallback = { $route } - { $reason }
+settings_audio_routing_fallback_unchosen = no audio overlay is chosen
+settings_audio_routing_fallback_server_off = the server that carries overlay audio is not running
+settings_audio_routing_fallback_unreadable = the chosen audio overlay could not be looked up
+settings_audio_routing_fallback_missing = the chosen audio overlay no longer exists
+settings_audio_routing_fallback_wrong_kind = the chosen overlay is not an audio overlay
+settings_audio_routing_pages_none = No page connected
+settings_audio_routing_pages_connected =
+    { $count ->
+        [one] { $count } page connected
+       *[other] { $count } pages connected
+    }
+settings_audio_routing_pages_duplicate = Every connected page plays the same audio, so the clip is heard { $count } times on stream.
 
 ## Settings - voice gate
 

@@ -105,6 +105,15 @@ pub enum AudioDestination {
     Ready(OverlayId),
 }
 
+impl AudioDestination {
+    pub fn ready(&self) -> Option<&OverlayId> {
+        match self {
+            Self::Ready(id) => Some(id),
+            _ => None,
+        }
+    }
+}
+
 pub async fn resolve_destination(
     repo: &dyn OverlayRepo,
     server_available: bool,

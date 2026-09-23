@@ -1805,6 +1805,26 @@ settings_audio_routing_test_error = Тест оверлея не вдався: {
 settings_audio_routing_persist_error = Не вдалося зберегти маршрутизацію: { $error }
 settings_audio_routing_in_effect = ЗАРАЗ ДІЄ
 settings_audio_routing_in_effect_fallback = { $route } - { $reason }
+settings_audio_routing_fallback_unchosen = не вибрано аудіооверлей
+settings_audio_routing_fallback_server_off = сервер, який передає звук оверлея, не запущено
+settings_audio_routing_fallback_unreadable = не вдалося знайти вибраний аудіооверлей
+settings_audio_routing_fallback_missing = вибраного аудіооверлея більше не існує
+settings_audio_routing_fallback_wrong_kind = вибраний оверлей не є аудіооверлеєм
+settings_audio_routing_pages_none = Жодної сторінки не підключено
+settings_audio_routing_pages_connected =
+    { $count ->
+        [one] Підключено { $count } сторінку
+        [few] Підключено { $count } сторінки
+        [many] Підключено { $count } сторінок
+       *[other] Підключено { $count } сторінок
+    }
+settings_audio_routing_pages_duplicate =
+    { $count ->
+        [one] Кожна підключена сторінка відтворює той самий звук, тож кліп буде чути { $count } раз у трансляції.
+        [few] Кожна підключена сторінка відтворює той самий звук, тож кліп буде чути { $count } рази в трансляції.
+        [many] Кожна підключена сторінка відтворює той самий звук, тож кліп буде чути { $count } разів у трансляції.
+       *[other] Кожна підключена сторінка відтворює той самий звук, тож кліп буде чути { $count } разів у трансляції.
+    }
 
 ## Settings - voice gate
 

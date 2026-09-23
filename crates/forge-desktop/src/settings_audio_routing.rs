@@ -7,6 +7,7 @@ use forge_components::{
     radius, segment, segmented, setting_row, spacing, tr, with_alpha,
 };
 use forge_overlay::kinds::audio::KIND_ID as AUDIO_OVERLAY_KIND;
+use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo};
 use gpui::{
     AnyElement, ClickEvent, Context, FocusHandle, Pixels, SharedString, Window, div, prelude::*, px,
@@ -14,8 +15,8 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::audio_routes::{
-    AudioDomain, RoutePlan, load_audio_routes, plan_route, resolve_destination, set_destination,
-    set_route,
+    AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
+    set_destination, set_route,
 };
 use crate::presentation::ActivePresentation;
 use crate::settings_audio::test_tone;
@@ -29,6 +30,8 @@ const EVERY_ROUTE: [(AudioRoute, &str); 3] = [
     (AudioRoute::Overlay, "settings_audio_route_overlay"),
     (AudioRoute::Both, "settings_audio_route_both"),
 ];
+
+const SINGLE_PAGE: usize = 1;
 
 struct OverlayChoice {
     id: OverlayId,
@@ -53,6 +56,7 @@ struct InEffect {
 pub struct SettingsAudioRoutingView {
     settings: Arc<dyn SettingsRepo>,
     overlays: Arc<dyn OverlayRepo>,
+    overlay_service: OverlayServiceHandle,
     rt_handle: tokio::runtime::Handle,
     speech_sink: Arc<dyn AudioSink>,
     server_available: bool,
@@ -62,6 +66,8 @@ pub struct SettingsAudioRoutingView {
     clips: AudioRoute,
     destination: Option<OverlayId>,
     choices: Vec<OverlayChoice>,
+    connected_pages: Option<usize>,
+    pages_gen: async_bridge::Generation,
     in_effect: Option<InEffect>,
     picker_open: bool,
     overlay_focus: FocusHandle,
@@ -75,6 +81,7 @@ impl SettingsAudioRoutingView {
     pub fn new(
         settings: Arc<dyn SettingsRepo>,
         overlays: Arc<dyn OverlayRepo>,
+        overlay_service: OverlayServiceHandle,
         rt_handle: tokio::runtime::Handle,
         speech_sink: Arc<dyn AudioSink>,
         server_available: bool,
@@ -83,6 +90,7 @@ impl SettingsAudioRoutingView {
         let mut view = Self {
             settings,
             overlays,
+            overlay_service,
             rt_handle,
             speech_sink,
             server_available,
@@ -92,6 +100,8 @@ impl SettingsAudioRoutingView {
             clips: AudioRoute::default(),
             destination: None,
             choices: Vec::new(),
+            connected_pages: None,
+            pages_gen: async_bridge::Generation::default(),
             in_effect: None,
             picker_open: false,
             overlay_focus: cx.focus_handle(),
@@ -129,6 +139,7 @@ impl SettingsAudioRoutingView {
                     speech: loaded.speech_plan,
                     clips: loaded.clips_plan,
                 });
+                self.count_pages(cx);
             }
             Err(message) => {
                 tracing::warn!(error = %message, "failed to read the audio routing settings");
@@ -162,6 +173,8 @@ impl SettingsAudioRoutingView {
         self.destination = destination.clone();
         self.picker_open = false;
         self.persist_error = None;
+        self.connected_pages = None;
+        self.count_pages(cx);
         let settings = Arc::clone(&self.settings);
         async_bridge::run_async(
             &self.rt_handle,
@@ -174,6 +187,28 @@ impl SettingsAudioRoutingView {
             cx,
         );
         cx.notify();
+    }
+
+    /// Read at mount, when the destination changes and when a test tone settles; never on a timer.
+    fn count_pages(&mut self, cx: &mut Context<Self>) {
+        let ticket = self.pages_gen.next();
+        let Some(id) = self.destination.clone() else {
+            self.connected_pages = None;
+            cx.notify();
+            return;
+        };
+        let service = self.overlay_service.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { service.receivers(&id).await.sources },
+            move |this, sources, cx| {
+                if this.pages_gen.is_current(ticket) {
+                    this.connected_pages = Some(sources);
+                    cx.notify();
+                }
+            },
+            cx,
+        );
     }
 
     fn apply_persisted(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
@@ -206,6 +241,7 @@ impl SettingsAudioRoutingView {
             tracing::warn!(error = %message, "the audio overlay test tone did not play");
             self.test_error = Some(message);
         }
+        self.count_pages(cx);
         cx.notify();
     }
 
@@ -302,12 +338,12 @@ impl SettingsAudioRoutingView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if self.choices.is_empty() {
+        if let Some(text) = no_overlays_text(&self.choices) {
             return div()
                 .font_family(body_family())
                 .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child(tr!("settings_audio_routing_no_overlays"))
+                .child(text)
                 .into_any_element();
         }
 
@@ -342,12 +378,55 @@ impl SettingsAudioRoutingView {
         div()
             .w_full()
             .flex()
-            .flex_row()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(field)
-            .child(self.test_button(palette, cx))
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(spacing(Spacing::Sm, density))
+                    .child(field)
+                    .child(self.test_button(palette, cx)),
+            )
+            .children(self.pages_section(palette, density))
             .into_any_element()
+    }
+
+    fn pages_section(&self, palette: &ForgePalette, density: Density) -> Option<impl IntoElement> {
+        let connected = self.connected_pages?;
+        let mut column = div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xxs, density))
+            .child(
+                div()
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_muted)
+                    .child(connected_pages_text(connected)),
+            );
+        if let Some(warning) = duplicate_pages_text(connected) {
+            column = column.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_start()
+                    .gap(spacing(Spacing::Xs, density))
+                    .child(icon(Icon::AlertTriangle, FONT_XS, palette.warning))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .font_family(body_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.warning)
+                            .child(warning),
+                    ),
+            );
+        }
+        Some(column)
     }
 
     fn test_button(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
@@ -515,16 +594,10 @@ impl SettingsAudioRoutingView {
         palette: &ForgePalette,
         density: Density,
     ) -> impl IntoElement {
-        let (value, tone) = match plan.fallback {
-            Some(fallback) => (
-                tr!(
-                    "settings_audio_routing_in_effect_fallback",
-                    route = route_label(plan.route),
-                    reason = fallback.to_string()
-                ),
-                palette.warning,
-            ),
-            None => (route_label(plan.route), palette.text_secondary),
+        let value = in_effect_text(plan);
+        let tone = match plan.fallback {
+            Some(_) => palette.warning,
+            None => palette.text_secondary,
         };
         div()
             .flex()
@@ -643,6 +716,52 @@ impl Render for SettingsAudioRoutingView {
     }
 }
 
+fn in_effect_text(plan: &RoutePlan) -> String {
+    match plan.fallback {
+        Some(fallback) => tr!(
+            "settings_audio_routing_in_effect_fallback",
+            route = route_label(plan.route),
+            reason = fallback_label(fallback)
+        ),
+        None => route_label(plan.route),
+    }
+}
+
+fn no_overlays_text(choices: &[OverlayChoice]) -> Option<String> {
+    choices
+        .is_empty()
+        .then(|| tr!("settings_audio_routing_no_overlays"))
+}
+
+fn connected_pages_text(connected: usize) -> String {
+    if connected == 0 {
+        return tr!("settings_audio_routing_pages_none");
+    }
+    tr!(
+        "settings_audio_routing_pages_connected",
+        count = connected as i64
+    )
+}
+
+fn duplicate_pages_text(connected: usize) -> Option<String> {
+    (connected > SINGLE_PAGE).then(|| {
+        tr!(
+            "settings_audio_routing_pages_duplicate",
+            count = connected as i64
+        )
+    })
+}
+
+fn fallback_label(fallback: RouteFallback) -> String {
+    tr!(match fallback {
+        RouteFallback::NoDestinationChosen => "settings_audio_routing_fallback_unchosen",
+        RouteFallback::ServerUnavailable => "settings_audio_routing_fallback_server_off",
+        RouteFallback::DestinationUnreadable => "settings_audio_routing_fallback_unreadable",
+        RouteFallback::DestinationNotFound => "settings_audio_routing_fallback_missing",
+        RouteFallback::DestinationNotAudioOverlay => "settings_audio_routing_fallback_wrong_kind",
+    })
+}
+
 fn route_label(route: AudioRoute) -> String {
     let key = EVERY_ROUTE
         .into_iter()
@@ -696,7 +815,6 @@ mod tests {
     use forge_storage::{MockOverlayRepo, StorageError, reserved_keys};
 
     use super::*;
-    use crate::audio_routes::RouteFallback;
     use crate::test_support::{overlay_named, test_backend};
 
     const CHOSEN: &str = "stage-audio";

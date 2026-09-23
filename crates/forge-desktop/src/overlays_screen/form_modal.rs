@@ -18,6 +18,7 @@ const BODY_PAD_H: Pixels = px(18.0);
 const FIELD_GAP: Pixels = px(6.0);
 const FIELD_MB: Pixels = px(16.0);
 const TILE_GAP: Pixels = px(8.0);
+const TILES_PER_ROW: usize = 3;
 const LOCKED_GAP: Pixels = px(8.0);
 const LOCKED_GLYPH: Pixels = px(15.0);
 const FOOTER_GAP: Pixels = px(8.0);
@@ -145,30 +146,38 @@ impl OverlayFormModal {
     }
 
     fn render_type_picker(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let mut row = div().w_full().flex().items_stretch().gap(TILE_GAP);
-        for choice in &self.types {
-            let selected = choice.kind_id == self.kind_id;
-            let pick = choice.kind_id.clone();
-            let tile = pad_tile(
-                SharedString::from(format!("overlay-type-{}", choice.kind_id)),
-                icon(choice.icon, LOCKED_GLYPH, palette.brand),
-                div().child(choice.label.clone()),
-                palette,
-            )
-            .sublabel(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(choice.summary.clone()),
-            )
-            .selected(selected)
-            .accent(palette.brand)
-            .hover_border(palette.brand)
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_type(pick.clone(), cx)),
-            );
-            row = row.child(grow_cell(tile, 1.0));
+        let mut grid = div().w_full().flex().flex_col().gap(TILE_GAP);
+        for chunk in self.types.chunks(TILES_PER_ROW) {
+            let mut row = div().w_full().flex().items_stretch().gap(TILE_GAP);
+            for choice in chunk {
+                let selected = choice.kind_id == self.kind_id;
+                let pick = choice.kind_id.clone();
+                let tile =
+                    pad_tile(
+                        SharedString::from(format!("overlay-type-{}", choice.kind_id)),
+                        icon(choice.icon, LOCKED_GLYPH, palette.brand),
+                        div().child(choice.label.clone()),
+                        palette,
+                    )
+                    .sublabel(
+                        div()
+                            .font_family(body_family())
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_faint)
+                            .child(choice.summary.clone()),
+                    )
+                    .selected(selected)
+                    .accent(palette.brand)
+                    .hover_border(palette.brand)
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _, cx| this.pick_type(pick.clone(), cx),
+                    ));
+                row = row.child(grow_cell(tile, 1.0));
+            }
+            for _ in chunk.len()..TILES_PER_ROW {
+                row = row.child(grow_cell(div(), 1.0));
+            }
+            grid = grid.child(row);
         }
 
         div()
@@ -177,7 +186,7 @@ impl OverlayFormModal {
             .flex_col()
             .gap(FIELD_GAP)
             .child(caption(tr!("overlays_form_type_label"), palette))
-            .child(row)
+            .child(grid)
             .into_any_element()
     }
 

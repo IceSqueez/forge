@@ -1,0 +1,13 @@
+{
+  "name": "pageprobe",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless Chromium probes for forge overlay pages: open a served page, drive it, and record what it fetched, rendered and played.",
+  "license": "MIT OR Apache-2.0",
+  "type": "commonjs",
+  "dependencies": {
+    "jsdom": "^30.1.0",
+    "puppeteer": "^25.11.0",
+    "ws": "^8.21.3"
+  }
+}

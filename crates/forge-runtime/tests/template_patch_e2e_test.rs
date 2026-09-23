@@ -31,13 +31,10 @@ const TEST_KEY: [u8; 32] = [0xab; 32];
 
 async fn make_backend() -> (Arc<SqliteBackend>, TempDir) {
     let media = tempfile::tempdir().unwrap();
-    let backend = SqliteBackend::open_with_key_and_media_root(
-        ":memory:",
-        TEST_KEY,
-        media.path().join("media"),
-    )
-    .await
-    .unwrap();
+    let backend =
+        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
+            .await
+            .unwrap();
     (Arc::new(backend), media)
 }
 

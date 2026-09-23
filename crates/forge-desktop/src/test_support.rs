@@ -679,10 +679,11 @@ pub(crate) async fn sandboxed_backend(
     key: [u8; 32],
 ) -> Sandboxed<forge_storage_sqlite::SqliteBackend> {
     let media_root = tempfile::tempdir().expect("a temporary media root");
-    let backend = forge_storage_sqlite::SqliteBackend::open_with_key_and_media_root(
+    let backend = forge_storage_sqlite::SqliteBackend::open_for_test(
         url,
         key,
         media_root.path().to_owned(),
+        None,
     )
     .await
     .expect("a backend");

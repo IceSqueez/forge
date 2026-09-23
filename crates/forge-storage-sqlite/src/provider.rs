@@ -61,46 +61,21 @@ impl SqliteBackend {
     }
 
     #[doc(hidden)]
-    pub async fn open_with_key(url: &str, key: [u8; 32]) -> Result<Self, SqliteStorageError> {
-        let pool = Self::migrate_and_gate(url).await?;
-        let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
-        Ok(Self::from_pool_and_credentials(
-            pool,
-            credentials,
-            PRUNE_INTERVAL_PRODUCTION,
-            forge_platform_core::paths::media_dir(),
-        ))
-    }
-
-    #[doc(hidden)]
-    pub async fn open_with_key_and_media_root(
+    /// `media_root` is always caller-supplied; there is no fallback to the real user media
+    /// directory, which only [`SqliteBackend::open`] resolves.
+    pub async fn open_for_test(
         url: &str,
         key: [u8; 32],
         media_root: std::path::PathBuf,
+        prune_interval: Option<Duration>,
     ) -> Result<Self, SqliteStorageError> {
         let pool = Self::migrate_and_gate(url).await?;
         let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,
-            PRUNE_INTERVAL_PRODUCTION,
+            prune_interval.unwrap_or(PRUNE_INTERVAL_PRODUCTION),
             media_root,
-        ))
-    }
-
-    #[doc(hidden)]
-    pub async fn open_with_key_and_interval(
-        url: &str,
-        key: [u8; 32],
-        prune_interval: Duration,
-    ) -> Result<Self, SqliteStorageError> {
-        let pool = Self::migrate_and_gate(url).await?;
-        let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key);
-        Ok(Self::from_pool_and_credentials(
-            pool,
-            credentials,
-            prune_interval,
-            forge_platform_core::paths::media_dir(),
         ))
     }
 

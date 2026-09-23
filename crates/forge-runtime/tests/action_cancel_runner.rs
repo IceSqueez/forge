@@ -89,13 +89,10 @@ impl SubActionRunner for GateRunner {
 
 async fn make_dp() -> (Arc<dyn DataProvider>, TempDir) {
     let media = tempfile::tempdir().unwrap();
-    let backend = SqliteBackend::open_with_key_and_media_root(
-        ":memory:",
-        [0xcd; 32],
-        media.path().join("media"),
-    )
-    .await
-    .unwrap();
+    let backend =
+        SqliteBackend::open_for_test(":memory:", [0xcd; 32], media.path().join("media"), None)
+            .await
+            .unwrap();
     (Arc::new(backend), media)
 }
 

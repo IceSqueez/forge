@@ -192,13 +192,9 @@ struct Harness {
 async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     let media = tempfile::tempdir().unwrap();
     let backend = Arc::new(
-        SqliteBackend::open_with_key_and_media_root(
-            ":memory:",
-            TEST_KEY,
-            media.path().join("media"),
-        )
-        .await
-        .unwrap(),
+        SqliteBackend::open_for_test(":memory:", TEST_KEY, media.path().join("media"), None)
+            .await
+            .unwrap(),
     );
     let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
 

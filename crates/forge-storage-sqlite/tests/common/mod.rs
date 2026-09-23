@@ -37,10 +37,9 @@ impl<T> Deref for Sandboxed<T> {
 
 pub async fn sandboxed_backend(url: &str, key: [u8; 32]) -> Sandboxed<SqliteBackend> {
     let media_root = tempfile::tempdir().expect("a temporary media root");
-    let backend =
-        SqliteBackend::open_with_key_and_media_root(url, key, media_root.path().to_owned())
-            .await
-            .expect("a backend");
+    let backend = SqliteBackend::open_for_test(url, key, media_root.path().to_owned(), None)
+        .await
+        .expect("a backend");
     Sandboxed {
         inner: backend,
         _media_root: media_root,

@@ -44,7 +44,9 @@ async fn reopen(dir: &Path) -> SqliteBackend {
         *byte = u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap();
     }
     let url = format!("sqlite://{}?mode=rw", dir.join("forge.db").display());
-    SqliteBackend::open_with_key(&url, key).await.unwrap()
+    SqliteBackend::open_for_test(&url, key, dir.join("media"), None)
+        .await
+        .unwrap()
 }
 
 fn log_step(message: &str) -> SubActionStep {

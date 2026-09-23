@@ -71,10 +71,9 @@ fn entries(dir: &std::path::Path) -> Vec<String> {
 async fn fixture() -> Fixture {
     let dir = tempfile::tempdir().expect("temp dir");
     let root = dir.path().join(MEDIA_SUBDIR);
-    let backend =
-        SqliteBackend::open_with_key_and_media_root("sqlite::memory:", TEST_KEY, root.clone())
-            .await
-            .expect("open backend against an isolated media root");
+    let backend = SqliteBackend::open_for_test("sqlite::memory:", TEST_KEY, root.clone(), None)
+        .await
+        .expect("open backend against an isolated media root");
     Fixture { backend, root, dir }
 }
 

@@ -111,13 +111,9 @@ impl EventPublisher for NullPublisher {
 async fn engine() -> (Engine, tempfile::TempDir) {
     let media_root = tempfile::tempdir().expect("a temporary media root");
     let backend = Arc::new(
-        SqliteBackend::open_with_key_and_media_root(
-            ":memory:",
-            [0xab; 32],
-            media_root.path().to_owned(),
-        )
-        .await
-        .unwrap(),
+        SqliteBackend::open_for_test(":memory:", [0xab; 32], media_root.path().to_owned(), None)
+            .await
+            .unwrap(),
     );
     let api = ForgeApi::new(
         Arc::new(NullPublisher),

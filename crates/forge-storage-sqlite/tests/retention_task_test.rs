@@ -12,7 +12,8 @@ async fn setup_file_db(interval: std::time::Duration) -> (SqliteBackend, tempfil
     let dir = tempfile::tempdir().expect("create tmpdir");
     let db_path = dir.path().join("test.db");
     let url = format!("sqlite:{}", db_path.display());
-    let backend = SqliteBackend::open_with_key_and_interval(&url, TEST_KEY, interval)
+    let media_root = dir.path().join("media");
+    let backend = SqliteBackend::open_for_test(&url, TEST_KEY, media_root, Some(interval))
         .await
         .expect("open");
     (backend, dir)

@@ -18,6 +18,9 @@ impl ObsSink for MockSink {
     async fn set_source_visible(&self, _: &str, _: &str, _: bool) -> Result<(), ObsError> {
         Ok(())
     }
+    async fn set_source_locked(&self, _: &str, _: &str, _: bool) -> Result<(), ObsError> {
+        Ok(())
+    }
     async fn set_input_mute(&self, _: &str, _: bool) -> Result<(), ObsError> {
         Ok(())
     }
@@ -211,6 +214,14 @@ impl ObsSink for RecordingSink {
         visible: bool,
     ) -> Result<(), ObsError> {
         self.record(format!("set_source_visible({scene},{source},{visible})"))
+    }
+    async fn set_source_locked(
+        &self,
+        scene: &str,
+        source: &str,
+        locked: bool,
+    ) -> Result<(), ObsError> {
+        self.record(format!("set_source_locked({scene},{source},{locked})"))
     }
     async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError> {
         self.record(format!("set_input_mute({input},{mute})"))

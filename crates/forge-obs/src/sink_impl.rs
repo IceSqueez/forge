@@ -6,13 +6,48 @@ use forge_types::Variant;
 use obws::common::MediaAction;
 use obws::requests::filters::SetEnabled as FilterSetEnabled;
 use obws::requests::inputs::{InputId, SetSettings, Volume};
-use obws::requests::scene_items::{Id, SetEnabled};
+use obws::requests::scene_items::{Id, SetEnabled, SetLocked};
 use obws::requests::scenes::SceneId;
 use obws::requests::sources::{SaveScreenshot, SourceId};
 
 use crate::client::ObsClient;
 use crate::error::{ObsError, map_request_error};
 use crate::sink::ObsSink;
+
+impl ObsClient {
+    async fn resolve_scene_item_id(
+        &self,
+        client: &obws::Client,
+        scene: &str,
+        source: &str,
+    ) -> Result<i64, ObsError> {
+        let cached_id = self
+            .scene_item_id_cache
+            .lock()
+            .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
+            .get(&(scene.to_owned(), source.to_owned()))
+            .copied();
+
+        if let Some(id) = cached_id {
+            return Ok(id);
+        }
+
+        let id = client
+            .scene_items()
+            .id(Id {
+                scene: SceneId::Name(scene),
+                source,
+                search_offset: None,
+            })
+            .await
+            .map_err(|e| map_request_error("GetSceneItemId", e))?;
+        self.scene_item_id_cache
+            .lock()
+            .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
+            .insert((scene.to_owned(), source.to_owned()), id);
+        Ok(id)
+    }
+}
 
 #[async_trait]
 impl ObsSink for ObsClient {
@@ -31,33 +66,8 @@ impl ObsSink for ObsClient {
         source: &str,
         visible: bool,
     ) -> Result<(), ObsError> {
-        let cached_id = self
-            .scene_item_id_cache
-            .lock()
-            .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
-            .get(&(scene.to_owned(), source.to_owned()))
-            .copied();
-
         let client = self.active_client().await?;
-
-        let item_id = if let Some(id) = cached_id {
-            id
-        } else {
-            let id = client
-                .scene_items()
-                .id(Id {
-                    scene: SceneId::Name(scene),
-                    source,
-                    search_offset: None,
-                })
-                .await
-                .map_err(|e| map_request_error("GetSceneItemId", e))?;
-            self.scene_item_id_cache
-                .lock()
-                .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
-                .insert((scene.to_owned(), source.to_owned()), id);
-            id
-        };
+        let item_id = self.resolve_scene_item_id(&client, scene, source).await?;
 
         client
             .scene_items()
@@ -68,6 +78,26 @@ impl ObsSink for ObsClient {
             })
             .await
             .map_err(|e| map_request_error("SetSceneItemEnabled", e))
+    }
+
+    async fn set_source_locked(
+        &self,
+        scene: &str,
+        source: &str,
+        locked: bool,
+    ) -> Result<(), ObsError> {
+        let client = self.active_client().await?;
+        let item_id = self.resolve_scene_item_id(&client, scene, source).await?;
+
+        client
+            .scene_items()
+            .set_locked(SetLocked {
+                scene: SceneId::Name(scene),
+                item_id,
+                locked,
+            })
+            .await
+            .map_err(|e| map_request_error("SetSceneItemLocked", e))
     }
 
     async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError> {

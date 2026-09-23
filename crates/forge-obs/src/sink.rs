@@ -14,6 +14,13 @@ pub trait ObsSink: Send + Sync {
         visible: bool,
     ) -> Result<(), ObsError>;
 
+    async fn set_source_locked(
+        &self,
+        scene: &str,
+        source: &str,
+        locked: bool,
+    ) -> Result<(), ObsError>;
+
     async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError>;
 
     async fn start_record(&self) -> Result<(), ObsError>;

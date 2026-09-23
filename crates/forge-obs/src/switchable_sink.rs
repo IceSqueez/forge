@@ -55,6 +55,16 @@ impl ObsSink for SwitchableObsSink {
         client.set_source_visible(scene, source, visible).await
     }
 
+    async fn set_source_locked(
+        &self,
+        scene: &str,
+        source: &str,
+        locked: bool,
+    ) -> Result<(), ObsError> {
+        let client = self.get()?;
+        client.set_source_locked(scene, source, locked).await
+    }
+
     async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError> {
         let client = self.get()?;
         client.set_input_mute(input, mute).await

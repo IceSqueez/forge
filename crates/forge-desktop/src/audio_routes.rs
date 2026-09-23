@@ -255,6 +255,8 @@ pub fn report_plan(domain: AudioDomain, plan: &RoutePlan) {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    use std::cell::Cell;
+
     use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
     use forge_storage::MockOverlayRepo;
     use forge_storage::settings::MockSettingsRepo;
@@ -540,28 +542,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_plan_carries_a_destination_exactly_when_its_route_plays_the_overlay() {
-        for requested in [AudioRoute::Local, AudioRoute::Overlay, AudioRoute::Both] {
-            for state in [
-                AudioDestination::Ready(OverlayId::new(CHOSEN)),
-                AudioDestination::Unset,
-                AudioDestination::ServerOff,
-                AudioDestination::Unreadable,
-                AudioDestination::NotFound,
-                AudioDestination::NotAudioOverlay,
-            ] {
-                let plan = plan_route(requested, &state);
-
-                assert_eq!(
-                    plan.route.plays_overlay(),
-                    plan.destination.is_some(),
-                    "{requested:?} against {state:?} produced {plan:?}"
-                );
-            }
-        }
-    }
-
     fn plan_with(route: AudioRoute, destination: Option<&str>) -> RoutePlan {
         RoutePlan {
             route,
@@ -617,5 +597,128 @@ mod tests {
             ),
             &overlay
         ));
+    }
+
+    fn overlay_plan(route: AudioRoute) -> RoutePlan {
+        plan_with(route, route.plays_overlay().then_some(CHOSEN))
+    }
+
+    #[test]
+    fn the_overlay_sink_is_built_once_and_only_where_a_ready_destination_is_played() {
+        let ready = AudioDestination::Ready(OverlayId::new(CHOSEN));
+        for (speech, clips, destination, expected) in [
+            (AudioRoute::Local, AudioRoute::Local, ready.clone(), 0),
+            (AudioRoute::Overlay, AudioRoute::Local, ready.clone(), 1),
+            (AudioRoute::Local, AudioRoute::Overlay, ready.clone(), 1),
+            (AudioRoute::Overlay, AudioRoute::Overlay, ready.clone(), 1),
+            (AudioRoute::Both, AudioRoute::Both, ready.clone(), 1),
+            (
+                AudioRoute::Overlay,
+                AudioRoute::Overlay,
+                AudioDestination::Unset,
+                0,
+            ),
+            (
+                AudioRoute::Overlay,
+                AudioRoute::Overlay,
+                AudioDestination::ServerOff,
+                0,
+            ),
+            (
+                AudioRoute::Both,
+                AudioRoute::Both,
+                AudioDestination::Unreadable,
+                0,
+            ),
+            (
+                AudioRoute::Both,
+                AudioRoute::Both,
+                AudioDestination::NotFound,
+                0,
+            ),
+            (
+                AudioRoute::Overlay,
+                AudioRoute::Local,
+                AudioDestination::NotAudioOverlay,
+                0,
+            ),
+        ] {
+            let built = Cell::new(0_usize);
+
+            let _install = compose_routes(
+                &overlay_plan(speech),
+                &overlay_plan(clips),
+                &destination,
+                RecordingSink::new() as Arc<dyn AudioSink>,
+                |_| {
+                    built.set(built.get() + 1);
+                    Some(RecordingSink::new() as Arc<dyn AudioSink>)
+                },
+            );
+
+            assert_eq!(
+                built.get(),
+                expected,
+                "speech={speech:?} clips={clips:?} against {destination:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_speech_side_takes_the_overlay_only_when_its_own_route_plays_it() {
+        for (speech, clips, speech_takes_the_overlay) in [
+            (AudioRoute::Local, AudioRoute::Overlay, false),
+            (AudioRoute::Overlay, AudioRoute::Local, true),
+            (AudioRoute::Overlay, AudioRoute::Overlay, true),
+        ] {
+            let local = Arc::new(RecordingSink::default()) as Arc<dyn AudioSink>;
+            let overlay = Arc::new(RecordingSink::default()) as Arc<dyn AudioSink>;
+
+            let install = compose_routes(
+                &overlay_plan(speech),
+                &overlay_plan(clips),
+                &AudioDestination::Ready(OverlayId::new(CHOSEN)),
+                Arc::clone(&local),
+                |_| Some(Arc::clone(&overlay)),
+            );
+
+            let expected = if speech_takes_the_overlay {
+                &overlay
+            } else {
+                &local
+            };
+            assert!(
+                Arc::ptr_eq(&install.speech_sink, expected),
+                "speech={speech:?} clips={clips:?} composed the wrong speech sink"
+            );
+        }
+    }
+
+    // Why: `ClipRoute` keeps its overlay leg private, so the reference count on the sink the
+    // factory handed back is the only way here to see that the clip side was given that same
+    // sink rather than nothing; which legs it then feeds is a soundboard-side contract.
+    #[test]
+    fn the_clip_route_is_handed_the_same_overlay_sink_as_the_speech_side() {
+        let overlay = Arc::new(RecordingSink::default()) as Arc<dyn AudioSink>;
+
+        let install = compose_routes(
+            &overlay_plan(AudioRoute::Overlay),
+            &overlay_plan(AudioRoute::Overlay),
+            &AudioDestination::Ready(OverlayId::new(CHOSEN)),
+            RecordingSink::new() as Arc<dyn AudioSink>,
+            |_| Some(Arc::clone(&overlay)),
+        );
+
+        assert!(
+            Arc::ptr_eq(&install.speech_sink, &overlay),
+            "the speech side was not given the sink the factory built"
+        );
+        let held_by_both = Arc::strong_count(&overlay);
+        drop(install.clip_route);
+        assert_eq!(
+            Arc::strong_count(&overlay),
+            held_by_both - 1,
+            "the clip route was not holding the overlay sink the speech side got"
+        );
     }
 }

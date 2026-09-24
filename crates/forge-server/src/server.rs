@@ -1561,6 +1561,10 @@ mod tests {
     /// Each round trip gives a pending policy close another chance to win the socket loop's
     /// select, so a session that should have stayed open is caught with near certainty.
     const ROUND_TRIPS: usize = 8;
+    /// Mirrors the grace period the socket loop allows before an unauthenticated session must
+    /// justify staying open.
+    const PRE_AUTH_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+    const PRE_AUTH_MARGIN: std::time::Duration = std::time::Duration::from_secs(1);
 
     async fn open_ws(addr: std::net::SocketAddr) -> ClientSocket {
         tokio_tungstenite::connect_async(format!("ws://{addr}/ws/v1/"))
@@ -1915,6 +1919,93 @@ mod tests {
         tokio::time::sleep(crate::listener::REQUEST_READ_TIMEOUT * 2).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_silent_socket_is_closed_with_policy_at_the_pre_auth_window() {
+        let (handle, addr) = make_server(false, MemCreds::new()).await;
+        let mut socket = open_ws(addr).await;
+
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+
+        assert_eq!(
+            close_code_of(next_message(&mut socket).await),
+            Some(close_code::POLICY),
+            "a socket that never spoke must be closed once the window passes"
+        );
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_socket_that_spoke_once_stays_open_past_the_window_when_reads_are_open() {
+        let (handle, addr) = make_server(false, MemCreds::new()).await;
+        let mut socket = open_ws(addr).await;
+
+        assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+
+        assert_still_serving(&mut socket, "a reader that had spoken while reads are open").await;
+        handle.abort();
+    }
+
+    // Why: under reads-required, `stays_open` only checks `authenticated`, so a session that
+    // spoke without ever authenticating must still be closed once the window passes - having
+    // sent a message must not stand in for a bearer or overlay credential.
+    #[tokio::test(start_paused = true)]
+    async fn an_unauthenticated_socket_that_spoke_is_still_closed_at_the_window_when_reads_are_required()
+     {
+        let (handle, addr) = make_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut socket = open_ws(addr).await;
+
+        assert_eq!(
+            ask(&mut socket, get_info_request()).await["error"]["code"],
+            "UNAUTHENTICATED",
+            "an unauthenticated request must be answered, not silently dropped"
+        );
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+
+        assert_eq!(
+            close_code_of(next_message(&mut socket).await),
+            Some(close_code::POLICY),
+            "having sent a message must not exempt an unauthenticated socket at the window"
+        );
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_bearer_authenticated_socket_stays_open_past_the_window_when_reads_are_required() {
+        let (handle, addr) = make_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut session = authenticated_ws(addr, BEARER_TOKEN).await;
+
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+
+        assert_still_serving(&mut session, "a bearer-authenticated session").await;
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_overlay_session_stays_open_past_the_window_when_reads_are_required() {
+        let (handle, addr) = make_server_serving_one_overlay().await;
+        handle.auth_state().await.set_reads_required(true);
+        let mut page = open_ws(addr).await;
+        let ack = ask(
+            &mut page,
+            serde_json::json!({
+                "id": "1",
+                "request": "auth",
+                "overlayCredential": OVERLAY_PAGE_CREDENTIAL,
+            }),
+        )
+        .await;
+        assert_eq!(
+            ack["status"], "ok",
+            "the page never became an overlay session"
+        );
+
+        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+
+        assert_still_serving(&mut page, "an overlay session").await;
         handle.abort();
     }
 }

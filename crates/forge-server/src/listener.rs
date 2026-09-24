@@ -239,6 +239,7 @@ impl Connected<IncomingStream<'_, GuardedListener>> for PeerInfo {
 #[allow(clippy::expect_used)]
 mod tests {
     use std::io;
+    use std::net::{IpAddr, Ipv4Addr};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -247,7 +248,10 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
     use tokio::sync::Semaphore;
 
-    use super::{GuardedListener, GuardedStream, MAX_CONCURRENT_CONNECTIONS, REQUEST_READ_TIMEOUT};
+    use super::{
+        GuardedListener, GuardedStream, MAX_CONCURRENT_CONNECTIONS, PER_IP_MAX_CONNECTIONS,
+        PerIpLimiter, REQUEST_READ_TIMEOUT,
+    };
 
     const BYTE_BUDGET: Duration = Duration::from_secs(5);
     const MARGIN: Duration = Duration::from_secs(1);
@@ -353,5 +357,74 @@ mod tests {
             .expect("a freed slot must admit the next connection")
             .expect("accept task");
         assert_eq!(accepted_peer, admitted.local_addr().expect("client addr"));
+    }
+
+    // Why: 127.0.0.2 is still `is_loopback()`, so a real second peer address cannot be dialled
+    // in-process; the per-IP cap and its cross-address isolation are driven directly against
+    // `PerIpLimiter`, the same seam `GuardedListener::accept` calls for a non-loopback peer.
+    fn non_loopback_ip(last_octet: u8) -> IpAddr {
+        // RFC 5737 TEST-NET-3, guaranteed non-routable and never loopback.
+        IpAddr::V4(Ipv4Addr::new(203, 0, 113, last_octet))
+    }
+
+    #[test]
+    fn the_permit_past_the_per_ip_cap_is_refused_while_another_address_is_unaffected() {
+        let limiter = Arc::new(PerIpLimiter::default());
+        let busy = non_loopback_ip(1);
+        let mut held = Vec::with_capacity(PER_IP_MAX_CONNECTIONS);
+        for _ in 0..PER_IP_MAX_CONNECTIONS {
+            held.push(limiter.try_acquire(busy).expect("under the per-IP cap"));
+        }
+
+        assert!(
+            limiter.try_acquire(busy).is_none(),
+            "the permit past the cap must be refused"
+        );
+        assert!(
+            limiter.try_acquire(non_loopback_ip(2)).is_some(),
+            "a saturated address must not affect a different address"
+        );
+    }
+
+    #[test]
+    fn dropping_a_per_ip_permit_frees_a_slot_for_the_same_address() {
+        let limiter = Arc::new(PerIpLimiter::default());
+        let ip = non_loopback_ip(3);
+        let mut held = Vec::with_capacity(PER_IP_MAX_CONNECTIONS);
+        for _ in 0..PER_IP_MAX_CONNECTIONS {
+            held.push(limiter.try_acquire(ip).expect("under the per-IP cap"));
+        }
+        assert!(limiter.try_acquire(ip).is_none(), "at the cap");
+
+        held.pop();
+
+        assert!(
+            limiter.try_acquire(ip).is_some(),
+            "a permit freed by drop must be available to acquire again"
+        );
+    }
+
+    #[tokio::test]
+    async fn loopback_connections_are_exempt_from_the_per_ip_cap() {
+        let inner = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = inner.local_addr().expect("addr");
+        let mut listener = GuardedListener::new(inner);
+
+        let mut clients = Vec::with_capacity(PER_IP_MAX_CONNECTIONS + 1);
+        let mut held = Vec::with_capacity(PER_IP_MAX_CONNECTIONS + 1);
+        for _ in 0..=PER_IP_MAX_CONNECTIONS {
+            clients.push(TcpStream::connect(addr).await.expect("connect"));
+            let (stream, _addr) =
+                tokio::time::timeout(BYTE_BUDGET, Listener::accept(&mut listener))
+                    .await
+                    .expect("a per-IP cap applied to loopback would hang this accept");
+            held.push(stream);
+        }
+
+        assert_eq!(
+            held.len(),
+            PER_IP_MAX_CONNECTIONS + 1,
+            "loopback connections from the same address must not be capped"
+        );
     }
 }

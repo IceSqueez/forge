@@ -42,6 +42,7 @@ pub(crate) async fn list_voices_from_binary() -> Result<String, EspeakError> {
         .arg("--voices")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
+        .kill_on_drop(true)
         .output()
         .await
         .map_err(EspeakError::Io)?;
@@ -81,6 +82,7 @@ pub(crate) async fn run_synthesis(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(EspeakError::Io)?;
 

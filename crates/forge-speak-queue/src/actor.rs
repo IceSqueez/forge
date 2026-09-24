@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use forge_audio::PcmBuffer;
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_tts_core::{EngineId, SynthesisRequest, TtsVoice, VoiceId};
+use forge_tts_core::{EngineId, SynthesisRequest, TtsError, TtsVoice, VoiceId};
 use forge_tts_pipeline::{DetectionOutcome, LanguageCode, LanguageDetector, PipelineResult};
 use forge_types::Shared;
 use forge_voice::{
@@ -23,19 +23,42 @@ struct SynthTaskResult {
     outcome: SynthOutcome,
 }
 
-struct CurrentPlayback {
+struct ReadyClip {
+    request_id: RequestId,
+    request: SpeakRequest,
+    pcm: PcmBuffer,
+    voice_id: VoiceId,
+    engine_id: EngineId,
+    language: Option<DetectedLanguage>,
+}
+
+struct PlayingClip {
     request_id: RequestId,
     request: SpeakRequest,
     playback: forge_audio::ControlledPlayback,
     elapsed_secs: u32,
 }
 
+enum CurrentPlayback {
+    Playing(PlayingClip),
+    /// Synthesized while the queue was paused; starts on Resume, never before.
+    Held(ReadyClip),
+}
+
+fn is_playing(current: &Option<CurrentPlayback>) -> bool {
+    matches!(current, Some(CurrentPlayback::Playing(_)))
+}
+
+fn is_held(current: &Option<CurrentPlayback>) -> bool {
+    matches!(current, Some(CurrentPlayback::Held(_)))
+}
+
 async fn poll_current(
     current: &mut Option<CurrentPlayback>,
 ) -> Result<(), forge_audio::AudioError> {
     match current {
-        Some(c) => (&mut c.playback).await,
-        None => std::future::pending().await,
+        Some(CurrentPlayback::Playing(c)) => (&mut c.playback).await,
+        _ => std::future::pending().await,
     }
 }
 
@@ -238,6 +261,30 @@ async fn run_synthesis(
     }
 }
 
+/// Dropping the timed-out synthesis drops its engine, which ends a subprocess engine's child.
+async fn run_synthesis_bounded(
+    req: SpeakRequest,
+    deps: SynthTaskDeps,
+    recent_messages: Vec<String>,
+    timeout: Duration,
+) -> SynthTaskResult {
+    let fallback = req.clone();
+    match tokio::time::timeout(timeout, run_synthesis(req, deps, recent_messages)).await {
+        Ok(result) => result,
+        Err(_) => SynthTaskResult {
+            request_id: fallback.request_id.clone(),
+            request: fallback,
+            outcome: SynthOutcome::Failed {
+                reason: "engine_timeout",
+                detail: TtsError::Timeout {
+                    ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+                }
+                .to_string(),
+            },
+        },
+    }
+}
+
 /// `None` unless the guess is confident AND some installed voice serves it - a guess that
 /// no voice can honour must leave resolution against the full catalog, not skip the message.
 async fn detect_language(
@@ -432,6 +479,25 @@ pub(crate) async fn run_actor(
             }
         }
 
+        if !paused
+            && is_held(&current_playback)
+            && let Some(CurrentPlayback::Held(clip)) = current_playback.take()
+        {
+            let gains = engine_gains.load();
+            start_clip(
+                clip,
+                &config,
+                &deps,
+                &event_tx,
+                &mut active_request_id,
+                &mut current_playback,
+                &mut progress_ticker,
+                high_queue.len() + normal_queue.len(),
+                gains.as_ref(),
+            )
+            .await;
+        }
+
         if active_request_id.is_none()
             && !paused
             && !voicegate_active
@@ -477,8 +543,10 @@ pub(crate) async fn run_actor(
                 recent_messages.pop_front();
             }
             recent_messages.push_back(req.text.clone());
+            let timeout = config.timeout_per_item;
             tokio::spawn(async move {
-                let result = run_synthesis(req, task_deps_clone, recent_snapshot).await;
+                let result =
+                    run_synthesis_bounded(req, task_deps_clone, recent_snapshot, timeout).await;
                 let _ = tx.send(result).await;
             });
         }
@@ -561,8 +629,8 @@ pub(crate) async fn run_actor(
                         &mut active_request_id,
                         &mut current_playback,
                         &mut progress_ticker,
-                        &high_queue,
-                        &normal_queue,
+                        paused,
+                        high_queue.len() + normal_queue.len(),
                         gains.as_ref(),
                     ).await;
                 }
@@ -582,7 +650,7 @@ pub(crate) async fn run_actor(
                 }
             }
             _ = tick_progress(&mut progress_ticker), if progress_ticker.is_some() => {
-                if !paused && let Some(c) = current_playback.as_mut() {
+                if !paused && let Some(CurrentPlayback::Playing(c)) = current_playback.as_mut() {
                     c.elapsed_secs += 1;
                     let _ = event_tx.send(SpeakEvent::Progress {
                         request_id: c.request_id.clone(),
@@ -590,8 +658,8 @@ pub(crate) async fn run_actor(
                     });
                 }
             }
-            play_result = poll_current(&mut current_playback), if current_playback.is_some() => {
-                if let Some(current) = current_playback.take() {
+            play_result = poll_current(&mut current_playback), if is_playing(&current_playback) => {
+                if let Some(CurrentPlayback::Playing(current)) = current_playback.take() {
                     progress_ticker = None;
                     finish_playback(
                         play_result,
@@ -616,14 +684,13 @@ async fn handle_synth_result(
     active_request_id: &mut Option<RequestId>,
     current_playback: &mut Option<CurrentPlayback>,
     progress_ticker: &mut Option<tokio::time::Interval>,
-    high_queue: &VecDeque<SpeakRequest>,
-    normal_queue: &VecDeque<SpeakRequest>,
+    paused: bool,
+    queue_len: usize,
     engine_gains: &HashMap<EngineId, f32>,
 ) {
     if active_request_id.as_ref() != Some(&result.request_id) {
         return;
     }
-    let queue_len = high_queue.len() + normal_queue.len();
 
     match result.outcome {
         SynthOutcome::Skipped {
@@ -679,65 +746,111 @@ async fn handle_synth_result(
             if let Some(cap_secs) = deps.pipeline.load().output.max_duration_secs {
                 pcm.truncate_to_secs(cap_secs);
             }
-            let duration_secs = (pcm.duration_ms() / 1000) as u32;
-            let _ = event_tx.send(SpeakEvent::Started {
-                request_id: result.request_id.clone(),
-                voice_id: voice_id.clone(),
-                engine_id: engine_id.clone(),
-                viewer_name: result.request.viewer_name.clone(),
-                text: result.request.text.clone(),
-                duration_secs,
+            let clip = ReadyClip {
+                request_id: result.request_id,
+                request: result.request,
+                pcm,
+                voice_id,
+                engine_id,
+                language,
+            };
+            if paused {
+                *current_playback = Some(CurrentPlayback::Held(clip));
+                return;
+            }
+            start_clip(
+                clip,
+                config,
+                deps,
+                event_tx,
+                active_request_id,
+                current_playback,
+                progress_ticker,
+                queue_len,
+                engine_gains,
+            )
+            .await;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn start_clip(
+    clip: ReadyClip,
+    config: &QueueConfig,
+    deps: &QueueDeps,
+    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
+    active_request_id: &mut Option<RequestId>,
+    current_playback: &mut Option<CurrentPlayback>,
+    progress_ticker: &mut Option<tokio::time::Interval>,
+    queue_len: usize,
+    engine_gains: &HashMap<EngineId, f32>,
+) {
+    let ReadyClip {
+        request_id,
+        request,
+        mut pcm,
+        voice_id,
+        engine_id,
+        language,
+    } = clip;
+    let duration_secs = (pcm.duration_ms() / 1000) as u32;
+    let _ = event_tx.send(SpeakEvent::Started {
+        request_id: request_id.clone(),
+        voice_id: voice_id.clone(),
+        engine_id: engine_id.clone(),
+        viewer_name: request.viewer_name.clone(),
+        text: request.text.clone(),
+        duration_secs,
+    });
+    publish(
+        deps.event_bus.as_ref(),
+        "speak.started",
+        serde_json::json!({
+            "request_id": request_id.0,
+            "voice_id": voice_id.0,
+            "engine_id": engine_id.0,
+            "queue_len": queue_len,
+            "viewer_name": request.viewer_name,
+            "text": request.text,
+            "detected_language": language.as_ref().map(|l| l.code.to_string()),
+            "language_confidence": language.as_ref().map(|l| l.confidence),
+        }),
+        request.source_event_id,
+    );
+    let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
+    pcm.apply_gain(config.master_volume * engine_gain);
+    match deps.audio_sink.play_controlled(pcm).await {
+        Ok(playback) => {
+            let mut ticker = tokio::time::interval(Duration::from_secs(1));
+            ticker.tick().await;
+            *progress_ticker = Some(ticker);
+            *current_playback = Some(CurrentPlayback::Playing(PlayingClip {
+                request_id,
+                request,
+                playback,
+                elapsed_secs: 0,
+            }));
+        }
+        Err(e) => {
+            *active_request_id = None;
+            tracing::warn!(request_id = %request_id.0, error = %e, "audio playback failed to start");
+            let _ = event_tx.send(SpeakEvent::Failed {
+                request_id: request_id.clone(),
+                error: e.to_string(),
             });
             publish(
                 deps.event_bus.as_ref(),
-                "speak.started",
+                "speak.failed",
                 serde_json::json!({
-                    "request_id": result.request_id.0,
-                    "voice_id": voice_id.0,
-                    "engine_id": engine_id.0,
-                    "queue_len": queue_len,
-                    "viewer_name": result.request.viewer_name,
-                    "text": result.request.text,
-                    "detected_language": language.as_ref().map(|l| l.code.to_string()),
-                    "language_confidence": language.as_ref().map(|l| l.confidence),
+                    "request_id": request_id.0,
+                    "reason": "device_error",
+                    "error": e.to_string(),
+                    "viewer_name": request.viewer_name,
+                    "text": request.text,
                 }),
-                result.request.source_event_id,
+                request.source_event_id,
             );
-            let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
-            pcm.apply_gain(config.master_volume * engine_gain);
-            match deps.audio_sink.play_controlled(pcm).await {
-                Ok(playback) => {
-                    let mut ticker = tokio::time::interval(Duration::from_secs(1));
-                    ticker.tick().await;
-                    *progress_ticker = Some(ticker);
-                    *current_playback = Some(CurrentPlayback {
-                        request_id: result.request_id,
-                        request: result.request,
-                        playback,
-                        elapsed_secs: 0,
-                    });
-                }
-                Err(e) => {
-                    *active_request_id = None;
-                    tracing::warn!(request_id = %result.request_id.0, error = %e, "audio playback failed to start");
-                    let _ = event_tx.send(SpeakEvent::Failed {
-                        request_id: result.request_id.clone(),
-                        error: e.to_string(),
-                    });
-                    publish(
-                        deps.event_bus.as_ref(),
-                        "speak.failed",
-                        serde_json::json!({
-                            "request_id": result.request_id.0,
-                            "reason": "device_error",
-                            "error": e.to_string(),
-                            "viewer_name": result.request.viewer_name,
-                            "text": result.request.text,
-                        }),
-                        result.request.source_event_id,
-                    );
-                }
-            }
         }
     }
 }
@@ -748,7 +861,7 @@ async fn finish_playback(
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     active_request_id: &mut Option<RequestId>,
     last_successful: &mut Option<SpeakRequest>,
-    current: CurrentPlayback,
+    current: PlayingClip,
 ) {
     *active_request_id = None;
 
@@ -803,15 +916,20 @@ fn stop_active(
     let Some(request_id) = active_request_id.take() else {
         return;
     };
-    let (viewer_name, text, caused_by) = match current_playback.take() {
-        Some(current) => {
+    let stopped_request = match current_playback.take() {
+        Some(CurrentPlayback::Playing(current)) => {
             current.playback.stop();
-            (
-                Some(current.request.viewer_name.clone()),
-                Some(current.request.text.clone()),
-                current.request.source_event_id,
-            )
+            Some(current.request)
         }
+        Some(CurrentPlayback::Held(held)) => Some(held.request),
+        None => None,
+    };
+    let (viewer_name, text, caused_by) = match stopped_request {
+        Some(request) => (
+            Some(request.viewer_name),
+            Some(request.text),
+            request.source_event_id,
+        ),
         None => (None, None, None),
     };
     *progress_ticker = None;
@@ -887,6 +1005,91 @@ fn engine_label(id: &str) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
+fn admit_request(
+    req: SpeakRequest,
+    config: &QueueConfig,
+    deps: &QueueDeps,
+    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
+    high_queue: &mut VecDeque<SpeakRequest>,
+    normal_queue: &mut VecDeque<SpeakRequest>,
+    per_user_counts: &mut HashMap<String, usize>,
+    voice_catalog: &[TtsVoice],
+) {
+    let total = high_queue.len() + normal_queue.len();
+    if total >= config.max_queue_len {
+        tracing::debug!(request_id = %req.request_id.0, "queue full, rejecting");
+        let _ = event_tx.send(SpeakEvent::Rejected {
+            request_id: req.request_id.clone(),
+            reason: format!("queue full (max {})", config.max_queue_len),
+        });
+        publish(
+            deps.event_bus.as_ref(),
+            "speak.rejected",
+            serde_json::json!({
+                "request_id": req.request_id.0,
+                "reason": "queue_full",
+                "limit": config.max_queue_len,
+                "queue_len": total,
+                "viewer_name": req.viewer_name,
+                "text": req.text,
+            }),
+            req.source_event_id,
+        );
+        return;
+    }
+    let user_count = per_user_counts.get(&req.viewer_id).copied().unwrap_or(0);
+    if user_count >= config.per_user_limit {
+        tracing::debug!(viewer_id = %req.viewer_id, "per-user limit reached");
+        let _ = event_tx.send(SpeakEvent::Rejected {
+            request_id: req.request_id.clone(),
+            reason: format!("per-user limit (max {})", config.per_user_limit),
+        });
+        publish(
+            deps.event_bus.as_ref(),
+            "speak.rejected",
+            serde_json::json!({
+                "request_id": req.request_id.0,
+                "reason": "per_user_limit",
+                "limit": config.per_user_limit,
+                "queue_len": total,
+                "viewer_name": req.viewer_name,
+                "text": req.text,
+            }),
+            req.source_event_id,
+        );
+        return;
+    }
+    *per_user_counts.entry(req.viewer_id.clone()).or_insert(0) += 1;
+    let total_after = total + 1;
+    let (voice_preview, estimated_secs) = enqueue_preview(&req, deps, voice_catalog);
+    match req.priority {
+        Priority::High => high_queue.push_back(req.clone()),
+        Priority::Normal => normal_queue.push_back(req.clone()),
+    }
+    let _ = event_tx.send(SpeakEvent::Enqueued {
+        request_id: req.request_id.clone(),
+        queue_len: total_after,
+        viewer_name: req.viewer_name.clone(),
+        text: req.text.clone(),
+        is_high_priority: matches!(req.priority, Priority::High),
+        voice_preview,
+        estimated_secs,
+    });
+    publish(
+        deps.event_bus.as_ref(),
+        "speak.enqueued",
+        serde_json::json!({
+            "request_id": req.request_id.0,
+            "queue_len": total_after,
+            "viewer_name": req.viewer_name,
+            "text": req.text,
+        }),
+        req.source_event_id,
+    );
+    let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+}
+
+#[allow(clippy::too_many_arguments)]
 fn handle_command(
     cmd: SpeakCommand,
     config: &mut QueueConfig,
@@ -905,78 +1108,16 @@ fn handle_command(
 ) {
     match cmd {
         SpeakCommand::Enqueue(req) => {
-            let total = high_queue.len() + normal_queue.len();
-            if total >= config.max_queue_len {
-                tracing::debug!(request_id = %req.request_id.0, "queue full, rejecting");
-                let _ = event_tx.send(SpeakEvent::Rejected {
-                    request_id: req.request_id.clone(),
-                    reason: format!("queue full (max {})", config.max_queue_len),
-                });
-                publish(
-                    deps.event_bus.as_ref(),
-                    "speak.rejected",
-                    serde_json::json!({
-                        "request_id": req.request_id.0,
-                        "reason": "queue_full",
-                        "limit": config.max_queue_len,
-                        "queue_len": total,
-                        "viewer_name": req.viewer_name,
-                        "text": req.text,
-                    }),
-                    req.source_event_id,
-                );
-                return;
-            }
-            let user_count = per_user_counts.get(&req.viewer_id).copied().unwrap_or(0);
-            if user_count >= config.per_user_limit {
-                tracing::debug!(viewer_id = %req.viewer_id, "per-user limit reached");
-                let _ = event_tx.send(SpeakEvent::Rejected {
-                    request_id: req.request_id.clone(),
-                    reason: format!("per-user limit (max {})", config.per_user_limit),
-                });
-                publish(
-                    deps.event_bus.as_ref(),
-                    "speak.rejected",
-                    serde_json::json!({
-                        "request_id": req.request_id.0,
-                        "reason": "per_user_limit",
-                        "limit": config.per_user_limit,
-                        "queue_len": total,
-                        "viewer_name": req.viewer_name,
-                        "text": req.text,
-                    }),
-                    req.source_event_id,
-                );
-                return;
-            }
-            *per_user_counts.entry(req.viewer_id.clone()).or_insert(0) += 1;
-            let total_after = total + 1;
-            let (voice_preview, estimated_secs) = enqueue_preview(&req, deps, voice_catalog);
-            match req.priority {
-                Priority::High => high_queue.push_back(req.clone()),
-                Priority::Normal => normal_queue.push_back(req.clone()),
-            }
-            let _ = event_tx.send(SpeakEvent::Enqueued {
-                request_id: req.request_id.clone(),
-                queue_len: total_after,
-                viewer_name: req.viewer_name.clone(),
-                text: req.text.clone(),
-                is_high_priority: matches!(req.priority, Priority::High),
-                voice_preview,
-                estimated_secs,
-            });
-            publish(
-                deps.event_bus.as_ref(),
-                "speak.enqueued",
-                serde_json::json!({
-                    "request_id": req.request_id.0,
-                    "queue_len": total_after,
-                    "viewer_name": req.viewer_name,
-                    "text": req.text,
-                }),
-                req.source_event_id,
+            admit_request(
+                req,
+                config,
+                deps,
+                event_tx,
+                high_queue,
+                normal_queue,
+                per_user_counts,
+                voice_catalog,
             );
-            let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
         }
         SpeakCommand::Skip => {
             stop_active(
@@ -1152,7 +1293,7 @@ fn handle_command(
         | SpeakCommand::SetEngineParams(_, _, _) => {}
         SpeakCommand::Pause => {
             *paused = true;
-            if let Some(c) = current_playback.as_ref() {
+            if let Some(CurrentPlayback::Playing(c)) = current_playback.as_ref() {
                 c.playback.pause();
             }
             let _ = event_tx.send(SpeakEvent::Paused {
@@ -1167,7 +1308,7 @@ fn handle_command(
         }
         SpeakCommand::Resume => {
             *paused = false;
-            if let Some(c) = current_playback.as_ref() {
+            if let Some(CurrentPlayback::Playing(c)) = current_playback.as_ref() {
                 c.playback.resume();
             }
             let _ = event_tx.send(SpeakEvent::Resumed);
@@ -1183,30 +1324,16 @@ fn handle_command(
                 let mut replay = last.clone();
                 replay.request_id = RequestId::new();
                 replay.priority = Priority::High;
-                let total = high_queue.len() + normal_queue.len() + 1;
-                let (voice_preview, estimated_secs) = enqueue_preview(&replay, deps, voice_catalog);
-                high_queue.push_back(replay.clone());
-                let _ = event_tx.send(SpeakEvent::Enqueued {
-                    request_id: replay.request_id.clone(),
-                    queue_len: total,
-                    viewer_name: replay.viewer_name.clone(),
-                    text: replay.text.clone(),
-                    is_high_priority: true,
-                    voice_preview,
-                    estimated_secs,
-                });
-                publish(
-                    deps.event_bus.as_ref(),
-                    "speak.enqueued",
-                    serde_json::json!({
-                        "request_id": replay.request_id.0,
-                        "queue_len": total,
-                        "viewer_name": replay.viewer_name,
-                        "text": replay.text,
-                    }),
-                    replay.source_event_id,
+                admit_request(
+                    replay,
+                    config,
+                    deps,
+                    event_tx,
+                    high_queue,
+                    normal_queue,
+                    per_user_counts,
+                    voice_catalog,
                 );
-                let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
             }
         }
         SpeakCommand::VoiceGateActivated => {

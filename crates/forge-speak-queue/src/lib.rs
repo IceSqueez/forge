@@ -176,16 +176,22 @@ pub struct QueueConfig {
     pub max_queue_len: usize,
     pub per_user_limit: usize,
     pub master_volume: f32,
+    /// Covers preprocessing and synthesis, not playback; an overrun fails as `engine_timeout`.
     pub timeout_per_item: Duration,
 }
+
+const DEFAULT_MAX_QUEUE_LEN: usize = 100;
+const DEFAULT_PER_USER_LIMIT: usize = 5;
+const DEFAULT_MASTER_VOLUME: f32 = 1.0;
+const DEFAULT_SYNTHESIS_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl Default for QueueConfig {
     fn default() -> Self {
         Self {
-            max_queue_len: 100,
-            per_user_limit: 5,
-            master_volume: 1.0,
-            timeout_per_item: Duration::from_secs(30),
+            max_queue_len: DEFAULT_MAX_QUEUE_LEN,
+            per_user_limit: DEFAULT_PER_USER_LIMIT,
+            master_volume: DEFAULT_MASTER_VOLUME,
+            timeout_per_item: DEFAULT_SYNTHESIS_TIMEOUT,
         }
     }
 }

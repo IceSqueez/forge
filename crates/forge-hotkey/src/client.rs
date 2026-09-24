@@ -131,8 +131,8 @@ impl HotkeyClient {
 
     pub async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
         let combo = {
-            let mut guard = self.id_to_combo.write().unwrap_or_else(|p| p.into_inner());
-            guard.remove(&id)
+            let guard = self.id_to_combo.read().unwrap_or_else(|p| p.into_inner());
+            guard.get(&id).cloned()
         };
 
         let Some(combo) = combo else {
@@ -141,12 +141,16 @@ impl HotkeyClient {
 
         let combo_str = combo.as_str().to_owned();
 
-        hold::close_synthesized(self, id);
-
         if self.os_registration_active() {
             self.backend.unregister(id).await?;
         }
 
+        hold::close_synthesized(self, id);
+
+        {
+            let mut guard = self.id_to_combo.write().unwrap_or_else(|p| p.into_inner());
+            guard.remove(&id);
+        }
         {
             let mut guard = self.registry.write().unwrap_or_else(|p| p.into_inner());
             guard.remove(&combo_str);

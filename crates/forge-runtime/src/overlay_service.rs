@@ -750,4 +750,81 @@ mod tests {
             );
         }
     }
+
+    #[derive(Default)]
+    struct RevokeLog(std::sync::Mutex<Vec<OverlayId>>);
+
+    impl RevokeLog {
+        fn revoked(&self) -> Vec<OverlayId> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl OverlayFrameSink for RevokeLog {
+        async fn deliver_content(
+            &self,
+            _: &OverlayId,
+            _: serde_json::Value,
+            _: Option<u64>,
+        ) -> OverlayReceivers {
+            unreachable!("deleting an overlay must never push content")
+        }
+
+        async fn deliver_reload(&self, _: &OverlayId) {
+            unreachable!("deleting an overlay must never reload a page")
+        }
+
+        async fn revoke(&self, identity: &OverlayId) {
+            self.0.lock().unwrap().push(identity.clone());
+        }
+    }
+
+    fn handle_deleting(
+        outcome: fn() -> Result<bool, forge_storage::StorageError>,
+        log: &Arc<RevokeLog>,
+    ) -> OverlayServiceHandle {
+        let mut repo = MockOverlayRepo::new();
+        repo.expect_delete().times(1).returning(move |_| outcome());
+        OverlayServiceHandle::new(
+            Arc::new(repo),
+            Arc::new(MockSettingsRepo::new()),
+            Arc::new(OverlayKindRegistry::new()),
+            EventBus::new(Arc::new(NullEventLogRepo)),
+            Some(Arc::clone(log) as Arc<dyn OverlayFrameSink>),
+        )
+    }
+
+    #[tokio::test]
+    async fn deleting_an_overlay_revokes_its_live_pages_exactly_once() {
+        let log = Arc::new(RevokeLog::default());
+        let handle = handle_deleting(|| Ok(true), &log);
+
+        assert!(handle.delete(&OverlayId::new(STAGE)).await.unwrap());
+
+        assert_eq!(log.revoked(), [OverlayId::new(STAGE)]);
+    }
+
+    #[tokio::test]
+    async fn a_delete_that_removes_no_row_revokes_nothing() {
+        for (case, outcome) in [
+            (
+                "an identity the store does not hold",
+                (|| Ok(false)) as fn() -> Result<bool, forge_storage::StorageError>,
+            ),
+            ("a store that failed the delete", || {
+                Err(forge_storage::StorageError::Connection {
+                    reason: "overlay store offline".to_owned(),
+                })
+            }),
+        ] {
+            let log = Arc::new(RevokeLog::default());
+            let handle = handle_deleting(outcome, &log);
+
+            let result = handle.delete(&OverlayId::new(STAGE)).await;
+
+            assert!(!matches!(result, Ok(true)), "{case} reported a removal");
+            assert!(log.revoked().is_empty(), "{case} closed live pages");
+        }
+    }
 }

@@ -28,7 +28,17 @@ impl AuthState {
         creds: &dyn CredentialsRepo,
     ) -> Result<Arc<Self>, ServerError> {
         let id = CredentialId::new(BEARER_CREDENTIAL_ID);
-        let token = match creds.load(&id).await? {
+        let stored = match creds.load(&id).await {
+            Ok(stored) => stored,
+            Err(StorageError::Decryption) => {
+                tracing::warn!(
+                    "stored server token cannot be decrypted with the current credentials key; issuing a new token"
+                );
+                None
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let token = match stored {
             Some(t) => t,
             None => {
                 let t = generate_token();

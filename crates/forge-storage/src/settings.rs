@@ -58,6 +58,7 @@ pub mod reserved_keys {
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
     pub const UPDATES_NOTIFY: &str = "updates.notify";
     pub const UPDATES_DISMISSED_VERSION: &str = "updates.dismissed_version";
+    pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
 }
 
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
@@ -120,7 +121,8 @@ pub mod disclosure {
             | reserved_keys::SOUNDBOARD_MASTER_VOLUME
             | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES
             | reserved_keys::UPDATES_NOTIFY
-            | reserved_keys::UPDATES_DISMISSED_VERSION => Verbatim,
+            | reserved_keys::UPDATES_DISMISSED_VERSION
+            | reserved_keys::CREDENTIALS_KEY_LOSS => Verbatim,
 
             reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS
             | reserved_keys::SERVER_ADDITIONAL_ORIGINS
@@ -725,6 +727,38 @@ pub async fn set_diagnostic_log_level(
         log_level_as_str(level),
     )
     .await
+}
+
+/// Stored credentials encrypted under a key that no longer exists; they stay in place and
+/// each one fails to load until it is entered again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CredentialsKeyLoss {
+    pub stranded: u64,
+}
+
+pub async fn record_credentials_key_loss(
+    repo: &dyn SettingsRepo,
+    loss: CredentialsKeyLoss,
+) -> Result<(), StorageError> {
+    repo.set_string(
+        reserved_keys::CREDENTIALS_KEY_LOSS,
+        &loss.stranded.to_string(),
+    )
+    .await
+}
+
+/// Clears the record, so a loss is reported once; an unreadable record reads as absent.
+pub async fn take_credentials_key_loss(
+    repo: &dyn SettingsRepo,
+) -> Result<Option<CredentialsKeyLoss>, StorageError> {
+    let Some(raw) = repo.get_string(reserved_keys::CREDENTIALS_KEY_LOSS).await? else {
+        return Ok(None);
+    };
+    repo.delete(reserved_keys::CREDENTIALS_KEY_LOSS).await?;
+    Ok(raw
+        .parse::<u64>()
+        .ok()
+        .map(|stranded| CredentialsKeyLoss { stranded }))
 }
 
 #[cfg(test)]

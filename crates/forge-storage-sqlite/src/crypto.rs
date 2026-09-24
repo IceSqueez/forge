@@ -8,13 +8,20 @@ const NONCE_LEN: usize = 12;
 
 // File-canonical, not OS keyring: Linux secret-service session collections get wiped on
 // logout, which would mint a new key and strand every previously-encrypted credential.
-pub fn load_or_create_key() -> Result<[u8; 32], SqliteStorageError> {
+pub fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
     let path = if let Ok(p) = std::env::var("FORGE_CREDENTIAL_KEY_FILE") {
         std::path::PathBuf::from(p)
     } else {
         forge_platform_core::paths::data_dir().join("credentials-key")
     };
-    load_or_create_file_key(&path)
+    let minted = !path.exists();
+    let key = load_or_create_file_key(&path)?;
+    Ok(CredentialsKey { key, minted })
+}
+
+pub struct CredentialsKey {
+    pub key: [u8; 32],
+    pub minted: bool,
 }
 
 fn load_or_create_file_key(path: &std::path::Path) -> Result<[u8; 32], SqliteStorageError> {

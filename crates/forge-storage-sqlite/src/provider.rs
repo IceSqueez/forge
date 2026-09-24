@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
-    ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
+    ActionRepo, ChatHistoryRepo, CredentialId, CredentialsKeyLoss, CredentialsRepo, DataProvider,
     EXPECTED_SCHEMA_VERSION, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalTransit,
     GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo,
     ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
@@ -25,6 +25,27 @@ use crate::{
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
+
+async fn report_stranded_credentials(
+    pool: &sqlx::SqlitePool,
+    credentials: &SqliteCredentialsRepo,
+) -> Result<(), SqliteStorageError> {
+    let stranded = credentials.stored_count().await?;
+    if stranded == 0 {
+        return Ok(());
+    }
+    tracing::error!(
+        stranded,
+        "credentials key file is missing and a new key was created; stored logins cannot be read and must be entered again"
+    );
+    let settings = SqliteSettingsRepo::new(pool.clone());
+    if let Err(e) =
+        forge_storage::record_credentials_key_loss(&settings, CredentialsKeyLoss { stranded }).await
+    {
+        tracing::warn!(error = %e, "could not record the credentials key loss for boot");
+    }
+    Ok(())
+}
 
 pub struct SqliteBackend {
     pool: sqlx::SqlitePool,
@@ -51,7 +72,11 @@ pub struct SqliteBackend {
 impl SqliteBackend {
     pub async fn open(url: &str) -> Result<Self, SqliteStorageError> {
         let pool = Self::migrate_and_gate(url).await?;
-        let credentials = SqliteCredentialsRepo::new(pool.clone())?;
+        let key = crate::crypto::load_or_create_key()?;
+        let credentials = SqliteCredentialsRepo::new_with_key(pool.clone(), key.key);
+        if key.minted {
+            report_stranded_credentials(&pool, &credentials).await?;
+        }
         Ok(Self::from_pool_and_credentials(
             pool,
             credentials,

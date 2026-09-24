@@ -11,14 +11,15 @@ pub struct SqliteCredentialsRepo {
 }
 
 impl SqliteCredentialsRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Result<Self, SqliteStorageError> {
-        let key = crypto::load_or_create_key()?;
-        Ok(Self { pool, key })
-    }
-
-    #[doc(hidden)]
     pub fn new_with_key(pool: sqlx::SqlitePool, key: [u8; 32]) -> Self {
         Self { pool, key }
+    }
+
+    pub(crate) async fn stored_count(&self) -> Result<u64, SqliteStorageError> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credentials")
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(u64::try_from(count).unwrap_or_default())
     }
 }
 
@@ -76,8 +77,8 @@ impl CredentialsRepo for SqliteCredentialsRepo {
             return Ok(None);
         };
 
-        let plaintext =
-            crypto::decrypt(&self.key, &row.encrypted, &row.nonce).map_err(StorageError::from)?;
+        let plaintext = crypto::decrypt(&self.key, &row.encrypted, &row.nonce)
+            .map_err(|_| StorageError::Decryption)?;
 
         Ok(Some(plaintext))
     }

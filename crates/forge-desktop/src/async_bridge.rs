@@ -374,3 +374,153 @@ pub fn optimistic<V, S, F, E>(
     })
     .detach();
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_registry::{
+        FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionRegistry,
+        SubActionRunner,
+    };
+    use forge_runtime::{ActionCancelRegistry, DispatchError, spawn_action_engine};
+    use forge_storage::history::MockHistoryRepo;
+    use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry};
+
+    use super::*;
+    use crate::test_support::{StubActions, StubEventLog, runtime};
+
+    const SUCCEEDS: &str = "test.succeeds";
+    const FAILS: &str = "test.fails";
+    const SKIPS: &str = "test.skips";
+    const FAILURE_REASON: &str = "scene not found";
+    const SKIP_REASON: &str = "not connected";
+    const ENGINE_EXIT_YIELDS: usize = 8;
+
+    struct FixedOutcome {
+        id: &'static str,
+        outcome: SubActionOutcome,
+    }
+
+    #[async_trait::async_trait]
+    impl SubActionRunner for FixedOutcome {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Util
+        }
+        fn label(&self) -> &str {
+            self.id
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn default_config(&self) -> SubActionConfig {
+            SubActionConfig::new()
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+        fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _: &SubActionConfig,
+            ctx: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            (
+                StepTimer::start(ctx, self.id).finish(self.outcome.clone()),
+                None,
+            )
+        }
+    }
+
+    fn engine() -> ActionEngineHandle {
+        let mut registry = SubActionRegistry::new();
+        for (id, outcome) in [
+            (SUCCEEDS, SubActionOutcome::Success),
+            (FAILS, SubActionOutcome::Failed(FAILURE_REASON.to_owned())),
+            (SKIPS, SubActionOutcome::Skipped(SKIP_REASON.to_owned())),
+        ] {
+            registry
+                .register(Box::new(FixedOutcome { id, outcome }))
+                .expect("each fixed-outcome runner has its own id");
+        }
+        let mut history = MockHistoryRepo::new();
+        history.expect_save().returning(|_| Ok(()));
+        spawn_action_engine(
+            EventBus::new(Arc::new(StubEventLog)),
+            Arc::new(StubActions),
+            Arc::new(history),
+            Arc::new(registry),
+            Arc::new(ActionCancelRegistry::new()),
+        )
+    }
+
+    fn quick_step(kind_id: &str) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config: SubActionConfig::new(),
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    async fn run(engine: ActionEngineHandle, kind_id: &str) -> Result<(), String> {
+        run_quick_step(
+            engine,
+            quick_step(kind_id),
+            "obs".to_owned(),
+            kind_id.to_owned(),
+        )
+        .await
+    }
+
+    #[test]
+    fn a_quick_step_settles_ok_only_when_the_step_succeeded() {
+        let rt = runtime();
+        for (kind_id, expected) in [
+            (SUCCEEDS, Ok(())),
+            (FAILS, Err(FAILURE_REASON.to_owned())),
+            (SKIPS, Err(SKIP_REASON.to_owned())),
+        ] {
+            let settled = rt.block_on(async { run(engine(), kind_id).await });
+            assert_eq!(settled, expected, "{kind_id}");
+        }
+    }
+
+    #[test]
+    fn a_quick_step_the_stopped_engine_never_ran_settles_as_an_error() {
+        let rt = runtime();
+        let not_accepted = rt.block_on(async {
+            let engine = engine();
+            engine.clone().shutdown();
+            for _ in 0..ENGINE_EXIT_YIELDS {
+                tokio::task::yield_now().await;
+            }
+            run(engine, SUCCEEDS).await
+        });
+        let dropped_from_intake = rt.block_on(async {
+            let engine = engine();
+            engine.clone().shutdown();
+            run(engine, SUCCEEDS).await
+        });
+
+        assert_eq!(
+            (not_accepted, dropped_from_intake),
+            (
+                Err(DispatchError::ChannelClosed.to_string()),
+                Err(DispatchError::NoOutcome.to_string()),
+            )
+        );
+    }
+}

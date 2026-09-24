@@ -117,3 +117,60 @@ impl TriggerKindDescriptor for SourceSceneItemRemovedDescriptor {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn event(kind: &str, payload: serde_json::Value) -> Event {
+        Event::new(EventSource::Obs, kind, payload)
+    }
+
+    #[test]
+    fn fires_on_the_scene_item_removed_kind_only() {
+        let cfg = TriggerConfig::new();
+        for (kind, expected) in [
+            ("obs.source.scene_item_removed", true),
+            ("obs.source.scene_item_created", false),
+            ("obs.source.input_removed", false),
+            ("obs.scene.removed", false),
+        ] {
+            assert_eq!(
+                SourceSceneItemRemovedDescriptor.matches_trigger(&cfg, &event(kind, json!({}))),
+                expected,
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn arg_stack_carries_the_scene_source_and_item_id() {
+        let stack = SourceSceneItemRemovedDescriptor.build_arg_stack(&event(
+            "obs.source.scene_item_removed",
+            json!({ "scene_name": "Gameplay", "source_name": "Webcam", "item_id": 42 }),
+        ));
+
+        assert_eq!(
+            stack.get("obs.scene.name"),
+            Some(&Variant::String("Gameplay".to_owned()))
+        );
+        assert_eq!(
+            stack.get("obs.source.name"),
+            Some(&Variant::String("Webcam".to_owned()))
+        );
+        assert_eq!(stack.get("obs.source.item_id"), Some(&Variant::Int(42)));
+    }
+
+    #[test]
+    fn arg_stack_omits_every_key_whose_payload_field_is_absent_or_mistyped() {
+        let stack = SourceSceneItemRemovedDescriptor.build_arg_stack(&event(
+            "obs.source.scene_item_removed",
+            json!({ "scene_name": 7, "item_id": "42" }),
+        ));
+
+        for key in ["obs.scene.name", "obs.source.name", "obs.source.item_id"] {
+            assert!(stack.get(key).is_none(), "{key}");
+        }
+    }
+}

@@ -194,6 +194,8 @@ mod tests {
             "obs.sources.input_created",
             "obs.sources.input_removed",
             "obs.sources.input_renamed",
+            "obs.sources.scene_item_created",
+            "obs.sources.scene_item_removed",
             "obs.sources.scene_item_lock_changed",
             "obs.sources.scene_item_visibility_changed",
             "obs.studio.enabled",

@@ -1388,6 +1388,41 @@ mod tests {
     }
 
     #[test]
+    fn a_scene_item_added_or_removed_is_announced_with_its_scene_source_and_item_id() {
+        for (ev, expected_kind) in [
+            (
+                obws::events::Event::SceneItemCreated {
+                    scene: scene_id("Gameplay"),
+                    source: source_id("Webcam"),
+                    item_id: 42,
+                    index: 3,
+                },
+                "obs.source.scene_item_created",
+            ),
+            (
+                obws::events::Event::SceneItemRemoved {
+                    scene: scene_id("Gameplay"),
+                    source: source_id("Webcam"),
+                    item_id: 42,
+                },
+                "obs.source.scene_item_removed",
+            ),
+        ] {
+            let Some(mapped) = map_obs_event(&ev, None, None) else {
+                panic!("{expected_kind} was not mapped");
+            };
+
+            assert_eq!(mapped.source, EventSource::Obs, "{expected_kind}");
+            assert_eq!(mapped.kind, expected_kind);
+            assert_eq!(
+                mapped.payload,
+                json!({ "scene_name": "Gameplay", "source_name": "Webcam", "item_id": 42 }),
+                "{expected_kind}"
+            );
+        }
+    }
+
+    #[test]
     fn every_emitted_kind_is_namespaced_under_obs() {
         use obws::events::OutputState;
         let events = [

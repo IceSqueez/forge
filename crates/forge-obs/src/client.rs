@@ -1772,4 +1772,55 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    #[allow(clippy::unwrap_used, clippy::panic)]
+    fn catalog_rows_offer_actions_only_while_connected() {
+        use forge_platform_core::{BuiltinContent, DetailSection, TrailingToken};
+        use forge_types::Variant;
+
+        let client = ObsClient::new_for_test("localhost:4455".to_owned());
+        {
+            let mut catalog = client.catalog_state.write().unwrap();
+            catalog.scenes = vec!["Gameplay".to_owned(), "BRB".to_owned()];
+            catalog.current_scene = Some("Gameplay".to_owned());
+            catalog.sources.insert(
+                "Gameplay".to_owned(),
+                vec![SourceInfo {
+                    name: "Cam".to_owned(),
+                    visible: true,
+                    locked: false,
+                    audio_db: None,
+                    kind: Some("v4l2_input".to_owned()),
+                }],
+            );
+        }
+        for state in EVERY_CONNECTION_STATE {
+            client.state.store(state);
+            let sections = client.sections();
+            let DetailSection::TwoColumnLists { left, right } = &sections[0] else {
+                panic!("expected TwoColumnLists");
+            };
+            let connected = state == ConnectionState::Connected;
+            assert_eq!(
+                left.items[1].on_click.is_some(),
+                connected,
+                "{state:?}: the non-live scene row"
+            );
+            let scene_keys: Vec<&Variant> = right.items[0]
+                .trailing
+                .iter()
+                .filter_map(|t| match t {
+                    TrailingToken::ActionIcon { step, .. } => step.config.get("scene"),
+                    _ => None,
+                })
+                .collect();
+            let expected_keys = if connected { 2 } else { 0 };
+            assert_eq!(
+                scene_keys,
+                vec![&Variant::String("Gameplay".to_owned()); expected_keys],
+                "{state:?}: source toggles must target the live scene only while connected"
+            );
+        }
+    }
 }

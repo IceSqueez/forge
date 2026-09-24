@@ -477,4 +477,81 @@ mod tests {
             .enabled
         );
     }
+
+    fn expected_step(kind_id: &str, config: &[(&str, Variant)]) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config: config
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), value.clone()))
+                .collect(),
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    #[test]
+    fn scene_row_switches_to_itself_only_when_connected_and_not_already_live() {
+        let switch_to_brb = Some(expected_step(
+            "obs.scenes.switch_current",
+            &[("scene", Variant::String("BRB".to_owned()))],
+        ));
+        for (row, actionable, expected) in [
+            ("BRB", true, switch_to_brb.clone()),
+            ("Gameplay", true, None),
+            ("BRB", false, None),
+            ("Gameplay", false, None),
+        ] {
+            let item = scene_to_item(row, Some("Gameplay"), Some(4), actionable);
+            assert_eq!(item.on_click, expected, "row={row} actionable={actionable}");
+        }
+    }
+
+    #[test]
+    fn connected_source_toggles_flip_the_current_state_in_the_current_scene() {
+        for (visible, locked) in [(true, true), (true, false), (false, true), (false, false)] {
+            let item = source_to_item(
+                "Gameplay",
+                &source(visible, locked, None, "browser_source"),
+                true,
+            );
+            let place = [
+                ("scene", Variant::String("Gameplay".to_owned())),
+                ("source", Variant::String("Cam".to_owned())),
+            ];
+            let with = |key: &'static str, value: bool| {
+                let mut config = place.to_vec();
+                config.push((key, Variant::Bool(value)));
+                config
+            };
+            let (eye, eye_tint) = if visible {
+                ("eye", TokenColor::Green)
+            } else {
+                ("eye-off", TokenColor::Muted)
+            };
+            let (lock, lock_tint) = if locked {
+                ("lock", TokenColor::Yellow)
+            } else {
+                ("lock-open", TokenColor::Muted)
+            };
+            assert_eq!(
+                item.trailing[..2],
+                [
+                    TrailingToken::ActionIcon {
+                        icon: SectionIcon::new(eye),
+                        tint: eye_tint,
+                        step: expected_step("obs.sources.set_visible", &with("visible", !visible)),
+                    },
+                    TrailingToken::ActionIcon {
+                        icon: SectionIcon::new(lock),
+                        tint: lock_tint,
+                        step: expected_step("obs.sources.set_locked", &with("locked", !locked)),
+                    },
+                ],
+                "visible={visible} locked={locked}"
+            );
+        }
+    }
 }

@@ -458,7 +458,9 @@ mod tests {
         ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
         SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
     };
-    use forge_runtime::sub_action_runners::CoreLogicIfThenElseRunner;
+    use forge_runtime::sub_action_runners::{
+        CoreLogicIfThenElseRunner, CoreLogicLoopRunner, CoreLogicSwitchCaseRunner,
+    };
     use forge_runtime::{ConditionGate, Config};
     use forge_types::{
         ActionId, ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PermissionRung,
@@ -551,11 +553,14 @@ mod tests {
     const LEGACY_NAME: &str = "username";
 
     fn registry() -> SubActionRegistry {
+        let gate = Arc::new(ConditionGate::new(&Config::default()));
         let mut reg = SubActionRegistry::new();
-        reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::new(
-            ConditionGate::new(&Config::default()),
-        ))))
-        .expect("the branching runner registers");
+        reg.register(Box::new(CoreLogicIfThenElseRunner::new(Arc::clone(&gate))))
+            .expect("the branching runner registers");
+        reg.register(Box::new(CoreLogicLoopRunner::new(gate)))
+            .expect("the loop runner registers");
+        reg.register(Box::new(CoreLogicSwitchCaseRunner))
+            .expect("the switch runner registers");
         reg
     }
 
@@ -748,5 +753,213 @@ mod tests {
                 findings: vec![Finding::SomeTriggersOnly(LEGACY_NAME.to_owned())],
             }],
         );
+    }
+    const LOOP_KIND: &str = "core.logic.loop";
+    const SWITCH_KIND: &str = "core.logic.switch_case";
+    const FLOW_CONTROL_KINDS: [&str; 3] = [BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID, STOP_KIND_ID];
+
+    fn plain(kind_id: &str) -> SubActionStep {
+        step(kind_id, SubActionConfig::new(), true)
+    }
+
+    fn chat_send() -> SubActionStep {
+        step(
+            CONSUMER_KIND,
+            SubActionConfig::from([(MESSAGE_KEY.to_owned(), Variant::String("hi".to_owned()))]),
+            true,
+        )
+    }
+
+    fn inside_loop(body: Vec<SubActionStep>) -> SubActionStep {
+        step(
+            LOOP_KIND,
+            SubActionConfig::from([("body".to_owned(), nav::encode_chain(&body))]),
+            true,
+        )
+    }
+
+    fn inside_case(body: Vec<SubActionStep>) -> SubActionStep {
+        let case = SubActionConfig::from([
+            ("match".to_owned(), Variant::String("a".to_owned())),
+            ("chain".to_owned(), nav::encode_chain(&body)),
+        ]);
+        step(
+            SWITCH_KIND,
+            SubActionConfig::from([(
+                "cases".to_owned(),
+                Variant::Array(vec![Variant::Object(case)]),
+            )]),
+            true,
+        )
+    }
+
+    fn inside_default(body: Vec<SubActionStep>) -> SubActionStep {
+        step(
+            SWITCH_KIND,
+            SubActionConfig::from([("default_chain".to_owned(), nav::encode_chain(&body))]),
+            true,
+        )
+    }
+
+    fn outside_any_loop(kind_id: &str) -> Vec<(SubActionStep, &'static str)> {
+        vec![
+            (plain(kind_id), "at the top level"),
+            (branch(vec![plain(kind_id)]), "inside an if branch"),
+            (inside_case(vec![plain(kind_id)]), "inside a switch case"),
+            (
+                inside_default(vec![plain(kind_id)]),
+                "inside a switch default",
+            ),
+            (
+                inside_case(vec![branch(vec![plain(kind_id)])]),
+                "inside an if nested in a switch case",
+            ),
+        ]
+    }
+
+    fn inside_a_loop(kind_id: &str) -> Vec<(SubActionStep, &'static str)> {
+        vec![
+            (inside_loop(vec![plain(kind_id)]), "inside a loop body"),
+            (
+                inside_loop(vec![branch(vec![plain(kind_id)])]),
+                "inside an if nested in a loop",
+            ),
+        ]
+    }
+
+    fn action_of(steps: Vec<SubActionStep>, concurrent: bool) -> Action {
+        Action {
+            concurrent,
+            sub_actions: steps,
+            ..action_consuming(&[])
+        }
+    }
+
+    fn health_without_triggers(action: &Action) -> Vec<StepHealth> {
+        analyze(
+            action,
+            &[],
+            &vec![None; action.sub_actions.len()],
+            &registry(),
+            &triggers(Vec::new()),
+        )
+    }
+
+    fn concurrent_warning() -> StepHealth {
+        StepHealth {
+            findings: vec![Finding::ControlFlowInConcurrentAction],
+        }
+    }
+
+    #[test]
+    fn flow_control_no_loop_absorbs_in_a_concurrent_action_flags_its_top_level_step() {
+        let flagged = FLOW_CONTROL_KINDS
+            .into_iter()
+            .flat_map(|kind_id| {
+                outside_any_loop(kind_id)
+                    .into_iter()
+                    .map(move |p| (kind_id, p))
+            })
+            .chain(
+                inside_a_loop(STOP_KIND_ID)
+                    .into_iter()
+                    .map(|p| (STOP_KIND_ID, p)),
+            );
+        for (kind_id, (placed, place)) in flagged {
+            let health = health_without_triggers(&action_of(vec![placed], true));
+            assert_eq!(health, vec![concurrent_warning()], "{kind_id} {place}");
+        }
+    }
+
+    #[test]
+    fn flow_control_in_a_sequential_action_raises_no_finding() {
+        for kind_id in FLOW_CONTROL_KINDS {
+            for (placed, place) in outside_any_loop(kind_id)
+                .into_iter()
+                .chain(inside_a_loop(kind_id))
+            {
+                let health = health_without_triggers(&action_of(vec![placed], false));
+                assert_eq!(health, vec![StepHealth::default()], "{kind_id} {place}");
+            }
+        }
+    }
+
+    // Why: a loop body runs as a sequential child chain even under a concurrent action, so the
+    // loop honours its own break/continue; only the signal reaching the top-level step is lost.
+    #[test]
+    fn a_loop_break_or_continue_in_a_concurrent_action_is_not_flagged() {
+        for kind_id in [BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID] {
+            for (placed, place) in inside_a_loop(kind_id) {
+                let health = health_without_triggers(&action_of(vec![placed], true));
+                assert_eq!(health, vec![StepHealth::default()], "{kind_id} {place}");
+            }
+        }
+    }
+
+    #[test]
+    fn flow_control_in_a_concurrent_action_is_flagged_whether_or_not_triggers_seed_it() {
+        let action = action_of(vec![plain(STOP_KIND_ID)], true);
+        for (instances, seeded) in [
+            (Vec::new(), "no triggers"),
+            (vec![instance(CANONICAL_TRIGGER)], "a declaring trigger"),
+        ] {
+            let health = analyze(
+                &action,
+                &instances,
+                &[None],
+                &registry(),
+                &triggers(vec![StubTrigger::declaring(
+                    CANONICAL_TRIGGER,
+                    canonical_actor_only,
+                )]),
+            );
+            assert_eq!(health, vec![concurrent_warning()], "{seeded}");
+        }
+    }
+
+    #[test]
+    fn a_concurrent_action_flags_only_steps_that_hold_flow_control() {
+        let health = health_without_triggers(&action_of(
+            vec![
+                chat_send(),
+                branch(vec![chat_send()]),
+                branch(vec![plain(STOP_KIND_ID)]),
+            ],
+            true,
+        ));
+
+        assert_eq!(
+            health,
+            vec![
+                StepHealth::default(),
+                StepHealth::default(),
+                concurrent_warning()
+            ]
+        );
+    }
+
+    #[test]
+    fn disabled_flow_control_in_a_concurrent_action_raises_no_finding() {
+        let disabled_stop = step(STOP_KIND_ID, SubActionConfig::new(), false);
+        let mut disabled_branch = branch(vec![plain(STOP_KIND_ID)]);
+        disabled_branch.enabled = false;
+
+        let health = health_without_triggers(&action_of(
+            vec![
+                disabled_stop.clone(),
+                disabled_branch,
+                branch(vec![disabled_stop]),
+            ],
+            true,
+        ));
+
+        assert_eq!(health, vec![StepHealth::default(); 3]);
+    }
+
+    #[test]
+    fn flow_control_in_a_concurrent_action_warns_without_marking_the_step_broken() {
+        let health = health_without_triggers(&action_of(vec![plain(STOP_KIND_ID)], true));
+
+        assert_eq!(health[0].severity(), HealthSeverity::Yellow);
     }
 }

@@ -4238,51 +4238,6 @@ mod tests {
     }
 
     #[test]
-    fn ws_frame_deserializes_session_welcome() {
-        let raw = r#"{"metadata":{"message_type":"session_welcome","message_id":"abc"},"payload":{"session":{"id":"sess-123","reconnect_url":null}}}"#;
-        let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
-        assert_eq!(frame.metadata.message_type, "session_welcome");
-        assert_eq!(frame.metadata.message_id, "abc");
-        let sid = frame.payload.unwrap().session.unwrap().id;
-        assert_eq!(sid, "sess-123");
-    }
-
-    #[test]
-    fn ws_frame_deserializes_session_reconnect() {
-        let raw = r#"{"metadata":{"message_type":"session_reconnect"},"payload":{"session":{"id":"sess-456","reconnect_url":"wss://eventsub.wss.twitch.tv/ws?reconnect_token=abc"}}}"#;
-        let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
-        assert_eq!(frame.metadata.message_type, "session_reconnect");
-        let url = frame
-            .payload
-            .unwrap()
-            .session
-            .unwrap()
-            .reconnect_url
-            .unwrap();
-        assert!(url.contains("reconnect_token=abc"));
-    }
-
-    #[test]
-    fn ws_frame_deserializes_notification_with_subscription_type() {
-        let raw = r#"{"metadata":{"message_type":"notification","message_id":"notif-001","subscription_type":"channel.chat.message"},"payload":{"event":{"chatter_user_login":"viewer","message":{"text":"hi"}}}}"#;
-        let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
-        assert_eq!(frame.metadata.message_type, "notification");
-        assert_eq!(
-            frame.metadata.subscription_type.as_deref(),
-            Some("channel.chat.message")
-        );
-    }
-
-    #[test]
-    fn ws_frame_deserializes_notification_with_event() {
-        let raw = r#"{"metadata":{"message_type":"notification"},"payload":{"event":{"broadcaster_user_id":"12345","chatter_user_id":"67890","chatter_user_login":"someuser","message_id":"msg-001","message":{"text":"Hello!"},"color":"red"}}}"#;
-        let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
-        let event = frame.payload.unwrap().event.unwrap();
-        assert_eq!(event["chatter_user_login"], "someuser");
-        assert_eq!(event["message"]["text"], "Hello!");
-    }
-
-    #[test]
     fn ws_frame_message_id_defaults_to_empty_when_absent() {
         let raw = r#"{"metadata":{"message_type":"session_keepalive"},"payload":{}}"#;
         let frame: WsFrame = serde_json::from_str(raw).expect("must parse");
@@ -4315,7 +4270,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn publish_chat_message_emits_rfc031_payload_shape() {
+    async fn publish_chat_message_emits_the_documented_payload_shape() {
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
@@ -6893,6 +6848,7 @@ mod tests {
 
     enum PeerCommand {
         Text(String),
+        Ping,
         Close,
     }
 
@@ -6901,6 +6857,7 @@ mod tests {
     struct Peer {
         commands: mpsc::UnboundedSender<PeerCommand>,
         closed: oneshot::Receiver<()>,
+        pongs: mpsc::UnboundedReceiver<()>,
     }
 
     impl Peer {
@@ -6912,6 +6869,18 @@ mod tests {
 
         fn close(&self) {
             let _ = self.commands.send(PeerCommand::Close);
+        }
+
+        /// The pong to this ping leaves forge's socket only on its next read.
+        async fn wait_until_forge_read_everything(&mut self) {
+            self.commands
+                .send(PeerCommand::Ping)
+                .expect("the fake socket must outlive the barrier");
+            let answered = tokio::time::timeout(FAKE_WAIT, self.pongs.recv()).await;
+            assert!(
+                answered.is_ok_and(|pong| pong.is_some()),
+                "forge must keep reading its socket"
+            );
         }
 
         fn closed_by_forge(&mut self) -> bool {
@@ -6943,10 +6912,16 @@ mod tests {
                     };
                     let (commands, command_rx) = mpsc::unbounded_channel();
                     let (closed_tx, closed) = oneshot::channel();
-                    if peer_tx.send(Peer { commands, closed }).is_err() {
+                    let (pong_tx, pongs) = mpsc::unbounded_channel();
+                    let peer = Peer {
+                        commands,
+                        closed,
+                        pongs,
+                    };
+                    if peer_tx.send(peer).is_err() {
                         return;
                     }
-                    tokio::spawn(serve_peer(socket, command_rx, closed_tx));
+                    tokio::spawn(serve_peer(socket, command_rx, closed_tx, pong_tx));
                 }
             });
             Self { url, peers }
@@ -6968,6 +6943,7 @@ mod tests {
         socket: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
         mut commands: mpsc::UnboundedReceiver<PeerCommand>,
         closed: oneshot::Sender<()>,
+        pongs: mpsc::UnboundedSender<()>,
     ) {
         use futures_util::SinkExt;
         let mut closed = Some(closed);
@@ -6977,6 +6953,11 @@ mod tests {
                 command = commands.recv() => match command {
                     Some(PeerCommand::Text(frame)) => {
                         if sink.send(Message::Text(frame.into())).await.is_err() {
+                            return;
+                        }
+                    }
+                    Some(PeerCommand::Ping) => {
+                        if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
                             return;
                         }
                     }
@@ -6993,6 +6974,9 @@ mod tests {
                         return;
                     }
                     Some(Err(_)) => return,
+                    Some(Ok(Message::Pong(_))) => {
+                        let _ = pongs.send(());
+                    }
                     Some(Ok(_)) => {}
                 },
             }
@@ -7659,5 +7643,902 @@ mod tests {
             "a disconnect the predecessor buffered must end the session rather than retire with \
              the socket that carried it, and the frames queued ahead of it must publish first"
         );
+    }
+
+    /// Until released it reads each request and never answers; then it accepts every subscription.
+    struct HeldHttpEndpoint {
+        url: String,
+        requests: mpsc::UnboundedReceiver<()>,
+        gate: watch::Sender<bool>,
+    }
+
+    impl HeldHttpEndpoint {
+        async fn bind() -> Self {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let (gate, released) = watch::channel(false);
+            let (request_tx, requests) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Ok((stream, _)) = listener.accept().await {
+                    tokio::spawn(answer_once_released(
+                        stream,
+                        released.clone(),
+                        request_tx.clone(),
+                    ));
+                }
+            });
+            Self {
+                url,
+                requests,
+                gate,
+            }
+        }
+
+        fn ws_url(&self) -> String {
+            self.url.replacen("http://", "ws://", 1)
+        }
+
+        async fn wait_for_a_request(&mut self) {
+            let arrived = tokio::time::timeout(FAKE_WAIT, self.requests.recv()).await;
+            assert!(
+                arrived.is_ok_and(|request| request.is_some()),
+                "forge must send a request to this endpoint"
+            );
+        }
+
+        fn release(&self) {
+            let _ = self.gate.send(true);
+        }
+    }
+
+    async fn answer_once_released(
+        mut stream: tokio::net::TcpStream,
+        mut released: watch::Receiver<bool>,
+        requests: mpsc::UnboundedSender<()>,
+    ) {
+        use tokio::io::AsyncWriteExt;
+        let body = serde_json::json!({
+            "data": [{ "id": "sub-1", "type": "generic", "condition": {} }]
+        })
+        .to_string();
+        let accepted = reqwest::StatusCode::ACCEPTED;
+        let response = format!(
+            "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+            accepted.as_u16(),
+            accepted.canonical_reason().unwrap_or_default(),
+            body.len()
+        );
+        let mut buffered = Vec::new();
+        while let Some(request_len) = read_one_request(&mut stream, &mut buffered).await {
+            buffered.drain(..request_len);
+            let _ = requests.send(());
+            if released.wait_for(|open| *open).await.is_err()
+                || stream.write_all(response.as_bytes()).await.is_err()
+            {
+                return;
+            }
+        }
+    }
+
+    /// Buffers until one whole request (head plus its `content-length` body) is in; its length.
+    async fn read_one_request(
+        stream: &mut tokio::net::TcpStream,
+        buffered: &mut Vec<u8>,
+    ) -> Option<usize> {
+        use tokio::io::AsyncReadExt;
+        const HEAD_END: &[u8] = b"\r\n\r\n";
+        loop {
+            if let Some(head_len) = buffered
+                .windows(HEAD_END.len())
+                .position(|window| window == HEAD_END)
+            {
+                let head = String::from_utf8_lossy(&buffered[..head_len]).to_ascii_lowercase();
+                let body_len = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length:"))
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                let request_len = head_len + HEAD_END.len() + body_len;
+                if buffered.len() >= request_len {
+                    return Some(request_len);
+                }
+            }
+            let mut chunk = [0u8; 4096];
+            match stream.read(&mut chunk).await {
+                Ok(0) | Err(_) => return None,
+                Ok(read) => buffered.extend_from_slice(&chunk[..read]),
+            }
+        }
+    }
+
+    /// Keeps every event in order and never lags, for tests that publish more than the channel holds.
+    #[derive(Default)]
+    struct RecordingBus {
+        events: std::sync::Mutex<Vec<Event>>,
+        published: tokio::sync::Notify,
+    }
+
+    impl EventPublisher for RecordingBus {
+        fn publish(&self, event: Event) {
+            self.events.lock().unwrap().push(event);
+            self.published.notify_one();
+        }
+    }
+
+    impl RecordingBus {
+        fn chat_texts(&self) -> Vec<String> {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|event| event.kind == CHAT_MESSAGE_KIND)
+                .filter_map(|event| event.payload["message"].as_str().map(str::to_owned))
+                .collect()
+        }
+
+        fn kinds_published(&self) -> Vec<String> {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|event| event.kind.clone())
+                .collect()
+        }
+
+        /// Each `Connected` report as `"connected"` and each chat message as its text, in order.
+        fn connected_and_chat_timeline(&self) -> Vec<String> {
+            let connected = serde_json::json!(ConnectionState::Connected);
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|event| match event.kind.as_str() {
+                    CONNECTION_STATE_CHANGED_KIND if event.payload["state"] == connected => {
+                        Some("connected".to_owned())
+                    }
+                    CHAT_MESSAGE_KIND => event.payload["message"].as_str().map(str::to_owned),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        async fn wait_until(&self, what: &str, reached: impl Fn(&Self) -> bool) {
+            let arrived = tokio::time::timeout(FAKE_WAIT, async {
+                while !reached(self) {
+                    self.published.notified().await;
+                }
+            })
+            .await;
+            assert!(arrived.is_ok(), "{what} never arrived");
+        }
+
+        async fn chat_texts_until(&self, last: &str) -> Vec<String> {
+            self.wait_until(&format!("the chat message {last:?}"), |bus| {
+                bus.chat_texts().iter().any(|text| text == last)
+            })
+            .await;
+            self.chat_texts()
+        }
+    }
+
+    fn session_over(
+        publisher: Arc<dyn EventPublisher>,
+        repo: Arc<dyn forge_storage::CredentialsRepo>,
+        manager_endpoint: Option<String>,
+        tracker: SubscriptionTracker,
+        endpoints: PlatformEndpoints,
+    ) -> (
+        ChatSession,
+        watch::Receiver<ChatConnectionState>,
+        oneshot::Sender<()>,
+    ) {
+        let manager = match manager_endpoint {
+            Some(endpoint) => {
+                TwitchCredentialsManager::with_endpoint(repo, "client".to_owned(), endpoint)
+            }
+            None => TwitchCredentialsManager::new(repo, "client".to_owned()),
+        };
+        ChatSession::new(
+            Arc::new(manager),
+            session_config(endpoints),
+            publisher,
+            tracker,
+            TwitchLifecycle::new(),
+        )
+    }
+
+    fn socket_and_api(socket_url: &str, api_url: &str) -> PlatformEndpoints {
+        crate::sub_actions::test_support::endpoints_with(&[
+            (EndpointSurface::TwitchApi, api_url),
+            (EndpointSurface::TwitchEventSubSocket, socket_url),
+        ])
+    }
+
+    fn chat_over(
+        socket_url: &str,
+        api_url: &str,
+    ) -> (crate::chat::TwitchChat, Arc<PlatformEventChannel>) {
+        let bus = Arc::new(PlatformEventChannel::new());
+        let manager = Arc::new(TwitchCredentialsManager::new(
+            Arc::new(MockCreds::with_identity()),
+            "client".to_owned(),
+        ));
+        let chat = crate::chat::TwitchChat::new(
+            manager,
+            session_config(socket_and_api(socket_url, api_url)),
+            bus.clone(),
+            SubscriptionTracker::default(),
+            TwitchLifecycle::new(),
+        );
+        (chat, bus)
+    }
+
+    async fn live_handle(
+        base: &mut FakeEventSub,
+        api: &wiremock::MockServer,
+    ) -> (crate::chat::TwitchChatHandle, Peer, EventStream) {
+        let (chat, bus) = chat_over(&base.url, &api.uri());
+        let mut events = bus.subscribe();
+        let handle = chat.start();
+        let peer = base.accept().await;
+        peer.send(welcome_frame("sess-1"));
+        peer.send(chat_frame("first", "on the live session"));
+        assert_eq!(next_chat_text(&mut events).await, "on the live session");
+        (handle, peer, events)
+    }
+
+    // Why: comfortably inside the grace period after which `shutdown` aborts the task, so only a
+    // session that observed the request itself can finish within it.
+    const STOPS_ON_ITS_OWN_WITHIN: Duration = crate::chat::SHUTDOWN_GRACE.checked_div(2).unwrap();
+
+    #[tokio::test]
+    async fn shutting_down_a_live_session_closes_its_socket_and_never_redials() {
+        let api = eventsub_api().await;
+        let mut base = FakeEventSub::bind().await;
+        let (handle, mut peer, _events) = live_handle(&mut base, &api).await;
+
+        let stopped = tokio::time::timeout(STOPS_ON_ITS_OWN_WITHIN, handle.shutdown()).await;
+
+        assert!(
+            stopped.is_ok(),
+            "a healthy session must end on the shutdown request instead of being aborted after \
+             the grace period"
+        );
+        assert!(
+            peer.wait_closed_by_forge().await,
+            "shutdown must close the socket so Twitch drops the session's subscriptions"
+        );
+        assert!(
+            base.no_dial_pending(),
+            "a session that was shut down must not dial a replacement"
+        );
+    }
+
+    #[tokio::test]
+    async fn shutting_down_while_the_socket_handshake_hangs_ends_the_session() {
+        let mut hung = HeldHttpEndpoint::bind().await;
+        let (chat, bus) = chat_over(&hung.ws_url(), &hung.url);
+        let mut events = bus.subscribe();
+        let handle = chat.start();
+        hung.wait_for_a_request().await;
+
+        let stopped = tokio::time::timeout(STOPS_ON_ITS_OWN_WITHIN, handle.shutdown()).await;
+
+        assert!(
+            stopped.is_ok(),
+            "a dial that never completes must not hold the session past a shutdown request"
+        );
+        connection_states_until(&mut events, ConnectionState::Disconnected).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn shutting_down_during_the_reconnect_backoff_skips_the_rest_of_the_wait() {
+        // Why: from the third retry on, the backoff ceiling is seconds long, so a session that
+        // only checks for shutdown after its sleep keeps the old socket slot for that long.
+        const RETRIES_BEFORE_SHUTDOWN: usize = 3;
+        let dead = unreachable_ws_url();
+        let (chat, bus) = chat_over(&dead, &dead.replacen("ws://", "http://", 1));
+        let mut events = bus.subscribe();
+        let handle = chat.start();
+        for _ in 0..RETRIES_BEFORE_SHUTDOWN {
+            connection_states_until(&mut events, ConnectionState::Reconnecting).await;
+        }
+
+        let asked = tokio::time::Instant::now();
+        handle.shutdown().await;
+
+        assert_eq!(
+            asked.elapsed(),
+            Duration::ZERO,
+            "a shutdown during the backoff must end the session without sleeping out the delay"
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_the_chat_handle_ends_its_session() {
+        let api = eventsub_api().await;
+        let mut base = FakeEventSub::bind().await;
+        let (handle, mut peer, _events) = live_handle(&mut base, &api).await;
+
+        drop(handle);
+
+        assert!(
+            peer.wait_closed_by_forge().await,
+            "a session whose handle is gone can never be stopped again, so it must stop now"
+        );
+    }
+
+    fn bundle_over(
+        socket_url: &str,
+        api_url: &str,
+    ) -> Arc<crate::builtin::TwitchIntegrationBundle> {
+        let creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(MockCreds::with_identity());
+        let manager = Arc::new(TwitchCredentialsManager::new(
+            Arc::clone(&creds),
+            "client".to_owned(),
+        ));
+        crate::builtin::TwitchIntegrationBundle::new(
+            Some("streamer".to_owned()),
+            session_config(socket_and_api(socket_url, api_url)),
+            Arc::new(PlatformEventChannel::new()),
+            creds,
+            manager,
+            SubscriptionTracker::default(),
+            Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+                crate::builtin::HELIX_BUDGET_CAPACITY,
+                crate::builtin::HELIX_BUDGET_WINDOW,
+            )),
+            TwitchLifecycle::new(),
+        )
+    }
+
+    async fn bundle_reaches(
+        bundle: &crate::builtin::TwitchIntegrationBundle,
+        expected: ConnectionState,
+    ) -> bool {
+        use forge_platform_core::{BuiltinHealth, BuiltinStatus};
+        let mut deltas = bundle.stream();
+        tokio::time::timeout(FAKE_WAIT, async {
+            while bundle.connection() != expected {
+                if deltas.next().await.is_none() {
+                    return false;
+                }
+            }
+            true
+        })
+        .await
+        .unwrap_or(false)
+    }
+
+    #[tokio::test]
+    async fn reconnect_closes_the_running_session_before_replacing_it() {
+        use forge_platform_core::BuiltinControl;
+        let api = eventsub_api().await;
+        let mut base = FakeEventSub::bind().await;
+        let bundle = bundle_over(&base.url, &api.uri());
+        let mut first = base.accept().await;
+        first.send(welcome_frame("sess-1"));
+        assert!(bundle_reaches(&bundle, ConnectionState::Connected).await);
+
+        assert_eq!(bundle.reconnect().await, Ok(()));
+
+        assert!(
+            first.wait_closed_by_forge().await,
+            "Reconnect must retire the running session; left open, both deliver every event"
+        );
+        base.accept().await;
+    }
+
+    #[tokio::test]
+    async fn the_bundle_state_follows_the_session_reconnect_started() {
+        use forge_platform_core::BuiltinControl;
+        let api = eventsub_api().await;
+        let mut base = FakeEventSub::bind().await;
+        let bundle = bundle_over(&base.url, &api.uri());
+        let first = base.accept().await;
+        first.send(welcome_frame("sess-1"));
+        assert!(bundle_reaches(&bundle, ConnectionState::Connected).await);
+        assert_eq!(bundle.reconnect().await, Ok(()));
+        let second = base.accept().await;
+        second.send(welcome_frame("sess-2"));
+        assert!(
+            bundle_reaches(&bundle, ConnectionState::Connected).await,
+            "the replacement session's Connected must reach the bundle"
+        );
+
+        second.close();
+
+        assert!(
+            bundle_reaches(&bundle, ConnectionState::Reconnecting).await,
+            "a drop of the replacement session must show on the bundle, not the state of the \
+             session Reconnect retired"
+        );
+    }
+
+    /// Waits for the first `Reconnecting` report with no deadline of its own, for paused-time tests.
+    async fn first_retry(state: &mut watch::Receiver<ChatConnectionState>) {
+        while !matches!(
+            *state.borrow_and_update(),
+            ChatConnectionState::Reconnecting { .. }
+        ) {
+            state
+                .changed()
+                .await
+                .expect("the session task must outlive the state it reports");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_keepalive_deadline_still_ends_a_session_whose_subscription_pass_hangs() {
+        let mut helix = HeldHttpEndpoint::bind().await;
+        let mut base = FakeEventSub::bind().await;
+        let mut session = spawn_session(&base.url, &helix.url);
+        let welcomed = base.accept().await;
+        welcomed.send(welcome_frame("sess-1"));
+        helix.wait_for_a_request().await;
+
+        // Why: from here only timers move the session, so paused time runs the keepalive
+        // deadline and the subscribe requests' own timeouts in their real order without waiting.
+        tokio::time::pause();
+        let retried = tokio::time::timeout(
+            KEEPALIVE_TIMEOUT + KEEPALIVE_TIMEOUT / 3,
+            first_retry(&mut session.state),
+        )
+        .await;
+
+        assert!(
+            retried.is_ok(),
+            "a silent socket must end the session at its keepalive deadline even while the \
+             subscription requests are still outstanding"
+        );
+    }
+
+    const HELD_DURING_PASS: usize = 8;
+
+    fn held_text(n: usize) -> String {
+        format!("held {n}")
+    }
+
+    #[tokio::test]
+    async fn frames_arriving_during_the_subscription_pass_publish_in_order_after_connected() {
+        let bus = Arc::new(RecordingBus::default());
+        let mut helix = HeldHttpEndpoint::bind().await;
+        let mut base = FakeEventSub::bind().await;
+        let (session, _state, _shutdown) = session_over(
+            bus.clone(),
+            Arc::new(MockCreds::with_identity()),
+            None,
+            SubscriptionTracker::default(),
+            socket_and_api(&base.url, &helix.url),
+        );
+        let task = tokio::spawn(session.run());
+        let mut welcomed = base.accept().await;
+        welcomed.send(welcome_frame("sess-1"));
+        helix.wait_for_a_request().await;
+        for n in 0..HELD_DURING_PASS {
+            welcomed.send(chat_frame(&format!("held-{n}"), &held_text(n)));
+        }
+        welcomed.wait_until_forge_read_everything().await;
+        assert!(
+            bus.chat_texts().is_empty(),
+            "a frame read while the pass runs must wait for the pass"
+        );
+
+        helix.release();
+        bus.chat_texts_until(&held_text(HELD_DURING_PASS - 1)).await;
+
+        let expected: Vec<String> = std::iter::once("connected".to_owned())
+            .chain((0..HELD_DURING_PASS).map(held_text))
+            .collect();
+        assert_eq!(
+            bus.connected_and_chat_timeline(),
+            expected,
+            "frames held during the pass must publish after Connected and in arrival order, so \
+             consumers still see subscribed-then-events"
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn frames_past_the_hold_limit_during_a_subscription_pass_are_dropped() {
+        let bus = Arc::new(RecordingBus::default());
+        let mut helix = HeldHttpEndpoint::bind().await;
+        let mut base = FakeEventSub::bind().await;
+        let (session, _state, _shutdown) = session_over(
+            bus.clone(),
+            Arc::new(MockCreds::with_identity()),
+            None,
+            SubscriptionTracker::default(),
+            socket_and_api(&base.url, &helix.url),
+        );
+        let task = tokio::spawn(session.run());
+        let mut welcomed = base.accept().await;
+        welcomed.send(welcome_frame("sess-1"));
+        helix.wait_for_a_request().await;
+        for n in 0..=HELD_FRAME_LIMIT {
+            welcomed.send(chat_frame(&format!("held-{n}"), &held_text(n)));
+        }
+        welcomed.wait_until_forge_read_everything().await;
+        helix.release();
+        bus.wait_until("Connected", |bus| {
+            bus.connected_and_chat_timeline()
+                .iter()
+                .any(|entry| entry == "connected")
+        })
+        .await;
+        welcomed.send(chat_frame("after", "after connected"));
+
+        let expected: Vec<String> = (0..HELD_FRAME_LIMIT)
+            .map(held_text)
+            .chain(std::iter::once("after connected".to_owned()))
+            .collect();
+        assert_eq!(
+            bus.chat_texts_until("after connected").await,
+            expected,
+            "the hold keeps exactly its limit of frames and drops the overflow, so a flood \
+             during a stuck pass cannot grow memory without bound"
+        );
+        task.abort();
+    }
+
+    fn revocation_frame(subscription_id: &str, kind: &str, status: &str) -> String {
+        serde_json::json!({
+            "metadata": {
+                "message_id": format!("revocation-{subscription_id}"),
+                "message_type": "revocation",
+                "message_timestamp": "2026-09-24T12:00:00.000Z",
+                "subscription_type": kind,
+                "subscription_version": "1",
+            },
+            "payload": { "subscription": {
+                "id": subscription_id,
+                "status": status,
+                "type": kind,
+                "version": "1",
+                "cost": 0,
+                "condition": { "broadcaster_user_id": "bcast" },
+                "transport": { "method": "websocket", "session_id": "sess-1" },
+                "created_at": "2026-09-24T11:00:00.000Z",
+            }},
+        })
+        .to_string()
+    }
+
+    fn active(
+        kind: &str,
+        subscription_id: Option<&str>,
+    ) -> crate::subscriptions::SubscriptionRecord {
+        crate::subscriptions::SubscriptionRecord {
+            kind: kind.to_owned(),
+            version: "1".to_owned(),
+            status: crate::subscriptions::SubStatus::Active,
+            subscription_id: subscription_id.map(str::to_owned),
+        }
+    }
+
+    fn session_tracking(
+        bus: Arc<RecordingBus>,
+        records: Vec<crate::subscriptions::SubscriptionRecord>,
+    ) -> (ChatSession, SubscriptionTracker) {
+        let tracker: SubscriptionTracker = Arc::new(std::sync::RwLock::new(records));
+        let (session, _state, _shutdown) = session_over(
+            bus,
+            Arc::new(MockCreds::with_identity()),
+            None,
+            Arc::clone(&tracker),
+            crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+        );
+        (session, tracker)
+    }
+
+    #[tokio::test]
+    async fn a_revocation_fails_the_tracker_row_it_names_by_id_before_falling_back_to_its_type() {
+        use crate::subscriptions::SubStatus;
+        const FOLLOW: &str = "channel.follow";
+        let revoked = || SubStatus::Failed("revoked: user_removed".to_owned());
+        let cases = [
+            (
+                vec![active(FOLLOW, Some("sub-a")), active(FOLLOW, Some("sub-b"))],
+                "sub-b",
+                vec![SubStatus::Active, revoked()],
+            ),
+            (
+                vec![
+                    active("channel.chat.message", Some("sub-chat")),
+                    active(FOLLOW, None),
+                ],
+                "sub-unknown",
+                vec![SubStatus::Active, revoked()],
+            ),
+        ];
+
+        for (records, subscription_id, expected) in cases {
+            let (mut session, tracker) = session_tracking(Arc::default(), records);
+
+            session
+                .handle_frame(
+                    &revocation_frame(subscription_id, FOLLOW, "user_removed"),
+                    &mut Some("sess-1".to_owned()),
+                )
+                .await;
+
+            let statuses: Vec<SubStatus> = tracker
+                .read()
+                .unwrap()
+                .iter()
+                .map(|record| record.status.clone())
+                .collect();
+            assert_eq!(
+                statuses, expected,
+                "revocation of {subscription_id}: the row with that subscription id wins, the \
+                 first row of that type is the fallback, every other row keeps its status"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_authorization_revoked_revocation_ends_the_session_and_prompts_reauth() {
+        let bus = Arc::new(RecordingBus::default());
+        let (mut session, _tracker) = session_tracking(
+            Arc::clone(&bus),
+            vec![active("channel.chat.message", Some("sub-chat"))],
+        );
+
+        let action = session
+            .handle_frame(
+                &revocation_frame("sub-chat", "channel.chat.message", "authorization_revoked"),
+                &mut Some("sess-1".to_owned()),
+            )
+            .await;
+
+        assert!(
+            matches!(action, FrameAction::ReauthRequired),
+            "a revoked authorization kills every topic, so the session must stop for sign-in"
+        );
+        assert_eq!(bus.kinds_published(), vec!["platform.reauth_required"]);
+    }
+
+    #[tokio::test]
+    async fn a_revocation_that_leaves_the_authorization_intact_keeps_the_session_running() {
+        for status in ["user_removed", "version_removed"] {
+            let bus = Arc::new(RecordingBus::default());
+            let (mut session, _tracker) = session_tracking(
+                Arc::clone(&bus),
+                vec![active("channel.chat.message", Some("sub-chat"))],
+            );
+
+            let action = session
+                .handle_frame(
+                    &revocation_frame("sub-chat", "channel.chat.message", status),
+                    &mut Some("sess-1".to_owned()),
+                )
+                .await;
+
+            assert!(
+                matches!(action, FrameAction::Continue),
+                "{status}: one dead topic must not stop the others"
+            );
+            assert!(
+                bus.kinds_published().is_empty(),
+                "{status}: nothing about the account changed, so no sign-in prompt"
+            );
+        }
+    }
+
+    const STALE_ACCESS: &str = "stale_access";
+    const RENEWED_ACCESS: &str = "renewed_access";
+    const FORBIDDEN_TOPIC: &str = "channel.follow";
+
+    #[derive(Clone, Copy, Debug)]
+    enum TopicReply {
+        RejectsTheStaleTokenOnly,
+        RejectsEveryToken,
+        ForbidsOneTopicAndRejectsTheRest,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum TokenEndpoint {
+        Rotates,
+        RejectsTheRefresh,
+        Unreachable,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Verdict {
+        Live,
+        NothingLive,
+        TokenUnavailable,
+        ReauthRequired,
+    }
+
+    impl From<PassVerdict> for Verdict {
+        fn from(verdict: PassVerdict) -> Self {
+            match verdict {
+                PassVerdict::Live => Self::Live,
+                PassVerdict::NothingLive => Self::NothingLive,
+                PassVerdict::TokenUnavailable => Self::TokenUnavailable,
+                PassVerdict::ReauthRequired => Self::ReauthRequired,
+            }
+        }
+    }
+
+    fn bearer(token: &str) -> wiremock::matchers::HeaderExactMatcher {
+        wiremock::matchers::header("authorization", format!("Bearer {token}").as_str())
+    }
+
+    async fn mount_topic_replies(server: &wiremock::MockServer, reply: TopicReply) {
+        use wiremock::matchers::{body_string_contains, method, path};
+        use wiremock::{Mock, ResponseTemplate};
+        let unauthorized = || ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED.as_u16());
+        match reply {
+            TopicReply::RejectsTheStaleTokenOnly => {
+                Mock::given(method("POST"))
+                    .and(path(EVENTSUB_SUBSCRIPTIONS_PATH))
+                    .and(bearer(RENEWED_ACCESS))
+                    .respond_with(subscription_accepted())
+                    .mount(server)
+                    .await;
+            }
+            TopicReply::RejectsEveryToken => {}
+            TopicReply::ForbidsOneTopicAndRejectsTheRest => {
+                Mock::given(method("POST"))
+                    .and(path(EVENTSUB_SUBSCRIPTIONS_PATH))
+                    .and(body_string_contains(format!(
+                        r#""type":"{FORBIDDEN_TOPIC}""#
+                    )))
+                    .respond_with(ResponseTemplate::new(
+                        reqwest::StatusCode::FORBIDDEN.as_u16(),
+                    ))
+                    .with_priority(1)
+                    .mount(server)
+                    .await;
+            }
+        }
+        Mock::given(method("POST"))
+            .and(path(EVENTSUB_SUBSCRIPTIONS_PATH))
+            .respond_with(unauthorized())
+            .mount(server)
+            .await;
+    }
+
+    /// The pass verdict and the number of refresh POSTs, starting from a stored unexpired token.
+    async fn pass_after_topic_replies(
+        reply: TopicReply,
+        endpoint: TokenEndpoint,
+    ) -> (Verdict, usize) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+        let server = wiremock::MockServer::start().await;
+        mount_topic_replies(&server, reply).await;
+        let token_url = match endpoint {
+            TokenEndpoint::Rotates => {
+                Mock::given(method("POST"))
+                    .and(path("/token"))
+                    .respond_with(
+                        ResponseTemplate::new(reqwest::StatusCode::OK.as_u16()).set_body_json(
+                            serde_json::json!({
+                                "access_token": RENEWED_ACCESS,
+                                "refresh_token": "rotated_refresh",
+                                "expires_in": 14400,
+                            }),
+                        ),
+                    )
+                    .mount(&server)
+                    .await;
+                format!("{}/token", server.uri())
+            }
+            TokenEndpoint::RejectsTheRefresh => {
+                Mock::given(method("POST"))
+                    .and(path("/token"))
+                    .respond_with(
+                        ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST.as_u16())
+                            .set_body_json(serde_json::json!({ "error": "invalid_grant" })),
+                    )
+                    .mount(&server)
+                    .await;
+                format!("{}/token", server.uri())
+            }
+            TokenEndpoint::Unreachable => format!(
+                "{}/token",
+                unreachable_ws_url().replacen("ws://", "http://", 1)
+            ),
+        };
+        let mut stored = crate::credentials_manager::tests::stub_cred(
+            std::time::SystemTime::now() + Duration::from_secs(3600),
+        );
+        stored.access_token = forge_types::OAuthToken::new(STALE_ACCESS);
+        let (mut session, _state, _shutdown) = session_over(
+            Arc::new(RecordingBus::default()),
+            crate::credentials_manager::tests::InMemRepo::seeded(&stored),
+            Some(token_url),
+            SubscriptionTracker::default(),
+            socket_and_api("ws://127.0.0.1:1", &server.uri()),
+        );
+
+        let pass = match session
+            .handle_frame(&welcome_frame("sess-1"), &mut None)
+            .await
+        {
+            FrameAction::Subscribe(pass) => Some(pass),
+            _ => None,
+        };
+        let pass = pass.expect("a welcome with a usable token must start a subscription pass");
+        let verdict = Verdict::from(pass.await);
+        let refreshes = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|request| request.url.path() == "/token")
+            .count();
+        (verdict, refreshes)
+    }
+
+    #[tokio::test]
+    async fn a_subscription_pass_rejecting_the_token_refreshes_once_and_follows_the_refresh() {
+        let cases = [
+            (
+                TopicReply::RejectsTheStaleTokenOnly,
+                TokenEndpoint::Rotates,
+                Verdict::Live,
+                1,
+            ),
+            (
+                TopicReply::RejectsEveryToken,
+                TokenEndpoint::Rotates,
+                Verdict::ReauthRequired,
+                1,
+            ),
+            (
+                TopicReply::RejectsTheStaleTokenOnly,
+                TokenEndpoint::RejectsTheRefresh,
+                Verdict::ReauthRequired,
+                1,
+            ),
+            (
+                TopicReply::RejectsTheStaleTokenOnly,
+                TokenEndpoint::Unreachable,
+                Verdict::TokenUnavailable,
+                0,
+            ),
+            (
+                TopicReply::ForbidsOneTopicAndRejectsTheRest,
+                TokenEndpoint::Rotates,
+                Verdict::ReauthRequired,
+                0,
+            ),
+        ];
+
+        for (reply, endpoint, expected, expected_refreshes) in cases {
+            let outcome = pass_after_topic_replies(reply, endpoint).await;
+
+            assert_eq!(
+                outcome,
+                (expected, expected_refreshes),
+                "{reply:?} with a token endpoint that {endpoint:?}: a 401 earns exactly one \
+                 refresh and retry, a missing scope (403) needs sign-in without refreshing, and \
+                 only a rejected refresh asks for sign-in"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_session_whose_pass_is_still_rejected_after_refresh_stops_and_prompts_reauth() {
+        let api = wiremock::MockServer::start().await;
+        mount_topic_replies(&api, TopicReply::RejectsEveryToken).await;
+        let mut base = FakeEventSub::bind().await;
+        let mut session = spawn_session(&base.url, &api.uri());
+        let mut events = session.bus.subscribe();
+        let welcomed = base.accept().await;
+
+        welcomed.send(welcome_frame("sess-1"));
+
+        next_event(&mut events, "platform.reauth_required").await;
+        let ended = tokio::time::timeout(FAKE_WAIT, &mut session.task).await;
+        assert!(
+            ended.is_ok(),
+            "a session that needs sign-in must stop instead of retrying a token Twitch refuses"
+        );
+        assert!(base.no_dial_pending());
     }
 }

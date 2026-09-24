@@ -195,7 +195,7 @@ fn reauth_err() -> PlatformError {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -213,14 +213,14 @@ mod tests {
     use super::TwitchCredentialsManager;
     use crate::credentials::{StoredCredential, TWITCH_CREDENTIAL_ID};
 
-    struct InMemRepo(Mutex<HashMap<String, String>>);
+    pub(crate) struct InMemRepo(Mutex<HashMap<String, String>>);
 
     impl InMemRepo {
         fn empty() -> Arc<Self> {
             Arc::new(Self(Mutex::new(HashMap::new())))
         }
 
-        fn seeded(cred: &StoredCredential) -> Arc<Self> {
+        pub(crate) fn seeded(cred: &StoredCredential) -> Arc<Self> {
             let expires_at_unix: Option<i64> = cred.expires_at.and_then(|t| {
                 t.duration_since(std::time::UNIX_EPOCH)
                     .ok()
@@ -297,7 +297,7 @@ mod tests {
         }
     }
 
-    fn stub_cred(expires_at: SystemTime) -> StoredCredential {
+    pub(crate) fn stub_cred(expires_at: SystemTime) -> StoredCredential {
         StoredCredential {
             access_token: OAuthToken::new("existing_access"),
             refresh_token: Some(OAuthToken::new("existing_refresh")),
@@ -406,49 +406,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn refresh_returns_reauth_required_on_400() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(
-                ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})),
-            )
-            .mount(&server)
-            .await;
+    async fn refresh_rejected_by_the_token_endpoint_requires_reauth() {
+        for rejection in [
+            ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST.as_u16())
+                .set_body_json(json!({"error": "invalid_grant"})),
+            ResponseTemplate::new(reqwest::StatusCode::UNAUTHORIZED.as_u16())
+                .set_body_string("Unauthorized"),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/token"))
+                .respond_with(rejection)
+                .mount(&server)
+                .await;
+            let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+            let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
 
-        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+            let err = mgr
+                .refresh(&OAuthToken::new("existing_access"))
+                .await
+                .unwrap_err();
 
-        let err = mgr
-            .refresh(&OAuthToken::new("existing_access"))
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(err, PlatformError::ReauthRequired { .. }),
-            "HTTP 400 must map to ReauthRequired, got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn refresh_returns_reauth_required_on_401() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/token"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
-            .mount(&server)
-            .await;
-
-        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
-        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
-
-        let err = mgr
-            .refresh(&OAuthToken::new("existing_access"))
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(err, PlatformError::ReauthRequired { .. }),
-            "HTTP 401 must map to ReauthRequired, got: {err}"
-        );
+            assert!(
+                matches!(err, PlatformError::ReauthRequired { .. }),
+                "a refresh the token endpoint rejects must map to ReauthRequired, got: {err}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -603,5 +586,141 @@ mod tests {
             matches!(err, crate::helix::HelixError::ReauthRequired),
             "HelixTokenSource must map missing credential to HelixError::ReauthRequired, got: {err:?}"
         );
+    }
+
+    fn rotating_token_endpoint() -> ResponseTemplate {
+        ResponseTemplate::new(reqwest::StatusCode::OK.as_u16()).set_body_json(json!({
+            "access_token": "new_access",
+            "refresh_token": "rotated_refresh",
+            "expires_in": 14400,
+        }))
+    }
+
+    async fn token_posts(server: &MockServer) -> usize {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|request| request.url.path() == "/token")
+            .count()
+    }
+
+    #[tokio::test]
+    async fn concurrent_refreshes_of_one_stale_token_post_the_refresh_token_once() {
+        // Why: Twitch rotates the pair on every refresh, so a second POST of the same refresh
+        // token persists a pair Twitch has already revoked.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(rotating_token_endpoint())
+            .mount(&server)
+            .await;
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(60));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let stale = OAuthToken::new("existing_access");
+
+        let (first, second) = tokio::join!(mgr.refresh(&stale), mgr.refresh(&stale));
+
+        assert_eq!(
+            token_posts(&server).await,
+            1,
+            "the refresh waiting on the guard must reuse the rotated pair, not post again"
+        );
+        for renewed in [first, second] {
+            assert_eq!(renewed.unwrap().access_token.expose(), "new_access");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_bundle_refresh_verb_shares_the_single_flight_of_the_manager_it_was_given() {
+        use forge_platform_core::BuiltinControl;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(rotating_token_endpoint())
+            .mount(&server)
+            .await;
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
+        let repo: Arc<dyn CredentialsRepo> = InMemRepo::seeded(&cred);
+        let mgr = Arc::new(manager_with_server(Arc::clone(&repo), &server));
+        let bundle = crate::builtin::TwitchIntegrationBundle::new(
+            Some("streamer".to_owned()),
+            crate::builtin::ChatSessionConfig {
+                client_id: "test_client_id".to_owned(),
+                broadcaster_id: "user_1".to_owned(),
+                user_id: "user_1".to_owned(),
+                endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+            },
+            Arc::new(crate::event_channel::PlatformEventChannel::new()),
+            repo,
+            Arc::clone(&mgr),
+            crate::subscriptions::SubscriptionTracker::default(),
+            Arc::new(forge_platform_core::TokenBucketRateLimiter::new(
+                crate::builtin::HELIX_BUDGET_CAPACITY,
+                crate::builtin::HELIX_BUDGET_WINDOW,
+            )),
+            crate::lifecycle::TwitchLifecycle::new(),
+        );
+        let stale = OAuthToken::new("existing_access");
+
+        let (verb, direct) = tokio::join!(bundle.refresh_token(), mgr.refresh(&stale));
+
+        assert!(verb.is_ok() && direct.is_ok());
+        assert_eq!(
+            token_posts(&server).await,
+            1,
+            "the Refresh verb and every other consumer of the credential row must share one \
+             refresh guard, or both post the same rotating refresh token"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_helix_refresher_asks_for_reauth_only_when_the_refresh_is_rejected() {
+        use crate::helix::{HelixError, HelixTokenRefresher};
+
+        let closed_port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let cases = [
+            (Some(reqwest::StatusCode::BAD_REQUEST), false),
+            (Some(reqwest::StatusCode::SERVICE_UNAVAILABLE), true),
+            (None, true),
+        ];
+
+        for (status, transient) in cases {
+            let server = MockServer::start().await;
+            let endpoint = match status {
+                Some(status) => {
+                    Mock::given(method("POST"))
+                        .and(path("/token"))
+                        .respond_with(ResponseTemplate::new(status.as_u16()))
+                        .mount(&server)
+                        .await;
+                    format!("{}/token", server.uri())
+                }
+                None => format!("http://127.0.0.1:{closed_port}/token"),
+            };
+            let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(3600));
+            let mgr = TwitchCredentialsManager::with_endpoint(
+                InMemRepo::seeded(&cred),
+                "test_client_id".to_owned(),
+                endpoint,
+            );
+
+            let err = HelixTokenRefresher::refresh(&mgr, &OAuthToken::new("existing_access"))
+                .await
+                .unwrap_err();
+
+            assert_eq!(
+                matches!(err, HelixError::ReauthRequired),
+                !transient,
+                "status {status:?}: only a rejected refresh may ask for reauth, a transient \
+                 failure must stay retryable; got {err:?}"
+            );
+        }
     }
 }

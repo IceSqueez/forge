@@ -178,6 +178,45 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_released_claim_lets_the_next_failure_toast(cx: &mut TestAppContext) {
+        setup(cx);
+        claim(cx);
+
+        cx.update(|cx| cx.release_pad_play(clip()));
+        report(&failed(Some("Air Horn")), cx);
+
+        assert_eq!(toasts(cx).len(), 1);
+    }
+
+    #[gpui::test]
+    fn releasing_a_clip_that_holds_no_claim_leaves_other_claims_in_place(cx: &mut TestAppContext) {
+        setup(cx);
+        claim(cx);
+
+        cx.update(|cx| {
+            cx.release_pad_play(ClipId::new());
+            cx.release_pad_play(ClipId::new());
+        });
+        report(&failed(Some("Air Horn")), cx);
+
+        assert!(toasts(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn releasing_twice_after_a_claim_still_toasts_the_next_failure_once(cx: &mut TestAppContext) {
+        setup(cx);
+        claim(cx);
+
+        cx.update(|cx| {
+            cx.release_pad_play(clip());
+            cx.release_pad_play(clip());
+        });
+        report(&failed(Some("Air Horn")), cx);
+
+        assert_eq!(toasts(cx).len(), 1);
+    }
+
+    #[gpui::test]
     fn unrelated_events_for_the_clip_neither_toast_nor_release_the_claim(cx: &mut TestAppContext) {
         setup(cx);
         claim(cx);

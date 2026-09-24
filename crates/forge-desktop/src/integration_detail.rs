@@ -1529,7 +1529,7 @@ mod tests {
 
     /// Every kind forge-obs publishes when a scene or source row's content changes; stated
     /// independently of the watch list so dropping one is caught.
-    const PUBLISHED_CATALOG_KINDS: [&str; 11] = [
+    const PUBLISHED_CATALOG_KINDS: [&str; 13] = [
         "obs.scene.changed",
         "obs.scene.preview_changed",
         "obs.scene.list_changed",
@@ -1541,6 +1541,8 @@ mod tests {
         "obs.source.input_created",
         "obs.source.input_removed",
         "obs.source.input_renamed",
+        "obs.source.scene_item_created",
+        "obs.source.scene_item_removed",
     ];
 
     #[test]

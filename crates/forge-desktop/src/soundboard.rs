@@ -2916,6 +2916,53 @@ mod tests {
         }
     }
 
+    // Why: a play that ends with no playback event must release the pad's claim, or the next
+    // failure of that clip (a hotkey or action play) is swallowed instead of toasted.
+    #[test]
+    fn only_a_play_the_player_settled_without_an_event_counts_as_outcome_free() {
+        let audio = || SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice);
+        for (result, board_enabled, expected) in [
+            (Ok(()), false, true),
+            (Ok(()), true, false),
+            (
+                Err(SoundboardError::ClipNotFound("01J0".to_owned())),
+                true,
+                true,
+            ),
+            (
+                Err(SoundboardError::Storage("disk is busy".to_owned())),
+                true,
+                true,
+            ),
+            (
+                Err(SoundboardError::ImportRefused(
+                    StorageError::MediaUnsupported {
+                        label: "notes.txt".to_owned(),
+                    },
+                )),
+                true,
+                true,
+            ),
+            (
+                Err(SoundboardError::SourceMissing("Fanfare".to_owned())),
+                true,
+                false,
+            ),
+            (Err(audio()), true, false),
+            (
+                Err(SoundboardError::JoinError("panicked".to_owned())),
+                true,
+                false,
+            ),
+        ] {
+            assert_eq!(
+                play_settled_without_outcome(&result, board_enabled),
+                expected,
+                "{result:?} with the board enabled={board_enabled}"
+            );
+        }
+    }
+
     fn settled(payload: serde_json::Value) -> Option<(&'static str, Option<String>)> {
         settled_adoption(&payload).map(|settled| match settled {
             SettledAdoption::Copied => ("copied", None),
@@ -2951,6 +2998,18 @@ mod tests {
                 serde_json::json!({ "verdict": "refused", "reason": "notes.txt is not audio" }),
                 ("refused", None),
             ),
+            (
+                serde_json::json!({ "verdict": "refused" }),
+                ("refused", None),
+            ),
+            (
+                serde_json::json!({ "verdict": "refused", "reason": "" }),
+                ("refused", None),
+            ),
+            (
+                serde_json::json!({ "verdict": "refused", "reason": 3 }),
+                ("refused", None),
+            ),
         ] {
             assert_eq!(settled(payload.clone()), Some(expected), "{payload}");
         }
@@ -2969,7 +3028,7 @@ mod tests {
     }
 
     #[test]
-    fn without_a_note_the_badge_follows_the_stored_availability() {
+    fn the_pad_badge_follows_the_stored_availability() {
         let refusal = unsupported("notes.txt");
         for (availability, expected) in [
             (None, None),

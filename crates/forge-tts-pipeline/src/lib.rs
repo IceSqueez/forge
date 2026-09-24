@@ -329,21 +329,41 @@ fn stage_text_replacements(text: &str, rules: &[ReplacementRule]) -> String {
 }
 
 fn case_insensitive_replace(text: &str, pattern: &str, replacement: &str) -> String {
-    if pattern.is_empty() {
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+    if pattern_chars.is_empty() {
         return text.to_owned();
     }
-    let lower_text = text.to_lowercase();
-    let lower_pattern = pattern.to_lowercase();
     let mut result = String::with_capacity(text.len());
-    let mut start = 0usize;
-    while let Some(pos) = lower_text[start..].find(&lower_pattern) {
-        let abs = start + pos;
-        result.push_str(&text[start..abs]);
-        result.push_str(replacement);
-        start = abs + lower_pattern.len();
+    let mut copied_until = 0usize;
+    let mut cursor = 0usize;
+    while let Some(current) = text[cursor..].chars().next() {
+        match match_len_ignoring_case(&text[cursor..], &pattern_chars) {
+            Some(match_len) => {
+                result.push_str(&text[copied_until..cursor]);
+                result.push_str(replacement);
+                cursor += match_len;
+                copied_until = cursor;
+            }
+            None => cursor += current.len_utf8(),
+        }
     }
-    result.push_str(&text[start..]);
+    result.push_str(&text[copied_until..]);
     result
+}
+
+fn match_len_ignoring_case(haystack: &str, pattern: &[char]) -> Option<usize> {
+    let mut chars = haystack.char_indices();
+    for &expected in pattern {
+        let (_, actual) = chars.next()?;
+        if !chars_equal_ignoring_case(actual, expected) {
+            return None;
+        }
+    }
+    Some(chars.offset())
+}
+
+fn chars_equal_ignoring_case(a: char, b: char) -> bool {
+    a == b || a.to_lowercase().eq(b.to_lowercase())
 }
 
 fn stage_word_blocklist(

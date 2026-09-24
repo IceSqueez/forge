@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use forge_components::ToastKind;
 use forge_events::{Event, EventsError};
-use forge_runtime::{EventBus, EventSubscription};
+use forge_runtime::{ActionEngineHandle, EventBus, EventSubscription};
+use forge_types::{SubActionOutcome, SubActionStep};
 use gpui::{App, AsyncApp, Context, Entity, SharedString};
 use tokio::runtime::Handle;
 
@@ -43,6 +44,22 @@ pub async fn recv_event_batch(sub: &mut EventSubscription) -> EventBatch {
         }
     }
     EventBatch::Ready(batch)
+}
+
+pub async fn run_quick_step(
+    engine: ActionEngineHandle,
+    step: SubActionStep,
+    builtin_id: String,
+    label: String,
+) -> Result<(), String> {
+    let pending = engine
+        .execute_quick_action(step, builtin_id, label, None)
+        .await
+        .map_err(|err| err.to_string())?;
+    match pending.outcome().await.map_err(|err| err.to_string())? {
+        SubActionOutcome::Success => Ok(()),
+        SubActionOutcome::Failed(reason) | SubActionOutcome::Skipped(reason) => Err(reason),
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

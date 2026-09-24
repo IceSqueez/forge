@@ -24,6 +24,15 @@ struct QuickActionRequest {
     builtin_id: String,
     label: String,
     caused_by: Option<EventId>,
+    outcome: oneshot::Sender<SubActionOutcome>,
+}
+
+pub struct PendingQuickAction(oneshot::Receiver<SubActionOutcome>);
+
+impl PendingQuickAction {
+    pub async fn outcome(self) -> Result<SubActionOutcome, DispatchError> {
+        self.0.await.map_err(|_| DispatchError::NoOutcome)
+    }
 }
 
 #[derive(Clone)]
@@ -50,6 +59,8 @@ struct EngineJob {
 pub enum DispatchError {
     #[error("engine channel closed")]
     ChannelClosed,
+    #[error("engine stopped before the step reported an outcome")]
+    NoOutcome,
 }
 
 impl ActionEngineHandle {
@@ -81,22 +92,26 @@ impl ActionEngineHandle {
             .map_err(|_| DispatchError::ChannelClosed)
     }
 
+    /// Dropping the returned handle leaves the step running without reporting its outcome.
     pub async fn execute_quick_action(
         &self,
         step: SubActionStep,
         builtin_id: String,
         label: String,
         caused_by: Option<EventId>,
-    ) -> Result<(), DispatchError> {
+    ) -> Result<PendingQuickAction, DispatchError> {
+        let (outcome, pending) = oneshot::channel();
         self.quick_sender
             .send(QuickActionRequest {
                 step,
                 builtin_id,
                 label,
                 caused_by,
+                outcome,
             })
             .await
-            .map_err(|_| DispatchError::ChannelClosed)
+            .map_err(|_| DispatchError::ChannelClosed)?;
+        Ok(PendingQuickAction(pending))
     }
 
     /// Stops intake and cancels every running execution; quick actions already running finish.
@@ -430,6 +445,7 @@ async fn run_quick_action(
         SubActionOutcome::Success | SubActionOutcome::Skipped(_) => ExecutionOutcome::Success,
         SubActionOutcome::Failed(message) => ExecutionOutcome::Failed(message.clone()),
     };
+    let reported = telemetry.outcome.clone();
     let ctx = ExecutionContext {
         action_id: ActionId::new(),
         metadata: ExecutionMetadata::QuickAction {
@@ -445,6 +461,7 @@ async fn run_quick_action(
     if let Err(e) = history.save(&ctx).await {
         warn!("history_repo.save failed: {e}");
     }
+    let _ = req.outcome.send(reported);
 }
 
 pub(crate) fn skipped_telemetry(index: usize, kind_id: &str) -> SubActionTelemetry {

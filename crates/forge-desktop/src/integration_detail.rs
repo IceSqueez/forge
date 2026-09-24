@@ -680,8 +680,8 @@ impl IntegrationDetail {
         }
     }
 
-    /// The one path from this screen into the action engine; `settled` sees only whether the
-    /// step reached the engine, not how the step itself ended.
+    /// The one path from this screen into the action engine; `settled` fires once the step has
+    /// ended, with the engine's failure or skip reason as the error.
     fn enqueue_builtin_step(
         &mut self,
         step: SubActionStep,
@@ -693,12 +693,7 @@ impl IntegrationDetail {
         let engine = self.action_engine.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                engine
-                    .execute_quick_action(step, builtin_id, label, None)
-                    .await
-                    .map_err(|err| err.to_string())
-            },
+            async_bridge::run_quick_step(engine, step, builtin_id, label),
             settled,
             cx,
         );

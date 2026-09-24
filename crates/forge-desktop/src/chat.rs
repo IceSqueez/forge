@@ -22,6 +22,7 @@ use gpui::{
     list, prelude::*, px,
 };
 
+use crate::async_bridge;
 use crate::chat_drawer::{
     DASH, SubStatus, ViewerSummary, drawer_matches, enrich_with_storage, selected_summary,
     synthesize_from_chat, unique_authors,
@@ -552,10 +553,8 @@ impl ChatView {
         let engine = self.action_engine.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let outcome = engine
-                .execute_quick_action(step, "twitch".to_owned(), label, None)
-                .await
-                .map_err(|e| e.to_string());
+            let outcome =
+                async_bridge::run_quick_step(engine, step, "twitch".to_owned(), label).await;
             let _ = tx.send(outcome);
         });
         cx.spawn(async move |this, cx| {

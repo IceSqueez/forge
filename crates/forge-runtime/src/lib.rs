@@ -31,7 +31,9 @@ pub mod triggers;
 pub mod viewer_tracker;
 
 pub use action_cancel::ActionCancelRegistry;
-pub use action_engine::{ActionEngineHandle, DispatchError, ExecutionRequest, spawn_action_engine};
+pub use action_engine::{
+    ActionEngineHandle, DispatchError, ExecutionRequest, PendingQuickAction, spawn_action_engine,
+};
 pub use audio_runners::register_audio_sub_actions;
 pub use bridge::bus_subscription;
 pub use bus::{BusError, EventBus, EventSubscription, NullEventLogRepo};

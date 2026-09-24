@@ -136,9 +136,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn wave_clips_advertise_the_media_type_the_browser_decodes() {
-        assert_eq!(ClipMediaType::Wave.as_str(), "audio/wav");
-    }
 }

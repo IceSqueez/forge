@@ -404,6 +404,7 @@ mod tests {
         Now(RemoteVerdict),
         Never,
         OnStop(RemoteVerdict),
+        WhenTold(RemoteVerdict),
         Fails(String),
     }
 
@@ -414,6 +415,7 @@ mod tests {
         delivered: Mutex<Vec<(Vec<u8>, u64)>>,
         verdict_calls: AtomicUsize,
         stopped: Notify,
+        told: Notify,
     }
 
     impl FakePage {
@@ -429,6 +431,7 @@ mod tests {
                 delivered: Mutex::new(Vec::new()),
                 verdict_calls: AtomicUsize::new(0),
                 stopped: Notify::new(),
+                told: Notify::new(),
             });
             (page, rx)
         }
@@ -479,6 +482,10 @@ mod tests {
                 Report::Never => std::future::pending().await,
                 Report::OnStop(verdict) => {
                     self.stopped.notified().await;
+                    Ok(verdict.clone())
+                }
+                Report::WhenTold(verdict) => {
+                    self.told.notified().await;
                     Ok(verdict.clone())
                 }
                 Report::Fails(reason) => Err(AudioError::RemoteDestination(reason.clone())),
@@ -762,6 +769,122 @@ mod tests {
             next_pushed(&mut rx).await,
             Some(RemoteCommand::Stop),
             "a clip started without a completion future must still be stoppable"
+        );
+    }
+
+    async fn assert_one_stop_then_quiet(
+        case: &str,
+        rx: &mut mpsc::UnboundedReceiver<RemoteCommand>,
+    ) {
+        assert_eq!(
+            next_pushed(rx).await,
+            Some(RemoteCommand::Stop),
+            "{case}: the page must be told to stop"
+        );
+        assert_eq!(
+            next_pushed(rx).await,
+            None,
+            "{case}: the stop must reach the page exactly once"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dropping_an_unsettled_playback_stops_the_clip_on_the_page_exactly_once() {
+        for (case, stop_first, poll_first) in [
+            ("dropped before it was ever awaited", false, false),
+            ("dropped while it waited on the verdict", false, true),
+            ("stopped and dropped in the same step", true, true),
+        ] {
+            let (page, mut rx) = FakePage::new(1, Report::Never);
+            let mut playback = sink(&page).play_controlled(clip_of(4_000)).await.unwrap();
+            if poll_first {
+                let parked = tokio::time::timeout(CONTROL_POLL_INTERVAL / 2, &mut playback).await;
+                assert!(parked.is_err(), "{case}: the clip settled on its own");
+            }
+            if stop_first {
+                playback.stop();
+            }
+
+            drop(playback);
+
+            assert_one_stop_then_quiet(case, &mut rx).await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dropping_a_fan_out_playback_stops_its_remote_leg_exactly_once() {
+        let (page, mut rx) = FakePage::new(1, Report::Never);
+        let fan_out = crate::fan_out::FanOutSink::new(vec![
+            Arc::new(sink(&page)) as Arc<dyn AudioSink>,
+            Arc::new(crate::sink::NullSink),
+        ]);
+        let playback = fan_out.play_controlled(clip_of(4_000)).await.unwrap();
+
+        drop(playback);
+
+        assert_one_stop_then_quiet("fan-out leg", &mut rx).await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_pause_longer_than_the_watchdog_budget_still_settles_on_the_page_verdict() {
+        let (page, _rx) = FakePage::new(
+            1,
+            Report::WhenTold(RemoteVerdict::Refused {
+                reason: PAGE_REFUSAL.to_owned(),
+            }),
+        );
+        let playback = sink(&page).play_controlled(clip_of(20)).await.unwrap();
+        let handle = playback.handle();
+        handle.pause();
+        let settling = tokio::spawn(playback);
+
+        tokio::time::sleep(watchdog_budget(20) * 2).await;
+        handle.resume();
+        page.told.notify_one();
+        let outcome = settling.await.unwrap();
+
+        assert!(
+            matches!(&outcome, Err(AudioError::RemoteDestination(reason)) if reason == PAGE_REFUSAL),
+            "paused time must not count toward the watchdog, got {outcome:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_resume_after_a_pause_longer_than_the_watchdog_budget_still_reaches_the_page() {
+        let (page, mut rx) = FakePage::new(1, Report::Never);
+        let playback = sink(&page).play_controlled(clip_of(20)).await.unwrap();
+
+        playback.pause();
+        assert_eq!(next_pushed(&mut rx).await, Some(RemoteCommand::Pause));
+        tokio::time::sleep(watchdog_budget(20) * 2).await;
+        playback.resume();
+
+        assert_eq!(
+            next_pushed(&mut rx).await,
+            Some(RemoteCommand::Resume),
+            "the observer must still forward controls after a long pause"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_clip_held_forever_still_settles_at_the_wall_clock_ceiling() {
+        let (page, _rx) = FakePage::new(1, Report::Never);
+        let playback = sink(&page).play_controlled(clip_of(20)).await.unwrap();
+        playback.pause();
+        let started = tokio::time::Instant::now();
+
+        let Ok(outcome) = tokio::time::timeout(WATCHDOG_CEILING * 2, playback).await else {
+            panic!("a held clip must not wait forever");
+        };
+        let waited = started.elapsed();
+
+        assert!(
+            outcome.is_ok(),
+            "a clip held to the ceiling degrades, got {outcome:?}"
+        );
+        assert!(
+            waited >= WATCHDOG_CEILING && waited < WATCHDOG_CEILING + CONTROL_POLL_INTERVAL,
+            "a held clip must settle at the ceiling, waited {waited:?}"
         );
     }
 }

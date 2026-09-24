@@ -1523,4 +1523,52 @@ mod tests {
             );
         }
     }
+
+    /// Every kind forge-obs publishes when a scene or source row's content changes; stated
+    /// independently of the watch list so dropping one is caught.
+    const PUBLISHED_CATALOG_KINDS: [&str; 11] = [
+        "obs.scene.changed",
+        "obs.scene.preview_changed",
+        "obs.scene.list_changed",
+        "obs.scene.created",
+        "obs.scene.removed",
+        "obs.scene.renamed",
+        "obs.source.visibility_changed",
+        "obs.source.lock_changed",
+        "obs.source.input_created",
+        "obs.source.input_removed",
+        "obs.source.input_renamed",
+    ];
+
+    #[test]
+    fn every_obs_scene_and_source_change_refreshes_the_content_rows() {
+        for kind in PUBLISHED_CATALOG_KINDS {
+            assert!(
+                refreshes_obs_content(&event(EventSource::Obs, kind)),
+                "{kind} must refresh the OBS content rows"
+            );
+        }
+    }
+
+    #[test]
+    fn audio_level_and_non_catalog_events_leave_the_content_rows_alone() {
+        let cases = [
+            (EventSource::Obs, "obs.audio.source_volume_changed"),
+            (EventSource::Obs, "obs.audio.source_mute_changed"),
+            (EventSource::Obs, "obs.audio.source_balance_changed"),
+            (EventSource::Obs, "obs.audio.source_sync_offset_changed"),
+            (EventSource::Obs, "obs.connection.connected"),
+            (EventSource::Obs, "obs.streaming.started"),
+            (EventSource::Obs, "obs.scene"),
+            (EventSource::Core, "obs.scene.changed"),
+            (EventSource::Server, "obs.source.visibility_changed"),
+        ];
+
+        for (source, kind) in cases {
+            assert!(
+                !refreshes_obs_content(&event(source, kind)),
+                "{source:?} / {kind} must not refresh the OBS content rows"
+            );
+        }
+    }
 }

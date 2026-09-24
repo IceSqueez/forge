@@ -1428,3 +1428,234 @@ fn health_value_col(value: &HealthValue, palette: &ForgePalette, density: Densit
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use forge_components::FORGE_DEFAULT;
+    use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
+
+    use super::*;
+
+    type Fired = Rc<RefCell<Vec<Vec<(String, String)>>>>;
+
+    const WINDOW_W: f32 = 720.0;
+    const WINDOW_H: f32 = 360.0;
+    const SCAN_STEP: f32 = 4.0;
+
+    fn step(kind_id: &str) -> SubActionStep {
+        SubActionStep {
+            kind_id: kind_id.to_owned(),
+            config: Default::default(),
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }
+    }
+
+    fn row(name: &str, active: bool, on_click: Option<&str>) -> ContentListItem {
+        ContentListItem {
+            icon: SectionIcon::new("film"),
+            icon_tint: None,
+            name: name.to_owned(),
+            monospace_name: false,
+            active,
+            active_label: None,
+            trailing: Vec::new(),
+            enabled: true,
+            on_click: on_click.map(step),
+        }
+    }
+
+    fn with_action_glyph(mut item: ContentListItem, kind_id: &str) -> ContentListItem {
+        item.trailing.push(TrailingToken::ActionIcon {
+            icon: SectionIcon::new("eye"),
+            tint: TokenColor::Green,
+            step: step(kind_id),
+        });
+        item
+    }
+
+    fn list(title: &str, items: Vec<ContentListItem>) -> ContentList {
+        ContentList {
+            title: title.to_owned(),
+            icon: SectionIcon::new("film"),
+            inline_label: None,
+            count_label: None,
+            visible_rows: None,
+            row_padding_y_px: 7,
+            refreshable: false,
+            items,
+            footer: None,
+        }
+    }
+
+    struct Host {
+        sections: Vec<DetailSection>,
+        fired: Fired,
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            let fired = Rc::clone(&self.fired);
+            let run_step: SectionStepRun = Rc::new(move |click: &StepClick, _, _| {
+                if let Some(current) = fired.borrow_mut().last_mut() {
+                    current.push((click.row.to_string(), click.step.kind_id.clone()));
+                }
+            });
+            let hooks = SectionHooks {
+                refresh: None,
+                run_step: Some(run_step),
+            };
+            div().size_full().child(content_sections(
+                &self.sections,
+                &hooks,
+                &FORGE_DEFAULT,
+                Density::default(),
+            ))
+        }
+    }
+
+    /// Clicks every point of a grid over the window and returns what each click fired.
+    fn click_everywhere(left: ContentList, right: ContentList, cx: &mut TestAppContext) -> Fired {
+        let fired: Fired = Rc::default();
+        let host_fired = Rc::clone(&fired);
+        let (_host, vcx) = cx.add_window_view(|_window, _cx| Host {
+            sections: vec![DetailSection::TwoColumnLists {
+                left: Box::new(left),
+                right: Box::new(right),
+            }],
+            fired: host_fired,
+        });
+        vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
+        vcx.run_until_parked();
+        scan(vcx, &fired);
+        fired
+    }
+
+    fn scan(vcx: &mut VisualTestContext, fired: &Fired) {
+        let mut y = 0.0;
+        while y < WINDOW_H {
+            let mut x = 0.0;
+            while x < WINDOW_W {
+                fired.borrow_mut().push(Vec::new());
+                vcx.simulate_click(point(px(x), px(y)), Modifiers::none());
+                x += SCAN_STEP;
+            }
+            y += SCAN_STEP;
+        }
+    }
+
+    fn distinct(fired: &Fired) -> Vec<(String, String)> {
+        let mut all: Vec<(String, String)> = fired.borrow().iter().flatten().cloned().collect();
+        all.sort();
+        all.dedup();
+        all
+    }
+
+    #[gpui::test]
+    fn only_rows_and_glyphs_that_carry_a_step_run_it_on_click(cx: &mut TestAppContext) {
+        let fired = click_everywhere(
+            list(
+                "Scenes",
+                vec![
+                    row("Live", true, Some("obs.scene.set_current")),
+                    row("Intro", false, Some("obs.scene.set_current")),
+                    row("Plain", false, None),
+                ],
+            ),
+            list(
+                "Sources",
+                vec![with_action_glyph(
+                    row("Mic", false, None),
+                    "obs.source.set_visibility",
+                )],
+            ),
+            cx,
+        );
+
+        assert_eq!(
+            distinct(&fired),
+            vec![
+                ("Intro".to_owned(), "obs.scene.set_current".to_owned()),
+                ("Mic".to_owned(), "obs.source.set_visibility".to_owned()),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_glyph_click_inside_an_actionable_row_runs_only_the_glyph_step(cx: &mut TestAppContext) {
+        let fired = click_everywhere(
+            list(
+                "Scenes",
+                vec![with_action_glyph(
+                    row("Cam", false, Some("obs.scene.set_current")),
+                    "obs.source.set_visibility",
+                )],
+            ),
+            list("Sources", Vec::new()),
+            cx,
+        );
+
+        assert!(
+            distinct(&fired).contains(&("Cam".to_owned(), "obs.source.set_visibility".to_owned())),
+            "the glyph never fired"
+        );
+        let doubled: Vec<Vec<(String, String)>> = fired
+            .borrow()
+            .iter()
+            .filter(|click| click.len() > 1)
+            .cloned()
+            .collect();
+        assert!(
+            doubled.is_empty(),
+            "one click ran several steps: {doubled:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn equal_row_names_in_two_lists_each_run_their_own_step(cx: &mut TestAppContext) {
+        let fired = click_everywhere(
+            list(
+                "Scenes",
+                vec![row("Mic", false, Some("obs.scene.set_current"))],
+            ),
+            list(
+                "Sources",
+                vec![row("Mic", false, Some("obs.source.set_visibility"))],
+            ),
+            cx,
+        );
+
+        assert_eq!(
+            distinct(&fired),
+            vec![
+                ("Mic".to_owned(), "obs.scene.set_current".to_owned()),
+                ("Mic".to_owned(), "obs.source.set_visibility".to_owned()),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn two_glyphs_on_one_row_each_run_their_own_step(cx: &mut TestAppContext) {
+        let source = with_action_glyph(
+            with_action_glyph(row("Mic", false, None), "obs.source.set_visibility"),
+            "obs.source.set_lock",
+        );
+        let fired = click_everywhere(
+            list("Sources", vec![source]),
+            list("Scenes", Vec::new()),
+            cx,
+        );
+
+        assert_eq!(
+            distinct(&fired),
+            vec![
+                ("Mic".to_owned(), "obs.source.set_lock".to_owned()),
+                ("Mic".to_owned(), "obs.source.set_visibility".to_owned()),
+            ]
+        );
+    }
+}

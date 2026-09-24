@@ -12,6 +12,8 @@ use time::OffsetDateTime;
 
 use crate::ObsSink;
 
+pub(crate) const KIND_ID: &str = "obs.sources.set_visible";
+
 pub struct SetVisibleRunner {
     sink: Arc<dyn ObsSink>,
 }
@@ -25,7 +27,7 @@ impl SetVisibleRunner {
 #[async_trait]
 impl SubActionRunner for SetVisibleRunner {
     fn id(&self) -> &str {
-        "obs.sources.set_visible"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -83,10 +85,9 @@ impl SubActionRunner for SetVisibleRunner {
         if scene_ok && source_ok {
             Ok(())
         } else {
-            Err(RegistryError::InvalidConfig(
-                "obs.sources.set_visible: 'scene' and 'source' must be non-empty strings"
-                    .to_owned(),
-            ))
+            Err(RegistryError::InvalidConfig(format!(
+                "{KIND_ID}: 'scene' and 'source' must be non-empty strings"
+            )))
         }
     }
 
@@ -113,7 +114,7 @@ impl SubActionRunner for SetVisibleRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.sources.set_visible".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

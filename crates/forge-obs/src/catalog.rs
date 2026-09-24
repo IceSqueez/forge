@@ -4,8 +4,10 @@ use forge_platform_core::{
     BuiltinContent, ContentList, ContentListItem, DetailSection, SectionIcon, TokenColor,
     TrailingToken,
 };
+use forge_types::{SubActionStep, Variant};
 
 use crate::client::ObsClient;
+use crate::runners::{SET_LOCKED_KIND_ID, SET_VISIBLE_KIND_ID, SWITCH_CURRENT_SCENE_KIND_ID};
 use crate::source::SourceInfo;
 
 const PANEL_VISIBLE_ROWS: u16 = 8;
@@ -21,10 +23,25 @@ pub(crate) struct ObsCatalog {
     pub audio_inputs: Vec<String>,
 }
 
+fn step(kind_id: &str, config: impl IntoIterator<Item = (&'static str, Variant)>) -> SubActionStep {
+    SubActionStep {
+        kind_id: kind_id.to_owned(),
+        config: config
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect(),
+        enabled: true,
+        continue_on_error: false,
+        condition: None,
+        label: None,
+    }
+}
+
 fn scene_to_item(
     name: &str,
     current_scene: Option<&str>,
     source_count: Option<usize>,
+    actionable: bool,
 ) -> ContentListItem {
     let is_current = current_scene == Some(name);
     let mut trailing = Vec::new();
@@ -48,6 +65,12 @@ fn scene_to_item(
         },
         trailing,
         enabled: true,
+        on_click: (actionable && !is_current).then(|| {
+            step(
+                SWITCH_CURRENT_SCENE_KIND_ID,
+                [("scene", Variant::String(name.to_owned()))],
+            )
+        }),
     }
 }
 
@@ -89,22 +112,61 @@ pub(crate) fn is_audio_kind(kind: Option<&str>) -> bool {
     kind.is_some_and(|k| k.contains("input_capture") || k.contains("output_capture"))
 }
 
-fn source_to_item(info: &SourceInfo) -> ContentListItem {
+fn toggle_token(
+    icon: SectionIcon,
+    tint: TokenColor,
+    actionable: bool,
+    step: impl FnOnce() -> SubActionStep,
+) -> TrailingToken {
+    if actionable {
+        TrailingToken::ActionIcon {
+            icon,
+            tint,
+            step: step(),
+        }
+    } else {
+        TrailingToken::Icon(icon, tint)
+    }
+}
+
+fn source_to_item(scene: &str, info: &SourceInfo, actionable: bool) -> ContentListItem {
     let mut trailing = Vec::new();
-    trailing.push(TrailingToken::Icon(
+    trailing.push(toggle_token(
         SectionIcon::new(if info.visible { "eye" } else { "eye-off" }),
         if info.visible {
             TokenColor::Green
         } else {
             TokenColor::Muted
         },
+        actionable,
+        || {
+            step(
+                SET_VISIBLE_KIND_ID,
+                [
+                    ("scene", Variant::String(scene.to_owned())),
+                    ("source", Variant::String(info.name.clone())),
+                    ("visible", Variant::Bool(!info.visible)),
+                ],
+            )
+        },
     ));
-    trailing.push(TrailingToken::Icon(
+    trailing.push(toggle_token(
         SectionIcon::new(if info.locked { "lock" } else { "lock-open" }),
         if info.locked {
             TokenColor::Yellow
         } else {
             TokenColor::Muted
+        },
+        actionable,
+        || {
+            step(
+                SET_LOCKED_KIND_ID,
+                [
+                    ("scene", Variant::String(scene.to_owned())),
+                    ("source", Variant::String(info.name.clone())),
+                    ("locked", Variant::Bool(!info.locked)),
+                ],
+            )
         },
     ));
     if let Some(db) = info.audio_db {
@@ -130,6 +192,7 @@ fn source_to_item(info: &SourceInfo) -> ContentListItem {
         active_label: None,
         trailing,
         enabled: info.visible,
+        on_click: None,
     }
 }
 
@@ -138,13 +201,19 @@ impl BuiltinContent for ObsClient {
         let Ok(catalog) = self.catalog_state.try_read() else {
             return vec![];
         };
+        let actionable = self.connection_state().is_connected();
 
         let scene_items: Vec<ContentListItem> = catalog
             .scenes
             .iter()
             .map(|s| {
                 let source_count = catalog.sources.get(s).map(Vec::len);
-                scene_to_item(s, catalog.current_scene.as_deref(), source_count)
+                scene_to_item(
+                    s,
+                    catalog.current_scene.as_deref(),
+                    source_count,
+                    actionable,
+                )
             })
             .collect();
         let scene_count = format!("{}", catalog.scenes.len());
@@ -152,8 +221,13 @@ impl BuiltinContent for ObsClient {
         let source_items: Vec<ContentListItem> = catalog
             .current_scene
             .as_deref()
-            .and_then(|scene| catalog.sources.get(scene))
-            .map(|sources| sources.iter().map(source_to_item).collect())
+            .and_then(|scene| catalog.sources.get(scene).map(|sources| (scene, sources)))
+            .map(|(scene, sources)| {
+                sources
+                    .iter()
+                    .map(|info| source_to_item(scene, info, actionable))
+                    .collect()
+            })
             .unwrap_or_default();
         let source_scene_label = catalog
             .current_scene
@@ -296,14 +370,14 @@ mod tests {
 
     #[test]
     fn active_scene_row_carries_the_live_label_instead_of_a_source_count() {
-        let item = scene_to_item("Gameplay", Some("Gameplay"), Some(4));
+        let item = scene_to_item("Gameplay", Some("Gameplay"), Some(4), false);
         assert_eq!(item.active_label.as_deref(), Some("LIVE"));
         assert!(item.trailing.is_empty());
     }
 
     #[test]
     fn inactive_scene_row_carries_its_source_count_and_no_live_label() {
-        let item = scene_to_item("BRB", Some("Gameplay"), Some(4));
+        let item = scene_to_item("BRB", Some("Gameplay"), Some(4), false);
         assert!(item.active_label.is_none());
         assert_eq!(
             item.trailing,
@@ -313,7 +387,7 @@ mod tests {
 
     #[test]
     fn scene_row_with_an_uncached_source_count_carries_no_trailing_token() {
-        let item = scene_to_item("BRB", Some("Gameplay"), None);
+        let item = scene_to_item("BRB", Some("Gameplay"), None, false);
         assert!(item.trailing.is_empty());
     }
 
@@ -323,7 +397,11 @@ mod tests {
             (true, "eye", TokenColor::Green),
             (false, "eye-off", TokenColor::Muted),
         ] {
-            let item = source_to_item(&source(visible, false, None, "browser_source"));
+            let item = source_to_item(
+                "Gameplay",
+                &source(visible, false, None, "browser_source"),
+                false,
+            );
             assert_eq!(
                 item.trailing[0],
                 TrailingToken::Icon(SectionIcon::new(glyph), color),
@@ -337,7 +415,11 @@ mod tests {
             (true, "lock", TokenColor::Yellow),
             (false, "lock-open", TokenColor::Muted),
         ] {
-            let item = source_to_item(&source(true, locked, None, "browser_source"));
+            let item = source_to_item(
+                "Gameplay",
+                &source(true, locked, None, "browser_source"),
+                false,
+            );
             assert_eq!(
                 item.trailing[1],
                 TrailingToken::Icon(SectionIcon::new(glyph), color),
@@ -347,7 +429,11 @@ mod tests {
 
     #[test]
     fn source_row_appends_a_one_decimal_db_label_only_when_a_level_is_known() {
-        let with_level = source_to_item(&source(true, false, Some(-12.34), "wasapi_input_capture"));
+        let with_level = source_to_item(
+            "Gameplay",
+            &source(true, false, Some(-12.34), "wasapi_input_capture"),
+            false,
+        );
         assert_eq!(
             with_level.trailing.last(),
             Some(&TrailingToken::TintedLabel(
@@ -356,7 +442,11 @@ mod tests {
             )),
         );
 
-        let without_level = source_to_item(&source(true, false, None, "wasapi_input_capture"));
+        let without_level = source_to_item(
+            "Gameplay",
+            &source(true, false, None, "wasapi_input_capture"),
+            false,
+        );
         assert_eq!(without_level.trailing.len(), 2);
     }
 
@@ -366,7 +456,11 @@ mod tests {
             (true, "browser", TokenColor::Accent),
             (false, "eye-off", TokenColor::Muted),
         ] {
-            let item = source_to_item(&source(visible, false, None, "browser_source"));
+            let item = source_to_item(
+                "Gameplay",
+                &source(visible, false, None, "browser_source"),
+                false,
+            );
             assert_eq!(item.icon.as_str(), glyph, "glyph for visible={visible}");
             assert_eq!(item.icon_tint, Some(tint), "tint for visible={visible}");
         }
@@ -374,6 +468,13 @@ mod tests {
 
     #[test]
     fn hidden_source_row_is_rendered_disabled() {
-        assert!(!source_to_item(&source(false, false, None, "browser_source")).enabled);
+        assert!(
+            !source_to_item(
+                "Gameplay",
+                &source(false, false, None, "browser_source"),
+                false
+            )
+            .enabled
+        );
     }
 }

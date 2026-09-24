@@ -127,6 +127,7 @@ impl BuiltinContent for DiscordClient {
                         TrailingToken::Badge("ERROR".to_owned(), TokenColor::Red)
                     }],
                     enabled: true,
+                    on_click: None,
                 }
             })
             .collect();
@@ -160,6 +161,7 @@ impl BuiltinContent for DiscordClient {
                     },
                     trailing: vec![TrailingToken::Label(ts)],
                     enabled: true,
+                    on_click: None,
                 }
             })
             .collect();

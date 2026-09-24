@@ -12,6 +12,8 @@ use time::OffsetDateTime;
 
 use crate::ObsSink;
 
+pub(crate) const KIND_ID: &str = "obs.sources.set_locked";
+
 pub struct SetLockedRunner {
     sink: Arc<dyn ObsSink>,
 }
@@ -25,7 +27,7 @@ impl SetLockedRunner {
 #[async_trait]
 impl SubActionRunner for SetLockedRunner {
     fn id(&self) -> &str {
-        "obs.sources.set_locked"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -83,9 +85,9 @@ impl SubActionRunner for SetLockedRunner {
         if scene_ok && source_ok {
             Ok(())
         } else {
-            Err(RegistryError::InvalidConfig(
-                "obs.sources.set_locked: 'scene' and 'source' must be non-empty strings".to_owned(),
-            ))
+            Err(RegistryError::InvalidConfig(format!(
+                "{KIND_ID}: 'scene' and 'source' must be non-empty strings"
+            )))
         }
     }
 
@@ -112,7 +114,7 @@ impl SubActionRunner for SetLockedRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.sources.set_locked".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

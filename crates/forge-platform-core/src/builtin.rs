@@ -94,13 +94,19 @@ pub enum TokenColor {
     Subtle,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrailingToken {
     Badge(String, TokenColor),
     Icon(SectionIcon, TokenColor),
     Label(String),
     TintedLabel(String, TokenColor),
+    ActionIcon {
+        icon: SectionIcon,
+        tint: TokenColor,
+        /// Enqueued through the action engine on glyph click, exactly as a quick action is.
+        step: SubActionStep,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,7 +115,7 @@ pub enum RowAction {
     Play,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ContentListItem {
     pub icon: SectionIcon,
@@ -121,13 +127,16 @@ pub struct ContentListItem {
     pub active_label: Option<String>,
     pub trailing: Vec<TrailingToken>,
     pub enabled: bool,
+    /// Enqueued through the action engine on row click, exactly as a quick action is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_click: Option<SubActionStep>,
 }
 
 fn default_row_padding_y_px() -> u8 {
     7
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContentList {
     pub title: String,
     pub icon: SectionIcon,
@@ -759,6 +768,7 @@ mod tests {
                     TrailingToken::TintedLabel("-12.3 dB".to_owned(), TokenColor::Subtle),
                 ],
                 enabled: true,
+                on_click: None,
             }],
             footer: None,
         }

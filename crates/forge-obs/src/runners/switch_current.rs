@@ -12,6 +12,8 @@ use time::OffsetDateTime;
 
 use crate::ObsSink;
 
+pub(crate) const KIND_ID: &str = "obs.scenes.switch_current";
+
 pub struct SwitchCurrentSceneRunner {
     sink: Arc<dyn ObsSink>,
 }
@@ -25,7 +27,7 @@ impl SwitchCurrentSceneRunner {
 #[async_trait]
 impl SubActionRunner for SwitchCurrentSceneRunner {
     fn id(&self) -> &str {
-        "obs.scenes.switch_current"
+        KIND_ID
     }
 
     fn category(&self) -> SubActionCategory {
@@ -63,12 +65,12 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("scene") {
             Some(Variant::String(s)) if !s.trim().is_empty() => Ok(()),
-            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(
-                "obs.scenes.switch_current: 'scene' must not be empty".to_owned(),
-            )),
-            _ => Err(RegistryError::InvalidConfig(
-                "obs.scenes.switch_current: 'scene' must be a string".to_owned(),
-            )),
+            Some(Variant::String(_)) => Err(RegistryError::InvalidConfig(format!(
+                "{KIND_ID}: 'scene' must not be empty"
+            ))),
+            _ => Err(RegistryError::InvalidConfig(format!(
+                "{KIND_ID}: 'scene' must be a string"
+            ))),
         }
     }
 
@@ -97,7 +99,7 @@ impl SubActionRunner for SwitchCurrentSceneRunner {
             SubActionTelemetry {
                 args_in: ::std::collections::BTreeMap::new(),
                 produced: ::std::collections::BTreeMap::new(),
-                kind: "obs.scenes.switch_current".to_owned(),
+                kind: KIND_ID.to_owned(),
                 started_at,
                 duration_ms: start.elapsed().as_millis() as u64,
                 outcome,

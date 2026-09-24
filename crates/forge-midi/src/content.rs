@@ -41,6 +41,7 @@ impl BuiltinContent for MidiClient {
                     active_label: Some("SUBSCRIBED".to_owned()),
                     trailing: vec![TrailingToken::Label(count.to_string())],
                     enabled: true,
+                    on_click: None,
                 }
             })
             .collect();
@@ -57,6 +58,7 @@ impl BuiltinContent for MidiClient {
                 active_label: None,
                 trailing: vec![],
                 enabled: true,
+                on_click: None,
             })
             .collect();
 

@@ -29,6 +29,7 @@ impl BuiltinContent for HotkeyClient {
                 active_label: Some("ACTIVE".to_owned()),
                 trailing: vec![],
                 enabled: true,
+                on_click: None,
             })
             .collect();
 
@@ -53,6 +54,7 @@ impl BuiltinContent for HotkeyClient {
                     active_label: None,
                     trailing: vec![TrailingToken::Label(time_str)],
                     enabled: true,
+                    on_click: None,
                 }
             })
             .collect();

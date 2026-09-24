@@ -87,6 +87,10 @@ pub use studio_trigger_transition::StudioTriggerTransitionRunner;
 pub use switch_current::SwitchCurrentSceneRunner;
 pub use virtualcam_set_active::VirtualCamSetActiveRunner;
 
+pub(crate) use set_locked::KIND_ID as SET_LOCKED_KIND_ID;
+pub(crate) use set_visible::KIND_ID as SET_VISIBLE_KIND_ID;
+pub(crate) use switch_current::KIND_ID as SWITCH_CURRENT_SCENE_KIND_ID;
+
 use crate::ObsSink;
 
 pub fn register_obs_sub_actions(

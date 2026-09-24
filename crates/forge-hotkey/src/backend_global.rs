@@ -290,3 +290,36 @@ fn str_to_code(s: &str) -> Option<Code> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn ctrl_f5() -> HotkeyCombo {
+        HotkeyCombo::parse("Ctrl+F5").unwrap()
+    }
+
+    #[test]
+    fn a_combo_another_app_already_holds_is_reported_as_a_conflict() {
+        let combo = ctrl_f5();
+        let hotkey = combo_to_hotkey(&combo).unwrap();
+
+        let error = map_manager_error(global_hotkey::Error::AlreadyRegistered(hotkey), &combo);
+
+        assert!(
+            matches!(error, HotkeyError::AlreadyRegistered { ref combo } if combo == "Ctrl+F5"),
+            "an OS-level conflict was not surfaced as AlreadyRegistered: {error:?}"
+        );
+    }
+
+    #[test]
+    fn any_other_manager_failure_stays_a_backend_error() {
+        let error = map_manager_error(
+            global_hotkey::Error::FailedToRegister("denied".to_owned()),
+            &ctrl_f5(),
+        );
+
+        assert!(matches!(error, HotkeyError::Backend(_)), "got {error:?}");
+    }
+}

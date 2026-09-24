@@ -45,6 +45,39 @@ mod tests {
         }
     }
 
+    fn pressed(combo: &str) -> Event {
+        Event::new(
+            forge_events::EventSource::Hotkey,
+            "hotkey.global.pressed",
+            serde_json::json!({ "combo": combo }),
+        )
+    }
+
+    fn configured(combo: &str) -> TriggerConfig {
+        TriggerConfig::from([(fields::COMBO.to_owned(), Variant::String(combo.to_owned()))])
+    }
+
+    #[test]
+    fn a_hand_typed_combo_matches_the_canonical_combo_the_event_carries() {
+        for (config, event_combo, expected) in [
+            ("F5", "F5", true),
+            ("f5", "F5", true),
+            ("shift+ctrl+1", "Ctrl+Shift+1", true),
+            (" Ctrl + F5 ", "Ctrl+F5", true),
+            ("control+option+a", "Ctrl+Alt+A", true),
+            ("f5", "F6", false),
+            ("Ctrl+F5", "F5", false),
+            ("Ctrl+XYZ", "Ctrl+XYZ", false),
+            ("", "", false),
+        ] {
+            assert_eq!(
+                config_accepts_combo(&configured(config), &pressed(event_combo)),
+                expected,
+                "config {config:?} vs event {event_combo:?}"
+            );
+        }
+    }
+
     #[test]
     fn duplicate_registration_returns_error() {
         let mut reg = TriggerRegistry::new();

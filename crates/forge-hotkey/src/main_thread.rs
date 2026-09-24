@@ -81,3 +81,76 @@ impl MainThreadLink {
             .map_err(|_| HotkeyError::MainThreadUnavailable)?
     }
 }
+
+#[cfg(all(test, any(target_os = "windows", target_os = "macos")))]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::error::HotkeyError;
+
+    #[test]
+    fn a_job_sent_through_the_link_runs_on_the_thread_that_drives_the_host() {
+        let (host, link) = main_thread_channel();
+        let (host_thread_tx, host_thread_rx) = std::sync::mpsc::channel();
+        let host_thread = std::thread::spawn(move || {
+            host_thread_tx.send(std::thread::current().id()).unwrap();
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(host.run());
+        });
+        let host_thread_id = host_thread_rx.recv().unwrap();
+
+        let ran_on = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(link.run(|| std::thread::current().id()))
+            .unwrap();
+
+        assert_eq!(ran_on, host_thread_id);
+        drop(link);
+        host_thread.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_dropped_host_fails_the_job_with_main_thread_unavailable() {
+        let (host, link) = main_thread_channel();
+        drop(host);
+
+        let outcome = link.run(|| ()).await;
+
+        assert!(matches!(outcome, Err(HotkeyError::MainThreadUnavailable)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_host_that_never_runs_the_job_fails_it_at_the_deadline() {
+        let (_host, link) = main_thread_channel();
+
+        let outcome = link.run(|| ()).await;
+
+        assert!(matches!(outcome, Err(HotkeyError::MainThreadUnavailable)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_job_that_timed_out_never_runs_once_the_host_catches_up() {
+        let (host, link) = main_thread_channel();
+        let ran = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let outcome = link
+            .run({
+                let ran = std::sync::Arc::clone(&ran);
+                move || ran.store(true, std::sync::atomic::Ordering::SeqCst)
+            })
+            .await;
+        assert!(matches!(outcome, Err(HotkeyError::MainThreadUnavailable)));
+
+        drop(link);
+        host.run().await;
+
+        assert!(
+            !ran.load(std::sync::atomic::Ordering::SeqCst),
+            "a register the caller already reported as failed still reached the OS"
+        );
+    }
+}

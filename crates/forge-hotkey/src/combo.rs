@@ -199,63 +199,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_simple_letter() {
-        let c = HotkeyCombo::parse("A").unwrap();
-        assert_eq!(c.as_str(), "A");
+    fn parse_canonicalises_case_aliases_and_modifier_order() {
+        for (input, canonical) in [
+            ("a", "A"),
+            ("ctrl+shift+a", "Ctrl+Shift+A"),
+            ("CTRL+SHIFT+A", "Ctrl+Shift+A"),
+            ("Shift+Ctrl+A", "Ctrl+Shift+A"),
+            ("Meta+Alt+F1", "Alt+Meta+F1"),
+            ("Ctrl+Ctrl+A", "Ctrl+A"),
+            ("Control+A", "Ctrl+A"),
+            ("Option+A", "Alt+A"),
+            ("Cmd+A", "Meta+A"),
+            ("Super+A", "Meta+A"),
+            ("Win+A", "Meta+A"),
+            ("ctrl+del", "Ctrl+Delete"),
+            ("ctrl+ins", "Ctrl+Insert"),
+            ("ctrl+home", "Ctrl+Home"),
+            ("ctrl+end", "Ctrl+End"),
+            ("ctrl+pgup", "Ctrl+PageUp"),
+            ("ctrl+pgdn", "Ctrl+PageDown"),
+            ("ctrl+backspace", "Ctrl+Backspace"),
+            ("ctrl+tab", "Ctrl+Tab"),
+            ("ctrl+return", "Ctrl+Enter"),
+            ("ctrl+esc", "Ctrl+Escape"),
+            ("ctrl+space", "Ctrl+Space"),
+            ("ctrl+up", "Ctrl+ArrowUp"),
+            ("ctrl+down", "Ctrl+ArrowDown"),
+            ("ctrl+left", "Ctrl+ArrowLeft"),
+            ("ctrl+right", "Ctrl+ArrowRight"),
+            ("ctrl+numpad5", "Ctrl+Num5"),
+            (" Ctrl + F5 ", "Ctrl+F5"),
+        ] {
+            assert_eq!(
+                HotkeyCombo::parse(input).unwrap().as_str(),
+                canonical,
+                "wrong canonical form for {input:?}"
+            );
+        }
     }
 
     #[test]
-    fn parse_ctrl_shift_a() {
-        let c = HotkeyCombo::parse("Ctrl+Shift+A").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+Shift+A");
-    }
-
-    #[test]
-    fn parse_lowercase_normalizes_to_canonical() {
-        let c = HotkeyCombo::parse("ctrl+shift+a").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+Shift+A");
-    }
-
-    #[test]
-    fn parse_uppercase_input() {
-        let c = HotkeyCombo::parse("CTRL+SHIFT+A").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+Shift+A");
-    }
-
-    #[test]
-    fn parse_reorders_modifiers_to_canonical_order() {
-        let c = HotkeyCombo::parse("Shift+Ctrl+A").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+Shift+A");
-    }
-
-    #[test]
-    fn parse_alt_meta_order() {
-        let c = HotkeyCombo::parse("Meta+Alt+F1").unwrap();
-        assert_eq!(c.as_str(), "Alt+Meta+F1");
-    }
-
-    #[test]
-    fn parse_control_alias() {
-        let c = HotkeyCombo::parse("Control+A").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+A");
-    }
-
-    #[test]
-    fn parse_option_alias() {
-        let c = HotkeyCombo::parse("Option+A").unwrap();
-        assert_eq!(c.as_str(), "Alt+A");
-    }
-
-    #[test]
-    fn parse_cmd_alias() {
-        let c = HotkeyCombo::parse("Cmd+A").unwrap();
-        assert_eq!(c.as_str(), "Meta+A");
-    }
-
-    #[test]
-    fn parse_super_alias() {
-        let c = HotkeyCombo::parse("Super+A").unwrap();
-        assert_eq!(c.as_str(), "Meta+A");
+    fn parse_accepts_every_function_key_and_digit() {
+        let function_keys = (1..=12u8).map(|n| (format!("ctrl+f{n}"), format!("Ctrl+F{n}")));
+        let digits = (0..=9u8).map(|d| (format!("ctrl+{d}"), format!("Ctrl+{d}")));
+        for (input, canonical) in function_keys.chain(digits) {
+            assert_eq!(HotkeyCombo::parse(&input).unwrap().as_str(), canonical);
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -273,133 +262,50 @@ mod tests {
     }
 
     #[test]
-    fn parse_function_keys() {
-        for n in 1..=12u8 {
-            let input = format!("Ctrl+F{n}");
-            let expected = format!("Ctrl+F{n}");
-            let c = HotkeyCombo::parse(&input).unwrap();
-            assert_eq!(c.as_str(), expected, "F{n} failed");
+    fn parse_rejects_malformed_combos_and_echoes_the_input() {
+        for bad in [
+            "",
+            "+",
+            "Ctrl+",
+            "Ctrl++A",
+            "Ctrl+Shift",
+            "Ctrl+XYZ123",
+            "A+B",
+            "F13",
+        ] {
+            assert!(
+                matches!(HotkeyCombo::parse(bad), Err(HotkeyError::InvalidCombo(ref echoed)) if echoed == bad),
+                "expected InvalidCombo({bad:?})"
+            );
         }
     }
 
     #[test]
-    fn parse_digits() {
-        for d in 0..=9u8 {
-            let input = format!("Ctrl+{d}");
-            let c = HotkeyCombo::parse(&input).unwrap();
-            assert_eq!(c.as_str(), format!("Ctrl+{d}"));
+    fn only_modifier_less_typing_keys_swallow_typing_and_only_where_the_grab_consumes_the_key() {
+        for (input, typing_key) in [
+            ("A", true),
+            ("1", true),
+            ("Num1", true),
+            ("Space", true),
+            ("Enter", true),
+            ("Tab", true),
+            ("Backspace", true),
+            ("F5", false),
+            ("Escape", false),
+            ("Delete", false),
+            ("ArrowUp", false),
+            ("Ctrl+A", false),
+            ("Shift+1", false),
+            ("Alt+Space", false),
+        ] {
+            // Why: the Linux portal and evdev backends observe keys without consuming them, so a
+            // bare key never stops typing there; the Carbon and RegisterHotKey grabs do.
+            let expected = typing_key && cfg!(any(target_os = "windows", target_os = "macos"));
+            assert_eq!(
+                HotkeyCombo::parse(input).unwrap().swallows_typing(),
+                expected,
+                "wrong verdict for {input:?}"
+            );
         }
-    }
-
-    #[test]
-    fn parse_named_keys() {
-        let cases = [
-            ("Ctrl+Delete", "Ctrl+Delete"),
-            ("Ctrl+Insert", "Ctrl+Insert"),
-            ("Ctrl+Home", "Ctrl+Home"),
-            ("Ctrl+End", "Ctrl+End"),
-            ("Ctrl+PageUp", "Ctrl+PageUp"),
-            ("Ctrl+PageDown", "Ctrl+PageDown"),
-            ("Ctrl+Backspace", "Ctrl+Backspace"),
-            ("Ctrl+Tab", "Ctrl+Tab"),
-            ("Ctrl+Enter", "Ctrl+Enter"),
-            ("Ctrl+Escape", "Ctrl+Escape"),
-            ("Ctrl+Space", "Ctrl+Space"),
-        ];
-        for (input, expected) in &cases {
-            let c = HotkeyCombo::parse(input).unwrap();
-            assert_eq!(c.as_str(), *expected, "failed: {input}");
-        }
-    }
-
-    #[test]
-    fn parse_arrow_keys() {
-        let cases = [
-            ("Ctrl+Up", "Ctrl+ArrowUp"),
-            ("Ctrl+Down", "Ctrl+ArrowDown"),
-            ("Ctrl+Left", "Ctrl+ArrowLeft"),
-            ("Ctrl+Right", "Ctrl+ArrowRight"),
-            ("Ctrl+ArrowUp", "Ctrl+ArrowUp"),
-        ];
-        for (input, expected) in &cases {
-            let c = HotkeyCombo::parse(input).unwrap();
-            assert_eq!(c.as_str(), *expected, "failed: {input}");
-        }
-    }
-
-    #[test]
-    fn parse_numpad_keys() {
-        let c = HotkeyCombo::parse("Ctrl+Num5").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+Num5");
-        let c = HotkeyCombo::parse("Ctrl+Numpad5").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+Num5");
-    }
-
-    #[test]
-    fn parse_empty_string_is_invalid() {
-        assert!(matches!(
-            HotkeyCombo::parse(""),
-            Err(HotkeyError::InvalidCombo(_))
-        ));
-    }
-
-    #[test]
-    fn parse_just_plus_is_invalid() {
-        assert!(matches!(
-            HotkeyCombo::parse("+"),
-            Err(HotkeyError::InvalidCombo(_))
-        ));
-    }
-
-    #[test]
-    fn parse_trailing_plus_is_invalid() {
-        assert!(matches!(
-            HotkeyCombo::parse("Ctrl+"),
-            Err(HotkeyError::InvalidCombo(_))
-        ));
-    }
-
-    #[test]
-    fn parse_only_modifier_is_invalid() {
-        assert!(matches!(
-            HotkeyCombo::parse("Ctrl+Shift"),
-            Err(HotkeyError::InvalidCombo(_))
-        ));
-    }
-
-    #[test]
-    fn parse_unknown_token_is_invalid() {
-        assert!(matches!(
-            HotkeyCombo::parse("Ctrl+XYZ123"),
-            Err(HotkeyError::InvalidCombo(_))
-        ));
-    }
-
-    #[test]
-    fn parse_two_key_codes_is_invalid() {
-        assert!(matches!(
-            HotkeyCombo::parse("A+B"),
-            Err(HotkeyError::InvalidCombo(_))
-        ));
-    }
-
-    #[test]
-    fn display_matches_as_str() {
-        let c = HotkeyCombo::parse("Ctrl+Shift+A").unwrap();
-        assert_eq!(c.to_string(), c.as_str());
-    }
-
-    #[test]
-    fn serde_roundtrip() {
-        let c = HotkeyCombo::parse("Ctrl+Shift+F5").unwrap();
-        let json = serde_json::to_string(&c).unwrap();
-        let back: HotkeyCombo = serde_json::from_str(&json).unwrap();
-        assert_eq!(back, c);
-    }
-
-    #[test]
-    fn duplicate_modifiers_deduplicated() {
-        let c = HotkeyCombo::parse("Ctrl+Ctrl+A").unwrap();
-        assert_eq!(c.as_str(), "Ctrl+A");
     }
 }

@@ -1231,4 +1231,49 @@ mod tests {
             "a hold's halves share one OS registration, and a release-only combo still needs one"
         );
     }
+
+    #[test]
+    fn persisted_hotkey_combos_folds_hand_typed_spellings_into_the_canonical_combo() {
+        let instances = [
+            instance_literal(HOTKEY_PRESSED_KIND, Some("f5")),
+            instance_literal(HOTKEY_RELEASED_KIND, Some("F5")),
+            instance_literal(HOTKEY_PRESSED_KIND, Some("shift+ctrl+1")),
+        ];
+
+        let combos = persisted_hotkey_combos(&instances);
+
+        let listed: Vec<&str> = combos.iter().map(String::as_str).collect();
+        assert_eq!(listed, ["Ctrl+Shift+1", "F5"]);
+    }
+
+    #[tokio::test]
+    async fn load_bindings_joins_a_hand_typed_half_with_its_canonical_partner_in_one_row() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("f5")).await;
+        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("F5")).await;
+
+        let rows = load_bindings(Arc::clone(&backend), vec![(HotkeyId(1), "F5".to_owned())])
+            .await
+            .unwrap();
+
+        let summary: Vec<(&str, bool)> = rows
+            .iter()
+            .map(|row| (row.combo.as_str(), row.registered))
+            .collect();
+        assert_eq!(summary, [("F5", true)]);
+    }
+
+    #[tokio::test]
+    async fn cleanup_stale_combo_instances_also_removes_a_hand_typed_spelling_of_the_combo() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("f5")).await;
+
+        cleanup_stale_combo_instances(&backend, "F5").await.unwrap();
+
+        let left = backend.trigger_instance_repo().list_all().await.unwrap();
+        assert!(
+            left.is_empty(),
+            "a legacy f5 row outlived the F5 cleanup: {left:?}"
+        );
+    }
 }

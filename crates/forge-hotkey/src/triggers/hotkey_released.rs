@@ -182,6 +182,12 @@ mod tests {
                 false,
             ),
             (
+                "a hand-typed combo in another case and modifier order",
+                combo_config("shift+ctrl+1"),
+                released_event("Ctrl+Shift+1"),
+                true,
+            ),
+            (
                 "the press half of the same hold",
                 BTreeMap::new(),
                 Event::new(

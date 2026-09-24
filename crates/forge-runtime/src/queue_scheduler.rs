@@ -7,7 +7,7 @@ use forge_registry::CancelSignal;
 use forge_types::{ActionId, ArgStack, EventId, Queue, QueueId};
 use serde_json::json;
 use tokio::sync::futures::Notified;
-use tokio::sync::{Notify, Semaphore, mpsc, oneshot, watch};
+use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tracing::{info, warn};
 
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
@@ -171,11 +171,88 @@ struct QueueSlot {
     mode: QueueMode,
     overflowed: u64,
     name: String,
-    concurrency: u32,
+    gate: ConcurrencyGate,
     inflight: InflightTracker,
 }
 
-/// Owned by the slot rather than the runner task, so a rebuilt slot can carry the buffer over.
+/// A lowered limit binds from the next acquire; executions already holding a slot keep it.
+#[derive(Clone)]
+struct ConcurrencyGate {
+    inner: Arc<GateInner>,
+}
+
+struct GateInner {
+    state: Mutex<GateState>,
+    freed: Notify,
+}
+
+struct GateState {
+    limit: usize,
+    outstanding: usize,
+}
+
+impl ConcurrencyGate {
+    fn new(limit: usize) -> Self {
+        Self {
+            inner: Arc::new(GateInner {
+                state: Mutex::new(GateState {
+                    limit,
+                    outstanding: 0,
+                }),
+                freed: Notify::new(),
+            }),
+        }
+    }
+
+    async fn acquire(&self) -> GatePermit {
+        loop {
+            let freed = self.inner.freed.notified();
+            if self.take() {
+                return GatePermit { gate: self.clone() };
+            }
+            freed.await;
+        }
+    }
+
+    fn take(&self) -> bool {
+        let mut state = self.lock();
+        if state.outstanding >= state.limit {
+            return false;
+        }
+        state.outstanding += 1;
+        true
+    }
+
+    fn replace_limit(&self, limit: usize) -> usize {
+        let previous = {
+            let mut state = self.lock();
+            std::mem::replace(&mut state.limit, limit)
+        };
+        if limit > previous {
+            self.inner.freed.notify_one();
+        }
+        previous
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, GateState> {
+        self.inner.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+struct GatePermit {
+    gate: ConcurrencyGate,
+}
+
+impl Drop for GatePermit {
+    fn drop(&mut self) {
+        {
+            let mut state = self.gate.lock();
+            state.outstanding = state.outstanding.saturating_sub(1);
+        }
+        self.gate.inner.freed.notify_one();
+    }
+}
+
 #[derive(Clone)]
 struct PendingBuffer {
     inner: Arc<PendingInner>,
@@ -187,10 +264,10 @@ struct PendingInner {
 }
 
 impl PendingBuffer {
-    fn seeded(tasks: VecDeque<QueueTask>) -> Self {
+    fn new() -> Self {
         Self {
             inner: Arc::new(PendingInner {
-                tasks: Mutex::new(tasks),
+                tasks: Mutex::new(VecDeque::new()),
                 arrived: Notify::new(),
             }),
         }
@@ -217,10 +294,6 @@ impl PendingBuffer {
         }
         let at = tasks.iter().position(|task| task.bypass_pause)?;
         tasks.remove(at)
-    }
-
-    fn take_all(&self) -> VecDeque<QueueTask> {
-        std::mem::take(&mut self.lock())
     }
 
     fn clear(&self) {
@@ -365,12 +438,7 @@ impl QueueScheduler {
         let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
         for queue in initial_queues {
             let id = queue.id;
-            let slot = Self::make_queue_slot(
-                queue,
-                Arc::clone(&engine),
-                QueueMode::default(),
-                VecDeque::new(),
-            );
+            let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
             slots.insert(id, slot);
         }
 
@@ -379,24 +447,18 @@ impl QueueScheduler {
         QueueSchedulerHandle { sender: cmd_tx }
     }
 
-    fn make_queue_slot(
-        queue: Queue,
-        engine: Arc<ActionEngineHandle>,
-        mode: QueueMode,
-        carried: VecDeque<QueueTask>,
-    ) -> QueueSlot {
+    fn make_queue_slot(queue: Queue, engine: Arc<ActionEngineHandle>) -> QueueSlot {
+        let mode = QueueMode::default();
         let (processing_tx, processing_rx) = watch::channel(mode.processing);
         let inflight = InflightTracker::default();
-        let pending = PendingBuffer::seeded(carried);
-        let name = queue.name.clone();
-        let concurrency = queue.concurrency.max(1);
+        let pending = PendingBuffer::new();
+        let gate = ConcurrencyGate::new(queue.concurrency.max(1) as usize);
 
-        let sem = Arc::new(Semaphore::new(concurrency as usize));
         tokio::spawn(Self::run_bounded(
             pending.clone(),
             processing_rx,
             engine,
-            sem,
+            gate.clone(),
             inflight.clone(),
         ));
 
@@ -405,8 +467,8 @@ impl QueueScheduler {
             processing: processing_tx,
             mode,
             overflowed: 0,
-            name,
-            concurrency,
+            name: queue.name,
+            gate,
             inflight,
         }
     }
@@ -416,14 +478,11 @@ impl QueueScheduler {
         pending: PendingBuffer,
         mut processing: watch::Receiver<QueueProcessing>,
         engine: Arc<ActionEngineHandle>,
-        sem: Arc<Semaphore>,
+        gate: ConcurrencyGate,
         inflight: InflightTracker,
     ) {
         loop {
-            let permit = match Arc::clone(&sem).acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => return,
-            };
+            let permit = gate.acquire().await;
 
             let task = loop {
                 let arrived = pending.arrived();
@@ -493,12 +552,7 @@ impl QueueScheduler {
                         MembershipOutcome::AlreadyRegistered
                     } else {
                         let id = queue.id;
-                        let slot = Self::make_queue_slot(
-                            queue,
-                            Arc::clone(&engine),
-                            QueueMode::default(),
-                            VecDeque::new(),
-                        );
+                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
                         slots.insert(id, slot);
                         MembershipOutcome::Applied
                     };
@@ -512,7 +566,7 @@ impl QueueScheduler {
                     let _ = reply.send(outcome);
                 }
                 SchedulerCommand::Reconfigure(queue, reply) => {
-                    let outcome = Self::reconfigure(queue, &mut slots, &engine);
+                    let outcome = Self::reconfigure(queue, &mut slots);
                     let _ = reply.send(outcome);
                 }
                 SchedulerCommand::QueryStates(reply) => {
@@ -643,34 +697,21 @@ impl QueueScheduler {
         Ok(())
     }
 
-    fn reconfigure(
-        queue: Queue,
-        slots: &mut HashMap<QueueId, QueueSlot>,
-        engine: &Arc<ActionEngineHandle>,
-    ) -> MembershipOutcome {
-        let Some(old) = slots.get_mut(&queue.id) else {
+    fn reconfigure(queue: Queue, slots: &mut HashMap<QueueId, QueueSlot>) -> MembershipOutcome {
+        let Some(slot) = slots.get_mut(&queue.id) else {
             return MembershipOutcome::NotFound;
         };
 
-        if old.concurrency == queue.concurrency.max(1) {
-            old.name = queue.name;
-            return MembershipOutcome::Applied;
+        let limit = queue.concurrency.max(1) as usize;
+        let previous = slot.gate.replace_limit(limit);
+        if previous != limit {
+            info!(
+                "queue {}: concurrency {previous} -> {limit} with {} executions still running",
+                queue.name,
+                slot.inflight.len()
+            );
         }
-
-        let mode = old.mode;
-        let overflowed = old.overflowed;
-        let carried = old.pending.take_all();
-        let carried_count = carried.len();
-
-        let id = queue.id;
-        let name = queue.name.clone();
-        let mut rebuilt = Self::make_queue_slot(queue, Arc::clone(engine), mode, carried);
-        rebuilt.overflowed = overflowed;
-        slots.insert(id, rebuilt);
-
-        if carried_count > 0 {
-            info!("queue {name}: carried {carried_count} buffered executions into the new runner");
-        }
+        slot.name = queue.name;
 
         MembershipOutcome::Applied
     }

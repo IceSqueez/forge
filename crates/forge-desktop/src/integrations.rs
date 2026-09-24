@@ -416,11 +416,17 @@ fn spawn_chat_send_bridge(
     tokio::spawn(async move {
         let mut sub = bus.subscribe();
         let mut lag_count: u64 = 0;
+        let mut lagging = false;
         loop {
             let event = match sub.recv().await {
-                Ok(e) => e,
+                Ok(e) => {
+                    lagging = false;
+                    e
+                }
                 Err(EventsError::BusClosed) => break,
+                Err(EventsError::LaggingReceiver) if lagging => continue,
                 Err(EventsError::LaggingReceiver) => {
+                    lagging = true;
                     lag_count += 1;
                     eprintln!(
                         "forge-desktop: WARN chat send bridge for {target} lagging; {lag_count} lag event(s) observed since bridge start"

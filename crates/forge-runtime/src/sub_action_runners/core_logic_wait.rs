@@ -2,12 +2,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
-    SubActionRunner,
+    CancelSignal, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 const MAX_DELAY_MS: u64 = 60_000;
+const CANCEL_POLL_MS: u64 = 50;
 
 pub const WAIT_KIND_ID: &str = "core.logic.wait";
 pub const WAIT_MS_KEY: &str = "ms";
@@ -67,10 +68,24 @@ impl SubActionRunner for CoreLogicWaitRunner {
         let timer = StepTimer::start(ctx, WAIT_KIND_ID);
 
         let ms = config.int(WAIT_MS_KEY).unwrap_or(0).max(0) as u64;
+        let delay = Duration::from_millis(ms.min(MAX_DELAY_MS));
 
-        tokio::time::sleep(Duration::from_millis(ms.min(MAX_DELAY_MS))).await;
+        tokio::select! {
+            _ = tokio::time::sleep(delay) => {}
+            _ = wait_for_cancel(&ctx.cancel) => {}
+        }
 
         (timer.success(), None)
+    }
+}
+
+async fn wait_for_cancel(cancel: &CancelSignal) {
+    let mut poll = tokio::time::interval(Duration::from_millis(CANCEL_POLL_MS));
+    loop {
+        poll.tick().await;
+        if cancel.is_cancelled() {
+            return;
+        }
     }
 }
 

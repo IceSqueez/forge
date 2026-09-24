@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_registry::{
-    CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
+    CancelSignal, CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
     SubActionConfigExt, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
@@ -15,6 +15,7 @@ const POLL_MIN_MS: i64 = 100;
 const POLL_MAX_MS: i64 = 30_000;
 const TIMEOUT_MIN_MS: i64 = 100;
 const TIMEOUT_MAX_MS: i64 = 600_000;
+const CANCEL_POLL_MS: u64 = 50;
 
 pub struct CoreLogicWaitUntilRunner {
     gate: Arc<ConditionGate>,
@@ -125,7 +126,10 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
                 timed_out = true;
                 break;
             }
-            tokio::time::sleep(poll_interval.min(deadline - now)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(poll_interval.min(deadline - now)) => {}
+                _ = wait_for_cancel(&ctx.cancel) => {}
+            }
         }
 
         let elapsed_ms = begin.elapsed().as_millis().min(i64::MAX as u128) as i64;
@@ -136,5 +140,15 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
             .set("wait.timed_out".to_owned(), Variant::Bool(timed_out));
 
         (timer.success(), Some(stack))
+    }
+}
+
+async fn wait_for_cancel(cancel: &CancelSignal) {
+    let mut poll = tokio::time::interval(Duration::from_millis(CANCEL_POLL_MS));
+    loop {
+        poll.tick().await;
+        if cancel.is_cancelled() {
+            return;
+        }
     }
 }

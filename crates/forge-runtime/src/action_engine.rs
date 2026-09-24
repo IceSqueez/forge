@@ -9,12 +9,15 @@ use forge_types::{
 };
 use serde_json::json;
 use time::OffsetDateTime;
-use tokio::sync::{mpsc, oneshot};
-use tracing::warn;
+use tokio::sync::{mpsc, oneshot, watch};
+use tracing::{info, warn};
 
 use crate::action_cancel::ActionCancelRegistry;
 use crate::chain::ChainEngine;
 use crate::{Config, EventBus};
+
+const EXECUTION_INTAKE_CAPACITY: usize = 256;
+const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
 
 struct QuickActionRequest {
     step: SubActionStep,
@@ -27,7 +30,7 @@ struct QuickActionRequest {
 pub struct ActionEngineHandle {
     sender: mpsc::Sender<EngineJob>,
     quick_sender: mpsc::Sender<QuickActionRequest>,
-    cancel: CancelSignal,
+    stop: Arc<watch::Sender<bool>>,
 }
 
 pub struct ExecutionRequest {
@@ -96,8 +99,9 @@ impl ActionEngineHandle {
             .map_err(|_| DispatchError::ChannelClosed)
     }
 
+    /// Stops intake and cancels every running execution; quick actions already running finish.
     pub fn shutdown(self) {
-        self.cancel.cancel();
+        self.stop.send_replace(true);
     }
 }
 
@@ -107,7 +111,6 @@ struct ActionEngine {
     history: Arc<dyn HistoryRepo>,
     chain_engine: Arc<ChainEngine>,
     cancel_registry: Arc<ActionCancelRegistry>,
-    input: mpsc::Receiver<EngineJob>,
 }
 
 impl ActionEngine {
@@ -118,10 +121,9 @@ impl ActionEngine {
         sub_action_registry: Arc<SubActionRegistry>,
         cancel_registry: Arc<ActionCancelRegistry>,
     ) -> ActionEngineHandle {
-        let (tx, rx) = mpsc::channel(256);
-        let (quick_tx, quick_rx) = mpsc::channel(64);
-        let cancel = CancelSignal::new();
-        let cancel_clone = cancel.clone();
+        let (tx, rx) = mpsc::channel(EXECUTION_INTAKE_CAPACITY);
+        let (quick_tx, quick_rx) = mpsc::channel(QUICK_ACTION_INTAKE_CAPACITY);
+        let (stop_tx, stop_rx) = watch::channel(false);
         let publisher: Arc<dyn EventPublisher> = Arc::clone(&bus) as Arc<dyn EventPublisher>;
         let config = Config::default();
         let gate = Arc::new(crate::condition::ConditionGate::new(&config));
@@ -131,17 +133,17 @@ impl ActionEngine {
             gate,
             config,
         ));
-        let engine = Self {
+        let engine = Arc::new(Self {
             bus: Arc::clone(&bus),
             actions: Arc::clone(&actions),
             history: Arc::clone(&history),
             chain_engine,
             cancel_registry,
-            input: rx,
-        };
-        tokio::spawn(async move { engine.run(cancel_clone).await });
+        });
+        tokio::spawn(Self::run(engine, rx, stop_rx.clone()));
         tokio::spawn(run_quick_action_loop(
             quick_rx,
+            stop_rx,
             bus,
             history,
             sub_action_registry,
@@ -149,39 +151,55 @@ impl ActionEngine {
         ActionEngineHandle {
             sender: tx,
             quick_sender: quick_tx,
-            cancel,
+            stop: Arc::new(stop_tx),
         }
     }
 
-    async fn run(mut self, cancel: CancelSignal) {
-        while !cancel.is_cancelled() {
-            match self.input.recv().await {
-                Some(job) => self.handle(job).await,
-                None => break,
+    async fn run(
+        engine: Arc<Self>,
+        mut input: mpsc::Receiver<EngineJob>,
+        mut stop: watch::Receiver<bool>,
+    ) {
+        loop {
+            tokio::select! {
+                biased;
+                Ok(_) = stop.wait_for(|stopped| *stopped) => {
+                    let cancelled = engine.cancel_registry.cancel_all();
+                    info!("action engine stopped: cancelled {cancelled} running executions");
+                    return;
+                }
+                job = input.recv() => match job {
+                    Some(job) => engine.start(job),
+                    None => return,
+                },
             }
         }
     }
 
-    async fn handle(&self, job: EngineJob) {
+    fn start(self: &Arc<Self>, job: EngineJob) {
         let EngineJob {
             request,
             cancel,
             on_complete,
         } = job;
-        self.run_execution(request, &cancel).await;
-        if let Some(done) = on_complete {
-            let _ = done.send(());
-        }
+        let cancel_guard = CancelGuard {
+            exec_id: self
+                .cancel_registry
+                .register(request.action_id, cancel.clone()),
+            registry: Arc::clone(&self.cancel_registry),
+            action_id: request.action_id,
+        };
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            engine.run_execution(request, &cancel).await;
+            drop(cancel_guard);
+            if let Some(done) = on_complete {
+                let _ = done.send(());
+            }
+        });
     }
 
     async fn run_execution(&self, req: ExecutionRequest, cancel: &CancelSignal) {
-        let exec_id = self.cancel_registry.register(req.action_id, cancel.clone());
-        let _cancel_guard = CancelGuard {
-            registry: Arc::clone(&self.cancel_registry),
-            action_id: req.action_id,
-            exec_id,
-        };
-
         let action = match self.actions.get(req.action_id).await {
             Ok(Some(a)) if a.enabled => a,
             Ok(_) => return,
@@ -323,87 +341,109 @@ impl Drop for CancelGuard {
 
 async fn run_quick_action_loop(
     mut rx: mpsc::Receiver<QuickActionRequest>,
+    mut stop: watch::Receiver<bool>,
+    bus: Arc<EventBus>,
+    history: Arc<dyn HistoryRepo>,
+    sub_action_registry: Arc<SubActionRegistry>,
+) {
+    loop {
+        tokio::select! {
+            biased;
+            Ok(_) = stop.wait_for(|stopped| *stopped) => return,
+            req = rx.recv() => match req {
+                Some(req) => {
+                    tokio::spawn(run_quick_action(
+                        req,
+                        Arc::clone(&bus),
+                        Arc::clone(&history),
+                        Arc::clone(&sub_action_registry),
+                    ));
+                }
+                None => return,
+            },
+        }
+    }
+}
+
+async fn run_quick_action(
+    req: QuickActionRequest,
     bus: Arc<EventBus>,
     history: Arc<dyn HistoryRepo>,
     sub_action_registry: Arc<SubActionRegistry>,
 ) {
     let publisher: Arc<dyn forge_events::EventPublisher> =
         Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
-    while let Some(req) = rx.recv().await {
-        let run_payload = json!({ "step_index": 0, "kind": req.step.kind_id });
-        let run_event = match req.caused_by {
-            Some(parent) => {
-                Event::caused_by(EventSource::Core, "subaction.run", run_payload, parent)
-            }
-            None => Event::new(EventSource::Core, "subaction.run", run_payload),
-        };
-        let run_event_id = run_event.id;
-        bus.publish(run_event);
+    let run_payload = json!({ "step_index": 0, "kind": req.step.kind_id });
+    let run_event = match req.caused_by {
+        Some(parent) => Event::caused_by(EventSource::Core, "subaction.run", run_payload, parent),
+        None => Event::new(EventSource::Core, "subaction.run", run_payload),
+    };
+    let run_event_id = run_event.id;
+    bus.publish(run_event);
 
-        let stack = ArgStack::new();
-        let run_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
+    let stack = ArgStack::new();
+    let run_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
 
-        let started_at = OffsetDateTime::now_utc();
-        let (mut telemetry, produced_stack) = match sub_action_registry.get(&req.step.kind_id) {
-            Some(runner) => {
-                let resolved = effective_config(&runner.default_config(), &req.step.config);
-                runner.execute(&resolved, &run_ctx).await
-            }
-            None => {
-                warn!(
-                    "unknown sub-action kind_id: {} - skipping step",
-                    req.step.kind_id
-                );
-                (skipped_telemetry(0, &req.step.kind_id), None)
-            }
-        };
-        let completed_at = OffsetDateTime::now_utc();
-
-        telemetry.args_in = crate::chain::capture_args_in(&sub_action_registry, &req.step, &stack);
-        telemetry.produced = match &produced_stack {
-            Some(after) => crate::chain::capture_produced(&stack, after),
-            None => ::std::collections::BTreeMap::new(),
-        };
-
-        crate::chain::publish_subaction_done(publisher.as_ref(), run_event_id, &telemetry);
-
-        let outcome = match &telemetry.outcome {
-            SubActionOutcome::Success => "success",
-            SubActionOutcome::Failed(_) => "failed",
-            SubActionOutcome::Skipped(_) => "skipped",
-        };
-
-        bus.publish(Event::caused_by(
-            EventSource::Core,
-            "action.quick.done",
-            json!({
-                "kind": telemetry.kind,
-                "outcome": outcome,
-                "label": req.label,
-                "builtin_id": req.builtin_id,
-            }),
-            run_event_id,
-        ));
-
-        let run_outcome = match &telemetry.outcome {
-            SubActionOutcome::Success | SubActionOutcome::Skipped(_) => ExecutionOutcome::Success,
-            SubActionOutcome::Failed(message) => ExecutionOutcome::Failed(message.clone()),
-        };
-        let ctx = ExecutionContext {
-            action_id: ActionId::new(),
-            metadata: ExecutionMetadata::QuickAction {
-                builtin_id: req.builtin_id.clone(),
-                label: req.label.clone(),
-            },
-            arg_stack_snapshot: stack.snapshot(),
-            started_at,
-            completed_at: Some(completed_at),
-            telemetry: vec![telemetry],
-            outcome: run_outcome,
-        };
-        if let Err(e) = history.save(&ctx).await {
-            warn!("history_repo.save failed: {e}");
+    let started_at = OffsetDateTime::now_utc();
+    let (mut telemetry, produced_stack) = match sub_action_registry.get(&req.step.kind_id) {
+        Some(runner) => {
+            let resolved = effective_config(&runner.default_config(), &req.step.config);
+            runner.execute(&resolved, &run_ctx).await
         }
+        None => {
+            warn!(
+                "unknown sub-action kind_id: {} - skipping step",
+                req.step.kind_id
+            );
+            (skipped_telemetry(0, &req.step.kind_id), None)
+        }
+    };
+    let completed_at = OffsetDateTime::now_utc();
+
+    telemetry.args_in = crate::chain::capture_args_in(&sub_action_registry, &req.step, &stack);
+    telemetry.produced = match &produced_stack {
+        Some(after) => crate::chain::capture_produced(&stack, after),
+        None => ::std::collections::BTreeMap::new(),
+    };
+
+    crate::chain::publish_subaction_done(publisher.as_ref(), run_event_id, &telemetry);
+
+    let outcome = match &telemetry.outcome {
+        SubActionOutcome::Success => "success",
+        SubActionOutcome::Failed(_) => "failed",
+        SubActionOutcome::Skipped(_) => "skipped",
+    };
+
+    bus.publish(Event::caused_by(
+        EventSource::Core,
+        "action.quick.done",
+        json!({
+            "kind": telemetry.kind,
+            "outcome": outcome,
+            "label": req.label,
+            "builtin_id": req.builtin_id,
+        }),
+        run_event_id,
+    ));
+
+    let run_outcome = match &telemetry.outcome {
+        SubActionOutcome::Success | SubActionOutcome::Skipped(_) => ExecutionOutcome::Success,
+        SubActionOutcome::Failed(message) => ExecutionOutcome::Failed(message.clone()),
+    };
+    let ctx = ExecutionContext {
+        action_id: ActionId::new(),
+        metadata: ExecutionMetadata::QuickAction {
+            builtin_id: req.builtin_id.clone(),
+            label: req.label.clone(),
+        },
+        arg_stack_snapshot: stack.snapshot(),
+        started_at,
+        completed_at: Some(completed_at),
+        telemetry: vec![telemetry],
+        outcome: run_outcome,
+    };
+    if let Err(e) = history.save(&ctx).await {
+        warn!("history_repo.save failed: {e}");
     }
 }
 

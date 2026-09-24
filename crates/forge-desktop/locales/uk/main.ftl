@@ -216,7 +216,7 @@ settings_storage_backup_hint = Створює копію бази з мітко�
 settings_storage_keep_limit_label = Ліміт зберігання історії чату
 settings_storage_keep_limit_hint = Скільки повідомлень чату зберігати в базі даних.
 settings_storage_display_limit_label = Показувати при відкритті чату
-settings_storage_display_limit_hint = Скільки останніх повідомлень завантажувати під час відкриття чату.
+settings_storage_display_limit_hint = Скільки останніх повідомлень показує чат; старіші зникають. Діє після перезапуску.
 settings_storage_retention_label = Зберігання журналу подій
 settings_storage_retention_hint = Скільки днів зберігати журнал подій у базі даних.
 

@@ -116,8 +116,7 @@ impl SubActionRunner for CoreLogicWaitUntilRunner {
                 break;
             }
 
-            let expr = ctx.arg_stack.interpolate(&template);
-            if let Ok(true) = self.gate.evaluate(&expr).await {
+            if let Ok(true) = self.gate.evaluate_with_args(&template, ctx.arg_stack).await {
                 break;
             }
 

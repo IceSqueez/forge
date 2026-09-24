@@ -311,3 +311,116 @@ impl SpeakRequester for SpeakBridge {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    const CAPACITY: usize = 2;
+    const OVERFLOW: usize = 5;
+
+    fn unrelated() -> SpeakEvent {
+        SpeakEvent::Progress {
+            request_id: RequestId::new(),
+            elapsed_secs: 1,
+        }
+    }
+
+    fn lag(events: &broadcast::Sender<SpeakEvent>) {
+        for _ in 0..OVERFLOW {
+            events.send(unrelated()).unwrap();
+        }
+    }
+
+    fn reason(result: Result<(), SpeakDispatchError>) -> String {
+        match result {
+            Err(SpeakDispatchError::Dispatch(reason)) => reason,
+            Ok(()) => panic!("the wait resolved as a finished speech"),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lagged_wait_still_resolves_when_the_end_of_its_speech_arrives() {
+        let (events, mut rx) = broadcast::channel(CAPACITY);
+        let request_id = RequestId::new();
+        lag(&events);
+        events
+            .send(SpeakEvent::Finished {
+                request_id: request_id.clone(),
+            })
+            .unwrap();
+
+        let result = wait_for_terminal(&mut rx, &request_id, CancelSignal::new()).await;
+
+        assert!(
+            result.is_ok(),
+            "missing some unrelated queue events ended the wait: {result:?}"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wait_that_never_sees_its_speech_end_reports_why_at_the_hard_cap() {
+        for (lagged, expected) in [(true, "outcome unknown"), (false, "timed out")] {
+            let (events, mut rx) = broadcast::channel(CAPACITY);
+            if lagged {
+                lag(&events);
+            }
+            let started = tokio::time::Instant::now();
+
+            let reason =
+                reason(wait_for_terminal(&mut rx, &RequestId::new(), CancelSignal::new()).await);
+
+            assert!(
+                reason.contains(expected),
+                "lagged={lagged}: the wait ended with {reason:?}"
+            );
+            assert!(
+                started.elapsed() >= SPEAK_WAIT_HARD_CAP,
+                "lagged={lagged}: the wait gave up after {:?}, before the hard cap",
+                started.elapsed()
+            );
+            drop(events);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_closed_event_stream_reports_closed_even_after_a_lag() {
+        for lagged in [false, true] {
+            let (events, mut rx) = broadcast::channel(CAPACITY);
+            if lagged {
+                lag(&events);
+            }
+            drop(events);
+
+            let reason =
+                reason(wait_for_terminal(&mut rx, &RequestId::new(), CancelSignal::new()).await);
+
+            assert!(
+                reason.contains("closed"),
+                "lagged={lagged}: a closed stream ended the wait with {reason:?}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_a_lagged_wait_ends_it_within_one_poll() {
+        let (events, mut rx) = broadcast::channel(CAPACITY);
+        lag(&events);
+        let cancel = CancelSignal::new();
+        cancel.cancel();
+        let started = tokio::time::Instant::now();
+
+        let reason = reason(wait_for_terminal(&mut rx, &RequestId::new(), cancel).await);
+
+        assert!(
+            reason.contains("cancelled"),
+            "the wait ended with {reason:?}"
+        );
+        assert!(
+            started.elapsed() <= SPEAK_WAIT_POLL_INTERVAL,
+            "a cancelled wait ran for {:?}",
+            started.elapsed()
+        );
+    }
+}

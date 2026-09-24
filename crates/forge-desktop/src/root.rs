@@ -385,6 +385,12 @@ fn start_bridge(
                 }
             });
 
+            cx.update(|cx| {
+                for event in batch {
+                    crate::clip_playback::report_clip_playback(event, cx);
+                }
+            });
+
             BridgeFlow::Continue
         })
         .await;

@@ -234,6 +234,7 @@ pub async fn build_runtime(
         backend.soundboard_clips_repo(),
         backend.media_repo(),
     ));
+    soundboard_library.install_event_publisher(Arc::clone(&bus) as Arc<dyn EventPublisher>);
     let soundboard_player = Arc::new(SoundboardPlayer::with_settings(
         Arc::new(CpalSinkFactory),
         Arc::new(BusAudioEventSink::new(Arc::clone(&bus))),

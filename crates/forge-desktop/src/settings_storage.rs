@@ -1,8 +1,11 @@
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use forge_components::{
-    Density, FONT_LG, FONT_SM, ForgePalette, Icon, InputEvent, Spacing, TextInput, body_family,
-    card, field_hint, field_title, icon, mono_family, primary_button, spacing, tr,
+    Density, FONT_LG, FONT_SM, ForgePalette, Icon, InputEvent, Spacing, TextInput, ToastAction,
+    ToastKind, body_family, card, field_hint, field_title, icon, mono_family, primary_button,
+    spacing, tr,
 };
 use forge_storage::{
     DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DataProvider, SettingsRepo, chat_history_display_limit,
@@ -15,12 +18,15 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::data_backup;
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 
 const DEFAULT_STORE_LIMIT: u32 = 5000;
 const DEFAULT_RETENTION_DAYS: u32 = 7;
 const MIN_RETENTION_DAYS: u32 = 1;
 const MAX_RETENTION_DAYS: u32 = 365;
+const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 
 pub struct SettingsStorageView {
     backend: Arc<dyn DataProvider>,
@@ -29,6 +35,7 @@ pub struct SettingsStorageView {
     store_limit: u32,
     display_limit: u32,
     retention_days: u32,
+    backing_up: bool,
 
     store_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
@@ -83,6 +90,7 @@ impl SettingsStorageView {
             store_limit: DEFAULT_STORE_LIMIT,
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
             retention_days: DEFAULT_RETENTION_DAYS,
+            backing_up: false,
             store_input,
             display_input,
             retention_input,
@@ -188,17 +196,49 @@ impl SettingsStorageView {
         cx.notify();
     }
 
-    fn backup_db(&self) {
-        let backend = Arc::clone(&self.backend);
-        self.rt_handle.spawn(async move {
-            let stamp = time::OffsetDateTime::now_utc().unix_timestamp();
-            let path =
-                forge_platform_core::paths::data_dir().join(format!("forge-backup-{stamp}.db"));
-            match backend.export(&path).await {
-                Ok(()) => tracing::info!(path = %path.display(), "DB backup created"),
-                Err(e) => tracing::warn!(error = %e, "DB backup failed"),
+    fn backup_now(&mut self, cx: &mut Context<Self>) {
+        if self.backing_up {
+            return;
+        }
+        self.backing_up = true;
+        cx.notify();
+        async_bridge::run_async(
+            &self.rt_handle,
+            data_backup::run_backup(
+                Arc::clone(&self.backend),
+                forge_platform_core::paths::data_dir(),
+            ),
+            |this, result, cx| this.apply_backup_result(result, cx),
+            cx,
+        );
+    }
+
+    fn apply_backup_result(&mut self, result: Result<PathBuf, String>, cx: &mut Context<Self>) {
+        self.backing_up = false;
+        match result {
+            Ok(path) => {
+                tracing::info!(path = %path.display(), "data backup created");
+                let shown = path.display().to_string();
+                cx.push_toast_full(
+                    ToastKind::Success,
+                    tr!("settings_storage_backup_done", path = shown.as_str()),
+                    None,
+                    Some(ToastAction::new(
+                        tr!("settings_storage_backup_reveal"),
+                        move |_window, app| app.reveal_path(&path),
+                    )),
+                    BACKUP_TOAST_DURATION,
+                );
             }
-        });
+            Err(message) => {
+                tracing::warn!(error = %message, "data backup failed");
+                cx.push_toast(
+                    ToastKind::Error,
+                    tr!("settings_storage_backup_failed", error = message.as_str()),
+                );
+            }
+        }
+        cx.notify();
     }
 
     fn limit_field(
@@ -225,10 +265,17 @@ impl Render for SettingsStorageView {
         let density = cx.density();
 
         let db_path = forge_platform_core::paths::data_dir().join("forge.db");
-        let backup_btn = primary_button(tr!("settings_storage_backup_btn"), &palette).on_click(
-            "settings-db-backup",
-            cx.listener(|this, _: &ClickEvent, _, _| this.backup_db()),
-        );
+        let backup_label = if self.backing_up {
+            tr!("settings_storage_backup_btn_busy")
+        } else {
+            tr!("settings_storage_backup_btn")
+        };
+        let backup_btn = primary_button(backup_label, &palette)
+            .busy(self.backing_up)
+            .on_click(
+                "settings-db-backup",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.backup_now(cx)),
+            );
 
         let body = div()
             .flex()

@@ -212,7 +212,16 @@ update_toast_open_action = Open release
 settings_storage_section_title = Storage & backups
 settings_storage_db_path_label = Database
 settings_storage_backup_btn = Backup now
-settings_storage_backup_hint = Creates a timestamped DB copy in the data directory.
+settings_storage_backup_hint = Saves the whole data folder - database, credentials key, media, overlays, voices and assets - as one archive in the backups folder. The archive holds the key that decrypts your saved logins: keep it private.
+settings_storage_backup_btn_busy = Backing up...
+settings_storage_backup_done = Backup saved to { $path }
+settings_storage_backup_failed = Backup failed: { $error }
+settings_storage_backup_reveal = Reveal
+credentials_key_loss_toast =
+    { $count ->
+        [one] The credentials key was missing - { $count } saved login can't be read. Sign in again on the Platforms screens.
+       *[other] The credentials key was missing - { $count } saved logins can't be read. Sign in again on the Platforms screens.
+    }
 settings_storage_keep_limit_label = Chat history keep limit
 settings_storage_keep_limit_hint = How many chat messages to retain in the database.
 settings_storage_display_limit_label = Chat history shown on open

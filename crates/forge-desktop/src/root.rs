@@ -2,11 +2,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_components::{
-    Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, body_family, card, icon,
-    mono_family, primary_button, radius, spacing, tr,
+    Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card,
+    icon, mono_family, primary_button, radius, spacing, tr,
 };
 use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
 use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle};
+use forge_storage::CredentialsKeyLoss;
 use forge_types::{ChatModerationAction, ChatModerationPayload};
 use futures_util::StreamExt as _;
 use gpui::{
@@ -28,6 +29,7 @@ use crate::runtime_status::RuntimeStatus;
 use crate::screen::Screen;
 use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
+use crate::toasts::PushToast;
 use crate::topics::Topics;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
@@ -154,6 +156,7 @@ pub fn run_boot(
                 let rt_handle_for_updates = handles.rt_handle.clone();
                 let obs_for_updates = handles.obs_install_seed.clone();
                 let bus_for_updates = Arc::clone(&handles.bus);
+                let credentials_key_loss = handles.credentials_key_loss;
                 let applied = window.update(cx, |root, window, cx| {
                     // Render-thread install: the fluent bundle is thread-local and must be set before the shell's first render resolves any translated string.
                     crate::i18n::install_language(handles.startup_language);
@@ -198,6 +201,9 @@ pub fn run_boot(
                     cx.notify();
                 });
                 if applied.is_ok() {
+                    if let Some(loss) = credentials_key_loss {
+                        cx.update(|cx| raise_credentials_key_loss_toast(loss, cx));
+                    }
                     seed_chat_history(
                         cx,
                         chat_feed_for_history,
@@ -238,6 +244,17 @@ pub fn run_boot(
         }
     })
     .detach();
+}
+
+fn raise_credentials_key_loss_toast(loss: CredentialsKeyLoss, cx: &mut App) {
+    let count = i64::try_from(loss.stranded).unwrap_or(i64::MAX);
+    cx.push_toast_full(
+        ToastKind::Error,
+        tr!("credentials_key_loss_toast", count = count),
+        None,
+        None,
+        Duration::ZERO,
+    );
 }
 
 async fn seed_chat_history(

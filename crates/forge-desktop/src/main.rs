@@ -15,6 +15,7 @@ mod cloud_credentials;
 mod cloud_tts_boot;
 mod config_form;
 mod connect_flow;
+mod data_backup;
 mod diagnostic_bundle;
 mod discord_screen;
 mod discord_webhook_modal;

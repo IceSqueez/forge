@@ -152,6 +152,14 @@ pub async fn build_runtime(
     };
 
     let settings_repo: Arc<dyn SettingsRepo> = Arc::clone(&backend) as Arc<dyn SettingsRepo>;
+    let credentials_key_loss =
+        match forge_storage::take_credentials_key_loss(settings_repo.as_ref()).await {
+            Ok(loss) => loss,
+            Err(e) => {
+                tracing::warn!(error = %e, "could not read the credentials key loss record");
+                None
+            }
+        };
     apply_persisted_log_level(settings_repo.as_ref()).await;
 
     let (startup_language, persist) =
@@ -381,6 +389,7 @@ pub async fn build_runtime(
         log_tail,
         backend,
         startup_language,
+        credentials_key_loss,
         bus,
         script_registry,
         sub_action_registry,

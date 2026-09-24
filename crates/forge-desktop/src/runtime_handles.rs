@@ -6,7 +6,7 @@ use forge_runtime::{
     ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, OverlayServiceHandle,
     QueueSchedulerHandle, ScriptRegistry, TriggerEvaluatorHandle,
 };
-use forge_storage::{DataProvider, Language};
+use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
 use crate::integrations::{
     BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed, VTubeInstallSeed,
@@ -22,6 +22,8 @@ pub struct RuntimeHandles {
     pub backend: Arc<dyn DataProvider>,
     /// Resolved + persisted on the tokio side; `install_language` must run on the render thread.
     pub startup_language: Language,
+    /// Taken (read and cleared) at boot, so it is reported on this launch only.
+    pub credentials_key_loss: Option<CredentialsKeyLoss>,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,
     pub sub_action_registry: Arc<SubActionRegistry>,

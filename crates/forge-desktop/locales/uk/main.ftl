@@ -212,7 +212,18 @@ update_toast_open_action = Відкрити реліз
 settings_storage_section_title = Сховище та резервні копії
 settings_storage_db_path_label = База даних
 settings_storage_backup_btn = Резервна копія зараз
-settings_storage_backup_hint = Створює копію бази з міткою часу в теці даних.
+settings_storage_backup_hint = Зберігає всю теку даних - базу, ключ облікових даних, медіа, оверлеї, голоси й ресурси - одним архівом у теці резервних копій. Архів містить ключ, що розшифровує збережені входи: тримайте його в таємниці.
+settings_storage_backup_btn_busy = Створюю копію...
+settings_storage_backup_done = Копію збережено: { $path }
+settings_storage_backup_failed = Не вдалося створити копію: { $error }
+settings_storage_backup_reveal = Показати
+credentials_key_loss_toast =
+    { $count ->
+        [one] Ключ облікових даних зник - { $count } збережений вхід неможливо прочитати. Увійдіть знову на екранах платформ.
+        [few] Ключ облікових даних зник - { $count } збережені входи неможливо прочитати. Увійдіть знову на екранах платформ.
+        [many] Ключ облікових даних зник - { $count } збережених входів неможливо прочитати. Увійдіть знову на екранах платформ.
+       *[other] Ключ облікових даних зник - { $count } збережених входів неможливо прочитати. Увійдіть знову на екранах платформ.
+    }
 settings_storage_keep_limit_label = Ліміт зберігання історії чату
 settings_storage_keep_limit_hint = Скільки повідомлень чату зберігати в базі даних.
 settings_storage_display_limit_label = Показувати при відкритті чату

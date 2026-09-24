@@ -318,6 +318,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn add_out_of_range_amount_fails_without_panic() {
+        let base = Variant::Datetime(utc(2024, Month::January, 1, 0, 0, 0));
+        for (amount, unit) in [
+            (i64::MAX, "seconds"),
+            (i64::MIN, "seconds"),
+            (i64::MAX / 60 + 1, "minutes"),
+            (i64::MAX, "hours"),
+            (5_000_000, "days"),
+            (-5_000_000, "days"),
+            (i64::MAX, "months"),
+            (200_000, "months"),
+            (i64::MAX / 12 + 1, "years"),
+            // Why: times 12 this wraps to exactly +8 months, so only a checked multiply rejects it.
+            (1_537_228_672_809_129_302, "years"),
+            (10_000, "years"),
+        ] {
+            let (outcome, out) = run(&cfg(base.clone(), amount, unit)).await;
+            assert!(
+                matches!(&outcome, SubActionOutcome::Failed(reason) if reason.contains("range")),
+                "{amount} {unit} must fail with a range reason, got {outcome:?}"
+            );
+            assert!(
+                out.is_none(),
+                "{amount} {unit} must not produce a scope stack"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn add_reaching_the_last_representable_year_still_succeeds() {
+        let base = Variant::Datetime(utc(2024, Month::January, 1, 0, 0, 0));
+        let (outcome, out) = run(&cfg(base, 9999 - 2024, "years")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+        assert_eq!(
+            out.unwrap().get("time.result"),
+            Some(&Variant::Datetime(utc(9999, Month::January, 1, 0, 0, 0)))
+        );
+    }
+
+    #[tokio::test]
     async fn add_unparseable_base_yields_failed() {
         let (outcome, out) = run(&cfg(
             Variant::String("not a datetime".to_owned()),

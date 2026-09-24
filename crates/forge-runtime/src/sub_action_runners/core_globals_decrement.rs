@@ -260,6 +260,17 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn decrement_by_i64_min_fails_and_leaves_the_global_untouched() {
+        let globals = Arc::new(MapGlobals::with([("counter", Variant::Int(5))]));
+        let outcome = run(globals.clone(), &cfg("counter", i64::MIN)).await;
+        assert!(
+            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.contains("negated")),
+            "got {outcome:?}"
+        );
+        assert_eq!(globals.snapshot("counter"), Some(Variant::Int(5)));
+    }
+
     async fn capture(globals: Arc<MapGlobals>, config: &SubActionConfig) -> Vec<Event> {
         let events: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
         let publisher = CapturingPublisher(Arc::clone(&events));

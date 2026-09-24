@@ -191,19 +191,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn float_non_finite_bound_fails_naming_the_bound() {
+        for (key, cfg) in [
+            ("min", cfg(f64::NAN, 1.0, "r")),
+            ("max", cfg(0.0, f64::INFINITY, "r")),
+            (
+                "min",
+                cfg_v(Variant::String("NaN".to_owned()), Variant::Float(1.0), "r"),
+            ),
+            (
+                "max",
+                cfg_v(Variant::Float(0.0), Variant::String("inf".to_owned()), "r"),
+            ),
+            (
+                "min",
+                cfg_v(
+                    Variant::String("-infinity".to_owned()),
+                    Variant::Float(0.0),
+                    "r",
+                ),
+            ),
+        ] {
+            let (outcome, produced) = run(&cfg).await;
+            assert!(produced.is_none(), "{key}: must not produce a scope stack");
+            assert!(
+                matches!(&outcome, SubActionOutcome::Failed(m) if m.starts_with(key) && m.contains("finite")),
+                "{key}: got {outcome:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn float_span_of_exactly_f64_max_still_samples_within_bounds() {
+        let half = f64::MAX / 2.0;
+        let (outcome, produced) = run(&cfg(-half, half, "r")).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        match produced.unwrap().get("r") {
+            Some(Variant::Float(f)) => assert!((-half..=half).contains(f), "out of bounds: {f}"),
+            other => panic!("expected Float in scope, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn float_min_equals_max_yields_that_exact_value() {
         let (_outcome, produced) = run(&cfg(3.5, 3.5, "r")).await;
         assert_eq!(produced.unwrap().get("r"), Some(&Variant::Float(3.5)));
     }
 
     #[tokio::test]
-    async fn float_failure_paths_produce_no_scope_stack() {
+    async fn float_failure_paths_fail_without_panic_or_scope_stack() {
         let cases = [
             ("min greater than max", cfg(5.0, 1.0, "r")),
             (
                 "unparseable min",
                 cfg_v(Variant::String("abc".to_owned()), Variant::Float(1.0), "r"),
             ),
+            ("span overflowing f64", cfg(-1e308, 1e308, "r")),
         ];
         for (label, cfg) in cases {
             let (outcome, produced) = run(&cfg).await;

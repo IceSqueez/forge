@@ -543,6 +543,42 @@ mod tests {
         assert!(settled(&destination, &delivered.clip_id).await.is_err());
     }
 
+    /// Why: the speak queue drops a skipped clip's completion (parked in `verdict`) before its
+    /// Stop is pushed; the Stop must still find the clip.
+    #[tokio::test]
+    async fn a_stop_after_the_verdict_wait_was_dropped_still_reaches_the_page_and_revokes() {
+        let (destination, pages) = listening().await;
+        let delivered = destination
+            .deliver(&destination_id(), clip())
+            .await
+            .expect("the clip is announced");
+        let capability = destination
+            .capability_of(delivered.clip_id.expose())
+            .expect("the announced clip is pending");
+        let abandoned =
+            tokio::time::timeout(Duration::ZERO, destination.verdict(&delivered.clip_id)).await;
+        assert!(
+            abandoned.is_err(),
+            "the clip settled before anyone reported"
+        );
+        pages.forget_what_was_pushed();
+
+        destination
+            .control(&destination_id(), &delivered.clip_id, RemoteCommand::Stop)
+            .await
+            .expect("the stop is pushed");
+
+        let content = pages.pushed().pop().expect("the stop reached the page");
+        assert_eq!(
+            field(&content, config::COMMAND),
+            AudioCommand::Stop.as_str()
+        );
+        assert!(
+            !destination.server.hold_audio_clip(&capability).await,
+            "the stop must withdraw the clip from the server"
+        );
+    }
+
     #[tokio::test]
     async fn a_verdict_for_a_clip_that_is_not_waiting_is_an_error_rather_than_a_hang() {
         let (destination, _pages) = listening().await;

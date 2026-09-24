@@ -101,7 +101,7 @@ impl ControlledPlayback {
         }
     }
 
-    pub(crate) fn handle(&self) -> PlaybackHandle {
+    pub fn handle(&self) -> PlaybackHandle {
         self.playback.clone()
     }
 

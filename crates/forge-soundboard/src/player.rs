@@ -1,15 +1,18 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_audio::{
-    AudioError, AudioEvent, AudioEventSink, AudioRoute, AudioSink, PcmBuffer, PlaybackHandle,
+    AudioError, AudioEvent, AudioEventSink, AudioRoute, AudioSink, ControlledPlayback, PcmBuffer,
+    PlaybackHandle,
 };
 use forge_runtime::{SoundPlayer, SoundPlayerError};
+use forge_storage::SettingsRepo;
 use forge_types::{ClipId, OutputDevice, Shared};
+use tokio::sync::oneshot;
 
 use crate::error::SoundboardError;
 use crate::library::{ClipLibrary, ClipSource};
@@ -26,32 +29,129 @@ const LOOP_POLL_MS: u64 = 50;
 
 const LOOP_MIN_CYCLE_MS: u64 = 50;
 
-#[derive(Clone)]
-enum StopToken {
-    Handle(PlaybackHandle),
-    Loop {
-        should_stop: Arc<AtomicBool>,
-        current: Arc<Mutex<PlaybackHandle>>,
-    },
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-impl StopToken {
+#[derive(Default)]
+struct PlayLegs {
+    stopped: bool,
+    handles: Vec<PlaybackHandle>,
+}
+
+#[derive(Default)]
+struct PlayControl {
+    legs: Mutex<PlayLegs>,
+}
+
+impl PlayControl {
     fn stop(&self) {
-        match self {
-            StopToken::Handle(handle) => handle.stop(),
-            StopToken::Loop {
-                should_stop,
-                current,
-            } => {
-                should_stop.store(true, Ordering::Relaxed);
-                let handle = current.lock().unwrap_or_else(PoisonError::into_inner);
-                handle.stop();
+        let handles = {
+            let mut legs = lock(&self.legs);
+            legs.stopped = true;
+            std::mem::take(&mut legs.handles)
+        };
+        for handle in &handles {
+            handle.stop();
+        }
+    }
+
+    fn is_stopped(&self) -> bool {
+        lock(&self.legs).stopped
+    }
+
+    /// Returns `false` after stopping `handles` when a stop already landed on this play.
+    fn install(&self, handles: Vec<PlaybackHandle>) -> bool {
+        let refused = {
+            let mut legs = lock(&self.legs);
+            if legs.stopped {
+                Some(handles)
+            } else {
+                legs.handles = handles;
+                None
             }
+        };
+        match refused {
+            Some(handles) => {
+                for handle in &handles {
+                    handle.stop();
+                }
+                false
+            }
+            None => true,
         }
     }
 }
 
-type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<(u64, StopToken, String)>>>>;
+struct ActivePlay {
+    play_id: u64,
+    control: Arc<PlayControl>,
+    label: String,
+}
+
+type ActiveRegistry = Arc<Mutex<HashMap<ClipId, Vec<ActivePlay>>>>;
+
+fn retire(active: &ActiveRegistry, clip_id: ClipId, play_id: u64) -> bool {
+    let mut guard = lock(active);
+    let Some(plays) = guard.get_mut(&clip_id) else {
+        return false;
+    };
+    let before = plays.len();
+    plays.retain(|play| play.play_id != play_id);
+    let removed = plays.len() < before;
+    if plays.is_empty() {
+        guard.remove(&clip_id);
+    }
+    removed
+}
+
+struct Reservation {
+    clip_id: ClipId,
+    play_id: u64,
+    label: String,
+    control: Arc<PlayControl>,
+}
+
+struct PreparedClip {
+    sinks: Vec<Arc<dyn AudioSink>>,
+    buffer: PcmBuffer,
+    duration_ms: u64,
+    device_label: String,
+}
+
+struct StartedLegs {
+    handles: Vec<PlaybackHandle>,
+    main: ControlledPlayback,
+}
+
+#[derive(Clone)]
+struct PlayReporter {
+    active: ActiveRegistry,
+    event_sink: Arc<dyn AudioEventSink>,
+}
+
+impl PlayReporter {
+    fn fail(&self, play: &Reservation, error: String) {
+        if !retire(&self.active, play.clip_id, play.play_id) {
+            return;
+        }
+        play.control.stop();
+        self.event_sink.emit(AudioEvent::PlaybackFailed {
+            clip_id: Some(play.clip_id),
+            clip_label: Some(play.label.clone()),
+            error,
+        });
+    }
+
+    fn finish(&self, play: &Reservation) {
+        if retire(&self.active, play.clip_id, play.play_id) {
+            self.event_sink.emit(AudioEvent::PlaybackFinished {
+                clip_id: Some(play.clip_id),
+                clip_label: Some(play.label.clone()),
+            });
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct ClipRoute {
@@ -73,11 +173,10 @@ pub struct SoundboardPlayer {
     sink_factory: Arc<dyn AudioSinkFactory>,
     event_sink: Arc<dyn AudioEventSink>,
     library: Arc<ClipLibrary>,
-    /// The `u64` tags one concrete play so concurrent plays of the same clip differ.
     active: ActiveRegistry,
     next_play_id: AtomicU64,
-    master_gain_bits: AtomicU32,
     settings: SoundboardSettingsHandle,
+    settings_store: Shared<Option<Arc<dyn SettingsRepo>>>,
     clip_route: Shared<ClipRoute>,
 }
 
@@ -88,15 +187,14 @@ impl SoundboardPlayer {
         library: Arc<ClipLibrary>,
         settings: SoundboardSettingsHandle,
     ) -> Self {
-        let master_volume = settings.load().master_volume.clamp(0.0, MAX_MASTER_GAIN);
         Self {
             sink_factory,
             event_sink,
             library,
             active: Arc::new(Mutex::new(HashMap::new())),
             next_play_id: AtomicU64::new(0),
-            master_gain_bits: AtomicU32::new(master_volume.to_bits()),
             settings,
+            settings_store: Shared::new(None),
             clip_route: Shared::new(ClipRoute::default()),
         }
     }
@@ -104,6 +202,11 @@ impl SoundboardPlayer {
     /// Installed once at boot; a later install reaches the next clip and leaves a playing one untouched.
     pub fn install_route(&self, route: ClipRoute) {
         self.clip_route.store(route);
+    }
+
+    /// Without a store, a volume set by a sub-action lasts only until restart.
+    pub fn install_settings_store(&self, store: Arc<dyn SettingsRepo>) {
+        self.settings_store.store(Some(store));
     }
 
     pub fn library(&self) -> &Arc<ClipLibrary> {
@@ -114,28 +217,29 @@ impl SoundboardPlayer {
         self.settings.clone()
     }
 
-    pub fn update_settings(&self, settings: SoundboardSettings) {
-        self.set_master_volume(settings.master_volume);
-        self.settings.swap(settings);
+    pub fn update_settings(
+        &self,
+        change: impl FnOnce(&mut SoundboardSettings),
+    ) -> Arc<SoundboardSettings> {
+        self.settings.update(|settings| {
+            change(settings);
+            settings.master_volume = settings.master_volume.clamp(0.0, MAX_MASTER_GAIN);
+        })
     }
 
-    pub fn set_master_volume(&self, gain: f32) {
-        let clamped = gain.clamp(0.0, MAX_MASTER_GAIN);
-        self.master_gain_bits
-            .store(clamped.to_bits(), Ordering::Relaxed);
+    pub fn set_master_volume(&self, gain: f32) -> f32 {
+        self.update_settings(|settings| settings.master_volume = gain)
+            .master_volume
     }
 
     pub fn stop(&self, clip_id: ClipId) {
-        let tokens = {
-            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-            guard.remove(&clip_id).unwrap_or_default()
-        };
-        if tokens.is_empty() {
+        let plays = lock(&self.active).remove(&clip_id).unwrap_or_default();
+        if plays.is_empty() {
             return;
         }
-        let clip_label = tokens.first().map(|(_, _, label)| label.clone());
-        for (_id, token, _label) in &tokens {
-            token.stop();
+        let clip_label = plays.first().map(|play| play.label.clone());
+        for play in &plays {
+            play.control.stop();
         }
         self.event_sink.emit(AudioEvent::PlaybackFinished {
             clip_id: Some(clip_id),
@@ -144,14 +248,11 @@ impl SoundboardPlayer {
     }
 
     pub fn stop_all(&self) {
-        let drained = {
-            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-            std::mem::take(&mut *guard)
-        };
-        for (clip_id, tokens) in &drained {
-            let clip_label = tokens.first().map(|(_, _, label)| label.clone());
-            for (_id, token, _label) in tokens {
-                token.stop();
+        let drained = std::mem::take(&mut *lock(&self.active));
+        for (clip_id, plays) in &drained {
+            let clip_label = plays.first().map(|play| play.label.clone());
+            for play in plays {
+                play.control.stop();
             }
             self.event_sink.emit(AudioEvent::PlaybackFinished {
                 clip_id: Some(*clip_id),
@@ -211,91 +312,121 @@ impl SoundboardPlayer {
             .await?
             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
 
-        let path = match self.library.source_of(&clip).await {
+        let play = self.reserve(clip_id, clip.name.clone());
+        let reporter = self.reporter();
+
+        let prepared = match self.prepare(&clip, override_device, &settings).await {
+            Ok(prepared) => prepared,
+            Err(e) => return reported_failure(&reporter, &play, e),
+        };
+        if play.control.is_stopped() {
+            return Ok(());
+        }
+
+        let legs = match play_target(&prepared.sinks, prepared.buffer.clone()).await {
+            Ok(legs) => legs,
+            Err(e) => return reported_failure(&reporter, &play, SoundboardError::Audio(e)),
+        };
+        if !play.control.install(legs.handles) {
+            return Ok(());
+        }
+
+        self.event_sink.emit(AudioEvent::PlaybackStarted {
+            clip_id: Some(clip_id),
+            clip_label: Some(clip.name.clone()),
+            device: prepared.device_label,
+            duration_secs: Some(prepared.duration_ms as f64 / 1000.0),
+            looped: clip.loop_playback,
+        });
+        if play.control.is_stopped() {
+            self.event_sink.emit(AudioEvent::PlaybackFinished {
+                clip_id: Some(clip_id),
+                clip_label: Some(clip.name.clone()),
+            });
+            return Ok(());
+        }
+
+        if clip.loop_playback {
+            tokio::spawn(run_loop(LoopPlay {
+                play,
+                reporter,
+                sinks: prepared.sinks,
+                buffer: prepared.buffer,
+                cycle_ms: prepared.duration_ms.max(LOOP_MIN_CYCLE_MS),
+                main: legs.main,
+            }));
+        } else {
+            tokio::spawn(watch_single(
+                play,
+                reporter,
+                legs.main,
+                prepared.duration_ms,
+            ));
+        }
+        Ok(())
+    }
+
+    fn reporter(&self) -> PlayReporter {
+        PlayReporter {
+            active: Arc::clone(&self.active),
+            event_sink: Arc::clone(&self.event_sink),
+        }
+    }
+
+    fn reserve(&self, clip_id: ClipId, label: String) -> Reservation {
+        let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
+        let control = Arc::new(PlayControl::default());
+        lock(&self.active)
+            .entry(clip_id)
+            .or_default()
+            .push(ActivePlay {
+                play_id,
+                control: Arc::clone(&control),
+                label: label.clone(),
+            });
+        Reservation {
+            clip_id,
+            play_id,
+            label,
+            control,
+        }
+    }
+
+    async fn prepare(
+        &self,
+        clip: &forge_storage::StoredClip,
+        override_device: Option<OutputDevice>,
+        settings: &SoundboardSettings,
+    ) -> Result<PreparedClip, SoundboardError> {
+        let path = match self.library.source_of(clip).await {
             ClipSource::Managed(path) => path,
             ClipSource::Legacy(path) => {
                 self.library.adopt_in_background(clip.id, path.clone());
                 path
             }
-            ClipSource::Missing => {
-                let failure = SoundboardError::SourceMissing(clip.name.clone());
-                self.event_sink.emit(AudioEvent::PlaybackFailed {
-                    clip_id: Some(clip_id),
-                    clip_label: Some(clip.name.clone()),
-                    error: failure.to_string(),
-                });
-                return Err(failure);
-            }
+            ClipSource::Missing => return Err(SoundboardError::SourceMissing(clip.name.clone())),
         };
 
-        let device = resolve_device(&clip.output_device, override_device, &settings);
+        let device = resolve_device(&clip.output_device, override_device, settings);
         let device_label = device_label(&device);
+        let sinks = self.build_sinks(&device, settings.also_headphones).await?;
 
-        let sinks = match self.build_sinks(&device, settings.also_headphones).await {
-            Ok(s) => s,
-            Err(e) => {
-                self.event_sink.emit(AudioEvent::PlaybackFailed {
-                    clip_id: Some(clip_id),
-                    clip_label: Some(clip.name.clone()),
-                    error: e.to_string(),
-                });
-                return Err(SoundboardError::Audio(e));
-            }
-        };
-
-        let buffer = match tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
+        let mut buffer = tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
             .await
-            .map_err(|e| SoundboardError::JoinError(e.to_string()))
-            .and_then(|r| r.map_err(SoundboardError::Audio))
-        {
-            Ok(b) => b,
-            Err(e) => {
-                self.event_sink.emit(AudioEvent::PlaybackFailed {
-                    clip_id: Some(clip_id),
-                    clip_label: Some(clip.name.clone()),
-                    error: e.to_string(),
-                });
-                return Err(e);
-            }
-        };
-
-        let gain = clip.volume * f32::from_bits(self.master_gain_bits.load(Ordering::Relaxed));
-        let mut buffer = buffer;
-        buffer.apply_gain(gain);
+            .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
+        buffer.apply_gain(clip.volume * settings.master_volume.clamp(0.0, MAX_MASTER_GAIN));
 
         let sample_rate = buffer.sample_rate.max(1) as u64;
         let channels = buffer.channels.max(1) as u64;
         let frames = (buffer.samples.len() as u64) / channels;
         let duration_ms = frames.saturating_mul(1000) / sample_rate;
 
-        self.event_sink.emit(AudioEvent::PlaybackStarted {
-            clip_id: Some(clip_id),
-            clip_label: Some(clip.name.clone()),
-            device: device_label,
-            duration_secs: Some(duration_ms as f64 / 1000.0),
-            looped: clip.loop_playback,
-        });
-
-        if clip.loop_playback {
-            self.play_looping(clip_id, sinks, buffer, duration_ms, clip.name.clone());
-            return Ok(());
-        }
-
-        match play_target(&sinks, buffer).await {
-            Ok(handle) => {
-                self.register(clip_id, handle, duration_ms, clip.name.clone());
-                Ok(())
-            }
-            Err(e) => {
-                let error = e.to_string();
-                self.event_sink.emit(AudioEvent::PlaybackFailed {
-                    clip_id: Some(clip_id),
-                    clip_label: Some(clip.name.clone()),
-                    error,
-                });
-                Err(SoundboardError::Audio(e))
-            }
-        }
+        Ok(PreparedClip {
+            sinks,
+            buffer,
+            duration_ms,
+            device_label,
+        })
     }
 
     async fn build_sinks(
@@ -330,133 +461,160 @@ impl SoundboardPlayer {
 
         Ok(sinks)
     }
+}
 
-    fn register(&self, clip_id: ClipId, handle: PlaybackHandle, duration_ms: u64, label: String) {
-        let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
-        {
-            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-            guard.entry(clip_id).or_default().push((
-                play_id,
-                StopToken::Handle(handle),
-                label.clone(),
-            ));
-        }
-
-        let active = Arc::clone(&self.active);
-        let event_sink = Arc::clone(&self.event_sink);
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(duration_ms + PLAYBACK_TAIL_MS)).await;
-            let completed_naturally = {
-                let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
-                match guard.get_mut(&clip_id) {
-                    Some(plays) => {
-                        let before = plays.len();
-                        plays.retain(|(id, _, _)| *id != play_id);
-                        let removed = plays.len() < before;
-                        if plays.is_empty() {
-                            guard.remove(&clip_id);
-                        }
-                        removed
-                    }
-                    None => false,
-                }
-            };
-            if completed_naturally {
-                event_sink.emit(AudioEvent::PlaybackFinished {
-                    clip_id: Some(clip_id),
-                    clip_label: Some(label),
-                });
-            }
-        });
+fn reported_failure(
+    reporter: &PlayReporter,
+    play: &Reservation,
+    error: SoundboardError,
+) -> Result<(), SoundboardError> {
+    if play.control.is_stopped() {
+        return Ok(());
     }
+    let reason = match &error {
+        SoundboardError::Audio(audio) => audio.to_string(),
+        other => other.to_string(),
+    };
+    reporter.fail(play, reason);
+    Err(error)
+}
 
-    fn play_looping(
-        &self,
-        clip_id: ClipId,
-        sinks: Vec<Arc<dyn AudioSink>>,
-        buffer: PcmBuffer,
-        duration_ms: u64,
-        label: String,
-    ) {
-        let should_stop = Arc::new(AtomicBool::new(false));
-        let current = Arc::new(Mutex::new(PlaybackHandle::default()));
-        let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
-
-        {
-            let mut guard = self.active.lock().unwrap_or_else(PoisonError::into_inner);
-            guard.entry(clip_id).or_default().push((
-                play_id,
-                StopToken::Loop {
-                    should_stop: Arc::clone(&should_stop),
-                    current: Arc::clone(&current),
-                },
-                label.clone(),
-            ));
+/// The leg is awaited on its own task: dropping an unsettled completion stops the clip.
+fn watch_main_leg(main: ControlledPlayback) -> oneshot::Receiver<AudioError> {
+    let (failure_tx, failure_rx) = oneshot::channel();
+    tokio::spawn(async move {
+        if let Err(e) = main.await {
+            let _ = failure_tx.send(e);
         }
+    });
+    failure_rx
+}
 
-        let active = Arc::clone(&self.active);
-        let event_sink = Arc::clone(&self.event_sink);
-        let cycle_ms = duration_ms.max(LOOP_MIN_CYCLE_MS);
+async fn main_leg_failure(failure: oneshot::Receiver<AudioError>) -> AudioError {
+    match failure.await {
+        Ok(error) => error,
+        Err(_) => std::future::pending().await,
+    }
+}
 
-        tokio::spawn(async move {
-            loop {
-                if should_stop.load(Ordering::Relaxed) {
+async fn watch_single(
+    play: Reservation,
+    reporter: PlayReporter,
+    main: ControlledPlayback,
+    duration_ms: u64,
+) {
+    tokio::select! {
+        error = main_leg_failure(watch_main_leg(main)) => reporter.fail(&play, error.to_string()),
+        () = tokio::time::sleep(Duration::from_millis(duration_ms + PLAYBACK_TAIL_MS)) => {
+            reporter.finish(&play);
+        }
+    }
+}
+
+struct LoopPlay {
+    play: Reservation,
+    reporter: PlayReporter,
+    sinks: Vec<Arc<dyn AudioSink>>,
+    buffer: PcmBuffer,
+    cycle_ms: u64,
+    main: ControlledPlayback,
+}
+
+async fn run_loop(looped: LoopPlay) {
+    let LoopPlay {
+        play,
+        reporter,
+        sinks,
+        buffer,
+        cycle_ms,
+        main,
+    } = looped;
+    let mut failure = watch_main_leg(main);
+    loop {
+        tokio::select! {
+            error = main_leg_failure(failure) => {
+                reporter.fail(&play, error.to_string());
+                return;
+            }
+            () = wait_cycle(&play.control, cycle_ms) => {}
+        }
+        if play.control.is_stopped() {
+            break;
+        }
+        match play_target(&sinks, buffer.clone()).await {
+            Ok(legs) => {
+                if !play.control.install(legs.handles) {
                     break;
                 }
-
-                match play_target(&sinks, buffer.clone()).await {
-                    Ok(handle) => {
-                        let mut guard = current.lock().unwrap_or_else(PoisonError::into_inner);
-                        *guard = handle;
-                    }
-                    Err(e) => {
-                        event_sink.emit(AudioEvent::PlaybackFailed {
-                            clip_id: Some(clip_id),
-                            clip_label: Some(label.clone()),
-                            error: e.to_string(),
-                        });
-                        break;
-                    }
-                }
-
-                let mut waited = 0u64;
-                while waited < cycle_ms {
-                    if should_stop.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    let step = LOOP_POLL_MS.min(cycle_ms - waited);
-                    tokio::time::sleep(Duration::from_millis(step)).await;
-                    waited += step;
-                }
+                failure = watch_main_leg(legs.main);
             }
-
-            let mut guard = active.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(plays) = guard.get_mut(&clip_id) {
-                plays.retain(|(id, _, _)| *id != play_id);
-                if plays.is_empty() {
-                    guard.remove(&clip_id);
-                }
+            Err(e) => {
+                reporter.fail(&play, e.to_string());
+                return;
             }
-        });
+        }
+    }
+    retire(&reporter.active, play.clip_id, play.play_id);
+}
+
+async fn wait_cycle(control: &PlayControl, cycle_ms: u64) {
+    let mut waited = 0u64;
+    while waited < cycle_ms {
+        if control.is_stopped() {
+            return;
+        }
+        let step = LOOP_POLL_MS.min(cycle_ms - waited);
+        tokio::time::sleep(Duration::from_millis(step)).await;
+        waited += step;
     }
 }
 
 async fn play_target(
     sinks: &[Arc<dyn AudioSink>],
     buffer: PcmBuffer,
-) -> Result<PlaybackHandle, AudioError> {
-    let (handle, outcomes) = forge_audio::fan_out_stoppable(buffer, sinks).await;
-    let mut outcomes = outcomes.into_iter();
+) -> Result<StartedLegs, AudioError> {
+    let starts = sinks.iter().map(|sink| {
+        let sink = Arc::clone(sink);
+        let buffer = buffer.clone();
+        async move { sink.play_controlled(buffer).await }
+    });
+    let mut outcomes = futures::future::join_all(starts).await.into_iter();
     let Some(main) = outcomes.next() else {
         return Err(AudioError::NoRoute);
     };
+
+    let mut secondary = Vec::new();
     for (idx, outcome) in outcomes.enumerate() {
-        if let Err(e) = outcome {
-            tracing::warn!(sink_index = idx + 1, error = %e, "secondary output sink failed");
+        match outcome {
+            Ok(leg) => {
+                secondary.push(leg.handle());
+                tokio::spawn(watch_secondary(idx + 1, leg));
+            }
+            Err(e) => {
+                tracing::warn!(sink_index = idx + 1, error = %e, "secondary output sink failed");
+            }
         }
     }
-    main?;
-    Ok(handle)
+
+    match main {
+        Ok(main) => {
+            let mut handles = vec![main.handle()];
+            handles.extend(secondary);
+            Ok(StartedLegs { handles, main })
+        }
+        Err(e) => {
+            for handle in &secondary {
+                handle.stop();
+            }
+            Err(e)
+        }
+    }
+}
+
+async fn watch_secondary(sink_index: usize, leg: ControlledPlayback) {
+    if let Err(e) = leg.await {
+        tracing::warn!(sink_index, error = %e, "secondary output sink stopped during playback");
+    }
 }
 
 fn resolve_device(
@@ -496,8 +654,13 @@ impl SoundPlayer for SoundboardPlayer {
     }
 
     async fn set_master_volume(&self, gain: f32) -> Result<(), SoundPlayerError> {
-        SoundboardPlayer::set_master_volume(self, gain);
-        Ok(())
+        let volume = SoundboardPlayer::set_master_volume(self, gain);
+        let Some(store) = self.settings_store.load().as_ref().clone() else {
+            return Ok(());
+        };
+        forge_storage::set_soundboard_master_volume(store.as_ref(), volume)
+            .await
+            .map_err(|e| SoundPlayerError::Play(e.to_string()))
     }
 }
 

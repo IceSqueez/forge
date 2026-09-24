@@ -449,7 +449,7 @@ pub struct SoundboardView {
     adopt_summary: Option<SharedString>,
     playing: HashMap<ClipId, PlaybackProgress>,
     ticking: bool,
-    settings: SoundboardSettings,
+    settings: Arc<SoundboardSettings>,
     device_menu_open: bool,
     search: SearchState,
     category_filter: Option<String>,
@@ -478,7 +478,7 @@ impl SoundboardView {
         let palette = cx.palette();
         let search = SearchState::new(cx, palette, tr!("soundboard_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
-        let settings = (*player.settings_handle().load()).clone();
+        let settings = player.settings_handle().load();
 
         let event_bridge = cx.spawn(async move |this, cx| {
             drain_events(&bus, cx, move |batch, cx| {
@@ -950,8 +950,9 @@ impl SoundboardView {
     }
 
     fn toggle_enabled(&mut self, cx: &mut Context<Self>) {
-        self.settings.enabled = !self.settings.enabled;
-        self.player.update_settings(self.settings.clone());
+        self.settings = self
+            .player
+            .update_settings(|settings| settings.enabled = !settings.enabled);
         let repo = Arc::clone(&self.settings_repo);
         let value = self.settings.enabled;
         self.rt_handle.spawn(async move {
@@ -963,8 +964,9 @@ impl SoundboardView {
     }
 
     fn toggle_headphones(&mut self, cx: &mut Context<Self>) {
-        self.settings.also_headphones = !self.settings.also_headphones;
-        self.player.update_settings(self.settings.clone());
+        self.settings = self
+            .player
+            .update_settings(|settings| settings.also_headphones = !settings.also_headphones);
         let repo = Arc::clone(&self.settings_repo);
         let value = self.settings.also_headphones;
         self.rt_handle.spawn(async move {
@@ -977,8 +979,9 @@ impl SoundboardView {
 
     fn set_master_volume(&mut self, fraction: f32, cx: &mut Context<Self>) {
         let value = (fraction / 100.0).clamp(0.0, 1.0);
-        self.settings.master_volume = value;
-        self.player.update_settings(self.settings.clone());
+        self.settings = self
+            .player
+            .update_settings(|settings| settings.master_volume = value);
         let repo = Arc::clone(&self.settings_repo);
         self.master_volume_debounce.schedule(
             &self.rt_handle,
@@ -989,9 +992,11 @@ impl SoundboardView {
     }
 
     fn set_output_device(&mut self, device_id: Option<String>, cx: &mut Context<Self>) {
-        self.settings.output_device_id = device_id.clone();
+        let chosen = device_id.clone();
+        self.settings = self
+            .player
+            .update_settings(|settings| settings.output_device_id = chosen);
         self.device_menu_open = false;
-        self.player.update_settings(self.settings.clone());
         let repo = Arc::clone(&self.settings_repo);
         self.rt_handle.spawn(async move {
             if let Err(e) = set_soundboard_output_device(repo.as_ref(), device_id).await {
@@ -2154,6 +2159,7 @@ impl SoundboardView {
 
 impl Render for SoundboardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.settings = self.player.settings_handle().load();
         let palette = cx.palette();
         let density = cx.density();
 

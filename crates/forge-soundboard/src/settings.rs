@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use forge_storage::SettingsRepo;
-use forge_types::{OutputDevice, Shared};
+use forge_types::OutputDevice;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SoundboardSettings {
@@ -32,19 +32,29 @@ impl SoundboardSettings {
 }
 
 #[derive(Clone)]
-pub struct SoundboardSettingsHandle(Shared<SoundboardSettings>);
+pub struct SoundboardSettingsHandle(Arc<RwLock<Arc<SoundboardSettings>>>);
 
 impl SoundboardSettingsHandle {
     pub fn new(initial: SoundboardSettings) -> Self {
-        Self(Shared::new(initial))
+        Self(Arc::new(RwLock::new(Arc::new(initial))))
     }
 
     pub fn load(&self) -> Arc<SoundboardSettings> {
-        self.0.load()
+        Arc::clone(&self.0.read().unwrap_or_else(PoisonError::into_inner))
     }
 
     pub fn swap(&self, settings: SoundboardSettings) {
-        self.0.store(settings);
+        *self.0.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(settings);
+    }
+
+    /// Applies `change` to the current value under one write lock, so concurrent writers never undo each other.
+    pub fn update(&self, change: impl FnOnce(&mut SoundboardSettings)) -> Arc<SoundboardSettings> {
+        let mut guard = self.0.write().unwrap_or_else(PoisonError::into_inner);
+        let mut next = (**guard).clone();
+        change(&mut next);
+        let next = Arc::new(next);
+        *guard = Arc::clone(&next);
+        next
     }
 }
 

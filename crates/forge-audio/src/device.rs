@@ -83,6 +83,12 @@ pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     Ok(fresh)
 }
 
+pub(crate) fn forget_output_devices() {
+    if let Ok(mut guard) = DEVICE_CACHE.lock() {
+        *guard = None;
+    }
+}
+
 /// Bypasses the 5s cache so a device picker refresh sees just-plugged hardware.
 pub fn refresh_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     let fresh = enumerate_uncached()?;

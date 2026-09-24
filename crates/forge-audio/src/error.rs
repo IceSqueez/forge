@@ -8,6 +8,9 @@ pub enum AudioError {
     #[error("cpal host error: {0}")]
     Host(String),
 
+    #[error("output device stopped during playback: {0}")]
+    DeviceLost(String),
+
     #[error("resampling failed: {0}")]
     Resample(String),
 

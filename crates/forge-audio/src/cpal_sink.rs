@@ -1,18 +1,32 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use tokio::sync::oneshot;
 
 use crate::convert;
-use crate::device::DeviceId;
+use crate::device::{DeviceId, forget_output_devices};
 use crate::error::AudioError;
 use crate::events::{AudioEvent, AudioEventSink};
 use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::pcm::PcmBuffer;
 use crate::sink::AudioSink;
+
+type PlaybackTask = tokio::task::JoinHandle<Result<(), AudioError>>;
+
+type StreamFailure = Arc<OnceLock<String>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputCandidate {
+    Requested,
+    HostDefault,
+}
+
+const OUTPUT_CANDIDATES: [OutputCandidate; 2] =
+    [OutputCandidate::Requested, OutputCandidate::HostDefault];
 
 pub struct CpalSink {
     device_id: DeviceId,
@@ -36,28 +50,31 @@ impl CpalSink {
         }
     }
 
-    fn spawn_playback(
+    /// Resolves once a device accepted the stream; `None` means the playback already ran to its end.
+    async fn start_playback(
         &self,
         buffer: PcmBuffer,
         stop: Arc<AtomicBool>,
         paused: Arc<AtomicBool>,
-    ) -> tokio::task::JoinHandle<Result<(), AudioError>> {
-        let device_id_str = self.device_id.0.clone();
-        let event_sink = Arc::clone(&self.event_sink);
-        let target_sr = self.target_sample_rate;
-        let target_ch = self.target_channels;
-
-        tokio::task::spawn_blocking(move || {
-            run_playback(
-                device_id_str,
-                buffer,
-                target_sr,
-                target_ch,
-                event_sink,
-                stop,
-                paused,
-            )
-        })
+    ) -> Result<Option<PlaybackTask>, AudioError> {
+        let (started_tx, started_rx) = oneshot::channel();
+        let request = PlaybackRequest {
+            device_id: self.device_id.0.clone(),
+            buffer,
+            target_sr: self.target_sample_rate,
+            target_ch: self.target_channels,
+            event_sink: Arc::clone(&self.event_sink),
+            stop,
+            paused,
+            started: started_tx,
+        };
+        let task = tokio::task::spawn_blocking(move || run_playback(request));
+        if started_rx.await.is_ok() {
+            return Ok(Some(task));
+        }
+        task.await
+            .map_err(|e| AudioError::JoinFailed(e.to_string()))??;
+        Ok(None)
     }
 }
 
@@ -66,27 +83,42 @@ impl AudioSink for CpalSink {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError> {
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
-        self.spawn_playback(buffer, stop, paused)
-            .await
-            .map_err(|e| AudioError::JoinFailed(e.to_string()))?
+        match self.start_playback(buffer, stop, paused).await? {
+            Some(task) => task
+                .await
+                .map_err(|e| AudioError::JoinFailed(e.to_string()))?,
+            None => Ok(()),
+        }
     }
 
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
-        self.spawn_playback(buffer, Arc::clone(&stop), Arc::clone(&paused));
+        self.start_playback(buffer, Arc::clone(&stop), Arc::clone(&paused))
+            .await?;
         Ok(PlaybackHandle::from_flags(stop, paused))
     }
 
     async fn play_controlled(&self, buffer: PcmBuffer) -> Result<ControlledPlayback, AudioError> {
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
-        let join = self.spawn_playback(buffer, Arc::clone(&stop), Arc::clone(&paused));
-        Ok(ControlledPlayback::from_handle(
-            PlaybackHandle::from_flags(stop, paused),
-            join,
-        ))
+        let handle = PlaybackHandle::from_flags(Arc::clone(&stop), Arc::clone(&paused));
+        match self.start_playback(buffer, stop, paused).await? {
+            Some(task) => Ok(ControlledPlayback::from_handle(handle, task)),
+            None => Ok(ControlledPlayback::resolved(Ok(()))),
+        }
     }
+}
+
+struct PlaybackRequest {
+    device_id: String,
+    buffer: PcmBuffer,
+    target_sr: Option<u32>,
+    target_ch: Option<u16>,
+    event_sink: Arc<dyn AudioEventSink>,
+    stop: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    started: oneshot::Sender<()>,
 }
 
 struct StartedStream {
@@ -95,88 +127,120 @@ struct StartedStream {
     device_name: String,
 }
 
-fn run_playback(
-    device_id_str: String,
-    buffer: PcmBuffer,
-    target_sr: Option<u32>,
-    target_ch: Option<u16>,
-    event_sink: Arc<dyn AudioEventSink>,
-    stop: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
-) -> Result<(), AudioError> {
+fn run_playback(request: PlaybackRequest) -> Result<(), AudioError> {
+    let PlaybackRequest {
+        device_id,
+        buffer,
+        target_sr,
+        target_ch,
+        event_sink,
+        stop,
+        paused,
+        started,
+    } = request;
     let host = cpal::default_host();
-    let candidates = candidate_device_ids(&device_id_str);
+    let failure: StreamFailure = Arc::new(OnceLock::new());
 
-    let mut last_error = AudioError::Host(format!("device '{}' not found", device_id_str));
-    for (idx, candidate) in candidates.iter().enumerate() {
-        match try_start_stream(
-            &host, candidate, &buffer, target_sr, target_ch, &stop, &paused,
-        ) {
-            Ok(started) => {
-                if idx > 0 {
-                    tracing::warn!(
-                        requested = %device_id_str,
-                        using = %candidate,
-                        "output device open failed; fell back through canonical chain"
-                    );
-                }
-                event_sink.emit(AudioEvent::PlaybackStarted {
-                    clip_id: None,
-                    clip_label: None,
-                    device: started.device_name,
-                    duration_secs: Some(started.duration_ms as f64 / 1000.0),
-                    looped: false,
-                });
-                wait_for_completion(started.duration_ms, &stop, &paused);
-                drop(started.stream);
-                event_sink.emit(AudioEvent::PlaybackFinished {
-                    clip_id: None,
-                    clip_label: None,
-                });
-                return Ok(());
+    let mut opened = None;
+    let mut last_error = AudioError::NoDefaultDevice;
+    for candidate in OUTPUT_CANDIDATES {
+        let attempt = locate_device(&host, candidate, &device_id).and_then(|device| {
+            try_start_stream(
+                &device, &buffer, target_sr, target_ch, &stop, &paused, &failure,
+            )
+        });
+        match attempt {
+            Ok(stream) => {
+                opened = Some((candidate, stream));
+                break;
             }
             Err(e) => {
+                if candidate == OutputCandidate::Requested {
+                    forget_output_devices();
+                }
                 last_error = e;
             }
         }
     }
 
-    let reason = last_error.to_string();
-    tracing::warn!(
-        requested = %device_id_str,
-        error = %reason,
-        "no output device accepted the stream; nothing was played"
-    );
-    event_sink.emit(AudioEvent::PlaybackFailed {
+    let Some((candidate, started_stream)) = opened else {
+        let reason = last_error.to_string();
+        tracing::warn!(
+            requested = %device_id,
+            error = %reason,
+            "no output device accepted the stream; nothing was played"
+        );
+        event_sink.emit(AudioEvent::PlaybackFailed {
+            clip_id: None,
+            clip_label: None,
+            error: reason,
+        });
+        return Err(last_error);
+    };
+
+    if candidate == OutputCandidate::HostDefault {
+        tracing::warn!(
+            requested = %device_id,
+            using = %started_stream.device_name,
+            "requested output device did not open; playing on the system default output"
+        );
+    }
+    let _ = started.send(());
+    event_sink.emit(AudioEvent::PlaybackStarted {
         clip_id: None,
         clip_label: None,
-        error: reason,
+        device: started_stream.device_name,
+        duration_secs: Some(started_stream.duration_ms as f64 / 1000.0),
+        looped: false,
     });
-    Err(last_error)
+    wait_for_completion(started_stream.duration_ms, &stop, &paused, &failure);
+    drop(started_stream.stream);
+
+    if let Some(reason) = failure.get() {
+        forget_output_devices();
+        tracing::warn!(
+            requested = %device_id,
+            error = %reason,
+            "output device failed during playback; the clip was cut short"
+        );
+        event_sink.emit(AudioEvent::PlaybackFailed {
+            clip_id: None,
+            clip_label: None,
+            error: reason.clone(),
+        });
+        return Err(AudioError::DeviceLost(reason.clone()));
+    }
+
+    event_sink.emit(AudioEvent::PlaybackFinished {
+        clip_id: None,
+        clip_label: None,
+    });
+    Ok(())
 }
 
-fn candidate_device_ids(requested: &str) -> Vec<String> {
-    let mut ids = vec![requested.to_string()];
-    for name in crate::device::CANONICAL_OUTPUT_CHAIN {
-        if *name != requested {
-            ids.push((*name).to_string());
-        }
+fn locate_device(
+    host: &cpal::Host,
+    candidate: OutputCandidate,
+    requested: &str,
+) -> Result<cpal::Device, AudioError> {
+    match candidate {
+        OutputCandidate::Requested => find_device(host, requested)
+            .ok_or_else(|| AudioError::Host(format!("device '{}' not found", requested))),
+        OutputCandidate::HostDefault => host
+            .default_output_device()
+            .ok_or(AudioError::NoDefaultDevice),
     }
-    ids
 }
 
 fn try_start_stream(
-    host: &cpal::Host,
-    device_id_str: &str,
+    device: &cpal::Device,
     buffer: &PcmBuffer,
     target_sr: Option<u32>,
     target_ch: Option<u16>,
     stop: &Arc<AtomicBool>,
     paused: &Arc<AtomicBool>,
+    failure: &StreamFailure,
 ) -> Result<StartedStream, AudioError> {
-    let device = find_device(host, device_id_str)
-        .ok_or_else(|| AudioError::Host(format!("device '{}' not found", device_id_str)))?;
-
     let config = device
         .default_output_config()
         .map_err(|e| AudioError::Host(e.to_string()))?;
@@ -214,12 +278,13 @@ fn try_start_stream(
         .unwrap_or_default();
 
     let stream = build_output_stream(
-        &device,
+        device,
         stream_config,
         sample_format,
         rx,
         Arc::clone(stop),
         Arc::clone(paused),
+        failure,
     )?;
 
     stream.play().map_err(|e| AudioError::Host(e.to_string()))?;
@@ -238,6 +303,7 @@ fn build_output_stream(
     rx: crossbeam_channel::Receiver<i16>,
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+    failure: &StreamFailure,
 ) -> Result<cpal::Stream, AudioError> {
     let stream = match sample_format {
         SampleFormat::F32 => device.build_output_stream(
@@ -251,7 +317,7 @@ fn build_output_stream(
                     *s = rx.try_recv().map(|v| v as f32 / 32767.0).unwrap_or(0.0);
                 }
             },
-            stream_error_fn,
+            stream_error_callback(Arc::clone(failure)),
             None,
         ),
         SampleFormat::I16 => device.build_output_stream(
@@ -265,7 +331,7 @@ fn build_output_stream(
                     *s = rx.try_recv().unwrap_or(0);
                 }
             },
-            stream_error_fn,
+            stream_error_callback(Arc::clone(failure)),
             None,
         ),
         SampleFormat::I32 => device.build_output_stream(
@@ -279,7 +345,7 @@ fn build_output_stream(
                     *s = rx.try_recv().map(|v| v as i32).unwrap_or(0);
                 }
             },
-            stream_error_fn,
+            stream_error_callback(Arc::clone(failure)),
             None,
         ),
         other => {
@@ -293,11 +359,16 @@ fn build_output_stream(
     stream.map_err(|e| AudioError::Host(e.to_string()))
 }
 
-fn wait_for_completion(duration_ms: u64, stop: &Arc<AtomicBool>, paused: &Arc<AtomicBool>) {
+fn wait_for_completion(
+    duration_ms: u64,
+    stop: &Arc<AtomicBool>,
+    paused: &Arc<AtomicBool>,
+    failure: &StreamFailure,
+) {
     let total_ms = duration_ms + 50;
     let mut elapsed_ms = 0u64;
     while elapsed_ms < total_ms || paused.load(Ordering::Relaxed) {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed) || failure.get().is_some() {
             break;
         }
         let step = if elapsed_ms < total_ms {
@@ -324,6 +395,18 @@ fn prepare_samples(buffer: &PcmBuffer, dst_sr: u32, dst_ch: u16) -> Result<Vec<i
     Ok(convert::remix(&resampled, buffer.channels, dst_ch))
 }
 
-fn stream_error_fn(err: cpal::Error) {
-    tracing::error!("cpal stream error: {}", err);
+fn stream_error_callback(failure: StreamFailure) -> impl FnMut(cpal::Error) + Send + 'static {
+    move |err: cpal::Error| {
+        tracing::error!("cpal stream error: {}", err);
+        if ends_playback(err.kind()) {
+            let _ = failure.set(err.to_string());
+        }
+    }
+}
+
+fn ends_playback(kind: cpal::ErrorKind) -> bool {
+    !matches!(
+        kind,
+        cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied
+    )
 }

@@ -16,6 +16,7 @@ forge-audio = { path = "../forge-audio" }
 forge-storage = { path = "../forge-storage" }
 forge-runtime = { path = "../forge-runtime" }
 async-trait = { workspace = true }
+futures = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -17,7 +17,7 @@ fn resolve_bound(
     default: f64,
 ) -> Result<f64, String> {
     let raw = match config.get(key) {
-        Some(Variant::Float(n)) => return Ok(*n),
+        Some(Variant::Float(n)) => return finite(key, *n),
         Some(Variant::Int(n)) => return Ok(*n as f64),
         Some(Variant::String(s)) => s.clone(),
         _ => return Ok(default),
@@ -26,10 +26,19 @@ fn resolve_bound(
         return Ok(default);
     }
     let resolved = ctx.arg_stack.interpolate(&raw);
-    resolved
+    let parsed = resolved
         .trim()
         .parse::<f64>()
-        .map_err(|_| format!("{key} is not a valid number: {resolved:?}"))
+        .map_err(|_| format!("{key} is not a valid number: {resolved:?}"))?;
+    finite(key, parsed)
+}
+
+fn finite(key: &str, value: f64) -> Result<f64, String> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(format!("{key} must be a finite number, got {value}"))
+    }
 }
 
 #[async_trait]
@@ -116,6 +125,12 @@ impl SubActionRunner for CoreRandomFloatRunner {
             (Err(e), _) | (Ok(_), Err(e)) => (SubActionOutcome::Failed(e), None),
             (Ok(min), Ok(max)) if min > max => (
                 SubActionOutcome::Failed(format!("min ({min}) must be <= max ({max})")),
+                None,
+            ),
+            (Ok(min), Ok(max)) if !(max - min).is_finite() => (
+                SubActionOutcome::Failed(format!(
+                    "range from {min} to {max} is too wide to sample"
+                )),
                 None,
             ),
             (Ok(min), Ok(max)) => {

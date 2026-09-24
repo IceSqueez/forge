@@ -85,7 +85,16 @@ impl SubActionRunner for CoreGlobalsDecrementRunner {
         let resolved_key =
             forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
 
-        let outcome = match self.globals.incr(&resolved_key, -amount).await {
+        let Some(delta) = amount.checked_neg() else {
+            return (
+                timer.failed(format!(
+                    "core.globals.decrement: amount {amount} cannot be negated"
+                )),
+                None,
+            );
+        };
+
+        let outcome = match self.globals.incr(&resolved_key, delta).await {
             Ok(new_val) => {
                 let new_val_json = match &new_val {
                     Variant::Int(i) => serde_json::Value::from(*i),

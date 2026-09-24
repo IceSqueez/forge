@@ -25,19 +25,24 @@ fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, S
     })
 }
 
-/// Clamps to the target month's last valid day when the original day exceeds it (Jan 31 + 1mo -> Feb 28/29).
-fn add_calendar_months(dt: OffsetDateTime, months: i64) -> OffsetDateTime {
+const MONTHS_PER_YEAR: i64 = 12;
+
+/// Clamps to the target month's last valid day when the original day exceeds it (Jan 31 + 1mo -> Feb 28/29); `None` when the result leaves the representable range.
+fn add_calendar_months(dt: OffsetDateTime, months: i64) -> Option<OffsetDateTime> {
     let date = dt.date();
-    let total = date.year() as i64 * 12 + (date.month() as i64 - 1) + months;
-    let new_year = total.div_euclid(12) as i32;
-    let new_month_idx = (total.rem_euclid(12) + 1) as u8;
-    let new_month = Month::try_from(new_month_idx).unwrap_or(Month::December);
-    let day = date.day();
-    let new_date = (1..=day)
+    let total = (i64::from(date.year()) * MONTHS_PER_YEAR + (date.month() as i64 - 1))
+        .checked_add(months)?;
+    let new_year = i32::try_from(total.div_euclid(MONTHS_PER_YEAR)).ok()?;
+    let new_month = Month::try_from((total.rem_euclid(MONTHS_PER_YEAR) + 1) as u8).ok()?;
+    let new_date = (1..=date.day())
         .rev()
-        .find_map(|d| Date::from_calendar_date(new_year, new_month, d).ok())
-        .unwrap_or(date);
-    dt.replace_date(new_date)
+        .find_map(|d| Date::from_calendar_date(new_year, new_month, d).ok())?;
+    Some(dt.replace_date(new_date))
+}
+
+fn add_fixed(dt: OffsetDateTime, amount: i64, unit: Duration) -> Option<OffsetDateTime> {
+    let seconds = amount.checked_mul(unit.whole_seconds())?;
+    dt.checked_add(Duration::seconds(seconds))
 }
 
 #[async_trait]
@@ -142,16 +147,21 @@ impl SubActionRunner for CoreTimeAddRunner {
 
         let result = match unit {
             "months" => add_calendar_months(base_dt, add_amount),
-            "years" => add_calendar_months(base_dt, add_amount * 12),
-            other => {
-                let dur = match other {
-                    "minutes" => Duration::minutes(add_amount),
-                    "hours" => Duration::hours(add_amount),
-                    "days" => Duration::days(add_amount),
-                    _ => Duration::seconds(add_amount),
-                };
-                base_dt + dur
-            }
+            "years" => add_amount
+                .checked_mul(MONTHS_PER_YEAR)
+                .and_then(|months| add_calendar_months(base_dt, months)),
+            "minutes" => add_fixed(base_dt, add_amount, Duration::MINUTE),
+            "hours" => add_fixed(base_dt, add_amount, Duration::HOUR),
+            "days" => add_fixed(base_dt, add_amount, Duration::DAY),
+            _ => add_fixed(base_dt, add_amount, Duration::SECOND),
+        };
+        let Some(result) = result else {
+            return (
+                timer.failed(format!(
+                    "adding {add_amount} {unit} to {base_dt} leaves the supported date range"
+                )),
+                None,
+            );
         };
 
         let new_stack = ctx

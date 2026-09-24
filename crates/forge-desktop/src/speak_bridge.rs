@@ -10,6 +10,8 @@ use forge_speak_queue::{
 };
 use forge_tts_core::{EngineId, VoiceId};
 use forge_voice::{AliasId, AliasState, VoiceAlias};
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::RecvError;
 
 const SPEAK_WAIT_HARD_CAP: Duration = Duration::from_secs(600);
 const SPEAK_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -61,10 +63,11 @@ impl SpeakBridge {
 }
 
 async fn wait_for_terminal(
-    events: &mut tokio::sync::broadcast::Receiver<SpeakEvent>,
+    events: &mut broadcast::Receiver<SpeakEvent>,
     request_id: &RequestId,
     cancel: CancelSignal,
 ) -> Result<(), SpeakDispatchError> {
+    let mut events_lost = false;
     let wait = async {
         loop {
             tokio::select! {
@@ -94,7 +97,15 @@ async fn wait_for_terminal(
                             )));
                         }
                         Ok(_) => continue,
-                        Err(_) => {
+                        Err(RecvError::Lagged(missed)) => {
+                            events_lost = true;
+                            tracing::warn!(
+                                request = %request_id.0,
+                                missed,
+                                "speak wait fell behind the queue's events; still waiting for this speech to end"
+                            );
+                        }
+                        Err(RecvError::Closed) => {
                             return Err(SpeakDispatchError::Dispatch(
                                 "speak event stream closed".to_owned(),
                             ));
@@ -106,6 +117,9 @@ async fn wait_for_terminal(
     };
     match tokio::time::timeout(SPEAK_WAIT_HARD_CAP, wait).await {
         Ok(result) => result,
+        Err(_) if events_lost => Err(SpeakDispatchError::Dispatch(
+            "speak outcome unknown: queue events were missed while waiting and the end of this speech was never seen".to_owned(),
+        )),
         Err(_) => Err(SpeakDispatchError::Dispatch(
             "speak wait timed out".to_owned(),
         )),

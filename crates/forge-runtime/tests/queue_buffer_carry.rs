@@ -361,14 +361,14 @@ async fn a_concurrency_change_carries_the_held_buffer_and_replays_it_in_order() 
 
     q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
 
-    let swapped = state_of(&q.sched, q.q_id).await;
+    let changed = state_of(&q.sched, q.q_id).await;
     assert_eq!(
-        swapped.pending, 3,
-        "a concurrency change must carry every held task into the new runner"
+        changed.pending, 3,
+        "a concurrency change must keep every held task buffered"
     );
     assert_eq!(
-        swapped.in_flight, 0,
-        "a held queue must run nothing while its runner is swapped"
+        changed.in_flight, 0,
+        "a held queue must run nothing across a concurrency change"
     );
 
     q.sched.set_mode(q.q_id, QueueMode::RUNNING).await.unwrap();
@@ -376,13 +376,13 @@ async fn a_concurrency_change_carries_the_held_buffer_and_replays_it_in_order() 
     assert_eq!(
         ids_of(&seen, "action.start"),
         vec![a.to_string(), b.to_string(), c.to_string()],
-        "the carried buffer must replay in enqueue order"
+        "the kept buffer must replay in enqueue order"
     );
     q.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_concurrency_change_carries_tasks_queued_behind_a_full_semaphore() {
+async fn a_concurrency_change_keeps_tasks_queued_behind_busy_slots_in_order() {
     let (g1, g2, b, c) = (
         ActionId::new(),
         ActionId::new(),
@@ -399,7 +399,7 @@ async fn a_concurrency_change_carries_tasks_queued_behind_a_full_semaphore() {
     for id in [b, c] {
         q.sched.dispatch(req(q.q_id, id)).await.unwrap();
     }
-    settle(&q.sched, q.q_id, "two tasks behind the semaphore", |s| {
+    settle(&q.sched, q.q_id, "two tasks behind the busy slots", |s| {
         s.pending == 2
     })
     .await;
@@ -416,7 +416,7 @@ async fn a_concurrency_change_carries_tasks_queued_behind_a_full_semaphore() {
     assert_eq!(
         carried,
         vec![b_id, c_id],
-        "tasks waiting on the old semaphore must survive the swap in enqueue order"
+        "tasks waiting for a slot must survive the concurrency change in enqueue order"
     );
     q.sched.shutdown();
 }
@@ -453,13 +453,13 @@ async fn a_concurrency_value_that_clamps_to_the_current_one_leaves_the_slot_alon
     );
     assert_eq!(
         state.in_flight, 1,
-        "a clamped no-op must not retire the runner holding the permit"
+        "a clamped no-op must not drop the running execution"
     );
     q.sched.shutdown();
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_task_dispatched_after_a_concurrency_change_runs_behind_the_carried_ones() {
+async fn a_task_dispatched_after_a_concurrency_change_runs_behind_the_buffered_ones() {
     let (a, b, d) = (ActionId::new(), ActionId::new(), ActionId::new());
     let q = gated_queue(4, &[a, b, d]).await;
     q.gate.open();
@@ -479,7 +479,7 @@ async fn a_task_dispatched_after_a_concurrency_change_runs_behind_the_carried_on
     assert_eq!(
         ids_of(&seen, "action.start"),
         vec![a.to_string(), b.to_string(), d.to_string()],
-        "a dispatch after the swap must queue behind everything carried"
+        "a dispatch after the change must queue behind everything already buffered"
     );
     q.sched.shutdown();
 }
@@ -571,5 +571,106 @@ async fn the_dispatch_that_fills_the_last_free_slot_is_still_buffered() {
         at_cap.overflowed, 0,
         "filling the last free slot must not count as an overflow"
     );
+    q.sched.shutdown();
+}
+
+/// Starts three gated executions on a queue of four, so every one is still running.
+async fn three_running_on_a_queue_of_four(extra: &[ActionId]) -> (GatedQueue, [ActionId; 3]) {
+    let running = [ActionId::new(), ActionId::new(), ActionId::new()];
+    let actions: Vec<ActionId> = running.iter().chain(extra).copied().collect();
+    let q = gated_queue(4, &actions).await;
+    for id in running {
+        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+    }
+    settle(&q.sched, q.q_id, "three running executions", |s| {
+        s.in_flight == 3
+    })
+    .await;
+    (q, running)
+}
+
+/// Why: the paused clock only advances once every task is idle, so this returns when the
+/// runner and engine have done everything they are going to do without a new input.
+async fn quiesce() {
+    tokio::time::sleep(QUIET_STEP).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn lowering_concurrency_keeps_the_running_executions_counted() {
+    let (q, _) = three_running_on_a_queue_of_four(&[]).await;
+
+    q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
+
+    assert_eq!(
+        state_of(&q.sched, q.q_id).await.in_flight,
+        3,
+        "executions started under the old limit must stay in flight"
+    );
+    q.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn clearing_after_lowering_concurrency_cancels_executions_started_under_the_old_limit() {
+    let d = ActionId::new();
+    let (q, running) = three_running_on_a_queue_of_four(&[d]).await;
+    let mut sub = q.bus.subscribe();
+
+    q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
+    q.sched.clear(q.q_id, false).await.unwrap();
+    q.gate.open();
+    q.sched.dispatch(req(q.q_id, d)).await.unwrap();
+
+    let seen = events_until(&mut sub, done_of(d)).await;
+    let done = ids_of(&seen, "action.done");
+    for id in running {
+        assert!(
+            !done.contains(&id.to_string()),
+            "clear must cancel every execution started before the concurrency change"
+        );
+    }
+    q.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_lowered_limit_starts_nothing_new_while_the_running_count_is_at_or_above_it() {
+    let d = ActionId::new();
+    let (q, _) = three_running_on_a_queue_of_four(&[d]).await;
+
+    q.sched.reconfigure(queue_with(q.q_id, 1)).await.unwrap();
+    q.sched.dispatch(req(q.q_id, d)).await.unwrap();
+    quiesce().await;
+
+    let state = state_of(&q.sched, q.q_id).await;
+    assert_eq!(
+        (state.in_flight, state.pending),
+        (3, 1),
+        "a queue lowered to 1 with 3 running must hold the new dispatch back"
+    );
+    q.sched.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn widening_concurrency_fills_the_new_slots_from_the_buffer() {
+    let actions = [
+        ActionId::new(),
+        ActionId::new(),
+        ActionId::new(),
+        ActionId::new(),
+    ];
+    let q = gated_queue(1, &actions).await;
+    for id in actions {
+        q.sched.dispatch(req(q.q_id, id)).await.unwrap();
+    }
+    settle(&q.sched, q.q_id, "one running, three buffered", |s| {
+        s.in_flight == 1 && s.pending == 3
+    })
+    .await;
+
+    q.sched.reconfigure(queue_with(q.q_id, 4)).await.unwrap();
+
+    settle(&q.sched, q.q_id, "four running", |s| {
+        s.in_flight == 4 && s.pending == 0
+    })
+    .await;
     q.sched.shutdown();
 }

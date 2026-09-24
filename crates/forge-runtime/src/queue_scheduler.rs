@@ -1387,7 +1387,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reconfigure_blocking_flip_accepts_work_after_rebuild() {
+    async fn reconfigure_blocking_flip_keeps_accepting_work() {
         let dp = make_dp().await;
         let q_id = QueueId::new();
         let a_id = ActionId::new();
@@ -1469,11 +1469,11 @@ mod tests {
         assert_eq!(
             state.mode,
             QueueMode::PAUSED,
-            "a blocking-flip reconfigure must carry the pause into the rebuilt slot"
+            "a blocking-flip reconfigure must leave the pause in place"
         );
         let skipped = collect_event(&mut sub, "action.skipped", 10, 200)
             .await
-            .expect("the rebuilt slot must keep refusing dispatches");
+            .expect("a paused queue must keep refusing dispatches after a reconfigure");
         assert_eq!(skipped.payload["reason"].as_str(), Some("queue_paused"));
         sched.shutdown();
     }
@@ -2036,5 +2036,79 @@ mod tests {
             "a real mode change must reset the overflow counter"
         );
         sched.shutdown();
+    }
+
+    fn outstanding(gate: &ConcurrencyGate) -> usize {
+        gate.lock().outstanding
+    }
+
+    #[test]
+    fn gate_take_admits_up_to_the_limit_and_refuses_at_it() {
+        let gate = ConcurrencyGate::new(2);
+        assert!(gate.take(), "0 of 2 slots taken must admit");
+        assert!(gate.take(), "1 of 2 slots taken must admit");
+        assert!(!gate.take(), "2 of 2 slots taken must refuse");
+        assert_eq!(outstanding(&gate), 2, "a refused take must not count");
+    }
+
+    #[tokio::test]
+    async fn dropping_a_gate_permit_frees_exactly_one_slot() {
+        let gate = ConcurrencyGate::new(2);
+        let first = gate.acquire().await;
+        let _second = gate.acquire().await;
+
+        drop(first);
+
+        assert!(gate.take(), "the dropped permit's slot must be free again");
+        assert!(
+            !gate.take(),
+            "one dropped permit must free exactly one slot"
+        );
+    }
+
+    #[tokio::test]
+    async fn lowering_the_gate_limit_keeps_held_permits_and_admits_nothing_until_below_it() {
+        let gate = ConcurrencyGate::new(3);
+        let mut held = vec![
+            gate.acquire().await,
+            gate.acquire().await,
+            gate.acquire().await,
+        ];
+
+        assert_eq!(gate.replace_limit(1), 3);
+        assert_eq!(outstanding(&gate), 3, "a lowered limit must not preempt");
+
+        for still_held in [2, 1] {
+            held.pop();
+            assert!(
+                !gate.take(),
+                "{still_held} held permits must still block a limit of 1"
+            );
+        }
+        held.pop();
+        assert!(
+            gate.take(),
+            "the limit must admit once every old permit is gone"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn widening_the_gate_limit_wakes_a_blocked_acquire() {
+        let gate = ConcurrencyGate::new(1);
+        let _held = gate.acquire().await;
+        let waiter = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.acquire().await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished(), "a full gate must block the acquire");
+
+        gate.replace_limit(2);
+
+        let woken = tokio::time::timeout(Duration::from_secs(5), waiter).await;
+        assert!(
+            woken.is_ok(),
+            "a widened limit must wake the acquire without waiting for a permit drop"
+        );
     }
 }

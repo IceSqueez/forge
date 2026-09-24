@@ -311,4 +311,66 @@ mod tests {
             "wall-bounded condition must return promptly, took {elapsed:?}",
         );
     }
+
+    fn stack(entries: &[(&str, &str)]) -> ArgStack {
+        entries.iter().fold(ArgStack::new(), |acc, (k, v)| {
+            acc.set(
+                (*k).to_owned(),
+                forge_types::Variant::String((*v).to_owned()),
+            )
+        })
+    }
+
+    #[tokio::test]
+    async fn argument_text_cannot_rewrite_the_verdict() {
+        let gate = gate_with(100_000, 1_000);
+        let args = stack(&[("message", r#"a" == "a" || ""#)]);
+        let verdict = gate
+            .evaluate_with_args(r#""%message%" == "!secret""#, &args)
+            .await;
+        assert!(matches!(verdict, Ok(false)), "got {verdict:?}");
+    }
+
+    #[tokio::test]
+    async fn unresolved_token_that_breaks_evaluation_is_undefined_naming_it() {
+        let gate = gate_with(100_000, 1_000);
+        let err = gate
+            .evaluate_with_args("%known% > 1 && %missing% > 5", &stack(&[("known", "3")]))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, ConditionError::Undefined { names } if names == &["missing".to_owned()]),
+            "got {err:?}",
+        );
+        assert!(err.to_string().contains("missing"));
+    }
+
+    #[tokio::test]
+    async fn unresolved_token_read_as_modulo_between_locals_still_evaluates() {
+        let gate = gate_with(100_000, 1_000);
+        let verdict = gate
+            .evaluate_with_args(
+                "{ let x = 7; let y = 4; let z = 5; x%y%z == 3 }",
+                &ArgStack::new(),
+            )
+            .await;
+        assert!(matches!(verdict, Ok(true)), "got {verdict:?}");
+    }
+
+    #[tokio::test]
+    async fn fully_resolved_failures_stay_eval_errors() {
+        let gate = gate_with(100, 1_000);
+        let args = stack(&[("n", "3")]);
+        for expr in [
+            "%n% +",
+            "%n% + 1",
+            "let x = 0; while x < 1000000 { x += %n%; } x > 0",
+        ] {
+            let err = gate.evaluate_with_args(expr, &args).await.unwrap_err();
+            assert!(
+                matches!(err, ConditionError::Eval(_)),
+                "{expr}: expected Eval, got {err:?}"
+            );
+        }
+    }
 }

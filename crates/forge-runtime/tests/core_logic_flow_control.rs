@@ -238,11 +238,9 @@ async fn if_branch_with_non_array_body_is_a_noop_and_still_succeeds() {
     );
 }
 
-#[tokio::test]
-async fn if_condition_error_falls_to_else_when_treating_undefined_as_false() {
-    let eng = engine();
-    let cfg = if_cfg(
-        "1 + 1",
+fn marker_branches(condition: &str) -> SubActionConfig {
+    if_cfg(
+        condition,
         inline(vec![chain_step(
             "core.args.set",
             args_set("marker", "THEN"),
@@ -251,7 +249,28 @@ async fn if_condition_error_falls_to_else_when_treating_undefined_as_false() {
             "core.args.set",
             args_set("marker", "ELSE"),
         )]),
-    );
+    )
+}
+
+async fn run_with(
+    engine: &Arc<ChainEngine>,
+    steps: Vec<SubActionStep>,
+    args: &[(&str, &str)],
+) -> ChainRun {
+    let stack = args.iter().fold(ArgStack::new(), |acc, (k, v)| {
+        acc.set((*k).to_owned(), s(v))
+    });
+    engine
+        .run_sequential(&steps, &stack, EventId::new(), &CancelSignal::new())
+        .await
+}
+
+const INJECTION: &str = r#"a" == "a" || ""#;
+
+#[tokio::test]
+async fn if_undefined_variable_falls_to_else_when_treating_undefined_as_false() {
+    let eng = engine();
+    let cfg = marker_branches("%missing% > 5");
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
     assert_eq!(run.signal, ChainSignal::Completed);
@@ -259,17 +278,118 @@ async fn if_condition_error_falls_to_else_when_treating_undefined_as_false() {
 }
 
 #[tokio::test]
-async fn if_condition_error_fails_when_not_treating_undefined_as_false() {
+async fn if_undefined_variable_fails_when_not_treating_undefined_as_false() {
     let eng = engine();
-    let mut cfg = if_cfg("1 + 1", inline(vec![]), inline(vec![]));
+    let mut cfg = marker_branches("%missing% > 5");
     cfg.insert("treat_undefined_as_false".to_owned(), Variant::Bool(false));
     let run = run_top(&eng, vec![step("core.logic.if_then_else", cfg)]).await;
 
     assert!(
-        matches!(&run.signal, ChainSignal::Error(m) if m.contains("if_then_else")),
-        "an unhandled condition error must fail the chain, got {:?}",
+        matches!(&run.signal, ChainSignal::Error(m) if m.contains("if_then_else") && m.contains("missing")),
+        "an unresolved variable must fail the chain naming it, got {:?}",
         run.signal,
     );
+}
+
+#[tokio::test]
+async fn if_non_undefined_condition_errors_fail_even_when_treating_undefined_as_false() {
+    let eng = engine();
+    for condition in ["1 + 1", "1 +", "let x = 0; while true { x += 1; } x > 0"] {
+        let run = run_top(
+            &eng,
+            vec![step("core.logic.if_then_else", marker_branches(condition))],
+        )
+        .await;
+        assert!(
+            matches!(&run.signal, ChainSignal::Error(m) if m.contains("if_then_else")),
+            "{condition}: must fail the step, got {:?}",
+            run.signal,
+        );
+        assert!(run.arg_stack.get("marker").is_none(), "{condition}");
+    }
+}
+
+#[tokio::test]
+async fn if_condition_argument_text_cannot_pick_the_branch() {
+    let eng = engine();
+    let cfg = marker_branches(r#""%message%" == "!secret""#);
+    let run = run_with(
+        &eng,
+        vec![step("core.logic.if_then_else", cfg)],
+        &[("message", INJECTION)],
+    )
+    .await;
+
+    assert_eq!(run.signal, ChainSignal::Completed);
+    assert_eq!(run.arg_stack.get("marker"), Some(&s("ELSE")));
+}
+
+#[tokio::test]
+async fn if_condition_compares_quoted_chat_text_literally() {
+    let eng = engine();
+    let cfg = marker_branches(r#""%message%" == "he said \"hi\" C:\\temp""#);
+    let run = run_with(
+        &eng,
+        vec![step("core.logic.if_then_else", cfg)],
+        &[("message", r#"he said "hi" C:\temp"#)],
+    )
+    .await;
+
+    assert_eq!(run.signal, ChainSignal::Completed);
+    assert_eq!(run.arg_stack.get("marker"), Some(&s("THEN")));
+}
+
+fn while_cfg(condition: &str, max_iterations: i64) -> SubActionConfig {
+    let mut c = SubActionConfig::new();
+    c.insert("mode".to_owned(), s("while"));
+    c.insert("while_condition".to_owned(), s(condition));
+    c.insert("max_iterations".to_owned(), Variant::Int(max_iterations));
+    c.insert("body".to_owned(), inline(vec![]));
+    c
+}
+
+#[tokio::test]
+async fn loop_while_argument_text_cannot_keep_the_loop_running() {
+    let eng = engine();
+    let run = run_with(
+        &eng,
+        vec![step(
+            "core.logic.loop",
+            while_cfg(r#""%message%" == "go""#, 5),
+        )],
+        &[("message", INJECTION)],
+    )
+    .await;
+
+    assert_eq!(run.signal, ChainSignal::Completed);
+    assert_eq!(
+        run.arg_stack.get("loop.iterations_completed"),
+        Some(&Variant::Int(0)),
+    );
+}
+
+#[tokio::test]
+async fn loop_while_condition_error_fails_the_loop_step_with_a_reason() {
+    let eng = engine();
+    for condition in ["1 +", "%missing% > 5"] {
+        let run = run_top(&eng, vec![step("core.logic.loop", while_cfg(condition, 5))]).await;
+        assert!(
+            matches!(&run.signal, ChainSignal::Error(m) if m.contains("core.logic.loop")),
+            "{condition}: must fail the loop, got {:?}",
+            run.signal,
+        );
+    }
+}
+
+#[tokio::test]
+async fn step_condition_argument_text_cannot_force_the_step_to_run() {
+    let eng = engine();
+    let mut guarded = step("core.args.set", args_set("marker", "RAN"));
+    guarded.condition = Some(r#""%message%" == "!secret""#.to_owned());
+    let run = run_with(&eng, vec![guarded], &[("message", INJECTION)]).await;
+
+    assert_eq!(run.signal, ChainSignal::Completed);
+    assert!(run.arg_stack.get("marker").is_none(), "guarded step ran");
 }
 
 #[tokio::test]

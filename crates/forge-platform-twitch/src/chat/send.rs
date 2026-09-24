@@ -21,6 +21,8 @@ pub enum ChatSendError {
     Http(String),
     #[error("reauth required")]
     ReauthRequired,
+    #[error("message dropped by twitch ({code}): {message}")]
+    Dropped { code: String, message: String },
 }
 
 impl From<HelixError> for ChatSendError {
@@ -42,7 +44,23 @@ struct SendChatResponse {
 #[derive(Debug, Deserialize)]
 struct SentData {
     message_id: String,
+    #[serde(default = "default_is_sent")]
+    is_sent: bool,
+    #[serde(default)]
+    drop_reason: Option<DropReason>,
 }
+
+#[derive(Debug, Deserialize)]
+struct DropReason {
+    code: String,
+    message: String,
+}
+
+const fn default_is_sent() -> bool {
+    true
+}
+
+const UNKNOWN_DROP_CODE: &str = "unknown";
 
 /// `message` must be ≤500 chars (Twitch limit); returns `ChatSendError::MessageTooLong`
 /// otherwise, without consuming a rate-limit token.
@@ -76,14 +94,24 @@ pub async fn send_chat(
     let parsed: SendChatResponse =
         serde_json::from_value(response).map_err(|e| ChatSendError::Http(e.to_string()))?;
 
-    let message_id = parsed
-        .data
-        .into_iter()
-        .next()
-        .map(|d| d.message_id)
-        .unwrap_or_default();
+    let sent = parsed.data.into_iter().next().unwrap_or(SentData {
+        message_id: String::new(),
+        is_sent: true,
+        drop_reason: None,
+    });
 
-    Ok(SentMessageId(message_id))
+    if !sent.is_sent {
+        let drop_reason = sent.drop_reason.unwrap_or(DropReason {
+            code: UNKNOWN_DROP_CODE.to_owned(),
+            message: String::new(),
+        });
+        return Err(ChatSendError::Dropped {
+            code: drop_reason.code,
+            message: drop_reason.message,
+        });
+    }
+
+    Ok(SentMessageId(sent.message_id))
 }
 
 #[cfg(test)]

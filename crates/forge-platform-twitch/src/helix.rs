@@ -7,7 +7,7 @@ use forge_platform_core::{EndpointSurface, PlatformEndpoints, RateLimiter, acqui
 use forge_types::OAuthToken;
 use reqwest::StatusCode;
 use thiserror::Error;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -17,7 +17,13 @@ pub(crate) fn bounded_http_client() -> reqwest::Client {
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
         .build()
-        .unwrap_or_default()
+        .unwrap_or_else(|e| {
+            error!(
+                error = %e.without_url(),
+                "failed to build a timeout-bounded reqwest client; falling back to an unbounded default client"
+            );
+            reqwest::Client::new()
+        })
 }
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 /// Used when a 429 omits `Retry-After`; a conservative default back-off.

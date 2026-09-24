@@ -200,5 +200,9 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
             status: NON_HTTP_STATUS,
             body,
         },
+        ChatSendError::Dropped { code, message } => PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body: format!("{code}: {message}"),
+        },
     }
 }

@@ -184,7 +184,10 @@ impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
 }
 
 fn storage_err(e: StorageError) -> PlatformError {
-    PlatformError::Io(std::io::Error::other(e))
+    match e {
+        StorageError::Decryption => reauth_err(),
+        other => PlatformError::Io(std::io::Error::other(other)),
+    }
 }
 
 fn reauth_err() -> PlatformError {

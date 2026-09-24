@@ -61,6 +61,7 @@ pub(crate) mod source {
     pub(crate) const SCENE_NAME: &str = "scene_name";
     pub(crate) const IS_LOCKED: &str = "is_locked";
     pub(crate) const IS_VISIBLE: &str = "is_visible";
+    pub(crate) const ITEM_ID: &str = "item_id";
 }
 
 pub(crate) mod filter {

@@ -285,6 +285,33 @@ pub(crate) fn map_obs_event(
                 (audio_fields::SYNC_OFFSET_MS): offset.whole_milliseconds(),
             }),
         )),
+        obws::events::Event::SceneItemCreated {
+            scene,
+            source,
+            item_id,
+            ..
+        } => Some(Event::new(
+            EventSource::Obs,
+            "obs.source.scene_item_created",
+            json!({
+                (source_fields::SCENE_NAME): scene.name,
+                (source_fields::SOURCE_NAME): source.name,
+                (source_fields::ITEM_ID): item_id,
+            }),
+        )),
+        obws::events::Event::SceneItemRemoved {
+            scene,
+            source,
+            item_id,
+        } => Some(Event::new(
+            EventSource::Obs,
+            "obs.source.scene_item_removed",
+            json!({
+                (source_fields::SCENE_NAME): scene.name,
+                (source_fields::SOURCE_NAME): source.name,
+                (source_fields::ITEM_ID): item_id,
+            }),
+        )),
         obws::events::Event::InputCreated {
             id,
             unversioned_kind,

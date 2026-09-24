@@ -1211,10 +1211,16 @@ mod tests {
     // The fixture supplies the repos and scheduler `TriggerEvaluator` needs to exist; only the
     // registry, the bus and the cooldown map take part in a decision.
     async fn decide_harness(descriptor: CommandDescriptor) -> (EvaluatorFixture, TriggerEvaluator) {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let fixture = fixture(Arc::clone(&bus)).await;
         let mut registry = TriggerRegistry::new();
         registry.register(Box::new(descriptor)).unwrap();
+        decide_harness_with(registry).await
+    }
+
+    async fn decide_harness_with(
+        registry: TriggerRegistry,
+    ) -> (EvaluatorFixture, TriggerEvaluator) {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
         let evaluator = TriggerEvaluator {
             bus: Arc::clone(&bus),
             registry: Arc::new(registry),
@@ -1495,6 +1501,133 @@ mod tests {
         ] {
             let event = Event::new(EventSource::Twitch, "test.chat.message", payload);
             assert!(viewer_digest(&event).is_none(), "{label}");
+        }
+    }
+
+    struct PrefixDescriptor {
+        id: &'static str,
+        source: EventSource,
+        prefix: &'static str,
+    }
+
+    impl TriggerKindDescriptor for PrefixDescriptor {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn category(&self) -> TriggerCategory {
+            TriggerCategory::Chat
+        }
+        fn label(&self) -> &str {
+            ""
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn platform_contract(&self) -> KindPlatformContract {
+            KindPlatformContract::Universal
+        }
+        fn default_config(&self) -> TriggerConfig {
+            TriggerConfig::new()
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+        fn condition_display(&self, _: &TriggerConfig) -> String {
+            String::new()
+        }
+        fn event_filter(&self) -> EventFilter {
+            EventFilter {
+                source: Some(self.source),
+                kind_prefix: Some(self.prefix.to_owned()),
+            }
+        }
+        fn matches_trigger(&self, _: &TriggerConfig, _: &Event) -> bool {
+            true
+        }
+    }
+
+    // The prefixes the shipped platform descriptors declare, each paired with the sibling kinds
+    // a bare `starts_with` used to let through.
+    const PREFIX_CASES: &[(&str, EventSource, &str, &[&str])] = &[
+        (
+            "twitch.chat.message",
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            &["twitch.channel.chat.message_delete"],
+        ),
+        (
+            "youtube.chat.message",
+            EventSource::YouTube,
+            "youtube.chat.message",
+            &["youtube.chat.message_deleted"],
+        ),
+        (
+            "twitch.unban",
+            EventSource::Twitch,
+            "twitch.channel.unban",
+            &["twitch.channel.unban_request.create"],
+        ),
+        (
+            "youtube.member",
+            EventSource::YouTube,
+            "youtube.channel.member",
+            &[
+                "youtube.channel.member_gift",
+                "youtube.channel.member_milestone",
+            ],
+        ),
+    ];
+
+    async fn prefix_harness() -> (EvaluatorFixture, TriggerEvaluator) {
+        let mut registry = TriggerRegistry::new();
+        for (id, source, prefix, _) in PREFIX_CASES {
+            registry
+                .register(Box::new(PrefixDescriptor {
+                    id,
+                    source: *source,
+                    prefix,
+                }))
+                .unwrap();
+        }
+        decide_harness_with(registry).await
+    }
+
+    fn prefix_instance(kind_id: &str) -> TriggerInstance {
+        TriggerInstance {
+            kind_id: kind_id.to_owned(),
+            ..command_instance(PlatformScope::Any, PermissionRung::Everyone, 0)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_platform_trigger_fires_on_the_exact_kind_its_prefix_names() {
+        let (_fixture, mut evaluator) = prefix_harness().await;
+        for (id, source, prefix, _) in PREFIX_CASES {
+            let event = Event::new(*source, *prefix, json!({}));
+            assert!(
+                evaluator.decide(&prefix_instance(id), &event).is_some(),
+                "{id} must fire on {prefix}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_platform_trigger_ignores_a_sibling_kind_sharing_its_prefix_text() {
+        let (_fixture, mut evaluator) = prefix_harness().await;
+        for (id, source, _, siblings) in PREFIX_CASES {
+            for sibling in *siblings {
+                let event = Event::new(*source, *sibling, json!({}));
+                assert!(
+                    evaluator.decide(&prefix_instance(id), &event).is_none(),
+                    "{id} must not fire on {sibling}"
+                );
+            }
         }
     }
 }

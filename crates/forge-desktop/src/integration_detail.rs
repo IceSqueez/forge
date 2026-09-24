@@ -17,8 +17,8 @@ use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
 use forge_types::{PlatformId, SubActionStep};
 use futures_util::StreamExt as _;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Window,
-    div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Task,
+    Window, div, prelude::*, px,
 };
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -102,6 +102,7 @@ pub struct IntegrationDetail {
     _history_modal_sub: Option<Subscription>,
     _conn_obs: Subscription,
     _qa_search_sub: Subscription,
+    _bridges: Vec<Task<()>>,
 }
 
 const VIEWER_DELTA_WINDOW: Duration = Duration::from_secs(15 * 60);
@@ -198,7 +199,7 @@ impl IntegrationDetail {
         let quick_actions = quick.actions();
 
         let mut health_stream = health.stream();
-        cx.spawn(async move |this, cx| {
+        let mut bridges = vec![cx.spawn(async move |this, cx| {
             while let Some(delta) = health_stream.next().await {
                 if this
                     .update(cx, |detail, cx| detail.apply_health_delta(delta, cx))
@@ -207,21 +208,20 @@ impl IntegrationDetail {
                     break;
                 }
             }
-        })
-        .detach();
+        })];
 
         if is_twitch {
-            Self::spawn_eventsub_tally(&event_bus, cx);
+            bridges.push(Self::spawn_eventsub_tally(&event_bus, cx));
         }
         if is_twitch || is_obs {
-            Self::spawn_descriptor_reload_watch(&event_bus, cx);
+            bridges.push(Self::spawn_descriptor_reload_watch(&event_bus, cx));
         }
         if is_obs {
-            Self::spawn_obs_content_watch(&event_bus, cx);
+            bridges.push(Self::spawn_obs_content_watch(&event_bus, cx));
         }
         if is_twitch || matches!(status.id().as_str(), "youtube" | "kick") {
-            Self::spawn_viewer_sampler(&live_viewers, cx);
-            Self::spawn_detail_ticker(cx);
+            bridges.push(Self::spawn_viewer_sampler(&live_viewers, cx));
+            bridges.push(Self::spawn_detail_ticker(cx));
         }
 
         let mut this = Self {
@@ -274,6 +274,7 @@ impl IntegrationDetail {
             _history_modal_sub: None,
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
+            _bridges: bridges,
         };
 
         if let Some(platform) = connect_platform {
@@ -351,7 +352,7 @@ impl IntegrationDetail {
         cx.notify();
     }
 
-    fn spawn_obs_content_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+    fn spawn_obs_content_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
         let mut sub = bus.subscribe();
         cx.spawn(async move |this, cx| {
             while let async_bridge::EventBatch::Ready(batch) =
@@ -368,10 +369,9 @@ impl IntegrationDetail {
                 }
             }
         })
-        .detach();
     }
 
-    fn spawn_eventsub_tally(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+    fn spawn_eventsub_tally(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
         let mut sub = bus.subscribe();
         cx.spawn(async move |this, cx| {
             while let async_bridge::EventBatch::Ready(batch) =
@@ -400,10 +400,9 @@ impl IntegrationDetail {
                 }
             }
         })
-        .detach();
     }
 
-    fn spawn_descriptor_reload_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+    fn spawn_descriptor_reload_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
         let mut sub = bus.subscribe();
         cx.spawn(async move |this, cx| {
             while let async_bridge::EventBatch::Ready(batch) =
@@ -417,10 +416,12 @@ impl IntegrationDetail {
                 }
             }
         })
-        .detach();
     }
 
-    fn spawn_viewer_sampler(live_viewers: &LiveViewerAggregatorHandle, cx: &mut Context<Self>) {
+    fn spawn_viewer_sampler(
+        live_viewers: &LiveViewerAggregatorHandle,
+        cx: &mut Context<Self>,
+    ) -> Task<()> {
         let mut stream = live_viewers.subscribe();
         cx.spawn(async move |this, cx| {
             while let Some(count) = stream.next().await {
@@ -436,10 +437,9 @@ impl IntegrationDetail {
                 }
             }
         })
-        .detach();
     }
 
-    fn spawn_detail_ticker(cx: &mut Context<Self>) {
+    fn spawn_detail_ticker(cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DETAIL_TICK).await;
@@ -452,7 +452,6 @@ impl IntegrationDetail {
                 }
             }
         })
-        .detach();
     }
 
     fn on_qa_search(

@@ -804,6 +804,76 @@ mod tests {
         );
     }
 
+    /// Why: lowercasing changes the UTF-8 length of U+212A, U+0130 and U+023A, so any match
+    /// offset taken from a lowercased copy slices the original mid-character and panics.
+    #[test]
+    fn plain_replacement_keeps_char_boundaries_when_lowercase_changes_utf8_length() {
+        for (case, text, pattern, expected) in [
+            (
+                "kelvin sign before",
+                "\u{212A} hello",
+                "hello",
+                "\u{212A} X",
+            ),
+            (
+                "dotted capital i before",
+                "\u{130}stanbul hello",
+                "hello",
+                "\u{130}stanbul X",
+            ),
+            (
+                "a with stroke before",
+                "\u{23A} hello",
+                "hello",
+                "\u{23A} X",
+            ),
+            ("kelvin sign after", "hello \u{212A}", "hello", "X \u{212A}"),
+            (
+                "dotted capital i after",
+                "hello \u{130}",
+                "hello",
+                "X \u{130}",
+            ),
+            ("a with stroke after", "hello \u{23A}", "hello", "X \u{23A}"),
+            (
+                "kelvin sign folds to k inside",
+                "a \u{212A}elvin b",
+                "kelvin",
+                "a X b",
+            ),
+            (
+                "a with stroke folds inside",
+                "a \u{23A}b c",
+                "\u{2C65}b",
+                "a X c",
+            ),
+            (
+                "dotted capital i matches itself",
+                "go \u{130}stanbul",
+                "\u{130}stanbul",
+                "go X",
+            ),
+            (
+                "dotted capital i does not fold to a single i",
+                "go \u{130}stanbul",
+                "istanbul",
+                "go \u{130}stanbul",
+            ),
+            ("every ascii casing", "LOL lol LoL", "lol", "X X X"),
+            ("matches do not overlap", "aaa", "aa", "Xa"),
+            ("pattern longer than the text", "hel", "hello", "hel"),
+            ("pattern at the very end", "say hello", "HELLO", "say X"),
+            ("empty text", "", "hello", ""),
+            ("empty pattern", "hello", "", "hello"),
+        ] {
+            assert_eq!(
+                case_insensitive_replace(text, pattern, "X"),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
     #[test]
     fn text_replacement_regex() {
         let config = PipelineConfig {

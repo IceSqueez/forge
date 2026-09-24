@@ -4,6 +4,9 @@ use time::OffsetDateTime;
 
 use crate::error::StorageError;
 
+/// Minted and replaced by forge itself, so losing it never costs the user a login.
+pub const SERVER_BEARER_CREDENTIAL_ID: &str = "server:bearer";
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct CredentialId(pub String);

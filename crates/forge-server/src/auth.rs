@@ -10,7 +10,6 @@ use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 
 use crate::ServerError;
 
-const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 const TOKEN_BYTE_LEN: usize = 64;
 
 pub struct AuthState {
@@ -27,7 +26,7 @@ impl AuthState {
         auth_required_for_reads: bool,
         creds: &dyn CredentialsRepo,
     ) -> Result<Arc<Self>, ServerError> {
-        let id = CredentialId::new(BEARER_CREDENTIAL_ID);
+        let id = CredentialId::new(forge_storage::SERVER_BEARER_CREDENTIAL_ID);
         let stored = match creds.load(&id).await {
             Ok(stored) => stored,
             Err(StorageError::Decryption) => {
@@ -63,7 +62,7 @@ impl AuthState {
     /// authenticated with the previous token loses its authentication and is closed.
     pub async fn regenerate(&self, creds: &dyn CredentialsRepo) -> Result<String, ServerError> {
         let new_token = generate_token();
-        let id = CredentialId::new(BEARER_CREDENTIAL_ID);
+        let id = CredentialId::new(forge_storage::SERVER_BEARER_CREDENTIAL_ID);
         creds.store(&id, &new_token).await?;
         {
             let mut current = self.bearer_token.write().await;

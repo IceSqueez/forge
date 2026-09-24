@@ -23,7 +23,7 @@ pub mod voice_aliases;
 
 pub use action::{ActionRepo, ActionTelemetry, ExecutionStatus};
 pub use chat_history::ChatHistoryRepo;
-pub use credentials::{CredentialId, CredentialsRepo};
+pub use credentials::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
 pub use error::StorageError;
 pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
 pub use globals::{GlobalEntry, GlobalsRepo};

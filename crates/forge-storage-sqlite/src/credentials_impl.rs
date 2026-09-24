@@ -16,7 +16,8 @@ impl SqliteCredentialsRepo {
     }
 
     pub(crate) async fn stored_count(&self) -> Result<u64, SqliteStorageError> {
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credentials")
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credentials WHERE id != ?")
+            .bind(forge_storage::SERVER_BEARER_CREDENTIAL_ID)
             .fetch_one(&self.pool)
             .await?;
         Ok(u64::try_from(count).unwrap_or_default())

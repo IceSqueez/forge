@@ -123,7 +123,9 @@ pub(crate) async fn validate_lan_bind(
         });
     }
     let token_present = credentials
-        .load(&forge_storage::CredentialId::new("server:bearer"))
+        .load(&forge_storage::CredentialId::new(
+            forge_storage::SERVER_BEARER_CREDENTIAL_ID,
+        ))
         .await
         .map_err(|e| ServerError::Storage(e.to_string()))?
         .is_some();

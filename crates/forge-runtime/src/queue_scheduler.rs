@@ -175,7 +175,7 @@ struct QueueSlot {
     inflight: InflightTracker,
 }
 
-/// A lowered limit binds from the next acquire; executions already holding a slot keep it.
+/// A lowered limit binds from the next dispatch; executions already running keep their slot.
 #[derive(Clone)]
 struct ConcurrencyGate {
     inner: Arc<GateInner>,
@@ -241,6 +241,13 @@ impl ConcurrencyGate {
 
 struct GatePermit {
     gate: ConcurrencyGate,
+}
+
+impl GatePermit {
+    fn within_limit(&self) -> bool {
+        let state = self.gate.lock();
+        state.outstanding <= state.limit
+    }
 }
 
 impl Drop for GatePermit {
@@ -487,8 +494,11 @@ impl QueueScheduler {
             let task = loop {
                 let arrived = pending.arrived();
                 let frozen = *processing.borrow_and_update() == QueueProcessing::Frozen;
+                if !permit.within_limit() {
+                    break None;
+                }
                 if let Some(task) = pending.take_next(frozen) {
-                    break task;
+                    break Some(task);
                 }
 
                 tokio::select! {
@@ -500,6 +510,9 @@ impl QueueScheduler {
                     }
                     _ = arrived => {}
                 }
+            };
+            let Some(task) = task else {
+                continue;
             };
 
             let req = ExecutionRequest {

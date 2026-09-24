@@ -2,16 +2,40 @@ use tokio::sync::mpsc;
 
 const MAIN_THREAD_QUEUE: usize = 16;
 
-type MainThreadJob = Box<dyn FnOnce() + Send>;
+trait MainThreadJob: Send {
+    fn is_cancelled(&self) -> bool;
+    fn run(self: Box<Self>);
+}
+
+#[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
+struct PendingJob<T, F> {
+    reply_tx: tokio::sync::oneshot::Sender<T>,
+    job: F,
+}
+
+impl<T, F> MainThreadJob for PendingJob<T, F>
+where
+    T: Send,
+    F: FnOnce() -> T + Send,
+{
+    fn is_cancelled(&self) -> bool {
+        self.reply_tx.is_closed()
+    }
+
+    fn run(self: Box<Self>) {
+        let this = *self;
+        let _ = this.reply_tx.send((this.job)());
+    }
+}
 
 pub struct MainThreadHost {
-    jobs: mpsc::Receiver<MainThreadJob>,
+    jobs: mpsc::Receiver<Box<dyn MainThreadJob>>,
 }
 
 #[derive(Clone)]
 pub struct MainThreadLink {
     #[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
-    jobs: mpsc::Sender<MainThreadJob>,
+    jobs: mpsc::Sender<Box<dyn MainThreadJob>>,
 }
 
 pub fn main_thread_channel() -> (MainThreadHost, MainThreadLink) {
@@ -24,7 +48,9 @@ impl MainThreadHost {
     /// every link is dropped.
     pub async fn run(mut self) {
         while let Some(job) = self.jobs.recv().await {
-            job();
+            if !job.is_cancelled() {
+                job.run();
+            }
         }
     }
 }
@@ -40,9 +66,7 @@ impl MainThreadLink {
         const MAIN_THREAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
         let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
-        let boxed: MainThreadJob = Box::new(move || {
-            let _ = reply_tx.send(job());
-        });
+        let boxed: Box<dyn MainThreadJob> = Box::new(PendingJob { reply_tx, job });
         let round_trip = async {
             self.jobs
                 .send(boxed)

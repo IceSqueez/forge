@@ -72,6 +72,7 @@ ulid = { workspace = true }
 unic-langid = { workspace = true }
 
 [dev-dependencies]
+forge-hotkey = { path = "../forge-hotkey", features = ["testing"] }
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }
 gpui = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true }

@@ -12,6 +12,8 @@ mod payload_fields;
 pub mod quick_actions;
 pub(crate) mod status;
 pub(crate) mod supervisor;
+#[cfg(feature = "testing")]
+pub mod testing;
 pub mod triggers;
 
 #[cfg(target_os = "linux")]

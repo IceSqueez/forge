@@ -115,19 +115,23 @@ impl HotkeyBackend for GlobalHotkeyBackend {
     }
 
     async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
-        let removed = {
-            let mut guard = self.registrations.lock().unwrap_or_else(|p| p.into_inner());
-            let internal_id = guard
+        let target = {
+            let guard = self.registrations.lock().unwrap_or_else(|p| p.into_inner());
+            guard
                 .iter()
                 .find(|(_, reg)| reg.caller_id == id)
-                .map(|(k, _)| *k);
-            internal_id.and_then(|k| guard.remove(&k))
+                .map(|(&internal_id, reg)| (internal_id, reg.hotkey, reg.combo.clone()))
         };
-        if let Some(Registration { hotkey, combo, .. }) = removed {
-            self.main_thread
-                .run(move || with_manager(|manager| manager.unregister(hotkey), &combo))
-                .await??;
-        }
+        let Some((internal_id, hotkey, combo)) = target else {
+            return Ok(());
+        };
+        self.main_thread
+            .run(move || with_manager(|manager| manager.unregister(hotkey), &combo))
+            .await??;
+        self.registrations
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&internal_id);
         Ok(())
     }
 

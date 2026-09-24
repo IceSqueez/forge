@@ -9,6 +9,9 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+testing = []
+
 [dependencies]
 forge-events = { path = "../forge-events" }
 forge-platform-core = { path = "../forge-platform-core" }

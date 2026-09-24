@@ -97,7 +97,9 @@ impl SubActionRunner for CoreStringSplitRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.string.split");
 
-        let source = config.str("source").unwrap_or("");
+        let source = ctx
+            .arg_stack
+            .interpolate(config.str("source").unwrap_or(""));
         let separator = config.str("separator").unwrap_or(",");
         let trim_each = config.bool("trim_each").unwrap_or(false);
         let max_parts = config.int("max_parts").unwrap_or(0).max(0) as usize;

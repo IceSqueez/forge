@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
-use forge_script::{ConditionEvaluator, EngineConfig, ScriptError};
+use forge_script::{BoundExpression, ConditionEvaluator, EngineConfig, ScriptError};
+use forge_types::ArgStack;
 
 use crate::config::Config;
 
@@ -11,6 +12,9 @@ pub enum ConditionError {
 
     #[error("condition evaluation did not run to completion")]
     Canceled,
+
+    #[error("condition references undefined variables: {}", .names.join(", "))]
+    Undefined { names: Vec<String> },
 }
 
 pub struct ConditionGate {
@@ -38,6 +42,32 @@ impl ConditionGate {
             .await
             .map_err(|_| ConditionError::Canceled)?
             .map_err(ConditionError::from)
+    }
+
+    /// `%name%` tokens become rhai scope variables, so argument text can never alter the expression's syntax.
+    pub async fn evaluate_with_args(
+        &self,
+        condition: &str,
+        args: &ArgStack,
+    ) -> Result<bool, ConditionError> {
+        let bound = BoundExpression::bind(condition, args);
+        if let Some(verdict) = literal_compare(bound.source()) {
+            return Ok(verdict);
+        }
+        let evaluator = self.evaluator.clone();
+        let (outcome, unresolved) = tokio::task::spawn_blocking(move || {
+            let outcome = evaluator.eval_bound(&bound);
+            (outcome, bound.unresolved().to_vec())
+        })
+        .await
+        .map_err(|_| ConditionError::Canceled)?;
+        match outcome {
+            Ok(verdict) => Ok(verdict),
+            Err(_) if !unresolved.is_empty() => {
+                Err(ConditionError::Undefined { names: unresolved })
+            }
+            Err(e) => Err(ConditionError::Eval(e)),
+        }
     }
 }
 

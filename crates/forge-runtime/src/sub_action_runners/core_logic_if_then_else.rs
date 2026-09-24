@@ -8,7 +8,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
 use super::core_logic_shared::{decode_chain, propagate, retag};
-use crate::ConditionGate;
+use crate::{ConditionError, ConditionGate};
 
 pub struct CoreLogicIfThenElseRunner {
     gate: Arc<ConditionGate>,
@@ -87,12 +87,11 @@ impl SubActionRunner for CoreLogicIfThenElseRunner {
         let timer = StepTimer::start(ctx, self.id());
 
         let template = config.str("condition").unwrap_or_default();
-        let expr = ctx.arg_stack.interpolate(template);
         let undefined_is_false = config.bool("treat_undefined_as_false").unwrap_or(true);
 
-        let verdict = match self.gate.evaluate(&expr).await {
+        let verdict = match self.gate.evaluate_with_args(template, ctx.arg_stack).await {
             Ok(value) => value,
-            Err(_) if undefined_is_false => false,
+            Err(ConditionError::Undefined { .. }) if undefined_is_false => false,
             Err(e) => {
                 return (timer.failed(format!("core.logic.if_then_else: {e}")), None);
             }

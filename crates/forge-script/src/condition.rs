@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use rhai::Dynamic;
 
 use crate::ScriptError;
+use crate::arg_binding::BoundExpression;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
 
 /// Carries no `ForgeApi`; the globals/chat/http surface is structurally unreachable rather than merely unused.
@@ -18,6 +19,19 @@ impl ConditionEvaluator {
 
     /// Any non-boolean result is a typed error, never truthiness-coerced.
     pub fn eval(&self, expr: &str) -> Result<bool, ScriptError> {
+        self.run(expr, expr, rhai::Scope::new())
+    }
+
+    pub fn eval_bound(&self, expr: &BoundExpression) -> Result<bool, ScriptError> {
+        self.run(expr.original(), expr.source(), expr.scope())
+    }
+
+    fn run(
+        &self,
+        label: &str,
+        source: &str,
+        mut scope: rhai::Scope<'static>,
+    ) -> Result<bool, ScriptError> {
         let mut inner = rhai::Engine::new_raw();
         register_sandbox_base(&mut inner, &self.config);
 
@@ -30,15 +44,14 @@ impl ConditionEvaluator {
             }
         });
 
-        let mut scope = rhai::Scope::new();
         let value = inner
-            .eval_with_scope::<Dynamic>(&mut scope, expr)
-            .map_err(|e| map_eval_error(expr, &self.config, *e))?;
+            .eval_with_scope::<Dynamic>(&mut scope, source)
+            .map_err(|e| map_eval_error(label, &self.config, *e))?;
 
         value
             .as_bool()
             .map_err(|got| ScriptError::ConditionNotBoolean {
-                expr: expr.to_owned(),
+                expr: label.to_owned(),
                 got: got.to_owned(),
             })
     }

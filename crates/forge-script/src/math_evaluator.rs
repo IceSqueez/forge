@@ -4,6 +4,7 @@ use forge_types::Variant;
 use rhai::Dynamic;
 
 use crate::ScriptError;
+use crate::arg_binding::BoundExpression;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
 
 /// Carries no `ForgeApi`; the globals/chat/http surface is structurally unreachable rather than merely unused.
@@ -19,6 +20,19 @@ impl MathEvaluator {
 
     /// NaN and infinite results are rejected rather than surviving into a `Variant`.
     pub fn eval(&self, expr: &str) -> Result<Variant, ScriptError> {
+        self.run(expr, expr, rhai::Scope::new())
+    }
+
+    pub fn eval_bound(&self, expr: &BoundExpression) -> Result<Variant, ScriptError> {
+        self.run(expr.original(), expr.source(), expr.scope())
+    }
+
+    fn run(
+        &self,
+        label: &str,
+        source: &str,
+        mut scope: rhai::Scope<'static>,
+    ) -> Result<Variant, ScriptError> {
         let mut inner = rhai::Engine::new_raw();
         register_sandbox_base(&mut inner, &self.config);
 
@@ -31,17 +45,16 @@ impl MathEvaluator {
             }
         });
 
-        let mut scope = rhai::Scope::new();
         let value = inner
-            .eval_with_scope::<Dynamic>(&mut scope, expr)
-            .map_err(|e| map_eval_error(expr, &self.config, *e))?;
+            .eval_with_scope::<Dynamic>(&mut scope, source)
+            .map_err(|e| map_eval_error(label, &self.config, *e))?;
 
         if let Ok(n) = value.as_int() {
             Ok(Variant::Int(n))
         } else if let Ok(f) = value.as_float() {
             if f.is_nan() || f.is_infinite() {
                 Err(ScriptError::Runtime {
-                    script: expr.to_owned(),
+                    script: label.to_owned(),
                     reason: "non-finite result".to_owned(),
                 })
             } else {
@@ -49,7 +62,7 @@ impl MathEvaluator {
             }
         } else {
             Err(ScriptError::Runtime {
-                script: expr.to_owned(),
+                script: label.to_owned(),
                 reason: format!("expected numeric result, got {}", value.type_name()),
             })
         }

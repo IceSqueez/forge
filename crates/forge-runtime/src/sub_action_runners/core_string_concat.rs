@@ -87,24 +87,26 @@ impl SubActionRunner for CoreStringConcatRunner {
         let parts: Vec<String> = match config.get("parts") {
             Some(Variant::Array(arr)) => arr
                 .iter()
-                .map(|v| v.as_str().unwrap_or("").to_owned())
+                .map(|v| ctx.arg_stack.interpolate(v.as_str().unwrap_or("")))
                 .collect(),
             Some(v) => v
                 .as_str()
                 .unwrap_or("")
                 .lines()
-                .map(str::to_owned)
+                .map(|line| ctx.arg_stack.interpolate(line))
                 .collect(),
             None => vec![],
         };
 
-        let separator = config.str("separator").unwrap_or("");
+        let separator = ctx
+            .arg_stack
+            .interpolate(config.str("separator").unwrap_or(""));
 
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.result"),
         );
 
-        let result = parts.join(separator);
+        let result = parts.join(&separator);
         let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
 
         (timer.success(), Some(new_stack))

@@ -3,7 +3,7 @@ use forge_registry::{
     CodeLanguage, FormField, RegistryError, RunContext, StepTimer, SubActionCategory,
     SubActionConfigExt, SubActionRunner,
 };
-use forge_script::{EngineConfig, MathEvaluator};
+use forge_script::{BoundExpression, EngineConfig, MathEvaluator};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 pub struct CoreMathEvaluateRunner {
@@ -100,7 +100,22 @@ impl SubActionRunner for CoreMathEvaluateRunner {
 
         let result_type = config.str("result_type").unwrap_or("auto");
 
-        let (outcome, updated_stack) = match self.evaluator.eval(expression) {
+        let bound = BoundExpression::bind(expression, ctx.arg_stack);
+        let evaluator = self.evaluator.clone();
+        let evaluated = tokio::task::spawn_blocking(move || {
+            let result = evaluator.eval_bound(&bound);
+            match result {
+                Err(_) if !bound.unresolved().is_empty() => Err(format!(
+                    "expression references undefined variables: {}",
+                    bound.unresolved().join(", ")
+                )),
+                other => other.map_err(|e| e.to_string()),
+            }
+        })
+        .await
+        .unwrap_or_else(|_| Err("math evaluation did not run to completion".to_owned()));
+
+        let (outcome, updated_stack) = match evaluated {
             Ok(variant) => {
                 let coerced = match result_type {
                     "int" => match variant {
@@ -116,7 +131,7 @@ impl SubActionRunner for CoreMathEvaluateRunner {
                 let new_stack = ctx.arg_stack.clone().set(into_var, coerced);
                 (SubActionOutcome::Success, Some(new_stack))
             }
-            Err(e) => (SubActionOutcome::Failed(e.to_string()), None),
+            Err(reason) => (SubActionOutcome::Failed(reason), None),
         };
 
         (timer.finish(outcome), updated_stack)

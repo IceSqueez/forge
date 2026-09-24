@@ -79,7 +79,9 @@ impl SubActionRunner for CoreStringLowercaseRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.string.lowercase");
 
-        let source = config.str("source").unwrap_or("");
+        let source = ctx
+            .arg_stack
+            .interpolate(config.str("source").unwrap_or(""));
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.result"),
         );

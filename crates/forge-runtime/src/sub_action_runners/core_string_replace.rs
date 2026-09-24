@@ -110,11 +110,21 @@ impl SubActionRunner for CoreStringReplaceRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.string.replace");
 
-        let source = config.str("source").unwrap_or("");
-        let search = config.str("search").unwrap_or("");
-        let replace_with = config.str("replace_with").unwrap_or("");
+        let source = ctx
+            .arg_stack
+            .interpolate(config.str("source").unwrap_or(""));
         let case_sensitive = config.bool("case_sensitive").unwrap_or(true);
         let is_regex = config.bool("is_regex").unwrap_or(false);
+        let search_template = config.str("search").unwrap_or("");
+        let replace_template = config.str("replace_with").unwrap_or("");
+        let (search, replace_with) = if is_regex {
+            (search_template.to_owned(), replace_template.to_owned())
+        } else {
+            (
+                ctx.arg_stack.interpolate(search_template),
+                ctx.arg_stack.interpolate(replace_template),
+            )
+        };
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("string.result"),
         );
@@ -127,7 +137,8 @@ impl SubActionRunner for CoreStringReplaceRunner {
             return (timer.success(), Some(new_stack));
         }
 
-        let outcome = match apply_replace(source, search, replace_with, case_sensitive, is_regex) {
+        let outcome = match apply_replace(&source, &search, &replace_with, case_sensitive, is_regex)
+        {
             Ok(result) => {
                 let new_stack = ctx.arg_stack.clone().set(into_var, Variant::String(result));
                 return (timer.success(), Some(new_stack));

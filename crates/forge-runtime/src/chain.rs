@@ -136,8 +136,7 @@ impl ChainEngine {
         if cond.trim().is_empty() {
             return ConditionVerdict::Run;
         }
-        let expr = scope.interpolate(cond);
-        match self.gate.evaluate(&expr).await {
+        match self.gate.evaluate_with_args(cond, scope).await {
             Ok(true) => ConditionVerdict::Run,
             Ok(false) => ConditionVerdict::Skip,
             Err(e) => ConditionVerdict::Fail(format!("condition evaluation failed: {e}")),

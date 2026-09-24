@@ -1,6 +1,7 @@
 #![doc = "Sandboxed rhai engine wrapper: ForgeApi, Engine, sandbox limits."]
 
 pub mod api;
+pub mod arg_binding;
 pub mod catalog;
 pub mod condition;
 pub mod contract;
@@ -16,6 +17,7 @@ pub mod runner;
 mod test_support;
 
 pub use api::{ENGINE_BOUND_NAMES, ForgeApi, SpeakRequester, is_engine_bound_name};
+pub use arg_binding::BoundExpression;
 pub use catalog::{MethodDescriptor, ParamDescriptor, catalog};
 pub use condition::ConditionEvaluator;
 pub use contract::{InputMismatchError, build_scope_for_contract, inert_annotation_lines};

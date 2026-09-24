@@ -161,7 +161,7 @@ impl ArgStack {
     }
 
     /// An exact flat key wins over traversal, so shipped dotted names (`time.formatted`) keep resolving; only then is the token walked as a path, numeric segments indexing arrays.
-    fn resolve(&self, key: &str) -> Option<&Variant> {
+    pub fn resolve(&self, key: &str) -> Option<&Variant> {
         if let Some(exact) = self.0.get(key) {
             return Some(exact);
         }

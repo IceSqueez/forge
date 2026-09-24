@@ -192,9 +192,17 @@ impl SubActionRunner for CoreLogicLoopRunner {
                         exit_reason = "max_iterations";
                         break;
                     }
-                    let expr = current.interpolate(&while_condition);
-                    if !self.gate.evaluate(&expr).await.unwrap_or(false) {
-                        break;
+                    match self
+                        .gate
+                        .evaluate_with_args(&while_condition, &current)
+                        .await
+                    {
+                        Ok(true) => {}
+                        Ok(false) => break,
+                        Err(e) => {
+                            failure = Some(format!("core.logic.loop: {e}"));
+                            break;
+                        }
                     }
                     current
                         .clone()

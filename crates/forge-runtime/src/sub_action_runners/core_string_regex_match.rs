@@ -107,7 +107,9 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.string.regex_match");
 
-        let source = config.str("source").unwrap_or("");
+        let source = ctx
+            .arg_stack
+            .interpolate(config.str("source").unwrap_or(""));
         let pattern = config.str("pattern").unwrap_or("");
         let into_var = forge_types::strip_var_decoration(
             config.str_nonempty("into_var").unwrap_or("regex.matched"),
@@ -134,7 +136,7 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
             ),
             Ok(re) => {
                 // captures[0] = full match, captures[1..] = numbered groups.
-                let (matched, captures) = match re.captures(source) {
+                let (matched, captures) = match re.captures(&source) {
                     None => (false, vec![]),
                     Some(caps) => {
                         let groups: Vec<Variant> = caps

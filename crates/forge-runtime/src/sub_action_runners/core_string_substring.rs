@@ -107,7 +107,9 @@ impl SubActionRunner for CoreStringSubstringRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.string.substring");
 
-        let source = config.str("source").unwrap_or("");
+        let source = ctx
+            .arg_stack
+            .interpolate(config.str("source").unwrap_or(""));
 
         let start = config.int("start_index").unwrap_or(0).max(0) as usize;
 

@@ -78,7 +78,9 @@ impl SubActionRunner for CoreStringFormatRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "core.string.format");
 
-        let template = config.str("template").unwrap_or("").to_owned();
+        let template = ctx
+            .arg_stack
+            .interpolate(config.str("template").unwrap_or(""));
         let into_var = forge_types::strip_var_decoration(
             config
                 .str_nonempty("into_var")
@@ -91,34 +93,5 @@ impl SubActionRunner for CoreStringFormatRunner {
             .set(into_var, Variant::String(template));
 
         (timer.success(), Some(new_stack))
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use super::*;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
-
-    #[tokio::test]
-    async fn format_writes_template_verbatim_without_reinterpolating_vars() {
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "template".to_owned(),
-            Variant::String("Hi %name%".to_owned()),
-        );
-        let stack = ArgStack::new().set("name".to_owned(), Variant::String("Alice".to_owned()));
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        let out = CoreStringFormatRunner.execute(&cfg, &ctx).await.1.unwrap();
-        assert_eq!(
-            out.get("string.formatted").and_then(|v| v.as_str()),
-            Some("Hi %name%")
-        );
     }
 }

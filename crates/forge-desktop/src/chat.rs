@@ -2104,3 +2104,133 @@ impl Render for ChatView {
             .children(user_menu)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
+    use forge_registry::SubActionRegistry;
+    use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
+    use forge_storage::viewer::MockViewerRepo;
+    use forge_storage::voice_aliases::MockVoiceAliasRepo;
+    use forge_types::EventId;
+    use gpui::{AppContext as _, Entity, TestAppContext};
+    use time::OffsetDateTime;
+
+    use super::ChatView;
+    use crate::chat_feed::{ChatFeed, ChatMessage};
+    use crate::home_stats::HomeStats;
+    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime};
+
+    const CAP: usize = 5;
+    const OVERFLOW: usize = 8;
+
+    fn message(ix: usize, is_bot: bool) -> ChatMessage {
+        ChatMessage {
+            id: format!("m{ix}").into(),
+            event_id: EventId::new(),
+            timestamp: "00:00:00".into(),
+            received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
+            platform: Platform::Twitch,
+            badges: vec![],
+            username: format!("user{ix}").into(),
+            author_color: None,
+            body: ChatBody::Message("hi".into()),
+            is_event: false,
+            is_bot,
+            moderated: false,
+            reply: None,
+        }
+    }
+
+    fn mount(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> (Entity<ChatFeed>, Entity<ChatView>) {
+        let _enter = rt.enter();
+        let feed = cx.new(|_| {
+            let mut feed = ChatFeed::new();
+            feed.set_capacity(CAP);
+            feed
+        });
+        let home_stats = cx.new(|_| HomeStats::new());
+        let mut viewers = MockViewerRepo::new();
+        viewers.expect_list().returning(|| Ok(Vec::new()));
+        let engine = spawn_action_engine(
+            EventBus::new(Arc::new(StubEventLog)),
+            Arc::new(StubActions),
+            Arc::new(StubHistory),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(ActionCancelRegistry::new()),
+        );
+        let view = cx.new(|cx| {
+            ChatView::new(
+                feed.clone(),
+                home_stats,
+                rt.handle().clone(),
+                Arc::new(viewers),
+                engine,
+                Arc::new(MockVoiceAliasRepo::new()),
+                None,
+                FORGE_DEFAULT,
+                cx,
+            )
+        });
+        (feed, view)
+    }
+
+    fn push_each(cx: &mut TestAppContext, feed: &Entity<ChatFeed>, messages: Vec<ChatMessage>) {
+        for message in messages {
+            feed.update(cx, |feed, cx| {
+                feed.push(message);
+                cx.notify();
+            });
+            cx.run_until_parked();
+        }
+    }
+
+    #[gpui::test]
+    fn unread_keeps_counting_past_the_feed_cap_while_scrolled_up(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (feed, view) = mount(cx, &rt);
+        view.update(cx, |view, _| view.auto_scroll = false);
+
+        push_each(
+            cx,
+            &feed,
+            (0..CAP + OVERFLOW).map(|ix| message(ix, false)).collect(),
+        );
+
+        assert_eq!(view.read_with(cx, |view, _| view.unread), CAP + OVERFLOW);
+    }
+
+    #[gpui::test]
+    fn the_visible_rows_and_list_follow_eviction_under_an_active_filter(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (feed, view) = mount(cx, &rt);
+        view.update(cx, |view, cx| {
+            view.hide_bots = true;
+            view.reset_chat_list(cx);
+        });
+
+        let total = CAP + OVERFLOW;
+        push_each(
+            cx,
+            &feed,
+            (0..total).map(|ix| message(ix, ix % 2 == 1)).collect(),
+        );
+
+        let start = (total - CAP) as u64;
+        let expected: Vec<u64> = (start..total as u64).filter(|seq| seq % 2 == 0).collect();
+        let (visible, list_len) = view.read_with(cx, |view, _| {
+            (
+                view.visible.iter().copied().collect::<Vec<u64>>(),
+                view.chat_list.item_count(),
+            )
+        });
+        assert_eq!(visible, expected);
+        assert_eq!(list_len, expected.len());
+    }
+}

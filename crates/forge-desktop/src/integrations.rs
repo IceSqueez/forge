@@ -1514,4 +1514,168 @@ mod tests {
             "the retired client was released before its supervisor joined"
         );
     }
+
+    mod detail_lifetime {
+        use std::sync::Mutex;
+
+        use forge_components::{Density, ThemeId};
+        use forge_platform_core::{
+            BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
+            ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
+            HealthValue, QuickAction, QuickActions, SectionIcon,
+        };
+        use forge_runtime::{
+            ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator,
+        };
+        use gpui::{AppContext as _, TestAppContext};
+
+        use super::super::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
+        use crate::integration_detail::IntegrationDetail;
+        use crate::platforms::PlatformConnectivity;
+        use crate::presentation::Presentation;
+        use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, test_backend};
+        use forge_registry::{SubActionRegistry, TriggerRegistry};
+        use forge_runtime::EventBus;
+        use forge_storage::{CredentialsRepo, SettingsRepo};
+        use std::sync::Arc;
+        use std::time::Duration;
+        use tokio::sync::mpsc;
+
+        struct HeldStreamBuiltin {
+            id: BuiltinId,
+            deltas: Mutex<Option<mpsc::UnboundedReceiver<HealthDelta>>>,
+        }
+
+        impl BuiltinStatus for HeldStreamBuiltin {
+            fn id(&self) -> &BuiltinId {
+                &self.id
+            }
+            fn display_name(&self) -> &str {
+                "OBS"
+            }
+            fn version(&self) -> Option<&str> {
+                None
+            }
+            fn connection(&self) -> ConnectionState {
+                ConnectionState::Connected
+            }
+            fn uptime(&self) -> Option<Duration> {
+                None
+            }
+            fn endpoint(&self) -> Option<&str> {
+                None
+            }
+            fn capability_flags(&self) -> CapabilityFlags {
+                CapabilityFlags {
+                    limited: false,
+                    label: None,
+                }
+            }
+            fn header_actions(&self) -> Vec<HeaderAction> {
+                Vec::new()
+            }
+        }
+
+        impl BuiltinHealth for HeldStreamBuiltin {
+            fn metrics(&self) -> [HealthMetric; 4] {
+                std::array::from_fn(|i| HealthMetric {
+                    label: format!("metric{i}"),
+                    value: HealthValue::Text {
+                        primary: String::new(),
+                        secondary: None,
+                    },
+                })
+            }
+            fn stream(&self) -> HealthStream {
+                let rx = self.deltas.lock().unwrap().take().unwrap();
+                Box::pin(futures_util::stream::unfold(rx, |mut rx| async move {
+                    rx.recv().await.map(|delta| (delta, rx))
+                }))
+            }
+        }
+
+        impl BuiltinContent for HeldStreamBuiltin {
+            fn sections(&self) -> Vec<DetailSection> {
+                Vec::new()
+            }
+        }
+
+        impl QuickActions for HeldStreamBuiltin {
+            fn actions(&self) -> Vec<QuickAction> {
+                Vec::new()
+            }
+        }
+
+        #[gpui::test]
+        fn closing_an_integration_screen_ends_the_task_holding_its_health_stream(
+            cx: &mut TestAppContext,
+        ) {
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let _enter = rt.enter();
+            let (deltas_tx, deltas_rx) = mpsc::unbounded_channel();
+            let probe = Arc::new(HeldStreamBuiltin {
+                id: BuiltinId::new("obs"),
+                deltas: Mutex::new(Some(deltas_rx)),
+            });
+            let object = BuiltinObject {
+                icon: SectionIcon::new("bug"),
+                status: probe.clone(),
+                health: probe.clone(),
+                content: probe.clone(),
+                quick: probe,
+                control: None,
+                obs_client: None,
+            };
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let engine = spawn_action_engine(
+                Arc::clone(&bus),
+                Arc::new(StubActions),
+                Arc::new(StubHistory),
+                Arc::new(SubActionRegistry::new()),
+                Arc::new(ActionCancelRegistry::new()),
+            );
+            let (backend, _writes) = test_backend();
+            let connectivity = cx.new(|_| PlatformConnectivity::new());
+            let view = cx.new(|cx| {
+                IntegrationDetail::new(
+                    object,
+                    rt.handle().clone(),
+                    engine,
+                    Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+                    backend as Arc<dyn SettingsRepo>,
+                    Arc::new(StubHistory),
+                    Arc::new(TriggerRegistry::new()),
+                    Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                    Arc::clone(&bus),
+                    spawn_live_viewer_aggregator(),
+                    BuiltinRegistry::default(),
+                    None,
+                    None,
+                    None,
+                    ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
+                    VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
+                    connectivity,
+                    cx,
+                )
+            });
+            cx.run_until_parked();
+            assert!(
+                !deltas_tx.is_closed(),
+                "the open screen must hold its health stream"
+            );
+
+            drop(view);
+            // Why: gpui releases a dropped entity on the next effect flush; its cancelled tasks' futures drop when the executor runs next.
+            cx.update(|_| {});
+            cx.run_until_parked();
+
+            assert!(
+                deltas_tx.is_closed(),
+                "the closed screen's health task must end without waiting for a delta"
+            );
+        }
+    }
 }

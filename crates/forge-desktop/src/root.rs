@@ -614,3 +614,131 @@ fn retry_screen(
         .child(retry);
     centered(card(body, palette), palette, density)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    use forge_events::{Event, EventSource};
+    use forge_runtime::EventBus;
+    use forge_types::{
+        ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSegment, EventId,
+        ModerationMarks,
+    };
+    use gpui::{AppContext as _, TestAppContext};
+
+    use super::start_bridge;
+    use crate::chat_feed::ChatFeed;
+    use crate::event_log::EventLog;
+    use crate::home_stats::HomeStats;
+    use crate::platforms::PlatformConnectivity;
+    use crate::queue_health::QueueHealth;
+    use crate::test_support::StubEventLog;
+
+    const MSG_ID: &str = "m1";
+
+    fn chat_message() -> Event {
+        let payload = ChatPayload {
+            platform_msg_id: MSG_ID.to_owned(),
+            author: "bob".to_owned(),
+            author_color: None,
+            segments: vec![ChatSegment::Text {
+                text: "!lurk".to_owned(),
+            }],
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        };
+        Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            serde_json::json!({ ChatPayload::KEY: payload }),
+        )
+    }
+
+    fn caused(kind: &str, payload: serde_json::Value, parent: EventId) -> Event {
+        Event::caused_by(EventSource::Core, kind, payload, parent)
+    }
+
+    fn delete(message_id: &str) -> Event {
+        let payload = ChatModerationPayload {
+            action: ChatModerationAction::DeleteMessage {
+                message_id: message_id.to_owned(),
+            },
+        };
+        Event::new(
+            EventSource::Twitch,
+            "chat.moderation",
+            serde_json::json!({ ChatModerationPayload::KEY: payload }),
+        )
+    }
+
+    #[gpui::test]
+    fn the_bridge_notifies_the_chat_feed_only_for_events_that_change_a_row(
+        cx: &mut TestAppContext,
+    ) {
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let feed = cx.new(|_| ChatFeed::new());
+        let notified = Rc::new(Cell::new(0_usize));
+        let _observer = cx.update(|cx| {
+            let notified = Rc::clone(&notified);
+            cx.observe(&feed, move |_, _| notified.set(notified.get() + 1))
+        });
+        start_bridge(
+            &mut cx.to_async(),
+            feed.clone(),
+            cx.new(|_| HomeStats::new()),
+            cx.new(|_| EventLog::new()),
+            cx.new(|_| PlatformConnectivity::new()),
+            cx.new(|_| QueueHealth::new()),
+            bus.subscribe(),
+        );
+
+        let message = chat_message();
+        let message_id = message.id;
+        let stranger = EventId::new();
+        let action = serde_json::json!({ "action_name": "Greet" });
+        let command = serde_json::json!({ "command": "!lurk" });
+        let steps = [
+            ("chat message", message, true),
+            (
+                "action.start for an unknown event",
+                caused("action.start", action.clone(), stranger),
+                false,
+            ),
+            (
+                "command.matched for an unknown event",
+                caused("command.matched", command.clone(), stranger),
+                false,
+            ),
+            (
+                "action.start on a plain message row",
+                caused("action.start", action.clone(), message_id),
+                false,
+            ),
+            ("delete of an unknown message", delete("ghost"), false),
+            (
+                "command.matched on the row",
+                caused("command.matched", command, message_id),
+                true,
+            ),
+            (
+                "action.start on the command row",
+                caused("action.start", action, message_id),
+                true,
+            ),
+            ("delete of the row", delete(MSG_ID), true),
+            ("repeated delete of the row", delete(MSG_ID), false),
+        ];
+        for (label, event, expect_notify) in steps {
+            let before = notified.get();
+            bus.publish(event);
+            cx.run_until_parked();
+            assert_eq!(notified.get() > before, expect_notify, "{label}");
+        }
+    }
+}

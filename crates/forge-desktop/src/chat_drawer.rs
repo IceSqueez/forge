@@ -392,6 +392,57 @@ mod tests {
     }
 
     #[test]
+    fn viewer_directory_resolves_a_shared_username_to_the_first_listed_viewer() {
+        let now = OffsetDateTime::now_utc();
+        let directory = ViewerDirectory::new(vec![
+            viewer("alice", 7, now, now),
+            viewer("alice", 99, now, now),
+        ]);
+
+        assert_eq!(directory.get("alice").unwrap().message_count, 7);
+        assert!(directory.get("bob").is_none());
+    }
+
+    #[test]
+    fn summaries_count_only_the_rows_still_retained_after_eviction() {
+        let mut feed = ChatFeed::new();
+        feed.set_capacity(3);
+        for name in ["alice", "alice", "bob", "alice", "carol"] {
+            feed.push(msg(name, vec![]));
+        }
+
+        let summary = |name: &str| {
+            author_summary(
+                name,
+                feed.authors(),
+                &ViewerDirectory::default(),
+                &FORGE_DEFAULT,
+            )
+        };
+        assert_eq!(summary("alice").unwrap().message_count, 1);
+        assert_eq!(summary("bob").unwrap().message_count, 1);
+        assert!(summary("ghost").is_none());
+    }
+
+    #[test]
+    fn selected_summary_falls_back_to_the_newest_author_once_the_selection_is_evicted() {
+        let mut feed = ChatFeed::new();
+        feed.set_capacity(2);
+        for name in ["alice", "bob", "carol"] {
+            feed.push(msg(name, vec![]));
+        }
+
+        let summary = selected_summary(
+            Some("alice"),
+            feed.authors(),
+            &ViewerDirectory::default(),
+            &FORGE_DEFAULT,
+        )
+        .unwrap();
+        assert_eq!(summary.username, "carol");
+    }
+
+    #[test]
     fn watch_time_since_formats_minutes_and_hours() {
         let now = OffsetDateTime::now_utc();
         let cases = [(0, "0 min"), (30, "30 min"), (60, "1h 0m"), (150, "2h 30m")];

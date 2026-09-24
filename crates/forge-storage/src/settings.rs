@@ -60,6 +60,8 @@ pub mod reserved_keys {
     pub const UPDATES_DISMISSED_VERSION: &str = "updates.dismissed_version";
 }
 
+pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
+
 /// How each settings key may appear in the publicly-attachable diagnostic bundle.
 pub mod disclosure {
     use std::collections::{BTreeMap, HashMap};
@@ -595,7 +597,10 @@ pub async fn chat_history_display_limit(repo: &dyn SettingsRepo) -> Result<u32, 
     let raw = repo
         .get_string(reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT)
         .await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(500))
+    Ok(raw
+        .as_deref()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT))
 }
 
 pub async fn set_chat_history_display_limit(

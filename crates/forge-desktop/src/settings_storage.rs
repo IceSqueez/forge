@@ -5,9 +5,9 @@ use forge_components::{
     card, field_hint, field_title, icon, mono_family, primary_button, spacing, tr,
 };
 use forge_storage::{
-    DataProvider, SettingsRepo, chat_history_display_limit, chat_history_store_limit,
-    event_log_retention_days, set_chat_history_display_limit, set_chat_history_store_limit,
-    set_event_log_retention_days,
+    DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DataProvider, SettingsRepo, chat_history_display_limit,
+    chat_history_store_limit, event_log_retention_days, set_chat_history_display_limit,
+    set_chat_history_store_limit, set_event_log_retention_days,
 };
 use gpui::{
     ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div, prelude::*,
@@ -18,7 +18,6 @@ use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 const DEFAULT_STORE_LIMIT: u32 = 5000;
-const DEFAULT_DISPLAY_LIMIT: u32 = 500;
 const DEFAULT_RETENTION_DAYS: u32 = 7;
 const MIN_RETENTION_DAYS: u32 = 1;
 const MAX_RETENTION_DAYS: u32 = 365;
@@ -50,7 +49,7 @@ impl SettingsStorageView {
                 .with_font_size(FONT_SM)
         });
         let display_input = cx.new(|cx| {
-            TextInput::new(DEFAULT_DISPLAY_LIMIT.to_string(), cx)
+            TextInput::new(DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT.to_string(), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
         });
@@ -82,7 +81,7 @@ impl SettingsStorageView {
             backend,
             rt_handle,
             store_limit: DEFAULT_STORE_LIMIT,
-            display_limit: DEFAULT_DISPLAY_LIMIT,
+            display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
             retention_days: DEFAULT_RETENTION_DAYS,
             store_input,
             display_input,

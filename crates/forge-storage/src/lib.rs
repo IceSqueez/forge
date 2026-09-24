@@ -38,9 +38,9 @@ pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{
-    DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, Language, SettingsRepo, UnknownLanguage,
-    VOICE_GATE_DEFAULT_HOLD_MS, VOICE_GATE_DEFAULT_THRESHOLD, VoiceGateSettings,
-    chat_history_display_limit, chat_history_store_limit, diagnostic_log_level,
+    DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_DIAGNOSTIC_LOG_LEVEL, EngineParams, Language,
+    SettingsRepo, UnknownLanguage, VOICE_GATE_DEFAULT_HOLD_MS, VOICE_GATE_DEFAULT_THRESHOLD,
+    VoiceGateSettings, chat_history_display_limit, chat_history_store_limit, diagnostic_log_level,
     disabled_tts_engines, disclosure, engine_params, get_bool_setting, get_json_setting,
     log_level_as_str, master_volume, reserved_keys, set_bool_setting,
     set_chat_history_display_limit, set_chat_history_store_limit, set_diagnostic_log_level,

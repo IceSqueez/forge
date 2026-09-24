@@ -8,6 +8,8 @@ use forge_types::{
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
 
+pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
+
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
     pub id: SharedString,
@@ -68,8 +70,6 @@ impl ChatMessage {
         }
     }
 }
-
-pub const DEFAULT_DISPLAY_LIMIT: u32 = 500;
 
 #[derive(Clone, Copy, Debug)]
 pub struct AuthorActivity {

@@ -166,3 +166,124 @@ impl Connected<IncomingStream<'_, GuardedListener>> for PeerInfo {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use std::io;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use axum::serve::Listener;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::sync::Semaphore;
+
+    use super::{GuardedListener, GuardedStream, MAX_CONCURRENT_CONNECTIONS, REQUEST_READ_TIMEOUT};
+
+    const BYTE_BUDGET: Duration = Duration::from_secs(5);
+    const MARGIN: Duration = Duration::from_secs(1);
+
+    async fn guarded_pair() -> (TcpStream, GuardedStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let client = TcpStream::connect(listener.local_addr().expect("addr"))
+            .await
+            .expect("connect");
+        let (server, _) = listener.accept().await.expect("accept");
+        let permit = Arc::new(Semaphore::new(1))
+            .try_acquire_owned()
+            .expect("permit");
+        (client, GuardedStream::new(server, permit))
+    }
+
+    async fn read_one(stream: &mut GuardedStream) -> io::Result<usize> {
+        let mut buf = [0_u8; 16];
+        stream.read(&mut buf).await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_trickling_request_head_is_cut_at_the_deadline_counted_from_accept() {
+        let (mut client, mut guarded) = guarded_pair().await;
+
+        tokio::time::sleep(REQUEST_READ_TIMEOUT - MARGIN).await;
+        client.write_all(b"G").await.expect("write");
+        assert_eq!(
+            read_one(&mut guarded)
+                .await
+                .expect("a byte inside the deadline is read"),
+            1
+        );
+
+        tokio::time::sleep(MARGIN * 2).await;
+        client.write_all(b"E").await.expect("write");
+        let late = read_one(&mut guarded).await;
+
+        assert_eq!(
+            late.expect_err("reading must not push the deadline out")
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_response_write_restarts_the_read_deadline() {
+        let (mut client, mut guarded) = guarded_pair().await;
+
+        tokio::time::sleep(REQUEST_READ_TIMEOUT - MARGIN).await;
+        guarded
+            .write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
+            .await
+            .expect("respond");
+        let responded_at = tokio::time::Instant::now();
+        tokio::time::sleep(MARGIN * 2).await;
+        client.write_all(b"G").await.expect("write");
+
+        assert_eq!(
+            read_one(&mut guarded)
+                .await
+                .expect("a keep-alive request after a response is read past the first deadline"),
+            1
+        );
+        let idle = read_one(&mut guarded).await;
+        assert_eq!(
+            idle.expect_err("an idle keep-alive must still time out")
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+        assert!(responded_at.elapsed() >= REQUEST_READ_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn the_connection_cap_drops_the_one_over_it_until_a_held_connection_closes() {
+        let inner = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = inner.local_addr().expect("addr");
+        let mut listener = GuardedListener::new(inner);
+        let mut clients = Vec::with_capacity(MAX_CONCURRENT_CONNECTIONS);
+        let mut held = Vec::with_capacity(MAX_CONCURRENT_CONNECTIONS);
+        for _ in 0..MAX_CONCURRENT_CONNECTIONS {
+            clients.push(TcpStream::connect(addr).await.expect("connect"));
+            held.push(Listener::accept(&mut listener).await.0);
+        }
+
+        let mut over_cap = TcpStream::connect(addr).await.expect("connect over cap");
+        let accepting = tokio::spawn(async move { Listener::accept(&mut listener).await.1 });
+        let mut buf = [0_u8; 1];
+        let closed = tokio::time::timeout(BYTE_BUDGET, over_cap.read(&mut buf))
+            .await
+            .expect("the connection over the cap was left hanging");
+        assert!(
+            matches!(closed, Ok(0) | Err(_)),
+            "the connection over the cap was served"
+        );
+
+        held.pop();
+        let admitted = TcpStream::connect(addr)
+            .await
+            .expect("connect after a slot frees");
+        let accepted_peer = tokio::time::timeout(BYTE_BUDGET, accepting)
+            .await
+            .expect("a freed slot must admit the next connection")
+            .expect("accept task");
+        assert_eq!(accepted_peer, admitted.local_addr().expect("client addr"));
+    }
+}

@@ -441,4 +441,53 @@ mod tests {
     fn a_configured_additional_origin_is_accepted_although_its_host_is_a_name() {
         assert!(accepts(EXTRA_ORIGIN, "overlay.example.com"));
     }
+
+    #[test]
+    fn a_host_that_a_rebinding_page_cannot_present_is_accepted() {
+        let allowed = allowlist_for_tests();
+        for host in [
+            "127.0.0.1:8080",
+            "127.0.0.1",
+            "192.168.1.4:65535",
+            "[::1]:8080",
+            "[::1]",
+            "[2001:db8::4]:0",
+            "localhost",
+            "localhost:0",
+            "LOCALHOST:8080",
+            "  localhost:8080\t",
+            "overlay.example.com",
+            "overlay.example.com:8443",
+            "Overlay.Example.COM:443",
+        ] {
+            assert!(accepts_host(&allowed, host), "expected accept for {host:?}");
+        }
+    }
+
+    #[test]
+    fn a_host_naming_anything_but_localhost_or_an_allowed_origin_is_refused() {
+        let allowed = allowlist_for_tests();
+        for host in [
+            "evil.example:8080",
+            "evil.example",
+            "localhost.evil.example:8080",
+            "overlay.example.com.evil:8080",
+            "evil.overlay.example.com",
+            "overlay.example.com:abc",
+            "overlay.example.com:",
+            "localhost:",
+            "localhost:65536",
+            "localhost:+80",
+            "127.0.0.1:65536",
+            "[::1",
+            "[fe80::1%25eth0]:8080",
+            "https://overlay.example.com",
+            "",
+        ] {
+            assert!(
+                !accepts_host(&allowed, host),
+                "expected refusal for {host:?}"
+            );
+        }
+    }
 }

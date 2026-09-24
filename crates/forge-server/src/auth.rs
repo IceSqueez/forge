@@ -122,3 +122,72 @@ fn generate_token() -> String {
     rand::rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_storage::credentials::MockCredentialsRepo;
+
+    use super::AuthState;
+
+    const FIRST_TOKEN: &str = "first-token";
+
+    #[tokio::test]
+    async fn a_live_session_stays_only_on_the_current_token_or_while_its_class_is_still_admitted() {
+        let auth = AuthState::for_test(false, FIRST_TOKEN);
+        let stale = auth.token_generation();
+        let mut creds = MockCredentialsRepo::new();
+        creds.expect_store().returning(|_, _| Ok(()));
+        auth.regenerate(&creds).await.expect("regenerate");
+        let current = auth.token_generation();
+
+        for (reads_required, bearer, overlay, admitted, case) in [
+            (
+                false,
+                Some(current),
+                false,
+                true,
+                "bearer on the current token",
+            ),
+            (
+                true,
+                Some(current),
+                false,
+                true,
+                "bearer on the current token, reads closed",
+            ),
+            (
+                false,
+                Some(stale),
+                false,
+                false,
+                "bearer on a rotated token",
+            ),
+            (
+                false,
+                Some(stale),
+                true,
+                false,
+                "rotated bearer that also opened an overlay channel",
+            ),
+            (
+                false,
+                None,
+                false,
+                true,
+                "anonymous reader while reads are open",
+            ),
+            (
+                true,
+                None,
+                false,
+                false,
+                "anonymous reader once reads are closed",
+            ),
+            (true, None, true, true, "overlay page once reads are closed"),
+        ] {
+            auth.set_reads_required(reads_required);
+            assert_eq!(auth.admits_session(bearer, overlay), admitted, "{case}");
+        }
+    }
+}

@@ -1412,7 +1412,7 @@ mod tests {
     }
 
     async fn make_server_serving_one_overlay() -> (ServerHandle, std::net::SocketAddr) {
-        let creds = MemCreds::new();
+        let creds = MemCreds::with_token(BEARER_TOKEN);
         let auth = AuthState::load(false, &*creds).await.expect("auth load");
         let creds_dyn: Arc<dyn CredentialsRepo> = creds;
         let mut state = make_app_state(auth, creds_dyn);
@@ -1542,5 +1542,379 @@ mod tests {
                 );
             }
         }
+    }
+
+    type ClientSocket = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+    use axum::extract::ws::close_code;
+    use tokio_tungstenite::tungstenite::Message as ClientMessage;
+
+    const BEARER_TOKEN: &str = "bearer-under-test";
+    const FOREIGN_HOST: &str = "evil.example";
+    const ADDED_ORIGIN_HOST: &str = "dash.test";
+    /// Mirrors the unauthenticated text-frame bound the socket loop enforces.
+    const PRE_AUTH_LIMIT: usize = 16 * 1024;
+    /// Mirrors the protocol-level frame and message bound set on the upgrade.
+    const PROTOCOL_LIMIT: usize = 256 * 1024;
+    const PAST_PRE_AUTH_PAYLOAD: usize = 100 * 1024;
+    /// Each round trip gives a pending policy close another chance to win the socket loop's
+    /// select, so a session that should have stayed open is caught with near certainty.
+    const ROUND_TRIPS: usize = 8;
+
+    async fn open_ws(addr: std::net::SocketAddr) -> ClientSocket {
+        tokio_tungstenite::connect_async(format!("ws://{addr}/ws/v1/"))
+            .await
+            .expect("ws connect")
+            .0
+    }
+
+    async fn send_text(socket: &mut ClientSocket, text: String) {
+        futures_util::SinkExt::send(socket, ClientMessage::Text(text.into()))
+            .await
+            .expect("send frame");
+    }
+
+    async fn next_message(socket: &mut ClientSocket) -> Option<ClientMessage> {
+        tokio::time::timeout(FRAME_BUDGET, futures_util::StreamExt::next(socket))
+            .await
+            .expect("timeout waiting for the server")
+            .and_then(Result::ok)
+    }
+
+    async fn ask(socket: &mut ClientSocket, request: serde_json::Value) -> serde_json::Value {
+        send_text(socket, request.to_string()).await;
+        serde_json::from_str(&next_text_frame(socket).await).expect("json response")
+    }
+
+    fn close_code_of(message: Option<ClientMessage>) -> Option<u16> {
+        match message {
+            Some(ClientMessage::Close(Some(frame))) => Some(u16::from(frame.code)),
+            _ => None,
+        }
+    }
+
+    fn get_info_request() -> serde_json::Value {
+        serde_json::json!({ "id": "info", "request": "getInfo" })
+    }
+
+    fn bearer_auth_request(token: &str) -> serde_json::Value {
+        serde_json::json!({ "id": "auth", "request": "auth", "token": token })
+    }
+
+    fn code_event_request() -> serde_json::Value {
+        serde_json::json!({
+            "id": "evt",
+            "request": "triggerCodeEvent",
+            "name": "qa_probe",
+            "args": {},
+        })
+    }
+
+    async fn authenticated_ws(addr: std::net::SocketAddr, token: &str) -> ClientSocket {
+        let mut socket = open_ws(addr).await;
+        let ack = ask(&mut socket, bearer_auth_request(token)).await;
+        assert_eq!(ack["status"], "ok", "the bearer was refused: {ack}");
+        socket
+    }
+
+    async fn assert_still_serving(socket: &mut ClientSocket, who: &str) {
+        for _ in 0..ROUND_TRIPS {
+            send_text(socket, get_info_request().to_string()).await;
+            assert!(
+                matches!(next_message(socket).await, Some(ClientMessage::Text(_))),
+                "{who} was closed"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn turning_reads_required_on_closes_an_anonymous_session_with_the_policy_code() {
+        let (handle, addr, auth) =
+            make_server_with_shared_auth(false, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut anonymous = open_ws(addr).await;
+        assert_eq!(
+            ask(&mut anonymous, get_info_request()).await["status"],
+            "ok"
+        );
+
+        auth.set_reads_required(true);
+
+        assert_eq!(
+            close_code_of(next_message(&mut anonymous).await),
+            Some(close_code::POLICY)
+        );
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn once_reads_are_required_a_new_anonymous_reader_is_refused_on_ws_and_http() {
+        let (handle, addr, auth) =
+            make_server_with_shared_auth(false, MemCreds::with_token(BEARER_TOKEN)).await;
+
+        auth.set_reads_required(true);
+
+        let mut late = open_ws(addr).await;
+        let refused = ask(&mut late, get_info_request()).await;
+        assert_eq!(refused["error"]["code"], "UNAUTHENTICATED");
+        let http = reqwest::get(format!("http://{addr}/api/v1/globals"))
+            .await
+            .expect("HTTP request");
+        assert_eq!(http.status(), reqwest::StatusCode::UNAUTHORIZED);
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn turning_reads_required_on_keeps_bearer_and_overlay_sessions_open() {
+        let (handle, addr) = make_server_serving_one_overlay().await;
+        let mut bearer = authenticated_ws(addr, BEARER_TOKEN).await;
+        let mut page = open_ws(addr).await;
+        let ack = ask(
+            &mut page,
+            serde_json::json!({
+                "id": "1",
+                "request": "auth",
+                "overlayCredential": OVERLAY_PAGE_CREDENTIAL,
+            }),
+        )
+        .await;
+        assert_eq!(
+            ack["status"], "ok",
+            "the page never became an overlay session"
+        );
+        let mut sentinel = open_ws(addr).await;
+        assert_eq!(ask(&mut sentinel, get_info_request()).await["status"], "ok");
+
+        handle.auth_state().await.set_reads_required(true);
+        assert_eq!(
+            close_code_of(next_message(&mut sentinel).await),
+            Some(close_code::POLICY),
+            "the policy change never reached the sockets, so nothing below is proven"
+        );
+
+        assert_still_serving(&mut bearer, "a bearer session").await;
+        assert_still_serving(&mut page, "an overlay page").await;
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_restart_applies_a_saved_reads_required_setting() {
+        let settings = MapSettings::new();
+        let (handle, port) = handle_awaiting_a_port(Arc::clone(&settings), true).await;
+        assert_eq!(info_status(port).await, reqwest::StatusCode::OK);
+        crate::config::ServerSettings::save_auth_required_for_reads(&*settings, true)
+            .await
+            .expect("save reads required");
+
+        handle.restart().await.expect("restart");
+
+        assert_eq!(info_status(port).await, reqwest::StatusCode::UNAUTHORIZED);
+        handle.stop().await.expect("stop after restart");
+    }
+
+    #[tokio::test]
+    async fn regenerating_the_token_closes_a_session_authenticated_with_the_old_one() {
+        let creds = MemCreds::with_token(BEARER_TOKEN);
+        let (handle, addr, auth) = make_server_with_shared_auth(false, Arc::clone(&creds)).await;
+        let mut session = authenticated_ws(addr, BEARER_TOKEN).await;
+
+        auth.regenerate(&*creds).await.expect("regenerate");
+
+        assert_eq!(
+            close_code_of(next_message(&mut session).await),
+            Some(close_code::POLICY)
+        );
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_session_presenting_the_regenerated_token_may_mutate() {
+        let creds = MemCreds::with_token(BEARER_TOKEN);
+        let (handle, addr, auth) = make_server_with_shared_auth(false, Arc::clone(&creds)).await;
+        let fresh = auth.regenerate(&*creds).await.expect("regenerate");
+
+        let mut session = authenticated_ws(addr, &fresh).await;
+
+        assert_eq!(
+            ask(&mut session, code_event_request()).await["status"],
+            "ok"
+        );
+        handle.abort();
+    }
+
+    /// Sends the request head verbatim so the `Host` line is whatever the case names; `None`
+    /// sends an HTTP/1.0 request with no `Host` at all.
+    async fn raw_request_naming(
+        addr: std::net::SocketAddr,
+        target: &str,
+        host: Option<&str>,
+    ) -> (u16, String) {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let head = match host {
+            Some(host) => {
+                format!("GET {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n")
+            }
+            None => format!("GET {target} HTTP/1.0\r\n\r\n"),
+        };
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        stream.write_all(head.as_bytes()).await.expect("write");
+        let mut raw = Vec::new();
+        stream.read_to_end(&mut raw).await.expect("read");
+        let text = String::from_utf8_lossy(&raw).into_owned();
+        let status = text
+            .split_whitespace()
+            .nth(1)
+            .and_then(|code| code.parse().ok())
+            .expect("status line");
+        let body = text
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body.to_owned())
+            .unwrap_or_default();
+        (status, body)
+    }
+
+    #[tokio::test]
+    async fn a_request_naming_a_foreign_host_is_misdirected_on_the_api_and_overlay_routes() {
+        let (handle, addr) = start_on_an_ephemeral_port(MapSettings::new(), Vec::new()).await;
+        let foreign = format!("{FOREIGN_HOST}:{}", addr.port());
+
+        for target in ["/api/v1/info", "/overlays/alerts/config.json"] {
+            let (status, body) = raw_request_naming(addr, target, Some(&foreign)).await;
+            assert_eq!(
+                status,
+                reqwest::StatusCode::MISDIRECTED_REQUEST.as_u16(),
+                "{target}"
+            );
+            let json: serde_json::Value = serde_json::from_str(&body).expect("json body");
+            assert_eq!(json["error"]["code"], "HOST_NOT_ALLOWED", "{target}");
+        }
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn requests_naming_an_address_localhost_an_allowed_origin_or_no_host_are_served() {
+        let (handle, addr) = start_on_an_ephemeral_port(
+            MapSettings::new(),
+            vec![format!("https://{ADDED_ORIGIN_HOST}")],
+        )
+        .await;
+        let port = addr.port();
+
+        for host in [
+            Some(format!("127.0.0.1:{port}")),
+            Some(format!("[::1]:{port}")),
+            Some(format!("localhost:{port}")),
+            Some(format!("{ADDED_ORIGIN_HOST}:{port}")),
+            None,
+        ] {
+            let (status, _) = raw_request_naming(addr, "/api/v1/info", host.as_deref()).await;
+            assert_eq!(status, reqwest::StatusCode::OK.as_u16(), "host {host:?}");
+        }
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn an_anonymous_frame_past_the_pre_auth_limit_closes_with_the_size_code() {
+        let (handle, addr) = make_server(false, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut anonymous = open_ws(addr).await;
+
+        send_text(&mut anonymous, "x".repeat(PRE_AUTH_LIMIT)).await;
+        assert!(
+            matches!(
+                next_message(&mut anonymous).await,
+                Some(ClientMessage::Text(_))
+            ),
+            "a frame exactly at the limit must still be answered"
+        );
+
+        send_text(&mut anonymous, "x".repeat(PRE_AUTH_LIMIT + 1)).await;
+        assert_eq!(
+            close_code_of(next_message(&mut anonymous).await),
+            Some(close_code::SIZE)
+        );
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn an_authenticated_session_may_send_frames_past_the_pre_auth_limit() {
+        let (handle, addr) = make_server(false, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut session = authenticated_ws(addr, BEARER_TOKEN).await;
+
+        send_text(&mut session, "x".repeat(PAST_PRE_AUTH_PAYLOAD)).await;
+
+        assert!(matches!(
+            next_message(&mut session).await,
+            Some(ClientMessage::Text(_))
+        ));
+        handle.abort();
+    }
+
+    // Why: the socket loop answers any binary frame with 1003, so seeing any other ending
+    // proves the oversized frame was refused by the protocol layer before it was buffered whole.
+    #[tokio::test]
+    async fn a_frame_past_the_protocol_limit_is_refused_before_the_socket_loop_sees_it() {
+        let (handle, addr) = make_server(false, MemCreds::with_token(BEARER_TOKEN)).await;
+        let mut session = authenticated_ws(addr, BEARER_TOKEN).await;
+
+        futures_util::SinkExt::send(
+            &mut session,
+            ClientMessage::Binary(vec![0_u8; PROTOCOL_LIMIT + 1].into()),
+        )
+        .await
+        .expect("send frame");
+        let ending = next_message(&mut session).await;
+
+        assert!(
+            !matches!(ending, Some(ClientMessage::Text(_))),
+            "the oversized frame was answered"
+        );
+        assert_ne!(
+            close_code_of(ending),
+            Some(close_code::UNSUPPORTED),
+            "the oversized frame reached the socket loop"
+        );
+        handle.abort();
+    }
+
+    // Why: virtual time lets the fifteen-second read deadline pass without a wall-clock wait;
+    // loopback bytes are delivered before the paused clock may auto-advance.
+    #[tokio::test(start_paused = true)]
+    async fn a_connection_that_never_sends_a_request_is_closed_at_the_read_deadline() {
+        use tokio::io::AsyncReadExt as _;
+
+        let (handle, addr) = make_server(false, MemCreds::new()).await;
+        let mut silent = tokio::net::TcpStream::connect(addr).await.expect("connect");
+        let opened = tokio::time::Instant::now();
+
+        let mut buf = [0_u8; 1];
+        let outcome = tokio::time::timeout(
+            crate::listener::REQUEST_READ_TIMEOUT * 2,
+            silent.read(&mut buf),
+        )
+        .await
+        .expect("a silent connection was held past twice the read deadline");
+
+        assert!(
+            matches!(outcome, Ok(0) | Err(_)),
+            "the server answered nothing yet sent bytes"
+        );
+        assert!(
+            opened.elapsed() >= crate::listener::REQUEST_READ_TIMEOUT,
+            "the connection was dropped before the deadline"
+        );
+        handle.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_upgraded_websocket_outlives_the_read_deadline() {
+        let (handle, addr) = make_server(false, MemCreds::new()).await;
+        let mut socket = open_ws(addr).await;
+        assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
+
+        tokio::time::sleep(crate::listener::REQUEST_READ_TIMEOUT * 2).await;
+
+        assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
+        handle.abort();
     }
 }

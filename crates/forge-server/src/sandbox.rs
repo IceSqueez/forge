@@ -31,3 +31,61 @@ pub(crate) async fn confine(root: &Path, requested: &Path) -> Option<PathBuf> {
         .starts_with(&canon_root)
         .then_some(canon_target)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::request_relative_path;
+
+    #[test]
+    fn a_request_path_carrying_a_network_drive_parent_or_hidden_shape_is_refused() {
+        for refused in [
+            "\\\\host\\s\\x",
+            "/\\\\host\\s\\x",
+            "alerts\\..\\secret",
+            "alerts/\\\\host\\s",
+            "C:/x",
+            "c:x",
+            "a:b",
+            "alerts/index.html:stream",
+            "a/../b",
+            "..",
+            "alerts/..",
+            ".hidden",
+            "alerts/.git/config",
+            "alerts/./index.html",
+            "a\0b",
+        ] {
+            assert_eq!(
+                request_relative_path(refused),
+                None,
+                "{refused:?} must be refused before any filesystem call"
+            );
+        }
+    }
+
+    #[test]
+    fn a_plain_relative_request_path_maps_to_its_normal_segments() {
+        for (requested, expected) in [
+            (
+                "alerts/index.html",
+                PathBuf::from("alerts").join("index.html"),
+            ),
+            ("//alerts/", PathBuf::from("alerts")),
+            (
+                "/alerts//media/clip.wav",
+                PathBuf::from("alerts").join("media").join("clip.wav"),
+            ),
+            ("", PathBuf::new()),
+            ("/", PathBuf::new()),
+            ("alerts/файл.js", PathBuf::from("alerts").join("файл.js")),
+        ] {
+            assert_eq!(
+                request_relative_path(requested),
+                Some(expected),
+                "{requested:?}"
+            );
+        }
+    }
+}

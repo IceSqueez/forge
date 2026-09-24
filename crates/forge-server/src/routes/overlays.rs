@@ -983,4 +983,91 @@ mod tests {
 
         handle.abort();
     }
+
+    // Why: on Unix a backslash or colon is an ordinary file-name byte, so a file carrying one
+    // is served unless the request-path guard refuses the shape before the sandbox looks.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn serve_overlay_refuses_backslash_colon_and_unc_shaped_paths() {
+        let dir = qa_tempdir();
+        let root = make_root(dir.path()).await;
+        write_at(root.join("a\\b.html"), ESCAPE_MARKER).await;
+        write_at(root.join("a:b.html"), ESCAPE_MARKER).await;
+
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        for target in [
+            "/overlays/a%5Cb.html",
+            "/overlays/a:b.html",
+            "/overlays/a%3Ab.html",
+            "/overlays/%5C%5Chost%5Cs%5Cx",
+        ] {
+            let (status, body) = raw_get(addr, target, "").await;
+            assert_eq!(status, 404, "expected 404 for {target}");
+            assert!(!body.contains(ESCAPE_MARKER), "{target} was served");
+        }
+
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_withholds_the_wildcard_from_config_json_only() {
+        let dir = qa_tempdir();
+        let root = make_root(dir.path()).await;
+        write_at(root.join("alerts").join(forge_overlay::CONFIG_FILE), "{}").await;
+        write_at(root.join("alerts").join(WIDGET_FILE), "console.log('hi')").await;
+
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        let mut granted = Vec::new();
+        for file in [forge_overlay::CONFIG_FILE, WIDGET_FILE] {
+            let response = reqwest::Client::new()
+                .get(format!("http://{addr}/overlays/alerts/{file}"))
+                .header(reqwest::header::ORIGIN, FOREIGN_ORIGIN)
+                .send()
+                .await
+                .expect("request");
+            assert_eq!(response.status(), reqwest::StatusCode::OK, "{file}");
+            granted.push(allowed_origin(response.headers()));
+        }
+
+        assert_eq!(
+            granted,
+            [
+                format!("http://{FIXTURE_BIND_ADDR}"),
+                ANY_ORIGIN_WILDCARD.to_owned()
+            ]
+        );
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_overlay_streams_a_multi_chunk_file_whole_under_its_exact_length() {
+        const LARGE_FILE_BYTES: usize = 100 * 1024 + 7;
+        let dir = qa_tempdir();
+        let root = make_root(dir.path()).await;
+        let content: Vec<u8> = (0..LARGE_FILE_BYTES)
+            .map(|n| u8::try_from(n % 251).expect("below 251"))
+            .collect();
+        tokio::fs::write(root.join("clip.wav"), &content)
+            .await
+            .expect("write");
+
+        let (handle, addr) = make_overlay_server(root, true, MemCreds::new()).await;
+
+        let response = reqwest::get(format!("http://{addr}/overlays/clip.wav"))
+            .await
+            .expect("request");
+        assert_eq!(
+            header_text(response.headers(), reqwest::header::CONTENT_LENGTH),
+            LARGE_FILE_BYTES.to_string()
+        );
+        let body = response.bytes().await.expect("body");
+        assert!(
+            body[..] == content[..],
+            "the streamed body differs from the file"
+        );
+
+        handle.abort();
+    }
 }

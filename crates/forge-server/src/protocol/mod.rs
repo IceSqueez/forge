@@ -1205,7 +1205,11 @@ mod tests {
             }
             other => panic!("expected ok response, got {other:?}"),
         }
-        assert!(ctx.client.authenticated.load(Ordering::Acquire));
+        assert_eq!(
+            ctx.client.bearer_generation(),
+            Some(ctx.auth_state.token_generation()),
+            "the session must record the generation of the token it presented"
+        );
     }
 
     #[tokio::test]
@@ -1587,5 +1591,95 @@ mod tests {
                 .iter()
                 .any(|f| f["name"].as_str().unwrap().contains("secret"))
         );
+    }
+
+    fn subscribe_to(kinds: impl IntoIterator<Item = String>) -> WsEnvelope<WsRequest> {
+        WsEnvelope {
+            id: Some("sub".to_owned()),
+            inner: WsRequest::Subscribe {
+                events: kinds
+                    .into_iter()
+                    .map(|kind| WireEventFilter {
+                        source: Some("twitch".to_owned()),
+                        kind: Some(kind),
+                    })
+                    .collect(),
+            },
+        }
+    }
+
+    fn error_code(resp: &WsEnvelope<WsResponse>) -> Option<&str> {
+        match &resp.inner {
+            WsResponse::Error { code, .. } => code.as_deref(),
+            WsResponse::Ok(_) => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn the_filter_cap_counts_distinct_filters_and_refuses_the_one_past_it_unchanged() {
+        let ctx = make_registered_ctx(false, false).await;
+        let at_cap: Vec<String> = (0..MAX_SUBSCRIPTIONS_PER_CLIENT)
+            .map(|n| format!("kind.{n}"))
+            .collect();
+
+        let filled = dispatch(subscribe_to(at_cap.clone()), &ctx).await;
+        assert_eq!(
+            error_code(&filled),
+            None,
+            "the cap itself must be reachable"
+        );
+
+        let repeated = dispatch(subscribe_to(at_cap.iter().take(1).cloned()), &ctx).await;
+        assert_eq!(
+            error_code(&repeated),
+            None,
+            "a filter the connection already holds adds nothing and must not count"
+        );
+
+        let over = dispatch(subscribe_to(["kind.one-too-many".to_owned()]), &ctx).await;
+        assert_eq!(error_code(&over), Some("TOO_MANY_SUBSCRIPTIONS"));
+        assert_eq!(
+            ctx.bus_adapter
+                .current_subscriptions(ctx.client.id)
+                .await
+                .len(),
+            MAX_SUBSCRIPTIONS_PER_CLIENT,
+            "a refused subscribe must leave the held filters as they were"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_authenticated_before_a_token_rotation_is_refused_mutations() {
+        let ctx = make_ctx(false, false);
+        let auth = dispatch(
+            WsEnvelope {
+                id: Some("a".to_owned()),
+                inner: WsRequest::Auth {
+                    token: Some("test-token".to_owned()),
+                    overlay_credential: None,
+                    preview_connection: false,
+                },
+            },
+            &ctx,
+        )
+        .await;
+        assert_eq!(error_code(&auth), None, "the session never authenticated");
+        let mut creds = forge_storage::credentials::MockCredentialsRepo::new();
+        creds.expect_store().returning(|_, _| Ok(()));
+        ctx.auth_state.regenerate(&creds).await.unwrap();
+
+        let resp = dispatch(
+            WsEnvelope {
+                id: Some("m".to_owned()),
+                inner: WsRequest::TriggerCodeEvent {
+                    name: "my_event".to_owned(),
+                    args: serde_json::json!({}),
+                },
+            },
+            &ctx,
+        )
+        .await;
+
+        assert_eq!(error_code(&resp), Some("UNAUTHENTICATED"));
     }
 }

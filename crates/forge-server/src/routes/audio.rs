@@ -403,6 +403,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn two_admitted_pages_both_fetch_the_clip_and_one_refusal_cannot_undo_the_other_playing()
+    {
+        let fixture = serve_default().await;
+        let (ticket, outcome) = fixture.offer().await;
+        assert!(
+            fixture
+                .handle
+                .admit_audio_players(ticket.capability(), 2)
+                .await
+        );
+
+        let first = fixture.fetch(ticket.clip_path()).await;
+        let second = fixture.fetch(ticket.clip_path()).await;
+        let third = fixture.fetch(ticket.clip_path()).await;
+        let refused = fixture
+            .report(ticket.report_path(), refused_body(SHORT_REASON))
+            .await;
+        let played = fixture.report(ticket.report_path(), played_body()).await;
+
+        assert_eq!(
+            [first.status(), second.status(), third.status()],
+            [StatusCode::OK, StatusCode::OK, StatusCode::NOT_FOUND]
+        );
+        assert_eq!(
+            [refused.status(), played.status()],
+            [StatusCode::NO_CONTENT, StatusCode::NO_CONTENT]
+        );
+        assert_eq!(outcome.recv().await, ClipOutcome::Played);
+
+        fixture.handle.abort();
+    }
+
+    #[tokio::test]
     async fn a_played_verdict_resolves_the_offer_and_a_second_report_is_a_miss() {
         let fixture = serve_default().await;
         let (ticket, outcome) = fixture.offer().await;

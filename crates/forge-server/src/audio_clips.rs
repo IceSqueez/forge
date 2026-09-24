@@ -884,6 +884,190 @@ mod tests {
         );
     }
 
+    const FIRST_REFUSAL: &str = "the second scene's page is muted";
+    const SECOND_REFUSAL: &str = "the third scene's page is muted";
+    const ONE_SECOND: Duration = Duration::from_secs(1);
+
+    fn refused(reason: &str) -> ClipOutcome {
+        ClipOutcome::Refused {
+            reason: reason.to_owned(),
+        }
+    }
+
+    fn still_waiting(store: &AudioClipStore, capability: &str) -> bool {
+        store.lock().entries.contains_key(capability)
+    }
+
+    fn sweep_at(store: &AudioClipStore, at: Instant) {
+        let mut inner = store.lock();
+        sweep_locked(&mut inner, at);
+    }
+
+    #[tokio::test]
+    async fn each_admitted_page_gets_one_fetch_and_the_next_one_misses() {
+        for (admitted, served) in [(0, 1), (1, 1), (2, 2), (3, 3)] {
+            let store = AudioClipStore::new();
+            let (ticket, _outcome) = store.offer(&owner(), clip_offer()).expect("offer");
+            let capability = ticket.capability().expose();
+            assert!(store.admit_players(capability, admitted));
+
+            let fetched = (0..=served)
+                .take_while(|_| store.take_clip(capability).is_some())
+                .count();
+
+            assert_eq!(fetched, served, "{admitted} admitted pages");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_clip_bytes_stay_held_until_the_last_admitted_page_fetched() {
+        let store = AudioClipStore::new();
+        let (ticket, _outcome) = store
+            .offer(&owner(), sized_offer(SAMPLE_CLIP_BYTES))
+            .expect("offer");
+        let capability = ticket.capability().expose();
+        store.admit_players(capability, 2);
+
+        let first = store.take_clip(capability).expect("first page fetch");
+        let held_after_first = held_bytes(&store);
+        let second = store.take_clip(capability).expect("second page fetch");
+
+        assert_eq!(first.bytes, second.bytes, "both pages get the same clip");
+        assert_eq!(held_after_first, SAMPLE_CLIP_BYTES);
+        assert_eq!(held_bytes(&store), 0, "the last fetch frees the bytes");
+    }
+
+    #[tokio::test]
+    async fn verdicts_from_several_pages_settle_the_clip_the_way_the_route_promises() {
+        for (case, admitted, verdicts, expected) in [
+            (
+                "a refusal from one page does not undo another page playing",
+                2,
+                vec![refused(FIRST_REFUSAL), ClipOutcome::Played],
+                ClipOutcome::Played,
+            ),
+            (
+                "every page refused, first reason kept",
+                2,
+                vec![refused(FIRST_REFUSAL), refused(SECOND_REFUSAL)],
+                refused(FIRST_REFUSAL),
+            ),
+            (
+                "one page refused and the other went quiet",
+                2,
+                vec![refused(FIRST_REFUSAL)],
+                ClipOutcome::NoVerdict,
+            ),
+            (
+                "the only page refused",
+                1,
+                vec![refused(FIRST_REFUSAL)],
+                refused(FIRST_REFUSAL),
+            ),
+        ] {
+            let store = AudioClipStore::new();
+            let (ticket, outcome) = store.offer(&owner(), clip_offer()).expect("offer");
+            let capability = ticket.capability().expose();
+            store.admit_players(capability, admitted);
+            for _ in 0..admitted {
+                store.take_clip(capability).expect("fetch");
+            }
+
+            for verdict in verdicts {
+                assert!(store.record_verdict(capability, verdict), "{case}");
+            }
+            close_every_window(&store);
+
+            assert_eq!(outcome.recv().await, expected, "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn readmitting_below_the_fetches_already_served_keeps_every_served_page_admitted() {
+        let store = AudioClipStore::new();
+        let (ticket, outcome) = store.offer(&owner(), clip_offer()).expect("offer");
+        let capability = ticket.capability().expose();
+        store.admit_players(capability, 3);
+        store.take_clip(capability).expect("first fetch");
+        store.take_clip(capability).expect("second fetch");
+
+        store.admit_players(capability, 1);
+        store.record_verdict(capability, refused(FIRST_REFUSAL));
+        let waiting_after_one_refusal = still_waiting(&store, capability);
+        store.record_verdict(capability, refused(SECOND_REFUSAL));
+
+        assert!(
+            waiting_after_one_refusal,
+            "one refusal settled a clip two pages were playing"
+        );
+        assert_eq!(outcome.recv().await, refused(FIRST_REFUSAL));
+    }
+
+    #[tokio::test]
+    async fn admitting_fewer_pages_after_every_served_page_refused_settles_the_clip() {
+        let store = AudioClipStore::new();
+        let (ticket, outcome) = store.offer(&owner(), clip_offer()).expect("offer");
+        let capability = ticket.capability().expose();
+        store.admit_players(capability, 3);
+        store.take_clip(capability).expect("first fetch");
+        store.take_clip(capability).expect("second fetch");
+        store.record_verdict(capability, refused(FIRST_REFUSAL));
+        store.record_verdict(capability, refused(SECOND_REFUSAL));
+
+        store.admit_players(capability, 2);
+
+        assert!(
+            !still_waiting(&store, capability),
+            "the clip kept waiting on a page that was never there"
+        );
+        assert_eq!(outcome.recv().await, refused(FIRST_REFUSAL));
+    }
+
+    #[tokio::test]
+    async fn a_held_clip_outlasts_its_verdict_window_and_settles_on_the_page_verdict() {
+        let store = AudioClipStore::new();
+        let (ticket, outcome) = store.offer(&owner(), clip_offer()).expect("offer");
+        let capability = ticket.capability().expose();
+        store.take_clip(capability).expect("fetch");
+
+        assert!(store.hold(capability));
+        sweep_at(
+            &store,
+            Instant::now() + verdict_window(CLIP_DURATION_MS) + ONE_SECOND,
+        );
+        assert!(store.release_hold(capability));
+        store.record_verdict(capability, refused(FIRST_REFUSAL));
+
+        assert_eq!(
+            outcome.recv().await,
+            refused(FIRST_REFUSAL),
+            "a paused clip must not be swept as unanswered"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_hold_that_runs_to_the_lifetime_cap_still_expires() {
+        let store = AudioClipStore::new();
+        let (ticket, outcome) = store.offer(&owner(), clip_offer()).expect("offer");
+        let capability = ticket.capability().expose();
+        store.take_clip(capability).expect("fetch");
+        store.hold(capability);
+
+        sweep_at(&store, Instant::now() + MAX_CLIP_LIFETIME - ONE_SECOND);
+        let held_before_the_cap = still_waiting(&store, capability);
+        sweep_at(&store, Instant::now() + MAX_CLIP_LIFETIME);
+        assert!(
+            !still_waiting(&store, capability),
+            "a hold kept the clip past its lifetime cap"
+        );
+
+        assert!(
+            held_before_the_cap,
+            "the hold expired before the lifetime cap"
+        );
+        assert_eq!(outcome.recv().await, ClipOutcome::NoVerdict);
+    }
+
     #[test]
     fn no_store_event_at_any_level_names_a_capability_or_a_clip_address() {
         let (secrets, lines) = log_capture::capture_blocking(Level::TRACE, async {

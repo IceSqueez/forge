@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use forge_platform_core::{BuiltinControl, ControlFailure, ControlOutcome, PlatformError};
 
 use crate::builtin::TwitchIntegrationBundle;
 use crate::credentials::load;
-use crate::credentials_manager::TwitchCredentialsManager;
 
 #[async_trait]
 impl BuiltinControl for TwitchIntegrationBundle {
@@ -15,20 +12,18 @@ impl BuiltinControl for TwitchIntegrationBundle {
             .map_err(|_| ControlFailure::Transport)?
             .ok_or(ControlFailure::NotConnected)?;
 
-        // Tear down the current session before spawning a fresh one: the old
-        // handle consumes itself on shutdown, so take() it out of the slot first.
-        if let Some(old) = self.handle_slot().lock().await.take() {
-            old.shutdown();
+        let mut slot = self.handle_slot().lock().await;
+        if let Some(old) = slot.take() {
+            old.shutdown().await;
         }
-
-        let handle = self.spawn_chat();
-        *self.handle_slot().lock().await = Some(handle);
+        *slot = Some(self.spawn_chat());
         Ok(())
     }
 
     async fn disconnect(&self) -> ControlOutcome {
-        if let Some(handle) = self.handle_slot().lock().await.take() {
-            handle.shutdown();
+        let mut slot = self.handle_slot().lock().await;
+        if let Some(handle) = slot.take() {
+            handle.shutdown().await;
         }
         Ok(())
     }
@@ -45,11 +40,11 @@ impl BuiltinControl for TwitchIntegrationBundle {
             return Err(ControlFailure::Unauthorized);
         }
 
-        let manager = TwitchCredentialsManager::new(
-            Arc::clone(self.credentials()),
-            self.config().client_id.clone(),
-        );
-        match manager.refresh(&stored.access_token).await {
+        match self
+            .credentials_manager()
+            .refresh(&stored.access_token)
+            .await
+        {
             Ok(_) => {
                 self.refresh_identity().await;
                 Ok(())

@@ -283,6 +283,7 @@ impl ConnectFlow {
         };
         let lifecycle = seed.lifecycle;
         let endpoints = seed.endpoints;
+        let manager = seed.manager;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -294,18 +295,6 @@ impl ConnectFlow {
                     user_id: outcome.user_info.id,
                     endpoints,
                 };
-                let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
-                    Arc::clone(&credentials),
-                    config.client_id.clone(),
-                ));
-                let chat = forge_platform_twitch::TwitchChat::new(
-                    manager,
-                    config.clone(),
-                    Arc::clone(&bus),
-                    Arc::clone(&tracker),
-                    lifecycle.clone(),
-                );
-                let handle = chat.start();
                 let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
                     HELIX_BUDGET_CAPACITY,
                     HELIX_BUDGET_WINDOW,
@@ -315,8 +304,8 @@ impl ConnectFlow {
                     config,
                     bus,
                     credentials,
+                    manager,
                     tracker,
-                    handle,
                     rate_limiter,
                     lifecycle,
                 );

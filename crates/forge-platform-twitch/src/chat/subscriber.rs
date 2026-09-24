@@ -15,6 +15,8 @@ const SUBSCRIBE_CONCURRENCY: usize = 10;
 pub(crate) enum SubscribeError {
     #[error("scope missing; re-authentication required")]
     ScopeMissing,
+    #[error("access token rejected")]
+    Unauthorized,
 }
 
 enum TopicOutcome {
@@ -22,6 +24,7 @@ enum TopicOutcome {
     AlreadyExists,
     Failed,
     ScopeRejected,
+    Unauthorized,
 }
 
 #[derive(Default)]
@@ -475,7 +478,7 @@ pub(crate) async fn subscribe_all_with_base_url(
     }
 
     let ctx = SubscribeCtx {
-        http: reqwest::Client::new(),
+        http: crate::helix::bounded_http_client(),
         token: token.clone(),
         client_id: client_id.to_owned(),
         session_id: session_id.to_owned(),
@@ -505,12 +508,14 @@ pub(crate) async fn subscribe_all_with_base_url(
 
     let mut pass = SubscribePass::default();
     let mut scope_rejected = 0usize;
+    let mut unauthorized = 0usize;
     while let Some(outcome) = outcomes.next().await {
         match outcome {
             TopicOutcome::Active => pass.active += 1,
             TopicOutcome::AlreadyExists => pass.already_exists += 1,
             TopicOutcome::Failed => pass.failed += 1,
             TopicOutcome::ScopeRejected => scope_rejected += 1,
+            TopicOutcome::Unauthorized => unauthorized += 1,
         }
     }
 
@@ -520,11 +525,15 @@ pub(crate) async fn subscribe_all_with_base_url(
         already_exists = pass.already_exists,
         failed = pass.failed,
         scope_rejected,
+        unauthorized,
         "eventsub subscription pass complete"
     );
 
     if scope_rejected > 0 {
         return Err(SubscribeError::ScopeMissing);
+    }
+    if unauthorized > 0 {
+        return Err(SubscribeError::Unauthorized);
     }
 
     Ok(pass)
@@ -570,10 +579,10 @@ async fn subscribe_one(
             let status = status_code.as_u16();
 
             if status_code == StatusCode::UNAUTHORIZED || status_code == StatusCode::FORBIDDEN {
-                let reason = if status_code == StatusCode::UNAUTHORIZED {
-                    "unauthorized"
+                let (reason, outcome) = if status_code == StatusCode::UNAUTHORIZED {
+                    ("unauthorized", TopicOutcome::Unauthorized)
                 } else {
-                    "missing scope"
+                    ("missing scope", TopicOutcome::ScopeRejected)
                 };
                 ctx.bus.publish(Event::new(
                     EventSource::Twitch,
@@ -586,7 +595,7 @@ async fn subscribe_one(
                     }),
                 ));
                 set_tracker_status(&tracker, index, SubStatus::Failed(reason.to_owned()));
-                return TopicOutcome::ScopeRejected;
+                return outcome;
             }
 
             if !status_code.is_success() {
@@ -657,6 +666,22 @@ fn set_tracker_status(tracker: &SubscriptionTracker, index: usize, status: SubSt
     let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
     if let Some(rec) = records.get_mut(index) {
         rec.status = status;
+    }
+}
+
+pub(crate) fn mark_revoked(
+    tracker: &SubscriptionTracker,
+    subscription_id: &str,
+    kind: &str,
+    status: &str,
+) {
+    let mut records = tracker.write().unwrap_or_else(|p| p.into_inner());
+    let by_id = records
+        .iter()
+        .position(|rec| rec.subscription_id.as_deref() == Some(subscription_id));
+    let index = by_id.or_else(|| records.iter().position(|rec| rec.kind == kind));
+    if let Some(rec) = index.and_then(|i| records.get_mut(i)) {
+        rec.status = SubStatus::Failed(format!("revoked: {status}"));
     }
 }
 

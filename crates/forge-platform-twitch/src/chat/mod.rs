@@ -14,7 +14,12 @@ use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 use forge_events::EventPublisher;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{oneshot, watch};
+use tokio::task::JoinHandle;
+use tracing::warn;
+
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 pub struct TwitchChat {
     manager: Arc<TwitchCredentialsManager>,
@@ -27,6 +32,7 @@ pub struct TwitchChat {
 pub struct TwitchChatHandle {
     state_rx: watch::Receiver<ChatConnectionState>,
     shutdown_tx: Option<oneshot::Sender<()>>,
+    task: Option<JoinHandle<()>>,
 }
 
 impl TwitchChat {
@@ -54,26 +60,61 @@ impl TwitchChat {
             self.tracker,
             self.lifecycle,
         );
-        tokio::spawn(sess.run());
-        TwitchChatHandle {
-            state_rx,
-            shutdown_tx: Some(shutdown_tx),
-        }
+        TwitchChatHandle::spawn(sess, state_rx, shutdown_tx)
+    }
+
+    pub(crate) fn start_reporting_to(
+        self,
+        state_tx: watch::Sender<ChatConnectionState>,
+    ) -> TwitchChatHandle {
+        let state_rx = state_tx.subscribe();
+        let (sess, shutdown_tx) = session::ChatSession::reporting_to(
+            self.manager,
+            self.config,
+            self.bus,
+            self.tracker,
+            self.lifecycle,
+            state_tx,
+        );
+        TwitchChatHandle::spawn(sess, state_rx, shutdown_tx)
     }
 }
 
 impl TwitchChatHandle {
+    fn spawn(
+        sess: session::ChatSession,
+        state_rx: watch::Receiver<ChatConnectionState>,
+        shutdown_tx: oneshot::Sender<()>,
+    ) -> Self {
+        Self {
+            state_rx,
+            shutdown_tx: Some(shutdown_tx),
+            task: Some(tokio::spawn(sess.run())),
+        }
+    }
+
     pub fn connection_state(&self) -> ChatConnectionState {
         *self.state_rx.borrow()
     }
 
-    pub(crate) fn state_receiver(&self) -> watch::Receiver<ChatConnectionState> {
-        self.state_rx.clone()
-    }
-
-    pub fn shutdown(mut self) {
+    /// Resolves after the session task has ended; a task outliving the grace period is aborted.
+    pub async fn shutdown(mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
+        }
+        let Some(mut task) = self.task.take() else {
+            return;
+        };
+        if tokio::time::timeout(SHUTDOWN_GRACE, &mut task)
+            .await
+            .is_err()
+        {
+            warn!(
+                grace_secs = SHUTDOWN_GRACE.as_secs(),
+                "twitch chat session did not stop within the grace period; aborting it"
+            );
+            task.abort();
+            let _ = task.await;
         }
     }
 }

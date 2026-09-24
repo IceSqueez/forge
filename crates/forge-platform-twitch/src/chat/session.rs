@@ -1,5 +1,7 @@
 use crate::builtin::ChatSessionConfig;
-use crate::chat::subscriber::{SubscribeError, subscribe_all_with_base_url};
+use crate::chat::subscriber::{
+    SubscribeError, SubscribePass, mark_revoked, subscribe_all_with_base_url,
+};
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
@@ -8,7 +10,9 @@ use forge_platform_core::{
     Backoff, ConnectionState, EndpointSurface, PlatformEndpoints, PlatformError,
     connection_state_changed_event,
 };
-use forge_types::{ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply};
+use forge_types::{
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, OAuthToken,
+};
 use futures_util::{FutureExt, StreamExt};
 use serde::Deserialize;
 use std::future::Future;
@@ -57,11 +61,15 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const SUCCESSOR_TIMEOUT: Duration = Duration::from_secs(15);
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const PREDECESSOR_DRAIN_LIMIT: usize = 256;
+const HELD_FRAME_LIMIT: usize = 1024;
+const AUTHORIZATION_REVOKED_STATUS: &str = "authorization_revoked";
 
 type EventSubSocket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 type SuccessorDial = Pin<Box<dyn Future<Output = Result<(EventSubSocket, String), String>> + Send>>;
+
+type SubscriptionPassRun = Pin<Box<dyn Future<Output = PassVerdict> + Send>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatConnectionState {
@@ -114,6 +122,19 @@ impl ChatSession {
         oneshot::Sender<()>,
     ) {
         let (state_tx, state_rx) = watch::channel(ChatConnectionState::Connecting);
+        let (session, shutdown_tx) =
+            Self::reporting_to(manager, config, bus, tracker, lifecycle, state_tx);
+        (session, state_rx, shutdown_tx)
+    }
+
+    pub(crate) fn reporting_to(
+        manager: Arc<TwitchCredentialsManager>,
+        config: ChatSessionConfig,
+        bus: Arc<dyn EventPublisher>,
+        tracker: SubscriptionTracker,
+        lifecycle: TwitchLifecycle,
+        state_tx: watch::Sender<ChatConnectionState>,
+    ) -> (Self, oneshot::Sender<()>) {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let ChatSessionConfig {
             client_id,
@@ -137,7 +158,7 @@ impl ChatSession {
             seen_messages: MessageIdWindow::default(),
             backoff: Backoff::default(),
         };
-        (session, state_rx, shutdown_tx)
+        (session, shutdown_tx)
     }
 
     pub(crate) async fn run(mut self) {
@@ -163,6 +184,7 @@ impl ChatSession {
 
             match outcome {
                 SessionOutcome::Disconnected => {}
+                SessionOutcome::Shutdown => break,
                 SessionOutcome::ReauthRequired => {
                     error!(
                         "twitch chat session stopped: re-authorization required (rejected \
@@ -179,10 +201,9 @@ impl ChatSession {
                 retry_in_ms = delay.as_millis() as u64,
                 "twitch chat session ended; reconnecting after backoff"
             );
-            tokio::time::sleep(delay).await;
-
-            if self.is_shutdown_requested() {
-                break;
+            tokio::select! {
+                _ = tokio::time::sleep(delay) => {}
+                _ = &mut self.shutdown_rx => break,
             }
         }
 
@@ -193,7 +214,11 @@ impl ChatSession {
 
     async fn run_session(&mut self, url: &str) -> SessionOutcome {
         debug!("opening eventsub websocket");
-        let mut live = match connect_socket(url).await {
+        let connected = tokio::select! {
+            connected = connect_socket(url) => connected,
+            _ = &mut self.shutdown_rx => return SessionOutcome::Shutdown,
+        };
+        let mut live = match connected {
             Ok(socket) => Some(socket),
             Err(reason) => {
                 warn!(error = %reason, "WebSocket connect failed");
@@ -205,10 +230,53 @@ impl ChatSession {
 
         let mut session_id: Option<String> = None;
         let mut successor: Option<SuccessorDial> = None;
+        let mut subscription_pass: Option<SubscriptionPassRun> = None;
+        let mut held_frames: Vec<String> = Vec::new();
         let mut keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
 
         loop {
             tokio::select! {
+                _ = &mut self.shutdown_rx => {
+                    if let Some(socket) = live.take() {
+                        close_socket(socket).await;
+                    }
+                    debug!("twitch chat session shut down on request");
+                    return SessionOutcome::Shutdown;
+                }
+
+                verdict = await_subscription_pass(&mut subscription_pass) => {
+                    subscription_pass = None;
+                    match verdict {
+                        PassVerdict::Live => {
+                            self.backoff.reset();
+                            self.set_state(ChatConnectionState::Connected);
+                            self.publish_connection_event();
+                            info!(broadcaster_id = %self.config.broadcaster_id, "chat connected");
+                            for text in std::mem::take(&mut held_frames) {
+                                match self.handle_frame(&text, &mut session_id).await {
+                                    FrameAction::Continue | FrameAction::Subscribe(_) => {}
+                                    FrameAction::Reconnect(new_url) => {
+                                        arm_successor(&mut successor, new_url);
+                                    }
+                                    FrameAction::Disconnect => return SessionOutcome::Disconnected,
+                                    FrameAction::ReauthRequired => {
+                                        return SessionOutcome::ReauthRequired;
+                                    }
+                                }
+                            }
+                        }
+                        PassVerdict::NothingLive => {
+                            warn!("no eventsub subscription became active; treating as disconnect");
+                            return SessionOutcome::Disconnected;
+                        }
+                        PassVerdict::TokenUnavailable => return SessionOutcome::Disconnected,
+                        PassVerdict::ReauthRequired => {
+                            self.publish_reauth_required();
+                            return SessionOutcome::ReauthRequired;
+                        }
+                    }
+                }
+
                 _ = sleep_until(keepalive_deadline), if live.is_some() => {
                     if successor.is_none() {
                         warn!("keepalive timeout; treating as disconnect");
@@ -236,7 +304,11 @@ impl ChatSession {
                                         close_in_background(socket);
                                         return SessionOutcome::ReauthRequired;
                                     }
-                                    Some(FrameAction::Continue | FrameAction::Reconnect(_))
+                                    Some(
+                                        FrameAction::Continue
+                                        | FrameAction::Reconnect(_)
+                                        | FrameAction::Subscribe(_),
+                                    )
                                     | None => {}
                                 }
                             }
@@ -261,14 +333,21 @@ impl ChatSession {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
                             keepalive_deadline = Instant::now() + KEEPALIVE_TIMEOUT;
+                            if subscription_pass.is_some() {
+                                if held_frames.len() < HELD_FRAME_LIMIT {
+                                    held_frames.push(text.to_string());
+                                } else {
+                                    debug!("frame arrived during a full subscription-pass hold; dropped");
+                                }
+                                continue;
+                            }
                             match self.handle_frame(&text, &mut session_id).await {
                                 FrameAction::Continue => {}
                                 FrameAction::Reconnect(new_url) => {
-                                    if successor.is_some() {
-                                        debug!("successor already dialing; repeated reconnect ignored");
-                                    } else {
-                                        successor = Some(Box::pin(dial_successor(new_url)));
-                                    }
+                                    arm_successor(&mut successor, new_url);
+                                }
+                                FrameAction::Subscribe(pass) => {
+                                    subscription_pass = Some(pass);
                                 }
                                 FrameAction::Disconnect => return SessionOutcome::Disconnected,
                                 FrameAction::ReauthRequired => {
@@ -348,66 +427,30 @@ impl ChatSession {
                     Ok(token) => token,
                     Err(PlatformError::ReauthRequired { .. }) => {
                         warn!("chat token refresh rejected: reauth required");
-                        self.config.bus.publish(Event::new(
-                            EventSource::Twitch,
-                            "platform.reauth_required",
-                            serde_json::json!({ "platform_id": "twitch" }),
-                        ));
+                        self.publish_reauth_required();
                         return FrameAction::ReauthRequired;
                     }
                     Err(e) => {
-                        // Display of `Http` carries the token endpoint's response body; report the shape only.
-                        match &e {
-                            PlatformError::Http { status, .. } => {
-                                warn!(
-                                    status = *status,
-                                    "chat token fetch failed; treating as disconnect"
-                                );
-                            }
-                            PlatformError::Network { reason } => {
-                                warn!(
-                                    error = %reason,
-                                    "chat token fetch failed; treating as disconnect"
-                                );
-                            }
-                            _ => warn!("chat token fetch failed; treating as disconnect"),
-                        }
+                        warn_token_failure(&e);
                         return FrameAction::Disconnect;
                     }
                 };
 
-                match subscribe_all_with_base_url(
-                    self.config.endpoints.base_url(EndpointSurface::TwitchApi),
-                    &token,
-                    &self.config.client_id,
-                    &id,
-                    &self.config.broadcaster_id,
-                    &self.config.user_id,
-                    &self.config.bus,
-                    &self.config.tracker,
-                )
-                .await
-                {
-                    Ok(pass) if pass.any_live() => {
-                        self.backoff.reset();
-                        self.set_state(ChatConnectionState::Connected);
-                        self.publish_connection_event();
-                        info!(broadcaster_id = %self.config.broadcaster_id, "chat connected");
-                    }
-                    Ok(_) => {
-                        warn!("no eventsub subscription became active; treating as disconnect");
-                        return FrameAction::Disconnect;
-                    }
-                    Err(SubscribeError::ScopeMissing) => {
-                        warn!("chat subscription rejected: scope missing (reauth required)");
-                        self.config.bus.publish(Event::new(
-                            EventSource::Twitch,
-                            "platform.reauth_required",
-                            serde_json::json!({ "platform_id": "twitch" }),
-                        ));
-                        return FrameAction::ReauthRequired;
-                    }
-                }
+                let pass = SubscriptionPassContext {
+                    manager: Arc::clone(&self.config.manager),
+                    api_base_url: self
+                        .config
+                        .endpoints
+                        .base_url(EndpointSurface::TwitchApi)
+                        .to_owned(),
+                    client_id: self.config.client_id.clone(),
+                    session_id: id,
+                    broadcaster_id: self.config.broadcaster_id.clone(),
+                    user_id: self.config.user_id.clone(),
+                    bus: Arc::clone(&self.config.bus),
+                    tracker: Arc::clone(&self.config.tracker),
+                };
+                return FrameAction::Subscribe(Box::pin(pass.run(token)));
             }
 
             "session_keepalive" => {
@@ -453,6 +496,29 @@ impl ChatSession {
                             debug!(subscription_type = %sub_type, "no route registered for notification subscription type");
                         }
                     }
+                }
+            }
+
+            "revocation" => {
+                let Some(revoked) = frame.payload.as_ref().and_then(|p| p.subscription.as_ref())
+                else {
+                    warn!("revocation frame missing its subscription");
+                    return FrameAction::Continue;
+                };
+                warn!(
+                    subscription_type = %revoked.kind,
+                    status = %revoked.status,
+                    "eventsub subscription revoked by twitch"
+                );
+                mark_revoked(
+                    &self.config.tracker,
+                    &revoked.id,
+                    &revoked.kind,
+                    &revoked.status,
+                );
+                if revoked.status == AUTHORIZATION_REVOKED_STATUS {
+                    self.publish_reauth_required();
+                    return FrameAction::ReauthRequired;
                 }
             }
 
@@ -3727,11 +3793,12 @@ impl ChatSession {
             .publish(connection_state_changed_event("twitch", state));
     }
 
-    fn is_shutdown_requested(&mut self) -> bool {
-        matches!(
-            self.shutdown_rx.try_recv(),
-            Ok(()) | Err(oneshot::error::TryRecvError::Closed)
-        )
+    fn publish_reauth_required(&self) {
+        self.config.bus.publish(Event::new(
+            EventSource::Twitch,
+            "platform.reauth_required",
+            serde_json::json!({ "platform_id": "twitch" }),
+        ));
     }
 }
 
@@ -3948,20 +4015,123 @@ async fn welcome_on_successor(url: String) -> Result<(EventSubSocket, String), S
     Err("closed before session_welcome".to_owned())
 }
 
-fn close_in_background(mut socket: EventSubSocket) {
-    tokio::spawn(async move {
-        let _ = tokio::time::timeout(CLOSE_TIMEOUT, socket.close(None)).await;
-    });
+fn arm_successor(successor: &mut Option<SuccessorDial>, url: String) {
+    if successor.is_some() {
+        debug!("successor already dialing; repeated reconnect ignored");
+    } else {
+        *successor = Some(Box::pin(dial_successor(url)));
+    }
+}
+
+async fn await_subscription_pass(pass: &mut Option<SubscriptionPassRun>) -> PassVerdict {
+    match pass {
+        Some(pass) => pass.await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn close_socket(mut socket: EventSubSocket) {
+    let _ = tokio::time::timeout(CLOSE_TIMEOUT, socket.close(None)).await;
+}
+
+fn close_in_background(socket: EventSubSocket) {
+    tokio::spawn(close_socket(socket));
+}
+
+fn warn_token_failure(e: &PlatformError) {
+    match e {
+        PlatformError::Http { status, .. } => {
+            warn!(
+                status = *status,
+                "chat token fetch failed; treating as disconnect"
+            );
+        }
+        PlatformError::Network { reason } => {
+            warn!(
+                error = %reason,
+                "chat token fetch failed; treating as disconnect"
+            );
+        }
+        _ => warn!("chat token fetch failed; treating as disconnect"),
+    }
+}
+
+struct SubscriptionPassContext {
+    manager: Arc<TwitchCredentialsManager>,
+    api_base_url: String,
+    client_id: String,
+    session_id: String,
+    broadcaster_id: String,
+    user_id: String,
+    bus: Arc<dyn EventPublisher>,
+    tracker: SubscriptionTracker,
+}
+
+impl SubscriptionPassContext {
+    async fn run(self, token: OAuthToken) -> PassVerdict {
+        let result = match self.subscribe(&token).await {
+            Err(SubscribeError::Unauthorized) => {
+                debug!("eventsub subscription rejected the access token; refreshing once");
+                match self.manager.refresh(&token).await {
+                    Ok(renewed) => self.subscribe(&renewed.access_token).await,
+                    Err(PlatformError::ReauthRequired { .. }) => {
+                        warn!("chat token refresh rejected: reauth required");
+                        return PassVerdict::ReauthRequired;
+                    }
+                    Err(e) => {
+                        warn_token_failure(&e);
+                        return PassVerdict::TokenUnavailable;
+                    }
+                }
+            }
+            first => first,
+        };
+        match result {
+            Ok(pass) if pass.any_live() => PassVerdict::Live,
+            Ok(_) => PassVerdict::NothingLive,
+            Err(SubscribeError::ScopeMissing) => {
+                warn!("chat subscription rejected: scope missing (reauth required)");
+                PassVerdict::ReauthRequired
+            }
+            Err(SubscribeError::Unauthorized) => {
+                warn!("chat subscription rejected the renewed token (reauth required)");
+                PassVerdict::ReauthRequired
+            }
+        }
+    }
+
+    async fn subscribe(&self, token: &OAuthToken) -> Result<SubscribePass, SubscribeError> {
+        subscribe_all_with_base_url(
+            &self.api_base_url,
+            token,
+            &self.client_id,
+            &self.session_id,
+            &self.broadcaster_id,
+            &self.user_id,
+            &self.bus,
+            &self.tracker,
+        )
+        .await
+    }
+}
+
+enum PassVerdict {
+    Live,
+    NothingLive,
+    TokenUnavailable,
+    ReauthRequired,
 }
 
 enum SessionOutcome {
     Disconnected,
     ReauthRequired,
+    Shutdown,
 }
 
 enum FrameAction {
     Continue,
     Reconnect(String),
+    Subscribe(SubscriptionPassRun),
     Disconnect,
     ReauthRequired,
 }
@@ -3983,7 +4153,18 @@ struct FrameMetadata {
 #[derive(Debug, Deserialize)]
 struct FramePayload {
     session: Option<SessionInfo>,
+    subscription: Option<RevokedSubscription>,
     event: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RevokedSubscription {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default, rename = "type")]
+    kind: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -6686,9 +6867,12 @@ mod tests {
             session_with(&bus, Arc::new(MockCreds::with_identity()), endpoints);
 
         let mut session_id = None;
-        session
+        if let FrameAction::Subscribe(pass) = session
             .handle_frame(SESSION_WELCOME_FRAME, &mut session_id)
-            .await;
+            .await
+        {
+            pass.await;
+        }
 
         let requests = server.received_requests().await.unwrap();
         assert!(

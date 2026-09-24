@@ -80,6 +80,7 @@ pub struct ChatSessionConfig {
 pub struct TwitchIntegrationBundle {
     id: BuiltinId,
     login: Option<String>,
+    state_tx: watch::Sender<ChatConnectionState>,
     state_rx: watch::Receiver<ChatConnectionState>,
     health_tx: broadcast::Sender<HealthDelta>,
     tracker: SubscriptionTracker,
@@ -106,18 +107,22 @@ impl TwitchIntegrationBundle {
         config: ChatSessionConfig,
         bus: Arc<dyn EventPublisher>,
         creds: Arc<dyn CredentialsRepo>,
+        credentials_manager: Arc<TwitchCredentialsManager>,
         tracker: SubscriptionTracker,
-        handle: TwitchChatHandle,
         rate_limiter: Arc<dyn RateLimiter>,
         lifecycle: TwitchLifecycle,
     ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
-        let state_rx = handle.state_receiver();
-        let credentials_manager = Arc::new(TwitchCredentialsManager::new(
-            Arc::clone(&creds),
-            config.client_id.clone(),
-        ));
+        let (state_tx, state_rx) = watch::channel(ChatConnectionState::Connecting);
+        let handle = TwitchChat::new(
+            Arc::clone(&credentials_manager),
+            config.clone(),
+            Arc::clone(&bus),
+            tracker.clone(),
+            lifecycle.clone(),
+        )
+        .start_reporting_to(state_tx.clone());
         let transport = Self::build_helix_transport(
             &config,
             &bus,
@@ -127,6 +132,7 @@ impl TwitchIntegrationBundle {
         let bundle = Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
+            state_tx,
             state_rx,
             health_tx,
             tracker,
@@ -309,15 +315,15 @@ impl TwitchIntegrationBundle {
             self.tracker.clone(),
             self.lifecycle.clone(),
         )
-        .start()
+        .start_reporting_to(self.state_tx.clone())
     }
 
     pub(crate) fn credentials(&self) -> &Arc<dyn CredentialsRepo> {
         &self.creds
     }
 
-    pub(crate) fn config(&self) -> &ChatSessionConfig {
-        &self.config
+    pub(crate) fn credentials_manager(&self) -> &TwitchCredentialsManager {
+        &self.credentials_manager
     }
 
     pub(crate) fn handle_slot(&self) -> &Mutex<Option<TwitchChatHandle>> {
@@ -347,6 +353,7 @@ impl TwitchIntegrationBundle {
         Arc::new(Self {
             id: BuiltinId::new("twitch"),
             login,
+            state_tx: watch::channel(ChatConnectionState::Disconnected).0,
             state_rx,
             health_tx,
             tracker,

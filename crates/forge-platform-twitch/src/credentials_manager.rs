@@ -149,18 +149,24 @@ fn near_expiry(cred: &StoredCredential) -> bool {
 #[async_trait]
 impl crate::helix::HelixTokenSource for TwitchCredentialsManager {
     async fn access_token(&self) -> Result<OAuthToken, crate::helix::HelixError> {
-        self.get_valid_access_token().await.map_err(|e| match e {
-            PlatformError::ReauthRequired { .. } => crate::helix::HelixError::ReauthRequired,
-            PlatformError::Io(io) => crate::helix::HelixError::Credentials(io.to_string()),
-            // Display of `Http` carries the token endpoint's response body, and this string reaches sub-action error text and run history.
-            PlatformError::Http { status, .. } => crate::helix::HelixError::Credentials(format!(
-                "twitch token refresh failed: HTTP {status}"
-            )),
-            PlatformError::Network { reason } => crate::helix::HelixError::Credentials(format!(
-                "twitch token refresh failed: {reason}"
-            )),
-            _ => crate::helix::HelixError::Credentials("twitch token refresh failed".to_owned()),
-        })
+        self.get_valid_access_token()
+            .await
+            .map_err(token_error_to_helix)
+    }
+}
+
+fn token_error_to_helix(e: PlatformError) -> crate::helix::HelixError {
+    match e {
+        PlatformError::ReauthRequired { .. } => crate::helix::HelixError::ReauthRequired,
+        PlatformError::Io(io) => crate::helix::HelixError::Credentials(io.to_string()),
+        // Display of `Http` carries the token endpoint's response body, and this string reaches sub-action error text and run history.
+        PlatformError::Http { status, .. } => crate::helix::HelixError::Credentials(format!(
+            "twitch token refresh failed: HTTP {status}"
+        )),
+        PlatformError::Network { reason } => {
+            crate::helix::HelixError::Credentials(format!("twitch token refresh failed: {reason}"))
+        }
+        _ => crate::helix::HelixError::Credentials("twitch token refresh failed".to_owned()),
     }
 }
 
@@ -170,10 +176,10 @@ impl crate::helix::HelixTokenRefresher for TwitchCredentialsManager {
         &self,
         failed_token: &OAuthToken,
     ) -> Result<OAuthToken, crate::helix::HelixError> {
-        match self.refresh(failed_token).await {
-            Ok(renewed) => Ok(renewed.access_token),
-            Err(_) => Err(crate::helix::HelixError::ReauthRequired),
-        }
+        self.refresh(failed_token)
+            .await
+            .map(|renewed| renewed.access_token)
+            .map_err(token_error_to_helix)
     }
 }
 

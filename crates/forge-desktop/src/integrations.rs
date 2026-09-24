@@ -190,12 +190,13 @@ pub struct KickInstallSeed {
     pub rewards: Arc<forge_platform_kick::KickRewards>,
 }
 
-/// Holds the same lifecycle cell the registered Twitch raid sub-actions write into, so a post-boot
-/// sign-in reads what they record without a restart.
+/// Holds the same lifecycle cell and credentials manager the registered Twitch sub-actions use, so a
+/// post-boot sign-in shares them without a restart.
 #[derive(Clone)]
 pub struct TwitchInstallSeed {
     pub lifecycle: forge_platform_twitch::TwitchLifecycle,
     pub endpoints: PlatformEndpoints,
+    pub manager: Arc<forge_platform_twitch::TwitchCredentialsManager>,
 }
 
 /// Holds the same handles the registered YouTube sub-actions resolve through, so a post-boot sign-in reaches them without a restart.
@@ -440,18 +441,19 @@ async fn build_twitch(
     };
     let creds = creds_of(backend);
     let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
+    let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+        Arc::clone(&creds),
+        client_id.clone(),
+    ));
     let seed = TwitchInstallSeed {
         lifecycle: lifecycle.clone(),
         endpoints: endpoints.clone(),
+        manager: Arc::clone(&manager),
     };
 
     let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
         forge_platform_twitch::HELIX_BUDGET_CAPACITY,
         forge_platform_twitch::HELIX_BUDGET_WINDOW,
-    ));
-    let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
-        Arc::clone(&creds),
-        client_id.clone(),
     ));
     let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
         Arc::new(
@@ -484,6 +486,7 @@ async fn build_twitch(
                 endpoints: endpoints.clone(),
             },
             Arc::clone(&creds),
+            Arc::clone(&manager),
             forge_platform_twitch::SubscriptionTracker::default(),
             Arc::clone(&rate_limiter),
             lifecycle.clone(),
@@ -511,21 +514,13 @@ async fn build_twitch(
         user_id: stored.user_id,
         endpoints: endpoints.clone(),
     };
-    let chat = forge_platform_twitch::TwitchChat::new(
-        Arc::clone(&manager),
-        config.clone(),
-        publisher(bus),
-        tracker.clone(),
-        lifecycle.clone(),
-    );
-    let handle = chat.start();
     let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
         login,
         config,
         publisher(bus),
         creds,
+        manager,
         tracker,
-        handle,
         rate_limiter,
         lifecycle,
     );

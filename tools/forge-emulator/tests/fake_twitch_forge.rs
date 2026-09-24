@@ -299,15 +299,18 @@ async fn forge_twitch_boot_calls_only_modeled_helix_endpoints() {
     let forge = Forge::against(&fake, &account, &account.access_token).await;
     let lifecycle = TwitchLifecycle::new();
     let tracker = SubscriptionTracker::default();
-    let handle = forge.start_chat(&lifecycle, &tracker);
+    let manager = Arc::new(TwitchCredentialsManager::new(
+        Arc::clone(&forge.creds),
+        forge.config.client_id.clone(),
+    ));
 
     let _bundle = TwitchIntegrationBundle::new(
         Some(account.login.clone()),
         forge.config.clone(),
         Arc::clone(&forge.bus),
         Arc::clone(&forge.creds),
+        manager,
         tracker,
-        handle,
         Forge::rate_limiter(),
         lifecycle,
     );

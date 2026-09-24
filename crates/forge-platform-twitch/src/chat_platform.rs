@@ -12,10 +12,10 @@ use tokio::sync::OnceCell;
 use crate::auth::twitch_auth_flow;
 use crate::builtin::ChatSessionConfig;
 use crate::chat::{ChatSendError, TwitchChat, TwitchChatHandle, send_chat};
-use crate::credentials::{CredentialsTokenSource, load};
+use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
-use crate::helix::{HelixHttpTransport, HelixTransport};
+use crate::helix::{HelixHttpTransport, HelixTokenRefresher, HelixTokenSource, HelixTransport};
 use crate::lifecycle::TwitchLifecycle;
 use crate::subscriptions::SubscriptionTracker;
 
@@ -40,14 +40,11 @@ impl TwitchPlatform {
     pub fn new(
         config: ChatSessionConfig,
         creds: Arc<dyn CredentialsRepo>,
+        credentials_manager: Arc<TwitchCredentialsManager>,
         tracker: SubscriptionTracker,
         rate_limiter: Arc<dyn RateLimiter>,
         lifecycle: TwitchLifecycle,
     ) -> Self {
-        let credentials_manager = Arc::new(TwitchCredentialsManager::new(
-            Arc::clone(&creds),
-            config.client_id.clone(),
-        ));
         Self {
             auth_flow: twitch_auth_flow(),
             capabilities: PlatformCapabilities {
@@ -76,13 +73,18 @@ impl TwitchPlatform {
         self.transport
             .get_or_try_init(|| async {
                 let publisher: Arc<dyn EventPublisher> = self.events.clone();
-                let transport: Arc<dyn HelixTransport> = Arc::new(HelixHttpTransport::new(
-                    &self.config.endpoints,
-                    Arc::clone(&self.rate_limiter),
-                    publisher,
-                    self.config.client_id.clone(),
-                    Arc::new(CredentialsTokenSource::new(Arc::clone(&self.creds))),
-                ));
+                let transport: Arc<dyn HelixTransport> = Arc::new(
+                    HelixHttpTransport::new(
+                        &self.config.endpoints,
+                        Arc::clone(&self.rate_limiter),
+                        publisher,
+                        self.config.client_id.clone(),
+                        Arc::clone(&self.credentials_manager) as Arc<dyn HelixTokenSource>,
+                    )
+                    .with_refresher(
+                        Arc::clone(&self.credentials_manager) as Arc<dyn HelixTokenRefresher>
+                    ),
+                );
                 Ok::<Arc<dyn HelixTransport>, PlatformError>(transport)
             })
             .await
@@ -129,7 +131,7 @@ impl ChatPlatform for TwitchPlatform {
 
         let previous = self.handle.lock().unwrap_or_else(|p| p.into_inner()).take();
         if let Some(previous) = previous {
-            previous.shutdown();
+            previous.shutdown().await;
         }
 
         let publisher: Arc<dyn EventPublisher> = self.events.clone();
@@ -148,7 +150,7 @@ impl ChatPlatform for TwitchPlatform {
     async fn disconnect(&self) -> Result<(), PlatformError> {
         let handle = self.handle.lock().unwrap_or_else(|p| p.into_inner()).take();
         if let Some(handle) = handle {
-            handle.shutdown();
+            handle.shutdown().await;
         }
         Ok(())
     }

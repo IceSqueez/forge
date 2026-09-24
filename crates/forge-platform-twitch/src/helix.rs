@@ -10,6 +10,15 @@ use thiserror::Error;
 use tracing::{debug, warn};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub(crate) fn bounded_http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .unwrap_or_default()
+}
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
 /// Used when a 429 omits `Retry-After`; a conservative default back-off.
 const DEFAULT_RETRY_AFTER_SECS: u64 = 5;
@@ -127,7 +136,7 @@ impl HelixHttpTransport {
         tokens: Arc<dyn HelixTokenSource>,
     ) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: bounded_http_client(),
             rate_limiter,
             bus,
             client_id,

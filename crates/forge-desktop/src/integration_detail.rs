@@ -102,6 +102,7 @@ pub struct IntegrationDetail {
     _history_modal_sub: Option<Subscription>,
     _conn_obs: Subscription,
     _qa_search_sub: Subscription,
+    _health_bridge: Task<()>,
     _bridges: Vec<Task<()>>,
 }
 
@@ -198,17 +199,8 @@ impl IntegrationDetail {
         let sections = content.sections();
         let quick_actions = quick.actions();
 
-        let mut health_stream = health.stream();
-        let mut bridges = vec![cx.spawn(async move |this, cx| {
-            while let Some(delta) = health_stream.next().await {
-                if this
-                    .update(cx, |detail, cx| detail.apply_health_delta(delta, cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })];
+        let health_bridge = Self::spawn_health_bridge(&health, cx);
+        let mut bridges = Vec::new();
 
         if is_twitch {
             bridges.push(Self::spawn_eventsub_tally(&event_bus, cx));
@@ -274,6 +266,7 @@ impl IntegrationDetail {
             _history_modal_sub: None,
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
+            _health_bridge: health_bridge,
             _bridges: bridges,
         };
 
@@ -350,6 +343,20 @@ impl IntegrationDetail {
     fn refresh_content(&mut self, cx: &mut Context<Self>) {
         self.sections = self.content.sections();
         cx.notify();
+    }
+
+    fn spawn_health_bridge(health: &Arc<dyn BuiltinHealth>, cx: &mut Context<Self>) -> Task<()> {
+        let mut health_stream = health.stream();
+        cx.spawn(async move |this, cx| {
+            while let Some(delta) = health_stream.next().await {
+                if this
+                    .update(cx, |detail, cx| detail.apply_health_delta(delta, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
     }
 
     fn spawn_obs_content_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {
@@ -807,6 +814,7 @@ impl IntegrationDetail {
         self.connect = None;
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
+        self._health_bridge = Self::spawn_health_bridge(&self.health, cx);
         self.reload(cx);
     }
 

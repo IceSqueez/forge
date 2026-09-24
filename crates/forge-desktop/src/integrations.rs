@@ -11,6 +11,8 @@ use forge_platform_core::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
+use forge_types::EventId;
+use tokio::sync::mpsc;
 
 use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, load_hold_ceiling, persisted_hotkey_combos};
 use crate::midi_screen::MIDI_ENABLED_KEY;
@@ -18,6 +20,7 @@ use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
 
 const CONNECT_GUARD: Duration = Duration::from_secs(5);
+const CHAT_SEND_QUEUE_CAPACITY: usize = 64;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -369,19 +372,71 @@ fn spawn_event_bridge(bus: Arc<dyn EventPublisher>, mut events: EventStream, lab
     });
 }
 
+struct ChatSendRequest {
+    message: String,
+    caused_by: EventId,
+}
+
+fn spawn_chat_send_worker(
+    bus: Arc<EventBus>,
+    platform: Arc<dyn ChatPlatform>,
+    target: &'static str,
+    source: EventSource,
+    mut requests: mpsc::Receiver<ChatSendRequest>,
+) {
+    tokio::spawn(async move {
+        while let Some(request) = requests.recv().await {
+            match platform.send_message(target, &request.message).await {
+                Ok(()) => bus.publish(Event::caused_by(
+                    source,
+                    "chat.send",
+                    serde_json::json!({ "channel": target, "message": request.message }),
+                    request.caused_by,
+                )),
+                Err(e) => bus.publish(Event::caused_by(
+                    source,
+                    "chat.send.failed",
+                    serde_json::json!({ "channel": target, "error": e.to_string() }),
+                    request.caused_by,
+                )),
+            }
+        }
+    });
+}
+
 fn spawn_chat_send_bridge(
     bus: Arc<EventBus>,
     platform: Arc<dyn ChatPlatform>,
     target: &'static str,
     source: EventSource,
 ) {
+    let (tx, rx) = mpsc::channel(CHAT_SEND_QUEUE_CAPACITY);
+    spawn_chat_send_worker(Arc::clone(&bus), platform, target, source, rx);
+
     tokio::spawn(async move {
         let mut sub = bus.subscribe();
+        let mut lag_count: u64 = 0;
         loop {
             let event = match sub.recv().await {
                 Ok(e) => e,
                 Err(EventsError::BusClosed) => break,
-                Err(EventsError::LaggingReceiver) => continue,
+                Err(EventsError::LaggingReceiver) => {
+                    lag_count += 1;
+                    eprintln!(
+                        "forge-desktop: WARN chat send bridge for {target} lagging; {lag_count} lag event(s) observed since bridge start"
+                    );
+                    bus.publish(Event::new(
+                        source,
+                        "chat.send.failed",
+                        serde_json::json!({
+                            "channel": target,
+                            "error": format!(
+                                "event bus receiver lagging ({lag_count} lag event(s) observed); chat.send.request events may have been dropped"
+                            ),
+                        }),
+                    ));
+                    continue;
+                }
                 Err(_) => continue,
             };
             if event.kind != "chat.send.request" {
@@ -404,19 +459,16 @@ fn spawn_chat_send_bridge(
                 continue;
             };
             let caused_by = event.id;
-            match platform.send_message(target, &message).await {
-                Ok(()) => bus.publish(Event::caused_by(
-                    source,
-                    "chat.send",
-                    serde_json::json!({ "channel": target, "message": message }),
-                    caused_by,
-                )),
-                Err(e) => bus.publish(Event::caused_by(
+            if tx.try_send(ChatSendRequest { message, caused_by }).is_err() {
+                bus.publish(Event::caused_by(
                     source,
                     "chat.send.failed",
-                    serde_json::json!({ "channel": target, "error": e.to_string() }),
+                    serde_json::json!({
+                        "channel": target,
+                        "error": "chat send queue full or worker unavailable; request dropped",
+                    }),
                     caused_by,
-                )),
+                ));
             }
         }
     });

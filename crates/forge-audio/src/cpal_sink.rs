@@ -410,3 +410,50 @@ fn ends_playback(kind: cpal::ErrorKind) -> bool {
         cpal::ErrorKind::Xrun | cpal::ErrorKind::DeviceChanged | cpal::ErrorKind::RealtimeDenied
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    const LONG_CLIP_MS: u64 = 10_000;
+    const EARLY_EXIT_BUDGET: Duration = Duration::from_secs(2);
+
+    #[test]
+    fn a_stream_error_ends_playback_only_when_the_device_can_no_longer_play() {
+        for (kind, ends) in [
+            (cpal::ErrorKind::Xrun, false),
+            (cpal::ErrorKind::DeviceChanged, false),
+            (cpal::ErrorKind::RealtimeDenied, false),
+            (cpal::ErrorKind::DeviceNotAvailable, true),
+            (cpal::ErrorKind::StreamInvalidated, true),
+            (cpal::ErrorKind::BackendError, true),
+        ] {
+            let failure: StreamFailure = Arc::new(OnceLock::new());
+            let mut on_error = stream_error_callback(Arc::clone(&failure));
+
+            on_error(cpal::Error::new(kind));
+
+            assert_eq!(failure.get().is_some(), ends, "wrong verdict for {kind:?}");
+        }
+    }
+
+    #[test]
+    fn the_playback_wait_ends_as_soon_as_the_stream_reports_a_failure() {
+        let failure: StreamFailure = Arc::new(OnceLock::new());
+        failure.set("device unplugged".to_owned()).unwrap();
+        let started = std::time::Instant::now();
+
+        wait_for_completion(
+            LONG_CLIP_MS,
+            &Arc::new(AtomicBool::new(false)),
+            &Arc::new(AtomicBool::new(false)),
+            &failure,
+        );
+
+        assert!(
+            started.elapsed() < EARLY_EXIT_BUDGET,
+            "a failed stream kept the playback thread waiting for the whole clip"
+        );
+    }
+}

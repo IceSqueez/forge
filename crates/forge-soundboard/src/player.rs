@@ -1090,21 +1090,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_on_idle_player_succeeds_without_effect() {
-        let (factory, _count, _buf) = CountingFactory::new();
-        let (event_sink, _events) = RecordingEventSink::new();
-        let player = SoundboardPlayer::with_settings(
-            Arc::new(factory),
-            Arc::new(event_sink),
-            unadopted_library(None),
-            SoundboardSettingsHandle::default(),
-        );
-
-        assert!(SoundPlayer::stop(&player, ClipId::new()).await.is_ok());
-        assert!(SoundPlayer::stop_all(&player).await.is_ok());
-    }
-
-    #[tokio::test]
     async fn play_returns_clip_not_found_when_repo_returns_none() {
         let clip_id = ClipId::new();
         let (factory, _count, _buf) = CountingFactory::new();
@@ -1503,6 +1488,411 @@ mod tests {
         assert!(
             matches!(error, SoundboardError::Audio(AudioError::NoRoute)),
             "a misconfigured overlay route did not surface as NoRoute: {error:?}"
+        );
+    }
+
+    const EVENT_DEADLINE: Duration = Duration::from_secs(2);
+    const EVENT_POLL: Duration = Duration::from_millis(5);
+    const ONE_SECOND_OF_FRAMES: usize = 22_050;
+    const SHORT_CLIP_FRAMES: usize = 100;
+    const UNPLUGGED: &str = "usb headset unplugged";
+
+    type SharedEvents = Arc<Mutex<Vec<AudioEvent>>>;
+
+    async fn wait_for_event(events: &SharedEvents, wanted: impl Fn(&AudioEvent) -> bool) {
+        let deadline = tokio::time::Instant::now() + EVENT_DEADLINE;
+        while tokio::time::Instant::now() < deadline {
+            if events.lock().unwrap().iter().any(&wanted) {
+                return;
+            }
+            tokio::time::sleep(EVENT_POLL).await;
+        }
+        panic!(
+            "expected event never arrived; saw {:?}",
+            events.lock().unwrap()
+        );
+    }
+
+    fn started_count(events: &SharedEvents) -> usize {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| matches!(event, AudioEvent::PlaybackStarted { .. }))
+            .count()
+    }
+
+    struct SingleSinkFactory(Arc<dyn AudioSink>);
+
+    #[async_trait]
+    impl AudioSinkFactory for SingleSinkFactory {
+        async fn build(&self, _device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
+            Ok(Arc::clone(&self.0))
+        }
+    }
+
+    struct RefusingDevice;
+
+    #[async_trait]
+    impl AudioSink for RefusingDevice {
+        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+            Err(AudioError::Host(
+                "device 'usb-headset' not found".to_owned(),
+            ))
+        }
+    }
+
+    struct DeliveryGate {
+        at_delivery: usize,
+        entered: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+
+    struct FakeOverlayPage {
+        deliveries: std::sync::atomic::AtomicUsize,
+        gate: Option<DeliveryGate>,
+        commands: tokio::sync::mpsc::UnboundedSender<(String, forge_audio::RemoteCommand)>,
+    }
+
+    #[async_trait]
+    impl forge_audio::RemoteAudioDestination for FakeOverlayPage {
+        async fn deliver(
+            &self,
+            _destination: &forge_audio::RemoteDestinationId,
+            _clip: forge_audio::RemoteClip,
+        ) -> Result<forge_audio::RemoteDelivery, AudioError> {
+            let n = self.deliveries.fetch_add(1, Ordering::SeqCst) + 1;
+            if let Some(gate) = self.gate.as_ref().filter(|gate| gate.at_delivery == n) {
+                gate.entered.notify_one();
+                gate.release.notified().await;
+            }
+            Ok(forge_audio::RemoteDelivery {
+                clip_id: forge_audio::RemoteClipId::new(format!("clip-{n}")),
+                live_players: 1,
+            })
+        }
+
+        async fn control(
+            &self,
+            _destination: &forge_audio::RemoteDestinationId,
+            clip_id: &forge_audio::RemoteClipId,
+            command: forge_audio::RemoteCommand,
+        ) -> Result<(), AudioError> {
+            let _ = self.commands.send((clip_id.expose().to_owned(), command));
+            Ok(())
+        }
+
+        async fn verdict(
+            &self,
+            _clip_id: &forge_audio::RemoteClipId,
+        ) -> Result<forge_audio::RemoteVerdict, AudioError> {
+            std::future::pending().await
+        }
+    }
+
+    type PageCommands = tokio::sync::mpsc::UnboundedReceiver<(String, forge_audio::RemoteCommand)>;
+
+    fn overlay_page(gate: Option<DeliveryGate>) -> (Arc<dyn AudioSink>, PageCommands) {
+        let (commands, received) = tokio::sync::mpsc::unbounded_channel();
+        let page = FakeOverlayPage {
+            deliveries: std::sync::atomic::AtomicUsize::new(0),
+            gate,
+            commands,
+        };
+        let sink = forge_audio::RemoteSink::new(
+            Arc::new(page),
+            forge_audio::RemoteDestinationId::new("soundboard"),
+        );
+        (Arc::new(sink), received)
+    }
+
+    async fn wait_for_stop_of(commands: &mut PageCommands, clip: &str) {
+        let arrived = tokio::time::timeout(EVENT_DEADLINE, async {
+            while let Some((id, command)) = commands.recv().await {
+                if id == clip && command == forge_audio::RemoteCommand::Stop {
+                    return true;
+                }
+            }
+            false
+        })
+        .await;
+        assert_eq!(arrived, Ok(true), "{clip} was never told to stop");
+    }
+
+    fn player_over(
+        factory: Arc<dyn AudioSinkFactory>,
+        clip: StoredClip,
+    ) -> (SoundboardPlayer, SharedEvents) {
+        let (event_sink, events) = RecordingEventSink::new();
+        let player = SoundboardPlayer::with_settings(
+            factory,
+            Arc::new(event_sink),
+            unadopted_library(Some(clip)),
+            SoundboardSettingsHandle::default(),
+        );
+        (player, events)
+    }
+
+    #[tokio::test]
+    async fn a_device_that_refuses_to_open_fails_the_play_and_reports_it_for_the_clip() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let (player, events) = player_over(
+            Arc::new(SingleSinkFactory(Arc::new(RefusingDevice))),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+
+        let played = player.play(clip_id, None).await;
+
+        assert!(
+            matches!(played, Err(SoundboardError::Audio(AudioError::Host(_)))),
+            "a refused device open was not returned to the caller: {played:?}"
+        );
+        let recorded = events.lock().unwrap();
+        assert!(
+            matches!(
+                recorded.as_slice(),
+                [AudioEvent::PlaybackFailed { clip_id: Some(id), clip_label: Some(label), .. }]
+                    if *id == clip_id && label == "test clip"
+            ),
+            "expected exactly one PlaybackFailed naming the clip and no PlaybackStarted, got {recorded:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_main_device_that_refuses_to_open_stops_the_overlay_leg_that_already_started() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let (overlay, mut commands) = overlay_page(None);
+        let (player, _events) = player_over(
+            Arc::new(SingleSinkFactory(Arc::new(RefusingDevice))),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+        player.install_route(ClipRoute::new(AudioRoute::Both, Some(overlay)));
+
+        let played = player.play(clip_id, None).await;
+
+        assert!(played.is_err(), "the main leg failure must fail the play");
+        wait_for_stop_of(&mut commands, "clip-1").await;
+    }
+
+    struct UnpluggableDevice {
+        opened: Arc<std::sync::atomic::AtomicUsize>,
+        unplug: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait]
+    impl AudioSink for UnpluggableDevice {
+        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+            Ok(())
+        }
+
+        async fn play_controlled(
+            &self,
+            _buffer: PcmBuffer,
+        ) -> Result<ControlledPlayback, AudioError> {
+            self.opened.fetch_add(1, Ordering::SeqCst);
+            let unplug = Arc::clone(&self.unplug);
+            Ok(ControlledPlayback::from_future(async move {
+                unplug.notified().await;
+                Err(AudioError::DeviceLost(UNPLUGGED.to_owned()))
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_device_lost_mid_play_ends_a_looped_clip_with_a_failure() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, ONE_SECOND_OF_FRAMES);
+        let mut clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
+        clip.loop_playback = true;
+        let unplug = Arc::new(tokio::sync::Notify::new());
+        let device = UnpluggableDevice {
+            opened: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            unplug: Arc::clone(&unplug),
+        };
+        let (player, events) = player_over(Arc::new(SingleSinkFactory(Arc::new(device))), clip);
+
+        player.play(clip_id, None).await.unwrap();
+        assert_eq!(started_count(&events), 1);
+        unplug.notify_one();
+
+        wait_for_event(&events, |event| {
+            matches!(
+                event,
+                AudioEvent::PlaybackFailed { clip_id: Some(id), clip_label: Some(label), error }
+                    if *id == clip_id && label == "test clip" && error.contains(UNPLUGGED)
+            )
+        })
+        .await;
+    }
+
+    struct GatedFactory {
+        entered: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+        opened: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    struct OpenCountingDevice(Arc<std::sync::atomic::AtomicUsize>);
+
+    #[async_trait]
+    impl AudioSink for OpenCountingDevice {
+        async fn play(&self, _buffer: PcmBuffer) -> Result<(), AudioError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl AudioSinkFactory for GatedFactory {
+        async fn build(&self, _device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(Arc::new(OpenCountingDevice(Arc::clone(&self.opened))))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_while_the_clip_is_still_being_prepared_keeps_it_from_playing() {
+        for stop_all in [false, true] {
+            let clip_id = ClipId::new();
+            let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+            let entered = Arc::new(tokio::sync::Notify::new());
+            let release = Arc::new(tokio::sync::Notify::new());
+            let opened = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let factory = GatedFactory {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                opened: Arc::clone(&opened),
+            };
+            let (player, events) = player_over(
+                Arc::new(factory),
+                make_stored_clip(clip_id, tmp.path().to_path_buf()),
+            );
+            let player = Arc::new(player);
+
+            let playing = tokio::spawn({
+                let player = Arc::clone(&player);
+                async move { player.play(clip_id, None).await }
+            });
+            tokio::time::timeout(EVENT_DEADLINE, entered.notified())
+                .await
+                .unwrap();
+            if stop_all {
+                player.stop_all();
+            } else {
+                player.stop(clip_id);
+            }
+            release.notify_one();
+            let played = playing.await.unwrap();
+
+            assert!(
+                played.is_ok(),
+                "a stopped play is not a failure: {played:?}"
+            );
+            assert_eq!(
+                (opened.load(Ordering::SeqCst), started_count(&events)),
+                (0, 0),
+                "stop_all={stop_all}: a clip stopped before it started still reached the device"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_at_a_loop_cycle_boundary_stops_the_pass_that_was_starting() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let mut clip = make_stored_clip(clip_id, tmp.path().to_path_buf());
+        clip.loop_playback = true;
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let (overlay, mut commands) = overlay_page(Some(DeliveryGate {
+            at_delivery: 2,
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+        }));
+        let (player, _events) = player_over(Arc::new(CountingFactory::new().0), clip);
+        player.install_route(ClipRoute::new(AudioRoute::Overlay, Some(overlay)));
+
+        player.play(clip_id, None).await.unwrap();
+        tokio::time::timeout(EVENT_DEADLINE, entered.notified())
+            .await
+            .unwrap();
+        player.stop(clip_id);
+        release.notify_one();
+
+        wait_for_stop_of(&mut commands, "clip-2").await;
+    }
+
+    #[derive(Default)]
+    struct MemorySettings(Mutex<HashMap<String, String>>);
+
+    #[async_trait]
+    impl SettingsRepo for MemorySettings {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().unwrap().get(key).cloned())
+        }
+
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), value.to_owned());
+            Ok(())
+        }
+
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(key).is_some())
+        }
+
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+    }
+
+    const SUB_ACTION_VOLUME: f32 = 0.25;
+
+    fn idle_player() -> SoundboardPlayer {
+        SoundboardPlayer::with_settings(
+            Arc::new(CountingFactory::new().0),
+            Arc::new(RecordingEventSink::new().0),
+            unadopted_library(None),
+            SoundboardSettingsHandle::default(),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_set_master_volume_sub_action_persists_through_the_installed_settings_store() {
+        let store = Arc::new(MemorySettings::default());
+        let player = idle_player();
+        player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
+
+        SoundPlayer::set_master_volume(&player, SUB_ACTION_VOLUME)
+            .await
+            .unwrap();
+
+        let persisted = forge_storage::soundboard_master_volume(store.as_ref())
+            .await
+            .unwrap();
+        assert!(
+            (persisted - SUB_ACTION_VOLUME).abs() < f32::EPSILON,
+            "the sub-action volume did not reach the store: {persisted}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_sub_action_volume_survives_a_later_edit_of_another_soundboard_setting() {
+        let player = idle_player();
+
+        SoundPlayer::set_master_volume(&player, SUB_ACTION_VOLUME)
+            .await
+            .unwrap();
+        player.update_settings(|settings| settings.also_headphones = true);
+
+        let volume = player.settings_handle().load().master_volume;
+        assert!(
+            (volume - SUB_ACTION_VOLUME).abs() < f32::EPSILON,
+            "editing another setting undid the sub-action volume: {volume}"
         );
     }
 }

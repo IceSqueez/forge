@@ -11,6 +11,7 @@ use super::nav;
 const BREAK_LOOP_KIND_ID: &str = "core.logic.break_loop";
 const CONTINUE_LOOP_KIND_ID: &str = "core.logic.continue_loop";
 const STOP_KIND_ID: &str = "core.logic.stop";
+const LOOP_KIND_ID: &str = "core.logic.loop";
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum HealthSeverity {
@@ -134,18 +135,8 @@ pub(super) fn analyze(
 
     if action.concurrent {
         for (step, health) in action.sub_actions.iter().zip(result.iter_mut()) {
-            if !step.enabled {
-                continue;
-            }
-            if is_control_flow_kind(&step.kind_id) {
+            if step_holds_unguarded_control_flow(step, sub_registry, false) {
                 health.findings.push(Finding::ControlFlowInConcurrentAction);
-            }
-            for chain in nested_chains(step, sub_registry) {
-                collect_concurrent_control_flow_findings(
-                    &chain,
-                    sub_registry,
-                    &mut health.findings,
-                );
             }
         }
     }
@@ -159,29 +150,31 @@ pub(super) fn analyze(
     result
 }
 
-fn is_control_flow_kind(kind_id: &str) -> bool {
-    matches!(
-        kind_id,
-        BREAK_LOOP_KIND_ID | CONTINUE_LOOP_KIND_ID | STOP_KIND_ID
-    )
+fn is_unguarded_control_flow(kind_id: &str, enclosed_by_loop: bool) -> bool {
+    match kind_id {
+        BREAK_LOOP_KIND_ID | CONTINUE_LOOP_KIND_ID => !enclosed_by_loop,
+        STOP_KIND_ID => true,
+        _ => false,
+    }
 }
 
-fn collect_concurrent_control_flow_findings(
-    steps: &[SubActionStep],
+fn step_holds_unguarded_control_flow(
+    step: &SubActionStep,
     registry: &SubActionRegistry,
-    out: &mut Vec<Finding>,
-) {
-    for step in steps {
-        if !step.enabled {
-            continue;
-        }
-        if is_control_flow_kind(&step.kind_id) {
-            out.push(Finding::ControlFlowInConcurrentAction);
-        }
-        for chain in nested_chains(step, registry) {
-            collect_concurrent_control_flow_findings(&chain, registry, out);
-        }
+    enclosed_by_loop: bool,
+) -> bool {
+    if !step.enabled {
+        return false;
     }
+    if is_unguarded_control_flow(&step.kind_id, enclosed_by_loop) {
+        return true;
+    }
+    let child_enclosed_by_loop = enclosed_by_loop || step.kind_id == LOOP_KIND_ID;
+    nested_chains(step, registry).iter().any(|chain| {
+        chain
+            .iter()
+            .any(|child| step_holds_unguarded_control_flow(child, registry, child_enclosed_by_loop))
+    })
 }
 
 fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Option<TriggerSeed> {
@@ -426,7 +419,7 @@ fn extract_tokens(template: &str, out: &mut HashSet<String>) {
 }
 
 fn body_local_vars(kind_id: &str) -> Vec<String> {
-    if kind_id == "core.logic.loop" {
+    if kind_id == LOOP_KIND_ID {
         vec!["loop.index".to_owned(), "loop.item".to_owned()]
     } else {
         Vec::new()

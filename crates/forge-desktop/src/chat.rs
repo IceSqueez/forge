@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,13 +19,13 @@ use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, ListAlignment, ListState,
     MouseButton, MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div,
-    list, prelude::*, px,
+    list, prelude::*, px, uniform_list,
 };
 
 use crate::async_bridge;
 use crate::chat_drawer::{
-    DASH, SubStatus, ViewerSummary, drawer_matches, enrich_with_storage, selected_summary,
-    synthesize_from_chat, unique_authors,
+    DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, drawer_matches,
+    selected_summary,
 };
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::home_stats::HomeStats;
@@ -222,13 +222,14 @@ pub struct ChatView {
     platform_filter: PlatformFilter,
     events_only: bool,
     hide_bots: bool,
-    visible: Rc<Vec<ChatMessage>>,
+    visible: Rc<VecDeque<u64>>,
+    appended_through: u64,
     drawer_width: Pixels,
     drawer_search: SearchState,
     drawer_menu_open: Option<Point<Pixels>>,
     selected_viewer: Option<String>,
-    viewers: Vec<Viewer>,
-    drawer_summaries: Vec<ViewerSummary>,
+    viewers: ViewerDirectory,
+    drawer_names: Vec<SharedString>,
     whisper_open: bool,
     whisper_input: Entity<TextInput>,
     reply_target: Option<ReplyTarget>,
@@ -236,7 +237,7 @@ pub struct ChatView {
     user_menu: Option<UserMenuTarget>,
     auto_scroll: bool,
     unread: usize,
-    last_seen_len: usize,
+    last_seen_seq: u64,
     chat_list: ListState,
     _feed_obs: Subscription,
     _input_sub: Subscription,
@@ -285,10 +286,9 @@ impl ChatView {
         let whisper_sub = cx.subscribe(&whisper_input, Self::on_whisper_event);
         let reply_sub = cx.subscribe(&reply_input, Self::on_reply_event);
 
-        let last_seen_len = feed.read(cx).messages().len();
-        let drawer_summaries = drawer_summaries_for(feed.read(cx).messages(), &[], &palette);
+        let last_seen_seq = feed.read(cx).end_seq();
 
-        let chat_list = ListState::new(last_seen_len, ListAlignment::Top, LIST_OVERDRAW);
+        let chat_list = ListState::new(0, ListAlignment::Top, LIST_OVERDRAW);
         let list_entity = cx.entity();
         chat_list.set_scroll_handler(move |event, _window, app| {
             let at_bottom = event.visible_range.end >= event.count;
@@ -296,7 +296,7 @@ impl ChatView {
                 this.auto_scroll = at_bottom;
                 if at_bottom {
                     this.unread = 0;
-                    this.last_seen_len = this.feed.read(cx).messages().len();
+                    this.last_seen_seq = this.feed.read(cx).end_seq();
                 }
                 cx.notify();
             });
@@ -316,13 +316,14 @@ impl ChatView {
             platform_filter: PlatformFilter::All,
             events_only: false,
             hide_bots: false,
-            visible: Rc::new(Vec::new()),
+            visible: Rc::new(VecDeque::new()),
+            appended_through: last_seen_seq,
             drawer_width: DRAWER_WIDTH,
             drawer_search,
             drawer_menu_open: None,
             selected_viewer: None,
-            viewers: Vec::new(),
-            drawer_summaries,
+            viewers: ViewerDirectory::default(),
+            drawer_names: Vec::new(),
             whisper_open: false,
             whisper_input,
             reply_target: None,
@@ -330,7 +331,7 @@ impl ChatView {
             user_menu: None,
             auto_scroll: true,
             unread: 0,
-            last_seen_len,
+            last_seen_seq,
             chat_list,
             _feed_obs: feed_obs,
             _input_sub: input_sub,
@@ -340,6 +341,8 @@ impl ChatView {
             _reply_sub: reply_sub,
         };
         this.rebuild_visible(cx);
+        this.chat_list.reset(this.visible.len());
+        this.refresh_drawer_names(cx);
         this
     }
 
@@ -376,68 +379,80 @@ impl ChatView {
     }
 
     fn apply_viewers(&mut self, viewers: Vec<Viewer>, cx: &mut Context<Self>) {
-        if self.viewers != viewers {
-            self.viewers = viewers;
-            self.recompute_drawer_summaries(cx);
+        if self.viewers.viewers() != viewers.as_slice() {
+            self.viewers = ViewerDirectory::new(viewers);
             cx.notify();
         }
     }
 
     fn on_feed_changed(&mut self, feed: Entity<ChatFeed>, cx: &mut Context<Self>) {
-        let len = feed.read(cx).messages().len();
-        self.rebuild_visible(cx);
-        self.sync_list_len();
+        let end = feed.read(cx).end_seq();
+        self.sync_visible(cx);
         if self.auto_scroll {
             self.chat_list.scroll_to_end();
             self.unread = 0;
         } else {
-            self.unread = self
-                .unread
-                .saturating_add(len.saturating_sub(self.last_seen_len));
+            let arrived =
+                usize::try_from(end.saturating_sub(self.last_seen_seq)).unwrap_or(usize::MAX);
+            self.unread = self.unread.saturating_add(arrived);
         }
-        self.last_seen_len = len;
-        self.recompute_drawer_summaries(cx);
+        self.last_seen_seq = end;
+        self.refresh_drawer_names(cx);
         cx.notify();
     }
 
     fn rebuild_visible(&mut self, cx: &mut Context<Self>) {
-        let messages: Vec<ChatMessage> = self
-            .feed
-            .read(cx)
-            .messages()
-            .iter()
-            .filter(|m| self.row_visible(m))
-            .cloned()
+        let feed = self.feed.read(cx);
+        let visible: VecDeque<u64> = (feed.start_seq()..feed.end_seq())
+            .filter(|seq| feed.get(*seq).is_some_and(|m| self.row_visible(m)))
             .collect();
-        self.visible = Rc::new(messages);
+        self.appended_through = feed.end_seq();
+        self.visible = Rc::new(visible);
     }
 
-    fn visible_count(&self) -> usize {
-        self.visible.len()
-    }
+    /// Mirrors feed eviction and appends onto the list state so its scroll position and measured rows survive.
+    fn sync_visible(&mut self, cx: &mut Context<Self>) {
+        let feed = self.feed.read(cx);
+        let start = feed.start_seq();
+        let end = feed.end_seq();
+        let fresh: Vec<u64> = (self.appended_through.max(start)..end)
+            .filter(|seq| feed.get(*seq).is_some_and(|m| self.row_visible(m)))
+            .collect();
+        self.appended_through = end;
 
-    fn sync_list_len(&self) {
-        let count = self.visible_count();
-        let current = self.chat_list.item_count();
-        if count > current {
-            self.chat_list.splice(current..current, count - current);
-        } else if count < current {
-            self.chat_list.reset(count);
+        let visible = Rc::make_mut(&mut self.visible);
+        let evicted = visible.iter().take_while(|seq| **seq < start).count();
+        visible.drain(..evicted);
+        let added = fresh.len();
+        visible.extend(fresh);
+
+        if evicted > 0 {
+            self.chat_list.splice(0..evicted, 0);
+        }
+        if added > 0 {
+            let current = self.chat_list.item_count();
+            self.chat_list.splice(current..current, added);
         }
     }
 
     fn reset_chat_list(&mut self, cx: &mut Context<Self>) {
         self.rebuild_visible(cx);
-        self.chat_list.reset(self.visible_count());
+        self.chat_list.reset(self.visible.len());
         self.auto_scroll = true;
         self.unread = 0;
-        self.last_seen_len = self.feed.read(cx).messages().len();
+        self.last_seen_seq = self.feed.read(cx).end_seq();
     }
 
-    fn recompute_drawer_summaries(&mut self, cx: &mut Context<Self>) {
-        let palette = cx.palette();
-        let messages = self.feed.read(cx).messages().to_vec();
-        self.drawer_summaries = drawer_summaries_for(&messages, &self.viewers, &palette);
+    fn refresh_drawer_names(&mut self, cx: &mut Context<Self>) {
+        let search = self.drawer_search.query();
+        self.drawer_names = self
+            .feed
+            .read(cx)
+            .authors()
+            .newest_first()
+            .filter(|name| drawer_matches(name, search))
+            .cloned()
+            .collect();
     }
 
     fn on_input_event(
@@ -507,7 +522,6 @@ impl ChatView {
 
     fn open_viewer(&mut self, username: SharedString, cx: &mut Context<Self>) {
         self.selected_viewer = Some(username.to_string());
-        self.recompute_drawer_summaries(cx);
         cx.notify();
     }
 
@@ -518,6 +532,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         if self.drawer_search.on_changed(event) {
+            self.refresh_drawer_names(cx);
             cx.notify();
         }
     }
@@ -941,7 +956,7 @@ impl ChatView {
         self.auto_scroll = true;
         self.chat_list.scroll_to_end();
         self.unread = 0;
-        self.last_seen_len = self.feed.read(cx).messages().len();
+        self.last_seen_seq = self.feed.read(cx).end_seq();
         cx.notify();
     }
 
@@ -1124,14 +1139,15 @@ impl ChatView {
         let query = self.search.query().to_string();
         let search_active = !query.is_empty();
 
-        let snapshot: Rc<Vec<ChatMessage>> = self.visible.clone();
+        let snapshot: Rc<VecDeque<u64>> = self.visible.clone();
         let empty = snapshot.is_empty();
+        let feed = self.feed.clone();
 
         let row_gap = spacing(Spacing::Xxs, density);
         let pal = *palette;
         let view = cx.entity();
-        let list_el = list(self.chat_list.clone(), move |ix, _window, _app| {
-            let Some(msg) = snapshot.get(ix) else {
+        let list_el = list(self.chat_list.clone(), move |ix, _window, app| {
+            let Some(msg) = snapshot.get(ix).and_then(|seq| feed.read(app).get(*seq)) else {
                 return div().into_any_element();
             };
             let data = ChatRow {
@@ -1250,30 +1266,20 @@ impl ChatView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let search = self.drawer_search.query();
-        let total = self.drawer_summaries.len();
-        let rows: Vec<ViewerSummary> = self
-            .drawer_summaries
-            .iter()
-            .filter(|s| drawer_matches(&s.username, search))
-            .cloned()
-            .collect();
-        let shown = rows.len();
-
-        let detail = {
-            let messages = self.feed.read(cx).messages();
-            selected_summary(
-                self.selected_viewer.as_deref(),
-                messages,
-                &self.viewers,
-                palette,
-            )
-        };
+        let authors = self.feed.read(cx).authors();
+        let total = authors.len();
+        let shown = self.drawer_names.len();
+        let detail = selected_summary(
+            self.selected_viewer.as_deref(),
+            authors,
+            &self.viewers,
+            palette,
+        );
         let selected_name = detail.as_ref().map(|d| d.username.clone());
 
         let header = self.render_drawer_header(total, shown, palette, density);
         let detail_el = self.render_selected_detail(detail, palette, density, cx);
-        let list_el = self.render_viewer_list(rows, selected_name, shown, palette, density, cx);
+        let list_el = self.render_viewer_list(selected_name, shown, palette, density, cx);
 
         let panel = div()
             .w(self.drawer_width)
@@ -1749,7 +1755,6 @@ impl ChatView {
 
     fn render_viewer_list(
         &self,
-        rows: Vec<ViewerSummary>,
         selected_name: Option<String>,
         shown: usize,
         palette: &ForgePalette,
@@ -1757,6 +1762,7 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let header = div()
+            .flex_none()
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Sm, density))
             .font_family(mono_family())
@@ -1764,33 +1770,49 @@ impl ChatView {
             .text_color(palette.text_faint)
             .child(tr!("chat_drawer_section_active", count = shown as i64));
 
-        let mut list = div().flex().flex_col();
-        if rows.is_empty() {
-            list = list.child(
-                div()
-                    .py(spacing(Spacing::Xs, density))
-                    .px(spacing(Spacing::Sm, density))
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("chat_drawer_no_matches")),
-            );
+        let body = if shown == 0 {
+            div()
+                .py(spacing(Spacing::Xs, density))
+                .px(spacing(Spacing::Sm, density))
+                .font_family(body_family())
+                .text_size(FONT_XS)
+                .text_color(palette.text_faint)
+                .child(tr!("chat_drawer_no_matches"))
+                .into_any_element()
         } else {
-            for summary in rows {
-                let is_sel = selected_name.as_deref() == Some(summary.username.as_str());
-                list = list.child(self.render_viewer_row(summary, is_sel, palette, density, cx));
-            }
-        }
-
-        div()
-            .id("chat-drawer-list")
+            let pal = *palette;
+            uniform_list(
+                "chat-drawer-list",
+                shown,
+                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                    let mut rows = Vec::with_capacity(range.len());
+                    for ix in range {
+                        let Some(summary) = this.drawer_names.get(ix).and_then(|name| {
+                            author_summary(name, this.feed.read(cx).authors(), &this.viewers, &pal)
+                        }) else {
+                            continue;
+                        };
+                        let is_sel = selected_name.as_deref() == Some(summary.username.as_str());
+                        rows.push(
+                            this.render_viewer_row(summary, is_sel, &pal, density, cx)
+                                .into_any_element(),
+                        );
+                    }
+                    rows
+                }),
+            )
             .flex_1()
             .min_h(px(0.0))
-            .overflow_y_scroll()
+            .into_any_element()
+        };
+
+        div()
+            .flex_1()
+            .min_h(px(0.0))
             .flex()
             .flex_col()
             .child(header)
-            .child(list)
+            .child(body)
     }
 
     fn render_viewer_row(
@@ -1864,6 +1886,7 @@ impl ChatView {
 
         let mut row = div()
             .id(row_id)
+            .w_full()
             .flex()
             .items_center()
             .gap(spacing(Spacing::Sm, density))
@@ -1886,19 +1909,6 @@ impl ChatView {
         }
         row
     }
-}
-
-fn drawer_summaries_for(
-    messages: &[ChatMessage],
-    viewers: &[Viewer],
-    palette: &ForgePalette,
-) -> Vec<ViewerSummary> {
-    unique_authors(messages)
-        .iter()
-        .filter_map(|u| {
-            synthesize_from_chat(u, messages, palette).map(|s| enrich_with_storage(s, viewers))
-        })
-        .collect()
 }
 
 fn viewer_avatar(

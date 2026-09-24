@@ -1,11 +1,11 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use forge_components::{BadgeKind, ForgePalette, fmt_relative_time, hash_accent};
 use forge_storage::Viewer;
 use gpui::Rgba;
 use time::OffsetDateTime;
 
-use crate::chat_feed::ChatMessage;
+use crate::chat_feed::{AuthorActivity, AuthorIndex};
 
 pub(crate) const DASH: &str = "-";
 
@@ -33,22 +33,6 @@ pub(crate) fn drawer_matches(username: &str, search: &str) -> bool {
     search.is_empty() || username.to_ascii_lowercase().contains(search)
 }
 
-pub(crate) fn unique_authors(messages: &[ChatMessage]) -> Vec<String> {
-    let mut seen: HashSet<String> = HashSet::new();
-    messages
-        .iter()
-        .rev()
-        .filter_map(|m| {
-            let name = m.username.as_ref();
-            if name.is_empty() || !seen.insert(name.to_owned()) {
-                None
-            } else {
-                Some(name.to_owned())
-            }
-        })
-        .collect()
-}
-
 fn sub_status(role: Option<BadgeKind>) -> SubStatus {
     match role {
         Some(BadgeKind::Broadcaster) => SubStatus::Unlimited,
@@ -57,43 +41,60 @@ fn sub_status(role: Option<BadgeKind>) -> SubStatus {
     }
 }
 
-pub(crate) fn synthesize_from_chat(
-    username: &str,
-    messages: &[ChatMessage],
-    palette: &ForgePalette,
-) -> Option<ViewerSummary> {
-    let count = messages
-        .iter()
-        .filter(|m| m.username.as_ref() == username)
-        .count();
-    if count == 0 {
-        return None;
+#[derive(Default)]
+pub(crate) struct ViewerDirectory {
+    viewers: Vec<Viewer>,
+    by_name: HashMap<String, usize>,
+}
+
+impl ViewerDirectory {
+    /// On a username shared across platforms the first listed viewer wins.
+    pub fn new(viewers: Vec<Viewer>) -> Self {
+        let mut by_name = HashMap::with_capacity(viewers.len());
+        for (ix, viewer) in viewers.iter().enumerate() {
+            by_name.entry(viewer.username.clone()).or_insert(ix);
+        }
+        Self { viewers, by_name }
     }
-    let last = messages
-        .iter()
-        .rev()
-        .find(|m| m.username.as_ref() == username)?;
-    let role = last.badges.first().copied();
+
+    pub fn viewers(&self) -> &[Viewer] {
+        &self.viewers
+    }
+
+    pub fn get(&self, username: &str) -> Option<&Viewer> {
+        self.by_name
+            .get(username)
+            .and_then(|ix| self.viewers.get(*ix))
+    }
+}
+
+pub(crate) fn summary_from_activity(
+    username: &str,
+    activity: &AuthorActivity,
+    palette: &ForgePalette,
+) -> ViewerSummary {
     let avatar_letter = username
         .chars()
         .next()
         .map_or('?', |c| c.to_ascii_uppercase());
-
-    Some(ViewerSummary {
+    ViewerSummary {
         username: username.to_owned(),
-        role,
-        message_count: count as u64,
-        last_seen_label: fmt_relative_time(Some(last.received_at)),
+        role: activity.role,
+        message_count: activity.message_count as u64,
+        last_seen_label: fmt_relative_time(Some(activity.last_received_at)),
         avatar_letter,
         avatar_color: hash_accent(username, palette),
         watch_time: DASH.to_owned(),
-        sub: sub_status(role),
+        sub: sub_status(activity.role),
         follow: DASH.to_owned(),
-    })
+    }
 }
 
-pub(crate) fn enrich_with_storage(mut summary: ViewerSummary, viewers: &[Viewer]) -> ViewerSummary {
-    if let Some(v) = viewers.iter().find(|v| v.username == summary.username) {
+pub(crate) fn enrich_with_storage(
+    mut summary: ViewerSummary,
+    viewer: Option<&Viewer>,
+) -> ViewerSummary {
+    if let Some(v) = viewer {
         summary.message_count = v.message_count;
         summary.last_seen_label = fmt_relative_time(Some(v.last_seen_at));
         summary.watch_time = watch_time_since(v.first_seen_at);
@@ -101,20 +102,31 @@ pub(crate) fn enrich_with_storage(mut summary: ViewerSummary, viewers: &[Viewer]
     summary
 }
 
-pub(crate) fn selected_summary(
-    selected: Option<&str>,
-    messages: &[ChatMessage],
-    viewers: &[Viewer],
+pub(crate) fn author_summary(
+    username: &str,
+    authors: &AuthorIndex,
+    directory: &ViewerDirectory,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
-    if let Some(sel) = selected
-        && let Some(summary) = synthesize_from_chat(sel, messages, palette)
-    {
-        return Some(enrich_with_storage(summary, viewers));
-    }
-    let last = messages.iter().rev().find(|m| !m.username.is_empty())?;
-    synthesize_from_chat(last.username.as_ref(), messages, palette)
-        .map(|s| enrich_with_storage(s, viewers))
+    let activity = authors.get(username)?;
+    Some(enrich_with_storage(
+        summary_from_activity(username, activity, palette),
+        directory.get(username),
+    ))
+}
+
+pub(crate) fn selected_summary(
+    selected: Option<&str>,
+    authors: &AuthorIndex,
+    directory: &ViewerDirectory,
+    palette: &ForgePalette,
+) -> Option<ViewerSummary> {
+    selected
+        .and_then(|sel| author_summary(sel, authors, directory, palette))
+        .or_else(|| {
+            let newest = authors.newest()?;
+            author_summary(newest, authors, directory, palette)
+        })
 }
 
 fn watch_time_since(first_seen: OffsetDateTime) -> String {

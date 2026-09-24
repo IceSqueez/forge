@@ -15,7 +15,7 @@ use gpui::{
 
 use crate::async_bridge::{BridgeFlow, drain_subscription};
 use crate::boot::{BootFailure, build_runtime};
-use crate::chat_feed::{ChatFeed, ChatMessage, chat_source, platform_of};
+use crate::chat_feed::{ChatFeed, ChatMessage, DEFAULT_DISPLAY_LIMIT, chat_source, platform_of};
 use crate::event_log::EventLog;
 use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
@@ -240,8 +240,6 @@ pub fn run_boot(
     .detach();
 }
 
-const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
-
 async fn seed_chat_history(
     cx: &mut AsyncApp,
     chat_feed: Entity<ChatFeed>,
@@ -253,21 +251,22 @@ async fn seed_chat_history(
         let settings = Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>;
         let limit = forge_storage::chat_history_display_limit(settings.as_ref())
             .await
-            .unwrap_or(DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT);
+            .unwrap_or(DEFAULT_DISPLAY_LIMIT);
         let rows = backend
             .chat_history_repo()
             .list_recent(limit as usize)
             .await
             .unwrap_or_default();
-        let _ = tx.send(rows);
+        let _ = tx.send((limit, rows));
     });
-    let Ok(mut rows) = rx.await else {
+    let Ok((limit, mut rows)) = rx.await else {
         return;
     };
     // Repo yields newest-first; the feed is oldest-first.
     rows.reverse();
     let messages: Vec<ChatMessage> = rows.iter().map(ChatMessage::from_row).collect();
     chat_feed.update(cx, |feed, cx| {
+        feed.set_capacity(limit as usize);
         feed.seed(messages);
         cx.notify();
     });
@@ -343,7 +342,7 @@ fn start_bridge(
                             serde_json::from_value::<ChatModerationPayload>(value.clone())
                         && let Some(platform) = chat_source(event.source).map(platform_of)
                     {
-                        match payload.action {
+                        changed |= match payload.action {
                             ChatModerationAction::DeleteMessage { message_id } => {
                                 feed.mark_deleted(&message_id)
                             }
@@ -351,23 +350,20 @@ fn start_bridge(
                                 feed.mark_user(platform, &user_name)
                             }
                             ChatModerationAction::ClearChat => feed.clear_platform(platform),
-                        }
-                        changed = true;
+                        };
                     }
                     if event.kind == "command.matched"
                         && let Some(caused_by) = event.caused_by
                         && let Some(command) = event.payload.get("command").and_then(|v| v.as_str())
                     {
-                        feed.mark_command(caused_by, command);
-                        changed = true;
+                        changed |= feed.mark_command(caused_by, command);
                     }
                     if event.kind == "action.start"
                         && let Some(caused_by) = event.caused_by
                         && let Some(action_name) =
                             event.payload.get("action_name").and_then(|v| v.as_str())
                     {
-                        feed.set_triggered(caused_by, action_name);
-                        changed = true;
+                        changed |= feed.set_triggered(caused_by, action_name);
                     }
                 }
                 if changed {

@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, HashMap, VecDeque};
+
 use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
 use forge_types::{
@@ -67,83 +69,213 @@ impl ChatMessage {
     }
 }
 
+pub const DEFAULT_DISPLAY_LIMIT: u32 = 500;
+
+#[derive(Clone, Copy, Debug)]
+pub struct AuthorActivity {
+    pub message_count: usize,
+    pub last_seq: u64,
+    pub role: Option<BadgeKind>,
+    pub last_received_at: OffsetDateTime,
+}
+
+#[derive(Default)]
+pub struct AuthorIndex {
+    by_name: HashMap<SharedString, AuthorActivity>,
+    by_recency: BTreeMap<u64, SharedString>,
+}
+
+impl AuthorIndex {
+    pub fn get(&self, username: &str) -> Option<&AuthorActivity> {
+        self.by_name.get(username)
+    }
+
+    pub fn len(&self) -> usize {
+        self.by_name.len()
+    }
+
+    pub fn newest_first(&self) -> impl Iterator<Item = &SharedString> {
+        self.by_recency.values().rev()
+    }
+
+    pub fn newest(&self) -> Option<&SharedString> {
+        self.by_recency.values().next_back()
+    }
+
+    fn record(&mut self, seq: u64, message: &ChatMessage) {
+        if message.username.is_empty() {
+            return;
+        }
+        let role = message.badges.first().copied();
+        match self.by_name.get_mut(&message.username) {
+            Some(activity) => {
+                self.by_recency.remove(&activity.last_seq);
+                activity.message_count += 1;
+                activity.last_seq = seq;
+                activity.role = role;
+                activity.last_received_at = message.received_at;
+            }
+            None => {
+                self.by_name.insert(
+                    message.username.clone(),
+                    AuthorActivity {
+                        message_count: 1,
+                        last_seq: seq,
+                        role,
+                        last_received_at: message.received_at,
+                    },
+                );
+            }
+        }
+        self.by_recency.insert(seq, message.username.clone());
+    }
+
+    /// Only valid for the oldest retained row, so the author's newest row is never the one removed while others remain.
+    fn forget_oldest(&mut self, message: &ChatMessage) {
+        let Some(activity) = self.by_name.get_mut(&message.username) else {
+            return;
+        };
+        activity.message_count = activity.message_count.saturating_sub(1);
+        if activity.message_count == 0 {
+            self.by_recency.remove(&activity.last_seq);
+            self.by_name.remove(&message.username);
+        }
+    }
+}
+
+/// Rows carry a monotonic sequence number that survives eviction: `start_seq()` is the oldest retained row.
 pub struct ChatFeed {
-    messages: Vec<ChatMessage>,
+    messages: VecDeque<ChatMessage>,
+    capacity: usize,
+    start_seq: u64,
+    authors: AuthorIndex,
 }
 
 impl ChatFeed {
     pub fn new() -> Self {
         Self {
-            messages: Vec::new(),
+            messages: VecDeque::new(),
+            capacity: DEFAULT_DISPLAY_LIMIT as usize,
+            start_seq: 0,
+            authors: AuthorIndex::default(),
         }
     }
 
-    pub fn messages(&self) -> &[ChatMessage] {
+    pub fn messages(&self) -> &VecDeque<ChatMessage> {
         &self.messages
     }
 
+    pub fn authors(&self) -> &AuthorIndex {
+        &self.authors
+    }
+
+    pub fn start_seq(&self) -> u64 {
+        self.start_seq
+    }
+
+    pub fn end_seq(&self) -> u64 {
+        self.start_seq + self.messages.len() as u64
+    }
+
+    pub fn get(&self, seq: u64) -> Option<&ChatMessage> {
+        let offset = usize::try_from(seq.checked_sub(self.start_seq)?).ok()?;
+        self.messages.get(offset)
+    }
+
+    /// Clamped to at least one row.
+    pub fn set_capacity(&mut self, capacity: usize) {
+        self.capacity = capacity.max(1);
+        self.evict_overflow();
+    }
+
     pub fn push(&mut self, message: ChatMessage) {
-        self.messages.push(message);
+        let seq = self.end_seq();
+        self.authors.record(seq, &message);
+        self.messages.push_back(message);
+        self.evict_overflow();
     }
 
-    pub fn seed(&mut self, mut history: Vec<ChatMessage>) {
-        if self.messages.is_empty() {
-            self.messages = history;
-        } else {
-            history.append(&mut self.messages);
-            self.messages = history;
+    /// Live rows already present are re-sequenced after the history, so observers see them as evicted and re-appended.
+    pub fn seed(&mut self, history: Vec<ChatMessage>) {
+        let live = std::mem::take(&mut self.messages);
+        self.start_seq += live.len() as u64;
+        self.authors = AuthorIndex::default();
+        for message in history.into_iter().chain(live) {
+            self.push(message);
         }
     }
 
-    pub fn set_triggered(&mut self, event_id: EventId, action_name: &str) {
-        for message in &mut self.messages {
-            if message.event_id == event_id
-                && let ChatBody::Subscription { triggered, .. }
-                | ChatBody::Raid { triggered, .. }
-                | ChatBody::Command { triggered, .. } = &mut message.body
-            {
+    fn evict_overflow(&mut self) {
+        while self.messages.len() > self.capacity {
+            let Some(oldest) = self.messages.pop_front() else {
+                break;
+            };
+            self.authors.forget_oldest(&oldest);
+            self.start_seq += 1;
+        }
+    }
+
+    pub fn set_triggered(&mut self, event_id: EventId, action_name: &str) -> bool {
+        let Some(message) = self
+            .messages
+            .iter_mut()
+            .rev()
+            .find(|m| m.event_id == event_id)
+        else {
+            return false;
+        };
+        match &mut message.body {
+            ChatBody::Subscription { triggered, .. }
+            | ChatBody::Raid { triggered, .. }
+            | ChatBody::Command { triggered, .. } => {
                 *triggered = Some(action_name.into());
+                true
             }
+            ChatBody::Message(_) | ChatBody::Cheer { .. } => false,
         }
     }
 
-    pub fn mark_command(&mut self, event_id: EventId, command: &str) {
-        for message in &mut self.messages {
-            if message.event_id == event_id {
-                let triggered = match &message.body {
-                    ChatBody::Command { triggered, .. } => triggered.clone(),
-                    _ => None,
-                };
-                message.body = ChatBody::Command {
-                    command: command.into(),
-                    triggered,
-                };
-            }
-        }
+    pub fn mark_command(&mut self, event_id: EventId, command: &str) -> bool {
+        let Some(message) = self
+            .messages
+            .iter_mut()
+            .rev()
+            .find(|m| m.event_id == event_id)
+        else {
+            return false;
+        };
+        let triggered = match &message.body {
+            ChatBody::Command { triggered, .. } => triggered.clone(),
+            _ => None,
+        };
+        message.body = ChatBody::Command {
+            command: command.into(),
+            triggered,
+        };
+        true
     }
 
-    pub fn mark_deleted(&mut self, msg_id: &str) {
+    pub fn mark_deleted(&mut self, msg_id: &str) -> bool {
+        self.moderate_where(|m| m.id == msg_id)
+    }
+
+    pub fn mark_user(&mut self, platform: Platform, username: &str) -> bool {
+        self.moderate_where(|m| m.platform == platform && m.username.eq_ignore_ascii_case(username))
+    }
+
+    pub fn clear_platform(&mut self, platform: Platform) -> bool {
+        self.moderate_where(|m| m.platform == platform)
+    }
+
+    fn moderate_where(&mut self, matches: impl Fn(&ChatMessage) -> bool) -> bool {
+        let mut changed = false;
         for message in &mut self.messages {
-            if message.id == msg_id {
+            if !message.moderated && matches(message) {
                 message.moderated = true;
+                changed = true;
             }
         }
-    }
-
-    pub fn mark_user(&mut self, platform: Platform, username: &str) {
-        for message in &mut self.messages {
-            if message.platform == platform && message.username.eq_ignore_ascii_case(username) {
-                message.moderated = true;
-            }
-        }
-    }
-
-    pub fn clear_platform(&mut self, platform: Platform) {
-        for message in &mut self.messages {
-            if message.platform == platform {
-                message.moderated = true;
-            }
-        }
+        changed
     }
 
     pub fn message_from_event(event: &Event) -> Option<ChatMessage> {

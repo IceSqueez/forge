@@ -8,6 +8,10 @@ use forge_types::{
 
 use super::nav;
 
+const BREAK_LOOP_KIND_ID: &str = "core.logic.break_loop";
+const CONTINUE_LOOP_KIND_ID: &str = "core.logic.continue_loop";
+const STOP_KIND_ID: &str = "core.logic.stop";
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(super) enum HealthSeverity {
     Green,
@@ -22,6 +26,7 @@ pub(super) enum Finding {
     IsolatedSibling(String),
     SomeTriggersOnly(String),
     LastRunFailed(String),
+    ControlFlowInConcurrentAction,
 }
 
 impl Finding {
@@ -30,7 +35,8 @@ impl Finding {
             Finding::UnknownVariable(_) | Finding::LastRunFailed(_) => HealthSeverity::Red,
             Finding::ProducedLater(_)
             | Finding::IsolatedSibling(_)
-            | Finding::SomeTriggersOnly(_) => HealthSeverity::Yellow,
+            | Finding::SomeTriggersOnly(_)
+            | Finding::ControlFlowInConcurrentAction => HealthSeverity::Yellow,
         }
     }
 }
@@ -126,6 +132,24 @@ pub(super) fn analyze(
         None => result.resize(action.sub_actions.len(), StepHealth::default()),
     }
 
+    if action.concurrent {
+        for (step, health) in action.sub_actions.iter().zip(result.iter_mut()) {
+            if !step.enabled {
+                continue;
+            }
+            if is_control_flow_kind(&step.kind_id) {
+                health.findings.push(Finding::ControlFlowInConcurrentAction);
+            }
+            for chain in nested_chains(step, sub_registry) {
+                collect_concurrent_control_flow_findings(
+                    &chain,
+                    sub_registry,
+                    &mut health.findings,
+                );
+            }
+        }
+    }
+
     for (i, health) in result.iter_mut().enumerate() {
         if let Some(Some(SubActionOutcome::Failed(msg))) = last_step_outcomes.get(i) {
             health.findings.push(Finding::LastRunFailed(msg.clone()));
@@ -133,6 +157,31 @@ pub(super) fn analyze(
     }
 
     result
+}
+
+fn is_control_flow_kind(kind_id: &str) -> bool {
+    matches!(
+        kind_id,
+        BREAK_LOOP_KIND_ID | CONTINUE_LOOP_KIND_ID | STOP_KIND_ID
+    )
+}
+
+fn collect_concurrent_control_flow_findings(
+    steps: &[SubActionStep],
+    registry: &SubActionRegistry,
+    out: &mut Vec<Finding>,
+) {
+    for step in steps {
+        if !step.enabled {
+            continue;
+        }
+        if is_control_flow_kind(&step.kind_id) {
+            out.push(Finding::ControlFlowInConcurrentAction);
+        }
+        for chain in nested_chains(step, registry) {
+            collect_concurrent_control_flow_findings(&chain, registry, out);
+        }
+    }
 }
 
 fn trigger_seed(triggers: &[TriggerInstance], registry: &TriggerRegistry) -> Option<TriggerSeed> {

@@ -58,6 +58,9 @@ fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
                 message = message.clone()
             )
         }
+        analyzer::Finding::ControlFlowInConcurrentAction => {
+            tr!("action_editor_health_control_flow_concurrent")
+        }
     };
     SharedString::from(text)
 }

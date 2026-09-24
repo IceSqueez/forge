@@ -405,6 +405,7 @@ action_editor_health_produced_later = Використовує %{ $name }%, ал
 action_editor_health_isolated_sibling = Використовує %{ $name }%, яку створює сусідній крок, що виконується ізольовано й не ділиться нею
 action_editor_health_some_triggers = Використовує %{ $name }%, яку надають лише деякі тригери цієї дії
 action_editor_health_last_run_failed = Останній запуск завершився помилкою: { $message }
+action_editor_health_control_flow_concurrent = Переривання, продовження та зупинка не мають ефекту, якщо дія виконує свої кроки паралельно. Переведіть дію в послідовний режим або видаліть цей крок.
 action_editor_health_ok = Все гаразд: усі посилання резолвляться, останній запуск успішний
 action_editor_health_warn = Статичне попередження
 action_editor_health_error = Помилка

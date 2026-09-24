@@ -405,6 +405,7 @@ action_editor_health_produced_later = Uses %{ $name }%, but it is only produced 
 action_editor_health_isolated_sibling = Uses %{ $name }%, produced by a sibling step that runs in isolation and does not share it
 action_editor_health_some_triggers = Uses %{ $name }%, which only some of this action's triggers provide
 action_editor_health_last_run_failed = Last run failed: { $message }
+action_editor_health_control_flow_concurrent = Break, continue and stop have no effect when the action runs its steps concurrently. Switch the action to sequential or remove this step.
 action_editor_health_ok = Healthy: all references resolve, last run passed
 action_editor_health_warn = Static warning
 action_editor_health_error = Error

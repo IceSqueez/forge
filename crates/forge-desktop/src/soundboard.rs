@@ -2921,16 +2921,12 @@ mod tests {
             SettledAdoption::Copied => ("copied", None),
             SettledAdoption::AlreadyManaged => ("already_managed", None),
             SettledAdoption::SourceMissing => ("source_missing", None),
-            SettledAdoption::Refused(reason) => ("refused", Some(reason.to_string())),
+            SettledAdoption::Refused => ("refused", None),
         })
     }
 
-    fn badge(
-        availability: Option<ClipAvailability>,
-        note: Option<&str>,
-    ) -> Option<(&'static str, Option<String>)> {
-        let note = note.map(|n| SharedString::from(n.to_owned()));
-        library_badge(availability.as_ref(), note.as_ref()).map(|badge| match badge {
+    fn badge(availability: Option<ClipAvailability>) -> Option<(&'static str, Option<String>)> {
+        library_badge(availability.as_ref()).map(|badge| match badge {
             LibraryBadge::Blocked(reason) => ("blocked", Some(reason.to_string())),
             LibraryBadge::Pending => ("pending", None),
         })
@@ -2953,7 +2949,7 @@ mod tests {
             ),
             (
                 serde_json::json!({ "verdict": "refused", "reason": "notes.txt is not audio" }),
-                ("refused", Some("notes.txt is not audio".to_owned())),
+                ("refused", None),
             ),
         ] {
             assert_eq!(settled(payload.clone()), Some(expected), "{payload}");
@@ -2967,23 +2963,9 @@ mod tests {
             serde_json::json!({ "verdict": "in_flight" }),
             serde_json::json!({ "verdict": "ADOPTED" }),
             serde_json::json!({ "verdict": 1 }),
-            serde_json::json!({ "verdict": "refused" }),
-            serde_json::json!({ "verdict": "refused", "reason": "" }),
-            serde_json::json!({ "verdict": "refused", "reason": 3 }),
         ] {
             assert_eq!(settled(payload.clone()), None, "{payload}");
         }
-    }
-
-    #[test]
-    fn a_live_refusal_note_blocks_the_pad_with_the_reason_as_its_tooltip() {
-        assert_eq!(
-            badge(
-                Some(ClipAvailability::Unadopted { refusal: None }),
-                Some("notes.txt is not audio"),
-            ),
-            Some(("blocked", Some("notes.txt is not audio".to_owned())))
-        );
     }
 
     #[test]
@@ -3004,11 +2986,7 @@ mod tests {
                 Some(("blocked", Some(clip_refusal_message(&refusal)))),
             ),
         ] {
-            assert_eq!(
-                badge(availability.clone(), None),
-                expected,
-                "{availability:?}"
-            );
+            assert_eq!(badge(availability.clone()), expected, "{availability:?}");
         }
     }
 }

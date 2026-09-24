@@ -179,12 +179,74 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
 mod tests {
     use std::collections::BTreeMap;
 
+    use forge_events::{Event, EventPublisher};
+    use forge_hotkey::HotkeyConfig;
+    use forge_hotkey::testing::{RecordedCall, RecordingBackend, test_client};
+    use forge_storage::{DataProvider, MockTriggerInstanceRepo};
     use forge_types::{PermissionRung, PlatformScope};
 
     use super::*;
     use crate::hotkey_bindings::{HOTKEY_PRESSED_KIND, HOTKEY_RELEASED_KIND};
+    use crate::test_support::{Sandboxed, sandboxed_backend};
 
     const OTHER_KIND: &str = "midi.note_on";
+    const TEST_KEY: [u8; 32] = [0x11; 32];
+
+    struct SilentPublisher;
+
+    impl EventPublisher for SilentPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    fn recording_client() -> (Arc<HotkeyClient>, Arc<RecordingBackend>) {
+        test_client(HotkeyConfig::default(), Arc::new(SilentPublisher))
+    }
+
+    struct Synced {
+        _storage: Sandboxed<Arc<dyn DataProvider>>,
+        stored: Arc<dyn TriggerInstanceRepo>,
+        repo: Arc<dyn TriggerInstanceRepo>,
+        client: Arc<HotkeyClient>,
+        backend: Arc<RecordingBackend>,
+    }
+
+    async fn synced() -> Synced {
+        let storage = sandboxed_backend("sqlite::memory:", TEST_KEY)
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let stored = storage_repo(&storage);
+        let (client, backend) = recording_client();
+        let repo = HotkeySyncedTriggerRepo::wrap(Arc::clone(&stored), Some(Arc::clone(&client)));
+        Synced {
+            _storage: storage,
+            stored,
+            repo,
+            client,
+            backend,
+        }
+    }
+
+    fn storage_repo(storage: &Sandboxed<Arc<dyn DataProvider>>) -> Arc<dyn TriggerInstanceRepo> {
+        let provider: &Arc<dyn DataProvider> = storage;
+        provider.trigger_instance_repo()
+    }
+
+    fn registered(client: &HotkeyClient) -> Vec<String> {
+        let mut combos: Vec<String> = client
+            .registered_combos()
+            .into_iter()
+            .map(|(_, combo)| combo.as_str().to_owned())
+            .collect();
+        combos.sort();
+        combos
+    }
+
+    fn with_combo(mut instance: TriggerInstance, combo: &str) -> TriggerInstance {
+        instance
+            .overrides
+            .insert(COMBO_FIELD.to_owned(), Variant::String(combo.to_owned()));
+        instance
+    }
 
     fn instance(kind_id: &str, combo: Option<&str>) -> TriggerInstance {
         let overrides = combo
@@ -247,5 +309,161 @@ mod tests {
 
             assert_eq!(saved, original, "kind {kind} with combo {combo:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn saving_a_hotkey_trigger_registers_its_combo_in_canonical_form() {
+        let synced = synced().await;
+
+        synced
+            .repo
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("shift+ctrl+f5")))
+            .await
+            .unwrap();
+
+        assert_eq!(registered(&synced.client), ["Ctrl+Shift+F5"]);
+    }
+
+    #[tokio::test]
+    async fn changing_a_triggers_combo_moves_the_registration_to_the_new_combo() {
+        let synced = synced().await;
+        let original = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        synced.repo.save(&original).await.unwrap();
+
+        synced.repo.save(&with_combo(original, "F6")).await.unwrap();
+
+        assert_eq!(registered(&synced.client), ["F6"]);
+    }
+
+    #[tokio::test]
+    async fn removing_the_last_trigger_on_a_combo_releases_its_registration() {
+        for removal in ["delete", "archive"] {
+            let synced = synced().await;
+            let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+            synced.repo.save(&trigger).await.unwrap();
+
+            let removed = match removal {
+                "delete" => synced.repo.delete(trigger.id).await,
+                _ => synced.repo.archive(trigger.id).await,
+            };
+
+            assert!(removed.unwrap(), "{removal} reports the row removed");
+            assert!(registered(&synced.client).is_empty(), "after {removal}");
+        }
+    }
+
+    #[tokio::test]
+    async fn restoring_an_archived_hotkey_trigger_registers_its_combo_again() {
+        let synced = synced().await;
+        let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        synced.repo.save(&trigger).await.unwrap();
+        synced.repo.archive(trigger.id).await.unwrap();
+
+        synced.repo.restore(trigger.id).await.unwrap();
+
+        assert_eq!(registered(&synced.client), ["F5"]);
+    }
+
+    #[tokio::test]
+    async fn removing_one_half_of_a_hold_keeps_the_registration_the_other_half_uses() {
+        let synced = synced().await;
+        let press = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        synced.repo.save(&press).await.unwrap();
+        synced
+            .repo
+            .save(&instance(HOTKEY_RELEASED_KIND, Some("f5")))
+            .await
+            .unwrap();
+
+        synced.repo.delete(press.id).await.unwrap();
+
+        let released = synced
+            .backend
+            .calls()
+            .into_iter()
+            .any(|call| matches!(call, RecordedCall::Unregister(_)));
+        assert!(!released, "the release half still needs the OS grab");
+        assert_eq!(registered(&synced.client), ["F5"]);
+    }
+
+    #[tokio::test]
+    async fn disabling_a_hotkey_trigger_keeps_its_registration() {
+        let synced = synced().await;
+        let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        synced.repo.save(&trigger).await.unwrap();
+
+        synced.repo.set_enabled(trigger.id, false).await.unwrap();
+
+        assert_eq!(registered(&synced.client), ["F5"]);
+    }
+
+    #[tokio::test]
+    async fn a_refused_write_leaves_the_client_registrations_untouched() {
+        let unparseable = instance(HOTKEY_PRESSED_KIND, Some("Ctrl+XYZ"));
+        let valid = instance(HOTKEY_PRESSED_KIND, Some("F9"));
+        let failure = || StorageError::Connection {
+            reason: "disk gone".to_owned(),
+        };
+        for write in ["invalid combo", "save", "delete", "archive", "restore"] {
+            let mut inner = MockTriggerInstanceRepo::new();
+            let listed = valid.clone();
+            inner
+                .expect_list_all()
+                .returning(move || Ok(vec![listed.clone()]));
+            inner.expect_save().returning(move |_| Err(failure()));
+            inner.expect_delete().returning(move |_| Err(failure()));
+            inner.expect_archive().returning(move |_| Err(failure()));
+            inner.expect_restore().returning(move |_| Err(failure()));
+            let (client, backend) = recording_client();
+            let repo = HotkeySyncedTriggerRepo::wrap(Arc::new(inner), Some(Arc::clone(&client)));
+
+            let outcome = match write {
+                "invalid combo" => repo.save(&unparseable).await.map(|_| ()),
+                "save" => repo.save(&valid).await.map(|_| ()),
+                "delete" => repo.delete(valid.id).await.map(|_| ()),
+                "archive" => repo.archive(valid.id).await.map(|_| ()),
+                _ => repo.restore(valid.id).await.map(|_| ()),
+            };
+
+            assert!(outcome.is_err(), "{write} must report the failure");
+            assert!(backend.calls().is_empty(), "{write} touched the client");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_combo_the_os_refuses_is_still_stored_but_left_unregistered() {
+        let synced = synced().await;
+        let trigger = instance(HOTKEY_PRESSED_KIND, Some("f7"));
+        synced
+            .backend
+            .fail_next_register(&HotkeyCombo::parse("F7").unwrap());
+
+        let saved = synced.repo.save(&trigger).await;
+
+        assert!(saved.is_ok(), "got {saved:?}");
+        let stored = synced.stored.get(trigger.id).await.unwrap().unwrap();
+        assert_eq!(stored_combo(&stored), Some("F7"));
+        assert!(registered(&synced.client).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_combo_the_os_refused_is_registered_by_the_next_trigger_write() {
+        let synced = synced().await;
+        synced
+            .backend
+            .fail_next_register(&HotkeyCombo::parse("F7").unwrap());
+        synced
+            .repo
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("F7")))
+            .await
+            .unwrap();
+
+        synced
+            .repo
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("F8")))
+            .await
+            .unwrap();
+
+        assert_eq!(registered(&synced.client), ["F7", "F8"]);
     }
 }

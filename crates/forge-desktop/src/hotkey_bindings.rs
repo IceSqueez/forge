@@ -1276,4 +1276,152 @@ mod tests {
             "a legacy f5 row outlived the F5 cleanup: {left:?}"
         );
     }
+
+    struct SilentPublisher;
+
+    impl forge_events::EventPublisher for SilentPublisher {
+        fn publish(&self, _: forge_events::Event) {}
+    }
+
+    async fn client_holding(
+        combo: &str,
+    ) -> (
+        Arc<HotkeyClient>,
+        Arc<forge_hotkey::testing::RecordingBackend>,
+        HotkeyId,
+    ) {
+        let (client, recorder) = forge_hotkey::testing::test_client(
+            forge_hotkey::HotkeyConfig::default(),
+            Arc::new(SilentPublisher),
+        );
+        let id = client
+            .register(HotkeyCombo::parse(combo).unwrap())
+            .await
+            .unwrap();
+        (client, recorder, id)
+    }
+
+    fn stored_combos(instances: &[TriggerInstance]) -> Vec<(String, Option<String>)> {
+        let mut combos: Vec<(String, Option<String>)> = instances
+            .iter()
+            .map(|instance| {
+                let combo = match instance.overrides.get(COMBO_FIELD) {
+                    Some(Variant::String(combo)) => Some(combo.clone()),
+                    _ => None,
+                };
+                (instance.kind_id.clone(), combo)
+            })
+            .collect();
+        combos.sort();
+        combos
+    }
+
+    #[tokio::test]
+    async fn rebind_combo_registers_the_new_combo_before_releasing_the_old_one() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        let (client, recorder, old_id) = client_holding("F1").await;
+        let before = recorder.calls().len();
+
+        rebind_combo(
+            Arc::clone(&client),
+            Arc::clone(&backend),
+            "F1".to_owned(),
+            "F2".to_owned(),
+        )
+        .await
+        .unwrap();
+
+        let calls = recorder.calls().split_off(before);
+        assert!(
+            matches!(
+                calls.as_slice(),
+                [
+                    forge_hotkey::testing::RecordedCall::Register(_, new),
+                    forge_hotkey::testing::RecordedCall::Unregister(old),
+                ] if new.as_str() == "F2" && *old == old_id
+            ),
+            "got {calls:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn rebind_combo_keeps_the_old_binding_live_and_stored_when_the_new_combo_is_refused() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        let (client, recorder, old_id) = client_holding("F1").await;
+        recorder.fail_next_register(&HotkeyCombo::parse("F2").unwrap());
+
+        let outcome = rebind_combo(
+            Arc::clone(&client),
+            Arc::clone(&backend),
+            "F1".to_owned(),
+            "F2".to_owned(),
+        )
+        .await;
+
+        assert!(outcome.is_err());
+        let live: Vec<(HotkeyId, String)> = client
+            .registered_combos()
+            .into_iter()
+            .map(|(id, combo)| (id, combo.as_str().to_owned()))
+            .collect();
+        assert_eq!(live, [(old_id, "F1".to_owned())]);
+        let stored = backend.trigger_instance_repo().list_all().await.unwrap();
+        assert_eq!(
+            stored_combos(&stored),
+            [(HOTKEY_PRESSED_KIND.to_owned(), Some("F1".to_owned()))]
+        );
+    }
+
+    #[tokio::test]
+    async fn rebind_combo_moves_both_halves_of_a_hold_and_keeps_their_action_links() {
+        let backend = provider().await;
+        let action = seed_action(&backend, "Push to talk").await;
+        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("F1")).await;
+        let repo = backend.trigger_instance_repo();
+        repo.link_action(action, press, 0).await.unwrap();
+        let (client, _recorder, _) = client_holding("F1").await;
+
+        rebind_combo(
+            client,
+            Arc::clone(&backend),
+            "F1".to_owned(),
+            "F2".to_owned(),
+        )
+        .await
+        .unwrap();
+
+        let stored = repo.list_all().await.unwrap();
+        assert_eq!(
+            stored_combos(&stored),
+            [
+                (HOTKEY_PRESSED_KIND.to_owned(), Some("F2".to_owned())),
+                (HOTKEY_RELEASED_KIND.to_owned(), Some("F2".to_owned())),
+            ]
+        );
+        assert_eq!(repo.actions_using(press).await.unwrap(), [action]);
+    }
+
+    #[tokio::test]
+    async fn rebind_combo_to_the_same_combo_leaves_the_client_and_storage_alone() {
+        let backend = provider().await;
+        let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        let (client, recorder, _) = client_holding("F1").await;
+        let before = recorder.calls();
+
+        rebind_combo(
+            Arc::clone(&client),
+            Arc::clone(&backend),
+            "F1".to_owned(),
+            "F1".to_owned(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(recorder.calls(), before);
+        let kept = backend.trigger_instance_repo().get(press).await.unwrap();
+        assert!(kept.is_some(), "rebinding onto itself dropped the binding");
+    }
 }

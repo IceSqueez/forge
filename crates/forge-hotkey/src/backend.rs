@@ -79,7 +79,7 @@ pub(crate) trait HotkeyBackend: Send + Sync {
 pub(crate) mod tests {
     use std::collections::{HashMap, HashSet};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use super::*;
 
@@ -88,6 +88,7 @@ pub(crate) mod tests {
         pub(crate) fail_on: Arc<Mutex<HashSet<String>>>,
         pub(crate) register_calls: Arc<AtomicUsize>,
         pub(crate) unregister_calls: Arc<AtomicUsize>,
+        pub(crate) fail_unregister: Arc<AtomicBool>,
         pub(crate) restart_tx: mpsc::Sender<()>,
         gate_only: bool,
         fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
@@ -111,6 +112,7 @@ pub(crate) mod tests {
                 fail_on: Arc::new(Mutex::new(HashSet::new())),
                 register_calls: Arc::new(AtomicUsize::new(0)),
                 unregister_calls: Arc::new(AtomicUsize::new(0)),
+                fail_unregister: Arc::new(AtomicBool::new(false)),
                 restart_tx,
                 gate_only,
                 fired_rx_slot: Mutex::new(Some(rx)),
@@ -138,6 +140,9 @@ pub(crate) mod tests {
 
         async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
             self.unregister_calls.fetch_add(1, Ordering::Relaxed);
+            if self.fail_unregister.load(Ordering::Relaxed) {
+                return Err(HotkeyError::MainThreadUnavailable);
+            }
             self.registered.lock().unwrap().remove(&id.0);
             Ok(())
         }

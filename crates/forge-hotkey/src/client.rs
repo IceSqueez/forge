@@ -500,6 +500,29 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_os_unregister_keeps_the_combo_registered_so_a_retry_can_release_it() {
+        let (backend, _tx) = MockPortalBackend::new();
+        let fail_unregister = Arc::clone(&backend.fail_unregister);
+        let unregister_calls = Arc::clone(&backend.unregister_calls);
+        let client = start_supervised(backend, noop_publisher());
+        let c = combo("Ctrl+F1");
+        let id = client.register(c.clone()).await.unwrap();
+        fail_unregister.store(true, Ordering::Relaxed);
+
+        assert!(client.unregister(id).await.is_err());
+        assert_eq!(client.registered_combos(), vec![(id, c)]);
+
+        fail_unregister.store(false, Ordering::Relaxed);
+        client.unregister(id).await.unwrap();
+        assert_eq!(
+            unregister_calls.load(Ordering::Relaxed),
+            2,
+            "the retry must reach the OS grab that is still held"
+        );
+        assert!(client.registered_combos().is_empty());
+    }
+
+    #[tokio::test]
     async fn backend_conflict_returns_already_registered() {
         let (backend, _tx) = MockPortalBackend::new();
         backend.add_conflict("Alt+X");

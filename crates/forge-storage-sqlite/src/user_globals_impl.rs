@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_storage::user_globals::incremented;
 use forge_storage::{StorageError, UserGlobalEntry, UserGlobalsRepo};
 use forge_types::Variant;
 use time::OffsetDateTime;
@@ -23,6 +24,41 @@ impl SqliteUserGlobalsRepo {
     pub fn new(pool: sqlx::SqlitePool) -> Self {
         Self { pool }
     }
+}
+
+async fn upsert<'e, E>(
+    executor: E,
+    broadcaster_id: &str,
+    user_id: &str,
+    name: &str,
+    value: &Variant,
+) -> Result<(), StorageError>
+where
+    E: sqlx::SqliteExecutor<'e>,
+{
+    let value_json = serde_json::to_string(value).map_err(StorageError::Serialization)?;
+    let type_tag = value.type_tag().to_string();
+    let now_ms = epoch_ms_now();
+
+    sqlx::query(
+        "INSERT INTO user_globals (broadcaster_id, user_id, name, value, type_tag, last_modified) \
+         VALUES (?, ?, ?, ?, ?, ?) \
+         ON CONFLICT(broadcaster_id, user_id, name) DO UPDATE SET \
+             value         = excluded.value, \
+             type_tag      = excluded.type_tag, \
+             last_modified = excluded.last_modified",
+    )
+    .bind(broadcaster_id)
+    .bind(user_id)
+    .bind(name)
+    .bind(&value_json)
+    .bind(&type_tag)
+    .bind(now_ms)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
 }
 
 #[async_trait]
@@ -61,29 +97,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         name: &str,
         value: Variant,
     ) -> Result<(), StorageError> {
-        let value_json = serde_json::to_string(&value).map_err(StorageError::Serialization)?;
-        let type_tag = value.type_tag().to_string();
-        let now_ms = epoch_ms_now();
-
-        sqlx::query(
-            "INSERT INTO user_globals (broadcaster_id, user_id, name, value, type_tag, last_modified) \
-             VALUES (?, ?, ?, ?, ?, ?) \
-             ON CONFLICT(broadcaster_id, user_id, name) DO UPDATE SET \
-                 value         = excluded.value, \
-                 type_tag      = excluded.type_tag, \
-                 last_modified = excluded.last_modified",
-        )
-        .bind(broadcaster_id)
-        .bind(user_id)
-        .bind(name)
-        .bind(&value_json)
-        .bind(&type_tag)
-        .bind(now_ms)
-        .execute(&self.pool)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        upsert(&self.pool, broadcaster_id, user_id, name, &value).await
     }
 
     async fn delete(
@@ -140,6 +154,43 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         .map_err(SqliteStorageError::Sqlx)?;
 
         decode_rows(rows)
+    }
+
+    async fn incr(
+        &self,
+        broadcaster_id: &str,
+        user_id: &str,
+        name: &str,
+        amount: i64,
+    ) -> Result<Variant, StorageError> {
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let current: Option<(String,)> = sqlx::query_as(
+            "SELECT value FROM user_globals \
+             WHERE broadcaster_id = ? AND user_id = ? AND name = ?",
+        )
+        .bind(broadcaster_id)
+        .bind(user_id)
+        .bind(name)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        let current = current
+            .map(|(value_json,)| {
+                serde_json::from_str::<Variant>(&value_json)
+                    .map_err(|e| SqliteStorageError::Decode(format!("variant decode: {e}")))
+            })
+            .transpose()?;
+        let next = incremented(name, current, amount)?;
+        upsert(&mut *tx, broadcaster_id, user_id, name, &next).await?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(next)
     }
 }
 

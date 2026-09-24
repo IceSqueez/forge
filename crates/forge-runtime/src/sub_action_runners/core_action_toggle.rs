@@ -25,14 +25,8 @@ impl CoreActionToggleRunner {
         let Ok(action_id) = resolved.parse::<ActionId>() else {
             return SubActionOutcome::Failed("core.action.toggle: invalid action_id".to_owned());
         };
-        match self.actions.get(action_id).await {
-            Ok(Some(mut action)) => {
-                action.enabled = !action.enabled;
-                match self.actions.save(&action).await {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(format!("core.action.toggle: {e}")),
-                }
-            }
+        match self.actions.toggle_enabled(action_id).await {
+            Ok(Some(_)) => SubActionOutcome::Success,
             Ok(None) => SubActionOutcome::Failed(format!(
                 "core.action.toggle: unknown action '{action_id}'"
             )),

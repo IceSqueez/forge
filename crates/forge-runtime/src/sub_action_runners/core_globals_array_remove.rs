@@ -6,7 +6,7 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_storage::GlobalsRepo;
+use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
@@ -94,54 +94,34 @@ impl SubActionRunner for CoreGlobalsArrayRemoveRunner {
         let raw_value = ctx.arg_stack.interpolate(value_template);
         let target = super::interpolate::parse_variant(&raw_value);
 
-        let outcome = match self.globals.get(&resolved_key).await {
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-            Ok(None) => SubActionOutcome::Failed(format!(
+        let outcome = match self
+            .globals
+            .array_remove(&resolved_key, &target, remove_all)
+            .await
+        {
+            Ok(new_len) => {
+                ctx.publisher.publish(Event::caused_by(
+                    EventSource::Core,
+                    "global.array_removed",
+                    serde_json::json!({
+                        "key": resolved_key,
+                        "new_length": new_len,
+                        "element": target.to_plain_json(),
+                    }),
+                    ctx.parent_event_id,
+                ));
+                SubActionOutcome::Success
+            }
+            Err(StorageError::NotFound { .. }) => SubActionOutcome::Failed(format!(
                 "core.globals.array_remove: global '{}' does not exist",
                 resolved_key
             )),
-            Ok(Some(Variant::Array(mut arr))) => {
-                if remove_all {
-                    arr.retain(|item| item != &target);
-                } else {
-                    if let Some(pos) = arr.iter().position(|item| item == &target) {
-                        arr.remove(pos);
-                    }
-                }
-
-                let new_len = arr.len();
-                let persisted = self
-                    .globals
-                    .persisted(&resolved_key)
-                    .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(false);
-                match self
-                    .globals
-                    .set(&resolved_key, Variant::Array(arr), persisted)
-                    .await
-                {
-                    Ok(()) => {
-                        ctx.publisher.publish(Event::caused_by(
-                            EventSource::Core,
-                            "global.array_removed",
-                            serde_json::json!({
-                                "key": resolved_key,
-                                "new_length": new_len,
-                                "element": target.to_plain_json(),
-                            }),
-                            ctx.parent_event_id,
-                        ));
-                        SubActionOutcome::Success
-                    }
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
-                }
-            }
-            Ok(Some(other)) => SubActionOutcome::Failed(format!(
+            Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(format!(
                 "core.globals.array_remove: expected array, found {}",
-                VariantKind::from_variant(&other).label()
+                VariantKind::from_contract_name(&actual)
+                    .map_or(actual.as_str(), |kind| kind.label())
             )),
+            Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 
         (timer.finish(outcome), None)

@@ -6,7 +6,7 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_storage::GlobalsRepo;
+use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
@@ -96,60 +96,29 @@ impl SubActionRunner for CoreGlobalsArrayAppendRunner {
         let raw_value = ctx.arg_stack.interpolate(value_template);
         let item = super::interpolate::parse_variant(&raw_value);
 
-        let outcome = match self.globals.get(&resolved_key).await {
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-            Ok(current) => {
-                let array_result: Result<Vec<Variant>, String> = match current {
-                    None => Ok(Vec::new()),
-                    Some(Variant::Array(a)) => Ok(a),
-                    Some(other) => Err(format!(
-                        "core.globals.array_append: expected array, found {}",
-                        VariantKind::from_variant(&other).label()
-                    )),
-                };
-                match array_result {
-                    Err(msg) => SubActionOutcome::Failed(msg),
-                    Ok(mut arr) => {
-                        let element_json = item.to_plain_json();
-                        arr.push(item);
+        let element_json = item.to_plain_json();
+        let bound = (max_len > 0).then(|| usize::try_from(max_len).unwrap_or(usize::MAX));
 
-                        // When bounded, drop oldest items from the front to stay within max_len.
-                        if max_len > 0 && arr.len() as i64 > max_len {
-                            let to_drain = (arr.len() as i64 - max_len) as usize;
-                            arr.drain(0..to_drain);
-                        }
-
-                        let new_len = arr.len();
-                        let persisted = self
-                            .globals
-                            .persisted(&resolved_key)
-                            .await
-                            .ok()
-                            .flatten()
-                            .unwrap_or(false);
-                        match self
-                            .globals
-                            .set(&resolved_key, Variant::Array(arr), persisted)
-                            .await
-                        {
-                            Ok(()) => {
-                                ctx.publisher.publish(Event::caused_by(
-                                    EventSource::Core,
-                                    "global.array_appended",
-                                    serde_json::json!({
-                                        "key": resolved_key,
-                                        "new_length": new_len,
-                                        "element": element_json,
-                                    }),
-                                    ctx.parent_event_id,
-                                ));
-                                SubActionOutcome::Success
-                            }
-                            Err(e) => SubActionOutcome::Failed(e.to_string()),
-                        }
-                    }
-                }
+        let outcome = match self.globals.array_append(&resolved_key, item, bound).await {
+            Ok(new_len) => {
+                ctx.publisher.publish(Event::caused_by(
+                    EventSource::Core,
+                    "global.array_appended",
+                    serde_json::json!({
+                        "key": resolved_key,
+                        "new_length": new_len,
+                        "element": element_json,
+                    }),
+                    ctx.parent_event_id,
+                ));
+                SubActionOutcome::Success
             }
+            Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(format!(
+                "core.globals.array_append: expected array, found {}",
+                VariantKind::from_contract_name(&actual)
+                    .map_or(actual.as_str(), |kind| kind.label())
+            )),
+            Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 
         (timer.finish(outcome), None)

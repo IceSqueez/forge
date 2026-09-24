@@ -103,6 +103,71 @@ pub trait GlobalsRepo: Send + Sync {
     /// if the stored type is not `Int`/`Float`.
     async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError>;
 
+    /// Returns the new length. An absent `name` becomes a session array; a set `max_len`
+    /// drops the oldest items. Errors with [`StorageError::TypeMismatch`] if the stored
+    /// value is not an array. Default impl is a non-atomic get/set composition; a real
+    /// backend must override it with one serialized write.
+    async fn array_append(
+        &self,
+        name: &str,
+        item: Variant,
+        max_len: Option<usize>,
+    ) -> Result<usize, StorageError> {
+        let mut items = match self.get(name).await? {
+            None => Vec::new(),
+            Some(Variant::Array(items)) => items,
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        append_bounded(&mut items, item, max_len);
+        let len = items.len();
+        let persisted = self.persisted(name).await?.unwrap_or(false);
+        self.set(name, Variant::Array(items), persisted).await?;
+        Ok(len)
+    }
+
+    /// Returns the new length. Errors with [`StorageError::NotFound`] if absent, or
+    /// [`StorageError::TypeMismatch`] if the stored value is not an array. Default impl
+    /// is a non-atomic get/set composition; a real backend must override it.
+    async fn array_remove(
+        &self,
+        name: &str,
+        item: &Variant,
+        remove_all: bool,
+    ) -> Result<usize, StorageError> {
+        let mut items = match self.get(name).await? {
+            None => {
+                return Err(StorageError::NotFound {
+                    key: name.to_string(),
+                });
+            }
+            Some(Variant::Array(items)) => items,
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        remove_matching(&mut items, item, remove_all);
+        let len = items.len();
+        let persisted = self.persisted(name).await?.unwrap_or(false);
+        self.set(name, Variant::Array(items), persisted).await?;
+        Ok(len)
+    }
+
+    /// Returns the new value. Errors with [`StorageError::NotFound`] if absent, or
+    /// [`StorageError::TypeMismatch`] if the stored value is not a bool. Default impl is
+    /// a non-atomic get/set composition; a real backend must override it.
+    async fn toggle(&self, name: &str) -> Result<bool, StorageError> {
+        let flipped = match self.get(name).await? {
+            None => {
+                return Err(StorageError::NotFound {
+                    key: name.to_string(),
+                });
+            }
+            Some(Variant::Bool(current)) => !current,
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        let persisted = self.persisted(name).await?.unwrap_or(false);
+        self.set(name, Variant::Bool(flipped), persisted).await?;
+        Ok(flipped)
+    }
+
     /// Does not increment `reads` counters; this is an inspection operation, not a
     /// runtime get.
     async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
@@ -119,6 +184,31 @@ pub trait GlobalsRepo: Send + Sync {
                 writes: e.writes,
             })
             .collect())
+    }
+}
+
+pub fn append_bounded(items: &mut Vec<Variant>, item: Variant, max_len: Option<usize>) {
+    items.push(item);
+    if let Some(max_len) = max_len
+        && items.len() > max_len
+    {
+        let excess = items.len() - max_len;
+        items.drain(..excess);
+    }
+}
+
+pub fn remove_matching(items: &mut Vec<Variant>, target: &Variant, remove_all: bool) {
+    if remove_all {
+        items.retain(|item| item != target);
+    } else if let Some(pos) = items.iter().position(|item| item == target) {
+        items.remove(pos);
+    }
+}
+
+pub fn type_mismatch(name: &str, found: &Variant) -> StorageError {
+    StorageError::TypeMismatch {
+        name: name.to_string(),
+        actual: found.type_tag().to_string(),
     }
 }
 

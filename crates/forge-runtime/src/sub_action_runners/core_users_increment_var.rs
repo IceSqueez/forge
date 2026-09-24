@@ -5,7 +5,7 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_storage::{GlobalsRepo, UserGlobalsRepo};
+use forge_storage::{GlobalsRepo, StorageError, UserGlobalsRepo};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::core_users_shared::resolve_broadcaster_id;
@@ -105,35 +105,16 @@ impl SubActionRunner for CoreUsersIncrementVarRunner {
 
         let outcome = match self
             .user_globals
-            .get(&broadcaster_id, &user_id, &var_name)
+            .incr(&broadcaster_id, &user_id, &var_name, amount)
             .await
         {
-            Ok(current) => match increment(current, amount) {
-                Some(next) => match self
-                    .user_globals
-                    .set(&broadcaster_id, &user_id, &var_name, next)
-                    .await
-                {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
-                },
-                None => {
-                    SubActionOutcome::Failed("existing user variable is not numeric".to_owned())
-                }
-            },
+            Ok(_) => SubActionOutcome::Success,
+            Err(StorageError::TypeMismatch { .. }) => {
+                SubActionOutcome::Failed("existing user variable is not numeric".to_owned())
+            }
             Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 
         (timer.finish(outcome), None)
-    }
-}
-
-/// A missing variable starts at zero; a non-numeric existing value yields `None` (Failed).
-fn increment(current: Option<Variant>, amount: i64) -> Option<Variant> {
-    match current {
-        None => Some(Variant::Int(amount)),
-        Some(Variant::Int(i)) => Some(Variant::Int(i.saturating_add(amount))),
-        Some(Variant::Float(f)) => Variant::float(f + amount as f64).ok(),
-        Some(_) => None,
     }
 }

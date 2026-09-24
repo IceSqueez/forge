@@ -6,7 +6,7 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_storage::GlobalsRepo;
+use forge_storage::{GlobalsRepo, StorageError};
 use forge_types::{
     ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant, VariantKind,
 };
@@ -77,42 +77,30 @@ impl SubActionRunner for CoreGlobalsToggleRunner {
         let resolved_key =
             forge_types::strip_var_decoration(&ctx.arg_stack.interpolate(key_template));
 
-        let outcome = match self.globals.get(&resolved_key).await {
-            Err(e) => SubActionOutcome::Failed(e.to_string()),
-            Ok(None) => SubActionOutcome::Failed(format!(
+        let outcome = match self.globals.toggle(&resolved_key).await {
+            Ok(flipped) => {
+                ctx.publisher.publish(Event::caused_by(
+                    EventSource::Core,
+                    "global.toggled",
+                    serde_json::json!({
+                        "key": resolved_key,
+                        "new_value": flipped,
+                        "prev_value": !flipped,
+                    }),
+                    ctx.parent_event_id,
+                ));
+                SubActionOutcome::Success
+            }
+            Err(StorageError::NotFound { .. }) => SubActionOutcome::Failed(format!(
                 "core.globals.toggle: global '{}' does not exist",
                 resolved_key
             )),
-            Ok(Some(Variant::Bool(b))) => {
-                let flipped = Variant::Bool(!b);
-                let persisted = self
-                    .globals
-                    .persisted(&resolved_key)
-                    .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(false);
-                match self.globals.set(&resolved_key, flipped, persisted).await {
-                    Ok(()) => {
-                        ctx.publisher.publish(Event::caused_by(
-                            EventSource::Core,
-                            "global.toggled",
-                            serde_json::json!({
-                                "key": resolved_key,
-                                "new_value": !b,
-                                "prev_value": b,
-                            }),
-                            ctx.parent_event_id,
-                        ));
-                        SubActionOutcome::Success
-                    }
-                    Err(e) => SubActionOutcome::Failed(e.to_string()),
-                }
-            }
-            Ok(Some(other)) => SubActionOutcome::Failed(format!(
+            Err(StorageError::TypeMismatch { actual, .. }) => SubActionOutcome::Failed(format!(
                 "core.globals.toggle: expected bool, found {}",
-                VariantKind::from_variant(&other).label()
+                VariantKind::from_contract_name(&actual)
+                    .map_or(actual.as_str(), |kind| kind.label())
             )),
+            Err(e) => SubActionOutcome::Failed(e.to_string()),
         };
 
         (timer.finish(outcome), None)

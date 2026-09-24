@@ -25,15 +25,9 @@ impl CoreActionEnableRunner {
         let Ok(action_id) = resolved.parse::<ActionId>() else {
             return SubActionOutcome::Failed("core.action.enable: invalid action_id".to_owned());
         };
-        match self.actions.get(action_id).await {
-            Ok(Some(mut action)) => {
-                action.enabled = true;
-                match self.actions.save(&action).await {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(format!("core.action.enable: {e}")),
-                }
-            }
-            Ok(None) => SubActionOutcome::Failed(format!(
+        match self.actions.set_enabled(action_id, true).await {
+            Ok(true) => SubActionOutcome::Success,
+            Ok(false) => SubActionOutcome::Failed(format!(
                 "core.action.enable: unknown action '{action_id}'"
             )),
             Err(e) => SubActionOutcome::Failed(format!("core.action.enable: {e}")),

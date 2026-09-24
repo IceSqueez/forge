@@ -326,6 +326,32 @@ impl ActionRepo for SqliteActionRepo {
         })
     }
 
+    async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError> {
+        let enabled_int: i64 = if enabled { 1 } else { 0 };
+        let result =
+            sqlx::query("UPDATE actions SET enabled = ? WHERE id = ? AND archived_at IS NULL")
+                .bind(enabled_int)
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
+    async fn toggle_enabled(&self, id: ActionId) -> Result<Option<bool>, StorageError> {
+        let row: Option<(i64,)> = sqlx::query_as(
+            "UPDATE actions SET enabled = CASE enabled WHEN 0 THEN 1 ELSE 0 END \
+             WHERE id = ? AND archived_at IS NULL RETURNING enabled",
+        )
+        .bind(id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(row.map(|(enabled,)| enabled != 0))
+    }
+
     async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
         let id_str = id.to_string();
         let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;

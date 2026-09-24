@@ -246,6 +246,28 @@ impl GlobalsRepo for SqliteBackend {
         self.globals.incr(name, amount).await
     }
 
+    async fn array_append(
+        &self,
+        name: &str,
+        item: Variant,
+        max_len: Option<usize>,
+    ) -> Result<usize, StorageError> {
+        self.globals.array_append(name, item, max_len).await
+    }
+
+    async fn array_remove(
+        &self,
+        name: &str,
+        item: &Variant,
+        remove_all: bool,
+    ) -> Result<usize, StorageError> {
+        self.globals.array_remove(name, item, remove_all).await
+    }
+
+    async fn toggle(&self, name: &str) -> Result<bool, StorageError> {
+        self.globals.toggle(name).await
+    }
+
     async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
         self.globals.export_all().await
     }
@@ -300,6 +322,18 @@ impl UserGlobalsRepo for SqliteBackend {
         broadcaster_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError> {
         self.user_globals.list_for_broadcaster(broadcaster_id).await
+    }
+
+    async fn incr(
+        &self,
+        broadcaster_id: &str,
+        user_id: &str,
+        name: &str,
+        amount: i64,
+    ) -> Result<Variant, StorageError> {
+        self.user_globals
+            .incr(broadcaster_id, user_id, name, amount)
+            .await
     }
 }
 

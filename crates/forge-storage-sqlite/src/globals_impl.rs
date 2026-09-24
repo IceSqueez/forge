@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_storage::globals::{append_bounded, remove_matching, type_mismatch};
 use forge_storage::{GlobalEntry, GlobalsRepo, StorageError};
 use forge_types::Variant;
 use time::OffsetDateTime;
@@ -58,6 +59,84 @@ fn decode_entries(rows: Vec<GlobalRow>) -> Result<Vec<GlobalEntry>, StorageError
     Ok(entries)
 }
 
+async fn upsert<'e, E>(
+    executor: E,
+    name: &str,
+    value: &Variant,
+    persisted: bool,
+) -> Result<(), StorageError>
+where
+    E: sqlx::SqliteExecutor<'e>,
+{
+    let value_json = serde_json::to_string(value).map_err(StorageError::Serialization)?;
+    let type_tag = value.type_tag().to_string();
+    let persisted_int: i64 = if persisted { 1 } else { 0 };
+    let now_ms = epoch_ms_now();
+
+    sqlx::query(
+        "INSERT INTO globals (name, value, type_tag, persisted, reads, writes, created_at, last_modified)
+         VALUES (?, ?, ?, ?, 0, 1, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET
+             value        = excluded.value,
+             type_tag     = excluded.type_tag,
+             persisted    = excluded.persisted,
+             writes       = writes + 1,
+             last_modified = excluded.last_modified,
+             archived_at  = NULL",
+    )
+    .bind(name)
+    .bind(&value_json)
+    .bind(&type_tag)
+    .bind(persisted_int)
+    .bind(now_ms)
+    .bind(now_ms)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+async fn replace_value<'e, E>(executor: E, name: &str, value: &Variant) -> Result<(), StorageError>
+where
+    E: sqlx::SqliteExecutor<'e>,
+{
+    let value_json = serde_json::to_string(value).map_err(StorageError::Serialization)?;
+
+    sqlx::query(
+        "UPDATE globals SET value = ?, writes = writes + 1, last_modified = ? \
+         WHERE name = ? AND archived_at IS NULL",
+    )
+    .bind(&value_json)
+    .bind(epoch_ms_now())
+    .bind(name)
+    .execute(executor)
+    .await
+    .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(())
+}
+
+async fn live_value<'e, E>(executor: E, name: &str) -> Result<Option<Variant>, StorageError>
+where
+    E: sqlx::SqliteExecutor<'e>,
+{
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM globals WHERE name = ? AND archived_at IS NULL")
+            .bind(name)
+            .fetch_optional(executor)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+    row.map(|(value_json,)| decode_variant(&value_json))
+        .transpose()
+}
+
+fn decode_variant(value_json: &str) -> Result<Variant, StorageError> {
+    serde_json::from_str(value_json)
+        .map_err(|e| StorageError::Parse(format!("variant decode: {e}")))
+}
+
 #[async_trait]
 impl GlobalsRepo for SqliteGlobalsRepo {
     async fn get(&self, name: &str) -> Result<Option<Variant>, StorageError> {
@@ -81,33 +160,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     }
 
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError> {
-        let value_json = serde_json::to_string(&value).map_err(StorageError::Serialization)?;
-        let type_tag = value.type_tag().to_string();
-        let persisted_int: i64 = if persisted { 1 } else { 0 };
-        let now_ms = epoch_ms_now();
-
-        sqlx::query(
-            "INSERT INTO globals (name, value, type_tag, persisted, reads, writes, created_at, last_modified)
-             VALUES (?, ?, ?, ?, 0, 1, ?, ?)
-             ON CONFLICT(name) DO UPDATE SET
-                 value        = excluded.value,
-                 type_tag     = excluded.type_tag,
-                 persisted    = excluded.persisted,
-                 writes       = writes + 1,
-                 last_modified = excluded.last_modified,
-                 archived_at  = NULL",
-        )
-        .bind(name)
-        .bind(&value_json)
-        .bind(&type_tag)
-        .bind(persisted_int)
-        .bind(now_ms)
-        .bind(now_ms)
-        .execute(&self.pool)
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(())
+        upsert(&self.pool, name, &value, persisted).await
     }
 
     async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
@@ -271,28 +324,115 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        if let Some((value_json,)) = row {
-            let variant: Variant = serde_json::from_str(&value_json)
-                .map_err(|e| StorageError::Parse(format!("variant decode: {e}")))?;
-            return Ok(variant);
+        match row {
+            Some((value_json,)) => decode_variant(&value_json),
+            None => Err(self.missing_or_mismatch(name).await),
+        }
+    }
+
+    async fn array_append(
+        &self,
+        name: &str,
+        item: Variant,
+        max_len: Option<usize>,
+    ) -> Result<usize, StorageError> {
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let (mut items, exists) = match live_value(&mut *tx, name).await? {
+            None => (Vec::new(), false),
+            Some(Variant::Array(items)) => (items, true),
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        append_bounded(&mut items, item, max_len);
+        let len = items.len();
+        let value = Variant::Array(items);
+        if exists {
+            replace_value(&mut *tx, name, &value).await?;
+        } else {
+            upsert(&mut *tx, name, &value, false).await?;
         }
 
-        let tag: Option<String> = sqlx::query_scalar(
-            "SELECT type_tag FROM globals WHERE name = ? AND archived_at IS NULL",
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(len)
+    }
+
+    async fn array_remove(
+        &self,
+        name: &str,
+        item: &Variant,
+        remove_all: bool,
+    ) -> Result<usize, StorageError> {
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let mut items = match live_value(&mut *tx, name).await? {
+            None => {
+                return Err(StorageError::NotFound {
+                    key: name.to_string(),
+                });
+            }
+            Some(Variant::Array(items)) => items,
+            Some(other) => return Err(type_mismatch(name, &other)),
+        };
+        remove_matching(&mut items, item, remove_all);
+        let len = items.len();
+        replace_value(&mut *tx, name, &Variant::Array(items)).await?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(len)
+    }
+
+    async fn toggle(&self, name: &str) -> Result<bool, StorageError> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "UPDATE globals \
+             SET value         = json_set(value, '$.value', \
+                     json(CASE WHEN json_extract(value, '$.value') THEN 'false' ELSE 'true' END)), \
+                 writes        = writes + 1, \
+                 last_modified = ? \
+             WHERE name = ? AND type_tag = 'bool' AND archived_at IS NULL \
+             RETURNING value",
         )
+        .bind(epoch_ms_now())
         .bind(name)
         .fetch_optional(&self.pool)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
+        let Some((value_json,)) = row else {
+            return Err(self.missing_or_mismatch(name).await);
+        };
+        match decode_variant(&value_json)? {
+            Variant::Bool(flipped) => Ok(flipped),
+            other => Err(type_mismatch(name, &other)),
+        }
+    }
+}
+
+impl SqliteGlobalsRepo {
+    async fn missing_or_mismatch(&self, name: &str) -> StorageError {
+        let tag: Result<Option<String>, sqlx::Error> = sqlx::query_scalar(
+            "SELECT type_tag FROM globals WHERE name = ? AND archived_at IS NULL",
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await;
+
         match tag {
-            None => Err(StorageError::NotFound {
+            Err(e) => SqliteStorageError::Sqlx(e).into(),
+            Ok(None) => StorageError::NotFound {
                 key: name.to_string(),
-            }),
-            Some(actual) => Err(StorageError::TypeMismatch {
+            },
+            Ok(Some(actual)) => StorageError::TypeMismatch {
                 name: name.to_string(),
                 actual,
-            }),
+            },
         }
     }
 }

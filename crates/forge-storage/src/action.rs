@@ -41,6 +41,29 @@ pub trait ActionRepo: Send + Sync {
     /// Returns rows removed.
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 
+    /// Writes only the enabled flag; returns false if `id` is absent or archived. Default
+    /// impl re-saves the whole row and can overwrite a concurrent edit; a real backend
+    /// must override it.
+    async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError> {
+        let Some(mut action) = self.get(id).await? else {
+            return Ok(false);
+        };
+        action.enabled = enabled;
+        self.save(&action).await?;
+        Ok(true)
+    }
+
+    /// Returns the new flag, or `None` if `id` is absent or archived. Same default-impl
+    /// caveat as [`Self::set_enabled`].
+    async fn toggle_enabled(&self, id: ActionId) -> Result<Option<bool>, StorageError> {
+        let Some(mut action) = self.get(id).await? else {
+            return Ok(None);
+        };
+        action.enabled = !action.enabled;
+        self.save(&action).await?;
+        Ok(Some(action.enabled))
+    }
+
     /// Errors with [`StorageError::NotFound`] if `source_id` does not exist. The default
     /// impl copies only the `Action` row itself, not its trigger-instance links (this
     /// trait has no visibility into `action_trigger_instances`); a real backend should

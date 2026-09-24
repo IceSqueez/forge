@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::StorageError;
+use crate::globals::type_mismatch;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserGlobalEntry {
@@ -50,6 +51,38 @@ pub trait UserGlobalsRepo: Send + Sync {
         &self,
         broadcaster_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError>;
+
+    /// Returns the new value. An absent variable starts from zero (`Int(amount)`); an
+    /// `Int` saturates. Errors with [`StorageError::TypeMismatch`] if the stored value is
+    /// not numeric or a `Float` result is not finite. Default impl is a non-atomic get/set
+    /// composition; a real backend must override it with one serialized write.
+    async fn incr(
+        &self,
+        broadcaster_id: &str,
+        user_id: &str,
+        name: &str,
+        amount: i64,
+    ) -> Result<Variant, StorageError> {
+        let current = self.get(broadcaster_id, user_id, name).await?;
+        let next = incremented(name, current, amount)?;
+        self.set(broadcaster_id, user_id, name, next.clone())
+            .await?;
+        Ok(next)
+    }
+}
+
+pub fn incremented(
+    name: &str,
+    current: Option<Variant>,
+    amount: i64,
+) -> Result<Variant, StorageError> {
+    match current {
+        None => Ok(Variant::Int(amount)),
+        Some(Variant::Int(value)) => Ok(Variant::Int(value.saturating_add(amount))),
+        Some(Variant::Float(value)) => Variant::float(value + amount as f64)
+            .map_err(|_| type_mismatch(name, &Variant::Float(value))),
+        Some(other) => Err(type_mismatch(name, &other)),
+    }
 }
 
 #[cfg(test)]

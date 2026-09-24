@@ -25,15 +25,9 @@ impl CoreActionDisableRunner {
         let Ok(action_id) = resolved.parse::<ActionId>() else {
             return SubActionOutcome::Failed("core.action.disable: invalid action_id".to_owned());
         };
-        match self.actions.get(action_id).await {
-            Ok(Some(mut action)) => {
-                action.enabled = false;
-                match self.actions.save(&action).await {
-                    Ok(()) => SubActionOutcome::Success,
-                    Err(e) => SubActionOutcome::Failed(format!("core.action.disable: {e}")),
-                }
-            }
-            Ok(None) => SubActionOutcome::Failed(format!(
+        match self.actions.set_enabled(action_id, false).await {
+            Ok(true) => SubActionOutcome::Success,
+            Ok(false) => SubActionOutcome::Failed(format!(
                 "core.action.disable: unknown action '{action_id}'"
             )),
             Err(e) => SubActionOutcome::Failed(format!("core.action.disable: {e}")),

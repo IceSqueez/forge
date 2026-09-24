@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
+use crate::error::VTubeError;
+
+pub(crate) const API_ERROR_MESSAGE_TYPE: &str = "APIError";
+pub(crate) const TOKEN_REQUEST_DENIED_ERROR_ID: i64 = 50;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VTubeRequest<T> {
     #[serde(rename = "apiName")]
@@ -21,6 +26,24 @@ pub fn new_request<T>(msg_type: &str, data: T) -> VTubeRequest<T> {
         request_id: Ulid::generate().to_string(),
         message_type: msg_type.to_owned(),
         data,
+    }
+}
+
+pub(crate) fn is_reply(message_type: &str) -> bool {
+    message_type == API_ERROR_MESSAGE_TYPE || message_type.ends_with("Response")
+}
+
+/// Only an `APIError` reply has a top-level `errorID`; per-item failures are the caller's to check.
+pub(crate) fn check_response(data: &serde_json::Value) -> Result<(), VTubeError> {
+    match data.get("errorID").and_then(serde_json::Value::as_i64) {
+        Some(error_id) => Err(VTubeError::Rejected {
+            error_id,
+            message: data["message"]
+                .as_str()
+                .unwrap_or("no reason given")
+                .to_owned(),
+        }),
+        None => Ok(()),
     }
 }
 

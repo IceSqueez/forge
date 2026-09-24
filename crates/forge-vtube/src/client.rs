@@ -13,7 +13,7 @@ use crate::auth::AuthState;
 use crate::error::VTubeError;
 use crate::health::{HealthSnapshot, make_health_channel};
 use crate::protocol::new_request;
-use crate::request::{PendingRequest, ReqTxSlot};
+use crate::request::{PendingRequest, REQUEST_TIMEOUT, ReqTxSlot};
 
 pub(crate) type VtsWs =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
@@ -196,7 +196,10 @@ impl VTubeClient {
             })
             .map_err(|_| VTubeError::NotConnected)?;
         }
-        rx.await.map_err(|_| VTubeError::NotConnected)
+        tokio::time::timeout(REQUEST_TIMEOUT, rx)
+            .await
+            .map_err(|_| VTubeError::Timeout)?
+            .map_err(|_| VTubeError::NotConnected)
     }
 
     pub async fn shutdown(&self) {

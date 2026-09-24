@@ -8,6 +8,7 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::optional_number;
 use crate::sink::VTubeSink;
 
 pub struct ModelSetPhysicsRunner {
@@ -20,12 +21,7 @@ impl ModelSetPhysicsRunner {
     }
 }
 
-fn read_opt_float(config: &SubActionConfig, key: &str) -> Option<f64> {
-    match config.get(key) {
-        Some(Variant::Float(f)) => Some(*f),
-        _ => None,
-    }
-}
+const DEFAULT_OVERRIDE_SECONDS: f64 = 2.0;
 
 #[async_trait]
 impl SubActionRunner for ModelSetPhysicsRunner {
@@ -94,14 +90,15 @@ impl SubActionRunner for ModelSetPhysicsRunner {
 
         let enabled = !matches!(config.get("enabled"), Some(Variant::Bool(false)));
         let strength = if enabled { 1.0 } else { 0.0 };
-        let override_seconds = read_opt_float(config, "duration").unwrap_or(2.0);
-
-        let outcome = SubActionOutcome::from_result(
-            &self
-                .sink
-                .set_physics_override(strength, override_seconds)
-                .await,
-        );
+        let outcome = match optional_number(config, "duration", ctx) {
+            Ok(duration) => SubActionOutcome::from_result(
+                &self
+                    .sink
+                    .set_physics_override(strength, duration.unwrap_or(DEFAULT_OVERRIDE_SECONDS))
+                    .await,
+            ),
+            Err(reason) => SubActionOutcome::Failed(format!("vtube.model.set_physics: {reason}")),
+        };
 
         (
             SubActionTelemetry {

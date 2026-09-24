@@ -5,9 +5,10 @@ use std::time::Instant;
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
-use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::optional_number;
 use crate::sink::VTubeSink;
 
 pub struct ModelMoveRunner {
@@ -20,11 +21,22 @@ impl ModelMoveRunner {
     }
 }
 
-fn read_opt_float(config: &SubActionConfig, key: &str) -> Option<f64> {
-    match config.get(key) {
-        Some(Variant::Float(f)) => Some(*f),
-        _ => None,
-    }
+struct MoveTarget {
+    x: Option<f64>,
+    y: Option<f64>,
+    rotation: Option<f64>,
+    size: Option<f64>,
+    duration: Option<f64>,
+}
+
+fn read_target(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<MoveTarget, String> {
+    Ok(MoveTarget {
+        x: optional_number(config, "x", ctx)?,
+        y: optional_number(config, "y", ctx)?,
+        rotation: optional_number(config, "rotation", ctx)?,
+        size: optional_number(config, "size", ctx)?,
+        duration: optional_number(config, "duration", ctx)?,
+    })
 }
 
 #[async_trait]
@@ -119,22 +131,27 @@ impl SubActionRunner for ModelMoveRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let x = read_opt_float(config, "x");
-        let y = read_opt_float(config, "y");
-        let rotation = read_opt_float(config, "rotation");
-        let size = read_opt_float(config, "size");
-        let duration = read_opt_float(config, "duration");
-
-        let outcome = if x.is_none() && y.is_none() && rotation.is_none() && size.is_none() {
-            SubActionOutcome::Success
-        } else {
-            let time_in_seconds = duration.unwrap_or(0.0);
-            SubActionOutcome::from_result(
+        let outcome = match read_target(config, ctx) {
+            Err(reason) => SubActionOutcome::Failed(format!("vtube.model.move: {reason}")),
+            Ok(MoveTarget {
+                x: None,
+                y: None,
+                rotation: None,
+                size: None,
+                ..
+            }) => SubActionOutcome::Success,
+            Ok(target) => SubActionOutcome::from_result(
                 &self
                     .sink
-                    .move_model(x, y, rotation, size, time_in_seconds)
+                    .move_model(
+                        target.x,
+                        target.y,
+                        target.rotation,
+                        target.size,
+                        target.duration.unwrap_or(0.0),
+                    )
                     .await,
-            )
+            ),
         };
 
         (

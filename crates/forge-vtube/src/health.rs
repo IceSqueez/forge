@@ -25,6 +25,9 @@ pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLo
     (tx, Arc::new(RwLock::new(HealthSnapshot::default())))
 }
 
+const MODEL_METRIC_INDEX: u8 = 0;
+const TRACKING_METRIC_INDEX: u8 = 3;
+
 pub(crate) fn update_from_event(
     env: &RawEnvelope,
     snap: &Arc<RwLock<HealthSnapshot>>,
@@ -32,59 +35,88 @@ pub(crate) fn update_from_event(
 ) {
     match env.message_type.as_str() {
         "TrackingStatusChangedEvent" => {
-            let found = env.data["faceFound"].as_bool().unwrap_or(false);
-            let mut changed = false;
-            if let Ok(mut s) = snap.write()
-                && s.tracking_active != found
-            {
-                s.tracking_active = found;
-                changed = true;
-            }
-            if changed {
-                let label = if found {
-                    "Face".to_owned()
-                } else {
-                    "Off".to_owned()
-                };
-                let _ = tx.send(HealthDelta {
-                    index: 3,
-                    new_value: HealthValue::Status {
-                        label,
-                        active: found,
-                        detail: None,
-                    },
-                });
-            }
+            apply_tracking(env.data["faceFound"].as_bool().unwrap_or(false), snap, tx);
         }
         "ModelLoadedEvent" => {
             let loaded = env.data["modelLoaded"].as_bool().unwrap_or(false);
-            let new_name = if loaded {
-                env.data["modelName"].as_str().unwrap_or("").to_owned()
-            } else {
-                String::new()
-            };
-            let mut changed = false;
-            if let Ok(mut s) = snap.write()
-                && (s.model_loaded != loaded || s.model_name != new_name)
-            {
-                s.model_loaded = loaded;
-                s.model_name = new_name.clone();
-                changed = true;
-            }
-            if changed {
-                let (primary, secondary) = if loaded && !new_name.is_empty() {
-                    (new_name, None)
-                } else {
-                    ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
-                };
-                let _ = tx.send(HealthDelta {
-                    index: 0,
-                    new_value: HealthValue::Text { primary, secondary },
-                });
-            }
+            let name = env.data["modelName"].as_str().unwrap_or("");
+            apply_model(loaded, name, None, snap, tx);
         }
         _ => {}
     }
+}
+
+pub(crate) fn apply_tracking(
+    face_found: bool,
+    snap: &Arc<RwLock<HealthSnapshot>>,
+    tx: &broadcast::Sender<HealthDelta>,
+) {
+    let mut changed = false;
+    if let Ok(mut s) = snap.write()
+        && s.tracking_active != face_found
+    {
+        s.tracking_active = face_found;
+        changed = true;
+    }
+    if changed {
+        let _ = tx.send(HealthDelta {
+            index: TRACKING_METRIC_INDEX,
+            new_value: tracking_value(face_found),
+        });
+    }
+}
+
+pub(crate) fn apply_model(
+    loaded: bool,
+    name: &str,
+    param_count: Option<u64>,
+    snap: &Arc<RwLock<HealthSnapshot>>,
+    tx: &broadcast::Sender<HealthDelta>,
+) {
+    let new_name = if loaded {
+        name.to_owned()
+    } else {
+        String::new()
+    };
+    let mut changed = false;
+    if let Ok(mut s) = snap.write()
+        && (s.model_loaded != loaded || s.model_name != new_name)
+    {
+        s.model_loaded = loaded;
+        s.model_name = new_name.clone();
+        changed = true;
+    }
+    if changed {
+        let (primary, secondary) = if loaded && !new_name.is_empty() {
+            (new_name, param_count.map(|n| format!("{n} parameters")))
+        } else {
+            ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
+        };
+        let _ = tx.send(HealthDelta {
+            index: MODEL_METRIC_INDEX,
+            new_value: HealthValue::Text { primary, secondary },
+        });
+    }
+}
+
+pub(crate) fn clear_session_state(
+    snap: &Arc<RwLock<HealthSnapshot>>,
+    tx: &broadcast::Sender<HealthDelta>,
+) {
+    apply_model(false, "", None, snap, tx);
+    apply_tracking(false, snap, tx);
+}
+
+fn tracking_value(face_found: bool) -> HealthValue {
+    HealthValue::Status {
+        label: tracking_label(face_found).to_owned(),
+        active: face_found,
+        detail: None,
+    }
+}
+
+fn tracking_label(face_found: bool) -> &'static str {
+    if face_found { "Face" } else { "Off" }
 }
 
 impl BuiltinHealth for VTubeClient {
@@ -111,7 +143,6 @@ impl BuiltinHealth for VTubeClient {
         } else {
             ("\u{2014}".to_owned(), Some("not loaded".to_owned()))
         };
-        let tracking_label = if snap.tracking_active { "Face" } else { "Off" };
 
         [
             HealthMetric {
@@ -137,11 +168,7 @@ impl BuiltinHealth for VTubeClient {
             },
             HealthMetric {
                 label: "TRACKING".to_owned(),
-                value: HealthValue::Status {
-                    label: tracking_label.to_owned(),
-                    active: snap.tracking_active,
-                    detail: None,
-                },
+                value: tracking_value(snap.tracking_active),
             },
         ]
     }

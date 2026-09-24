@@ -18,10 +18,13 @@ pub enum VTubeError {
     #[error("request failed: {message}")]
     Request { message: String },
 
+    #[error("VTube Studio rejected the request: {message} (errorID={error_id})")]
+    Rejected { error_id: i64, message: String },
+
     #[error("not connected")]
     NotConnected,
 
-    #[error("connection timed out")]
+    #[error("VTube Studio did not answer in time")]
     Timeout,
 
     #[error("serialization error: {0}")]

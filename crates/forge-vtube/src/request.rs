@@ -1,7 +1,10 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::Value;
 use tokio::sync::{Mutex, mpsc, oneshot};
+
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) struct PendingRequest {
     pub request_id: String,

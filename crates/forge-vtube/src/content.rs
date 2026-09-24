@@ -6,7 +6,7 @@ use forge_platform_core::{BuiltinContent, DetailSection, HealthDelta, HealthValu
 
 use crate::client::VTubeClient;
 use crate::health::HealthSnapshot;
-use crate::protocol::new_request;
+use crate::protocol::{check_response, new_request};
 use crate::request::{PendingRequest, ReqTxHandle};
 
 #[derive(Debug, Clone, Default)]

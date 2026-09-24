@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::optional_number;
 use crate::sink::VTubeSink;
 
 pub struct ItemPinRunner {
@@ -33,11 +34,17 @@ const SIZE_RELATIVE_TO_OPTIONS: &[&str] = &["RelativeToWorld", "RelativeToCurren
 
 const VERTEX_PIN_TYPE_OPTIONS: &[&str] = &["Center", "Random"];
 
-fn read_opt_float(config: &SubActionConfig, key: &str) -> Option<f64> {
-    match config.get(key) {
-        Some(Variant::Float(f)) => Some(*f),
-        _ => None,
-    }
+const DEFAULT_PIN_ANGLE: f64 = 0.0;
+const DEFAULT_PIN_SIZE: f64 = 0.33;
+
+fn read_angle_and_size(
+    config: &SubActionConfig,
+    ctx: &RunContext<'_>,
+) -> Result<(f64, f64), String> {
+    Ok((
+        optional_number(config, "angle", ctx)?.unwrap_or(DEFAULT_PIN_ANGLE),
+        optional_number(config, "size", ctx)?.unwrap_or(DEFAULT_PIN_SIZE),
+    ))
 }
 
 fn select_or_default<'a>(
@@ -202,13 +209,14 @@ impl SubActionRunner for ItemPinRunner {
             select_or_default(config, "vertex_pin_type", VERTEX_PIN_TYPE_OPTIONS, "Center");
         let model_id = config.str("model_id").unwrap_or_default();
         let art_mesh_id = config.str("art_mesh_id").unwrap_or_default();
-        let angle = read_opt_float(config, "angle").unwrap_or(0.0);
-        let size = read_opt_float(config, "size").unwrap_or(0.33);
+        let angle_and_size = read_angle_and_size(config, ctx);
 
-        let outcome = if item_instance_id.is_empty() {
-            SubActionOutcome::Failed("vtube.item.pin: item_instance_id is empty".to_owned())
-        } else {
-            SubActionOutcome::from_result(
+        let outcome = match angle_and_size {
+            _ if item_instance_id.is_empty() => {
+                SubActionOutcome::Failed("vtube.item.pin: item_instance_id is empty".to_owned())
+            }
+            Err(reason) => SubActionOutcome::Failed(format!("vtube.item.pin: {reason}")),
+            Ok((angle, size)) => SubActionOutcome::from_result(
                 &self
                     .sink
                     .pin_item(
@@ -223,7 +231,7 @@ impl SubActionRunner for ItemPinRunner {
                         size,
                     )
                     .await,
-            )
+            ),
         };
 
         (

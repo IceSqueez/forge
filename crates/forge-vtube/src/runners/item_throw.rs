@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::optional_number;
 use crate::sink::VTubeSink;
 
 pub struct ItemThrowRunner {
@@ -22,11 +23,26 @@ impl ItemThrowRunner {
     }
 }
 
-fn read_opt_float(config: &SubActionConfig, key: &str) -> Option<f64> {
-    match config.get(key) {
-        Some(Variant::Float(f)) => Some(*f),
-        _ => None,
-    }
+const DEFAULT_THROW_SECONDS: f64 = 0.4;
+
+struct Trajectory {
+    from_x: Option<f64>,
+    from_y: Option<f64>,
+    to_x: Option<f64>,
+    to_y: Option<f64>,
+    size: Option<f64>,
+    duration: f64,
+}
+
+fn read_trajectory(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Trajectory, String> {
+    Ok(Trajectory {
+        from_x: optional_number(config, "from_x", ctx)?,
+        from_y: optional_number(config, "from_y", ctx)?,
+        to_x: optional_number(config, "to_x", ctx)?,
+        to_y: optional_number(config, "to_y", ctx)?,
+        size: optional_number(config, "size", ctx)?,
+        duration: optional_number(config, "duration", ctx)?.unwrap_or(DEFAULT_THROW_SECONDS),
+    })
 }
 
 #[async_trait]
@@ -155,20 +171,28 @@ impl SubActionRunner for ItemThrowRunner {
             );
         }
 
-        let from_x = read_opt_float(config, "from_x");
-        let from_y = read_opt_float(config, "from_y");
-        let to_x = read_opt_float(config, "to_x");
-        let to_y = read_opt_float(config, "to_y");
-        let size = read_opt_float(config, "size");
-        let duration = read_opt_float(config, "duration").unwrap_or(0.4);
+        let trajectory = match read_trajectory(config, ctx) {
+            Ok(trajectory) => trajectory,
+            Err(reason) => {
+                return (
+                    telemetry(
+                        started_at,
+                        start,
+                        ctx.index,
+                        SubActionOutcome::Failed(format!("vtube.item.throw: {reason}")),
+                    ),
+                    None,
+                );
+            }
+        };
 
         let load_result = self
             .sink
             .load_item(
                 &file_name,
-                from_x,
-                from_y,
-                size,
+                trajectory.from_x,
+                trajectory.from_y,
+                trajectory.size,
                 None,
                 Some(0.0),
                 None,
@@ -224,12 +248,12 @@ impl SubActionRunner for ItemThrowRunner {
             .sink
             .move_item(
                 &instance_id,
-                to_x,
-                to_y,
+                trajectory.to_x,
+                trajectory.to_y,
                 None,
                 None,
                 None,
-                duration,
+                trajectory.duration,
                 "linear",
             )
             .await;

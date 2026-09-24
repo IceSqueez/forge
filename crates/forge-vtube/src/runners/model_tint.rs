@@ -8,6 +8,7 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::{optional_integer, optional_number};
 use crate::sink::VTubeSink;
 
 pub struct ModelTintRunner {
@@ -20,18 +21,32 @@ impl ModelTintRunner {
     }
 }
 
-fn read_color_channel(config: &SubActionConfig, key: &str) -> i64 {
-    match config.get(key) {
-        Some(Variant::Int(v)) => (*v).clamp(0, 255),
-        _ => 255,
-    }
+const CHANNEL_MAX: i64 = 255;
+
+struct Tint {
+    r: i64,
+    g: i64,
+    b: i64,
+    a: i64,
+    mix_with_scene_lighting: Option<f64>,
 }
 
-fn read_opt_float(config: &SubActionConfig, key: &str) -> Option<f64> {
-    match config.get(key) {
-        Some(Variant::Float(f)) => Some(*f),
-        _ => None,
-    }
+fn read_color_channel(
+    config: &SubActionConfig,
+    key: &str,
+    ctx: &RunContext<'_>,
+) -> Result<i64, String> {
+    Ok(optional_integer(config, key, ctx)?.map_or(CHANNEL_MAX, |v| v.clamp(0, CHANNEL_MAX)))
+}
+
+fn read_tint(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Tint, String> {
+    Ok(Tint {
+        r: read_color_channel(config, "color_r", ctx)?,
+        g: read_color_channel(config, "color_g", ctx)?,
+        b: read_color_channel(config, "color_b", ctx)?,
+        a: read_color_channel(config, "color_a", ctx)?,
+        mix_with_scene_lighting: optional_number(config, "mix_with_scene_lighting", ctx)?,
+    })
 }
 
 #[async_trait]
@@ -119,18 +134,21 @@ impl SubActionRunner for ModelTintRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let color_r = read_color_channel(config, "color_r");
-        let color_g = read_color_channel(config, "color_g");
-        let color_b = read_color_channel(config, "color_b");
-        let color_a = read_color_channel(config, "color_a");
-        let mix_with_scene_lighting = read_opt_float(config, "mix_with_scene_lighting");
-
-        let outcome = SubActionOutcome::from_result(
-            &self
-                .sink
-                .tint_all_art_meshes(color_r, color_g, color_b, color_a, mix_with_scene_lighting)
-                .await,
-        );
+        let outcome = match read_tint(config, ctx) {
+            Ok(tint) => SubActionOutcome::from_result(
+                &self
+                    .sink
+                    .tint_all_art_meshes(
+                        tint.r,
+                        tint.g,
+                        tint.b,
+                        tint.a,
+                        tint.mix_with_scene_lighting,
+                    )
+                    .await,
+            ),
+            Err(reason) => SubActionOutcome::Failed(format!("vtube.model.tint: {reason}")),
+        };
 
         (
             SubActionTelemetry {

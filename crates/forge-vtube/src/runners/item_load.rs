@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::{optional_integer, optional_number};
 use crate::sink::VTubeSink;
 
 pub struct ItemLoadRunner {
@@ -22,18 +23,24 @@ impl ItemLoadRunner {
     }
 }
 
-fn read_opt_float(config: &SubActionConfig, key: &str) -> Option<f64> {
-    match config.get(key) {
-        Some(Variant::Float(f)) => Some(*f),
-        _ => None,
-    }
+struct Placement {
+    x: Option<f64>,
+    y: Option<f64>,
+    size: Option<f64>,
+    rotation: Option<f64>,
+    fade_time: Option<f64>,
+    order: Option<i64>,
 }
 
-fn read_opt_int(config: &SubActionConfig, key: &str) -> Option<i64> {
-    match config.get(key) {
-        Some(Variant::Int(i)) => Some(*i),
-        _ => None,
-    }
+fn read_placement(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<Placement, String> {
+    Ok(Placement {
+        x: optional_number(config, "x", ctx)?,
+        y: optional_number(config, "y", ctx)?,
+        size: optional_number(config, "size", ctx)?,
+        rotation: optional_number(config, "rotation", ctx)?,
+        fade_time: optional_number(config, "fade_time", ctx)?,
+        order: optional_integer(config, "order", ctx)?,
+    })
 }
 
 #[async_trait]
@@ -158,29 +165,28 @@ impl SubActionRunner for ItemLoadRunner {
         let raw_name = config.str("file_name").unwrap_or_default();
         let file_name = ctx.arg_stack.interpolate(raw_name);
 
-        if file_name.is_empty() {
-            return (
-                SubActionTelemetry {
-                    args_in: ::std::collections::BTreeMap::new(),
-                    produced: ::std::collections::BTreeMap::new(),
-                    kind: "vtube.item.load".to_owned(),
-                    started_at,
-                    duration_ms: start.elapsed().as_millis() as u64,
-                    outcome: SubActionOutcome::Failed(
-                        "vtube.item.load: file_name is empty".to_owned(),
-                    ),
-                    index: ctx.index,
-                },
-                None,
-            );
-        }
-
-        let x = read_opt_float(config, "x");
-        let y = read_opt_float(config, "y");
-        let size = read_opt_float(config, "size");
-        let rotation = read_opt_float(config, "rotation");
-        let fade_time = read_opt_float(config, "fade_time");
-        let order = read_opt_int(config, "order");
+        let placement = if file_name.is_empty() {
+            Err("file_name is empty".to_owned())
+        } else {
+            read_placement(config, ctx)
+        };
+        let placement = match placement {
+            Ok(placement) => placement,
+            Err(reason) => {
+                return (
+                    SubActionTelemetry {
+                        args_in: ::std::collections::BTreeMap::new(),
+                        produced: ::std::collections::BTreeMap::new(),
+                        kind: "vtube.item.load".to_owned(),
+                        started_at,
+                        duration_ms: start.elapsed().as_millis() as u64,
+                        outcome: SubActionOutcome::Failed(format!("vtube.item.load: {reason}")),
+                        index: ctx.index,
+                    },
+                    None,
+                );
+            }
+        };
         let unload_on_disconnect = !matches!(
             config.get("unload_on_disconnect"),
             Some(Variant::Bool(false))
@@ -190,12 +196,12 @@ impl SubActionRunner for ItemLoadRunner {
             .sink
             .load_item(
                 &file_name,
-                x,
-                y,
-                size,
-                rotation,
-                fade_time,
-                order,
+                placement.x,
+                placement.y,
+                placement.size,
+                placement.rotation,
+                placement.fade_time,
+                placement.order,
                 unload_on_disconnect,
             )
             .await

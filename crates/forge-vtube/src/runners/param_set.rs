@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::{accepts_number, required_number};
 use crate::sink::VTubeSink;
 
 pub struct ParamSetRunner {
@@ -79,11 +80,12 @@ impl SubActionRunner for ParamSetRunner {
                 ));
             }
         }
-        match config.get("value") {
-            Some(Variant::Float(_)) => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(
-                "vtube.param.set: 'value' must be a float".to_owned(),
-            )),
+        if accepts_number(config.get("value")) {
+            Ok(())
+        } else {
+            Err(RegistryError::InvalidConfig(
+                "vtube.param.set: 'value' must be a number".to_owned(),
+            ))
         }
     }
 
@@ -98,12 +100,12 @@ impl SubActionRunner for ParamSetRunner {
         let raw_id = config.str("param_id").unwrap_or_default();
         let param_id = ctx.arg_stack.interpolate(raw_id);
 
-        let value = match config.get("value") {
-            Some(Variant::Float(f)) => *f,
-            _ => 0.0,
+        let outcome = match required_number(config, "value", ctx) {
+            Ok(value) => {
+                SubActionOutcome::from_result(&self.sink.set_param(&param_id, value).await)
+            }
+            Err(reason) => SubActionOutcome::Failed(format!("vtube.param.set: {reason}")),
         };
-
-        let outcome = SubActionOutcome::from_result(&self.sink.set_param(&param_id, value).await);
 
         (
             SubActionTelemetry {

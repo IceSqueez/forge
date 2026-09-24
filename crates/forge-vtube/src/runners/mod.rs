@@ -14,6 +14,7 @@ mod model_load;
 mod model_move;
 mod model_set_physics;
 mod model_tint;
+mod numeric;
 mod param_set;
 mod params_reset;
 #[cfg(test)]

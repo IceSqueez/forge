@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use crate::runners::numeric::{optional_integer, optional_number};
 use crate::sink::VTubeSink;
 
 pub struct ItemMoveRunner {
@@ -31,18 +32,34 @@ const FADE_MODES: &[&str] = &[
     "zip",
 ];
 
-fn read_opt_float(config: &SubActionConfig, key: &str) -> Option<f64> {
-    match config.get(key) {
-        Some(Variant::Float(f)) => Some(*f),
-        _ => None,
+struct MoveTarget {
+    x: Option<f64>,
+    y: Option<f64>,
+    size: Option<f64>,
+    rotation: Option<f64>,
+    order: Option<i64>,
+    duration: Option<f64>,
+}
+
+impl MoveTarget {
+    fn is_empty(&self) -> bool {
+        self.x.is_none()
+            && self.y.is_none()
+            && self.size.is_none()
+            && self.rotation.is_none()
+            && self.order.is_none()
     }
 }
 
-fn read_opt_int(config: &SubActionConfig, key: &str) -> Option<i64> {
-    match config.get(key) {
-        Some(Variant::Int(i)) => Some(*i),
-        _ => None,
-    }
+fn read_target(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<MoveTarget, String> {
+    Ok(MoveTarget {
+        x: optional_number(config, "x", ctx)?,
+        y: optional_number(config, "y", ctx)?,
+        size: optional_number(config, "size", ctx)?,
+        rotation: optional_number(config, "rotation", ctx)?,
+        order: optional_integer(config, "order", ctx)?,
+        duration: optional_number(config, "duration", ctx)?,
+    })
 }
 
 #[async_trait]
@@ -171,43 +188,33 @@ impl SubActionRunner for ItemMoveRunner {
         let raw_id = config.str("item_instance_id").unwrap_or_default();
         let item_instance_id = ctx.arg_stack.interpolate(raw_id);
 
-        let x = read_opt_float(config, "x");
-        let y = read_opt_float(config, "y");
-        let size = read_opt_float(config, "size");
-        let rotation = read_opt_float(config, "rotation");
-        let order = read_opt_int(config, "order");
-        let duration = read_opt_float(config, "duration");
+        let target = read_target(config, ctx);
         let fade_mode = match config.get("fade_mode") {
             Some(Variant::String(s)) if FADE_MODES.contains(&s.as_str()) => s.as_str(),
             _ => "linear",
         };
 
-        let outcome = if item_instance_id.is_empty() {
-            SubActionOutcome::Failed("vtube.item.move: item_instance_id is empty".to_owned())
-        } else if x.is_none()
-            && y.is_none()
-            && size.is_none()
-            && rotation.is_none()
-            && order.is_none()
-        {
-            SubActionOutcome::Success
-        } else {
-            let time_in_seconds = duration.unwrap_or(0.0);
-            SubActionOutcome::from_result(
+        let outcome = match target {
+            _ if item_instance_id.is_empty() => {
+                SubActionOutcome::Failed("vtube.item.move: item_instance_id is empty".to_owned())
+            }
+            Err(reason) => SubActionOutcome::Failed(format!("vtube.item.move: {reason}")),
+            Ok(target) if target.is_empty() => SubActionOutcome::Success,
+            Ok(target) => SubActionOutcome::from_result(
                 &self
                     .sink
                     .move_item(
                         &item_instance_id,
-                        x,
-                        y,
-                        size,
-                        rotation,
-                        order,
-                        time_in_seconds,
+                        target.x,
+                        target.y,
+                        target.size,
+                        target.rotation,
+                        target.order,
+                        target.duration.unwrap_or(0.0),
                         fade_mode,
                     )
                     .await,
-            )
+            ),
         };
 
         (

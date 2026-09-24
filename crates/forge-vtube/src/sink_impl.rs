@@ -7,6 +7,7 @@ use forge_types::Variant;
 
 use crate::client::VTubeClient;
 use crate::error::VTubeError;
+use crate::protocol::check_response;
 use crate::sink::VTubeSink;
 
 #[async_trait]
@@ -112,7 +113,8 @@ impl VTubeSink for VTubeClient {
             }]
         });
         let resp = self.send_json_request("ItemMoveRequest", data).await?;
-        check_response(&resp)
+        check_response(&resp)?;
+        check_items_moved(&resp)
     }
 
     async fn get_current_model(&self) -> Result<Variant, VTubeError> {
@@ -338,20 +340,34 @@ fn bool_array(entries: Option<&Vec<Value>>, key: &str) -> Vec<Variant> {
         .unwrap_or_default()
 }
 
+fn check_items_moved(data: &Value) -> Result<(), VTubeError> {
+    let failed: Vec<(String, i64)> = data["movedItems"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["success"].as_bool() == Some(false))
+        .map(|entry| {
+            (
+                entry["itemInstanceID"].as_str().unwrap_or("").to_owned(),
+                entry["errorID"].as_i64().unwrap_or(ITEM_ERROR_ID_UNKNOWN),
+            )
+        })
+        .collect();
+    match failed.first() {
+        None => Ok(()),
+        Some((_, error_id)) => {
+            let items: Vec<&str> = failed.iter().map(|(id, _)| id.as_str()).collect();
+            Err(VTubeError::Rejected {
+                error_id: *error_id,
+                message: format!("could not move item {}", items.join(", ")),
+            })
+        }
+    }
+}
+
+const ITEM_ERROR_ID_UNKNOWN: i64 = -1;
 const ITEM_IGNORE_SENTINEL: f64 = -1000.0;
 const ITEM_IGNORE_SENTINEL_ORDER: i64 = -1000;
-
-fn check_response(data: &serde_json::Value) -> Result<(), VTubeError> {
-    if let Some(error_id) = data.get("errorID").and_then(|v| v.as_i64()) {
-        let message = data["message"]
-            .as_str()
-            .unwrap_or("request rejected by VTube Studio");
-        return Err(VTubeError::Request {
-            message: format!("{message} (errorID={error_id})"),
-        });
-    }
-    Ok(())
-}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]

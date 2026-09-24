@@ -513,3 +513,26 @@ async fn switch_runs_default_chain_with_index_minus_one_when_no_case_matches() {
         Some(&Variant::Int(-1)),
     );
 }
+
+#[tokio::test]
+async fn a_loop_run_as_a_concurrent_step_still_honours_a_break_in_its_body() {
+    let eng = engine();
+    let body = inline(vec![chain_step(
+        "core.logic.break_loop",
+        SubActionConfig::new(),
+    )]);
+    let run = eng
+        .run_concurrent(
+            &[step("core.logic.loop", loop_cfg(5, body))],
+            &ArgStack::new(),
+            EventId::new(),
+            &CancelSignal::new(),
+        )
+        .await;
+
+    assert_eq!(
+        run.telemetry[0].produced.get("loop.exit_reason"),
+        Some(&"\"break\"".to_owned()),
+        "the loop body runs as a sequential child chain, so break must end the loop",
+    );
+}

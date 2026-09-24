@@ -12,15 +12,17 @@ use forge_registry::{
 };
 use forge_runtime::sub_action_runners::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, EventBus, EventSubscription, NullEventLogRepo,
-    QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerRequest, spawn_action_engine,
+    ActionCancelRegistry, ActionEngineHandle, DispatchError, EventBus, EventSubscription,
+    NullEventLogRepo, PendingQuickAction, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
+    SchedulerRequest, spawn_action_engine,
 };
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, ExecutionStatus, HistoryRepo, StorageError,
 };
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionMode,
-    ExecutionOutcome, Queue, QueueId, SubActionConfig, SubActionStep, SubActionTelemetry, Variant,
+    ExecutionOutcome, Queue, QueueId, SubActionConfig, SubActionOutcome, SubActionStep,
+    SubActionTelemetry, Variant,
 };
 use time::OffsetDateTime;
 use tokio::sync::{mpsc, watch};
@@ -28,6 +30,9 @@ use tokio::sync::{mpsc, watch};
 const SLOW_KIND_ID: &str = "test.slow";
 const INSTANT_KIND_ID: &str = "test.instant";
 const PANIC_KIND_ID: &str = "test.panic";
+const FAILING_KIND_ID: &str = "test.fail";
+const UNREGISTERED_KIND_ID: &str = "test.unregistered";
+const FAILURE_REASON: &str = "scene not found";
 const LONG_WAIT_MS: i64 = 60_000;
 const SETTLE_ROUNDS: usize = 200;
 const QUIET_STEP: Duration = Duration::from_secs(5);
@@ -82,14 +87,18 @@ impl ActionRepo for MemoryActionRepo {
     }
 }
 
-/// Hands every saved run to the test in the order the engine saved it.
+/// Hands every saved run to the test in the order the engine saved it, each save held
+/// until the test's save gate is open.
 struct CapturingHistoryRepo {
     saved: mpsc::UnboundedSender<ExecutionContext>,
+    gate: watch::Receiver<bool>,
 }
 
 #[async_trait]
 impl HistoryRepo for CapturingHistoryRepo {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError> {
+        let mut gate = self.gate.clone();
+        let _ = gate.wait_for(|open| *open).await;
         let _ = self.saved.send(ctx.clone());
         Ok(())
     }
@@ -123,6 +132,7 @@ enum Behavior {
     Gate(watch::Receiver<bool>),
     Instant,
     Panic,
+    Fail,
 }
 
 struct ScriptedRunner {
@@ -176,6 +186,7 @@ impl SubActionRunner for ScriptedRunner {
             }
             Behavior::Instant => {}
             Behavior::Panic => panic!("scripted runner panic"),
+            Behavior::Fail => return (timer.failed(FAILURE_REASON), None),
         }
         (timer.success(), None)
     }
@@ -186,6 +197,7 @@ struct Rig {
     engine: ActionEngineHandle,
     sched: QueueSchedulerHandle,
     slow_gate: watch::Sender<bool>,
+    save_gate: watch::Sender<bool>,
     saved: mpsc::UnboundedReceiver<ExecutionContext>,
 }
 
@@ -275,17 +287,25 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
             id: PANIC_KIND_ID,
             behavior: Behavior::Panic,
         },
+        ScriptedRunner {
+            id: FAILING_KIND_ID,
+            behavior: Behavior::Fail,
+        },
     ] {
         registry.register(Box::new(runner)).unwrap();
     }
     registry.register(Box::new(CoreLogicWaitRunner)).unwrap();
 
     let (saved_tx, saved) = mpsc::unbounded_channel();
+    let (save_gate, save_open) = watch::channel(true);
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
         Arc::new(repo),
-        Arc::new(CapturingHistoryRepo { saved: saved_tx }),
+        Arc::new(CapturingHistoryRepo {
+            saved: saved_tx,
+            gate: save_open,
+        }),
         Arc::new(registry),
         Arc::new(ActionCancelRegistry::new()),
     );
@@ -295,6 +315,7 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
         engine,
         sched,
         slow_gate,
+        save_gate,
         saved,
     }
 }
@@ -635,4 +656,87 @@ async fn a_run_that_finishes_last_keeps_the_earlier_start_time() {
         "a run's start time must be taken when it starts, not when it is saved"
     );
     r.sched.shutdown();
+}
+
+type OutcomeCheck = fn(&SubActionOutcome) -> bool;
+
+async fn quick(engine: &ActionEngineHandle, kind_id: &str) -> PendingQuickAction {
+    engine
+        .execute_quick_action(
+            step(kind_id, SubActionConfig::new()),
+            "obs".to_owned(),
+            kind_id.to_owned(),
+            None,
+        )
+        .await
+        .expect("the engine accepts the quick action")
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quick_action_reports_how_its_step_ended() {
+    let r = rig(Vec::new(), &[]).await;
+
+    let cases: [(&str, OutcomeCheck); 3] = [
+        (INSTANT_KIND_ID, |o| matches!(o, SubActionOutcome::Success)),
+        (
+            FAILING_KIND_ID,
+            |o| matches!(o, SubActionOutcome::Failed(reason) if reason == FAILURE_REASON),
+        ),
+        (UNREGISTERED_KIND_ID, |o| {
+            matches!(o, SubActionOutcome::Skipped(_))
+        }),
+    ];
+    for (kind_id, expected) in cases {
+        let outcome = quick(&r.engine, kind_id)
+            .await
+            .outcome()
+            .await
+            .expect("a running engine reports every quick action's outcome");
+        assert!(expected(&outcome), "{kind_id} reported {outcome:?}");
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quick_action_still_in_the_intake_at_shutdown_reports_no_outcome() {
+    let r = rig(Vec::new(), &[]).await;
+
+    r.engine.clone().shutdown();
+    let pending = quick(&r.engine, INSTANT_KIND_ID).await;
+
+    assert!(matches!(
+        pending.outcome().await,
+        Err(DispatchError::NoOutcome)
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quick_action_whose_outcome_nobody_awaits_still_runs_and_is_saved() {
+    let mut r = rig(Vec::new(), &[]).await;
+
+    drop(quick(&r.engine, INSTANT_KIND_ID).await);
+
+    let saved = r.next_saved().await;
+    assert!(
+        matches!(&saved.metadata, ExecutionMetadata::QuickAction { label, .. } if label == INSTANT_KIND_ID),
+        "the abandoned quick action must still record its run, got {:?}",
+        saved.metadata
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quick_action_reports_its_outcome_only_after_its_run_is_saved() {
+    let r = rig(Vec::new(), &[]).await;
+    r.save_gate.send_replace(false);
+
+    let outcome = quick(&r.engine, INSTANT_KIND_ID).await.outcome();
+    tokio::pin!(outcome);
+
+    assert!(
+        tokio::time::timeout(QUIET_STEP, &mut outcome)
+            .await
+            .is_err(),
+        "the outcome must not arrive while the history row is still being saved"
+    );
+    r.save_gate.send_replace(true);
+    assert!(matches!(outcome.await, Ok(SubActionOutcome::Success)));
 }

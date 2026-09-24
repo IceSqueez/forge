@@ -25,10 +25,18 @@ pub enum ObsError {
     },
 }
 
+impl ObsError {
+    pub(crate) fn is_connection_loss(&self) -> bool {
+        matches!(self, Self::Timeout | Self::Disconnected)
+    }
+}
+
 pub(crate) fn map_request_error(request_type: &str, e: obws::error::Error) -> ObsError {
     match e {
         obws::error::Error::Timeout => ObsError::Timeout,
-        obws::error::Error::Disconnected => ObsError::Disconnected,
+        obws::error::Error::Disconnected
+        | obws::error::Error::Send(_)
+        | obws::error::Error::ReceiveMessage(_) => ObsError::Disconnected,
         _ => ObsError::Request {
             request_type: request_type.to_owned(),
             message: e.to_string(),

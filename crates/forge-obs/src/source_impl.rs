@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::client::ObsClient;
-use crate::error::{ObsError, map_request_error};
+use crate::error::ObsError;
 use crate::source::{ObsSource, SourceInfo};
 
 #[async_trait]
@@ -53,33 +53,30 @@ impl ObsSource for ObsClient {
     }
 
     async fn transitions(&self) -> Result<Vec<String>, ObsError> {
-        let client = self.active_client().await?;
-        client
-            .transitions()
-            .list()
+        let session = self.active_session().await?;
+        session
+            .request("GetSceneTransitionList", session.obs().transitions().list())
             .await
             .map(|list| list.transitions.into_iter().map(|t| t.id.name).collect())
-            .map_err(|e| map_request_error("GetSceneTransitionList", e))
     }
 
     async fn profiles(&self) -> Result<Vec<String>, ObsError> {
-        let client = self.active_client().await?;
-        client
-            .profiles()
-            .list()
+        let session = self.active_session().await?;
+        session
+            .request("GetProfileList", session.obs().profiles().list())
             .await
             .map(|p| p.profiles)
-            .map_err(|e| map_request_error("GetProfileList", e))
     }
 
     async fn scene_collections(&self) -> Result<Vec<String>, ObsError> {
-        let client = self.active_client().await?;
-        client
-            .scene_collections()
-            .list()
+        let session = self.active_session().await?;
+        session
+            .request(
+                "GetSceneCollectionList",
+                session.obs().scene_collections().list(),
+            )
             .await
             .map(|c| c.collections)
-            .map_err(|e| map_request_error("GetSceneCollectionList", e))
     }
 }
 

@@ -15,11 +15,11 @@ use forge_platform_core::{
     ConnectionState, ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HeroBadge,
     HeroBadgeTone, connection_state_changed_event,
 };
-use forge_types::EventId;
 
 use crate::catalog::ObsCatalog;
 use crate::error::ObsError;
 use crate::health::{HealthSnapshot, make_health_channel};
+use crate::session::{LiveSession, with_deadline};
 use crate::source::SourceInfo;
 
 const OBS_PLATFORM_ID: &str = "obs";
@@ -40,10 +40,11 @@ fn settle_connection_state(
     }
 }
 
+type SessionSlot = Arc<tokio::sync::RwLock<Option<LiveSession>>>;
+
 pub struct ObsClient {
-    pub(crate) inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
+    pub(crate) inner: SessionSlot,
     pub(crate) scene_item_id_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
-    pub(crate) last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     endpoint: String,
     state: Arc<AtomicConnectionState>,
     // async Mutex: reconnect swaps the Notify for a new supervisor cycle without racing
@@ -74,7 +75,7 @@ impl ObsClient {
     ) -> Result<Self, ObsError> {
         let (host, port) = parse_endpoint(endpoint)?;
 
-        let inner = Arc::new(tokio::sync::RwLock::new(None::<Arc<obws::Client>>));
+        let inner: SessionSlot = Arc::new(tokio::sync::RwLock::new(None));
         let state = Arc::new(AtomicConnectionState::new(ConnectionState::Connecting));
         let notify = Arc::new(Notify::new());
         let shutdown = Arc::new(tokio::sync::Mutex::new(Arc::clone(&notify)));
@@ -85,7 +86,6 @@ impl ObsClient {
 
         let (health_tx, health_state) = make_health_channel();
         let catalog_state = Arc::new(RwLock::new(ObsCatalog::default()));
-        let last_set_scene_event_id = Arc::new(RwLock::new(None::<EventId>));
 
         let stored_password = password.map(str::to_owned);
         let auto_reconnect = Arc::new(AtomicBool::new(true));
@@ -103,7 +103,6 @@ impl ObsClient {
             health_tx: health_tx.clone(),
             publisher: Arc::clone(&publisher),
             item_cache: Arc::clone(&item_cache),
-            last_set_scene_event_id: Arc::clone(&last_set_scene_event_id),
             auto_reconnect: Arc::clone(&auto_reconnect),
             resync_nudge: Arc::clone(&resync_nudge),
         };
@@ -128,7 +127,6 @@ impl ObsClient {
             health_tx,
             catalog_state,
             scene_item_id_cache: item_cache,
-            last_set_scene_event_id,
             reconnect_host: host,
             reconnect_port: port,
             reconnect_password: Arc::new(stored_password),
@@ -156,7 +154,7 @@ impl ObsClient {
         self.auto_reconnect.load(Ordering::Relaxed)
     }
 
-    pub(crate) async fn active_client(&self) -> Result<Arc<obws::Client>, ObsError> {
+    pub(crate) async fn active_session(&self) -> Result<LiveSession, ObsError> {
         let guard = self.inner.read().await;
         guard.clone().ok_or(ObsError::Disconnected)
     }
@@ -179,7 +177,6 @@ impl ObsClient {
             health_tx,
             catalog_state: Arc::new(RwLock::new(ObsCatalog::default())),
             scene_item_id_cache: Arc::new(Mutex::new(HashMap::new())),
-            last_set_scene_event_id: Arc::new(RwLock::new(None)),
             reconnect_host: host,
             reconnect_port: port,
             reconnect_password: Arc::new(None),
@@ -292,7 +289,6 @@ impl BuiltinControl for ObsClient {
             health_tx: self.health_tx.clone(),
             publisher: Arc::clone(&self.reconnect_publisher),
             item_cache: Arc::clone(&self.scene_item_id_cache),
-            last_set_scene_event_id: Arc::clone(&self.last_set_scene_event_id),
             auto_reconnect: Arc::clone(&self.auto_reconnect),
             resync_nudge: Arc::clone(&self.resync_nudge),
         };
@@ -333,7 +329,7 @@ impl BuiltinControl for ObsClient {
 }
 
 struct SupervisorContext {
-    inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
+    inner: SessionSlot,
     state: Arc<AtomicConnectionState>,
     shutdown: Arc<Notify>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -344,13 +340,15 @@ struct SupervisorContext {
     health_tx: broadcast::Sender<HealthDelta>,
     publisher: Arc<dyn EventPublisher>,
     item_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
-    last_set_scene_event_id: Arc<RwLock<Option<EventId>>>,
     auto_reconnect: Arc<AtomicBool>,
     resync_nudge: Arc<Notify>,
 }
 
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
+
+/// Events queue here while the post-connect catalog snapshot runs, so it has to absorb a burst.
+const EVENT_BUFFER_CAPACITY: usize = 1024;
 
 async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
     let SupervisorContext {
@@ -365,7 +363,6 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         health_tx,
         publisher,
         item_cache,
-        last_set_scene_event_id,
         auto_reconnect,
         resync_nudge,
     } = ctx;
@@ -406,7 +403,7 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             port,
             password: password.as_deref(),
             event_subscriptions: Some(required_event_subscriptions()),
-            broadcast_capacity: obws::client::DEFAULT_BROADCAST_CAPACITY,
+            broadcast_capacity: EVENT_BUFFER_CAPACITY,
             connect_timeout: obws::client::DEFAULT_CONNECT_TIMEOUT,
             dangerous: None,
         };
@@ -419,158 +416,8 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
             }
         };
 
-        match attempt {
-            Ok(client) => {
-                let client = Arc::new(client);
-                match client.general().version().await {
-                    Ok(v) => {
-                        let _ = obs_version.set(v.obs_studio_version.to_string());
-                        let _ = obs_ws_version.set(v.obs_web_socket_version.to_string());
-                    }
-                    Err(e) => {
-                        tracing::warn!(error = %e, "failed to fetch OBS version");
-                    }
-                }
-
-                snapshot_catalog(
-                    &client,
-                    &catalog_state,
-                    &health_state,
-                    &health_tx,
-                    &item_cache,
-                )
-                .await;
-
-                let events = client.events();
-                inner.write().await.replace(Arc::clone(&client));
-
-                if let Ok(mut g) = connected_at.write() {
-                    *g = Some(OffsetDateTime::now_utc());
-                }
-
-                settle_connection_state(&state, &*publisher, ConnectionState::Connected);
-                tracing::info!(host = %host, port, "connected to OBS");
-                publisher.publish(crate::events::make_connection_connected());
-
-                // No periodic Stats event exists (OQ-OBS-1, INTEGRATIONS_NOTES.md); polled instead.
-                let stats_handle = spawn_stats_poll(
-                    Arc::clone(&inner),
-                    Arc::clone(&health_state),
-                    health_tx.clone(),
-                    Arc::clone(&catalog_state),
-                    Arc::clone(&item_cache),
-                    Arc::clone(&resync_nudge),
-                );
-
-                let mut pending_resync: Option<JoinHandle<()>> = None;
-
-                match events {
-                    Ok(mut stream) => loop {
-                        tokio::select! {
-                            () = shutdown.notified() => {
-                                if let Some(handle) = pending_resync.take() {
-                                    handle.abort();
-                                }
-                                stats_handle.abort();
-                                inner.write().await.take();
-                                clear_connected_at(&connected_at);
-                                settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
-                                tracing::info!("OBS supervisor shutting down");
-                                return;
-                            }
-                            item = stream.next() => {
-                                match item {
-                                    None => {
-                                        tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
-                                        break;
-                                    }
-                                    Some(ev) => {
-                                        handle_obs_event(
-                                            &ev,
-                                            &catalog_state,
-                                            &health_state,
-                                            &health_tx,
-                                            &item_cache,
-                                            &*publisher,
-                                            &last_set_scene_event_id,
-                                        );
-                                        // A scene collection swap replaces every scene and source
-                                        // wholesale; incremental catalog updates cannot track that,
-                                        // so force an immediate full resync instead of waiting for
-                                        // the next reconciliation tick.
-                                        if matches!(
-                                            ev,
-                                            obws::events::Event::CurrentSceneCollectionChanged { .. }
-                                        ) {
-                                            if let Some(handle) = pending_resync.take() {
-                                                handle.abort();
-                                            }
-                                            let client = Arc::clone(&client);
-                                            let catalog_state = Arc::clone(&catalog_state);
-                                            let health_state = Arc::clone(&health_state);
-                                            let health_tx = health_tx.clone();
-                                            let item_cache = Arc::clone(&item_cache);
-                                            pending_resync = Some(tokio::spawn(async move {
-                                                snapshot_catalog(
-                                                    &client,
-                                                    &catalog_state,
-                                                    &health_state,
-                                                    &health_tx,
-                                                    &item_cache,
-                                                )
-                                                .await;
-                                            }));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            "OBS event subscription unavailable; waiting for shutdown only"
-                        );
-                        shutdown.notified().await;
-                        if let Some(handle) = pending_resync.take() {
-                            handle.abort();
-                        }
-                        stats_handle.abort();
-                        inner.write().await.take();
-                        clear_connected_at(&connected_at);
-                        settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
-                        return;
-                    }
-                }
-
-                if let Some(handle) = pending_resync.take() {
-                    handle.abort();
-                }
-                stats_handle.abort();
-                inner.write().await.take();
-                clear_connected_at(&connected_at);
-                let retry = auto_reconnect.load(Ordering::Relaxed);
-                settle_connection_state(
-                    &state,
-                    &*publisher,
-                    if retry {
-                        ConnectionState::Reconnecting
-                    } else {
-                        ConnectionState::Disconnected
-                    },
-                );
-                publisher.publish(crate::events::make_connection_disconnected(
-                    crate::payload_fields::connection::reason::CONNECTION_LOST,
-                    None,
-                ));
-                if retry {
-                    backoff.reset();
-                    reconnecting = true;
-                } else {
-                    return;
-                }
-            }
-
+        let client = match attempt {
+            Ok(client) => client,
             Err(ObsError::Authentication) => {
                 tracing::warn!(host = %host, port, "OBS authentication rejected");
                 settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
@@ -579,13 +426,217 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                 ));
                 return;
             }
-
             Err(e) => {
                 tracing::debug!(host = %host, port, error = %e, "OBS connection attempt failed");
                 reconnecting = true;
+                continue;
+            }
+        };
+
+        let session = LiveSession::new(client);
+        let mut stream = match session.obs().events() {
+            Ok(stream) => stream,
+            Err(e) => {
+                tracing::info!(
+                    host = %host,
+                    port,
+                    error = %e,
+                    "OBS closed the connection right after the handshake"
+                );
+                reconnecting = true;
+                continue;
+            }
+        };
+
+        let primed = tokio::select! {
+            outcome = prime_session(
+                &session,
+                &obs_version,
+                &obs_ws_version,
+                &catalog_state,
+                &health_state,
+                &health_tx,
+                &item_cache,
+            ) => outcome,
+            () = shutdown.notified() => {
+                settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
+                return;
+            }
+        };
+        if let Err(e) = primed {
+            tracing::info!(
+                host = %host,
+                port,
+                error = %e,
+                "OBS connection lost while loading its catalog"
+            );
+            reconnecting = true;
+            continue;
+        }
+
+        inner.write().await.replace(session.clone());
+
+        if let Ok(mut g) = connected_at.write() {
+            *g = Some(OffsetDateTime::now_utc());
+        }
+
+        settle_connection_state(&state, &*publisher, ConnectionState::Connected);
+        tracing::info!(host = %host, port, "connected to OBS");
+        publisher.publish(crate::events::make_connection_connected());
+
+        // No periodic Stats event exists (OQ-OBS-1, INTEGRATIONS_NOTES.md); polled instead.
+        let stats_handle = spawn_stats_poll(
+            Arc::clone(&inner),
+            Arc::clone(&health_state),
+            health_tx.clone(),
+            Arc::clone(&catalog_state),
+            Arc::clone(&item_cache),
+            Arc::clone(&resync_nudge),
+        );
+
+        let mut pending_resync: Option<JoinHandle<()>> = None;
+
+        loop {
+            tokio::select! {
+                () = shutdown.notified() => {
+                    if let Some(handle) = pending_resync.take() {
+                        handle.abort();
+                    }
+                    stats_handle.abort();
+                    inner.write().await.take();
+                    clear_connected_at(&connected_at);
+                    settle_connection_state(&state, &*publisher, ConnectionState::Disconnected);
+                    tracing::info!("OBS supervisor shutting down");
+                    return;
+                }
+                () = session.suspected() => {
+                    tracing::warn!(host = %host, port, "OBS stopped answering requests; reconnecting");
+                    break;
+                }
+                item = stream.next() => match item {
+                    Some(ev) => {
+                        handle_obs_event(
+                            &ev,
+                            &catalog_state,
+                            &health_state,
+                            &health_tx,
+                            &item_cache,
+                            &*publisher,
+                        );
+                        // A scene collection swap replaces every scene and source wholesale;
+                        // incremental catalog updates cannot track that, so force an immediate
+                        // full resync instead of waiting for the next reconciliation tick.
+                        if matches!(ev, obws::events::Event::CurrentSceneCollectionChanged { .. }) {
+                            respawn_full_resync(
+                                &mut pending_resync,
+                                &session,
+                                &catalog_state,
+                                &health_state,
+                                &health_tx,
+                                &item_cache,
+                            );
+                        }
+                    }
+                    None if session.obs().events().is_ok() => {
+                        tracing::warn!("OBS events overflowed the buffer; resyncing the catalog");
+                        respawn_full_resync(
+                            &mut pending_resync,
+                            &session,
+                            &catalog_state,
+                            &health_state,
+                            &health_tx,
+                            &item_cache,
+                        );
+                    }
+                    None => {
+                        tracing::info!(host = %host, port, "OBS connection lost; reconnecting");
+                        break;
+                    }
+                },
             }
         }
+
+        if let Some(handle) = pending_resync.take() {
+            handle.abort();
+        }
+        stats_handle.abort();
+        inner.write().await.take();
+        clear_connected_at(&connected_at);
+        let retry = auto_reconnect.load(Ordering::Relaxed);
+        settle_connection_state(
+            &state,
+            &*publisher,
+            if retry {
+                ConnectionState::Reconnecting
+            } else {
+                ConnectionState::Disconnected
+            },
+        );
+        publisher.publish(crate::events::make_connection_disconnected(
+            crate::payload_fields::connection::reason::CONNECTION_LOST,
+            None,
+        ));
+        if retry {
+            backoff.reset();
+            reconnecting = true;
+        } else {
+            return;
+        }
     }
+}
+
+async fn prime_session(
+    session: &LiveSession,
+    obs_version: &OnceLock<String>,
+    obs_ws_version: &OnceLock<String>,
+    catalog_state: &RwLock<ObsCatalog>,
+    health_state: &RwLock<HealthSnapshot>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+    item_cache: &Mutex<HashMap<(String, String), i64>>,
+) -> Result<(), ObsError> {
+    match session
+        .request("GetVersion", session.obs().general().version())
+        .await
+    {
+        Ok(v) => {
+            let _ = obs_version.set(v.obs_studio_version.to_string());
+            let _ = obs_ws_version.set(v.obs_web_socket_version.to_string());
+        }
+        Err(e) if e.is_connection_loss() => return Err(e),
+        Err(e) => tracing::warn!(error = %e, "failed to fetch OBS version"),
+    }
+    snapshot_catalog(session, catalog_state, health_state, health_tx, item_cache).await
+}
+
+fn respawn_full_resync(
+    pending: &mut Option<JoinHandle<()>>,
+    session: &LiveSession,
+    catalog_state: &Arc<RwLock<ObsCatalog>>,
+    health_state: &Arc<RwLock<HealthSnapshot>>,
+    health_tx: &broadcast::Sender<HealthDelta>,
+    item_cache: &Arc<Mutex<HashMap<(String, String), i64>>>,
+) {
+    if let Some(handle) = pending.take() {
+        handle.abort();
+    }
+    let session = session.clone();
+    let catalog_state = Arc::clone(catalog_state);
+    let health_state = Arc::clone(health_state);
+    let health_tx = health_tx.clone();
+    let item_cache = Arc::clone(item_cache);
+    *pending = Some(tokio::spawn(async move {
+        if let Err(e) = snapshot_catalog(
+            &session,
+            &catalog_state,
+            &health_state,
+            &health_tx,
+            &item_cache,
+        )
+        .await
+        {
+            tracing::debug!(error = %e, "OBS catalog resync interrupted");
+        }
+    }));
 }
 
 fn handle_obs_event(
@@ -595,7 +646,6 @@ fn handle_obs_event(
     health_tx: &broadcast::Sender<HealthDelta>,
     item_cache: &Mutex<HashMap<(String, String), i64>>,
     publisher: &dyn EventPublisher,
-    last_set_scene_event_id: &RwLock<Option<EventId>>,
 ) {
     let is_scene_change = matches!(ev, obws::events::Event::CurrentProgramSceneChanged { .. });
     let is_preview_change = matches!(ev, obws::events::Event::CurrentPreviewSceneChanged { .. });
@@ -627,16 +677,7 @@ fn handle_obs_event(
         let _ = health_tx.send(delta);
     }
 
-    let cause = if is_scene_change {
-        last_set_scene_event_id
-            .write()
-            .ok()
-            .and_then(|mut g| g.take())
-    } else {
-        None
-    };
-
-    if let Some(bus_event) = crate::events::map_obs_event(ev, from_scene.as_deref(), cause) {
+    if let Some(bus_event) = crate::events::map_obs_event(ev, from_scene.as_deref()) {
         publisher.publish(bus_event);
     }
 
@@ -723,6 +764,15 @@ fn handle_obs_event(
         }
     }
 
+    if matches!(
+        ev,
+        obws::events::Event::CurrentSceneCollectionChanging { .. }
+            | obws::events::Event::CurrentSceneCollectionChanged { .. }
+    ) && let Ok(mut cache) = item_cache.lock()
+    {
+        cache.clear();
+    }
+
     if let obws::events::Event::SceneItemRemoved { scene, source, .. } = ev
         && let Ok(mut cache) = item_cache.lock()
     {
@@ -752,99 +802,147 @@ fn handle_obs_event(
     }
 }
 
+/// A request OBS rejected falls back to a default; a lost or unanswered connection is returned.
+fn tolerate_rejection<T>(outcome: Result<T, ObsError>) -> Result<Option<T>, ObsError> {
+    match outcome {
+        Ok(value) => Ok(Some(value)),
+        Err(e) if e.is_connection_loss() => Err(e),
+        Err(_) => Ok(None),
+    }
+}
+
 /// Snapshots every known scene's sources, not just the active one, so `BuiltinContent::sections()`
 /// has non-active scene counts available immediately after a cold connect. Also (re)populates
 /// `item_cache` so live `SceneItemEnableStateChanged`/`SceneItemLockStateChanged` events can
 /// resolve a source name without ever having gone through a forge-initiated visibility toggle.
+/// Leaves the catalog untouched when the connection is lost midway.
 async fn snapshot_catalog(
-    client: &obws::Client,
+    session: &LiveSession,
     catalog_state: &RwLock<ObsCatalog>,
     health_state: &RwLock<HealthSnapshot>,
     health_tx: &broadcast::Sender<HealthDelta>,
     item_cache: &Mutex<HashMap<(String, String), i64>>,
-) {
+) -> Result<(), ObsError> {
     use obws::requests::inputs::InputId;
     use obws::requests::scenes::SceneId;
 
-    let scenes: Vec<String> = client
-        .scenes()
-        .list()
-        .await
-        .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
-        .unwrap_or_default();
+    let obs = session.obs();
 
-    let current_scene: Option<String> = client
-        .scenes()
-        .current_program_scene()
-        .await
-        .map(|s| s.id.name.clone())
-        .ok();
+    let scenes: Vec<String> =
+        tolerate_rejection(session.request("GetSceneList", obs.scenes().list()).await)?
+            .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
+            .unwrap_or_default();
 
-    let current_preview_scene: Option<String> = client
-        .scenes()
-        .current_preview_scene()
-        .await
-        .map(|s| s.id.name.clone())
-        .ok();
+    let current_scene: Option<String> = tolerate_rejection(
+        session
+            .request(
+                "GetCurrentProgramScene",
+                obs.scenes().current_program_scene(),
+            )
+            .await,
+    )?
+    .map(|s| s.id.name);
+
+    let current_preview_scene: Option<String> = tolerate_rejection(
+        session
+            .request(
+                "GetCurrentPreviewScene",
+                obs.scenes().current_preview_scene(),
+            )
+            .await,
+    )?
+    .map(|s| s.id.name);
 
     let mut sources_by_scene: HashMap<String, Vec<SourceInfo>> = HashMap::new();
     let mut db_cache: HashMap<String, f32> = HashMap::new();
     let mut fresh_item_cache: HashMap<(String, String), i64> = HashMap::new();
     for scene in &scenes {
-        if let Ok(items) = client.scene_items().list(SceneId::Name(scene)).await {
-            let mut infos = Vec::with_capacity(items.len());
-            for item in items {
-                fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
+        let Some(items) = tolerate_rejection(
+            session
+                .request(
+                    "GetSceneItemList",
+                    obs.scene_items().list(SceneId::Name(scene)),
+                )
+                .await,
+        )?
+        else {
+            continue;
+        };
+        let mut infos = Vec::with_capacity(items.len());
+        for item in items {
+            fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
 
-                let visible = client
-                    .scene_items()
-                    .enabled(SceneId::Name(scene), item.id)
-                    .await
-                    .unwrap_or(true);
-                let locked = client
-                    .scene_items()
-                    .locked(SceneId::Name(scene), item.id)
-                    .await
-                    .unwrap_or(false);
+            let visible = tolerate_rejection(
+                session
+                    .request(
+                        "GetSceneItemEnabled",
+                        obs.scene_items().enabled(SceneId::Name(scene), item.id),
+                    )
+                    .await,
+            )?
+            .unwrap_or(true);
+            let locked = tolerate_rejection(
+                session
+                    .request(
+                        "GetSceneItemLocked",
+                        obs.scene_items().locked(SceneId::Name(scene), item.id),
+                    )
+                    .await,
+            )?
+            .unwrap_or(false);
 
-                let kind = item.input_kind;
-                let audio_db = if crate::catalog::is_audio_kind(kind.as_deref()) {
-                    match db_cache.get(&item.source_name) {
-                        Some(db) => Some(*db),
-                        None => {
-                            let fetched = client
-                                .inputs()
-                                .volume(InputId::Name(&item.source_name))
-                                .await
-                                .ok()
-                                .map(|v| v.db);
-                            if let Some(db) = fetched {
-                                db_cache.insert(item.source_name.clone(), db);
-                            }
-                            fetched
+            let kind = item.input_kind;
+            let audio_db = if crate::catalog::is_audio_kind(kind.as_deref()) {
+                match db_cache.get(&item.source_name) {
+                    Some(db) => Some(*db),
+                    None => {
+                        let fetched = tolerate_rejection(
+                            session
+                                .request(
+                                    "GetInputVolume",
+                                    obs.inputs().volume(InputId::Name(&item.source_name)),
+                                )
+                                .await,
+                        )?
+                        .map(|v| v.db);
+                        if let Some(db) = fetched {
+                            db_cache.insert(item.source_name.clone(), db);
                         }
+                        fetched
                     }
-                } else {
-                    None
-                };
-                infos.push(SourceInfo {
-                    name: item.source_name,
-                    visible,
-                    locked,
-                    audio_db,
-                    kind,
-                });
-            }
-            sources_by_scene.insert(scene.clone(), infos);
+                }
+            } else {
+                None
+            };
+            infos.push(SourceInfo {
+                name: item.source_name,
+                visible,
+                locked,
+                audio_db,
+                kind,
+            });
         }
+        sources_by_scene.insert(scene.clone(), infos);
     }
 
-    let audio_inputs: Vec<String> = client
-        .inputs()
-        .list(None)
-        .await
-        .map(|inputs| inputs.into_iter().map(|i| i.id.name.clone()).collect())
-        .unwrap_or_default();
+    let audio_inputs: Vec<String> = tolerate_rejection(
+        session
+            .request("GetInputList", obs.inputs().list(None))
+            .await,
+    )?
+    .map(|inputs| inputs.into_iter().map(|i| i.id.name).collect())
+    .unwrap_or_default();
+
+    let stream_status = tolerate_rejection(
+        session
+            .request("GetStreamStatus", obs.streaming().status())
+            .await,
+    )?;
+    let record_status = tolerate_rejection(
+        session
+            .request("GetRecordStatus", obs.recording().status())
+            .await,
+    )?;
 
     if let Ok(mut catalog) = catalog_state.write() {
         catalog.scenes = scenes;
@@ -857,20 +955,21 @@ async fn snapshot_catalog(
         *cache = fresh_item_cache;
     }
 
-    if let Ok(status) = client.streaming().status().await
+    if let Some(status) = stream_status
         && let Ok(mut snapshot) = health_state.write()
     {
         for delta in crate::events::apply_stream_status_update(&status, &mut snapshot) {
             let _ = health_tx.send(delta);
         }
     }
-    if let Ok(status) = client.recording().status().await
+    if let Some(status) = record_status
         && let Ok(mut snapshot) = health_state.write()
     {
         for delta in crate::events::apply_record_status_update(&status, &mut snapshot) {
             let _ = health_tx.send(delta);
         }
     }
+    Ok(())
 }
 
 /// Cheap safety-net reconciliation for topology drift (missed scene/source create, remove, or
@@ -878,11 +977,13 @@ async fn snapshot_catalog(
 /// which stay live via `SceneItemEnableStateChanged`/`SceneItemLockStateChanged`/
 /// `InputVolumeChanged`, so cost scales with scene count rather than total source count.
 async fn reconcile_catalog_topology(
-    client: &obws::Client,
+    session: &LiveSession,
     catalog_state: &RwLock<ObsCatalog>,
     item_cache: &Mutex<HashMap<(String, String), i64>>,
-) {
+) -> Result<(), ObsError> {
     use obws::requests::scenes::SceneId;
+
+    let obs = session.obs();
 
     let (pre_fetch_current_scene, pre_fetch_current_preview_scene) = catalog_state
         .read()
@@ -894,45 +995,59 @@ async fn reconcile_catalog_topology(
         })
         .unwrap_or_default();
 
-    let scenes: Vec<String> = client
-        .scenes()
-        .list()
-        .await
-        .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
-        .unwrap_or_default();
+    let scenes: Vec<String> =
+        tolerate_rejection(session.request("GetSceneList", obs.scenes().list()).await)?
+            .map(|list| list.scenes.iter().map(|s| s.id.name.clone()).collect())
+            .unwrap_or_default();
 
-    let fetched_current_scene: Option<String> = client
-        .scenes()
-        .current_program_scene()
-        .await
-        .map(|s| s.id.name.clone())
-        .ok();
+    let fetched_current_scene: Option<String> = tolerate_rejection(
+        session
+            .request(
+                "GetCurrentProgramScene",
+                obs.scenes().current_program_scene(),
+            )
+            .await,
+    )?
+    .map(|s| s.id.name);
 
-    let fetched_current_preview_scene: Option<String> = client
-        .scenes()
-        .current_preview_scene()
-        .await
-        .map(|s| s.id.name.clone())
-        .ok();
+    let fetched_current_preview_scene: Option<String> = tolerate_rejection(
+        session
+            .request(
+                "GetCurrentPreviewScene",
+                obs.scenes().current_preview_scene(),
+            )
+            .await,
+    )?
+    .map(|s| s.id.name);
 
-    let audio_inputs: Vec<String> = client
-        .inputs()
-        .list(None)
-        .await
-        .map(|inputs| inputs.into_iter().map(|i| i.id.name.clone()).collect())
-        .unwrap_or_default();
+    let audio_inputs: Vec<String> = tolerate_rejection(
+        session
+            .request("GetInputList", obs.inputs().list(None))
+            .await,
+    )?
+    .map(|inputs| inputs.into_iter().map(|i| i.id.name).collect())
+    .unwrap_or_default();
 
     let mut fetched_topology: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
     let mut fresh_item_cache: HashMap<(String, String), i64> = HashMap::new();
     for scene in &scenes {
-        if let Ok(items) = client.scene_items().list(SceneId::Name(scene)).await {
-            let mut entries = Vec::with_capacity(items.len());
-            for item in items {
-                fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
-                entries.push((item.source_name, item.input_kind));
-            }
-            fetched_topology.insert(scene.clone(), entries);
+        let Some(items) = tolerate_rejection(
+            session
+                .request(
+                    "GetSceneItemList",
+                    obs.scene_items().list(SceneId::Name(scene)),
+                )
+                .await,
+        )?
+        else {
+            continue;
+        };
+        let mut entries = Vec::with_capacity(items.len());
+        for item in items {
+            fresh_item_cache.insert((scene.clone(), item.source_name.clone()), item.id);
+            entries.push((item.source_name, item.input_kind));
         }
+        fetched_topology.insert(scene.clone(), entries);
     }
 
     if let Ok(mut catalog) = catalog_state.write() {
@@ -952,6 +1067,7 @@ async fn reconcile_catalog_topology(
     if let Ok(mut cache) = item_cache.lock() {
         *cache = fresh_item_cache;
     }
+    Ok(())
 }
 
 pub(crate) struct FetchedTopology {
@@ -1001,12 +1117,14 @@ pub(crate) fn merge_reconciled_topology(
 }
 
 const STATS_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const STATS_POLL_REQUEST_TIMEOUT: Duration = STATS_POLL_INTERVAL;
+const UNANSWERED_STATS_POLLS_BEFORE_SUSPECT: u32 = 3;
 const CATALOG_RECONCILE_EVERY_NTH_TICK: u32 = 3;
 
 /// The returned handle MUST be `.abort()`-ed on every connection-loss/shutdown exit path;
 /// dropping a `JoinHandle` does not cancel the underlying task.
 fn spawn_stats_poll(
-    inner: Arc<tokio::sync::RwLock<Option<Arc<obws::Client>>>>,
+    inner: SessionSlot,
     health_state: Arc<RwLock<HealthSnapshot>>,
     health_tx: broadcast::Sender<HealthDelta>,
     catalog_state: Arc<RwLock<ObsCatalog>>,
@@ -1017,27 +1135,52 @@ fn spawn_stats_poll(
         let mut ticker = tokio::time::interval(STATS_POLL_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut tick: u32 = 0;
+        let mut unanswered_polls: u32 = 0;
         loop {
             let nudged = tokio::select! {
                 _ = ticker.tick() => false,
                 () = resync_nudge.notified() => true,
             };
 
-            let client = {
+            let session = {
                 let guard = inner.read().await;
-                let Some(client) = guard.as_ref() else {
+                let Some(session) = guard.as_ref() else {
                     continue;
                 };
-                Arc::clone(client)
+                session.clone()
             };
 
             if !nudged {
                 tick = tick.wrapping_add(1);
-                let general = client.general();
-                let streaming = client.streaming();
-                let recording = client.recording();
-                let (stats, stream_status, record_status) =
-                    tokio::join!(general.stats(), streaming.status(), recording.status());
+                let general = session.obs().general();
+                let streaming = session.obs().streaming();
+                let recording = session.obs().recording();
+                let (stats, stream_status, record_status) = tokio::join!(
+                    with_deadline(STATS_POLL_REQUEST_TIMEOUT, "GetStats", general.stats()),
+                    with_deadline(
+                        STATS_POLL_REQUEST_TIMEOUT,
+                        "GetStreamStatus",
+                        streaming.status()
+                    ),
+                    with_deadline(
+                        STATS_POLL_REQUEST_TIMEOUT,
+                        "GetRecordStatus",
+                        recording.status()
+                    ),
+                );
+
+                let unanswered = matches!(stats, Err(ObsError::Timeout))
+                    || matches!(stream_status, Err(ObsError::Timeout))
+                    || matches!(record_status, Err(ObsError::Timeout));
+                if unanswered {
+                    unanswered_polls += 1;
+                    if unanswered_polls >= UNANSWERED_STATS_POLLS_BEFORE_SUSPECT {
+                        unanswered_polls = 0;
+                        session.mark_suspect();
+                    }
+                } else {
+                    unanswered_polls = 0;
+                }
 
                 let mut deltas = Vec::new();
                 if let Ok(stats) = stats
@@ -1066,8 +1209,11 @@ fn spawn_stats_poll(
                 }
             }
 
-            if nudged || tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK) {
-                reconcile_catalog_topology(&client, &catalog_state, &item_cache).await;
+            if (nudged || tick.is_multiple_of(CATALOG_RECONCILE_EVERY_NTH_TICK))
+                && let Err(e) =
+                    reconcile_catalog_topology(&session, &catalog_state, &item_cache).await
+            {
+                tracing::debug!(error = %e, "OBS catalog reconciliation interrupted");
             }
         }
     })
@@ -1271,7 +1417,6 @@ mod tests {
         health_tx: broadcast::Sender<HealthDelta>,
         item_cache: Mutex<HashMap<(String, String), i64>>,
         publisher: CapturingPublisher,
-        last_set_scene_event_id: RwLock<Option<EventId>>,
     }
 
     impl EventHarness {
@@ -1283,7 +1428,6 @@ mod tests {
                 health_tx,
                 item_cache: Mutex::new(HashMap::new()),
                 publisher: CapturingPublisher::default(),
-                last_set_scene_event_id: RwLock::new(None),
             }
         }
 
@@ -1343,7 +1487,6 @@ mod tests {
                 &self.health_tx,
                 &self.item_cache,
                 &self.publisher,
-                &self.last_set_scene_event_id,
             );
         }
 

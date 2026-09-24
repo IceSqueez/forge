@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use forge_events::{Event, EventSource};
 use forge_platform_core::HealthDelta;
-use forge_types::EventId;
 use serde_json::json;
 
 use crate::catalog::ObsCatalog;
@@ -38,19 +37,12 @@ pub(crate) fn make_connection_auth_failed(message: &str) -> Event {
     )
 }
 
-pub(crate) fn make_scene_changed_event(
-    from_scene: Option<&str>,
-    to_scene: &str,
-    cause: Option<EventId>,
-) -> Event {
+pub(crate) fn make_scene_changed_event(from_scene: Option<&str>, to_scene: &str) -> Event {
     let payload = json!({
         (scene_fields::FROM_SCENE): from_scene.unwrap_or(""),
         (scene_fields::TO_SCENE): to_scene,
     });
-    match cause {
-        Some(c) => Event::caused_by(EventSource::Obs, "obs.scene.changed", payload, c),
-        None => Event::new(EventSource::Obs, "obs.scene.changed", payload),
-    }
+    Event::new(EventSource::Obs, "obs.scene.changed", payload)
 }
 
 pub(crate) fn make_record_event(active: bool, path: Option<&str>) -> Event {
@@ -141,14 +133,10 @@ pub(crate) fn make_stream_event(active: bool, state: &obws::events::OutputState)
     )
 }
 
-pub(crate) fn map_obs_event(
-    ev: &obws::events::Event,
-    from_scene: Option<&str>,
-    cause: Option<EventId>,
-) -> Option<Event> {
+pub(crate) fn map_obs_event(ev: &obws::events::Event, from_scene: Option<&str>) -> Option<Event> {
     match ev {
         obws::events::Event::CurrentProgramSceneChanged { id } => {
-            Some(make_scene_changed_event(from_scene, &id.name, cause))
+            Some(make_scene_changed_event(from_scene, &id.name))
         }
         obws::events::Event::CurrentPreviewSceneChanged { id } => Some(Event::new(
             EventSource::Obs,
@@ -678,7 +666,7 @@ mod tests {
 
     #[test]
     fn make_scene_changed_event_emits_from_and_to_fields() {
-        let ev = make_scene_changed_event(Some("Menu"), "Gameplay", None);
+        let ev = make_scene_changed_event(Some("Menu"), "Gameplay");
         assert_eq!(ev.source, EventSource::Obs);
         assert_eq!(ev.kind, "obs.scene.changed");
         assert_eq!(ev.payload["from_scene"], "Menu");
@@ -688,17 +676,8 @@ mod tests {
 
     #[test]
     fn make_scene_changed_event_unknown_from_scene_uses_empty_string() {
-        let ev = make_scene_changed_event(None, "Gameplay", None);
+        let ev = make_scene_changed_event(None, "Gameplay");
         assert_eq!(ev.payload["from_scene"], "");
-        assert_eq!(ev.payload["to_scene"], "Gameplay");
-    }
-
-    #[test]
-    fn make_scene_changed_event_with_cause_populates_caused_by() {
-        let cause = EventId::new();
-        let ev = make_scene_changed_event(Some("BRB"), "Gameplay", Some(cause));
-        assert_eq!(ev.caused_by, Some(cause));
-        assert_eq!(ev.payload["from_scene"], "BRB");
         assert_eq!(ev.payload["to_scene"], "Gameplay");
     }
 
@@ -851,7 +830,6 @@ mod tests {
         for enabled in [true, false] {
             let mapped = map_obs_event(
                 &obws::events::Event::StudioModeStateChanged { enabled },
-                None,
                 None,
             );
             assert!(mapped.is_some(), "studio mode event should map");
@@ -1408,7 +1386,7 @@ mod tests {
                 "obs.source.scene_item_removed",
             ),
         ] {
-            let Some(mapped) = map_obs_event(&ev, None, None) else {
+            let Some(mapped) = map_obs_event(&ev, None) else {
                 panic!("{expected_kind} was not mapped");
             };
 
@@ -1429,7 +1407,7 @@ mod tests {
             make_connection_connected(),
             make_connection_disconnected("connection_lost", None),
             make_connection_auth_failed("bad"),
-            make_scene_changed_event(Some("A"), "B", None),
+            make_scene_changed_event(Some("A"), "B"),
             make_record_event(true, None),
             make_record_state_event(true, &OutputState::Starting, None),
             make_stream_event(true, &OutputState::Started),

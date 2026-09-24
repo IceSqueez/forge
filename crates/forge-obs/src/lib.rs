@@ -10,6 +10,7 @@ mod payload_fields;
 pub mod probe;
 pub mod quick_actions;
 pub mod runners;
+mod session;
 pub mod sink;
 mod sink_impl;
 pub mod source;

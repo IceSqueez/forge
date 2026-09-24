@@ -11,13 +11,14 @@ use obws::requests::scenes::SceneId;
 use obws::requests::sources::{SaveScreenshot, SourceId};
 
 use crate::client::ObsClient;
-use crate::error::{ObsError, map_request_error};
+use crate::error::ObsError;
+use crate::session::{CONFIG_SWITCH_TIMEOUT, LiveSession};
 use crate::sink::ObsSink;
 
 impl ObsClient {
     async fn resolve_scene_item_id(
         &self,
-        client: &obws::Client,
+        session: &LiveSession,
         scene: &str,
         source: &str,
     ) -> Result<i64, ObsError> {
@@ -32,32 +33,43 @@ impl ObsClient {
             return Ok(id);
         }
 
-        let id = client
-            .scene_items()
-            .id(Id {
-                scene: SceneId::Name(scene),
-                source,
-                search_offset: None,
-            })
-            .await
-            .map_err(|e| map_request_error("GetSceneItemId", e))?;
+        let id = session
+            .request(
+                "GetSceneItemId",
+                session.obs().scene_items().id(Id {
+                    scene: SceneId::Name(scene),
+                    source,
+                    search_offset: None,
+                }),
+            )
+            .await?;
         self.scene_item_id_cache
             .lock()
             .map_err(|_| ObsError::Protocol("scene item cache poisoned".to_owned()))?
             .insert((scene.to_owned(), source.to_owned()), id);
         Ok(id)
     }
+
+    fn forget_scene_item_ids(&self) {
+        if let Ok(mut cache) = self.scene_item_id_cache.lock() {
+            cache.clear();
+        }
+    }
 }
 
 #[async_trait]
 impl ObsSink for ObsClient {
     async fn set_scene(&self, scene: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .scenes()
-            .set_current_program_scene(SceneId::Name(scene))
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetCurrentProgramScene",
+                session
+                    .obs()
+                    .scenes()
+                    .set_current_program_scene(SceneId::Name(scene)),
+            )
             .await
-            .map_err(|e| map_request_error("SetCurrentProgramScene", e))
     }
 
     async fn set_source_visible(
@@ -66,18 +78,19 @@ impl ObsSink for ObsClient {
         source: &str,
         visible: bool,
     ) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        let item_id = self.resolve_scene_item_id(&client, scene, source).await?;
+        let session = self.active_session().await?;
+        let item_id = self.resolve_scene_item_id(&session, scene, source).await?;
 
-        client
-            .scene_items()
-            .set_enabled(SetEnabled {
-                scene: SceneId::Name(scene),
-                item_id,
-                enabled: visible,
-            })
+        session
+            .request(
+                "SetSceneItemEnabled",
+                session.obs().scene_items().set_enabled(SetEnabled {
+                    scene: SceneId::Name(scene),
+                    item_id,
+                    enabled: visible,
+                }),
+            )
             .await
-            .map_err(|e| map_request_error("SetSceneItemEnabled", e))
     }
 
     async fn set_source_locked(
@@ -86,64 +99,58 @@ impl ObsSink for ObsClient {
         source: &str,
         locked: bool,
     ) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        let item_id = self.resolve_scene_item_id(&client, scene, source).await?;
+        let session = self.active_session().await?;
+        let item_id = self.resolve_scene_item_id(&session, scene, source).await?;
 
-        client
-            .scene_items()
-            .set_locked(SetLocked {
-                scene: SceneId::Name(scene),
-                item_id,
-                locked,
-            })
+        session
+            .request(
+                "SetSceneItemLocked",
+                session.obs().scene_items().set_locked(SetLocked {
+                    scene: SceneId::Name(scene),
+                    item_id,
+                    locked,
+                }),
+            )
             .await
-            .map_err(|e| map_request_error("SetSceneItemLocked", e))
     }
 
     async fn set_input_mute(&self, input: &str, mute: bool) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .inputs()
-            .set_muted(InputId::Name(input), mute)
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetInputMute",
+                session.obs().inputs().set_muted(InputId::Name(input), mute),
+            )
             .await
-            .map_err(|e| map_request_error("SetInputMute", e))
     }
 
     async fn start_record(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .recording()
-            .start()
+        let session = self.active_session().await?;
+        session
+            .request("StartRecord", session.obs().recording().start())
             .await
-            .map_err(|e| map_request_error("StartRecord", e))
     }
 
     async fn stop_record(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .recording()
-            .stop()
+        let session = self.active_session().await?;
+        session
+            .request("StopRecord", session.obs().recording().stop())
             .await
             .map(|_| ())
-            .map_err(|e| map_request_error("StopRecord", e))
     }
 
     async fn start_stream(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .streaming()
-            .start()
+        let session = self.active_session().await?;
+        session
+            .request("StartStream", session.obs().streaming().start())
             .await
-            .map_err(|e| map_request_error("StartStream", e))
     }
 
     async fn stop_stream(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .streaming()
-            .stop()
+        let session = self.active_session().await?;
+        session
+            .request("StopStream", session.obs().streaming().stop())
             .await
-            .map_err(|e| map_request_error("StopStream", e))
     }
 
     async fn raw_request(
@@ -157,30 +164,39 @@ impl ObsSink for ObsClient {
     }
 
     async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .scenes()
-            .set_current_preview_scene(SceneId::Name(scene))
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetCurrentPreviewScene",
+                session
+                    .obs()
+                    .scenes()
+                    .set_current_preview_scene(SceneId::Name(scene)),
+            )
             .await
-            .map_err(|e| map_request_error("SetCurrentPreviewScene", e))
     }
 
     async fn set_current_scene_transition(&self, name: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .transitions()
-            .set_current(name)
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetCurrentSceneTransition",
+                session.obs().transitions().set_current(name),
+            )
             .await
-            .map_err(|e| map_request_error("SetCurrentSceneTransition", e))
     }
 
     async fn set_input_volume_db(&self, input: &str, db: f64) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .inputs()
-            .set_volume(InputId::Name(input), Volume::Db(db as f32))
-            .await
-            .map_err(|e| map_request_error("SetInputVolume", e))?;
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetInputVolume",
+                session
+                    .obs()
+                    .inputs()
+                    .set_volume(InputId::Name(input), Volume::Db(db as f32)),
+            )
+            .await?;
 
         // An input's volume is global in OBS, so the same name can appear as a scene item
         // in several scenes; write the confirmed level back into every scene's copy.
@@ -204,107 +220,100 @@ impl ObsSink for ObsClient {
         overlay: bool,
     ) -> Result<(), ObsError> {
         let json_settings = settings.to_json();
-        let client = self.active_client().await?;
-        client
-            .inputs()
-            .set_settings(SetSettings {
-                input: InputId::Name(input),
-                settings: &json_settings,
-                overlay: Some(overlay),
-            })
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetInputSettings",
+                session.obs().inputs().set_settings(SetSettings {
+                    input: InputId::Name(input),
+                    settings: &json_settings,
+                    overlay: Some(overlay),
+                }),
+            )
             .await
-            .map_err(|e| map_request_error("SetInputSettings", e))
     }
 
     async fn pause_record(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .recording()
-            .pause()
+        let session = self.active_session().await?;
+        session
+            .request("PauseRecord", session.obs().recording().pause())
             .await
-            .map_err(|e| map_request_error("PauseRecord", e))
     }
 
     async fn resume_record(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .recording()
-            .resume()
+        let session = self.active_session().await?;
+        session
+            .request("ResumeRecord", session.obs().recording().resume())
             .await
-            .map_err(|e| map_request_error("ResumeRecord", e))
     }
 
     async fn toggle_record_pause(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .recording()
-            .toggle_pause()
+        let session = self.active_session().await?;
+        session
+            .request(
+                "ToggleRecordPause",
+                session.obs().recording().toggle_pause(),
+            )
             .await
             .map(|_| ())
-            .map_err(|e| map_request_error("ToggleRecordPause", e))
     }
 
     async fn send_stream_caption(&self, text: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .streaming()
-            .send_caption(text)
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SendStreamCaption",
+                session.obs().streaming().send_caption(text),
+            )
             .await
-            .map_err(|e| map_request_error("SendStreamCaption", e))
     }
 
     async fn start_replay_buffer(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .replay_buffer()
-            .start()
+        let session = self.active_session().await?;
+        session
+            .request("StartReplayBuffer", session.obs().replay_buffer().start())
             .await
-            .map_err(|e| map_request_error("StartReplayBuffer", e))
     }
 
     async fn stop_replay_buffer(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .replay_buffer()
-            .stop()
+        let session = self.active_session().await?;
+        session
+            .request("StopReplayBuffer", session.obs().replay_buffer().stop())
             .await
-            .map_err(|e| map_request_error("StopReplayBuffer", e))
     }
 
     async fn save_replay_buffer(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .replay_buffer()
-            .save()
+        let session = self.active_session().await?;
+        session
+            .request("SaveReplayBuffer", session.obs().replay_buffer().save())
             .await
-            .map_err(|e| map_request_error("SaveReplayBuffer", e))
     }
 
     async fn set_studio_mode(&self, enabled: bool) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .ui()
-            .set_studio_mode_enabled(enabled)
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetStudioModeEnabled",
+                session.obs().ui().set_studio_mode_enabled(enabled),
+            )
             .await
-            .map_err(|e| map_request_error("SetStudioModeEnabled", e))
     }
 
     async fn trigger_studio_transition(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .transitions()
-            .trigger()
+        let session = self.active_session().await?;
+        session
+            .request(
+                "TriggerStudioModeTransition",
+                session.obs().transitions().trigger(),
+            )
             .await
-            .map_err(|e| map_request_error("TriggerStudioModeTransition", e))
     }
 
     async fn get_scene_list(&self) -> Result<Variant, ObsError> {
-        let client = self.active_client().await?;
-        let scenes = client
-            .scenes()
-            .list()
-            .await
-            .map_err(|e| map_request_error("GetSceneList", e))?;
+        let session = self.active_session().await?;
+        let scenes = session
+            .request("GetSceneList", session.obs().scenes().list())
+            .await?;
         let all_names: Vec<Variant> = scenes
             .scenes
             .iter()
@@ -321,12 +330,10 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_input_list(&self) -> Result<Variant, ObsError> {
-        let client = self.active_client().await?;
-        let inputs = client
-            .inputs()
-            .list(None)
-            .await
-            .map_err(|e| map_request_error("GetInputList", e))?;
+        let session = self.active_session().await?;
+        let inputs = session
+            .request("GetInputList", session.obs().inputs().list(None))
+            .await?;
         let all_names: Vec<Variant> = inputs
             .iter()
             .map(|i| Variant::String(i.id.name.clone()))
@@ -337,12 +344,10 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_record_status(&self) -> Result<Variant, ObsError> {
-        let client = self.active_client().await?;
-        let status = client
-            .recording()
-            .status()
-            .await
-            .map_err(|e| map_request_error("GetRecordStatus", e))?;
+        let session = self.active_session().await?;
+        let status = session
+            .request("GetRecordStatus", session.obs().recording().status())
+            .await?;
         let mut obj = BTreeMap::new();
         obj.insert("is_active".to_owned(), Variant::Bool(status.active));
         obj.insert("is_paused".to_owned(), Variant::Bool(status.paused));
@@ -354,12 +359,10 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_stream_status(&self) -> Result<Variant, ObsError> {
-        let client = self.active_client().await?;
-        let status = client
-            .streaming()
-            .status()
-            .await
-            .map_err(|e| map_request_error("GetStreamStatus", e))?;
+        let session = self.active_session().await?;
+        let status = session
+            .request("GetStreamStatus", session.obs().streaming().status())
+            .await?;
         let mut obj = BTreeMap::new();
         obj.insert("is_active".to_owned(), Variant::Bool(status.active));
         obj.insert(
@@ -370,22 +373,27 @@ impl ObsSink for ObsClient {
     }
 
     async fn get_current_scene(&self) -> Result<Option<String>, ObsError> {
-        let client = self.active_client().await?;
-        let current = client
-            .scenes()
-            .current_program_scene()
-            .await
-            .map_err(|e| map_request_error("GetCurrentProgramScene", e))?;
+        let session = self.active_session().await?;
+        let current = session
+            .request(
+                "GetCurrentProgramScene",
+                session.obs().scenes().current_program_scene(),
+            )
+            .await?;
         Ok(Some(current.id.name))
     }
 
     async fn get_input_settings(&self, input: &str) -> Result<Variant, ObsError> {
-        let client = self.active_client().await?;
-        let result = client
-            .inputs()
-            .settings::<serde_json::Value>(InputId::Name(input))
-            .await
-            .map_err(|e| map_request_error("GetInputSettings", e))?;
+        let session = self.active_session().await?;
+        let result = session
+            .request(
+                "GetInputSettings",
+                session
+                    .obs()
+                    .inputs()
+                    .settings::<serde_json::Value>(InputId::Name(input)),
+            )
+            .await?;
         let settings_variant = serde_json::from_value::<Variant>(result.settings)
             .unwrap_or(Variant::Object(BTreeMap::new()));
         let mut obj = BTreeMap::new();
@@ -400,52 +408,57 @@ impl ObsSink for ObsClient {
         filter: &str,
         enabled: bool,
     ) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .filters()
-            .set_enabled(FilterSetEnabled {
-                source: SourceId::Name(source),
-                filter,
-                enabled,
-            })
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetSourceFilterEnabled",
+                session.obs().filters().set_enabled(FilterSetEnabled {
+                    source: SourceId::Name(source),
+                    filter,
+                    enabled,
+                }),
+            )
             .await
-            .map_err(|e| map_request_error("SetSourceFilterEnabled", e))
     }
 
     async fn refresh_browser_source(&self, input: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .inputs()
-            .press_properties_button(InputId::Name(input), "refreshnocache")
+        let session = self.active_session().await?;
+        session
+            .request(
+                "PressInputPropertiesButton",
+                session
+                    .obs()
+                    .inputs()
+                    .press_properties_button(InputId::Name(input), "refreshnocache"),
+            )
             .await
-            .map_err(|e| map_request_error("PressInputPropertiesButton", e))
     }
 
     async fn restart_media_input(&self, input: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .media_inputs()
-            .trigger_action(InputId::Name(input), MediaAction::Restart)
+        let session = self.active_session().await?;
+        session
+            .request(
+                "TriggerMediaInputAction",
+                session
+                    .obs()
+                    .media_inputs()
+                    .trigger_action(InputId::Name(input), MediaAction::Restart),
+            )
             .await
-            .map_err(|e| map_request_error("TriggerMediaInputAction", e))
     }
 
     async fn start_virtual_cam(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .virtual_cam()
-            .start()
+        let session = self.active_session().await?;
+        session
+            .request("StartVirtualCam", session.obs().virtual_cam().start())
             .await
-            .map_err(|e| map_request_error("StartVirtualCam", e))
     }
 
     async fn stop_virtual_cam(&self) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .virtual_cam()
-            .stop()
+        let session = self.active_session().await?;
+        session
+            .request("StopVirtualCam", session.obs().virtual_cam().stop())
             .await
-            .map_err(|e| map_request_error("StopVirtualCam", e))
     }
 
     async fn save_source_screenshot(
@@ -454,46 +467,54 @@ impl ObsSink for ObsClient {
         file_path: &str,
         format: &str,
     ) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .sources()
-            .save_screenshot(SaveScreenshot {
-                source: SourceId::Name(source),
-                format,
-                width: None,
-                height: None,
-                compression_quality: None,
-                file_path: Path::new(file_path),
-            })
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SaveSourceScreenshot",
+                session.obs().sources().save_screenshot(SaveScreenshot {
+                    source: SourceId::Name(source),
+                    format,
+                    width: None,
+                    height: None,
+                    compression_quality: None,
+                    file_path: Path::new(file_path),
+                }),
+            )
             .await
-            .map_err(|e| map_request_error("SaveSourceScreenshot", e))
     }
 
     async fn set_record_directory(&self, path: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .config()
-            .set_record_directory(path)
+        let session = self.active_session().await?;
+        session
+            .request(
+                "SetRecordDirectory",
+                session.obs().config().set_record_directory(path),
+            )
             .await
-            .map_err(|e| map_request_error("SetRecordDirectory", e))
     }
 
     async fn set_current_profile(&self, name: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .profiles()
-            .set_current(name)
+        let session = self.active_session().await?;
+        session
+            .request_within(
+                CONFIG_SWITCH_TIMEOUT,
+                "SetCurrentProfile",
+                session.obs().profiles().set_current(name),
+            )
             .await
-            .map_err(|e| map_request_error("SetCurrentProfile", e))
     }
 
     async fn set_current_scene_collection(&self, name: &str) -> Result<(), ObsError> {
-        let client = self.active_client().await?;
-        client
-            .scene_collections()
-            .set_current(name)
-            .await
-            .map_err(|e| map_request_error("SetCurrentSceneCollection", e))
+        let session = self.active_session().await?;
+        let switched = session
+            .request_within(
+                CONFIG_SWITCH_TIMEOUT,
+                "SetCurrentSceneCollection",
+                session.obs().scene_collections().set_current(name),
+            )
+            .await;
+        self.forget_scene_item_ids();
+        switched
     }
 }
 

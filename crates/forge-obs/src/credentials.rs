@@ -7,10 +7,19 @@ use crate::{ObsClient, ObsError};
 
 pub const OBS_CREDENTIAL_ID: &str = "obs:default";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StoredCredential {
     pub url: String,
     pub password: String,
+}
+
+impl std::fmt::Debug for StoredCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredCredential")
+            .field("url", &self.url)
+            .field("password", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

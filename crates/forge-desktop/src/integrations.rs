@@ -1112,19 +1112,44 @@ mod tests {
     use forge_platform_core::{AuthFlow, ConnectionState, PlatformCapabilities};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
-    use tokio::sync::{broadcast, mpsc};
+    use tokio::sync::{Semaphore, broadcast, mpsc};
 
     struct RecordingPlatform {
         sends: mpsc::UnboundedSender<(String, String)>,
+        gate: Option<Arc<Semaphore>>,
+        failure: Option<String>,
         auth: AuthFlow,
         caps: PlatformCapabilities,
     }
 
     impl RecordingPlatform {
         fn spawn() -> (Arc<Self>, mpsc::UnboundedReceiver<(String, String)>) {
+            Self::build(None, None)
+        }
+
+        fn gated() -> (
+            Arc<Self>,
+            mpsc::UnboundedReceiver<(String, String)>,
+            Arc<Semaphore>,
+        ) {
+            let gate = Arc::new(Semaphore::new(0));
+            let (platform, rx) = Self::build(Some(Arc::clone(&gate)), None);
+            (platform, rx, gate)
+        }
+
+        fn failing(reason: &str) -> (Arc<Self>, mpsc::UnboundedReceiver<(String, String)>) {
+            Self::build(None, Some(reason.to_owned()))
+        }
+
+        fn build(
+            gate: Option<Arc<Semaphore>>,
+            failure: Option<String>,
+        ) -> (Arc<Self>, mpsc::UnboundedReceiver<(String, String)>) {
             let (tx, rx) = mpsc::unbounded_channel();
             let platform = Arc::new(Self {
                 sends: tx,
+                gate,
+                failure,
                 auth: AuthFlow::None {
                     reason: String::new(),
                 },
@@ -1165,7 +1190,15 @@ mod tests {
         }
         async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError> {
             let _ = self.sends.send((channel.to_string(), text.to_string()));
-            Ok(())
+            if let Some(gate) = &self.gate {
+                gate.acquire().await.unwrap().forget();
+            }
+            match &self.failure {
+                Some(reason) => Err(PlatformError::Network {
+                    reason: reason.clone(),
+                }),
+                None => Ok(()),
+            }
         }
         fn events(&self) -> EventStream {
             EventStream::new(broadcast::channel(1).1)
@@ -1278,6 +1311,167 @@ mod tests {
             expect_send(&mut twitch_rx).await,
             ("twitch".to_string(), "sentinel".to_string()),
             "a platform-sourced request must be ignored so bridges cannot re-enter"
+        );
+    }
+
+    async fn next_of_kind(sub: &mut forge_runtime::EventSubscription, kind: &str) -> Event {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let event = sub.recv().await.expect("observer subscription failed");
+                if event.kind == kind {
+                    return event;
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("no {kind} event was published"))
+    }
+
+    fn drain_of_kind(sub: &mut forge_runtime::EventSubscription, kind: &str) -> Vec<Event> {
+        let mut seen = Vec::new();
+        while let Some(event) = sub.try_recv().expect("observer subscription failed") {
+            if event.kind == kind {
+                seen.push(event);
+            }
+        }
+        seen
+    }
+
+    #[tokio::test]
+    async fn successful_send_publishes_chat_send_caused_by_the_request() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+        let req = request(EventSource::Rhai, serde_json::json!({ "message": "hi" }));
+        let req_id = req.id;
+
+        bus.publish(req);
+        expect_send(&mut twitch_rx).await;
+
+        let sent = next_of_kind(&mut observer, "chat.send").await;
+        assert_eq!(sent.caused_by, Some(req_id));
+        assert_eq!(sent.payload["message"], "hi");
+    }
+
+    #[tokio::test]
+    async fn platform_send_error_publishes_failure_with_its_text_caused_by_the_request() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, _twitch_rx) = RecordingPlatform::failing("msg_duplicate: identical message");
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+        let req = request(EventSource::Rhai, serde_json::json!({ "message": "hi" }));
+        let req_id = req.id;
+
+        bus.publish(req);
+
+        let failed = next_of_kind(&mut observer, "chat.send.failed").await;
+        assert_eq!(failed.caused_by, Some(req_id));
+        assert!(
+            failed.payload["error"]
+                .as_str()
+                .unwrap()
+                .contains("msg_duplicate: identical message"),
+            "got {}",
+            failed.payload
+        );
+    }
+
+    #[tokio::test]
+    async fn requests_are_sent_one_at_a_time_in_publish_order() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx, gate) = RecordingPlatform::gated();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        for message in ["first", "second", "third"] {
+            bus.publish(request(
+                EventSource::Rhai,
+                serde_json::json!({ "message": message }),
+            ));
+        }
+        assert_eq!(expect_send(&mut twitch_rx).await.1, "first");
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            twitch_rx.try_recv().is_err(),
+            "a second send started while the first was still in flight"
+        );
+        gate.add_permits(3);
+
+        assert_eq!(expect_send(&mut twitch_rx).await.1, "second");
+        assert_eq!(expect_send(&mut twitch_rx).await.1, "third");
+    }
+
+    #[tokio::test]
+    async fn blocked_send_queues_up_to_capacity_and_reports_the_first_overflow_request() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, mut twitch_rx, _gate) = RecordingPlatform::gated();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "in-flight" }),
+        ));
+        expect_send(&mut twitch_rx).await;
+
+        for n in 0..CHAT_SEND_QUEUE_CAPACITY {
+            bus.publish(request(
+                EventSource::Rhai,
+                serde_json::json!({ "message": format!("queued-{n}") }),
+            ));
+        }
+        let overflow = request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "overflow" }),
+        );
+        let overflow_id = overflow.id;
+        bus.publish(overflow);
+
+        let failed = next_of_kind(&mut observer, "chat.send.failed").await;
+        assert_eq!(
+            failed.caused_by,
+            Some(overflow_id),
+            "the reader must keep accepting while a send blocks, rejecting only past capacity"
+        );
+    }
+
+    #[tokio::test]
+    async fn lagged_bus_reader_publishes_one_failure_naming_the_lag_and_keeps_serving() {
+        // Why: must exceed the event bus broadcast capacity so the bridge's receiver lags.
+        const FLOOD: usize = 2_048;
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+        for _ in 0..FLOOD {
+            bus.publish(Event::new(
+                EventSource::Core,
+                "noise",
+                serde_json::Value::Null,
+            ));
+        }
+        let mut observer = bus.subscribe();
+
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "after-lag" }),
+        ));
+        assert_eq!(expect_send(&mut twitch_rx).await.1, "after-lag");
+
+        let failures = drain_of_kind(&mut observer, "chat.send.failed");
+        assert_eq!(failures.len(), 1, "got {failures:?}");
+        assert!(
+            failures[0].payload["error"]
+                .as_str()
+                .unwrap()
+                .contains("lagging"),
+            "got {}",
+            failures[0].payload
         );
     }
 

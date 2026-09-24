@@ -3,6 +3,8 @@ use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use forge_storage::OverlayId;
+use std::path::{Path, PathBuf};
+use tokio_util::io::ReaderStream;
 
 use crate::origin::accepts_origin;
 use crate::protocol::mime_for_extension;
@@ -27,24 +29,31 @@ pub async fn serve_overlay_file(
     headers: HeaderMap,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> Response {
-    match resolve_and_read(&state, &path).await {
-        Ok((body_bytes, resolved)) => {
+    match resolve_and_open(&state, &path).await {
+        Ok(served) => {
+            let resolved = served.path;
             let ext = resolved
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or_default();
             let mime = mime_for_extension(ext).unwrap_or("application/octet-stream");
-            let cors_value = cors_header_value(&state, &headers);
+            let cors_value = if is_overlay_config(&resolved) {
+                scoped_cors_header_value(&state, &headers)
+            } else {
+                cors_header_value(&state, &headers)
+            };
 
             let mut response_headers = HeaderMap::new();
             response_headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(mime));
+            response_headers.insert(header::CONTENT_LENGTH, HeaderValue::from(served.len));
             response_headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, cors_value);
             response_headers.insert(header::VARY, HeaderValue::from_name(header::ORIGIN));
             if is_generated_media_path(&path) {
                 response_headers.insert(header::CACHE_CONTROL, generated_media_cache_control());
             }
 
-            (StatusCode::OK, response_headers, Body::from(body_bytes)).into_response()
+            let body = Body::from_stream(ReaderStream::new(served.file));
+            (StatusCode::OK, response_headers, body).into_response()
         }
         Err(status) => status.into_response(),
     }
@@ -68,10 +77,18 @@ fn generated_media_cache_control() -> HeaderValue {
     HeaderValue::from_str(&value).unwrap_or_else(|_| HeaderValue::from_static(CACHE_CONTROL_PUBLIC))
 }
 
+fn is_overlay_config(resolved: &Path) -> bool {
+    resolved.file_name().and_then(|name| name.to_str()) == Some(forge_overlay::CONFIG_FILE)
+}
+
 pub(crate) fn cors_header_value(state: &AppState, headers: &HeaderMap) -> HeaderValue {
     if state.overlay_cors_any_origin {
         return HeaderValue::from_static(ANY_ORIGIN);
     }
+    scoped_cors_header_value(state, headers)
+}
+
+fn scoped_cors_header_value(state: &AppState, headers: &HeaderMap) -> HeaderValue {
     let origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
     let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
     origin
@@ -83,23 +100,17 @@ pub(crate) fn cors_header_value(state: &AppState, headers: &HeaderMap) -> Header
         })
 }
 
-async fn resolve_and_read(
-    state: &AppState,
-    url_path: &str,
-) -> Result<(Vec<u8>, std::path::PathBuf), StatusCode> {
-    if url_path.split('/').any(|seg| seg.starts_with('.')) {
-        return Err(StatusCode::NOT_FOUND);
-    }
+struct ServedFile {
+    file: tokio::fs::File,
+    len: u64,
+    path: PathBuf,
+}
 
-    if url_path.contains("..") {
-        return Err(StatusCode::NOT_FOUND);
-    }
-
+async fn resolve_and_open(state: &AppState, url_path: &str) -> Result<ServedFile, StatusCode> {
+    let requested = crate::sandbox::request_relative_path(url_path).ok_or(StatusCode::NOT_FOUND)?;
     let root = state.overlay_root.as_ref();
-    let trimmed = url_path.trim_start_matches('/');
-    let requested = std::path::Path::new(trimmed);
 
-    let canon_target = crate::sandbox::confine(root, requested)
+    let canon_target = crate::sandbox::confine(root, &requested)
         .await
         .ok_or(StatusCode::NOT_FOUND)?;
 
@@ -108,7 +119,7 @@ async fn resolve_and_read(
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
     let canon_file = if meta.is_dir() {
-        let entry_relative = std::path::Path::new(trimmed).join(OVERLAY_ENTRY_DOCUMENT);
+        let entry_relative = requested.join(OVERLAY_ENTRY_DOCUMENT);
         let canon_entry = crate::sandbox::confine(root, &entry_relative)
             .await
             .ok_or(StatusCode::NOT_FOUND)?;
@@ -127,10 +138,19 @@ async fn resolve_and_read(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let body = tokio::fs::read(&canon_file)
+    let file = tokio::fs::File::open(&canon_file)
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
-    Ok((body, canon_file))
+    let len = file
+        .metadata()
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?
+        .len();
+    Ok(ServedFile {
+        file,
+        len,
+        path: canon_file,
+    })
 }
 
 async fn overlay_serving_enabled(

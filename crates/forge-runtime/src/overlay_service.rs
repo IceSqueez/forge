@@ -311,6 +311,16 @@ impl OverlayServiceHandle {
         Ok(blocking(move || remove_overlay_directory(&root, &identity)).await??)
     }
 
+    /// Revokes the deleted identity's live connections, so a page still open under it never
+    /// receives frames meant for a later overlay that reuses the identity.
+    pub async fn delete(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
+        let removed = self.inner.repo.delete(id).await?;
+        if removed && let Some(frames) = &self.inner.frames {
+            frames.revoke(id).await;
+        }
+        Ok(removed)
+    }
+
     /// Persists first, then revokes any live connections when the overlay was just disabled.
     /// Retained content keeps recording either way - only delivery to a browser source stops.
     pub async fn set_enabled(

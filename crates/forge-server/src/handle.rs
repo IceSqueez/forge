@@ -155,6 +155,9 @@ impl ServerHandle {
         .await?;
 
         self.stop().await?;
+        state
+            .auth
+            .set_reads_required(settings.auth_required_for_reads);
 
         let listener = TcpListener::bind(bind_addr)
             .await

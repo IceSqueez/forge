@@ -842,13 +842,12 @@ impl OverlaysView {
             self.selected = None;
             self.clear_test();
         }
-        let repo = Arc::clone(&self.repo);
         let service = self.service.clone();
         let id = prompt.id;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let removed = repo.delete(&id).await.map_err(|e| e.to_string())?;
+                let removed = service.delete(&id).await.map_err(|e| e.to_string())?;
                 if !removed {
                     return Ok((false, None));
                 }

@@ -26,9 +26,7 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
         std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
         drop_counter,
     ));
-    client
-        .authenticated
-        .store(true, std::sync::atomic::Ordering::Relaxed);
+    client.mark_bearer_authenticated(state.auth.token_generation());
     DispatchContext {
         bus: Arc::clone(&state.bus),
         bus_adapter: Arc::clone(&state.bus_adapter),
@@ -38,7 +36,6 @@ fn ephemeral_ctx(state: &AppState) -> DispatchContext {
         overlays: Arc::clone(&state.overlays),
         auth_state: Arc::clone(&state.auth),
         client,
-        auth_required_for_reads: state.auth.auth_required_for_reads,
         credentials: Arc::clone(&state.credentials),
         server_info: Arc::clone(&state.server_info),
         action_engine: Arc::clone(&state.action_engine),

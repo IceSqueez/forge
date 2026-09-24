@@ -627,13 +627,18 @@ impl SettingsWebSocketView {
         let value = !prev;
         self.require_ws_token = value;
         let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        let server = self.server.clone();
         self.persist_bool(
             prev,
             |this, v| this.require_ws_token = v,
             async move {
                 ServerSettings::save_auth_required_for_reads(repo.as_ref(), value)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                if let Some(handle) = server {
+                    handle.auth_state().await.set_reads_required(value);
+                }
+                Ok(())
             },
             cx,
         );

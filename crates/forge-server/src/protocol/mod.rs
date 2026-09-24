@@ -17,8 +17,17 @@ pub(crate) use handlers::{
     mime_for_extension,
 };
 
-use context::{handle_authenticate, is_authenticated, unauthenticated};
+use context::{handle_authenticate, is_authenticated, read_refused, unauthenticated};
 use helpers::parse_wire_filter;
+
+const MAX_SUBSCRIPTIONS_PER_CLIENT: usize = 256;
+
+fn too_many_subscriptions() -> WsResponse {
+    WsResponse::Error {
+        code: Some("TOO_MANY_SUBSCRIPTIONS".to_owned()),
+        message: format!("a connection holds at most {MAX_SUBSCRIPTIONS_PER_CLIENT} event filters"),
+    }
+}
 
 pub async fn dispatch(req: WsEnvelope<WsRequest>, ctx: &DispatchContext) -> WsEnvelope<WsResponse> {
     let id = req.id.clone();
@@ -35,12 +44,15 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         } => handle_authenticate(token, overlay_credential, preview_connection, ctx).await,
 
         WsRequest::Subscribe { events } => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             let new_filters: HashSet<EventFilter> = events.iter().map(parse_wire_filter).collect();
             let mut current = ctx.bus_adapter.current_subscriptions(ctx.client.id).await;
             current.extend(new_filters);
+            if current.len() > MAX_SUBSCRIPTIONS_PER_CLIENT {
+                return too_many_subscriptions();
+            }
             ctx.bus_adapter
                 .update_subscriptions(ctx.client.id, ClientFilterSet::new(current))
                 .await;
@@ -48,7 +60,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         }
 
         WsRequest::Unsubscribe { events } => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             let to_remove: HashSet<EventFilter> = events.iter().map(parse_wire_filter).collect();
@@ -61,14 +73,14 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         }
 
         WsRequest::GetInfo => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_info(ctx).await
         }
 
         WsRequest::GetActions => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_actions(ctx).await
@@ -82,14 +94,14 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         }
 
         WsRequest::GetGlobals => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_globals(ctx).await
         }
 
         WsRequest::GetGlobal { name } => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_global(name, ctx).await
@@ -110,7 +122,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
             broadcaster_id,
             user_id,
         } => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_user_globals(broadcaster_id, user_id, ctx).await
@@ -124,7 +136,7 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         }
 
         WsRequest::GetEvents { limit, since } => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_events(limit, since, ctx).await
@@ -138,14 +150,14 @@ async fn route(req: WsRequest, ctx: &DispatchContext) -> WsResponse {
         }
 
         WsRequest::GetActiveViewers => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_active_viewers(ctx).await
         }
 
         WsRequest::GetOverlayFiles { recursive } => {
-            if ctx.auth_required_for_reads && !is_authenticated(ctx) {
+            if read_refused(ctx) {
                 return unauthenticated();
             }
             handle_get_overlay_files(recursive, ctx).await
@@ -231,7 +243,6 @@ mod tests {
             overlays,
             auth_state,
             client,
-            auth_required_for_reads,
             credentials,
             server_info: ServerInfo::new(),
             action_engine,
@@ -266,7 +277,6 @@ mod tests {
             overlays,
             auth_state,
             client,
-            auth_required_for_reads: false,
             credentials: test_creds(),
             server_info: ServerInfo::new(),
             action_engine,
@@ -313,7 +323,6 @@ mod tests {
             overlays,
             auth_state,
             client,
-            auth_required_for_reads,
             credentials,
             server_info: ServerInfo::new(),
             action_engine,
@@ -1344,7 +1353,6 @@ mod tests {
             overlays: dp.overlay_repo(),
             auth_state: AuthState::for_test(true, "test-token"),
             client,
-            auth_required_for_reads: true,
             credentials: test_creds(),
             server_info: ServerInfo::new(),
             action_engine,

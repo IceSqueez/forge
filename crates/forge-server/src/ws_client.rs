@@ -3,7 +3,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -61,6 +61,7 @@ pub struct WsClient {
     pub remote_addr: SocketAddr,
     pub client_type: ArcSwap<ClientType>,
     pub authenticated: AtomicBool,
+    bearer_generation: AtomicU64,
     pub connected_at: OffsetDateTime,
     pub bytes_sent_session: AtomicU64,
     pub recent_events: Mutex<VecDeque<Instant>>,
@@ -75,11 +76,24 @@ impl WsClient {
             remote_addr,
             client_type: ArcSwap::from_pointee(ClientType::Unknown),
             authenticated: AtomicBool::new(false),
+            bearer_generation: AtomicU64::new(0),
             connected_at: OffsetDateTime::now_utc(),
             bytes_sent_session: AtomicU64::new(0),
             recent_events: Mutex::new(VecDeque::new()),
             drop_counter,
         }
+    }
+
+    pub fn mark_bearer_authenticated(&self, generation: u64) {
+        self.bearer_generation.store(generation, Ordering::SeqCst);
+        self.authenticated.store(true, Ordering::SeqCst);
+    }
+
+    /// `None` until the session presents a valid bearer.
+    pub fn bearer_generation(&self) -> Option<u64> {
+        self.authenticated
+            .load(Ordering::SeqCst)
+            .then(|| self.bearer_generation.load(Ordering::SeqCst))
     }
 
     pub fn uptime(&self) -> time::Duration {

@@ -4,13 +4,15 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use axum::Json;
-use axum::extract::ws::{CloseFrame, Message, WebSocket};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
 use axum::extract::{ConnectInfo, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast::error::RecvError;
 
+use crate::auth::AuthState;
 use crate::bus_adapter::{ClientFilterSet, WsFrame};
+use crate::listener::PeerInfo;
 use crate::origin::{accepts_origin, is_well_formed_origin};
 use crate::protocol::{
     DispatchContext, WsEnvelope, WsRequest, WsResponse, dispatch, serialize_response_frame,
@@ -19,11 +21,13 @@ use crate::server::AppState;
 use crate::ws_client::{WsClient, detect_from_user_agent};
 
 const HEADER_LOG_PLACEHOLDER: &str = "<absent-or-invalid>";
+const MAX_MESSAGE_BYTES: usize = 256 * 1024;
+const PRE_AUTH_MAX_MESSAGE_BYTES: usize = 16 * 1024;
 
 pub async fn ws_handler(
     upgrade: WebSocketUpgrade,
     State(state): State<AppState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ConnectInfo(peer): ConnectInfo<PeerInfo>,
     headers: HeaderMap,
 ) -> Response {
     let origin_header = headers.get(header::ORIGIN);
@@ -46,7 +50,13 @@ pub async fn ws_handler(
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    upgrade.on_upgrade(move |socket| handle_socket(socket, state, addr, user_agent))
+    upgrade
+        .max_message_size(MAX_MESSAGE_BYTES)
+        .max_frame_size(MAX_MESSAGE_BYTES)
+        .on_upgrade(move |socket| async move {
+            peer.mark_upgraded();
+            handle_socket(socket, state, peer.addr, user_agent).await;
+        })
 }
 
 fn origin_log_value(origin: Option<&str>) -> &str {
@@ -105,7 +115,6 @@ async fn handle_socket(
         overlays: Arc::clone(&state.overlays),
         auth_state: Arc::clone(&state.auth),
         client: Arc::clone(&client),
-        auth_required_for_reads: state.auth.auth_required_for_reads,
         credentials: Arc::clone(&state.credentials),
         server_info: Arc::clone(&state.server_info),
         action_engine: Arc::clone(&state.action_engine),
@@ -114,8 +123,23 @@ async fn handle_socket(
         close_after_auth_failure: std::sync::atomic::AtomicBool::new(false),
     };
 
+    let mut policy_changes = state.auth.policy_changes();
+    let mut overlay_session = false;
+
     loop {
         tokio::select! {
+            Ok(()) = policy_changes.changed() => {
+                if !state.auth.admits_session(client.bearer_generation(), overlay_session) {
+                    let _ = socket
+                        .send(Message::Close(Some(CloseFrame {
+                            code: close_code::POLICY,
+                            reason: "authentication revoked".into(),
+                        })))
+                        .await;
+                    break;
+                }
+            }
+
             msg = socket.recv() => {
                 let msg = match msg {
                     Some(Ok(m)) => m,
@@ -123,6 +147,15 @@ async fn handle_socket(
                 };
                 match msg {
                     Message::Text(text) => {
+                        if text.len() > message_limit(&client, &state.auth) {
+                            let _ = socket
+                                .send(Message::Close(Some(CloseFrame {
+                                    code: close_code::SIZE,
+                                    reason: "message too large".into(),
+                                })))
+                                .await;
+                            break;
+                        }
                         let response_json =
                             match serde_json::from_str::<WsEnvelope<WsRequest>>(&text) {
                                 Ok(req) => {
@@ -142,6 +175,7 @@ async fn handle_socket(
                             };
                         if let Some(promoted) = ctx.overlay_channel_swap.lock().await.take() {
                             event_rx = promoted;
+                            overlay_session = true;
                         }
                         let response_bytes = response_json.len() as u64;
                         if socket
@@ -161,7 +195,7 @@ async fn handle_socket(
                     Message::Binary(_) => {
                         let _ = socket
                             .send(Message::Close(Some(CloseFrame {
-                                code: 1003,
+                                code: close_code::UNSUPPORTED,
                                 reason: "binary frames not supported".into(),
                             })))
                             .await;
@@ -207,6 +241,17 @@ async fn handle_socket(
 
     state.bus_adapter.unregister_client(handle.id).await;
     state.server_info.unregister(handle.id).await;
+}
+
+fn message_limit(client: &WsClient, auth: &AuthState) -> usize {
+    let bearer_current = client
+        .bearer_generation()
+        .is_some_and(|generation| generation == auth.token_generation());
+    if bearer_current {
+        MAX_MESSAGE_BYTES
+    } else {
+        PRE_AUTH_MAX_MESSAGE_BYTES
+    }
 }
 
 fn dropped_notification(n: u64) -> String {

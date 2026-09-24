@@ -18,7 +18,8 @@ use forge_storage::{
 use crate::audio_clips::AudioClipStore;
 use crate::auth::AuthState;
 use crate::bus_adapter::BusAdapter;
-use crate::origin::build_allowed_origins;
+use crate::listener::{GuardedListener, PeerInfo};
+use crate::origin::{accepts_host, build_allowed_origins};
 use crate::routes::{api_v1, audio, overlays, ws};
 use crate::server_info::ServerInfo;
 use crate::{ServerConfig, ServerError, ServerHandle};
@@ -149,7 +150,7 @@ async fn auth_middleware(State(state): State<AppState>, request: Request, next: 
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
     );
 
-    if is_mutating || state.auth.auth_required_for_reads {
+    if is_mutating || state.auth.reads_required() {
         let maybe_token = request
             .headers()
             .get(header::AUTHORIZATION)
@@ -183,16 +184,50 @@ fn unauthenticated_response() -> Response {
         .into_response()
 }
 
+async fn host_middleware(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    let host = request
+        .headers()
+        .get(header::HOST)
+        .map(|value| value.to_str().ok());
+    let accepted = match host {
+        None => true,
+        Some(host) => host.is_some_and(|host| accepts_host(&state.allowed_origins, host)),
+    };
+    if !accepted {
+        return misdirected_response();
+    }
+    next.run(request).await
+}
+
+fn misdirected_response() -> Response {
+    (
+        StatusCode::MISDIRECTED_REQUEST,
+        Json(serde_json::json!({
+            "error": {
+                "code": "HOST_NOT_ALLOWED",
+                "message": "Host not allowed; open the server by IP address or add the origin in Settings"
+            }
+        })),
+    )
+        .into_response()
+}
+
 fn build_router(state: AppState) -> Router {
-    let api_routes = api_v1::router().route_layer(middleware::from_fn_with_state(
-        state.clone(),
-        auth_middleware,
-    ));
+    let host_guard = middleware::from_fn_with_state(state.clone(), host_middleware);
+    let api_routes = api_v1::router()
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
+        .route_layer(host_guard.clone());
 
     Router::new()
         .route("/ws/v1/", get(ws::ws_handler))
         .nest("/api/v1", api_routes)
-        .route("/overlays/{*path}", get(overlays::serve_overlay_file))
+        .route(
+            "/overlays/{*path}",
+            get(overlays::serve_overlay_file).route_layer(host_guard),
+        )
         .merge(audio::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -210,7 +245,8 @@ pub fn serve_on_with_shutdown(
     tokio::sync::watch::Sender<bool>,
 ) {
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
-    let app = build_router(state).into_make_service_with_connect_info::<SocketAddr>();
+    let app = build_router(state).into_make_service_with_connect_info::<PeerInfo>();
+    let listener = GuardedListener::new(listener);
     let join = tokio::spawn(async move {
         let result = axum::serve(listener, app)
             .with_graceful_shutdown(async move {

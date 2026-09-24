@@ -23,7 +23,6 @@ pub struct DispatchContext {
     pub overlays: Arc<dyn OverlayRepo>,
     pub auth_state: Arc<AuthState>,
     pub client: Arc<WsClient>,
-    pub auth_required_for_reads: bool,
     pub credentials: Arc<dyn CredentialsRepo>,
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
@@ -37,7 +36,13 @@ pub struct DispatchContext {
 }
 
 pub(super) fn is_authenticated(ctx: &DispatchContext) -> bool {
-    ctx.client.authenticated.load(Ordering::Acquire)
+    ctx.client
+        .bearer_generation()
+        .is_some_and(|generation| generation == ctx.auth_state.token_generation())
+}
+
+pub(super) fn read_refused(ctx: &DispatchContext) -> bool {
+    ctx.auth_state.reads_required() && !is_authenticated(ctx)
 }
 
 pub(super) fn unauthenticated() -> WsResponse {
@@ -62,8 +67,8 @@ pub(super) async fn handle_authenticate(
 }
 
 async fn authenticate_bearer(token: String, ctx: &DispatchContext) -> WsResponse {
-    if ctx.auth_state.verify(&token).await {
-        ctx.client.authenticated.store(true, Ordering::SeqCst);
+    if let Some(generation) = ctx.auth_state.verify_generation(&token).await {
+        ctx.client.mark_bearer_authenticated(generation);
         WsResponse::Ok(serde_json::json!({ "authenticated": true }))
     } else {
         auth_failed("invalid token")

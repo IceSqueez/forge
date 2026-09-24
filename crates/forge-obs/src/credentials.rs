@@ -77,3 +77,21 @@ pub async fn load_and_connect(
     let client = ObsClient::connect(&cred.url, pw, bus).await?;
     Ok(Arc::new(client))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_output_of_a_stored_credential_never_carries_the_password() {
+        let password = "obs-debug-secret-4f3e2d";
+        let credential = StoredCredential {
+            url: "ws://192.0.2.10:4455".to_owned(),
+            password: password.to_owned(),
+        };
+
+        let rendered = format!("{credential:?} {credential:#?}");
+
+        assert!(!rendered.contains(password), "leaked: {rendered}");
+    }
+}

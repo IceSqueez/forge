@@ -43,3 +43,34 @@ pub(crate) fn map_request_error(request_type: &str, e: obws::error::Error) -> Ob
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Why: the catalog load and the supervisor tell "OBS said no" (fall back, keep going) apart
+    // from "OBS is gone" (abort and redial) by this split alone.
+    #[test]
+    fn request_errors_split_into_connection_loss_and_obs_rejections() {
+        for (error, expect_loss) in [
+            (obws::error::Error::Timeout, true),
+            (obws::error::Error::Disconnected, true),
+            (
+                obws::error::Error::Api {
+                    code: obws::responses::StatusCode::ResourceNotFound,
+                    message: Some("No source was found".to_owned()),
+                },
+                false,
+            ),
+        ] {
+            let mapped = map_request_error("GetSceneItemId", error);
+            assert_eq!(mapped.is_connection_loss(), expect_loss, "{mapped:?}");
+            if !expect_loss {
+                assert!(
+                    matches!(&mapped, ObsError::Request { request_type, .. } if request_type == "GetSceneItemId"),
+                    "a rejection lost its request type: {mapped:?}"
+                );
+            }
+        }
+    }
+}

@@ -79,3 +79,34 @@ pub(crate) async fn with_deadline<T>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WELL_PAST_ANY_DEADLINE: Duration = Duration::from_secs(600);
+
+    fn unanswered() -> impl Future<Output = Result<(), obws::error::Error>> {
+        std::future::pending()
+    }
+
+    #[tokio::test(start_paused = true)]
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    async fn an_unanswered_request_times_out_exactly_when_its_deadline_elapses() {
+        let request = tokio::spawn(with_deadline(REQUEST_TIMEOUT, "GetStats", unanswered()));
+
+        tokio::time::advance(REQUEST_TIMEOUT - Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !request.is_finished(),
+            "the request gave up before its deadline"
+        );
+
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let outcome = tokio::time::timeout(WELL_PAST_ANY_DEADLINE, request)
+            .await
+            .expect("an unanswered request never timed out")
+            .unwrap();
+        assert!(matches!(outcome, Err(ObsError::Timeout)), "got {outcome:?}");
+    }
+}

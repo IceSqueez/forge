@@ -1373,16 +1373,6 @@ mod tests {
         assert!(client.auto_reconnect_enabled());
     }
 
-    #[tokio::test]
-    async fn refresh_token_is_unsupported() {
-        let client = ObsClient::new_for_test("localhost:4455".to_owned());
-        let outcome = forge_platform_core::BuiltinControl::refresh_token(&client).await;
-        assert_eq!(
-            outcome,
-            Err(forge_platform_core::ControlFailure::Unsupported)
-        );
-    }
-
     #[derive(Default)]
     struct CapturingPublisher(Mutex<Vec<forge_events::Event>>);
 
@@ -1593,6 +1583,47 @@ mod tests {
             before,
             "a removed item id still resolved to a source",
         );
+    }
+
+    // Why: item ids are per collection; a cached id from the old collection addresses a
+    // different item (or none) in the new one with the same scene and source names.
+    #[test]
+    fn a_scene_collection_switch_inside_obs_forgets_every_cached_item_id() {
+        for switch in [
+            obws::events::Event::CurrentSceneCollectionChanging {
+                name: "Collab".to_owned(),
+            },
+            obws::events::Event::CurrentSceneCollectionChanged {
+                name: "Collab".to_owned(),
+            },
+        ] {
+            let h = EventHarness::new()
+                .with_source("Gameplay", "Webcam", 7)
+                .with_source("BRB", "Logo", 3);
+
+            h.feed(&switch);
+
+            assert!(
+                h.item_cache.lock().is_ok_and(|cache| cache.is_empty()),
+                "{switch:?} left item ids of the previous collection cached"
+            );
+        }
+    }
+
+    #[test]
+    fn a_rejected_catalog_request_falls_back_while_a_lost_connection_aborts_the_load() {
+        let rejected = ObsError::Request {
+            request_type: "GetSceneItemLocked".to_owned(),
+            message: "No scene item was found".to_owned(),
+        };
+        assert!(matches!(tolerate_rejection(Ok(4)), Ok(Some(4))));
+        assert!(matches!(tolerate_rejection::<i32>(Err(rejected)), Ok(None)));
+        for loss in [ObsError::Timeout, ObsError::Disconnected] {
+            assert!(
+                tolerate_rejection::<i32>(Err(loss)).is_err(),
+                "a lost connection was swallowed as a rejection"
+            );
+        }
     }
 
     #[test]

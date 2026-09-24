@@ -773,9 +773,9 @@ mod tests {
 
     use super::disclosure::{self, SettingDisclosure};
     use super::{
-        DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, Language, SettingsRepo, StorageError,
-        diagnostic_log_level, get_json_setting, reserved_keys, set_diagnostic_log_level,
-        set_json_setting,
+        CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, Language, SettingsRepo,
+        StorageError, diagnostic_log_level, get_json_setting, record_credentials_key_loss,
+        reserved_keys, set_diagnostic_log_level, set_json_setting, take_credentials_key_loss,
     };
 
     #[derive(Default)]
@@ -1029,6 +1029,7 @@ mod tests {
             (reserved_keys::SERVER_ENABLED, "true"),
             (reserved_keys::UPDATES_NOTIFY, "false"),
             (reserved_keys::UPDATES_DISMISSED_VERSION, "v0.6.0"),
+            (reserved_keys::CREDENTIALS_KEY_LOSS, "1"),
             ("tts.engine_params.piper.speed", "1.25"),
         ] {
             assert_eq!(disclosure::class_of(key), SettingDisclosure::Verbatim);
@@ -1096,6 +1097,43 @@ mod tests {
         assert!(
             !shown.values().any(|v| v.contains("nova")),
             "a withheld key or a path value survived: {shown:?}",
+        );
+    }
+
+    #[tokio::test]
+    async fn credentials_key_loss_is_reported_once_then_reads_as_absent() {
+        let repo = MapRepo::default();
+        assert_eq!(take_credentials_key_loss(&repo).await.unwrap(), None);
+
+        record_credentials_key_loss(&repo, CredentialsKeyLoss { stranded: 3 })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            take_credentials_key_loss(&repo).await.unwrap(),
+            Some(CredentialsKeyLoss { stranded: 3 }),
+        );
+        assert_eq!(
+            take_credentials_key_loss(&repo).await.unwrap(),
+            None,
+            "a second read must not repeat the same loss",
+        );
+    }
+
+    #[tokio::test]
+    async fn credentials_key_loss_reads_a_non_numeric_stored_value_as_absent_and_clears_it() {
+        let repo = MapRepo::default();
+        repo.set_string(reserved_keys::CREDENTIALS_KEY_LOSS, "not-a-count")
+            .await
+            .unwrap();
+
+        assert_eq!(take_credentials_key_loss(&repo).await.unwrap(), None);
+        assert_eq!(
+            repo.get_string(reserved_keys::CREDENTIALS_KEY_LOSS)
+                .await
+                .unwrap(),
+            None,
+            "the unreadable record must still be cleared",
         );
     }
 }

@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use forge_storage::{CredentialId, CredentialsRepo};
+use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_storage_sqlite::{SqliteCredentialsRepo, apply_migrations};
 
 const TEST_KEY: [u8; 32] = [
@@ -39,7 +39,7 @@ async fn load_missing_returns_none() {
 }
 
 #[tokio::test]
-async fn wrong_key_fails_decryption() {
+async fn wrong_key_returns_decryption_error() {
     let pool = sqlx::SqlitePool::connect("sqlite::memory:")
         .await
         .expect("in-memory pool");
@@ -52,8 +52,8 @@ async fn wrong_key_fails_decryption() {
     let reader = SqliteCredentialsRepo::new_with_key(pool, WRONG_KEY);
     let result = reader.load(&id).await;
     assert!(
-        result.is_err(),
-        "expected decryption failure with wrong key"
+        matches!(result, Err(StorageError::Decryption)),
+        "expected StorageError::Decryption, got {result:?}"
     );
 }
 

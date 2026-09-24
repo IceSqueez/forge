@@ -136,11 +136,48 @@ fn generate_token() -> String {
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use forge_storage::StorageError;
     use forge_storage::credentials::MockCredentialsRepo;
 
     use super::AuthState;
 
     const FIRST_TOKEN: &str = "first-token";
+
+    #[tokio::test]
+    async fn load_treats_an_undecryptable_stored_bearer_as_absent_and_mints_a_working_token() {
+        let mut creds = MockCredentialsRepo::new();
+        creds
+            .expect_load()
+            .returning(|_| Err(StorageError::Decryption));
+        let minted = Arc::new(Mutex::new(None));
+        let minted_write = Arc::clone(&minted);
+        creds.expect_store().times(1).returning(move |_, token| {
+            *minted_write.lock().expect("lock") = Some(token.to_owned());
+            Ok(())
+        });
+
+        let auth = AuthState::load(false, &creds).await.expect("load");
+
+        let token = minted.lock().expect("lock").clone().expect("store called");
+        assert!(auth.verify(&token).await);
+    }
+
+    #[tokio::test]
+    async fn load_propagates_a_non_decryption_storage_error_and_stores_nothing() {
+        let mut creds = MockCredentialsRepo::new();
+        creds.expect_load().returning(|_| {
+            Err(StorageError::Connection {
+                reason: "pool exhausted".into(),
+            })
+        });
+        creds.expect_store().times(0);
+
+        let result = AuthState::load(false, &creds).await;
+
+        assert!(result.is_err());
+    }
 
     #[tokio::test]
     async fn a_live_session_stays_only_on_the_current_token_or_while_its_class_is_still_admitted() {

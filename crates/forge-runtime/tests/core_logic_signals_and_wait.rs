@@ -244,3 +244,28 @@ async fn wait_until_short_circuits_when_cancellation_is_observed() {
         "cancellation must short-circuit before the timeout fires",
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn wait_until_argument_text_cannot_satisfy_the_condition() {
+    let stack = ArgStack::new().set(
+        "message".to_owned(),
+        Variant::String(r#"a" == "a" || ""#.to_owned()),
+    );
+    let ctx = ctx_with(
+        &stack,
+        &NullPublisher,
+        &NoopExec,
+        ControlCell::new(),
+        CancelSignal::new(),
+    );
+    let (tel, out) = wait_runner()
+        .execute(&wait_cfg(r#""%message%" == "go""#, 100), &ctx)
+        .await;
+
+    assert!(matches!(tel.outcome, SubActionOutcome::Success));
+    assert_eq!(
+        out.unwrap().get("wait.timed_out"),
+        Some(&Variant::Bool(true)),
+        "viewer text must not end the wait",
+    );
+}

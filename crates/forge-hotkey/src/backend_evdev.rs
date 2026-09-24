@@ -65,14 +65,15 @@ impl EvdevBackend {
     }
 }
 
+#[async_trait::async_trait]
 impl HotkeyBackend for EvdevBackend {
-    fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
+    async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
         self.cmd_tx
             .try_send(EvdevCmd::Register(id, combo.clone()))
             .map_err(|e| HotkeyError::Backend(e.to_string()))
     }
 
-    fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
+    async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
         self.cmd_tx
             .try_send(EvdevCmd::Unregister(id))
             .map_err(|e| HotkeyError::Backend(e.to_string()))

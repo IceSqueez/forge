@@ -274,6 +274,7 @@ pub async fn build_integrations(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
+    hotkey_main_thread: forge_hotkey::MainThreadLink,
 ) -> Integrations {
     register_platform_triggers(triggers);
 
@@ -294,7 +295,7 @@ pub async fn build_integrations(
     insert("discord", discord);
     let (midi, midi_client) = build_midi(sub_actions, backend, bus).await;
     insert("midi", midi);
-    let (hotkey, hotkey_client) = build_hotkey(backend, bus).await;
+    let (hotkey, hotkey_client) = build_hotkey(backend, bus, hotkey_main_thread).await;
     insert("hotkey", hotkey);
 
     let (youtube, youtube_viewers, youtube_install_seed) =
@@ -723,6 +724,7 @@ async fn build_midi(
 async fn build_hotkey(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
+    main_thread: forge_hotkey::MainThreadLink,
 ) -> (
     Option<BuiltinObject>,
     Option<Arc<forge_hotkey::HotkeyClient>>,
@@ -732,7 +734,7 @@ async fn build_hotkey(
         hold_ceiling_secs: load_hold_ceiling(&*settings).await,
         ..forge_hotkey::HotkeyConfig::default()
     };
-    let client = forge_hotkey::HotkeyClient::new(config, publisher(bus)).await;
+    let client = forge_hotkey::HotkeyClient::new(config, publisher(bus), main_thread).await;
     reregister_persisted_hotkeys(&client, backend).await;
 
     if !get_bool_setting(&*settings, HOTKEY_ENABLED_KEY, true).await

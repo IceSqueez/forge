@@ -7,7 +7,7 @@ use forge_components::{
     page_frame, status_dot, toggle, tr,
 };
 use forge_events::Event;
-use forge_hotkey::HotkeyClient;
+use forge_hotkey::{HotkeyClient, HotkeyCombo};
 use forge_runtime::EventBus;
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, StorageError, set_bool_setting};
@@ -516,6 +516,12 @@ impl HotkeysScreenView {
     fn on_capture_combo(&mut self, combo: String, cx: &mut Context<Self>) {
         let capture = std::mem::replace(&mut self.capture, Capture::Off);
         self.capture_sub = None;
+        if HotkeyCombo::parse(&combo).is_ok_and(|parsed| parsed.swallows_typing()) {
+            cx.push_toast(
+                ToastKind::Warn,
+                tr!("hotkeys_toast_bare_key_global", combo = combo.as_str()),
+            );
+        }
         let adding = matches!(capture, Capture::Add | Capture::Modal(None));
         let holder = combo_holder(&self.bindings, &combo, capture.target())
             .filter(|row| !(adding && row.free_edge().is_some()))

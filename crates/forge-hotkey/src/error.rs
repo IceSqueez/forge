@@ -19,6 +19,9 @@ pub enum HotkeyError {
 
     #[error("hotkey supervisor task is not running")]
     SupervisorUnavailable,
+
+    #[error("the main-thread hotkey host is not running")]
+    MainThreadUnavailable,
 }
 
 #[cfg(test)]

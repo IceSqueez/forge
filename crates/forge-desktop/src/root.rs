@@ -116,10 +116,13 @@ pub fn run_boot(
     let speak = cx.new(|_| SpeakState::new());
     let queue_health = cx.new(|_| QueueHealth::new());
 
+    let (hotkey_host, hotkey_main_thread) = forge_hotkey::main_thread_channel();
+    cx.spawn(async move |_| hotkey_host.run().await).detach();
+
     let (result_tx, result_rx) =
         tokio::sync::oneshot::channel::<Result<RuntimeHandles, BootFailure>>();
     rt_handle.spawn(async move {
-        let _ = result_tx.send(build_runtime(log_tail, endpoints).await);
+        let _ = result_tx.send(build_runtime(log_tail, endpoints, hotkey_main_thread).await);
     });
 
     cx.spawn(async move |cx| {

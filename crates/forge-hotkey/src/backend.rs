@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
@@ -35,13 +36,14 @@ impl NullBackend {
     }
 }
 
+#[async_trait]
 impl HotkeyBackend for NullBackend {
-    fn register(&self, _id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
+    async fn register(&self, _id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
         let _ = combo;
         Err(HotkeyError::PermissionDenied)
     }
 
-    fn unregister(&self, _id: HotkeyId) -> Result<(), HotkeyError> {
+    async fn unregister(&self, _id: HotkeyId) -> Result<(), HotkeyError> {
         Err(HotkeyError::PermissionDenied)
     }
 
@@ -53,9 +55,10 @@ impl HotkeyBackend for NullBackend {
     }
 }
 
+#[async_trait]
 pub(crate) trait HotkeyBackend: Send + Sync {
-    fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError>;
-    fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError>;
+    async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError>;
+    async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError>;
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>>;
 
     /// True when the OS-level grab survives the client's disable/enable cycle untouched
@@ -121,8 +124,9 @@ pub(crate) mod tests {
         }
     }
 
+    #[async_trait]
     impl HotkeyBackend for MockPortalBackend {
-        fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
+        async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
             self.register_calls.fetch_add(1, Ordering::Relaxed);
             let combo_str = combo.as_str().to_owned();
             if self.fail_on.lock().unwrap().contains(&combo_str) {
@@ -132,7 +136,7 @@ pub(crate) mod tests {
             Ok(())
         }
 
-        fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
+        async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
             self.unregister_calls.fetch_add(1, Ordering::Relaxed);
             self.registered.lock().unwrap().remove(&id.0);
             Ok(())
@@ -164,13 +168,14 @@ pub(crate) mod tests {
         }
     }
 
+    #[async_trait]
     impl HotkeyBackend for MockFailAllBackend {
-        fn register(&self, _id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
+        async fn register(&self, _id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
             let _ = combo;
             Err(HotkeyError::PermissionDenied)
         }
 
-        fn unregister(&self, _id: HotkeyId) -> Result<(), HotkeyError> {
+        async fn unregister(&self, _id: HotkeyId) -> Result<(), HotkeyError> {
             Err(HotkeyError::PermissionDenied)
         }
 

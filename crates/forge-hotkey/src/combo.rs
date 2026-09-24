@@ -6,6 +6,61 @@ use crate::error::HotkeyError;
 
 const MOD_ORDER: &[&str] = &["Ctrl", "Shift", "Alt", "Meta"];
 
+const GRAB_CONSUMES_KEYSTROKE: bool = cfg!(any(target_os = "windows", target_os = "macos"));
+
+const TYPING_KEYS: &[&str] = &[
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "Num0",
+    "Num1",
+    "Num2",
+    "Num3",
+    "Num4",
+    "Num5",
+    "Num6",
+    "Num7",
+    "Num8",
+    "Num9",
+    "Space",
+    "Enter",
+    "Tab",
+    "Backspace",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct HotkeyCombo(String);
@@ -55,6 +110,12 @@ impl HotkeyCombo {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// True where the OS grab consumes the keystroke system-wide (macOS, Windows) and the combo is
+    /// a modifier-less key used for typing, so binding it stops that key from reaching other apps.
+    pub fn swallows_typing(&self) -> bool {
+        GRAB_CONSUMES_KEYSTROKE && !self.0.contains('+') && TYPING_KEYS.contains(&self.0.as_str())
     }
 }
 

@@ -2080,6 +2080,7 @@ hotkeys_toggle_failed = Could not change the hotkey engine state
 hotkeys_toggle_binding_failed = Could not change the binding state
 hotkeys_toast_error = Hotkey operation failed: { $message }
 hotkeys_toast_enable_partial = { $count } combinations could not be re-registered with the system
+hotkeys_toast_bare_key_global = { $combo } without a modifier is captured system-wide: while forge runs, other apps no longer receive this key
 
 ## Hotkeys - stats
 

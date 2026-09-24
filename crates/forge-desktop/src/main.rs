@@ -29,6 +29,7 @@ mod home;
 mod home_stats;
 mod hotkey_action_modal;
 mod hotkey_bindings;
+mod hotkey_sync;
 mod hotkeys_screen;
 mod i18n;
 mod in_flight_steps;

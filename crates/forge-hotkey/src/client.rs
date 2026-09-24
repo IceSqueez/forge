@@ -13,6 +13,7 @@ use crate::config::HotkeyConfig;
 use crate::error::HotkeyError;
 use crate::health::{HealthTx, HotkeyHealthSnapshot, make_health_state};
 use crate::hold::{self, HoldMap};
+use crate::main_thread::MainThreadLink;
 use crate::supervisor::{self, SupervisorCommand};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
@@ -82,8 +83,12 @@ impl HotkeyClient {
         client
     }
 
-    pub async fn new(config: HotkeyConfig, publisher: Arc<dyn EventPublisher>) -> Arc<Self> {
-        select_and_start(config, publisher).await
+    pub async fn new(
+        config: HotkeyConfig,
+        publisher: Arc<dyn EventPublisher>,
+        main_thread: MainThreadLink,
+    ) -> Arc<Self> {
+        select_and_start(config, publisher, main_thread).await
     }
 
     pub async fn register(&self, combo: HotkeyCombo) -> Result<HotkeyId, HotkeyError> {
@@ -101,7 +106,7 @@ impl HotkeyClient {
         let id = HotkeyId(self.id_counter.fetch_add(1, Ordering::Relaxed));
 
         if self.os_registration_active() {
-            self.backend.register(id, &combo).map_err(|e| {
+            self.backend.register(id, &combo).await.map_err(|e| {
                 if matches!(e, HotkeyError::AlreadyRegistered { .. }) {
                     let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
                     snap.conflict_count = snap.conflict_count.saturating_add(1);
@@ -139,7 +144,7 @@ impl HotkeyClient {
         hold::close_synthesized(self, id);
 
         if self.os_registration_active() {
-            self.backend.unregister(id)?;
+            self.backend.unregister(id).await?;
         }
 
         {
@@ -262,9 +267,11 @@ impl HotkeyClient {
 async fn select_and_start(
     config: HotkeyConfig,
     publisher: Arc<dyn EventPublisher>,
+    main_thread: MainThreadLink,
 ) -> Arc<HotkeyClient> {
     #[cfg(target_os = "linux")]
     {
+        drop(main_thread);
         use crate::backend_evdev::EvdevBackend;
         use crate::backend_portal::PortalBackend;
 
@@ -301,7 +308,7 @@ async fn select_and_start(
     {
         use crate::backend_global::GlobalHotkeyBackend;
 
-        match GlobalHotkeyBackend::new() {
+        match GlobalHotkeyBackend::new(main_thread).await {
             Ok(backend) => {
                 return HotkeyClient::start(config, publisher, Arc::new(backend), None);
             }
@@ -313,6 +320,7 @@ async fn select_and_start(
 
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
+        drop(main_thread);
         let backend = Arc::new(NullBackend::new());
         return HotkeyClient::start(config, publisher, backend, None);
     }

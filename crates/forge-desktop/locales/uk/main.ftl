@@ -2119,6 +2119,7 @@ hotkeys_toggle_failed = Не вдалося змінити стан рушія �
 hotkeys_toggle_binding_failed = Не вдалося змінити стан прив'язки
 hotkeys_toast_error = Операція з гарячою клавішею не вдалася: { $message }
 hotkeys_toast_enable_partial = { $count } комбінацій не вдалося перереєструвати в системі
+hotkeys_toast_bare_key_global = { $combo } без модифікатора перехоплюється в усій системі: поки forge працює, інші програми не отримують цю клавішу
 
 ## Hotkeys - stats
 

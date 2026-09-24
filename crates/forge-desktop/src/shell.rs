@@ -21,6 +21,7 @@ use crate::discord_screen::DiscordScreenView;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
+use crate::hotkey_sync::HotkeySyncedTriggerRepo;
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
@@ -390,7 +391,10 @@ impl AppShell {
                     handles.backend.trigger_instance_repo(),
                     handles.backend.soundboard_clips_repo(),
                 ));
-                let trigger_instance_repo = handles.backend.trigger_instance_repo();
+                let trigger_instance_repo = HotkeySyncedTriggerRepo::wrap(
+                    handles.backend.trigger_instance_repo(),
+                    handles.hotkey_client.clone(),
+                );
                 let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
                 let soundboard_repo = handles.backend.soundboard_clips_repo();
                 let globals_repo = Arc::clone(&handles.backend) as Arc<dyn GlobalsRepo>;
@@ -434,7 +438,10 @@ impl AppShell {
                 view.into()
             }
             Screen::Triggers(preselect) => {
-                let repo = handles.backend.trigger_instance_repo();
+                let repo = HotkeySyncedTriggerRepo::wrap(
+                    handles.backend.trigger_instance_repo(),
+                    handles.hotkey_client.clone(),
+                );
                 let action_repo = handles.backend.action_repo();
                 let registry = handles.trigger_registry.clone();
                 let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;

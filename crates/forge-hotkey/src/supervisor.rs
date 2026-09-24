@@ -40,7 +40,7 @@ pub(crate) async fn run_supervisor(
             }
             maybe_cmd = control_rx.recv() => {
                 let Some(cmd) = maybe_cmd else { break };
-                handle_supervisor_command(&client, cmd);
+                handle_supervisor_command(&client, cmd).await;
             }
             restart = maybe_restart(restart_rx.as_mut()) => {
                 match restart {
@@ -103,7 +103,7 @@ fn handle_press(client: &Arc<HotkeyClient>, event: HotkeyFiredEvent) {
     let _ = client.health_tx.send(delta);
 }
 
-fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand) {
+async fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand) {
     match cmd {
         SupervisorCommand::Disable(reply) => {
             if !client.enabled.load(Ordering::Relaxed) {
@@ -113,7 +113,7 @@ fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand)
             hold::close_all_synthesized(client);
             if !client.backend.delivery_gate_only() {
                 for (id, _combo) in known_combos(client) {
-                    let _ = client.backend.unregister(id);
+                    let _ = client.backend.unregister(id).await;
                 }
             }
             client.enabled.store(false, Ordering::Relaxed);
@@ -128,7 +128,7 @@ fn handle_supervisor_command(client: &Arc<HotkeyClient>, cmd: SupervisorCommand)
             let mut failures = Vec::new();
             if !client.backend.delivery_gate_only() {
                 for (id, combo) in known_combos(client) {
-                    if let Err(error) = client.backend.register(id, &combo) {
+                    if let Err(error) = client.backend.register(id, &combo).await {
                         failures.push(EnableFailure { id, combo, error });
                     }
                 }

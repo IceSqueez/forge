@@ -1,9 +1,10 @@
 #![cfg(any(target_os = "windows", target_os = "macos"))]
-#![allow(unsafe_code)]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use tokio::sync::mpsc;
@@ -11,6 +12,15 @@ use tokio::sync::mpsc;
 use crate::backend::{HotkeyBackend, HotkeyEdge, HotkeyFiredEvent, HotkeyId};
 use crate::combo::HotkeyCombo;
 use crate::error::HotkeyError;
+use crate::main_thread::MainThreadLink;
+
+const FIRED_QUEUE: usize = 64;
+const EVENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
+
+thread_local! {
+    /// Only ever populated on the event-loop thread: `MainThreadLink` jobs are the sole accessors.
+    static MANAGER: RefCell<Option<GlobalHotKeyManager>> = const { RefCell::new(None) };
+}
 
 struct Registration {
     hotkey: HotKey,
@@ -23,24 +33,16 @@ struct Registration {
 type RegistrationMap = Arc<Mutex<HashMap<u32, Registration>>>;
 
 pub(crate) struct GlobalHotkeyBackend {
-    manager: GlobalHotKeyManager,
+    main_thread: MainThreadLink,
     registrations: RegistrationMap,
     fired_rx_slot: Mutex<Option<mpsc::Receiver<HotkeyFiredEvent>>>,
 }
 
-// SAFETY: `GlobalHotKeyManager` holds a Windows HWND, making it `!Send`/`!Sync` by default; Win32
-// `RegisterHotKey`/`UnregisterHotKey` are documented safe from any thread, and `WM_HOTKEY` targets the
-// HWND-owning thread's message queue. Callers only invoke register/unregister; the HWND is never
-// dereferenced outside the crate's internal `Drop`.
-unsafe impl Send for GlobalHotkeyBackend {}
-unsafe impl Sync for GlobalHotkeyBackend {}
-
 impl GlobalHotkeyBackend {
-    pub(crate) fn new() -> Result<Self, HotkeyError> {
-        let manager =
-            GlobalHotKeyManager::new().map_err(|e| HotkeyError::Backend(e.to_string()))?;
+    pub(crate) async fn new(main_thread: MainThreadLink) -> Result<Self, HotkeyError> {
+        main_thread.run(install_manager).await??;
 
-        let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(64);
+        let (fired_tx, fired_rx) = mpsc::channel::<HotkeyFiredEvent>(FIRED_QUEUE);
 
         let registrations: RegistrationMap = Arc::new(Mutex::new(HashMap::new()));
         tokio::spawn(poll_global_hotkey_events(
@@ -49,19 +51,54 @@ impl GlobalHotkeyBackend {
         ));
 
         Ok(Self {
-            manager,
+            main_thread,
             registrations,
             fired_rx_slot: Mutex::new(Some(fired_rx)),
         })
     }
 }
 
+fn install_manager() -> Result<(), HotkeyError> {
+    let manager = GlobalHotKeyManager::new().map_err(|e| HotkeyError::Backend(e.to_string()))?;
+    MANAGER.with(|slot| *slot.borrow_mut() = Some(manager));
+    Ok(())
+}
+
+fn with_manager(
+    op: impl FnOnce(&GlobalHotKeyManager) -> global_hotkey::Result<()>,
+    combo: &HotkeyCombo,
+) -> Result<(), HotkeyError> {
+    MANAGER.with(|slot| match slot.borrow().as_ref() {
+        Some(manager) => op(manager).map_err(|e| map_manager_error(e, combo)),
+        None => Err(HotkeyError::Backend(
+            "global hotkey manager is not installed".to_owned(),
+        )),
+    })
+}
+
+fn map_manager_error(error: global_hotkey::Error, combo: &HotkeyCombo) -> HotkeyError {
+    match error {
+        global_hotkey::Error::AlreadyRegistered(_) => HotkeyError::AlreadyRegistered {
+            combo: combo.as_str().to_owned(),
+        },
+        other => HotkeyError::Backend(other.to_string()),
+    }
+}
+
+#[async_trait]
 impl HotkeyBackend for GlobalHotkeyBackend {
-    fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
+    async fn register(&self, id: HotkeyId, combo: &HotkeyCombo) -> Result<(), HotkeyError> {
         let hotkey = combo_to_hotkey(combo)?;
-        self.manager
-            .register(hotkey)
-            .map_err(|e| HotkeyError::Backend(e.to_string()))?;
+        if combo.swallows_typing() {
+            tracing::warn!(
+                combo = %combo,
+                "a bare typing key is bound as a global hotkey: the system delivers it to forge only, so it cannot be typed in other apps"
+            );
+        }
+        let job_combo = combo.clone();
+        self.main_thread
+            .run(move || with_manager(|manager| manager.register(hotkey), &job_combo))
+            .await??;
         self.registrations
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -77,19 +114,19 @@ impl HotkeyBackend for GlobalHotkeyBackend {
         Ok(())
     }
 
-    fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
-        let hotkey = {
+    async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError> {
+        let removed = {
             let mut guard = self.registrations.lock().unwrap_or_else(|p| p.into_inner());
             let internal_id = guard
                 .iter()
                 .find(|(_, reg)| reg.caller_id == id)
                 .map(|(k, _)| *k);
-            internal_id.and_then(|k| guard.remove(&k)).map(|r| r.hotkey)
+            internal_id.and_then(|k| guard.remove(&k))
         };
-        if let Some(hk) = hotkey {
-            self.manager
-                .unregister(hk)
-                .map_err(|e| HotkeyError::Backend(e.to_string()))?;
+        if let Some(Registration { hotkey, combo, .. }) = removed {
+            self.main_thread
+                .run(move || with_manager(|manager| manager.unregister(hotkey), &combo))
+                .await??;
         }
         Ok(())
     }
@@ -138,7 +175,7 @@ async fn poll_global_hotkey_events(
                 }
             }
         }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        tokio::time::sleep(EVENT_POLL_INTERVAL).await;
     }
 }
 

@@ -125,6 +125,7 @@ async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
 pub async fn build_runtime(
     log_tail: LogTail,
     endpoints: PlatformEndpoints,
+    hotkey_main_thread: forge_hotkey::MainThreadLink,
 ) -> Result<RuntimeHandles, BootFailure> {
     let db_path = default_db_path();
     if let Some(parent) = db_path.parent()
@@ -249,6 +250,7 @@ pub async fn build_runtime(
         soundboard_library,
         soundboard_settings,
     ));
+    soundboard_player.install_settings_store(Arc::clone(&soundboard_settings_repo));
     match speak_dispatcher {
         Some(dispatcher) => {
             if let Err(e) = register_audio_sub_actions(
@@ -275,6 +277,7 @@ pub async fn build_runtime(
         &backend,
         &bus,
         &endpoints,
+        hotkey_main_thread,
     )
     .await;
 

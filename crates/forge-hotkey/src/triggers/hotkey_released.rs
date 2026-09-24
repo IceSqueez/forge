@@ -80,15 +80,7 @@ impl TriggerKindDescriptor for HotkeyReleasedDescriptor {
         if event.source != EventSource::Hotkey {
             return false;
         }
-        if let Some(Variant::String(combo)) = config.get("combo") {
-            let event_combo = event
-                .payload
-                .get(fields::COMBO)
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            return combo == event_combo;
-        }
-        true
+        super::config_accepts_combo(config, event)
     }
 
     fn build_arg_stack(&self, event: &Event) -> ArgStack {

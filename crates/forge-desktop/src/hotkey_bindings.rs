@@ -15,7 +15,7 @@ pub const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
 pub const HOTKEY_RELEASED_KIND: &str = "hotkey.global.released";
 pub const HOTKEY_EVENT_PREFIX: &str = "hotkey.";
 
-const COMBO_FIELD: &str = "combo";
+pub const COMBO_FIELD: &str = "combo";
 const CONFLICTS_METRIC: &str = "CONFLICTS";
 const CEILING_OFF: u64 = 0;
 
@@ -170,6 +170,15 @@ fn combo_of(instance: &TriggerInstance) -> Option<&String> {
     }
 }
 
+/// Canonical form when the stored text parses, so a hand-typed `f5` groups and matches with `F5`.
+fn canonical_combo_of(instance: &TriggerInstance) -> Option<String> {
+    combo_of(instance).map(|combo| {
+        HotkeyCombo::parse(combo)
+            .map(|parsed| parsed.as_str().to_owned())
+            .unwrap_or_else(|_| combo.clone())
+    })
+}
+
 pub async fn load_bindings(
     backend: Arc<dyn DataProvider>,
     registered: Vec<(HotkeyId, String)>,
@@ -183,7 +192,7 @@ pub async fn load_bindings(
         let Some(edge) = HotkeyEdge::from_kind(&instance.kind_id) else {
             continue;
         };
-        let Some(combo) = combo_of(&instance).cloned() else {
+        let Some(combo) = canonical_combo_of(&instance) else {
             continue;
         };
         let linked = triggers
@@ -239,7 +248,9 @@ async fn hotkey_instances_for_combo(
     Ok(instances
         .into_iter()
         .filter(|instance| HotkeyEdge::from_kind(&instance.kind_id).is_some())
-        .filter(|instance| combo_of(instance).is_some_and(|existing| existing == combo_str))
+        .filter(|instance| {
+            canonical_combo_of(instance).is_some_and(|existing| existing == combo_str)
+        })
         .collect())
 }
 
@@ -326,8 +337,7 @@ pub fn persisted_hotkey_combos(instances: &[TriggerInstance]) -> BTreeSet<String
     instances
         .iter()
         .filter(|instance| HotkeyEdge::from_kind(&instance.kind_id).is_some())
-        .filter_map(combo_of)
-        .cloned()
+        .filter_map(canonical_combo_of)
         .collect()
 }
 
@@ -407,6 +417,7 @@ pub async fn rebind_combo(
         return Ok(());
     }
     let combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
+    ensure_registered(&client, combo).await?;
     if let Some((id, _)) = client
         .registered_combos()
         .into_iter()
@@ -414,7 +425,6 @@ pub async fn rebind_combo(
     {
         client.unregister(id).await.map_err(|e| e.to_string())?;
     }
-    ensure_registered(&client, combo).await?;
 
     cleanup_stale_combo_instances(&backend, &combo_str).await?;
 

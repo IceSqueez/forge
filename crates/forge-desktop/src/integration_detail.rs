@@ -21,13 +21,16 @@ use gpui::{
     div, prelude::*, px,
 };
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::async_bridge;
-use crate::builtin_sections::{SectionRefresh, content_sections, health_grid};
+use crate::builtin_sections::{
+    SectionHooks, SectionRefresh, SectionStepRun, StepClick, content_sections, health_grid,
+};
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch, ConnectedBundle};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integrations::{
@@ -88,6 +91,7 @@ pub struct IntegrationDetail {
     pub(crate) quick_actions: Vec<QuickAction>,
     pub(crate) qa_search: SearchState,
     eventsub_tally: HashMap<String, u64>,
+    row_steps_in_flight: HashSet<(String, String)>,
     viewer_samples: VecDeque<(Instant, u64)>,
     pending_disconnect: Confirm<()>,
     quick_action_modal: Option<Entity<QuickActionModal>>,
@@ -105,6 +109,19 @@ const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
 const HISTORY_LIMIT: u32 = 50;
+const OBS_CATALOG_KINDS: [&str; 11] = [
+    "obs.scene.changed",
+    "obs.scene.preview_changed",
+    "obs.scene.list_changed",
+    "obs.scene.created",
+    "obs.scene.removed",
+    "obs.scene.renamed",
+    "obs.source.visibility_changed",
+    "obs.source.lock_changed",
+    "obs.source.input_created",
+    "obs.source.input_removed",
+    "obs.source.input_renamed",
+];
 const TWITCH_LIFECYCLE_KINDS: [&str; 8] = [
     "twitch.channel.poll.begin",
     "twitch.channel.poll.progress",
@@ -197,6 +214,9 @@ impl IntegrationDetail {
         if is_twitch || is_obs {
             Self::spawn_descriptor_reload_watch(&event_bus, cx);
         }
+        if is_obs {
+            Self::spawn_obs_content_watch(&event_bus, cx);
+        }
         if is_twitch || matches!(status.id().as_str(), "youtube" | "kick") {
             Self::spawn_viewer_sampler(&live_viewers, cx);
             Self::spawn_detail_ticker(cx);
@@ -241,6 +261,7 @@ impl IntegrationDetail {
             quick_actions,
             qa_search,
             eventsub_tally: HashMap::new(),
+            row_steps_in_flight: HashSet::new(),
             viewer_samples: VecDeque::new(),
             pending_disconnect: Confirm::default(),
             quick_action_modal: None,
@@ -319,9 +340,33 @@ impl IntegrationDetail {
         let idx = delta.index as usize;
         if idx < self.health_metrics.len() {
             self.health_metrics[idx].value = delta.new_value;
-            self.sections = self.content.sections();
-            cx.notify();
+            self.refresh_content(cx);
         }
+    }
+
+    fn refresh_content(&mut self, cx: &mut Context<Self>) {
+        self.sections = self.content.sections();
+        cx.notify();
+    }
+
+    fn spawn_obs_content_watch(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
+        let mut sub = bus.subscribe();
+        cx.spawn(async move |this, cx| {
+            while let async_bridge::EventBatch::Ready(batch) =
+                async_bridge::recv_event_batch(&mut sub).await
+            {
+                if !batch.iter().any(refreshes_obs_content) {
+                    continue;
+                }
+                if this
+                    .update(cx, |this, cx| this.refresh_content(cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     fn spawn_eventsub_tally(bus: &Arc<EventBus>, cx: &mut Context<Self>) {
@@ -633,17 +678,35 @@ impl IntegrationDetail {
         }
     }
 
-    fn run_quick_action(&mut self, step: SubActionStep, label: String, cx: &mut Context<Self>) {
+    /// The one path from this screen into the action engine; `settled` sees only whether the
+    /// step reached the engine, not how the step itself ended.
+    fn enqueue_builtin_step(
+        &mut self,
+        step: SubActionStep,
+        label: String,
+        settled: impl FnOnce(&mut Self, Result<(), String>, &mut Context<Self>) + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
         let builtin_id = self.status.id().as_str().to_owned();
         let engine = self.action_engine.clone();
-        let toast_label = label.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 engine
                     .execute_quick_action(step, builtin_id, label, None)
                     .await
+                    .map_err(|err| err.to_string())
             },
+            settled,
+            cx,
+        );
+    }
+
+    fn run_quick_action(&mut self, step: SubActionStep, label: String, cx: &mut Context<Self>) {
+        let toast_label = label.clone();
+        self.enqueue_builtin_step(
+            step,
+            label,
             move |detail, result, cx| {
                 match result {
                     Ok(()) => cx.push_toast(
@@ -656,6 +719,30 @@ impl IntegrationDetail {
                     }
                 }
                 detail.reload(cx);
+            },
+            cx,
+        );
+    }
+
+    fn run_row_step(&mut self, click: &StepClick, cx: &mut Context<Self>) {
+        let key = (click.row.to_string(), click.step.kind_id.clone());
+        if !self.row_steps_in_flight.insert(key.clone()) {
+            return;
+        }
+        cx.notify();
+        self.enqueue_builtin_step(
+            click.step.clone(),
+            click.row.to_string(),
+            move |detail, result, cx| {
+                detail.row_steps_in_flight.remove(&key);
+                if let Err(err) = result {
+                    tracing::warn!(error = %err, "content row action failed");
+                    cx.push_toast(
+                        ToastKind::Error,
+                        tr!("integration_row_action_failed", error = err.as_str()),
+                    );
+                }
+                cx.notify();
             },
             cx,
         );
@@ -1187,14 +1274,17 @@ impl Render for IntegrationDetail {
                 let reauth_banner = (self.is_twitch && self.twitch_reauth_required)
                     .then(|| self.twitch_reauth_banner(&palette, density, cx));
                 let health = health_grid(&self.augmented_health(), reconnecting, &palette, density);
-                let on_refresh: SectionRefresh =
+                let refresh: SectionRefresh =
                     Rc::new(cx.listener(|this, _: &ClickEvent, _, cx| this.resync_content(cx)));
-                let content = content_sections(
-                    &self.augmented_sections(),
-                    Some(&on_refresh),
-                    &palette,
-                    density,
+                let run_step: SectionStepRun = Rc::new(
+                    cx.listener(|this, click: &StepClick, _, cx| this.run_row_step(click, cx)),
                 );
+                let hooks = SectionHooks {
+                    refresh: Some(refresh),
+                    run_step: Some(run_step),
+                };
+                let content =
+                    content_sections(&self.augmented_sections(), &hooks, &palette, density);
                 let quick = self.quick_actions_card(&palette, density, cx);
 
                 div()
@@ -1270,6 +1360,10 @@ impl Render for IntegrationDetail {
             .children(self.obs_settings_modal.clone())
             .children(self.history_modal.clone())
     }
+}
+
+fn refreshes_obs_content(event: &Event) -> bool {
+    matches!(event.source, EventSource::Obs) && OBS_CATALOG_KINDS.contains(&event.kind.as_str())
 }
 
 pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {

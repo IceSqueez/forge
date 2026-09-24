@@ -177,6 +177,7 @@ impl RenderOnce for ToastCard {
 
         let mut content = div()
             .flex_1()
+            .min_w(px(0.0))
             .flex()
             .items_center()
             .gap(pad(Spacing::Sm))
@@ -186,8 +187,8 @@ impl RenderOnce for ToastCard {
             .child(
                 div()
                     .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
+                    .w_full()
+                    .min_w(px(0.0))
                     .font_family(body_family())
                     .text_size(FONT_SM)
                     .text_color(self.message_color)

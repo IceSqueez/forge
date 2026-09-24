@@ -7,9 +7,10 @@ use forge_platform_core::{
     HealthMetric, HealthValue, InfoField, KeyValueRow, ListFooter, RowAction, SectionIcon,
     StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
+use forge_types::SubActionStep;
 use gpui::{
     AnyElement, App, ClickEvent, Div, FontWeight, ListSizingBehavior, Pixels, Rgba, SharedString,
-    Window, div, prelude::*, px, relative, uniform_list,
+    Window, div, prelude::*, px, relative, svg, uniform_list,
 };
 use std::rc::Rc;
 
@@ -33,11 +34,43 @@ const ROW_NAME_FONT: Pixels = FONT_XS;
 const ROW_MONO_NAME_FONT: Pixels = px(11.5);
 const ROW_TRAILING_GLYPH: Pixels = px(12.0);
 const ROW_TINTED_LABEL_FONT: Pixels = px(10.0);
+const ROW_PAD_X: Pixels = px(14.0);
 /// gpui's default line height, which rounds the resulting line box to whole pixels.
 const LINE_HEIGHT_RATIO: f32 = 1.618_034;
 
 /// Invoked by the header control a `ContentList` marks `refreshable`.
 pub type SectionRefresh = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+pub struct StepClick {
+    pub row: SharedString,
+    pub step: SubActionStep,
+}
+
+/// Invoked by a row or trailing glyph that carries a step; the handler owns the double-fire guard.
+pub type SectionStepRun = Rc<dyn Fn(&StepClick, &mut Window, &mut App)>;
+
+pub struct SectionHooks {
+    pub refresh: Option<SectionRefresh>,
+    pub run_step: Option<SectionStepRun>,
+}
+
+struct RowHooks {
+    scope: SharedString,
+    pad_y: f32,
+    run_step: Option<SectionStepRun>,
+}
+
+impl RowHooks {
+    fn element_id(&self, part: &str, name: &str) -> SharedString {
+        SharedString::from(format!("{}-{part}-{name}", self.scope))
+    }
+}
+
+struct TokenSite<'a> {
+    hooks: &'a RowHooks,
+    row: &'a str,
+    index: usize,
+}
 
 /// The row's tallest element is its name line box; both name fonts round to the same box, and
 /// every glyph and badge in the row is shorter.
@@ -96,7 +129,7 @@ pub(crate) fn grow_cell(el: impl IntoElement, grow: f32) -> Div {
 
 pub fn content_sections(
     sections: &[DetailSection],
-    on_refresh: Option<&SectionRefresh>,
+    hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -106,20 +139,20 @@ pub fn content_sections(
         .flex_col()
         .gap(spacing(Spacing::Lg, density));
     for section in sections {
-        col = col.child(dispatch_section(section, on_refresh, palette, density));
+        col = col.child(dispatch_section(section, hooks, palette, density));
     }
     col.into_any_element()
 }
 
 fn dispatch_section(
     section: &DetailSection,
-    on_refresh: Option<&SectionRefresh>,
+    hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
     match section {
         DetailSection::TwoColumnLists { left, right } => {
-            render_two_column_lists(left, right, on_refresh, palette, density)
+            render_two_column_lists(left, right, hooks, palette, density)
         }
         DetailSection::KeyValueList { title, icon, items } => {
             render_key_value_list(title, icon, items, palette, density)
@@ -155,7 +188,7 @@ fn dispatch_section(
             footer,
         } => render_scopes_list(title, icon, scopes, footer.as_ref(), palette, density),
         DetailSection::TwoColumn { left, right } => {
-            render_two_column(left, right, on_refresh, palette, density)
+            render_two_column(left, right, hooks, palette, density)
         }
         DetailSection::InfoCard {
             title,
@@ -180,7 +213,7 @@ fn dispatch_section(
 fn render_two_column_lists(
     left: &ContentList,
     right: &ContentList,
-    on_refresh: Option<&SectionRefresh>,
+    hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -193,11 +226,11 @@ fn render_two_column_lists(
         .flex()
         .gap(spacing(Spacing::Md, density))
         .child(grow_cell(
-            content_list_panel(left, left_h, on_refresh, palette, density),
+            content_list_panel(left, left_h, hooks, palette, density),
             10.0,
         ))
         .child(grow_cell(
-            content_list_panel(right, right_h, on_refresh, palette, density),
+            content_list_panel(right, right_h, hooks, palette, density),
             13.0,
         ))
         .into_any_element()
@@ -453,7 +486,7 @@ fn render_scopes_list(
 fn render_two_column(
     left: &DetailSection,
     right: &DetailSection,
-    on_refresh: Option<&SectionRefresh>,
+    hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -463,11 +496,11 @@ fn render_two_column(
         .items_stretch()
         .gap(px(12.0))
         .child(grow_cell(
-            dispatch_section(left, on_refresh, palette, density),
+            dispatch_section(left, hooks, palette, density),
             10.0,
         ))
         .child(grow_cell(
-            dispatch_section(right, on_refresh, palette, density),
+            dispatch_section(right, hooks, palette, density),
             13.0,
         ))
         .into_any_element()
@@ -623,12 +656,16 @@ fn chip_elem(chip_icon: &SectionIcon, name: &str, palette: &ForgePalette) -> Any
 fn content_list_panel(
     list: &ContentList,
     region_h: Option<f32>,
-    on_refresh: Option<&SectionRefresh>,
+    hooks: &SectionHooks,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
     let row_h = content_list_row_h(list);
-    let pad_y = f32::from(list.row_padding_y_px);
+    let rows = RowHooks {
+        scope: SharedString::from(format!("content-list-{}", list.title)),
+        pad_y: f32::from(list.row_padding_y_px),
+        run_step: hooks.run_step.clone(),
+    };
     let mut slack = 0.0;
     let list_region: AnyElement = match region_h {
         Some(h) if list.items.len() as f32 * row_h > h => {
@@ -637,11 +674,11 @@ fn content_list_panel(
             let owned: Vec<ContentListItem> = list.items.clone();
             let pal = *palette;
             uniform_list(
-                SharedString::from(format!("content-list-{}", list.title)),
+                rows.scope.clone(),
                 owned.len(),
                 move |range, _window, _cx| {
                     range
-                        .map(|i| content_list_item_row(&owned[i], pad_y, &pal, density))
+                        .map(|i| content_list_item_row(&owned[i], &rows, &pal, density))
                         .collect::<Vec<_>>()
                 },
             )
@@ -652,17 +689,17 @@ fn content_list_panel(
             .into_any_element()
         }
         pinned_h => {
-            let mut rows = div().w_full().flex().flex_col();
+            let mut stack = div().w_full().flex().flex_col();
             if let Some(h) = pinned_h {
-                rows = rows.flex_none().h(px(h));
+                stack = stack.flex_none().h(px(h));
             }
             for item in &list.items {
-                rows = rows.child(content_list_item_row(item, pad_y, palette, density));
+                stack = stack.child(content_list_item_row(item, &rows, palette, density));
             }
-            rows.into_any_element()
+            stack.into_any_element()
         }
     };
-    let refresh = list.refreshable.then(|| on_refresh.cloned()).flatten();
+    let refresh = list.refreshable.then(|| hooks.refresh.clone()).flatten();
     let mut card = card_shell(palette)
         .child(panel_header_row(
             list.icon.as_str(),
@@ -686,7 +723,7 @@ fn content_list_panel(
 
 fn content_list_item_row(
     item: &ContentListItem,
-    pad_y: f32,
+    rows: &RowHooks,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -732,8 +769,13 @@ fn content_list_item_row(
     {
         trailing = trailing.child(active_badge(label, palette, density));
     }
-    for token in &item.trailing {
-        trailing = trailing.child(trailing_token_elem(token, dim, palette, density));
+    for (index, token) in item.trailing.iter().enumerate() {
+        let site = TokenSite {
+            hooks: rows,
+            row: &item.name,
+            index,
+        };
+        trailing = trailing.child(trailing_token_elem(token, dim, &site, palette, density));
     }
 
     let content = div()
@@ -750,9 +792,25 @@ fn content_list_item_row(
         .child(trailing);
 
     if item.active {
-        active_row_wrapper(content.into_any_element(), pad_y, palette, density)
-    } else {
-        plain_row_wrapper(content.into_any_element(), pad_y, palette, density)
+        return active_row_wrapper(content.into_any_element(), rows.pad_y, palette, density);
+    }
+    match (&item.on_click, &rows.run_step) {
+        (Some(step), Some(run)) => {
+            let run = Rc::clone(run);
+            let click = StepClick {
+                row: SharedString::from(item.name.clone()),
+                step: step.clone(),
+            };
+            let hover_bg = palette.surface_overlay;
+            row_surface(rows.pad_y, palette)
+                .id(rows.element_id("row", &item.name))
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover_bg))
+                .on_click(move |_: &ClickEvent, window, cx| run(&click, window, cx))
+                .child(content)
+                .into_any_element()
+        }
+        _ => plain_row_wrapper(content.into_any_element(), rows.pad_y, palette, density),
     }
 }
 
@@ -1103,7 +1161,7 @@ fn active_row_wrapper(
         .flex_1()
         .min_w(px(0.0))
         .py(px(pad_y))
-        .px(px(14.0))
+        .px(ROW_PAD_X)
         .child(content);
     div()
         .w_full()
@@ -1114,17 +1172,21 @@ fn active_row_wrapper(
         .into_any_element()
 }
 
+fn row_surface(pad_y: f32, palette: &ForgePalette) -> Div {
+    div()
+        .w_full()
+        .py(px(pad_y))
+        .px(ROW_PAD_X)
+        .bg(palette.elevated)
+}
+
 fn plain_row_wrapper(
     content: AnyElement,
     pad_y: f32,
     palette: &ForgePalette,
     _density: Density,
 ) -> AnyElement {
-    div()
-        .w_full()
-        .py(px(pad_y))
-        .px(px(14.0))
-        .bg(palette.elevated)
+    row_surface(pad_y, palette)
         .child(content)
         .into_any_element()
 }
@@ -1147,6 +1209,7 @@ fn active_badge(label: &str, palette: &ForgePalette, density: Density) -> AnyEle
 fn trailing_token_elem(
     token: &TrailingToken,
     dim: f32,
+    site: &TokenSite,
     palette: &ForgePalette,
     density: Density,
 ) -> AnyElement {
@@ -1175,6 +1238,37 @@ fn trailing_token_elem(
             with_alpha(token_color_value(color, palette), dim),
         )
         .into_any_element(),
+        TrailingToken::ActionIcon {
+            icon: ic,
+            tint,
+            step,
+        } => {
+            let tc = with_alpha(token_color_value(tint, palette), dim);
+            let glyph = Icon::from_name(ic.as_str());
+            let Some(run) = site.hooks.run_step.clone() else {
+                return icon(glyph, ROW_TRAILING_GLYPH, tc).into_any_element();
+            };
+            let hover_tint = palette.text_primary;
+            let click = StepClick {
+                row: SharedString::from(site.row.to_owned()),
+                step: step.clone(),
+            };
+            svg()
+                .flex_none()
+                .size(ROW_TRAILING_GLYPH)
+                .path(glyph.path())
+                .text_color(tc)
+                .id(site
+                    .hooks
+                    .element_id(&format!("token-{}", site.index), site.row))
+                .cursor_pointer()
+                .hover(move |s| s.text_color(hover_tint))
+                .on_click(move |_: &ClickEvent, window, cx| {
+                    cx.stop_propagation();
+                    run(&click, window, cx);
+                })
+                .into_any_element()
+        }
     }
 }
 

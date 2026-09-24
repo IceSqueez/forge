@@ -148,10 +148,36 @@ mod tests {
     use time::{Duration, OffsetDateTime};
 
     use super::{
-        DASH, SubStatus, drawer_matches, enrich_with_storage, selected_summary, sub_status,
-        synthesize_from_chat, unique_authors, watch_time_since,
+        DASH, SubStatus, ViewerDirectory, author_summary, drawer_matches, enrich_with_storage,
+        selected_summary, sub_status, watch_time_since,
     };
-    use crate::chat_feed::ChatMessage;
+    use crate::chat_feed::{ChatFeed, ChatMessage};
+
+    fn feed_of(messages: &[ChatMessage]) -> ChatFeed {
+        let mut feed = ChatFeed::new();
+        feed.seed(messages.to_vec());
+        feed
+    }
+
+    fn unique_authors(messages: &[ChatMessage]) -> Vec<String> {
+        feed_of(messages)
+            .authors()
+            .newest_first()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    fn synthesize_from_chat(
+        username: &str,
+        messages: &[ChatMessage],
+    ) -> Option<super::ViewerSummary> {
+        author_summary(
+            username,
+            feed_of(messages).authors(),
+            &ViewerDirectory::default(),
+            &FORGE_DEFAULT,
+        )
+    }
 
     fn msg(username: &str, badges: Vec<BadgeKind>) -> ChatMessage {
         ChatMessage {
@@ -230,7 +256,7 @@ mod tests {
             msg("bob", vec![BadgeKind::Moderator]),
             msg("alice", vec![BadgeKind::Vip, BadgeKind::Subscriber]),
         ];
-        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
+        let summary = synthesize_from_chat("alice", &messages).unwrap();
         assert_eq!(summary.message_count, 2);
         assert_eq!(summary.role, Some(BadgeKind::Vip));
         assert_eq!(summary.avatar_letter, 'A');
@@ -239,20 +265,20 @@ mod tests {
     #[test]
     fn synthesize_role_is_none_when_latest_row_has_no_badges() {
         let messages = [msg("alice", vec![])];
-        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
+        let summary = synthesize_from_chat("alice", &messages).unwrap();
         assert_eq!(summary.role, None);
     }
 
     #[test]
     fn synthesize_returns_none_when_author_absent() {
         let messages = [msg("alice", vec![])];
-        assert!(synthesize_from_chat("ghost", &messages, &FORGE_DEFAULT).is_none());
+        assert!(synthesize_from_chat("ghost", &messages).is_none());
     }
 
     #[test]
     fn enrich_overlays_storage_fields_and_leaves_role_untouched() {
         let messages = [msg("alice", vec![BadgeKind::Subscriber])];
-        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
+        let summary = synthesize_from_chat("alice", &messages).unwrap();
         assert_eq!(summary.message_count, 1);
         assert_eq!(summary.watch_time, DASH);
 
@@ -263,7 +289,7 @@ mod tests {
             now - Duration::minutes(120),
             now - Duration::days(2),
         );
-        let enriched = enrich_with_storage(summary, &[stored]);
+        let enriched = enrich_with_storage(summary, Some(&stored));
 
         assert_eq!(enriched.message_count, 99);
         assert_eq!(enriched.watch_time, "2h 0m");
@@ -275,10 +301,10 @@ mod tests {
     #[test]
     fn enrich_leaves_synthesized_values_when_no_viewer_matches() {
         let messages = [msg("alice", vec![])];
-        let summary = synthesize_from_chat("alice", &messages, &FORGE_DEFAULT).unwrap();
+        let summary = synthesize_from_chat("alice", &messages).unwrap();
         let now = OffsetDateTime::now_utc();
         let other = viewer("someone-else", 99, now, now);
-        let enriched = enrich_with_storage(summary, &[other]);
+        let enriched = enrich_with_storage(summary, ViewerDirectory::new(vec![other]).get("alice"));
 
         assert_eq!(enriched.message_count, 1);
         assert_eq!(enriched.watch_time, DASH);
@@ -303,34 +329,66 @@ mod tests {
     #[test]
     fn selected_summary_falls_back_to_latest_author_when_none_selected() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
-        let summary = selected_summary(None, &messages, &[], &FORGE_DEFAULT).unwrap();
+        let summary = selected_summary(
+            None,
+            feed_of(&messages).authors(),
+            &ViewerDirectory::default(),
+            &FORGE_DEFAULT,
+        )
+        .unwrap();
         assert_eq!(summary.username, "bob");
     }
 
     #[test]
     fn selected_summary_fallback_skips_a_trailing_empty_author() {
         let messages = [msg("alice", vec![]), msg("", vec![])];
-        let summary = selected_summary(None, &messages, &[], &FORGE_DEFAULT).unwrap();
+        let summary = selected_summary(
+            None,
+            feed_of(&messages).authors(),
+            &ViewerDirectory::default(),
+            &FORGE_DEFAULT,
+        )
+        .unwrap();
         assert_eq!(summary.username, "alice");
     }
 
     #[test]
     fn selected_summary_uses_the_selected_author() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
-        let summary = selected_summary(Some("alice"), &messages, &[], &FORGE_DEFAULT).unwrap();
+        let summary = selected_summary(
+            Some("alice"),
+            feed_of(&messages).authors(),
+            &ViewerDirectory::default(),
+            &FORGE_DEFAULT,
+        )
+        .unwrap();
         assert_eq!(summary.username, "alice");
     }
 
     #[test]
     fn selected_summary_absent_selection_falls_back_to_latest_author() {
         let messages = [msg("alice", vec![])];
-        let summary = selected_summary(Some("ghost"), &messages, &[], &FORGE_DEFAULT).unwrap();
+        let summary = selected_summary(
+            Some("ghost"),
+            feed_of(&messages).authors(),
+            &ViewerDirectory::default(),
+            &FORGE_DEFAULT,
+        )
+        .unwrap();
         assert_eq!(summary.username, "alice");
     }
 
     #[test]
     fn selected_summary_is_none_without_any_authored_message() {
-        assert!(selected_summary(None, &[], &[], &FORGE_DEFAULT).is_none());
+        assert!(
+            selected_summary(
+                None,
+                ChatFeed::new().authors(),
+                &ViewerDirectory::default(),
+                &FORGE_DEFAULT
+            )
+            .is_none()
+        );
     }
 
     #[test]

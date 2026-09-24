@@ -2777,31 +2777,6 @@ mod tests {
     }
 
     #[test]
-    fn only_an_unadopted_row_is_badged_and_a_blocked_one_carries_its_reason() {
-        for (availability, expected) in [
-            (None, None),
-            (Some(ClipAvailability::Managed), None),
-            (Some(ClipAvailability::Missing), None),
-            (
-                Some(ClipAvailability::Unadopted { refusal: None }),
-                Some(None),
-            ),
-            (
-                Some(ClipAvailability::Unadopted {
-                    refusal: Some(unsupported("notes.txt")),
-                }),
-                Some(Some(unsupported("notes.txt"))),
-            ),
-        ] {
-            let badge = adoption_badge(availability.as_ref()).map(|badge| match badge {
-                AdoptionBadge::Blocked(reason) => Some(reason),
-                AdoptionBadge::Pending => None,
-            });
-            assert_eq!(badge, expected, "{availability:?}");
-        }
-    }
-
-    #[test]
     fn unadopted_ids_names_every_row_the_library_has_not_taken_in() {
         let ids: Vec<ClipId> = (0..5).map(|_| ClipId::new()).collect();
         let clips: Vec<SoundClip> = ids.iter().copied().map(sound_clip).collect();
@@ -2898,6 +2873,102 @@ mod tests {
             ),
         ] {
             assert_eq!(clip_refusal_message(&refusal), expected_key, "{refusal:?}");
+        }
+    }
+
+    fn settled(payload: serde_json::Value) -> Option<(&'static str, Option<String>)> {
+        settled_adoption(&payload).map(|settled| match settled {
+            SettledAdoption::Copied => ("copied", None),
+            SettledAdoption::AlreadyManaged => ("already_managed", None),
+            SettledAdoption::SourceMissing => ("source_missing", None),
+            SettledAdoption::Refused(reason) => ("refused", Some(reason.to_string())),
+        })
+    }
+
+    fn badge(
+        availability: Option<ClipAvailability>,
+        note: Option<&str>,
+    ) -> Option<(&'static str, Option<String>)> {
+        let note = note.map(|n| SharedString::from(n.to_owned()));
+        library_badge(availability.as_ref(), note.as_ref()).map(|badge| match badge {
+            LibraryBadge::Blocked(reason) => ("blocked", Some(reason.to_string())),
+            LibraryBadge::Pending => ("pending", None),
+        })
+    }
+
+    #[test]
+    fn each_settled_adoption_verdict_maps_to_its_outcome() {
+        for (payload, expected) in [
+            (
+                serde_json::json!({ "verdict": "adopted" }),
+                ("copied", None),
+            ),
+            (
+                serde_json::json!({ "verdict": "already_managed" }),
+                ("already_managed", None),
+            ),
+            (
+                serde_json::json!({ "verdict": "source_missing" }),
+                ("source_missing", None),
+            ),
+            (
+                serde_json::json!({ "verdict": "refused", "reason": "notes.txt is not audio" }),
+                ("refused", Some("notes.txt is not audio".to_owned())),
+            ),
+        ] {
+            assert_eq!(settled(payload.clone()), Some(expected), "{payload}");
+        }
+    }
+
+    #[test]
+    fn an_adoption_event_without_a_usable_verdict_settles_nothing() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({ "verdict": "in_flight" }),
+            serde_json::json!({ "verdict": "ADOPTED" }),
+            serde_json::json!({ "verdict": 1 }),
+            serde_json::json!({ "verdict": "refused" }),
+            serde_json::json!({ "verdict": "refused", "reason": "" }),
+            serde_json::json!({ "verdict": "refused", "reason": 3 }),
+        ] {
+            assert_eq!(settled(payload.clone()), None, "{payload}");
+        }
+    }
+
+    #[test]
+    fn a_live_refusal_note_blocks_the_pad_with_the_reason_as_its_tooltip() {
+        assert_eq!(
+            badge(
+                Some(ClipAvailability::Unadopted { refusal: None }),
+                Some("notes.txt is not audio"),
+            ),
+            Some(("blocked", Some("notes.txt is not audio".to_owned())))
+        );
+    }
+
+    #[test]
+    fn without_a_note_the_badge_follows_the_stored_availability() {
+        let refusal = unsupported("notes.txt");
+        for (availability, expected) in [
+            (None, None),
+            (Some(ClipAvailability::Managed), None),
+            (Some(ClipAvailability::Missing), None),
+            (
+                Some(ClipAvailability::Unadopted { refusal: None }),
+                Some(("pending", None)),
+            ),
+            (
+                Some(ClipAvailability::Unadopted {
+                    refusal: Some(refusal.clone()),
+                }),
+                Some(("blocked", Some(clip_refusal_message(&refusal)))),
+            ),
+        ] {
+            assert_eq!(
+                badge(availability.clone(), None),
+                expected,
+                "{availability:?}"
+            );
         }
     }
 }

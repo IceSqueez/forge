@@ -68,3 +68,163 @@ fn toast_text(payload: &Value) -> String {
         None => tr!("soundboard_toast_clip_failed_unnamed", error = error),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_storage::Language;
+    use gpui::TestAppContext;
+    use serde_json::json;
+
+    use super::*;
+    use crate::toasts::Toasts;
+
+    const CLIP: &str = "01J8Z3N5Q7R9T1V3X5Z7B9D1F3";
+
+    fn clip() -> ClipId {
+        CLIP.parse().unwrap()
+    }
+
+    fn setup(cx: &mut TestAppContext) {
+        crate::i18n::install_language(Language::En);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+    }
+
+    fn audio(kind: &str, payload: Value) -> Event {
+        Event::new(EventSource::Audio, kind, payload)
+    }
+
+    fn failed(label: Option<&str>) -> Event {
+        audio(
+            PLAYBACK_FAILED,
+            json!({ "clip_id": CLIP, "clip_label": label, "error": "device lost" }),
+        )
+    }
+
+    fn report(event: &Event, cx: &mut TestAppContext) {
+        cx.update(|cx| report_clip_playback(event, cx));
+    }
+
+    fn claim(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.claim_pad_play(clip()));
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|t| (t.kind, t.message.to_string()))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_failure_the_pad_claimed_raises_no_toast(cx: &mut TestAppContext) {
+        setup(cx);
+        claim(cx);
+
+        report(&failed(Some("Air Horn")), cx);
+
+        assert!(toasts(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_claim_covers_only_the_first_outcome_so_the_next_failure_toasts(cx: &mut TestAppContext) {
+        setup(cx);
+        claim(cx);
+
+        report(&failed(Some("Air Horn")), cx);
+        report(&failed(Some("Air Horn")), cx);
+
+        assert_eq!(toasts(cx).len(), 1);
+    }
+
+    #[gpui::test]
+    fn an_unclaimed_failure_raises_one_error_toast_naming_the_clip_and_error(
+        cx: &mut TestAppContext,
+    ) {
+        setup(cx);
+
+        report(&failed(Some("Air Horn")), cx);
+
+        let shown = toasts(cx);
+        assert_eq!(shown.len(), 1);
+        let (kind, message) = &shown[0];
+        assert!(matches!(kind, ToastKind::Error));
+        assert!(message.contains("Air Horn"), "{message}");
+        assert!(message.contains("device lost"), "{message}");
+    }
+
+    #[gpui::test]
+    fn a_start_or_finish_releases_the_claim_so_a_later_failure_toasts(cx: &mut TestAppContext) {
+        setup(cx);
+        for kind in [PLAYBACK_STARTED, PLAYBACK_FINISHED] {
+            cx.update(|cx| cx.set_global(Toasts::new()));
+            claim(cx);
+
+            report(&audio(kind, json!({ "clip_id": CLIP })), cx);
+            report(&failed(Some("Air Horn")), cx);
+
+            assert_eq!(toasts(cx).len(), 1, "after {kind}");
+        }
+    }
+
+    #[gpui::test]
+    fn unrelated_events_for_the_clip_neither_toast_nor_release_the_claim(cx: &mut TestAppContext) {
+        setup(cx);
+        claim(cx);
+
+        report(
+            &audio("soundboard.clip.adopted", json!({ "clip_id": CLIP })),
+            cx,
+        );
+        report(
+            &Event::new(
+                EventSource::Core,
+                PLAYBACK_STARTED,
+                json!({ "clip_id": CLIP }),
+            ),
+            cx,
+        );
+        report(
+            &Event::new(
+                EventSource::Core,
+                PLAYBACK_FAILED,
+                json!({ "clip_id": CLIP, "error": "x" }),
+            ),
+            cx,
+        );
+        report(&failed(Some("Air Horn")), cx);
+
+        assert!(toasts(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_failure_without_a_clip_label_still_toasts_its_error(cx: &mut TestAppContext) {
+        setup(cx);
+
+        report(&failed(None), cx);
+
+        let shown = toasts(cx);
+        assert_eq!(shown.len(), 1);
+        assert!(shown[0].1.contains("device lost"), "{}", shown[0].1);
+    }
+
+    #[gpui::test]
+    fn a_failure_without_a_usable_clip_id_toasts_and_leaves_claims_alone(cx: &mut TestAppContext) {
+        setup(cx);
+        claim(cx);
+
+        for payload in [
+            json!({ "error": "device lost" }),
+            json!({ "clip_id": "not-a-ulid", "error": "device lost" }),
+            json!({ "clip_id": 7, "error": "device lost" }),
+        ] {
+            report(&audio(PLAYBACK_FAILED, payload), cx);
+        }
+        report(&failed(Some("Air Horn")), cx);
+
+        assert_eq!(toasts(cx).len(), 3);
+    }
+}

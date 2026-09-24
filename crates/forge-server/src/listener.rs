@@ -261,7 +261,7 @@ mod tests {
         let permit = Arc::new(Semaphore::new(1))
             .try_acquire_owned()
             .expect("permit");
-        (client, GuardedStream::new(server, permit))
+        (client, GuardedStream::new(server, permit, None))
     }
 
     async fn read_one(stream: &mut GuardedStream) -> io::Result<usize> {

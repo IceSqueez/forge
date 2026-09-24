@@ -5,6 +5,7 @@ use std::time::Duration;
 use forge_events::{Event, EventSource, EventsError};
 use forge_registry::{
     CancelSignal, ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
+    kind_matches_prefix,
 };
 use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
@@ -110,7 +111,7 @@ impl TriggerEvaluator {
                 let prefix_ok = filter
                     .kind_prefix
                     .as_deref()
-                    .is_none_or(|p| event.kind.starts_with(p));
+                    .is_none_or(|p| kind_matches_prefix(&event.kind, p));
                 source_ok && prefix_ok
             })
             .collect();
@@ -193,7 +194,7 @@ impl TriggerEvaluator {
         let prefix_ok = filter
             .kind_prefix
             .as_deref()
-            .is_none_or(|p| event.kind.starts_with(p));
+            .is_none_or(|p| kind_matches_prefix(&event.kind, p));
 
         if !source_ok || !prefix_ok {
             return None;

@@ -24,7 +24,7 @@ pub use chain::{
 pub use config_ext::SubActionConfigExt;
 pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
 pub use error::RegistryError;
-pub use evaluator::EventFilter;
+pub use evaluator::{EventFilter, kind_matches_prefix};
 pub use form::{CodeLanguage, FormField};
 pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;

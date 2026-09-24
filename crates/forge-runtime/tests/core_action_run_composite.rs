@@ -447,3 +447,136 @@ fn validate_config_rejects_empty_or_missing_action_id() {
     assert!(runner.validate_config(&cfg("")).is_err());
     assert!(runner.validate_config(&SubActionConfig::new()).is_err());
 }
+
+/// Answers each child chain by the kind of its single step: `ok`, `err:<msg>`, or `late_err:<msg>`
+/// (errors only after every other child has returned). Every child waits at a shared barrier
+/// first, so the children only get past it if they were all started together.
+struct ScriptedExecutor {
+    started: tokio::sync::Barrier,
+    finished: AtomicUsize,
+    expected: usize,
+    calls: Mutex<Vec<Vec<String>>>,
+}
+
+impl ScriptedExecutor {
+    fn new(expected_children: usize) -> Self {
+        Self {
+            started: tokio::sync::Barrier::new(expected_children),
+            finished: AtomicUsize::new(0),
+            expected: expected_children,
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn calls(&self) -> Vec<Vec<String>> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl ChainExecutor for ScriptedExecutor {
+    async fn run_child_chain(
+        &self,
+        steps: &[SubActionStep],
+        arg_stack: &ArgStack,
+        _parent_event_id: EventId,
+    ) -> Result<ChildChainOutcome, RegistryError> {
+        let kinds: Vec<String> = steps.iter().map(|s| s.kind_id.clone()).collect();
+        self.calls.lock().unwrap().push(kinds.clone());
+        tokio::time::timeout(std::time::Duration::from_secs(2), self.started.wait())
+            .await
+            .expect("children were not started concurrently");
+        let kind = kinds.first().cloned().unwrap_or_default();
+        let signal = if let Some(msg) = kind.strip_prefix("late_err:") {
+            while self.finished.load(Ordering::SeqCst) + 1 < self.expected {
+                tokio::task::yield_now().await;
+            }
+            ChainSignal::Error(msg.to_owned())
+        } else if let Some(msg) = kind.strip_prefix("err:") {
+            ChainSignal::Error(msg.to_owned())
+        } else {
+            ChainSignal::Completed
+        };
+        self.finished.fetch_add(1, Ordering::SeqCst);
+        Ok(ChildChainOutcome {
+            signal,
+            arg_stack: arg_stack.clone(),
+            telemetry: Vec::new(),
+        })
+    }
+
+    fn cancel_signal(&self) -> CancelSignal {
+        CancelSignal::new()
+    }
+}
+
+#[tokio::test]
+async fn random_pick_target_runs_exactly_one_of_its_steps() {
+    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let mut target = target_with_steps(&["step.a", "step.b", "step.c"]);
+    target.execution_mode = ExecutionMode::RandomPick;
+    let id = target.id;
+    repo.seed(target);
+    let runner = CoreActionRunRunner::new(repo);
+
+    for _ in 0..20 {
+        let executor = MockChainExecutor::completing();
+        let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        let kinds = executor.recorded_step_kinds();
+        assert_eq!(
+            kinds.len(),
+            1,
+            "a random pick must run one step, ran {kinds:?}"
+        );
+        assert!(["step.a", "step.b", "step.c"].contains(&kinds[0].as_str()));
+    }
+}
+
+#[tokio::test]
+async fn random_pick_target_without_steps_succeeds_as_a_no_op() {
+    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let mut target = target_with_steps(&[]);
+    target.execution_mode = ExecutionMode::RandomPick;
+    let id = target.id;
+    repo.seed(target);
+    let runner = CoreActionRunRunner::new(repo);
+
+    let executor = MockChainExecutor::completing();
+    let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
+    assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+}
+
+#[tokio::test]
+async fn concurrent_target_starts_every_step_as_its_own_child_at_once() {
+    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let mut target = target_with_steps(&["ok", "ok", "ok"]);
+    target.concurrent = true;
+    let id = target.id;
+    repo.seed(target);
+    let runner = CoreActionRunRunner::new(repo);
+
+    let executor = ScriptedExecutor::new(3);
+    let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
+
+    assert!(matches!(outcome, SubActionOutcome::Success), "{outcome:?}");
+    assert_eq!(executor.calls(), vec![vec!["ok".to_owned()]; 3]);
+}
+
+#[tokio::test]
+async fn concurrent_target_reports_the_first_error_in_chain_order_not_finish_order() {
+    let repo = std::sync::Arc::new(MockActionRepo::new());
+    let mut target = target_with_steps(&["ok", "late_err:second step", "err:third step"]);
+    target.concurrent = true;
+    let id = target.id;
+    repo.seed(target);
+    let runner = CoreActionRunRunner::new(repo);
+
+    let executor = ScriptedExecutor::new(3);
+    let outcome = run(&runner, &cfg(&id.to_string()), &ArgStack::new(), &executor).await;
+
+    assert!(
+        matches!(&outcome, SubActionOutcome::Failed(m) if m == "second step"),
+        "got {outcome:?}"
+    );
+}

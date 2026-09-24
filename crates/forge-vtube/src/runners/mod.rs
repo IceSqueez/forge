@@ -80,7 +80,9 @@ mod tests {
 
     use super::*;
     use crate::client::VTubeClient;
-    use crate::runners::test_support::MockSink;
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
+    use forge_registry::runner::SubActionConfig;
+    use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     fn registry() -> SubActionRegistry {
         let mut reg = SubActionRegistry::new();
@@ -181,5 +183,187 @@ mod tests {
         register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new())).unwrap();
         let result = register_vtube_sub_actions(&mut reg, Arc::new(MockSink::new()));
         assert!(result.is_err());
+    }
+
+    enum WhenEmpty {
+        Fails,
+        SkipsTheCall,
+        Sends(Option<f64>),
+    }
+
+    struct NumericField {
+        kind_id: &'static str,
+        base: &'static [(&'static str, &'static str)],
+        key: &'static str,
+        literal: (&'static str, f64),
+        method: &'static str,
+        arg: usize,
+        when_empty: WhenEmpty,
+    }
+
+    const NUMERIC_FIELDS: [NumericField; 10] = [
+        NumericField {
+            kind_id: "vtube.param.set",
+            base: &[("param_id", "MouthSmile")],
+            key: "value",
+            literal: ("0.5", 0.5),
+            method: "set_param",
+            arg: 0,
+            when_empty: WhenEmpty::Fails,
+        },
+        NumericField {
+            kind_id: "vtube.model.move",
+            base: &[],
+            key: "rotation",
+            literal: ("0.5", 0.5),
+            method: "move_model",
+            arg: 2,
+            when_empty: WhenEmpty::SkipsTheCall,
+        },
+        NumericField {
+            kind_id: "vtube.item.move",
+            base: &[("item_instance_id", "inst-1")],
+            key: "size",
+            literal: ("0.5", 0.5),
+            method: "move_item",
+            arg: 2,
+            when_empty: WhenEmpty::SkipsTheCall,
+        },
+        NumericField {
+            kind_id: "vtube.item.load",
+            base: &[("file_name", "crown.png")],
+            key: "rotation",
+            literal: ("0.5", 0.5),
+            method: "load_item",
+            arg: 3,
+            when_empty: WhenEmpty::Sends(None),
+        },
+        NumericField {
+            kind_id: "vtube.item.load",
+            base: &[("file_name", "crown.png")],
+            key: "order",
+            literal: ("3", 3.0),
+            method: "load_item",
+            arg: 5,
+            when_empty: WhenEmpty::Sends(None),
+        },
+        NumericField {
+            kind_id: "vtube.item.throw",
+            base: &[("file_name", "crown.png")],
+            key: "duration",
+            literal: ("0.5", 0.5),
+            method: "move_item",
+            arg: 5,
+            when_empty: WhenEmpty::Sends(Some(0.4)),
+        },
+        NumericField {
+            kind_id: "vtube.item.pin",
+            base: &[("item_instance_id", "inst-1")],
+            key: "size",
+            literal: ("0.5", 0.5),
+            method: "pin_item",
+            arg: 1,
+            when_empty: WhenEmpty::Sends(Some(0.33)),
+        },
+        NumericField {
+            kind_id: "vtube.model.set_physics",
+            base: &[],
+            key: "duration",
+            literal: ("0.5", 0.5),
+            method: "set_physics_override",
+            arg: 1,
+            when_empty: WhenEmpty::Sends(Some(2.0)),
+        },
+        NumericField {
+            kind_id: "vtube.model.tint",
+            base: &[],
+            key: "mix_with_scene_lighting",
+            literal: ("0.5", 0.5),
+            method: "tint_all_art_meshes",
+            arg: 4,
+            when_empty: WhenEmpty::Sends(None),
+        },
+        NumericField {
+            kind_id: "vtube.model.tint",
+            base: &[],
+            key: "color_r",
+            literal: ("128", 128.0),
+            method: "tint_all_art_meshes",
+            arg: 0,
+            when_empty: WhenEmpty::Sends(Some(255.0)),
+        },
+    ];
+
+    enum Expect {
+        Sent(Option<f64>),
+        NotSent,
+        Failed,
+    }
+
+    async fn run_with_text(
+        field: &NumericField,
+        text: &str,
+    ) -> (SubActionOutcome, Option<Option<f64>>, bool) {
+        let sink = Arc::new(RecordingSink::default());
+        let mut reg = SubActionRegistry::new();
+        register_vtube_sub_actions(&mut reg, Arc::clone(&sink) as Arc<dyn VTubeSink>).unwrap();
+        let mut config: SubActionConfig = field
+            .base
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), Variant::String((*v).to_owned())))
+            .collect();
+        config.insert(field.key.to_owned(), Variant::String(text.to_owned()));
+        let stack = ArgStack::new().set("v".to_owned(), Variant::Int(2));
+
+        let (telemetry, _) = reg
+            .get(field.kind_id)
+            .unwrap()
+            .execute(&config, &make_ctx(&stack))
+            .await;
+
+        let sent = sink
+            .numbers_sent_to(field.method)
+            .map(|args| args[field.arg]);
+        (telemetry.outcome, sent, sink.was_called())
+    }
+
+    // Why: the Actions editor stores every one of these fields as text, so a runner that only
+    // reads `Variant::Float` silently sends its default instead of what the streamer typed.
+    #[tokio::test]
+    async fn numeric_fields_typed_as_text_reach_vts_as_numbers() {
+        for field in &NUMERIC_FIELDS {
+            let when_empty = match field.when_empty {
+                WhenEmpty::Fails => Expect::Failed,
+                WhenEmpty::SkipsTheCall => Expect::NotSent,
+                WhenEmpty::Sends(v) => Expect::Sent(v),
+            };
+            for (text, expected) in [
+                (field.literal.0, Expect::Sent(Some(field.literal.1))),
+                ("%v%", Expect::Sent(Some(2.0))),
+                ("abc", Expect::Failed),
+                ("", when_empty),
+            ] {
+                let case = format!("{} {}={text:?}", field.kind_id, field.key);
+                let (outcome, sent, called) = run_with_text(field, text).await;
+
+                match expected {
+                    Expect::Sent(value) => {
+                        assert_eq!(outcome, SubActionOutcome::Success, "{case}");
+                        assert_eq!(sent, Some(value), "{case}");
+                    }
+                    Expect::NotSent => {
+                        assert_eq!(outcome, SubActionOutcome::Success, "{case}");
+                        assert!(!called, "{case}: nothing to change, yet VTS was called");
+                    }
+                    Expect::Failed => {
+                        assert!(
+                            matches!(&outcome, SubActionOutcome::Failed(reason) if reason.contains(field.key)),
+                            "{case}: expected a failure naming the key, got {outcome:?}"
+                        );
+                        assert!(!called, "{case}: a rejected value still reached VTS");
+                    }
+                }
+            }
+        }
     }
 }

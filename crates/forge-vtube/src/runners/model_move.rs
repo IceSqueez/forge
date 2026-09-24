@@ -175,6 +175,7 @@ mod tests {
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
+    use forge_types::Variant;
 
     #[tokio::test]
     async fn execute_all_none_is_noop() {
@@ -189,40 +190,6 @@ mod tests {
             !sink.was_called(),
             "sink must not be called when all fields omitted"
         );
-    }
-
-    #[tokio::test]
-    async fn execute_partial_fields_dispatches() {
-        let sink = Arc::new(MockSink::new());
-        let runner = ModelMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
-        let config = BTreeMap::from([
-            ("x".to_owned(), Variant::Float(0.5)),
-            ("duration".to_owned(), Variant::Float(0.3)),
-        ]);
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (tel, _) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert!(sink.was_called());
-    }
-
-    #[tokio::test]
-    async fn execute_full_move_dispatches_correctly() {
-        let sink = Arc::new(MockSink::new());
-        let runner = ModelMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
-        let config = BTreeMap::from([
-            ("x".to_owned(), Variant::Float(-0.2)),
-            ("y".to_owned(), Variant::Float(0.1)),
-            ("rotation".to_owned(), Variant::Float(45.0)),
-            ("duration".to_owned(), Variant::Float(1.0)),
-        ]);
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (tel, extra) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "vtube.model.move");
-        assert!(extra.is_none());
-        assert!(sink.was_called());
     }
 
     #[tokio::test]

@@ -370,25 +370,97 @@ const ITEM_IGNORE_SENTINEL: f64 = -1000.0;
 const ITEM_IGNORE_SENTINEL_ORDER: i64 = -1000;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    use std::time::Duration;
+
+    use serde_json::json;
+
     use super::*;
+    use crate::client::tests::{FakeVts, MockPublisher, PeerConn, stored_token_creds, wait_paused};
+    use crate::request::REQUEST_TIMEOUT;
 
-    #[test]
-    fn check_response_passes_empty_data() {
-        assert!(check_response(&serde_json::json!({})).is_ok());
+    const SETTLE: Duration = Duration::from_secs(5);
+    const REJECTION_ERROR_ID: i64 = 452;
+    const ITEM_ERROR_ID: i64 = 751;
+
+    async fn connected_client(vts: &mut FakeVts) -> (VTubeClient, PeerConn) {
+        let client = vts.connect(&MockPublisher::new(), &stored_token_creds());
+        let conn = vts.logged_in_conn().await;
+        assert!(
+            wait_paused(SETTLE, || client.connection_state().is_connected()).await,
+            "the session never reached connected"
+        );
+        (client, conn)
     }
 
-    #[test]
-    fn check_response_passes_success_data() {
-        assert!(check_response(&serde_json::json!({ "hotkeyID": "abc" })).is_ok());
+    #[tokio::test(start_paused = true)]
+    async fn a_request_vts_rejects_fails_with_the_error_id_vts_sent() {
+        let mut vts = FakeVts::bind().await;
+        let (client, mut conn) = connected_client(&mut vts).await;
+
+        let (outcome, ()) = tokio::join!(client.trigger_hotkey("hk-1"), async {
+            let request = conn.expect("HotkeyTriggerRequest", SETTLE).await;
+            conn.tx
+                .api_error(&request, REJECTION_ERROR_ID, "Hotkey is on cooldown");
+        });
+
+        assert!(
+            matches!(
+                outcome,
+                Err(VTubeError::Rejected { error_id, .. }) if error_id == REJECTION_ERROR_ID
+            ),
+            "got {outcome:?}"
+        );
     }
 
-    #[test]
-    fn check_response_fails_on_error_id() {
-        let data = serde_json::json!({ "errorID": 100, "message": "no such hotkey" });
-        let err = check_response(&data).unwrap_err();
-        assert!(matches!(err, VTubeError::Request { .. }));
-        assert!(err.to_string().contains("errorID=100"));
+    #[tokio::test(start_paused = true)]
+    async fn a_request_the_peer_never_answers_times_out_at_the_request_deadline() {
+        let mut vts = FakeVts::bind().await;
+        let (client, conn) = connected_client(&mut vts).await;
+        let _peer = conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
+        let sent_at = tokio::time::Instant::now();
+
+        let outcome = client.trigger_hotkey("hk-1").await;
+
+        assert!(
+            matches!(outcome, Err(VTubeError::Timeout)),
+            "got {outcome:?}"
+        );
+        assert_eq!(sent_at.elapsed(), REQUEST_TIMEOUT);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn moving_an_item_fails_only_when_vts_reports_that_item_unmoved() {
+        let mut vts = FakeVts::bind().await;
+        let (client, mut conn) = connected_client(&mut vts).await;
+
+        for (moved, expect_ok) in [(true, true), (false, false)] {
+            let (outcome, ()) = tokio::join!(
+                client.move_item("inst-7", Some(0.5), None, None, None, None, 0.0, "linear"),
+                async {
+                    let request = conn.expect("ItemMoveRequest", SETTLE).await;
+                    let entry = if moved {
+                        json!({ "itemInstanceID": "inst-7", "success": true, "errorID": -1 })
+                    } else {
+                        json!({ "itemInstanceID": "inst-7", "success": false, "errorID": ITEM_ERROR_ID })
+                    };
+                    conn.tx.reply(&request, json!({ "movedItems": [entry] }));
+                }
+            );
+
+            if expect_ok {
+                assert!(outcome.is_ok(), "moved item reported {outcome:?}");
+            } else {
+                let Err(VTubeError::Rejected { error_id, message }) = outcome else {
+                    panic!("an unmoved item must be rejected, got {outcome:?}");
+                };
+                assert_eq!(error_id, ITEM_ERROR_ID);
+                assert!(
+                    message.contains("inst-7"),
+                    "message {message:?} must name the item"
+                );
+            }
+        }
     }
 }

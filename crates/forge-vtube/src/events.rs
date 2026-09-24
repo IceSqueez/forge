@@ -334,21 +334,6 @@ mod tests {
     }
 
     #[test]
-    fn raw_envelope_serde_roundtrip() {
-        let raw = r#"{
-            "requestID": "req-001",
-            "apiName": "VTubeStudioPublicAPI",
-            "apiVersion": "1.0",
-            "messageType": "HotkeyTriggeredEvent",
-            "data": { "hotkeyID": "hk-abc", "hotkeyName": "Wave" }
-        }"#;
-        let env: RawEnvelope = serde_json::from_str(raw).unwrap();
-        assert_eq!(env.message_type, "HotkeyTriggeredEvent");
-        assert_eq!(env.data["hotkeyID"], "hk-abc");
-        assert_eq!(env.data["hotkeyName"], "Wave");
-    }
-
-    #[test]
     fn config_changed_event_carries_model_id_and_name() {
         let publisher = MockPublisher::new();
         let env = make_envelope(

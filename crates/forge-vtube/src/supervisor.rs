@@ -1078,4 +1078,327 @@ mod tests {
         assert_eq!(events[0].payload["reason"], "auth_required");
         assert_eq!(events[1].payload["detail"], "dns failure");
     }
+
+    mod session {
+        use std::sync::Arc;
+        use std::sync::atomic::Ordering;
+        use std::time::Duration;
+
+        use forge_platform_core::{BuiltinControl, BuiltinHealth, HealthValue};
+        use serde_json::json;
+
+        use super::super::HANDSHAKE_REPLY_TIMEOUT;
+        use crate::client::VTubeClient;
+        use crate::client::tests::{
+            FakeVts, MockCreds, MockPublisher, PeerConn, stored_token_creds, wait_paused,
+        };
+        use crate::sink::VTubeSink;
+
+        const SETTLE: Duration = Duration::from_secs(5);
+        const LONG_WAIT: Duration = Duration::from_secs(60);
+        const PROMPT: Duration = Duration::from_secs(1);
+
+        async fn connected_session(
+            vts: &mut FakeVts,
+            publisher: &Arc<MockPublisher>,
+        ) -> (VTubeClient, PeerConn) {
+            let client = vts.connect(publisher, &stored_token_creds());
+            let conn = vts.logged_in_conn().await;
+            assert!(
+                wait_paused(SETTLE, || client.connection_state().is_connected()).await,
+                "the session never reached connected"
+            );
+            (client, conn)
+        }
+
+        fn face_kinds(publisher: &MockPublisher) -> Vec<String> {
+            publisher
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| e.kind.starts_with("vtube.tracking.face_"))
+                .map(|e| e.kind.clone())
+                .collect()
+        }
+
+        fn hotkey_event_seen(publisher: &MockPublisher, hotkey_id: &str) -> bool {
+            publisher
+                .events
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|e| e.kind == "vtube.hotkey.triggered" && e.payload["hotkey_id"] == hotkey_id)
+        }
+
+        fn metric(client: &VTubeClient, label: &str) -> HealthValue {
+            client
+                .metrics()
+                .into_iter()
+                .find(|m| m.label == label)
+                .unwrap()
+                .value
+        }
+
+        fn is_expression_poll(frame: &serde_json::Value) -> bool {
+            frame["messageType"] == "ExpressionStateRequest" && frame["data"]["details"] == false
+        }
+
+        async fn answer_seeds(conn: &mut PeerConn) {
+            let model = conn.expect("CurrentModelRequest", SETTLE).await;
+            conn.tx.reply(
+                &model,
+                json!({
+                    "modelLoaded": true,
+                    "modelName": "MyAvatar",
+                    "modelID": "m-1",
+                    "numberOfLive2DParameters": 42
+                }),
+            );
+            let face = conn.expect("FaceFoundRequest", SETTLE).await;
+            conn.tx.reply(&face, json!({ "found": true }));
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_request_left_unanswered_drops_the_session_as_unresponsive_and_redials() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, conn) = connected_session(&mut vts, &publisher).await;
+            let _peer = conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
+
+            let _ = client.trigger_hotkey("hk-1").await;
+
+            assert!(
+                wait_paused(SETTLE, || publisher
+                    .disconnected_with_reason("unresponsive"))
+                .await,
+                "a request past its deadline must drop the session as unresponsive"
+            );
+            assert!(
+                vts.next_conn(LONG_WAIT).await.is_some(),
+                "an unresponsive session must be redialed"
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_peer_silent_after_the_upgrade_fails_the_handshake_at_the_reply_deadline() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let _client = vts.connect(&publisher, &stored_token_creds());
+            let mut conn = vts.next_conn(SETTLE).await.unwrap();
+            conn.expect("AuthenticationRequest", SETTLE).await;
+            let asked_at = tokio::time::Instant::now();
+
+            assert!(
+                wait_paused(LONG_WAIT, || publisher
+                    .disconnected_with_reason("auth_failed"))
+                .await,
+                "a login nobody answers must end as auth_failed"
+            );
+            assert!(
+                asked_at.elapsed() >= HANDSHAKE_REPLY_TIMEOUT - Duration::from_millis(50),
+                "auth_failed arrived after {:?}, before the handshake deadline",
+                asked_at.elapsed()
+            );
+            drop(conn);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn disconnecting_during_a_silent_handshake_returns_promptly() {
+            for (phase, creds, request) in [
+                ("login", stored_token_creds(), "AuthenticationRequest"),
+                (
+                    "approval popup",
+                    MockCreds::new(),
+                    "AuthenticationTokenRequest",
+                ),
+            ] {
+                let mut vts = FakeVts::bind().await;
+                let client = vts.connect(&MockPublisher::new(), &creds);
+                let mut conn = vts.next_conn(SETTLE).await.unwrap();
+                conn.expect(request, SETTLE).await;
+
+                let outcome = tokio::time::timeout(PROMPT, client.disconnect()).await;
+
+                assert!(
+                    outcome.is_ok(),
+                    "disconnect during the {phase} waited for the peer instead of cancelling"
+                );
+                drop(conn);
+            }
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn two_unanswered_expression_polls_drop_the_session_even_while_events_flow() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (_client, conn) = connected_session(&mut vts, &publisher).await;
+            let (peer, unanswered_polls) = conn.answer_all_except(is_expression_poll);
+            let events = tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    peer.event(
+                        "HotkeyTriggeredEvent",
+                        json!({ "hotkeyID": "hk-1", "hotkeyName": "Wave" }),
+                    );
+                }
+            });
+
+            let dropped = wait_paused(LONG_WAIT, || {
+                publisher.disconnected_with_reason("unresponsive")
+            })
+            .await;
+            events.abort();
+
+            assert!(dropped, "a peer that stops answering polls must be dropped");
+            assert_eq!(
+                unanswered_polls.load(Ordering::SeqCst),
+                2,
+                "the session must drop on the second unanswered poll"
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_peer_that_answers_every_poll_stays_connected() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, conn) = connected_session(&mut vts, &publisher).await;
+            let _peer = conn.answer_all_except(|_| false);
+
+            let dropped = wait_paused(Duration::from_secs(30), || {
+                publisher.disconnected_event().is_some()
+            })
+            .await;
+
+            assert!(!dropped, "a responsive peer was dropped");
+            assert!(client.connection_state().is_connected());
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn the_current_model_and_face_replies_seed_the_model_and_tracking_tiles() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, mut conn) = connected_session(&mut vts, &publisher).await;
+            let mut deltas = client.health_tx.subscribe();
+
+            answer_seeds(&mut conn).await;
+
+            assert!(
+                wait_paused(SETTLE, || matches!(
+                    metric(&client, "TRACKING"),
+                    HealthValue::Status { active: true, .. }
+                ))
+                .await,
+                "the face seed never reached the TRACKING tile"
+            );
+            let model_index = client
+                .metrics()
+                .iter()
+                .position(|m| m.label == "MODEL")
+                .unwrap();
+            let model_delta = std::iter::from_fn(|| deltas.try_recv().ok())
+                .find(|d| usize::from(d.index) == model_index)
+                .map(|d| d.new_value);
+            assert_eq!(
+                model_delta,
+                Some(HealthValue::Text {
+                    primary: "MyAvatar".to_owned(),
+                    secondary: Some("42 parameters".to_owned()),
+                })
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn a_session_end_clears_the_model_and_tracking_tiles() {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let (client, mut conn) = connected_session(&mut vts, &publisher).await;
+            answer_seeds(&mut conn).await;
+            assert!(
+                wait_paused(SETTLE, || matches!(
+                    metric(&client, "TRACKING"),
+                    HealthValue::Status { active: true, .. }
+                ))
+                .await,
+                "precondition: the seeds must land first"
+            );
+
+            conn.tx.close();
+
+            assert!(
+                wait_paused(SETTLE, || publisher
+                    .disconnected_with_reason("socket_closed"))
+                .await,
+                "precondition: the session must end"
+            );
+            assert_eq!(
+                (metric(&client, "MODEL"), metric(&client, "TRACKING")),
+                (
+                    HealthValue::Text {
+                        primary: "\u{2014}".to_owned(),
+                        secondary: Some("not loaded".to_owned()),
+                    },
+                    HealthValue::Status {
+                        label: "Off".to_owned(),
+                        active: false,
+                        detail: None,
+                    },
+                )
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn face_triggers_fire_only_when_the_face_state_changes() {
+            type FaceCase = (
+                &'static str,
+                Option<bool>,
+                &'static [(bool, bool)],
+                &'static [&'static str],
+            );
+            let cases: [FaceCase; 2] = [
+                (
+                    "hand changes without a seed",
+                    None,
+                    &[(true, false), (true, true), (false, true), (false, false)],
+                    &["vtube.tracking.face_found", "vtube.tracking.face_lost"],
+                ),
+                (
+                    "hand change after the face seed",
+                    Some(true),
+                    &[(true, true)],
+                    &[],
+                ),
+            ];
+            for (case, seed, changes, expected) in cases {
+                let mut vts = FakeVts::bind().await;
+                let publisher = MockPublisher::new();
+                let (_client, mut conn) = connected_session(&mut vts, &publisher).await;
+                if let Some(found) = seed {
+                    let face = conn.expect("FaceFoundRequest", SETTLE).await;
+                    conn.tx.reply(&face, json!({ "found": found }));
+                }
+
+                for &(face_found, left_hand_found) in changes {
+                    conn.tx.event(
+                        "TrackingStatusChangedEvent",
+                        json!({
+                            "faceFound": face_found,
+                            "leftHandFound": left_hand_found,
+                            "rightHandFound": false
+                        }),
+                    );
+                }
+                conn.tx.event(
+                    "HotkeyTriggeredEvent",
+                    json!({ "hotkeyID": "sentinel", "hotkeyName": "sentinel" }),
+                );
+                assert!(
+                    wait_paused(SETTLE, || hotkey_event_seen(&publisher, "sentinel")).await,
+                    "{case}: the events were never processed"
+                );
+
+                assert_eq!(face_kinds(&publisher), expected, "{case}");
+            }
+        }
+    }
 }

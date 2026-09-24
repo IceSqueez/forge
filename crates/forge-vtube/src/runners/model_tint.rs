@@ -169,7 +169,7 @@ impl SubActionRunner for ModelTintRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::runners::test_support::{MockSink, make_ctx};
+    use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
 
     #[tokio::test]
     async fn execute_default_config_succeeds() {
@@ -183,14 +183,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_clamps_out_of_range_channel() {
-        let sink = Arc::new(MockSink::new());
+    async fn out_of_range_channels_are_clamped_to_the_byte_range() {
+        let sink = Arc::new(RecordingSink::default());
         let runner = ModelTintRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
-        let config = BTreeMap::from([("color_r".to_owned(), Variant::Int(999))]);
+        let config = BTreeMap::from([
+            ("color_r".to_owned(), Variant::Int(999)),
+            ("color_g".to_owned(), Variant::String("-5".to_owned())),
+            ("color_b".to_owned(), Variant::Int(255)),
+            ("color_a".to_owned(), Variant::Int(0)),
+        ]);
         let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (tel, _) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
+
+        runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert_eq!(
+            sink.numbers_sent_to("tint_all_art_meshes")
+                .map(|args| args[..4].to_vec()),
+            Some(vec![Some(255.0), Some(0.0), Some(255.0), Some(0.0)])
+        );
     }
 
     #[tokio::test]

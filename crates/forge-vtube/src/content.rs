@@ -354,10 +354,12 @@ async fn send_internal(
             respond_to,
         })
         .map_err(|_| ())?;
-    tokio::time::timeout(tokio::time::Duration::from_secs(5), rx)
+    let data = tokio::time::timeout(tokio::time::Duration::from_secs(5), rx)
         .await
         .map_err(|_| ())?
-        .map_err(|_| ())
+        .map_err(|_| ())?;
+    check_response(&data).map_err(|_| ())?;
+    Ok(data)
 }
 
 impl BuiltinContent for VTubeClient {

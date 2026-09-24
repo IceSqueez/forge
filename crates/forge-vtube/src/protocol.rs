@@ -83,4 +83,32 @@ mod tests {
         let b = new_request::<serde_json::Value>("B", serde_json::json!(null));
         assert_ne!(a.request_id, b.request_id);
     }
+
+    #[test]
+    fn check_response_turns_a_top_level_error_id_into_a_rejection() {
+        for (data, expected) in [
+            (serde_json::json!({}), None),
+            (serde_json::json!({ "hotkeyID": "abc" }), None),
+            (
+                serde_json::json!({ "errorID": 100, "message": "no such hotkey" }),
+                Some((100, "no such hotkey")),
+            ),
+            (
+                serde_json::json!({ "errorID": 8 }),
+                Some((8, "no reason given")),
+            ),
+        ] {
+            let rejection = match check_response(&data) {
+                Ok(()) => None,
+                Err(VTubeError::Rejected { error_id, message }) => Some((error_id, message)),
+                Err(other) => Some((i64::MIN, other.to_string())),
+            };
+
+            assert_eq!(
+                rejection,
+                expected.map(|(id, reason)| (id, reason.to_owned())),
+                "{data}"
+            );
+        }
+    }
 }

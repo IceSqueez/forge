@@ -205,14 +205,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn health_stream_is_subscribable() {
-        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        let health: &dyn BuiltinHealth = &c;
-        let items: Vec<_> = health.stream().take(0).collect().await;
-        assert!(items.is_empty());
-    }
-
     // Why: the delta index is a hardcoded slot number into the array `metrics()` builds. If the
     // two ever drift, the UI writes the model name into whichever metric now sits at that slot.
     #[test]

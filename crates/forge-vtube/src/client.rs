@@ -361,6 +361,10 @@ pub(crate) mod tests {
             self.store.lock().unwrap().contains_key(key)
         }
 
+        pub(crate) fn value(&self, key: &str) -> Option<String> {
+            self.store.lock().unwrap().get(key).cloned()
+        }
+
         pub(crate) fn insert(&self, key: &str, value: &str) {
             self.store
                 .lock()
@@ -428,7 +432,7 @@ pub(crate) mod tests {
                 "apiVersion": "1.0",
                 "requestID": request_id,
                 "messageType": "AuthenticationTokenResponse",
-                "data": { "authenticationToken": "test-token-abc", "granted": true }
+                "data": { "authenticationToken": "test-token-abc" }
             });
             ws.send(Message::Text(resp.to_string().into())).await.ok();
 
@@ -477,6 +481,252 @@ pub(crate) mod tests {
 
     pub(crate) async fn wait_for_connected(publisher: &MockPublisher) -> bool {
         wait_for(|| publisher.connected_event().is_some()).await
+    }
+
+    /// Short enough that a paused clock creeps forward instead of leaping to the next
+    /// supervisor deadline while a reply is still sitting in the loopback socket.
+    pub(crate) const PAUSED_STEP: Duration = Duration::from_millis(10);
+
+    /// Waits on a paused clock in `PAUSED_STEP` increments; returns false once `budget` elapses.
+    pub(crate) async fn wait_paused(budget: Duration, cond: impl Fn() -> bool) -> bool {
+        let deadline = tokio::time::Instant::now() + budget;
+        while tokio::time::Instant::now() < deadline {
+            if cond() {
+                return true;
+            }
+            tokio::time::sleep(PAUSED_STEP).await;
+        }
+        cond()
+    }
+
+    pub(crate) fn stored_token_creds() -> Arc<MockCreds> {
+        let creds = MockCreds::new();
+        creds.insert(
+            "vtube:default",
+            &serde_json::json!({ "token": "stored-token", "api_version": "1.0" }).to_string(),
+        );
+        creds
+    }
+
+    enum PeerCmd {
+        Send(serde_json::Value),
+        Close,
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct PeerTx(mpsc::UnboundedSender<PeerCmd>);
+
+    impl PeerTx {
+        fn frame(message_type: &str, request_id: &str, data: serde_json::Value) -> PeerCmd {
+            PeerCmd::Send(serde_json::json!({
+                "apiName": "VTubeStudioPublicAPI",
+                "apiVersion": "1.0",
+                "requestID": request_id,
+                "messageType": message_type,
+                "data": data,
+            }))
+        }
+
+        pub(crate) fn reply(&self, request: &serde_json::Value, data: serde_json::Value) {
+            let request_type = request["messageType"].as_str().unwrap_or("");
+            let response_type = request_type.replace("Request", "Response");
+            let request_id = request["requestID"].as_str().unwrap_or("");
+            let _ = self.0.send(Self::frame(&response_type, request_id, data));
+        }
+
+        pub(crate) fn api_error(&self, request: &serde_json::Value, error_id: i64, message: &str) {
+            let request_id = request["requestID"].as_str().unwrap_or("");
+            let _ = self.0.send(Self::frame(
+                "APIError",
+                request_id,
+                serde_json::json!({ "errorID": error_id, "message": message }),
+            ));
+        }
+
+        pub(crate) fn event(&self, message_type: &str, data: serde_json::Value) {
+            let _ = self.0.send(Self::frame(message_type, "", data));
+        }
+
+        pub(crate) fn close(&self) {
+            let _ = self.0.send(PeerCmd::Close);
+        }
+    }
+
+    pub(crate) struct PeerConn {
+        frames: mpsc::UnboundedReceiver<serde_json::Value>,
+        backlog: std::collections::VecDeque<serde_json::Value>,
+        pub(crate) tx: PeerTx,
+    }
+
+    impl PeerConn {
+        /// Next frame from forge whose `messageType` is `message_type`; frames of other types
+        /// are kept for later calls. Panics when none arrives within `budget` of paused time.
+        pub(crate) async fn expect(
+            &mut self,
+            message_type: &str,
+            budget: Duration,
+        ) -> serde_json::Value {
+            if let Some(pos) = self
+                .backlog
+                .iter()
+                .position(|f| f["messageType"] == message_type)
+            {
+                return self.backlog.remove(pos).unwrap();
+            }
+            let deadline = tokio::time::Instant::now() + budget;
+            while tokio::time::Instant::now() < deadline {
+                match tokio::time::timeout(PAUSED_STEP, self.frames.recv()).await {
+                    Ok(Some(frame)) if frame["messageType"] == message_type => return frame,
+                    Ok(Some(frame)) => self.backlog.push_back(frame),
+                    Ok(None) => panic!("the connection closed while waiting for {message_type}"),
+                    Err(_) => {}
+                }
+            }
+            panic!("no {message_type} from forge within {budget:?}");
+        }
+
+        pub(crate) async fn accept_login(&mut self) {
+            let login = self
+                .expect("AuthenticationRequest", Duration::from_secs(5))
+                .await;
+            self.tx.reply(
+                &login,
+                serde_json::json!({ "authenticated": true, "reason": "" }),
+            );
+        }
+
+        /// Hands the frame stream to a task that answers every request with an empty success
+        /// body, except the frames `is_silent` picks, which it counts and leaves unanswered.
+        pub(crate) fn answer_all_except(
+            mut self,
+            is_silent: fn(&serde_json::Value) -> bool,
+        ) -> (PeerTx, Arc<AtomicU32>) {
+            let tx = self.tx.clone();
+            let ignored = Arc::new(AtomicU32::new(0));
+            let counter = Arc::clone(&ignored);
+            let responder = self.tx.clone();
+            tokio::spawn(async move {
+                let mut pending: Vec<_> = self.backlog.drain(..).collect();
+                loop {
+                    for frame in pending.drain(..) {
+                        if is_silent(&frame) {
+                            counter.fetch_add(1, AO::SeqCst);
+                        } else {
+                            responder.reply(&frame, serde_json::json!({}));
+                        }
+                    }
+                    match self.frames.recv().await {
+                        Some(frame) => pending.push(frame),
+                        None => return,
+                    }
+                }
+            });
+            (tx, ignored)
+        }
+    }
+
+    /// Scripted VTube Studio: every accepted connection is handed to the test as a `PeerConn`.
+    pub(crate) struct FakeVts {
+        pub(crate) endpoint: String,
+        conns: mpsc::UnboundedReceiver<PeerConn>,
+    }
+
+    impl FakeVts {
+        pub(crate) async fn bind() -> Self {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("ws://{}", listener.local_addr().unwrap());
+            let (conns_tx, conns) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                while let Ok((stream, _)) = listener.accept().await {
+                    if stream.set_nodelay(true).is_err() {
+                        continue;
+                    }
+                    let Ok(ws) = tokio_tungstenite::accept_async(stream).await else {
+                        continue;
+                    };
+                    let (frames_tx, frames) = mpsc::unbounded_channel();
+                    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+                    tokio::spawn(pump_peer_connection(ws, frames_tx, cmd_rx));
+                    let conn = PeerConn {
+                        frames,
+                        backlog: std::collections::VecDeque::new(),
+                        tx: PeerTx(cmd_tx),
+                    };
+                    if conns_tx.send(conn).is_err() {
+                        return;
+                    }
+                }
+            });
+            Self { endpoint, conns }
+        }
+
+        pub(crate) fn connect(
+            &self,
+            publisher: &Arc<MockPublisher>,
+            creds: &Arc<MockCreds>,
+        ) -> VTubeClient {
+            VTubeClient::connect(
+                VTubeConfig {
+                    endpoint: self.endpoint.clone(),
+                },
+                publisher.publisher(),
+                creds.creds(),
+            )
+        }
+
+        pub(crate) async fn next_conn(&mut self, budget: Duration) -> Option<PeerConn> {
+            let deadline = tokio::time::Instant::now() + budget;
+            while tokio::time::Instant::now() < deadline {
+                if let Ok(conn) = tokio::time::timeout(PAUSED_STEP, self.conns.recv()).await {
+                    return conn;
+                }
+            }
+            None
+        }
+
+        pub(crate) async fn logged_in_conn(&mut self) -> PeerConn {
+            let Some(mut conn) = self.next_conn(Duration::from_secs(5)).await else {
+                panic!("forge never dialed the fake VTube Studio");
+            };
+            conn.accept_login().await;
+            conn
+        }
+    }
+
+    async fn pump_peer_connection(
+        mut ws: tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+        frames: mpsc::UnboundedSender<serde_json::Value>,
+        mut cmds: mpsc::UnboundedReceiver<PeerCmd>,
+    ) {
+        use tokio_tungstenite::tungstenite::Message;
+        loop {
+            tokio::select! {
+                frame = futures_util::StreamExt::next(&mut ws) => match frame {
+                    Some(Ok(Message::Text(text))) => {
+                        let _ = frames.send(serde_json::from_str(&text).unwrap_or_default());
+                        // Why: forge's socket leaves Nagle on, so its next frame waits for our
+                        // ACK; an unsolicited pong carries that ACK at once instead of after the
+                        // delayed-ACK timer, which real time never reaches on a paused clock.
+                        if ws.send(Message::Pong(Vec::new().into())).await.is_err() {
+                            return;
+                        }
+                    }
+                    Some(Ok(_)) => {}
+                    _ => return,
+                },
+                cmd = cmds.recv() => match cmd {
+                    Some(PeerCmd::Send(value)) => {
+                        if ws.send(Message::Text(value.to_string().into())).await.is_err() {
+                            return;
+                        }
+                    }
+                    Some(PeerCmd::Close) | None => {
+                        let _ = ws.close(None).await;
+                        return;
+                    }
+                },
+            }
+        }
     }
 
     #[tokio::test]
@@ -596,8 +846,10 @@ pub(crate) mod tests {
             "expected connected after cold-start auth"
         );
         assert!(
-            creds.has_key("vtube:default"),
-            "token should have been persisted to creds"
+            creds
+                .value("vtube:default")
+                .is_some_and(|blob| blob.contains("test-token-abc")),
+            "the token from the documented reply must be persisted"
         );
     }
 
@@ -631,103 +883,102 @@ pub(crate) mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn rejected_token_emits_auth_required_and_stops_reconnect() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            use tokio_tungstenite::tungstenite::Message;
-            let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
-                Duration::from_secs(3),
-                futures_util::StreamExt::next(&mut ws),
-            )
-            .await
-            else {
-                return;
-            };
-            let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-            let request_id = req["requestID"].as_str().unwrap_or("unknown");
-            let resp = serde_json::json!({
-                "apiName": "VTubeStudioPublicAPI",
-                "apiVersion": "1.0",
-                "requestID": request_id,
-                "messageType": "AuthenticationResponse",
-                "data": { "authenticated": false, "reason": "Plugin removed" }
-            });
-            ws.send(Message::Text(resp.to_string().into())).await.ok();
-        });
-
-        let publisher = MockPublisher::new();
-        let creds = MockCreds::new();
-        let token_blob = serde_json::json!({ "token": "stale-token", "api_version": "1.0" });
-        creds.insert("vtube:default", &token_blob.to_string());
-
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
-
-        assert!(
-            wait_for(|| publisher.disconnected_with_reason("auth_required")).await,
-            "expected disconnected event with auth_required reason"
-        );
-        assert!(
-            wait_for(|| !creds.has_key("vtube:default")).await,
-            "stale token should have been cleared from creds"
-        );
+    fn first_disconnect_reason(publisher: &MockPublisher) -> Option<String> {
+        publisher
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "vtube.connection.changed")
+            .filter_map(|e| e.payload["reason"].as_str())
+            .find(|reason| *reason != "awaiting_approval")
+            .map(str::to_owned)
     }
 
-    #[tokio::test]
-    async fn denied_popup_emits_auth_denied_reason_distinct_from_timeout() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+    #[tokio::test(start_paused = true)]
+    async fn a_rejected_login_asks_for_auth_again_and_forgets_the_stored_token() {
+        type Rejection = fn(&PeerTx, &serde_json::Value);
+        let rejections: [(&str, Rejection); 2] = [
+            ("authenticated false", |tx, login| {
+                tx.reply(
+                    login,
+                    serde_json::json!({ "authenticated": false, "reason": "Plugin removed" }),
+                );
+            }),
+            ("APIError 50", |tx, login| {
+                tx.api_error(login, 50, "User has denied API access for this plugin");
+            }),
+        ];
+        for (shape, reject) in rejections {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let creds = stored_token_creds();
+            let _client = vts.connect(&publisher, &creds);
+            let mut conn = vts.next_conn(Duration::from_secs(5)).await.unwrap();
 
-        tokio::spawn(async move {
-            let Ok((stream, _)) = listener.accept().await else {
-                return;
-            };
-            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
-            use tokio_tungstenite::tungstenite::Message;
-            let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout(
-                Duration::from_secs(3),
-                futures_util::StreamExt::next(&mut ws),
-            )
-            .await
-            else {
-                return;
-            };
-            let req: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-            let request_id = req["requestID"].as_str().unwrap_or("unknown");
-            let resp = serde_json::json!({
-                "apiName": "VTubeStudioPublicAPI",
-                "apiVersion": "1.0",
-                "requestID": request_id,
-                "messageType": "AuthenticationTokenResponse",
-                "data": { "authenticationToken": "", "granted": false }
-            });
-            ws.send(Message::Text(resp.to_string().into())).await.ok();
-        });
+            let login = conn
+                .expect("AuthenticationRequest", Duration::from_secs(5))
+                .await;
+            reject(&conn.tx, &login);
 
-        let publisher = MockPublisher::new();
-        let creds = MockCreds::new();
-        let cfg = VTubeConfig {
-            endpoint: format!("ws://{addr}"),
-        };
-        let _client = VTubeClient::connect(cfg, publisher.publisher(), creds.creds());
+            assert!(
+                wait_paused(Duration::from_secs(5), || {
+                    publisher.disconnected_with_reason("auth_required")
+                })
+                .await,
+                "{shape}: expected the auth_required reason"
+            );
+            assert!(
+                !creds.has_key("vtube:default"),
+                "{shape}: the rejected token must be cleared from the store"
+            );
+        }
+    }
 
-        assert!(
-            wait_for(|| publisher.disconnected_with_reason("auth_denied")).await,
-            "denied popup must map to the auth_denied reason token"
-        );
-        assert!(
-            !publisher.disconnected_with_reason("auth_timeout"),
-            "TokenDenied must not collapse into the auth_timeout token"
-        );
+    #[tokio::test(start_paused = true)]
+    async fn the_pairing_popup_reply_decides_between_denied_and_a_retryable_failure() {
+        type PopupReply = fn(&PeerTx, &serde_json::Value);
+        let cases: [(&str, PopupReply, &str); 3] = [
+            (
+                "user clicked Deny (APIError 50)",
+                |tx, req| tx.api_error(req, 50, "User has denied API access for this plugin"),
+                "auth_denied",
+            ),
+            (
+                "any other APIError",
+                |tx, req| tx.api_error(req, 1, "Internal server error"),
+                "auth_failed",
+            ),
+            (
+                "token response without a token",
+                |tx, req| tx.reply(req, serde_json::json!({ "authenticationToken": "" })),
+                "auth_failed",
+            ),
+        ];
+        for (case, answer, expected) in cases {
+            let mut vts = FakeVts::bind().await;
+            let publisher = MockPublisher::new();
+            let _client = vts.connect(&publisher, &MockCreds::new());
+            let mut conn = vts.next_conn(Duration::from_secs(5)).await.unwrap();
+
+            let popup = conn
+                .expect("AuthenticationTokenRequest", Duration::from_secs(5))
+                .await;
+            answer(&conn.tx, &popup);
+
+            assert!(
+                wait_paused(Duration::from_secs(5), || {
+                    first_disconnect_reason(&publisher).is_some()
+                })
+                .await,
+                "{case}: no outcome was reported"
+            );
+            assert_eq!(
+                first_disconnect_reason(&publisher).as_deref(),
+                Some(expected),
+                "{case}"
+            );
+        }
     }
 
     #[tokio::test]

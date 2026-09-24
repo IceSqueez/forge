@@ -276,19 +276,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_dispatches_when_a_positional_field_is_set() {
-        let sink = Arc::new(MockSink::new());
-        let runner = ItemMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
-        let mut config = config_with_id("item-1");
-        config.insert("x".to_owned(), Variant::Float(0.5));
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (tel, _) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert!(sink.was_called());
-    }
-
-    #[tokio::test]
     async fn execute_failed_outcome_when_sink_errors() {
         let sink = Arc::new(MockSink::failing());
         let runner = ItemMoveRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);

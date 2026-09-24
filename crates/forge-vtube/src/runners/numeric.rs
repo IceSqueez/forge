@@ -70,3 +70,69 @@ pub(crate) fn accepts_number(value: Option<&Variant>) -> bool {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::ArgStack;
+
+    use super::*;
+    use crate::runners::test_support::make_ctx;
+
+    fn read(value: Variant) -> Result<Option<f64>, String> {
+        let config = BTreeMap::from([("k".to_owned(), value)]);
+        optional_number(&config, "k", &make_ctx(&ArgStack::new()))
+    }
+
+    fn read_integer(value: Variant) -> Result<Option<i64>, String> {
+        let config = BTreeMap::from([("k".to_owned(), value)]);
+        optional_integer(&config, "k", &make_ctx(&ArgStack::new()))
+    }
+
+    fn text(s: &str) -> Variant {
+        Variant::String(s.to_owned())
+    }
+
+    #[test]
+    fn optional_number_reads_typed_and_padded_values() {
+        for (value, expected) in [
+            (Variant::Float(-0.25), Some(-0.25)),
+            (Variant::Int(3), Some(3.0)),
+            (text(" 0.5 "), Some(0.5)),
+            (text("-1e2"), Some(-100.0)),
+            (text("   "), None),
+        ] {
+            assert_eq!(read(value.clone()).unwrap(), expected, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn optional_number_rejects_values_vts_cannot_take() {
+        for value in [text("NaN"), text("inf"), text("0.5.1"), Variant::Bool(true)] {
+            let err = read(value.clone()).unwrap_err();
+            assert!(err.contains("'k'"), "{value:?} gave {err:?}");
+        }
+    }
+
+    #[test]
+    fn optional_integer_rejects_a_fractional_value() {
+        assert_eq!(read_integer(text(" 7 ")).unwrap(), Some(7));
+        assert!(read_integer(text("2.5")).is_err());
+    }
+
+    #[test]
+    fn accepts_number_lets_templates_through_for_run_time_resolution() {
+        for (value, expected) in [
+            (Some(Variant::Float(0.5)), true),
+            (Some(Variant::Int(1)), true),
+            (Some(text("0.5")), true),
+            (Some(text("%level%")), true),
+            (Some(text("abc")), false),
+            (Some(Variant::Bool(true)), false),
+            (None, false),
+        ] {
+            assert_eq!(accepts_number(value.as_ref()), expected, "{value:?}");
+        }
+    }
+}

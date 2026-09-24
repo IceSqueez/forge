@@ -146,35 +146,6 @@ mod tests {
         assert!(runner.validate_config(&config).is_err());
     }
 
-    #[tokio::test]
-    async fn execute_interpolates_param_id_not_value() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
-        let stack =
-            ArgStack::new().set("pid".to_owned(), Variant::String("DynamicParam".to_owned()));
-        let config = BTreeMap::from([
-            ("param_id".to_owned(), Variant::String("%pid%".to_owned())),
-            ("value".to_owned(), Variant::Float(0.75)),
-        ]);
-        let ctx = make_ctx(&stack);
-        let (tel, extra) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert!(extra.is_none());
-    }
-
-    #[tokio::test]
-    async fn execute_returns_success_on_mock_sink() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
-        let stack = ArgStack::new();
-        let config = BTreeMap::from([
-            ("param_id".to_owned(), Variant::String("ParamA".to_owned())),
-            ("value".to_owned(), Variant::Float(1.0)),
-        ]);
-        let ctx = make_ctx(&stack);
-        let (tel, _) = runner.execute(&config, &ctx).await;
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
-        assert_eq!(tel.kind, "vtube.param.set");
-    }
-
     struct CaptureSink {
         last_id: Arc<std::sync::Mutex<Option<String>>>,
         last_value: Arc<std::sync::Mutex<Option<f64>>>,
@@ -326,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_config_rejects_non_float_value() {
+    fn validate_config_rejects_a_non_numeric_value() {
         let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
         let config = BTreeMap::from([
             ("param_id".to_owned(), Variant::String("P".to_owned())),

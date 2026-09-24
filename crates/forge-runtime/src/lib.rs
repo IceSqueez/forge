@@ -17,6 +17,7 @@ pub mod dashboard;
 mod egress;
 pub mod event_log_bridge;
 pub mod live_viewers;
+mod overlay_lanes;
 pub mod overlay_media;
 pub mod overlay_service;
 pub mod queue_scheduler;

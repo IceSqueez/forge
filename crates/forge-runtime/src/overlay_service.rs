@@ -23,6 +23,7 @@ use serde_json::json;
 
 use crate::actions::ActionsService;
 use crate::bus::EventBus;
+use crate::overlay_lanes::OverlayLanes;
 use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
@@ -127,6 +128,7 @@ struct OverlayService {
     frames: Option<Arc<dyn OverlayFrameSink>>,
     media: Option<OverlayMediaLibrary>,
     wiring: Option<EventWiring>,
+    lanes: Arc<OverlayLanes>,
 }
 
 #[derive(Clone)]
@@ -158,6 +160,7 @@ impl OverlayServiceHandle {
                 frames,
                 media: None,
                 wiring: None,
+                lanes: Arc::default(),
             }),
         }
     }
@@ -198,6 +201,7 @@ impl OverlayServiceHandle {
             frames: self.inner.frames.clone(),
             media: self.inner.media.clone(),
             wiring: self.inner.wiring.clone(),
+            lanes: Arc::clone(&self.inner.lanes),
         }
     }
 
@@ -413,6 +417,7 @@ impl OverlayServiceHandle {
 
     /// Only a Replace kind ever has a retained row, so what is stored is what may be replayed.
     async fn replay_retained(&self, id: &OverlayId) -> Result<(), OverlayServiceError> {
+        let _lane = self.inner.lanes.enter(id).await;
         let Some(content) = self.inner.repo.get_retained_content(id).await? else {
             return Ok(());
         };
@@ -427,9 +432,11 @@ impl OverlayServiceHandle {
         content: &OverlayConfig,
         duration_ms: Option<u64>,
     ) -> Result<OverlayDelivery, OverlayServiceError> {
-        if disposition.retains_last_content() {
-            self.inner.repo.set_retained_content(id, content).await?;
+        if !disposition.retains_last_content() {
+            return Ok(self.send(id, content, duration_ms).await);
         }
+        let _lane = self.inner.lanes.enter(id).await;
+        self.inner.repo.set_retained_content(id, content).await?;
         Ok(self.send(id, content, duration_ms).await)
     }
 

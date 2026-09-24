@@ -30,6 +30,7 @@ mod hotkey_action_modal;
 mod hotkey_bindings;
 mod hotkeys_screen;
 mod i18n;
+mod in_flight_steps;
 mod instance_lock;
 mod integration_detail;
 mod integration_quick_action_modal;

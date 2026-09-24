@@ -22,6 +22,7 @@ impl Global for PadPlays {}
 pub trait PadPlayClaims {
     /// Claims the clip until its next playback event, so the pad's own inline error is the only surface for that attempt.
     fn claim_pad_play(&mut self, clip: ClipId);
+    fn release_pad_play(&mut self, clip: ClipId);
 }
 
 impl PadPlayClaims for App {
@@ -29,6 +30,12 @@ impl PadPlayClaims for App {
         self.default_global::<PadPlays>()
             .awaiting_outcome
             .insert(clip);
+    }
+
+    fn release_pad_play(&mut self, clip: ClipId) {
+        self.default_global::<PadPlays>()
+            .awaiting_outcome
+            .remove(&clip);
     }
 }
 

@@ -21,7 +21,6 @@ use gpui::{
     div, prelude::*, px,
 };
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -32,6 +31,7 @@ use crate::builtin_sections::{
     SectionHooks, SectionRefresh, SectionStepRun, StepClick, content_sections, health_grid,
 };
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch, ConnectedBundle};
+use crate::in_flight_steps::InFlightSteps;
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integrations::{
     BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed,
@@ -91,7 +91,7 @@ pub struct IntegrationDetail {
     pub(crate) quick_actions: Vec<QuickAction>,
     pub(crate) qa_search: SearchState,
     eventsub_tally: HashMap<String, u64>,
-    row_steps_in_flight: HashSet<(String, String)>,
+    row_steps_in_flight: InFlightSteps,
     viewer_samples: VecDeque<(Instant, u64)>,
     pending_disconnect: Confirm<()>,
     quick_action_modal: Option<Entity<QuickActionModal>>,
@@ -109,7 +109,7 @@ const VIEWER_RING_CAP: usize = 256;
 const DETAIL_TICK: Duration = Duration::from_secs(30);
 const OBS_CONNECTION_PREFIX: &str = "obs.connection.";
 const HISTORY_LIMIT: u32 = 50;
-const OBS_CATALOG_KINDS: [&str; 11] = [
+const OBS_CATALOG_KINDS: [&str; 13] = [
     "obs.scene.changed",
     "obs.scene.preview_changed",
     "obs.scene.list_changed",
@@ -121,6 +121,8 @@ const OBS_CATALOG_KINDS: [&str; 11] = [
     "obs.source.input_created",
     "obs.source.input_removed",
     "obs.source.input_renamed",
+    "obs.source.scene_item_created",
+    "obs.source.scene_item_removed",
 ];
 const TWITCH_LIFECYCLE_KINDS: [&str; 8] = [
     "twitch.channel.poll.begin",
@@ -261,7 +263,7 @@ impl IntegrationDetail {
             quick_actions,
             qa_search,
             eventsub_tally: HashMap::new(),
-            row_steps_in_flight: HashSet::new(),
+            row_steps_in_flight: InFlightSteps::default(),
             viewer_samples: VecDeque::new(),
             pending_disconnect: Confirm::default(),
             quick_action_modal: None,
@@ -725,16 +727,17 @@ impl IntegrationDetail {
     }
 
     fn run_row_step(&mut self, click: &StepClick, cx: &mut Context<Self>) {
-        let key = (click.row.to_string(), click.step.kind_id.clone());
-        if !self.row_steps_in_flight.insert(key.clone()) {
+        let row = click.row.to_string();
+        let kind = click.step.kind_id.clone();
+        if !self.row_steps_in_flight.try_begin(&row, &kind) {
             return;
         }
         cx.notify();
         self.enqueue_builtin_step(
             click.step.clone(),
-            click.row.to_string(),
+            row.clone(),
             move |detail, result, cx| {
-                detail.row_steps_in_flight.remove(&key);
+                detail.row_steps_in_flight.finish(&row, &kind);
                 if let Err(err) = result {
                     tracing::warn!(error = %err, "content row action failed");
                     cx.push_toast(

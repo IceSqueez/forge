@@ -444,7 +444,7 @@ pub struct SoundboardView {
     importable: Vec<BuiltinSoundEntry>,
     total_size: Option<u64>,
     availability: HashMap<ClipId, ClipAvailability>,
-    refusal_notes: HashMap<ClipId, SharedString>,
+    refusal_reads: HashSet<ClipId>,
     adopting_all: bool,
     adopt_summary: Option<SharedString>,
     playing: HashMap<ClipId, PlaybackProgress>,
@@ -503,7 +503,7 @@ impl SoundboardView {
             importable: Vec::new(),
             total_size: None,
             availability: HashMap::new(),
-            refusal_notes: HashMap::new(),
+            refusal_reads: HashSet::new(),
             adopting_all: false,
             adopt_summary: None,
             playing: HashMap::new(),
@@ -576,27 +576,52 @@ impl SoundboardView {
         settled: SettledAdoption,
         cx: &mut Context<Self>,
     ) {
-        match settled {
+        let availability = match settled {
             SettledAdoption::Copied => {
-                self.availability.insert(clip_id, ClipAvailability::Managed);
-                self.refusal_notes.remove(&clip_id);
                 self.refresh_library_size(cx);
+                ClipAvailability::Managed
             }
-            SettledAdoption::AlreadyManaged => {
-                self.availability.insert(clip_id, ClipAvailability::Managed);
-                self.refusal_notes.remove(&clip_id);
+            SettledAdoption::AlreadyManaged => ClipAvailability::Managed,
+            SettledAdoption::SourceMissing => ClipAvailability::Missing,
+            SettledAdoption::Refused => {
+                self.read_refusal(clip_id, cx);
+                return;
             }
-            SettledAdoption::SourceMissing => {
-                self.availability.insert(clip_id, ClipAvailability::Missing);
-                self.refusal_notes.remove(&clip_id);
-            }
-            SettledAdoption::Refused(reason) => {
-                self.availability
-                    .insert(clip_id, ClipAvailability::Unadopted { refusal: None });
-                self.refusal_notes.insert(clip_id, reason);
-            }
-        }
+        };
+        self.refusal_reads.remove(&clip_id);
+        self.availability.insert(clip_id, availability);
         cx.notify();
+    }
+
+    fn read_refusal(&mut self, clip_id: ClipId, cx: &mut Context<Self>) {
+        self.refusal_reads.insert(clip_id);
+        let library = Arc::clone(&self.library);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move {
+                let clip = library.get(clip_id).await?;
+                Ok::<_, SoundboardError>(match clip {
+                    Some(clip) => Some(library.availability(&clip).await),
+                    None => None,
+                })
+            },
+            move |this, result, cx| {
+                if !this.refusal_reads.remove(&clip_id) {
+                    return;
+                }
+                match result {
+                    Ok(Some(availability)) => {
+                        this.availability.insert(clip_id, availability);
+                        cx.notify();
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(clip_id = %clip_id, error = %error, "clip refusal lookup failed");
+                    }
+                }
+            },
+            cx,
+        );
     }
 
     fn has_active_playback(&self) -> bool {
@@ -713,7 +738,6 @@ impl SoundboardView {
                     return;
                 }
                 this.availability = states.into_iter().collect();
-                this.refusal_notes.clear();
                 cx.notify();
             },
             cx,
@@ -736,7 +760,6 @@ impl SoundboardView {
                 match result {
                     Ok(states) => {
                         this.availability = states.into_iter().collect();
-                        this.refusal_notes.clear();
                         cx.notify();
                     }
                     Err(error) => {
@@ -869,15 +892,26 @@ impl SoundboardView {
         cx.spawn(async move |this, cx| {
             let (tx, rx) = tokio::sync::oneshot::channel();
             rt.spawn(async move {
-                let _ = tx.send(player_play.play(id, None).await);
+                let board_enabled = player_play.settings_handle().load().enabled;
+                let result = player_play.play(id, None).await;
+                let _ = tx.send((result, board_enabled));
             });
-            match rx.await {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
-                    let _ = this.update(cx, |this, cx| this.on_play_error(id, &error, cx));
-                    return;
+            let Ok((result, board_enabled)) = rx.await else {
+                return;
+            };
+            let settled_silently = play_settled_without_outcome(&result, board_enabled);
+            let _ = this.update(cx, |this, cx| {
+                if settled_silently {
+                    cx.release_pad_play(id);
                 }
-                Err(_) => return,
+                match &result {
+                    Err(error) => this.on_play_error(id, error, cx),
+                    Ok(()) if settled_silently => this.clear_playing(id, cx),
+                    Ok(()) => {}
+                }
+            });
+            if result.is_err() {
+                return;
             }
             if known.is_none() {
                 rt.spawn(async move {
@@ -1511,7 +1545,7 @@ impl SoundboardView {
                         .child(tr!("soundboard_pad_source_missing")),
                 );
         }
-        match library_badge(self.availability.get(&id), self.refusal_notes.get(&id)) {
+        match library_badge(self.availability.get(&id)) {
             Some(LibraryBadge::Blocked(reason)) => {
                 status = status
                     .child(icon(Icon::AlertTriangle, LOOP_ICON, palette.warning))
@@ -2257,7 +2291,7 @@ enum SettledAdoption {
     Copied,
     AlreadyManaged,
     SourceMissing,
-    Refused(SharedString),
+    Refused,
 }
 
 fn settled_adoption(payload: &serde_json::Value) -> Option<SettledAdoption> {
@@ -2265,12 +2299,24 @@ fn settled_adoption(payload: &serde_json::Value) -> Option<SettledAdoption> {
         "adopted" => Some(SettledAdoption::Copied),
         "already_managed" => Some(SettledAdoption::AlreadyManaged),
         "source_missing" => Some(SettledAdoption::SourceMissing),
-        "refused" => payload
-            .get("reason")
-            .and_then(|v| v.as_str())
-            .filter(|reason| !reason.is_empty())
-            .map(|reason| SettledAdoption::Refused(reason.to_owned().into())),
+        "refused" => Some(SettledAdoption::Refused),
         _ => None,
+    }
+}
+
+fn play_settled_without_outcome(result: &Result<(), SoundboardError>, board_enabled: bool) -> bool {
+    match result {
+        Ok(()) => !board_enabled,
+        Err(
+            SoundboardError::SourceMissing(_)
+            | SoundboardError::Audio(_)
+            | SoundboardError::JoinError(_),
+        ) => false,
+        Err(
+            SoundboardError::ClipNotFound(_)
+            | SoundboardError::ImportRefused(_)
+            | SoundboardError::Storage(_),
+        ) => true,
     }
 }
 
@@ -2279,13 +2325,7 @@ enum LibraryBadge {
     Pending,
 }
 
-fn library_badge(
-    availability: Option<&ClipAvailability>,
-    refusal_note: Option<&SharedString>,
-) -> Option<LibraryBadge> {
-    if let Some(reason) = refusal_note {
-        return Some(LibraryBadge::Blocked(reason.clone()));
-    }
+fn library_badge(availability: Option<&ClipAvailability>) -> Option<LibraryBadge> {
     match adoption_badge(availability)? {
         AdoptionBadge::Blocked(refusal) => {
             Some(LibraryBadge::Blocked(clip_refusal_message(&refusal).into()))

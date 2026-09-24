@@ -11,7 +11,9 @@
  * the element reached its end, otherwise "refused" with a short reason. The
  * body carries the verdict and nothing else. A command with no clip_id reaches
  * every clip still in flight; clips overlap freely and each one settles on its
- * own.
+ * own. A clip paused before its bytes arrive waits for resume before it starts.
+ * Several pages can carry the same overlay: each fetches and reports once, and
+ * forge settles the clip from all of their verdicts.
  *
  * The addresses an announcement carries authorize that one clip and are never
  * written into the page, the console, or any request body. Nothing here runs on
@@ -66,6 +68,7 @@ function announce(values) {
     mediaType: text(values.clip_media_type),
     element: null,
     objectUrl: "",
+    held: false,
     settled: false,
   };
   inFlight.set(clipId, clip);
@@ -103,7 +106,9 @@ function play(clipId, clip, bytes) {
     settle(clipId, clip, VERDICT_REFUSED, REASON_DECODE_FAILED);
   });
   element.src = clip.objectUrl;
-  start(clipId, clip);
+  if (!clip.held) {
+    start(clipId, clip);
+  }
 }
 
 function start(clipId, clip) {
@@ -145,15 +150,18 @@ function apply(clipId, clip, command) {
     );
     return;
   }
-  if (!clip.element) {
-    return;
-  }
   if (command === COMMAND_PAUSE) {
-    clip.element.pause();
+    clip.held = true;
+    if (clip.element) {
+      clip.element.pause();
+    }
     return;
   }
   if (command === COMMAND_RESUME) {
-    start(clipId, clip);
+    clip.held = false;
+    if (clip.element) {
+      start(clipId, clip);
+    }
   }
 }
 

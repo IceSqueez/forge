@@ -230,6 +230,21 @@ impl ServerHandle {
         store.revoke(capability.expose())
     }
 
+    pub async fn admit_audio_players(&self, capability: &ClipCapability, players: usize) -> bool {
+        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
+        store.admit_players(capability.expose(), players)
+    }
+
+    pub async fn hold_audio_clip(&self, capability: &ClipCapability) -> bool {
+        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
+        store.hold(capability.expose())
+    }
+
+    pub async fn release_audio_clip(&self, capability: &ClipCapability) -> bool {
+        let store = Arc::clone(&self.inner.lock().await.state.audio_clips);
+        store.release_hold(capability.expose())
+    }
+
     /// Addressed at the connections identified as `identity`; never reaches any other client.
     pub async fn deliver_overlay_content(
         &self,

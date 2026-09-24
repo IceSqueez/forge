@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use tokio::time::Instant;
 
 use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
@@ -96,20 +97,20 @@ impl AudioSink for RemoteSink {
         let handle =
             PlaybackHandle::from_flags(Arc::clone(&controls.stop), Arc::clone(&controls.pause));
         let budget = watchdog_budget(duration_ms);
-
-        tokio::spawn(observe_controls(
-            Arc::clone(&self.destination),
-            self.destination_id.clone(),
-            clip_id.clone(),
-            controls.clone(),
-            budget,
-        ));
-
-        let completion = settle_clip(
-            Arc::clone(&self.destination),
-            self.destination_id.clone(),
+        let clip = LiveClip {
+            destination: Arc::clone(&self.destination),
+            destination_id: self.destination_id.clone(),
             clip_id,
             controls,
+        };
+
+        tokio::spawn(observe_controls(clip.clone(), budget));
+
+        let completion = settle_clip(
+            StopUnlessSettled {
+                clip,
+                settled: false,
+            },
             budget,
             live_players,
         );
@@ -122,6 +123,7 @@ struct Controls {
     stop: Arc<AtomicBool>,
     pause: Arc<AtomicBool>,
     finished: Arc<AtomicBool>,
+    stop_sent: Arc<AtomicBool>,
 }
 
 impl Controls {
@@ -130,6 +132,7 @@ impl Controls {
             stop: Arc::new(AtomicBool::new(false)),
             pause: Arc::new(AtomicBool::new(false)),
             finished: Arc::new(AtomicBool::new(false)),
+            stop_sent: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -138,6 +141,58 @@ impl Controls {
             stopped: self.stop.load(Ordering::Relaxed),
             held: self.pause.load(Ordering::Relaxed),
         }
+    }
+
+    fn held(&self) -> bool {
+        self.pause.load(Ordering::Relaxed)
+    }
+
+    fn claim_stop(&self) -> bool {
+        !self.stop_sent.swap(true, Ordering::AcqRel)
+    }
+}
+
+#[derive(Clone)]
+struct LiveClip {
+    destination: Arc<dyn RemoteAudioDestination>,
+    destination_id: RemoteDestinationId,
+    clip_id: RemoteClipId,
+    controls: Controls,
+}
+
+impl LiveClip {
+    async fn push(&self, command: RemoteCommand) {
+        push(
+            self.destination.as_ref(),
+            &self.destination_id,
+            &self.clip_id,
+            command,
+        )
+        .await;
+    }
+}
+
+/// A completion dropped before its verdict counts as a stop, and the stop still reaches the page.
+struct StopUnlessSettled {
+    clip: LiveClip,
+    settled: bool,
+}
+
+impl Drop for StopUnlessSettled {
+    fn drop(&mut self) {
+        if self.settled {
+            return;
+        }
+        let controls = &self.clip.controls;
+        controls.stop.store(true, Ordering::Relaxed);
+        if !controls.claim_stop() {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let clip = self.clip.clone();
+        runtime.spawn(async move { clip.push(RemoteCommand::Stop).await });
     }
 }
 
@@ -153,57 +208,86 @@ enum RemoteSettlement {
     Failed(AudioError),
 }
 
-async fn observe_controls(
-    destination: Arc<dyn RemoteAudioDestination>,
-    destination_id: RemoteDestinationId,
-    clip_id: RemoteClipId,
-    controls: Controls,
-    budget: Duration,
-) {
-    let give_up = tokio::time::sleep(budget);
-    tokio::pin!(give_up);
+async fn observe_controls(clip: LiveClip, budget: Duration) {
+    tokio::select! {
+        () = run_out(&clip.controls, budget) => {}
+        () = forward_commands(&clip) => {}
+    }
+}
+
+async fn forward_commands(clip: &LiveClip) {
+    let controls = &clip.controls;
     let mut sent = ControlState::default();
 
     loop {
-        tokio::select! {
-            () = &mut give_up => return,
-            () = tokio::time::sleep(CONTROL_POLL_INTERVAL) => {}
-        }
+        tokio::time::sleep(CONTROL_POLL_INTERVAL).await;
 
         if let Some(command) = next_command(sent, controls.observed()) {
+            if command == RemoteCommand::Stop && !controls.claim_stop() {
+                return;
+            }
             sent = applied(sent, command);
-            push(destination.as_ref(), &destination_id, &clip_id, command).await;
+            clip.push(command).await;
         }
 
-        if sent.stopped || controls.finished.load(Ordering::Relaxed) {
+        if sent.stopped
+            || controls.finished.load(Ordering::Relaxed)
+            || controls.stop_sent.load(Ordering::Acquire)
+        {
             return;
         }
     }
 }
 
+/// Resolves once the clip has spent `budget` un-paused, or at the wall-clock ceiling while held.
+async fn run_out(controls: &Controls, budget: Duration) {
+    let ceiling = Instant::now() + WATCHDOG_CEILING;
+    let mut remaining = budget;
+
+    loop {
+        let left_on_the_wall = ceiling.saturating_duration_since(Instant::now());
+        if remaining.is_zero() || left_on_the_wall.is_zero() {
+            return;
+        }
+        let held = controls.held();
+        let step = if held {
+            CONTROL_POLL_INTERVAL
+        } else {
+            remaining.min(CONTROL_POLL_INTERVAL)
+        }
+        .min(left_on_the_wall);
+
+        tokio::time::sleep(step).await;
+        if !held {
+            remaining = remaining.saturating_sub(step);
+        }
+    }
+}
+
 async fn settle_clip(
-    destination: Arc<dyn RemoteAudioDestination>,
-    destination_id: RemoteDestinationId,
-    clip_id: RemoteClipId,
-    controls: Controls,
+    mut guard: StopUnlessSettled,
     budget: Duration,
     live_players: usize,
 ) -> Result<(), AudioError> {
-    let settlement = tokio::select! {
-        verdict = destination.verdict(&clip_id) => {
-            settle(controls.stop.load(Ordering::Relaxed), verdict)
-        }
-        () = tokio::time::sleep(budget) => {
-            RemoteSettlement::Degraded(WATCHDOG_REASON.to_owned())
+    let settlement = {
+        let clip = &guard.clip;
+        tokio::select! {
+            verdict = clip.destination.verdict(&clip.clip_id) => {
+                settle(clip.controls.stop.load(Ordering::Relaxed), verdict)
+            }
+            () = run_out(&clip.controls, budget) => {
+                RemoteSettlement::Degraded(WATCHDOG_REASON.to_owned())
+            }
         }
     };
-    controls.finished.store(true, Ordering::Relaxed);
+    guard.clip.controls.finished.store(true, Ordering::Relaxed);
+    guard.settled = true;
 
     match settlement {
         RemoteSettlement::Finished => Ok(()),
         RemoteSettlement::Degraded(reason) => {
             tracing::warn!(
-                destination = %destination_id,
+                destination = %guard.clip.destination_id,
                 live_players,
                 reason = %reason,
                 "remote audio route is degraded; the clip counts as played"

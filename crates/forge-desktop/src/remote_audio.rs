@@ -86,6 +86,7 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             media_type,
             duration_ms,
         } = clip;
+        let expected_players = self.overlays.receivers(&identity).await.sources;
 
         let (ticket, outcome) = self
             .server
@@ -99,6 +100,9 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             )
             .await
             .map_err(|e| AudioError::RemoteDestination(e.to_string()))?;
+        self.server
+            .admit_audio_players(ticket.capability(), expected_players)
+            .await;
 
         let clip_id = Ulid::generate().to_string();
         let content = announcement_content(&AudioAnnouncement {
@@ -115,10 +119,16 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             .deliver_content(&identity, content, None)
             .await
         {
-            Ok(delivery) => Ok(RemoteDelivery {
-                clip_id: RemoteClipId::new(clip_id),
-                live_players: live_players(delivery),
-            }),
+            Ok(delivery) => {
+                let live_players = live_players(delivery);
+                self.server
+                    .admit_audio_players(ticket.capability(), live_players)
+                    .await;
+                Ok(RemoteDelivery {
+                    clip_id: RemoteClipId::new(clip_id),
+                    live_players,
+                })
+            }
             Err(e) => {
                 if let Some(capability) = self.forget(&clip_id) {
                     self.server.revoke_audio_clip(&capability).await;
@@ -137,6 +147,16 @@ impl RemoteAudioDestination for OverlayAudioDestination {
         let Some(capability) = self.capability_of(clip_id.expose()) else {
             return Ok(());
         };
+
+        match command {
+            RemoteCommand::Pause => {
+                self.server.hold_audio_clip(&capability).await;
+            }
+            RemoteCommand::Resume => {
+                self.server.release_audio_clip(&capability).await;
+            }
+            RemoteCommand::Stop => {}
+        }
 
         let identity = OverlayId::new(destination.as_str());
         let content = command_content(overlay_command(command), Some(clip_id.expose()));
@@ -159,22 +179,9 @@ impl RemoteAudioDestination for OverlayAudioDestination {
         let Some(outcome) = self.take_outcome(clip_id.expose()) else {
             return Err(AudioError::RemoteDestination(UNKNOWN_CLIP.to_owned()));
         };
-        let _release = Release {
-            destination: self,
-            clip_id: clip_id.expose(),
-        };
-        Ok(verdict_of(outcome.recv().await))
-    }
-}
-
-struct Release<'a> {
-    destination: &'a OverlayAudioDestination,
-    clip_id: &'a str,
-}
-
-impl Drop for Release<'_> {
-    fn drop(&mut self) {
-        self.destination.forget(self.clip_id);
+        let settled = outcome.recv().await;
+        self.forget(clip_id.expose());
+        Ok(verdict_of(settled))
     }
 }
 

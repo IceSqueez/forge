@@ -3,6 +3,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use axum::body::Bytes;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use forge_storage::OverlayId;
 use forge_types::Redacted;
@@ -21,6 +22,8 @@ pub const MAX_TOTAL_CLIP_BYTES: usize = 4 * MAX_CLIP_BYTES;
 const FETCH_WINDOW: Duration = Duration::from_secs(30);
 const VERDICT_SLACK: Duration = Duration::from_secs(15);
 const MAX_VERDICT_WINDOW: Duration = Duration::from_secs(300);
+const MAX_CLIP_LIFETIME: Duration = FETCH_WINDOW.saturating_add(MAX_VERDICT_WINDOW);
+const MIN_FETCH_BUDGET: usize = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClipMediaType {
@@ -106,8 +109,9 @@ impl ClipOutcomeHandle {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ClipPayload {
-    pub(crate) bytes: Vec<u8>,
+    pub(crate) bytes: Bytes,
     pub(crate) media_type: ClipMediaType,
 }
 
@@ -115,7 +119,13 @@ struct ClipEntry {
     owner: OverlayId,
     duration_ms: u64,
     deadline: Instant,
+    expires_by: Instant,
+    held_remaining: Option<Duration>,
     payload: Option<ClipPayload>,
+    fetch_budget: usize,
+    fetches: usize,
+    refusals: usize,
+    first_refusal: Option<String>,
     outcome: oneshot::Sender<ClipOutcome>,
 }
 
@@ -191,10 +201,16 @@ impl AudioClipStore {
                     owner: owner.clone(),
                     duration_ms: offer.duration_ms,
                     deadline: now + FETCH_WINDOW,
+                    expires_by: now + MAX_CLIP_LIFETIME,
+                    held_remaining: None,
                     payload: Some(ClipPayload {
-                        bytes: offer.bytes,
+                        bytes: Bytes::from(offer.bytes),
                         media_type: offer.media_type,
                     }),
+                    fetch_budget: MIN_FETCH_BUDGET,
+                    fetches: 0,
+                    refusals: 0,
+                    first_refusal: None,
                     outcome: outcome_tx,
                 },
             );
@@ -220,27 +236,89 @@ impl AudioClipStore {
         ))
     }
 
+    /// Serves one fetch per admitted page; the bytes stay held until the last admitted fetch.
     pub(crate) fn take_clip(&self, capability: &str) -> Option<ClipPayload> {
         let now = Instant::now();
         let mut inner = self.lock();
         sweep_locked(&mut inner, now);
 
-        let payload = {
-            let entry = inner.entries.get_mut(capability)?;
-            let payload = entry.payload.take()?;
-            entry.deadline = now + verdict_window(entry.duration_ms);
-            payload
-        };
-        inner.pending_bytes = inner.pending_bytes.saturating_sub(payload.bytes.len());
+        let entry = inner.entries.get_mut(capability)?;
+        if entry.fetches >= entry.fetch_budget {
+            return None;
+        }
+        let payload = entry.payload.clone()?;
+        let answer_by = (now + verdict_window(entry.duration_ms)).min(entry.expires_by);
+        let first_fetch = entry.fetches == 0;
+        entry.fetches += 1;
+        match entry.held_remaining.as_mut() {
+            Some(remaining) => *remaining = verdict_window(entry.duration_ms),
+            None if first_fetch => entry.deadline = answer_by,
+            None => entry.deadline = entry.deadline.max(answer_by),
+        }
+        drop_spent_payload(&mut inner, capability);
         drop(inner);
         self.deadline_moved.notify_one();
         Some(payload)
     }
 
+    /// The live page count at announcement bounds both the fetches and the verdicts one clip
+    /// accepts; it never drops below the fetches already served.
+    pub(crate) fn admit_players(&self, capability: &str, players: usize) -> bool {
+        let mut inner = self.lock();
+        let Some(entry) = inner.entries.get_mut(capability) else {
+            return false;
+        };
+        entry.fetch_budget = players.max(entry.fetches).max(MIN_FETCH_BUDGET);
+        drop_spent_payload(&mut inner, capability);
+        settle_if_every_page_refused(&mut inner, capability);
+        true
+    }
+
+    /// Played by any page settles the clip at once; it is refused only once every admitted
+    /// page has refused, and then carries the first reason given.
     pub(crate) fn record_verdict(&self, capability: &str, outcome: ClipOutcome) -> bool {
         let mut inner = self.lock();
         sweep_locked(&mut inner, Instant::now());
-        finish_locked(&mut inner, capability, outcome)
+        let ClipOutcome::Refused { reason } = outcome else {
+            return finish_locked(&mut inner, capability, outcome);
+        };
+        let Some(entry) = inner.entries.get_mut(capability) else {
+            return false;
+        };
+        entry.refusals += 1;
+        entry.first_refusal.get_or_insert(reason);
+        settle_if_every_page_refused(&mut inner, capability);
+        true
+    }
+
+    /// A held clip's verdict window stops counting down, but it never outlives its lifetime.
+    pub(crate) fn hold(&self, capability: &str) -> bool {
+        let now = Instant::now();
+        let mut inner = self.lock();
+        let Some(entry) = inner.entries.get_mut(capability) else {
+            return false;
+        };
+        if entry.held_remaining.is_none() {
+            entry.held_remaining = Some(entry.deadline.saturating_duration_since(now));
+            entry.deadline = entry.expires_by;
+        }
+        drop(inner);
+        self.deadline_moved.notify_one();
+        true
+    }
+
+    pub(crate) fn release_hold(&self, capability: &str) -> bool {
+        let now = Instant::now();
+        let mut inner = self.lock();
+        let Some(entry) = inner.entries.get_mut(capability) else {
+            return false;
+        };
+        if let Some(remaining) = entry.held_remaining.take() {
+            entry.deadline = (now + remaining).min(entry.expires_by);
+        }
+        drop(inner);
+        self.deadline_moved.notify_one();
+        true
     }
 
     pub(crate) fn revoke(&self, capability: &str) -> bool {
@@ -295,6 +373,29 @@ fn finish_locked(inner: &mut StoreInner, capability: &str, outcome: ClipOutcome)
     true
 }
 
+fn drop_spent_payload(inner: &mut StoreInner, capability: &str) {
+    let Some(entry) = inner.entries.get_mut(capability) else {
+        return;
+    };
+    if entry.fetches < entry.fetch_budget {
+        return;
+    }
+    if let Some(payload) = entry.payload.take() {
+        inner.pending_bytes = inner.pending_bytes.saturating_sub(payload.bytes.len());
+    }
+}
+
+fn settle_if_every_page_refused(inner: &mut StoreInner, capability: &str) {
+    let Some(entry) = inner.entries.get_mut(capability) else {
+        return;
+    };
+    if entry.refusals == 0 || entry.refusals < entry.fetch_budget {
+        return;
+    }
+    let reason = entry.first_refusal.take().unwrap_or_default();
+    finish_locked(inner, capability, ClipOutcome::Refused { reason });
+}
+
 fn sweep_locked(inner: &mut StoreInner, now: Instant) {
     let expired: Vec<String> = inner
         .entries
@@ -308,14 +409,14 @@ fn sweep_locked(inner: &mut StoreInner, now: Instant) {
             continue;
         };
         release_bytes(inner, &entry);
-        let outcome = if entry.payload.is_some() {
+        let outcome = if entry.fetches == 0 {
             ClipOutcome::NeverFetched
         } else {
             ClipOutcome::NoVerdict
         };
         tracing::debug!(
             owner = entry.owner.as_str(),
-            fetched = entry.payload.is_none(),
+            fetches = entry.fetches,
             "audio clip window closed"
         );
         let _ = entry.outcome.send(outcome);

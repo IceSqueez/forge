@@ -138,4 +138,29 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_cancelled_run_leaves_a_long_wait_within_one_cancel_poll() {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert(WAIT_MS_KEY.to_owned(), Variant::Int(MAX_DELAY_MS as i64));
+        let stack = ArgStack::new();
+        let mut ctx = make_ctx(&stack);
+        let cancel = CancelSignal::new();
+        ctx.cancel = cancel.clone();
+        let cancel_after = Duration::from_secs(1);
+        tokio::spawn(async move {
+            tokio::time::sleep(cancel_after).await;
+            cancel.cancel();
+        });
+
+        let before = tokio::time::Instant::now();
+        CoreLogicWaitRunner.execute(&cfg, &ctx).await;
+        let held = before.elapsed();
+
+        assert!(
+            held >= cancel_after
+                && held <= cancel_after + Duration::from_millis(CANCEL_POLL_MS) + TIMER_GRANULARITY,
+            "a wait cancelled at {cancel_after:?} held {held:?}",
+        );
+    }
 }

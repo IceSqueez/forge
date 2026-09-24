@@ -152,3 +152,55 @@ async fn wait_for_cancel(cancel: &CancelSignal) {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use crate::Config;
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+
+    // Why: the timer wheel rounds a deadline up to its next tick, so the virtual clock
+    // can land a hair past the requested delay.
+    const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
+
+    struct NullPublisher;
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_run_cancelled_mid_poll_sleep_ends_within_one_cancel_poll() {
+        let runner =
+            CoreLogicWaitUntilRunner::new(Arc::new(ConditionGate::new(&Config::default())));
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("condition".to_owned(), Variant::String("1 == 2".to_owned()));
+        cfg.insert("poll_interval_ms".to_owned(), Variant::Int(POLL_MAX_MS));
+        cfg.insert("timeout_ms".to_owned(), Variant::Int(TIMEOUT_MAX_MS));
+        let stack = ArgStack::new();
+        let mut ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+        let cancel = CancelSignal::new();
+        ctx.cancel = cancel.clone();
+        let cancel_after = Duration::from_secs(1);
+        tokio::spawn(async move {
+            tokio::time::sleep(cancel_after).await;
+            cancel.cancel();
+        });
+
+        let before = Instant::now();
+        let (_, out) = runner.execute(&cfg, &ctx).await;
+        let held = before.elapsed();
+
+        assert!(
+            held >= cancel_after
+                && held <= cancel_after + Duration::from_millis(CANCEL_POLL_MS) + TIMER_GRANULARITY,
+            "a wait_until cancelled at {cancel_after:?} held {held:?}",
+        );
+        assert_eq!(
+            out.unwrap().get("wait.timed_out"),
+            Some(&Variant::Bool(false)),
+            "a cancelled wait_until is not a timeout",
+        );
+    }
+}

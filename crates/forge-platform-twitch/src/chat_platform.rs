@@ -206,3 +206,25 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropped_send_surfaces_code_and_message_in_the_platform_error() {
+        let err = map_send_error(ChatSendError::Dropped {
+            code: "channel_settings".to_owned(),
+            message: "Followers-only mode is on.".to_owned(),
+        });
+
+        assert!(
+            matches!(
+                &err,
+                PlatformError::Http { status: NON_HTTP_STATUS, body }
+                    if body == "channel_settings: Followers-only mode is on."
+            ),
+            "got {err:?}"
+        );
+    }
+}

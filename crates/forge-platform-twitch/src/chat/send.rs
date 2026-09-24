@@ -184,30 +184,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn message_over_limit_is_rejected_without_invoking_transport() {
-        let transport = MockTransport::returning(Ok(sent_fixture()));
-        let message = "a".repeat(501);
+    async fn send_chat_treats_is_sent_true_or_absent_as_delivered() {
+        for payload in [
+            serde_json::json!({"data": [{"message_id": "abc-123", "is_sent": true, "drop_reason": null}]}),
+            serde_json::json!({"data": [{"message_id": "abc-123"}]}),
+        ] {
+            let transport = MockTransport::returning(Ok(payload.clone()));
 
-        let err = send_chat(&transport, "100", "100", &message)
-            .await
-            .unwrap_err();
+            let result = send_chat(&transport, "100", "100", "hi").await;
 
-        assert!(matches!(err, ChatSendError::MessageTooLong));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "pre-check must not consume a transport call"
+            assert_eq!(
+                result.unwrap(),
+                SentMessageId("abc-123".to_owned()),
+                "payload {payload} must count as delivered"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn send_chat_reports_a_twitch_drop_with_its_code_and_message() {
+        let transport = MockTransport::returning(Ok(serde_json::json!({"data": [{
+            "message_id": "",
+            "is_sent": false,
+            "drop_reason": {"code": "msg_duplicate", "message": "Your message is identical to the previous one."}
+        }]})));
+
+        let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                ChatSendError::Dropped { code, message }
+                    if code == "msg_duplicate"
+                        && message == "Your message is identical to the previous one."
+            ),
+            "got {err:?}"
         );
     }
 
     #[tokio::test]
-    async fn message_at_exactly_the_limit_is_sent() {
-        let transport = MockTransport::returning(Ok(sent_fixture()));
-        let message = "a".repeat(500);
+    async fn send_chat_reports_a_drop_without_reason_under_the_unknown_code() {
+        let transport = MockTransport::returning(Ok(serde_json::json!({"data": [{
+            "message_id": "",
+            "is_sent": false
+        }]})));
 
-        let result = send_chat(&transport, "100", "100", &message).await;
+        let err = send_chat(&transport, "100", "100", "hi").await.unwrap_err();
 
-        assert!(result.is_ok());
+        assert!(
+            matches!(&err, ChatSendError::Dropped { code, .. } if code == "unknown"),
+            "got {err:?}"
+        );
     }
 
     type ErrorExpectation = fn(&ChatSendError) -> bool;

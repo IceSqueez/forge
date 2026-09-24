@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::future::Future as _;
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex as StdMutex, PoisonError};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -15,11 +16,13 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, Sleep};
 
 pub(crate) const MAX_CONCURRENT_CONNECTIONS: usize = 256;
+pub(crate) const PER_IP_MAX_CONNECTIONS: usize = 64;
 pub(crate) const REQUEST_READ_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub(crate) struct GuardedListener {
     inner: TcpListener,
     permits: Arc<Semaphore>,
+    per_ip: Arc<PerIpLimiter>,
 }
 
 impl GuardedListener {
@@ -27,6 +30,7 @@ impl GuardedListener {
         Self {
             inner,
             permits: Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS)),
+            per_ip: Arc::new(PerIpLimiter::default()),
         }
     }
 }
@@ -38,17 +42,75 @@ impl Listener for GuardedListener {
     async fn accept(&mut self) -> (Self::Io, Self::Addr) {
         loop {
             let (stream, addr) = Listener::accept(&mut self.inner).await;
-            match Arc::clone(&self.permits).try_acquire_owned() {
-                Ok(permit) => return (GuardedStream::new(stream, permit), addr),
+            let permit = match Arc::clone(&self.permits).try_acquire_owned() {
+                Ok(permit) => permit,
                 Err(_) => {
                     tracing::debug!(%addr, "connection dropped: server is at its connection cap");
+                    continue;
                 }
-            }
+            };
+            let ip = addr.ip();
+            let per_ip_permit = if ip.is_loopback() {
+                None
+            } else {
+                match self.per_ip.try_acquire(ip) {
+                    Some(per_ip_permit) => Some(per_ip_permit),
+                    None => {
+                        tracing::debug!(
+                            %addr,
+                            "connection dropped: address is at its per-IP connection cap"
+                        );
+                        continue;
+                    }
+                }
+            };
+            return (GuardedStream::new(stream, permit, per_ip_permit), addr);
         }
     }
 
     fn local_addr(&self) -> io::Result<Self::Addr> {
         self.inner.local_addr()
+    }
+}
+
+#[derive(Default)]
+struct PerIpLimiter {
+    counts: StdMutex<HashMap<IpAddr, usize>>,
+}
+
+impl PerIpLimiter {
+    fn try_acquire(self: &Arc<Self>, ip: IpAddr) -> Option<PerIpPermit> {
+        let mut counts = self.counts.lock().unwrap_or_else(PoisonError::into_inner);
+        let slot = counts.entry(ip).or_insert(0);
+        if *slot >= PER_IP_MAX_CONNECTIONS {
+            return None;
+        }
+        *slot += 1;
+        Some(PerIpPermit {
+            limiter: Arc::clone(self),
+            ip,
+        })
+    }
+}
+
+struct PerIpPermit {
+    limiter: Arc<PerIpLimiter>,
+    ip: IpAddr,
+}
+
+impl Drop for PerIpPermit {
+    fn drop(&mut self) {
+        let mut counts = self
+            .limiter
+            .counts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(slot) = counts.get_mut(&self.ip) {
+            *slot -= 1;
+            if *slot == 0 {
+                counts.remove(&self.ip);
+            }
+        }
     }
 }
 
@@ -60,15 +122,21 @@ pub(crate) struct GuardedStream {
     read_deadline: Pin<Box<Sleep>>,
     upgraded: Arc<AtomicBool>,
     _permit: OwnedSemaphorePermit,
+    _per_ip_permit: Option<PerIpPermit>,
 }
 
 impl GuardedStream {
-    fn new(stream: TcpStream, permit: OwnedSemaphorePermit) -> Self {
+    fn new(
+        stream: TcpStream,
+        permit: OwnedSemaphorePermit,
+        per_ip_permit: Option<PerIpPermit>,
+    ) -> Self {
         Self {
             stream,
             read_deadline: Box::pin(tokio::time::sleep(REQUEST_READ_TIMEOUT)),
             upgraded: Arc::new(AtomicBool::new(false)),
             _permit: permit,
+            _per_ip_permit: per_ip_permit,
         }
     }
 

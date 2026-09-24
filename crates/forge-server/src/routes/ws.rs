@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
@@ -23,6 +24,7 @@ use crate::ws_client::{WsClient, detect_from_user_agent};
 const HEADER_LOG_PLACEHOLDER: &str = "<absent-or-invalid>";
 const MAX_MESSAGE_BYTES: usize = 256 * 1024;
 const PRE_AUTH_MAX_MESSAGE_BYTES: usize = 16 * 1024;
+const PRE_AUTH_WINDOW: Duration = Duration::from_secs(10);
 
 pub async fn ws_handler(
     upgrade: WebSocketUpgrade,
@@ -125,6 +127,10 @@ async fn handle_socket(
 
     let mut policy_changes = state.auth.policy_changes();
     let mut overlay_session = false;
+    let mut has_sent_any_message = false;
+    let mut pre_auth_window_open = true;
+    let pre_auth_deadline = tokio::time::sleep(PRE_AUTH_WINDOW);
+    tokio::pin!(pre_auth_deadline);
 
     loop {
         tokio::select! {
@@ -140,11 +146,28 @@ async fn handle_socket(
                 }
             }
 
+            () = &mut pre_auth_deadline, if pre_auth_window_open => {
+                pre_auth_window_open = false;
+                let authenticated = client.bearer_generation().is_some() || overlay_session;
+                let stays_open = authenticated
+                    || (!state.auth.reads_required() && has_sent_any_message);
+                if !stays_open {
+                    let _ = socket
+                        .send(Message::Close(Some(CloseFrame {
+                            code: close_code::POLICY,
+                            reason: "no authentication within the pre-auth window".into(),
+                        })))
+                        .await;
+                    break;
+                }
+            }
+
             msg = socket.recv() => {
                 let msg = match msg {
                     Some(Ok(m)) => m,
                     _ => break,
                 };
+                has_sent_any_message = true;
                 match msg {
                     Message::Text(text) => {
                         if text.len() > message_limit(&client, &state.auth) {

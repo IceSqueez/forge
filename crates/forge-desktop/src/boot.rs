@@ -9,7 +9,7 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Config, EventBus, OverlayConnectListener,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, EventBus, OverlayConnectListener,
     OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle,
     QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer, SpeakDispatcher,
     register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
@@ -314,8 +314,10 @@ pub async fn build_runtime(
         }
     };
 
+    let catalog = Catalog::from_provider(backend.as_ref());
     let action_engine = spawn_action_engine(
         Arc::clone(&bus),
+        Arc::clone(&catalog),
         backend.action_repo(),
         backend.history_repo(),
         Arc::clone(&sub_action_registry),
@@ -326,8 +328,7 @@ pub async fn build_runtime(
     let trigger_evaluator = spawn_trigger_evaluator(
         Arc::clone(&bus),
         Arc::clone(&trigger_registry),
-        backend.action_repo(),
-        backend.trigger_instance_repo(),
+        catalog,
         scheduler.clone(),
         Config::default(),
     );

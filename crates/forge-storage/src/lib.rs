@@ -1,6 +1,7 @@
 #![doc = "DataProvider trait + per-domain repo traits. Backend-agnostic storage contract."]
 
 pub mod action;
+pub mod catalog;
 pub mod chat_history;
 pub mod credentials;
 pub mod error;
@@ -22,6 +23,9 @@ pub mod viewer;
 pub mod voice_aliases;
 
 pub use action::{ActionRepo, ActionTelemetry, ExecutionStatus};
+pub use catalog::{
+    CatalogRevision, RevisingActionRepo, RevisingQueueRepo, RevisingTriggerInstanceRepo,
+};
 pub use chat_history::ChatHistoryRepo;
 pub use credentials::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
 pub use error::StorageError;

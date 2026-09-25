@@ -7,7 +7,6 @@ use forge_registry::{
     CancelSignal, ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
     kind_matches_prefix,
 };
-use forge_storage::{ActionRepo, TriggerInstanceRepo};
 use forge_types::{
     ArgStack, ChatPayload, EventId, PermissionRung, SynthesisHint, TriggerConfig, TriggerInstance,
     TriggerInstanceId, Variant,
@@ -17,6 +16,7 @@ use serde_json::json;
 use tokio::sync::broadcast;
 use tracing::{Level, debug, enabled, trace, warn};
 
+use crate::catalog::{Catalog, CatalogSnapshot};
 use crate::cooldown::CooldownMap;
 use crate::event_log_bridge::identity_digest;
 use crate::{Config, EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
@@ -26,6 +26,8 @@ const DECISION_TARGET: &str = "forge::trigger";
 
 /// The one target carrying viewer-authored text; TRACE-only, so it is raised on its own or not at all.
 pub const COMMAND_LINE_TARGET: &str = "forge::command";
+
+const MAX_RESOLVED_EVENT_SHAPES: usize = 4096;
 
 #[derive(Clone)]
 pub struct TriggerEvaluatorHandle {
@@ -41,19 +43,26 @@ impl TriggerEvaluatorHandle {
 pub struct TriggerEvaluator {
     bus: Arc<EventBus>,
     registry: Arc<TriggerRegistry>,
-    actions: Arc<dyn ActionRepo>,
-    trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    catalog: Arc<Catalog>,
     scheduler: QueueSchedulerHandle,
     subscription: EventSubscription,
     cooldowns: CooldownMap,
+    resolved: ResolvedBindings,
+}
+
+/// Binding indexes per event source and kind, valid for one catalog revision only.
+#[derive(Default)]
+struct ResolvedBindings {
+    revision: Option<u64>,
+    by_shape: HashMap<EventSource, HashMap<String, Arc<[usize]>>>,
+    shapes: usize,
 }
 
 impl TriggerEvaluator {
     pub fn spawn(
         bus: Arc<EventBus>,
         registry: Arc<TriggerRegistry>,
-        actions: Arc<dyn ActionRepo>,
-        trigger_instances: Arc<dyn TriggerInstanceRepo>,
+        catalog: Arc<Catalog>,
         scheduler: QueueSchedulerHandle,
         config: Config,
     ) -> TriggerEvaluatorHandle {
@@ -61,11 +70,11 @@ impl TriggerEvaluator {
         let evaluator = Self {
             bus,
             registry,
-            actions,
-            trigger_instances,
+            catalog,
             scheduler,
             subscription,
             cooldowns: CooldownMap::new(config.max_cooldown_entries),
+            resolved: ResolvedBindings::default(),
         };
         let cancel = CancelSignal::new();
         let cancel_clone = cancel.clone();
@@ -102,78 +111,87 @@ impl TriggerEvaluator {
     }
 
     async fn handle(&mut self, event: forge_events::Event) {
-        let descriptors: Vec<_> = self
-            .registry
-            .all()
-            .filter(|d| {
-                let filter = d.event_filter();
-                let source_ok = filter.source.is_none_or(|s| s == event.source);
-                let prefix_ok = filter
-                    .kind_prefix
-                    .as_deref()
-                    .is_none_or(|p| kind_matches_prefix(&event.kind, p));
-                source_ok && prefix_ok
-            })
-            .collect();
-
-        if descriptors.is_empty() {
-            return;
-        }
-
-        let actions = match self.actions.list().await {
-            Ok(a) => a,
+        let catalog = match self.catalog.current().await {
+            Ok(catalog) => catalog,
             Err(e) => {
-                warn!("trigger_evaluator: action_repo.list failed: {e}");
+                warn!("trigger_evaluator: catalog rebuild failed: {e}");
                 return;
             }
         };
+        let bindings = self.resolve(&catalog, &event);
+        if bindings.is_empty() {
+            return;
+        }
 
         let mut decided: HashMap<TriggerInstanceId, Option<ArgStack>> = HashMap::new();
 
-        for action in &actions {
-            if !action.enabled {
+        for &index in bindings.iter() {
+            let Some(binding) = catalog.binding(index) else {
                 continue;
-            }
+            };
+            let instance = &binding.instance;
 
-            let instances = match self.trigger_instances.list_for_action(action.id).await {
-                Ok(t) => t,
-                Err(e) => {
-                    warn!("trigger_evaluator: trigger_instance_repo.list_for_action failed: {e}");
-                    continue;
+            let decision = match decided.get(&instance.id) {
+                Some(cached) => cached.clone(),
+                None => {
+                    let fresh = self.decide(instance, &event);
+                    decided.insert(instance.id, fresh.clone());
+                    fresh
                 }
             };
 
-            for instance in &instances {
-                if !instance.enabled {
-                    continue;
-                }
+            let Some(args) = decision else {
+                continue;
+            };
 
-                let decision = match decided.get(&instance.id) {
-                    Some(cached) => cached.clone(),
-                    None => {
-                        let fresh = self.decide(instance, &event);
-                        decided.insert(instance.id, fresh.clone());
-                        fresh
-                    }
-                };
-
-                let Some(args) = decision else {
-                    continue;
-                };
-
-                let req = SchedulerRequest {
-                    queue_id: action.queue_id,
-                    action_id: action.id,
-                    trigger_event_id: event.id,
-                    trigger_kind: Some(instance.kind_id.clone()),
-                    initial_args: args,
-                    bypass_pause: action.bypass_pause,
-                };
-                if let Err(e) = self.scheduler.dispatch(req).await {
-                    warn!("trigger_evaluator: scheduler dispatch failed: {e}");
-                }
+            let action = &binding.action;
+            let req = SchedulerRequest {
+                queue_id: action.queue_id,
+                action_id: action.id,
+                trigger_event_id: event.id,
+                trigger_kind: Some(instance.kind_id.clone()),
+                initial_args: args,
+                bypass_pause: action.bypass_pause,
+            };
+            if let Err(e) = self.scheduler.dispatch(req).await {
+                warn!("trigger_evaluator: scheduler dispatch failed: {e}");
             }
         }
+    }
+
+    fn resolve(&mut self, catalog: &CatalogSnapshot, event: &Event) -> Arc<[usize]> {
+        if self.resolved.revision != Some(catalog.revision())
+            || self.resolved.shapes >= MAX_RESOLVED_EVENT_SHAPES
+        {
+            self.resolved.revision = Some(catalog.revision());
+            self.resolved.by_shape.clear();
+            self.resolved.shapes = 0;
+        }
+        if let Some(indexes) = self
+            .resolved
+            .by_shape
+            .get(&event.source)
+            .and_then(|by_kind| by_kind.get(event.kind.as_str()))
+        {
+            return Arc::clone(indexes);
+        }
+        let matching_kinds = self.registry.all().filter_map(|d| {
+            let filter = d.event_filter();
+            let source_ok = filter.source.is_none_or(|s| s == event.source);
+            let prefix_ok = filter
+                .kind_prefix
+                .as_deref()
+                .is_none_or(|p| kind_matches_prefix(&event.kind, p));
+            (source_ok && prefix_ok).then(|| d.id())
+        });
+        let indexes: Arc<[usize]> = catalog.binding_indexes_for_kinds(matching_kinds).into();
+        self.resolved
+            .by_shape
+            .entry(event.source)
+            .or_default()
+            .insert(event.kind.clone(), Arc::clone(&indexes));
+        self.resolved.shapes += 1;
+        indexes
     }
 
     /// Publishes the decision record, so callers must invoke it once per (event, instance) pair.
@@ -461,12 +479,11 @@ fn scope_matches(instance: &forge_types::TriggerInstance, event: &forge_events::
 pub fn spawn_trigger_evaluator(
     bus: Arc<EventBus>,
     registry: Arc<TriggerRegistry>,
-    actions: Arc<dyn ActionRepo>,
-    trigger_instances: Arc<dyn TriggerInstanceRepo>,
+    catalog: Arc<Catalog>,
     scheduler: QueueSchedulerHandle,
     config: Config,
 ) -> TriggerEvaluatorHandle {
-    TriggerEvaluator::spawn(bus, registry, actions, trigger_instances, scheduler, config)
+    TriggerEvaluator::spawn(bus, registry, catalog, scheduler, config)
 }
 
 #[cfg(test)]

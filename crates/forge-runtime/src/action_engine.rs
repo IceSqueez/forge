@@ -13,6 +13,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{info, warn};
 
 use crate::action_cancel::ActionCancelRegistry;
+use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
 use crate::{Config, EventBus};
 
@@ -125,6 +126,7 @@ impl ActionEngineHandle {
 
 struct ActionEngine {
     bus: Arc<EventBus>,
+    catalog: Arc<Catalog>,
     actions: Arc<dyn ActionRepo>,
     history: Arc<dyn HistoryRepo>,
     chain_engine: Arc<ChainEngine>,
@@ -134,6 +136,7 @@ struct ActionEngine {
 impl ActionEngine {
     pub fn spawn(
         bus: Arc<EventBus>,
+        catalog: Arc<Catalog>,
         actions: Arc<dyn ActionRepo>,
         history: Arc<dyn HistoryRepo>,
         sub_action_registry: Arc<SubActionRegistry>,
@@ -153,6 +156,7 @@ impl ActionEngine {
         ));
         let engine = Arc::new(Self {
             bus: Arc::clone(&bus),
+            catalog,
             actions: Arc::clone(&actions),
             history: Arc::clone(&history),
             chain_engine,
@@ -262,11 +266,13 @@ impl ActionEngine {
     }
 
     async fn run_execution(&self, req: ExecutionRequest, cancel: &CancelSignal) {
-        let action = match self.actions.get(req.action_id).await {
-            Ok(Some(a)) if a.enabled => a,
-            Ok(_) => return,
+        let action = match self.catalog.current().await {
+            Ok(catalog) => match catalog.action(req.action_id) {
+                Some(action) => Arc::clone(action),
+                None => return,
+            },
             Err(e) => {
-                warn!("action_repo.get failed: {e}");
+                warn!("action catalog rebuild failed: {e}");
                 return;
             }
         };
@@ -582,12 +588,20 @@ pub(crate) fn condition_failed_telemetry(
 
 pub fn spawn_action_engine(
     bus: Arc<EventBus>,
+    catalog: Arc<Catalog>,
     actions: Arc<dyn ActionRepo>,
     history: Arc<dyn HistoryRepo>,
     sub_action_registry: Arc<SubActionRegistry>,
     cancel_registry: Arc<ActionCancelRegistry>,
 ) -> ActionEngineHandle {
-    ActionEngine::spawn(bus, actions, history, sub_action_registry, cancel_registry)
+    ActionEngine::spawn(
+        bus,
+        catalog,
+        actions,
+        history,
+        sub_action_registry,
+        cancel_registry,
+    )
 }
 
 #[cfg(test)]

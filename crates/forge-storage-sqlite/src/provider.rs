@@ -4,9 +4,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
-    ActionRepo, ChatHistoryRepo, CredentialId, CredentialsKeyLoss, CredentialsRepo, DataProvider,
-    EXPECTED_SCHEMA_VERSION, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalTransit,
-    GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo,
+    ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialId, CredentialsKeyLoss,
+    CredentialsRepo, DataProvider, EXPECTED_SCHEMA_VERSION, EventLogRepo, ExecutionStatus,
+    GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo, QueueRepo,
+    RevisingActionRepo, RevisingQueueRepo, RevisingTriggerInstanceRepo, ScriptRecord, ScriptRepo,
     ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
     TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
@@ -52,9 +53,10 @@ pub struct SqliteBackend {
     globals: SqliteGlobalsRepo,
     user_globals: SqliteUserGlobalsRepo,
     settings: SqliteSettingsRepo,
-    action: Arc<SqliteActionRepo>,
-    trigger_instance: Arc<SqliteTriggerInstanceRepo>,
-    queue: Arc<SqliteQueueRepo>,
+    action: Arc<dyn ActionRepo>,
+    trigger_instance: Arc<dyn TriggerInstanceRepo>,
+    queue: Arc<dyn QueueRepo>,
+    catalog_revision: CatalogRevision,
     script: SqliteScriptRepo,
     credentials: SqliteCredentialsRepo,
     history: Arc<SqliteHistoryRepo>,
@@ -134,6 +136,7 @@ impl SqliteBackend {
         media_root: std::path::PathBuf,
     ) -> Self {
         let shutdown = Arc::new(Notify::new());
+        let catalog_revision = CatalogRevision::new();
 
         let event_log_for_task =
             Arc::new(SqliteEventLogRepo::new(pool.clone())) as Arc<dyn EventLogRepo>;
@@ -156,9 +159,19 @@ impl SqliteBackend {
             globals: SqliteGlobalsRepo::new(pool.clone()),
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
             settings: SqliteSettingsRepo::new(pool.clone()),
-            action: Arc::new(SqliteActionRepo::new(pool.clone())),
-            trigger_instance: Arc::new(SqliteTriggerInstanceRepo::new(pool.clone())),
-            queue: Arc::new(SqliteQueueRepo::new(pool.clone())),
+            action: RevisingActionRepo::wrap(
+                Arc::new(SqliteActionRepo::new(pool.clone())),
+                catalog_revision.clone(),
+            ),
+            trigger_instance: RevisingTriggerInstanceRepo::wrap(
+                Arc::new(SqliteTriggerInstanceRepo::new(pool.clone())),
+                catalog_revision.clone(),
+            ),
+            queue: RevisingQueueRepo::wrap(
+                Arc::new(SqliteQueueRepo::new(pool.clone())),
+                catalog_revision.clone(),
+            ),
+            catalog_revision,
             script: SqliteScriptRepo::new(pool.clone()),
             history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
             event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
@@ -461,15 +474,15 @@ impl CredentialsRepo for SqliteBackend {
 #[async_trait]
 impl DataProvider for SqliteBackend {
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
-        Arc::clone(&self.action) as Arc<dyn ActionRepo>
+        Arc::clone(&self.action)
     }
 
     fn trigger_instance_repo(&self) -> Arc<dyn TriggerInstanceRepo> {
-        Arc::clone(&self.trigger_instance) as Arc<dyn TriggerInstanceRepo>
+        Arc::clone(&self.trigger_instance)
     }
 
     fn queue_repo(&self) -> Arc<dyn QueueRepo> {
-        Arc::clone(&self.queue) as Arc<dyn QueueRepo>
+        Arc::clone(&self.queue)
     }
 
     fn history_repo(&self) -> Arc<dyn HistoryRepo> {
@@ -506,6 +519,10 @@ impl DataProvider for SqliteBackend {
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {
         Arc::clone(&self.media) as Arc<dyn MediaRepo>
+    }
+
+    fn catalog_revision(&self) -> CatalogRevision {
+        self.catalog_revision.clone()
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

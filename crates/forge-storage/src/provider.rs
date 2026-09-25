@@ -3,9 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::{
-    ActionRepo, ChatHistoryRepo, CredentialsRepo, EventLogRepo, GlobalsRepo, HistoryRepo,
-    MediaRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, EventLogRepo, GlobalsRepo,
+    HistoryRepo, MediaRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo,
+    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
 /// Schema version this build expects. The startup gate compares `schema_version()`
@@ -28,6 +28,9 @@ pub trait DataProvider:
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo>;
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo>;
     fn media_repo(&self) -> Arc<dyn MediaRepo>;
+
+    /// Shared by the action, trigger-instance and queue repos this provider hands out.
+    fn catalog_revision(&self) -> CatalogRevision;
 
     async fn schema_version(&self) -> Result<u32, StorageError>;
 

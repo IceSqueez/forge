@@ -6,7 +6,6 @@ forge.ready(function (config) {
   forge.content(function (values, durationMs) {
     forge.set("headline", values.headline);
     forge.set("subline", values.subline);
-    forge.sound(config.sound);
     forge.show("#stage", durationMs || config.duration * 1000 || FALLBACK_MS);
   });
 });

@@ -8,9 +8,11 @@ use forge_storage::{OverlayConfig, OverlayId};
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
 use super::overlay_targets::{OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY};
-use crate::overlay_service::{OverlayDelivery, OverlayServiceCell};
+use crate::overlay_service::{OverlayDelivery, OverlayDispatch, OverlayServiceCell};
+use crate::overlay_shows::ShowEnd;
 
 const DURATION_KEY: &str = "duration_secs";
+const WAIT_KEY: &str = "wait_for_show";
 
 /// Names the catalog a host resolves `overlay_id` in to get the target type's content fields.
 pub const CONTENT_SCHEMA_KEY: &str = "overlay.content_fields";
@@ -48,14 +50,37 @@ impl OverlaySendRunner {
             )
             .await
         {
-            Ok(OverlayDelivery::NoPage) => {
-                tracing::debug!(overlay = %identity, "overlay content had no page to reach");
-                SubActionOutcome::Success
+            Ok(OverlayDispatch::Applied(delivery)) => delivered(identity, delivery),
+            Ok(OverlayDispatch::Queued(ticket)) if waits_for_show(config) => {
+                show_outcome(identity, ticket.finished().await)
             }
-            Ok(_) => SubActionOutcome::Success,
+            Ok(OverlayDispatch::Queued(_)) => SubActionOutcome::Success,
             Err(error) => SubActionOutcome::Failed(format!("overlay.send: {error}")),
         }
     }
+}
+
+fn delivered(identity: &str, delivery: OverlayDelivery) -> SubActionOutcome {
+    if delivery == OverlayDelivery::NoPage {
+        tracing::debug!(overlay = %identity, "overlay content had no page to reach");
+    }
+    SubActionOutcome::Success
+}
+
+fn show_outcome(identity: &str, end: ShowEnd) -> SubActionOutcome {
+    match end {
+        ShowEnd::Shown(delivery) => delivered(identity, delivery),
+        ShowEnd::Cleared => SubActionOutcome::Failed(
+            "overlay.send: the overlay's show queue was cleared before this show ran".to_owned(),
+        ),
+        ShowEnd::Withdrawn => SubActionOutcome::Failed(
+            "overlay.send: the overlay was disabled or deleted before the show ran".to_owned(),
+        ),
+    }
+}
+
+fn waits_for_show(config: &SubActionConfig) -> bool {
+    matches!(config.get(WAIT_KEY), Some(Variant::Bool(true)))
 }
 
 #[async_trait]
@@ -90,6 +115,7 @@ impl SubActionRunner for OverlaySendRunner {
             OVERLAY_TARGET_KEY.to_owned(),
             Variant::String(String::new()),
         );
+        cfg.insert(WAIT_KEY.to_owned(), Variant::Bool(false));
         cfg
     }
 
@@ -110,6 +136,10 @@ impl SubActionRunner for OverlaySendRunner {
                     max: DURATION_MAX_SECS,
                     unit: "s",
                 }),
+            },
+            FormField::Toggle {
+                key: WAIT_KEY,
+                label: "Wait until the show ends",
             },
         ]
     }
@@ -141,7 +171,7 @@ impl SubActionRunner for OverlaySendRunner {
 fn supplied_content(config: &SubActionConfig) -> OverlayConfig {
     config
         .iter()
-        .filter(|(key, _)| key.as_str() != OVERLAY_TARGET_KEY && key.as_str() != DURATION_KEY)
+        .filter(|(key, _)| ![OVERLAY_TARGET_KEY, DURATION_KEY, WAIT_KEY].contains(&key.as_str()))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
 }

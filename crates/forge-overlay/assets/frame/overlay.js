@@ -8,6 +8,5 @@ forge.ready(function (config) {
   forge.content(function (values) {
     forge.set("headline", values.headline);
     forge.set("subline", values.subline);
-    forge.sound(config.sound);
   });
 });

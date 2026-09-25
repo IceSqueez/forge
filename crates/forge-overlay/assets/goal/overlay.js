@@ -6,7 +6,6 @@ forge.ready(function (config) {
 
   forge.content(function (values) {
     applyGoal(values.label, values.value, values.target);
-    forge.sound(config.sound);
   });
 });
 

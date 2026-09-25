@@ -1,7 +1,5 @@
 use crate::assets::PageAssets;
-use crate::descriptor::{
-    DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
-};
+use crate::descriptor::{DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.blank";
@@ -35,14 +33,6 @@ impl OverlayKindDescriptor for BlankOverlayKind {
 
     fn config_schema_version(&self) -> u32 {
         1
-    }
-
-    fn default_config(&self) -> OverlayConfig {
-        OverlayConfig::new()
-    }
-
-    fn config_fields(&self) -> Vec<SectionedField> {
-        Vec::new()
     }
 
     fn page_assets(&self) -> PageAssets {

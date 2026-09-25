@@ -389,18 +389,6 @@ fn in_section(section: ConfigSection, field: FormField) -> SectionedField {
     SectionedField { section, field }
 }
 
-pub(crate) fn shared_defaults(
-    accent: &str,
-    font: &str,
-    position: &str,
-    animation: &str,
-    sizing: ElementSizing,
-) -> OverlayConfig {
-    let mut defaults = shared_style_defaults(accent, font, position, animation, sizing);
-    defaults.insert(SOUND.to_owned(), text(""));
-    defaults
-}
-
 pub(crate) fn shared_style_defaults(
     accent: &str,
     font: &str,

@@ -4,6 +4,7 @@ use forge_registry::FormField;
 use forge_types::Variant;
 
 use crate::assets::PageAssets;
+use crate::base;
 use crate::preview::PreviewComposition;
 
 pub type OverlayConfig = BTreeMap<String, Variant>;
@@ -47,8 +48,29 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn order_sensitive(&self) -> bool;
     /// Bumped only when a stored config needs a Rust-side rewrite pass to stay readable.
     fn config_schema_version(&self) -> u32;
-    fn default_config(&self) -> OverlayConfig;
-    fn config_fields(&self) -> Vec<SectionedField>;
+    fn look_defaults(&self) -> OverlayConfig {
+        OverlayConfig::new()
+    }
+    fn look_fields(&self) -> Vec<SectionedField> {
+        Vec::new()
+    }
+    /// Seconds a transient show stays up when neither the overlay nor the step names a duration.
+    fn default_display_secs(&self) -> i64 {
+        base::DEFAULT_DISPLAY_SECS
+    }
+    /// The base's defaults with the look's laid over them; a look implements `look_defaults`.
+    fn default_config(&self) -> OverlayConfig {
+        let mut defaults =
+            base::base_defaults(self.delivery_disposition(), self.default_display_secs());
+        defaults.extend(self.look_defaults());
+        defaults
+    }
+    /// The look's fields followed by the base's; a look implements `look_fields`.
+    fn config_fields(&self) -> Vec<SectionedField> {
+        let mut fields = self.look_fields();
+        fields.extend(base::base_fields(self.delivery_disposition()));
+        fields
+    }
     /// Carries no config value; the page binds against its config document at runtime.
     fn page_assets(&self) -> PageAssets;
     /// Takes the effective config, never the sparse stored one.

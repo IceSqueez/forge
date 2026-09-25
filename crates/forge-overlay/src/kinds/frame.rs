@@ -39,18 +39,21 @@ impl OverlayKindDescriptor for FrameOverlayKind {
         1
     }
 
-    fn default_config(&self) -> OverlayConfig {
-        let mut defaults =
-            config::shared_defaults("peach", "Inter", "center", "fade", metrics::FRAME_SIZING);
+    fn look_defaults(&self) -> OverlayConfig {
+        let mut defaults = config::shared_style_defaults(
+            "peach",
+            "Inter",
+            "center",
+            "fade",
+            metrics::FRAME_SIZING,
+        );
         defaults.insert(config::HEADLINE.to_owned(), config::text(""));
         defaults.insert(config::SUBLINE.to_owned(), config::text("LIVE"));
         defaults
     }
 
-    fn config_fields(&self) -> Vec<SectionedField> {
-        let mut fields = config::shared_fields(metrics::FRAME_SIZING);
-        fields.push(config::sound_field());
-        fields
+    fn look_fields(&self) -> Vec<SectionedField> {
+        config::shared_fields(metrics::FRAME_SIZING)
     }
 
     fn page_assets(&self) -> PageAssets {

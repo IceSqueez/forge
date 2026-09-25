@@ -20,6 +20,7 @@ pub mod live_viewers;
 mod overlay_lanes;
 pub mod overlay_media;
 pub mod overlay_service;
+mod overlay_shows;
 pub mod queue_scheduler;
 pub mod script_registry;
 pub mod sound_player;
@@ -49,9 +50,10 @@ pub use event_log_bridge::spawn_event_log_bridge;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{
-    MaterializePass, OverlayConnectListener, OverlayDelivery, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceCell, OverlayServiceError, OverlayServiceHandle, TestFire,
+    MaterializePass, OverlayConnectListener, OverlayDelivery, OverlayDispatch, OverlayFrameSink,
+    OverlayReceivers, OverlayServiceCell, OverlayServiceError, OverlayServiceHandle, TestFire,
 };
+pub use overlay_shows::{SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowEnd, ShowTicket};
 pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
     QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,

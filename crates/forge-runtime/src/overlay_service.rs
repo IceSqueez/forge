@@ -7,8 +7,8 @@ use forge_events::{Event, EventSource};
 use forge_overlay::{
     DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
     OverlayKindRegistry, OverlayMedia, SampleContext, SampleTrigger, delivered_content,
-    ensure_shared_directory, materialize_overlay, read_overlay_source, remove_overlay_directory,
-    sample_content, sample_context, write_overlay_source,
+    display_window, ensure_shared_directory, materialize_overlay, read_overlay_source,
+    remove_overlay_directory, sample_content, sample_context, write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_registry::{
@@ -25,6 +25,9 @@ use crate::actions::ActionsService;
 use crate::bus::EventBus;
 use crate::overlay_lanes::OverlayLanes;
 use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
+use crate::overlay_shows::{
+    QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowEnd, ShowSequencer, ShowTicket,
+};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -47,6 +50,9 @@ pub enum OverlayServiceError {
 
     #[error("overlay file work did not finish")]
     Interrupted,
+
+    #[error("overlay '{id}' already has {capacity} shows waiting, so this one was not queued")]
+    ShowQueueFull { id: OverlayId, capacity: usize },
 }
 
 /// Counts only connections whose receiver was still alive; a page that closed counts for nothing.
@@ -54,6 +60,13 @@ pub enum OverlayServiceError {
 pub struct OverlayReceivers {
     pub sources: usize,
     pub preview_tabs: usize,
+}
+
+/// Content a look applies on arrival is pushed at once; a transient show waits its turn.
+#[derive(Debug)]
+pub enum OverlayDispatch {
+    Applied(OverlayDelivery),
+    Queued(ShowTicket),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +139,7 @@ struct OverlayService {
     media: Option<OverlayMediaLibrary>,
     wiring: Option<EventWiring>,
     lanes: Arc<OverlayLanes>,
+    shows: Arc<ShowSequencer>,
 }
 
 #[derive(Clone)]
@@ -148,6 +162,7 @@ impl OverlayServiceHandle {
         bus: Arc<EventBus>,
         frames: Option<Arc<dyn OverlayFrameSink>>,
     ) -> Self {
+        let shows = Arc::new(ShowSequencer::new(frames.clone()));
         Self {
             inner: Arc::new(OverlayService {
                 repo,
@@ -158,6 +173,7 @@ impl OverlayServiceHandle {
                 media: None,
                 wiring: None,
                 lanes: Arc::default(),
+                shows,
             }),
         }
     }
@@ -199,6 +215,7 @@ impl OverlayServiceHandle {
             media: self.inner.media.clone(),
             wiring: self.inner.wiring.clone(),
             lanes: Arc::clone(&self.inner.lanes),
+            shows: Arc::clone(&self.inner.shows),
         }
     }
 
@@ -312,8 +329,11 @@ impl OverlayServiceHandle {
     /// receives frames meant for a later overlay that reuses the identity.
     pub async fn delete(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
         let removed = self.inner.repo.delete(id).await?;
-        if removed && let Some(frames) = &self.inner.frames {
-            frames.revoke(id).await;
+        if removed {
+            self.withdraw_shows(id);
+            if let Some(frames) = &self.inner.frames {
+                frames.revoke(id).await;
+            }
         }
         Ok(removed)
     }
@@ -326,11 +346,11 @@ impl OverlayServiceHandle {
         enabled: bool,
     ) -> Result<bool, OverlayServiceError> {
         let changed = self.inner.repo.set_enabled(id, enabled).await?;
-        if changed
-            && !enabled
-            && let Some(frames) = &self.inner.frames
-        {
-            frames.revoke(id).await;
+        if changed && !enabled {
+            self.withdraw_shows(id);
+            if let Some(frames) = &self.inner.frames {
+                frames.revoke(id).await;
+            }
         }
         Ok(changed)
     }
@@ -361,14 +381,15 @@ impl OverlayServiceHandle {
     }
 
     /// The send-to-overlay step's funnel: the supplied fields are laid over the overlay's own
-    /// content, both expanded against the run's arguments.
+    /// content, both expanded against the run's arguments. A transient show joins its overlay's
+    /// queue and holds the page for its display window, capped at [`SHOW_CEILING`].
     pub async fn send_to(
         &self,
         id: &OverlayId,
         supplied: &OverlayConfig,
         args: &ArgStack,
         duration_ms: Option<u64>,
-    ) -> Result<OverlayDelivery, OverlayServiceError> {
+    ) -> Result<OverlayDispatch, OverlayServiceError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
             return Err(OverlayServiceError::UnavailableKind {
@@ -377,9 +398,46 @@ impl OverlayServiceHandle {
             });
         };
         let content = delivered_content(descriptor, &definition.config, supplied, args);
-        let disposition = descriptor.delivery_disposition();
-        self.push(&definition.id, disposition, &content, duration_ms)
-            .await
+        let Some(window) = display_window(descriptor, &definition.config, duration_ms) else {
+            let disposition = descriptor.delivery_disposition();
+            return self
+                .push(&definition.id, disposition, &content, duration_ms)
+                .await
+                .map(OverlayDispatch::Applied);
+        };
+
+        let ceiling_ms = u64::try_from(SHOW_CEILING.as_millis()).unwrap_or(u64::MAX);
+        let show = Show {
+            content: content_json(&content),
+            duration_ms: duration_ms.map(|ms| ms.min(ceiling_ms)),
+            window: window.min(SHOW_CEILING),
+        };
+        self.inner
+            .shows
+            .enqueue(&definition.id, show)
+            .map(OverlayDispatch::Queued)
+            .map_err(|QueueFull| OverlayServiceError::ShowQueueFull {
+                id: definition.id,
+                capacity: SHOW_QUEUE_CAPACITY,
+            })
+    }
+
+    /// Shows queued behind the one on screen; zero for an overlay that applies content on arrival.
+    pub fn pending_shows(&self, id: &OverlayId) -> usize {
+        self.inner.shows.depth(id)
+    }
+
+    /// Drops the shows still waiting and returns how many; the one on screen runs out its window,
+    /// and a step waiting on a dropped show ends as cleared.
+    pub fn clear_shows(&self, id: &OverlayId) -> usize {
+        self.inner.shows.drop_pending(id, ShowEnd::Cleared)
+    }
+
+    fn withdraw_shows(&self, id: &OverlayId) {
+        let withdrawn = self.inner.shows.drop_pending(id, ShowEnd::Withdrawn);
+        if withdrawn > 0 {
+            tracing::info!(overlay = %id, withdrawn, "queued overlay shows dropped with their overlay");
+        }
     }
 
     /// Builds the sample content once and returns it, so the caller previews exactly what the

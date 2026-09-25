@@ -39,9 +39,14 @@ impl OverlayKindDescriptor for AlertOverlayKind {
         2
     }
 
-    fn default_config(&self) -> OverlayConfig {
-        let mut defaults =
-            config::shared_defaults("mauve", "Rubik", "top", "slide-up", metrics::ALERT_SIZING);
+    fn look_defaults(&self) -> OverlayConfig {
+        let mut defaults = config::shared_style_defaults(
+            "mauve",
+            "Rubik",
+            "top",
+            "slide-up",
+            metrics::ALERT_SIZING,
+        );
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Thanks for the sub!"),
@@ -50,16 +55,13 @@ impl OverlayKindDescriptor for AlertOverlayKind {
             config::SUBLINE.to_owned(),
             config::text("%sub_cumulative_months% months subscribed"),
         );
-        defaults.insert(config::DURATION.to_owned(), forge_types::Variant::Int(5));
         defaults.insert(config::ICON.to_owned(), config::text(config::DEFAULT_ICON));
         defaults
     }
 
-    fn config_fields(&self) -> Vec<SectionedField> {
+    fn look_fields(&self) -> Vec<SectionedField> {
         let mut fields = config::shared_fields(metrics::ALERT_SIZING);
         fields.push(config::icon_field());
-        fields.push(config::duration_field());
-        fields.push(config::sound_field());
         fields
     }
 

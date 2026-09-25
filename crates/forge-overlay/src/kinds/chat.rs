@@ -39,7 +39,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         1
     }
 
-    fn default_config(&self) -> OverlayConfig {
+    fn look_defaults(&self) -> OverlayConfig {
         let mut defaults = config::shared_style_defaults(
             "sky",
             "Inter",
@@ -54,7 +54,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults
     }
 
-    fn config_fields(&self) -> Vec<SectionedField> {
+    fn look_fields(&self) -> Vec<SectionedField> {
         let mut fields = vec![
             config::author_field(),
             config::author_color_field(),

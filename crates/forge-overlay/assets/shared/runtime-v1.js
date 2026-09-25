@@ -58,6 +58,12 @@
  * business, and a content group is applied whole, so a key the frame leaves out is
  * left out of the display too.
  *
+ * Every content delivery also plays the overlay's configured sound, whatever
+ * its look: the sound belongs to the overlay, so a look never plays it itself.
+ * Actions reach a transient overlay one show at a time: forge sends the next
+ * delivery only once the previous one has been up for its whole duration, and
+ * holds the rest back in arrival order.
+ *
  * A page reached with ?preview=1 in its query previews itself. It reads
  * sample.json, the generated sample document sitting beside config.json, and
  * delivers that content to itself as soon as the page is ready; it paints a
@@ -166,6 +172,7 @@
   var credential = "";
   var readyFired = false;
   var reloading = false;
+  var playedThisDelivery = "";
 
   var socket = null;
   var attempt = 0;
@@ -564,9 +571,12 @@
 
   function deliver(values, durationMs) {
     unclear();
+    playedThisDelivery = (config && config.sound) || "";
+    sound(config && config.sound);
     contentCallbacks.forEach(function (callback) {
       invoke(callback, values, durationMs);
     });
+    playedThisDelivery = "";
   }
 
   function clear() {
@@ -656,7 +666,7 @@
   /* The page plays the sound, so it reaches the stream through the browser
      source's own audio rather than the local output device. */
   function sound(name) {
-    if (!name) {
+    if (!name || name === playedThisDelivery) {
       return;
     }
     var audio = new Audio(new URL(name, document_.baseURI).href);

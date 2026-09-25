@@ -8,6 +8,8 @@ use crate::preview::{PreviewComposition, PreviewShape, compose};
 
 pub const KIND_ID: &str = "overlay.ticker";
 
+const TICKER_DISPLAY_SECS: i64 = 8;
+
 pub struct TickerOverlayKind;
 
 impl OverlayKindDescriptor for TickerOverlayKind {
@@ -39,8 +41,8 @@ impl OverlayKindDescriptor for TickerOverlayKind {
         1
     }
 
-    fn default_config(&self) -> OverlayConfig {
-        let mut defaults = config::shared_defaults(
+    fn look_defaults(&self) -> OverlayConfig {
+        let mut defaults = config::shared_style_defaults(
             "yellow",
             "Bebas Neue",
             "bottom",
@@ -55,15 +57,15 @@ impl OverlayKindDescriptor for TickerOverlayKind {
             config::SUBLINE.to_owned(),
             config::text("\"%message_text%\""),
         );
-        defaults.insert(config::DURATION.to_owned(), forge_types::Variant::Int(8));
         defaults
     }
 
-    fn config_fields(&self) -> Vec<SectionedField> {
-        let mut fields = config::shared_fields(metrics::TICKER_SIZING);
-        fields.push(config::duration_field());
-        fields.push(config::sound_field());
-        fields
+    fn default_display_secs(&self) -> i64 {
+        TICKER_DISPLAY_SECS
+    }
+
+    fn look_fields(&self) -> Vec<SectionedField> {
+        config::shared_fields(metrics::TICKER_SIZING)
     }
 
     fn page_assets(&self) -> PageAssets {

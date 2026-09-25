@@ -39,24 +39,22 @@ impl OverlayKindDescriptor for GoalOverlayKind {
         1
     }
 
-    fn default_config(&self) -> OverlayConfig {
+    fn look_defaults(&self) -> OverlayConfig {
         let mut defaults =
             config::shared_style_defaults("green", "Inter", "bottom", "fade", metrics::GOAL_SIZING);
-        defaults.insert(config::SOUND.to_owned(), config::text(""));
         defaults.insert(config::LABEL.to_owned(), config::text("Sub goal"));
         defaults.insert(config::VALUE.to_owned(), config::text("42"));
         defaults.insert(config::TARGET.to_owned(), config::text("100"));
         defaults
     }
 
-    fn config_fields(&self) -> Vec<SectionedField> {
+    fn look_fields(&self) -> Vec<SectionedField> {
         let mut fields = vec![
             config::label_field(),
             config::value_field(),
             config::target_field(),
         ];
         fields.extend(config::shared_style_fields(metrics::GOAL_SIZING));
-        fields.push(config::sound_field());
         fields
     }
 

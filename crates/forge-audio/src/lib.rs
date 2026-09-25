@@ -16,6 +16,7 @@ pub mod remote_sink;
 pub mod route;
 pub mod sink;
 pub mod sink_factory;
+pub mod targeted;
 pub mod voice_gate;
 pub mod wave;
 
@@ -34,8 +35,8 @@ pub use fan_out::{FanOutSink, fan_out_stoppable};
 pub use handle::{ControlledPlayback, PlaybackHandle};
 pub use pcm::PcmBuffer;
 pub use remote::{
-    ClipMediaType, RemoteAudioDestination, RemoteClip, RemoteClipId, RemoteCommand, RemoteDelivery,
-    RemoteDestinationId, RemoteVerdict,
+    ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteClipId,
+    RemoteCommand, RemoteDelivery, RemoteDestinationId, RemoteVerdict,
 };
 pub use remote_sink::RemoteSink;
 pub use route::{
@@ -43,5 +44,6 @@ pub use route::{
 };
 pub use sink::{AudioSink, NullSink};
 pub use sink_factory::{AudioSinkFactory, CpalSinkFactory};
+pub use targeted::{PlaybackTarget, RemoteLegFactory, TargetedSinkFactory};
 pub use voice_gate::{VoiceGateConfig, VoiceGateMonitor, VoiceGateState};
 pub use wave::encode_wave;

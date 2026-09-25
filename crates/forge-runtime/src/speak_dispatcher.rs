@@ -16,6 +16,18 @@ pub struct VoiceDescriptor {
     pub engine_id: String,
 }
 
+const SHOW_SPEECH_UNAVAILABLE: &str = "speech for an overlay show is not available";
+
+/// Plays only through `overlay`, never through the global audio receiver; `show` joins the speech
+/// to the show on that overlay's page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShowSpeech {
+    pub text: String,
+    pub voice_alias: Option<String>,
+    pub overlay: String,
+    pub show: String,
+}
+
 /// Lives here to avoid a dependency cycle; every method except `speak` defaults to a no-op/empty.
 #[async_trait]
 pub trait SpeakDispatcher: Send + Sync {
@@ -84,6 +96,18 @@ pub trait SpeakDispatcher: Send + Sync {
     ) -> Result<(), SpeakDispatchError> {
         let _ = cancel;
         self.speak_with_engine(text, engine_id).await
+    }
+
+    /// Resolves on the request's one terminal outcome; a cancel ends the speech wherever it is.
+    async fn speak_for_show(
+        &self,
+        speech: ShowSpeech,
+        cancel: CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let _ = (speech, cancel);
+        Err(SpeakDispatchError::Dispatch(
+            SHOW_SPEECH_UNAVAILABLE.to_owned(),
+        ))
     }
 
     /// Stop the active item; the queue then advances to the next.

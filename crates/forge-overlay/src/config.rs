@@ -17,6 +17,9 @@ pub const TEXT_SIZE: &str = "text_size";
 pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
 pub const SOUND: &str = "sound";
+pub const SPEECH: &str = "speech";
+pub const SPEECH_VOICE: &str = "speech_voice";
+pub const SHOW: &str = "show";
 pub const ICON: &str = "icon";
 
 pub const AUTHOR: &str = "author";
@@ -381,6 +384,27 @@ pub(crate) fn sound_field() -> SectionedField {
             key: SOUND,
             label: "Sound",
             options_key: SOUND_OPTIONS_KEY,
+        },
+    )
+}
+
+pub(crate) fn speech_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::TextArea {
+            key: SPEECH,
+            label: "Speech",
+        },
+    )
+}
+
+pub(crate) fn speech_voice_field() -> SectionedField {
+    in_section(
+        ConfigSection::Behavior,
+        FormField::Text {
+            key: SPEECH_VOICE,
+            label: "Speech voice alias",
+            placeholder: "e.g. piper/en_US-amy-medium",
         },
     )
 }

@@ -61,7 +61,7 @@ pub use queue_scheduler::{
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
-pub use speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
+pub use speak_dispatcher::{ShowSpeech, SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
 pub use sub_action_runners::{
     CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
     overlay_send_targets, register_core_sub_actions,

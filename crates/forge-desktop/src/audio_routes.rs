@@ -2,7 +2,10 @@ use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use forge_audio::{AudioRoute, AudioSink, FanOutSink};
+use forge_audio::{
+    AudioRoute, AudioSink, FanOutSink, RemoteAudioDestination, RemoteLegFactory,
+    TargetedSinkFactory,
+};
 use forge_soundboard::ClipRoute;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo, StorageError, reserved_keys};
 
@@ -227,6 +230,17 @@ pub fn compose_routes(
         speech_sink: compose_sink(speech_plan, speech_local, overlay_sink.clone()),
         clip_route: ClipRoute::new(clips_plan.route, overlay_sink),
     }
+}
+
+/// Speech that belongs to a show reaches the stream only through that show's overlay; `local`
+/// joins it only while the global speech route plays locally.
+pub fn show_speech_legs(
+    speech_plan: &RoutePlan,
+    remote: Arc<dyn RemoteAudioDestination>,
+    local: Arc<dyn AudioSink>,
+) -> Arc<dyn TargetedSinkFactory> {
+    let local = speech_plan.route.plays_local().then_some(local);
+    Arc::new(RemoteLegFactory::new(remote, local))
 }
 
 pub fn report_plan(domain: AudioDomain, plan: &RoutePlan) {

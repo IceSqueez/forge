@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use forge_registry::{KindPlatformContract, SynthesisSample, TriggerVariable, synthesize_args};
 use forge_types::{ArgStack, CanonicalVariable, Variant};
 
+use crate::config::SPEECH;
 use crate::content::delivered_content;
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 
@@ -50,12 +51,15 @@ pub fn sample_context(feeding: &[SampleTrigger]) -> SampleContext {
     }
 }
 
+/// Never carries the speech text: a page plays speech, it never draws it.
 pub fn sample_content(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,
     context: &SampleContext,
 ) -> OverlayConfig {
-    delivered_content(descriptor, stored, &OverlayConfig::new(), &context.args())
+    let mut content = delivered_content(descriptor, stored, &OverlayConfig::new(), &context.args());
+    content.remove(SPEECH);
+    content
 }
 
 fn distinct_kind(feeding: &[SampleTrigger]) -> Option<&SampleTrigger> {

@@ -317,6 +317,7 @@ impl TtsEnginesView {
             voice_override: Some(VoiceId(voice_id)),
             source_event_id: None,
             is_reward: false,
+            target: None,
         };
         async_bridge::report_failure(
             &self.rt_handle,

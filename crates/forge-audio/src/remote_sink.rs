@@ -9,8 +9,8 @@ use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::pcm::PcmBuffer;
 use crate::remote::{
-    ClipMediaType, RemoteAudioDestination, RemoteClip, RemoteClipId, RemoteCommand, RemoteDelivery,
-    RemoteDestinationId, RemoteVerdict,
+    ClipMediaType, PlaybackCorrelation, RemoteAudioDestination, RemoteClip, RemoteClipId,
+    RemoteCommand, RemoteDelivery, RemoteDestinationId, RemoteVerdict,
 };
 use crate::sink::AudioSink;
 use crate::wave::encode_wave;
@@ -25,6 +25,7 @@ const WATCHDOG_REASON: &str = "the page never reported whether it played the cli
 pub struct RemoteSink {
     destination: Arc<dyn RemoteAudioDestination>,
     destination_id: RemoteDestinationId,
+    correlation: Option<PlaybackCorrelation>,
 }
 
 impl RemoteSink {
@@ -35,6 +36,14 @@ impl RemoteSink {
         Self {
             destination,
             destination_id,
+            correlation: None,
+        }
+    }
+
+    pub fn correlated(self, correlation: PlaybackCorrelation) -> Self {
+        Self {
+            correlation: Some(correlation),
+            ..self
         }
     }
 }
@@ -67,6 +76,7 @@ impl AudioSink for RemoteSink {
             bytes: encode_wave(&buffer),
             media_type: ClipMediaType::Wave,
             duration_ms,
+            correlation: self.correlation.clone(),
         };
 
         let RemoteDelivery {

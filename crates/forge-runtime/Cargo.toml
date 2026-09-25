@@ -37,6 +37,7 @@ async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
+ulid = { workspace = true }
 
 [dev-dependencies]
 forge-storage = { path = "../forge-storage", features = ["test-mocks"] }

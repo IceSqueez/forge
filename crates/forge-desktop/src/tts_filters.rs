@@ -929,6 +929,7 @@ impl TtsFiltersView {
                 voice_override: None,
                 source_event_id: None,
                 is_reward: false,
+                target: None,
             };
             if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
                 eprintln!("forge-desktop: filter preview speak failed: {e}");

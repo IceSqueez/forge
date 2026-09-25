@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 pub use filters::{
     FilterMappingError, PipelineConfigHandle, build_config_lenient, build_config_strict,
 };
+pub use forge_audio::PlaybackTarget;
+use forge_audio::TargetedSinkFactory;
 pub use forge_tts_core::TtsError;
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceId};
 use forge_types::Shared;
@@ -54,6 +56,8 @@ pub struct SpeakRequest {
     pub source_event_id: Option<forge_types::EventId>,
     /// Gates `PipelineConfig::strip_reward_emotes`, independent of `strip_twitch_emotes`.
     pub is_reward: bool,
+    /// Plays only through the legs built for this target, never through the queue's own sink.
+    pub target: Option<PlaybackTarget>,
 }
 
 #[derive(Debug)]
@@ -62,6 +66,9 @@ pub enum SpeakCommand {
     Skip,
     PlayNow(RequestId),
     RemoveQueued(RequestId),
+    /// Ends the request wherever it is - removed while queued, skipped once active - and is a
+    /// no-op after it has ended.
+    Cancel(RequestId),
     /// No-op if `request_id` or `before` (when set) is absent from the pending queues, or if
     /// `before` equals `request_id`. Moves `request_id` to the tail of `normal_queue` when
     /// `before` is `None`.
@@ -217,11 +224,19 @@ pub struct SpeakQueueHandle {
     resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     master_volume_bits: Arc<AtomicU32>,
     engine_gains: Shared<HashMap<EngineId, f32>>,
+    targeted_legs: TargetedLegs,
 }
+
+pub(crate) type TargetedLegs = Shared<Option<Arc<dyn TargetedSinkFactory>>>;
 
 impl SpeakQueueHandle {
     pub async fn send(&self, cmd: SpeakCommand) -> Result<(), SpeakError> {
         self.tx.send(cmd).await.map_err(|_| SpeakError::ActorGone)
+    }
+
+    /// Reaches the next targeted request to start playing; until then a targeted request fails.
+    pub fn install_targeted_legs(&self, factory: Arc<dyn TargetedSinkFactory>) {
+        self.targeted_legs.store(Some(factory));
     }
 
     pub fn queue_depth(&self) -> usize {
@@ -304,6 +319,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let resolver = deps.resolver.clone();
     let master_volume_bits = Arc::new(AtomicU32::new(config.master_volume.to_bits()));
     let engine_gains = Shared::<HashMap<EngineId, f32>>::new(HashMap::new());
+    let targeted_legs = TargetedLegs::new(None);
 
     let event_tx_clone = event_tx.clone();
     let depth_clone = depth.clone();
@@ -311,6 +327,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
     let disabled_engines_clone = disabled_engines.clone();
     let master_volume_bits_clone = master_volume_bits.clone();
     let engine_gains_clone = engine_gains.clone();
+    let targeted_legs_clone = targeted_legs.clone();
     tokio::spawn(async move {
         actor::run_actor(
             config,
@@ -322,6 +339,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             disabled_engines_clone,
             master_volume_bits_clone,
             engine_gains_clone,
+            targeted_legs_clone,
         )
         .await;
     });
@@ -336,6 +354,7 @@ pub fn spawn(config: QueueConfig, deps: QueueDeps) -> (SpeakQueueHandle, SpeakEv
             resolver,
             master_volume_bits,
             engine_gains,
+            targeted_legs,
         },
         SpeakEventStream(event_rx),
     )

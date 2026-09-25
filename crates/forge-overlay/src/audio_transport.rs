@@ -63,6 +63,12 @@ pub fn announcement_content(announcement: &AudioAnnouncement<'_>) -> OverlayConf
     ])
 }
 
+/// Tags an announcement or a show with the token that joins a show to its speech on the page.
+pub fn joined_to_show(mut content: OverlayConfig, show: &str) -> OverlayConfig {
+    content.insert(config::SHOW.to_owned(), Variant::String(show.to_owned()));
+    content
+}
+
 /// A `None` clip reaches every clip the page still holds.
 pub fn command_content(command: AudioCommand, clip_id: Option<&str>) -> OverlayConfig {
     OverlayConfig::from([

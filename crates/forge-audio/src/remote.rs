@@ -26,6 +26,20 @@ impl fmt::Display for RemoteDestinationId {
     }
 }
 
+/// Joins a clip to the show that asked for it on the page; opaque, and grants nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlaybackCorrelation(String);
+
+impl PlaybackCorrelation {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct RemoteClipId(String);
 
@@ -68,6 +82,7 @@ pub struct RemoteClip {
     pub bytes: Vec<u8>,
     pub media_type: ClipMediaType,
     pub duration_ms: u64,
+    pub correlation: Option<PlaybackCorrelation>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

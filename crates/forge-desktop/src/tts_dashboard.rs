@@ -1300,6 +1300,7 @@ fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {
         voice_override: None,
         source_event_id: None,
         is_reward: false,
+        target: None,
     }
 }
 

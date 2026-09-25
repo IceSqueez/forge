@@ -6,7 +6,9 @@ use forge_audio::{
     AudioError, RemoteAudioDestination, RemoteClip, RemoteClipId, RemoteCommand, RemoteDelivery,
     RemoteDestinationId, RemoteVerdict,
 };
-use forge_overlay::{AudioAnnouncement, AudioCommand, announcement_content, command_content};
+use forge_overlay::{
+    AudioAnnouncement, AudioCommand, announcement_content, command_content, joined_to_show,
+};
 use forge_runtime::{OverlayDelivery, OverlayServiceHandle};
 use forge_server::{
     ClipCapability, ClipMediaType, ClipOffer, ClipOutcome, ClipOutcomeHandle, ServerHandle,
@@ -85,6 +87,7 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             bytes,
             media_type,
             duration_ms,
+            correlation,
         } = clip;
         let expected_players = self.overlays.receivers(&identity).await.sources;
 
@@ -112,6 +115,10 @@ impl RemoteAudioDestination for OverlayAudioDestination {
             media_type: media_type.as_str(),
             duration_ms,
         });
+        let content = match &correlation {
+            Some(show) => joined_to_show(content, show.as_str()),
+            None => content,
+        };
         self.register(clip_id.clone(), ticket.capability().clone(), outcome);
 
         match self.overlays.deliver_audio(&identity, content).await {

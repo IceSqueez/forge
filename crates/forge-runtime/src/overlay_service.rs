@@ -7,12 +7,13 @@ use forge_events::{Event, EventSource};
 use forge_overlay::{
     DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
     OverlayKindRegistry, OverlayMedia, SampleContext, SampleTrigger, delivered_content,
-    display_window, ensure_shared_directory, materialize_overlay, read_overlay_source,
-    remove_overlay_directory, sample_content, sample_context, write_overlay_source,
+    display_window, ensure_shared_directory, joined_to_show, materialize_overlay,
+    read_overlay_source, remove_overlay_directory, sample_content, sample_context, take_speech,
+    write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_registry::{
-    KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
+    CancelSignal, KindPlatformContract, SubActionRegistry, TriggerRegistry, declared_variables,
 };
 use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
@@ -20,6 +21,7 @@ use forge_storage::{
 };
 use forge_types::ArgStack;
 use serde_json::json;
+use ulid::Ulid;
 
 use crate::actions::ActionsService;
 use crate::bus::EventBus;
@@ -28,6 +30,7 @@ use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 use crate::overlay_shows::{
     QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowEnd, ShowSequencer, ShowTicket,
 };
+use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -140,6 +143,7 @@ struct OverlayService {
     wiring: Option<EventWiring>,
     lanes: Arc<OverlayLanes>,
     shows: Arc<ShowSequencer>,
+    speaker: Option<Arc<dyn SpeakDispatcher>>,
 }
 
 #[derive(Clone)]
@@ -162,7 +166,7 @@ impl OverlayServiceHandle {
         bus: Arc<EventBus>,
         frames: Option<Arc<dyn OverlayFrameSink>>,
     ) -> Self {
-        let shows = Arc::new(ShowSequencer::new(frames.clone()));
+        let shows = Arc::new(ShowSequencer::new(frames.clone(), None));
         Self {
             inner: Arc::new(OverlayService {
                 repo,
@@ -174,6 +178,22 @@ impl OverlayServiceHandle {
                 wiring: None,
                 lanes: Arc::default(),
                 shows,
+                speaker: None,
+            }),
+        }
+    }
+
+    /// Must be applied before any show is queued: it replaces the show queue.
+    pub fn with_speech(self, speaker: Arc<dyn SpeakDispatcher>) -> Self {
+        let shows = Arc::new(ShowSequencer::new(
+            self.inner.frames.clone(),
+            Some(Arc::clone(&speaker)),
+        ));
+        Self {
+            inner: Arc::new(OverlayService {
+                shows,
+                speaker: Some(speaker),
+                ..self.parts()
             }),
         }
     }
@@ -216,6 +236,7 @@ impl OverlayServiceHandle {
             wiring: self.inner.wiring.clone(),
             lanes: Arc::clone(&self.inner.lanes),
             shows: Arc::clone(&self.inner.shows),
+            speaker: self.inner.speaker.clone(),
         }
     }
 
@@ -397,20 +418,35 @@ impl OverlayServiceHandle {
                 kind_id: definition.kind_id,
             });
         };
-        let content = delivered_content(descriptor, &definition.config, supplied, args);
+        let mut content = delivered_content(descriptor, &definition.config, supplied, args);
+        let speech = take_speech(descriptor, &definition.config, &mut content)
+            .filter(|_| self.inner.speaker.is_some())
+            .map(|program| ShowSpeech {
+                text: program.text,
+                voice_alias: program.voice_alias,
+                overlay: definition.id.as_str().to_owned(),
+                show: Ulid::generate().to_string(),
+            });
         let Some(window) = display_window(descriptor, &definition.config, duration_ms) else {
             let disposition = descriptor.delivery_disposition();
-            return self
+            let delivery = self
                 .push(&definition.id, disposition, &content, duration_ms)
-                .await
-                .map(OverlayDispatch::Applied);
+                .await?;
+            if let Some(speech) = speech {
+                self.speak_unheld(speech);
+            }
+            return Ok(OverlayDispatch::Applied(delivery));
         };
 
+        if let Some(speech) = &speech {
+            content = joined_to_show(content, &speech.show);
+        }
         let ceiling_ms = u64::try_from(SHOW_CEILING.as_millis()).unwrap_or(u64::MAX);
         let show = Show {
             content: content_json(&content),
             duration_ms: duration_ms.map(|ms| ms.min(ceiling_ms)),
             window: window.min(SHOW_CEILING),
+            speech,
         };
         self.inner
             .shows
@@ -420,6 +456,18 @@ impl OverlayServiceHandle {
                 id: definition.id,
                 capacity: SHOW_QUEUE_CAPACITY,
             })
+    }
+
+    fn speak_unheld(&self, speech: ShowSpeech) {
+        let Some(speaker) = self.inner.speaker.clone() else {
+            return;
+        };
+        tokio::spawn(async move {
+            let overlay = speech.overlay.clone();
+            if let Err(e) = speaker.speak_for_show(speech, CancelSignal::new()).await {
+                tracing::info!(overlay = %overlay, reason = %e, "overlay speech did not play in full");
+            }
+        });
     }
 
     /// Shows queued behind the one on screen; zero for an overlay that applies content on arrival.

@@ -29,6 +29,7 @@ use forge_storage_sqlite::SqliteBackend;
 
 use crate::audio_routes::{
     AudioDomain, compose_routes, load_audio_routes, plan_route, report_plan, resolve_destination,
+    show_speech_legs,
 };
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
@@ -199,6 +200,7 @@ pub async fn build_runtime(
     let speak_dispatcher: Option<Arc<dyn SpeakDispatcher>> = speak_bridge
         .clone()
         .map(|bridge| bridge as Arc<dyn SpeakDispatcher>);
+    let show_speaker = speak_dispatcher.clone();
     let speak_requester: Option<Arc<dyn forge_script::SpeakRequester>> =
         speak_bridge.map(|bridge| bridge as Arc<dyn forge_script::SpeakRequester>);
 
@@ -358,6 +360,10 @@ pub async fn build_runtime(
         Arc::clone(&sub_action_registry),
         Arc::clone(&trigger_registry),
     );
+    let overlays = match show_speaker {
+        Some(speaker) => overlays.with_speech(speaker),
+        None => overlays,
+    };
     overlay_service_cell.set(overlays.clone());
     if let Some(handle) = server.clone() {
         handle
@@ -378,12 +384,12 @@ pub async fn build_runtime(
 
     install_audio_routes(
         &backend,
-        settings_repo.as_ref(),
         &server,
         &overlays,
         &speech_sink,
         Arc::clone(&speech_output) as Arc<dyn AudioSink>,
         &soundboard_player,
+        speak.as_ref(),
     )
     .await;
 
@@ -427,13 +433,14 @@ pub async fn build_runtime(
 /// Fixed for the life of the process: a stored route change reaches playback only after a restart.
 async fn install_audio_routes(
     backend: &Arc<dyn DataProvider>,
-    settings: &dyn SettingsRepo,
     server: &Option<forge_server::ServerHandle>,
     overlays: &OverlayServiceHandle,
     speech_sink: &RoutedSink,
     speech_output: Arc<dyn AudioSink>,
     soundboard_player: &SoundboardPlayer,
+    speak: Option<&forge_speak_queue::SpeakQueueHandle>,
 ) {
+    let settings: &dyn SettingsRepo = backend.as_ref();
     let routes = load_audio_routes(settings).await;
     let destination = resolve_destination(
         backend.overlay_repo().as_ref(),
@@ -447,15 +454,17 @@ async fn install_audio_routes(
     report_plan(AudioDomain::Speech, &speech_plan);
     report_plan(AudioDomain::Clips, &clips_plan);
 
+    let remote = server.clone().map(|handle| {
+        Arc::new(OverlayAudioDestination::new(handle, overlays.clone()))
+            as Arc<dyn RemoteAudioDestination>
+    });
     let install = compose_routes(
         &speech_plan,
         &clips_plan,
         &destination,
-        speech_output,
+        Arc::clone(&speech_output),
         |id| {
-            server.clone().map(|handle| {
-                let destination = Arc::new(OverlayAudioDestination::new(handle, overlays.clone()))
-                    as Arc<dyn RemoteAudioDestination>;
+            remote.clone().map(|destination| {
                 Arc::new(RemoteSink::new(
                     destination,
                     RemoteDestinationId::new(id.as_str()),
@@ -466,6 +475,9 @@ async fn install_audio_routes(
 
     speech_sink.install(install.speech_sink);
     soundboard_player.install_route(install.clip_route);
+    if let (Some(remote), Some(speak)) = (remote, speak) {
+        speak.install_targeted_legs(show_speech_legs(&speech_plan, remote, speech_output));
+    }
 }
 
 async fn build_voice_gate(

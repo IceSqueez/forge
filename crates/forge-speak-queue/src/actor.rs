@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use forge_audio::PcmBuffer;
+use forge_audio::{AudioError, AudioSink, PcmBuffer};
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_tts_core::{EngineId, SynthesisRequest, TtsError, TtsVoice, VoiceId};
 use forge_tts_pipeline::{DetectionOutcome, LanguageCode, LanguageDetector, PipelineResult};
@@ -14,7 +14,7 @@ use forge_voice::{
 
 use crate::{
     PipelineConfigHandle, Priority, QueueConfig, QueueDeps, QueuedOrderEntry, RequestId,
-    SpeakCommand, SpeakEvent, SpeakRequest,
+    SpeakCommand, SpeakEvent, SpeakRequest, TargetedLegs,
 };
 
 struct SynthTaskResult {
@@ -432,6 +432,7 @@ pub(crate) async fn run_actor(
     disabled_engines: Shared<HashSet<EngineId>>,
     master_volume_bits: Arc<AtomicU32>,
     engine_gains: Shared<HashMap<EngineId, f32>>,
+    targeted_legs: TargetedLegs,
 ) {
     let mut high_queue: VecDeque<SpeakRequest> = VecDeque::new();
     let mut normal_queue: VecDeque<SpeakRequest> = VecDeque::new();
@@ -494,6 +495,7 @@ pub(crate) async fn run_actor(
                 &mut progress_ticker,
                 high_queue.len() + normal_queue.len(),
                 gains.as_ref(),
+                &targeted_legs,
             )
             .await;
         }
@@ -632,6 +634,7 @@ pub(crate) async fn run_actor(
                         paused,
                         high_queue.len() + normal_queue.len(),
                         gains.as_ref(),
+                        &targeted_legs,
                     ).await;
                 }
             }
@@ -687,6 +690,7 @@ async fn handle_synth_result(
     paused: bool,
     queue_len: usize,
     engine_gains: &HashMap<EngineId, f32>,
+    targeted_legs: &TargetedLegs,
 ) {
     if active_request_id.as_ref() != Some(&result.request_id) {
         return;
@@ -768,6 +772,7 @@ async fn handle_synth_result(
                 progress_ticker,
                 queue_len,
                 engine_gains,
+                targeted_legs,
             )
             .await;
         }
@@ -785,6 +790,7 @@ async fn start_clip(
     progress_ticker: &mut Option<tokio::time::Interval>,
     queue_len: usize,
     engine_gains: &HashMap<EngineId, f32>,
+    targeted_legs: &TargetedLegs,
 ) {
     let ReadyClip {
         request_id,
@@ -820,7 +826,11 @@ async fn start_clip(
     );
     let engine_gain = engine_gains.get(&engine_id).copied().unwrap_or(1.0);
     pcm.apply_gain(config.master_volume * engine_gain);
-    match deps.audio_sink.play_controlled(pcm).await {
+    let started = match sink_for(&request, deps, targeted_legs) {
+        Ok(sink) => sink.play_controlled(pcm).await,
+        Err(e) => Err(e),
+    };
+    match started {
         Ok(playback) => {
             let mut ticker = tokio::time::interval(Duration::from_secs(1));
             ticker.tick().await;
@@ -853,6 +863,24 @@ async fn start_clip(
             );
         }
     }
+}
+
+/// A targeted request never falls back to the queue's own sink: without legs for its target it
+/// has no route at all.
+fn sink_for(
+    request: &SpeakRequest,
+    deps: &QueueDeps,
+    targeted_legs: &TargetedLegs,
+) -> Result<Arc<dyn AudioSink>, AudioError> {
+    let Some(target) = &request.target else {
+        return Ok(Arc::clone(&deps.audio_sink));
+    };
+    targeted_legs
+        .load()
+        .as_ref()
+        .as_ref()
+        .map(|legs| legs.sink_for(target))
+        .ok_or(AudioError::NoRoute)
 }
 
 async fn finish_playback(
@@ -1146,27 +1174,35 @@ fn handle_command(
             }
         }
         SpeakCommand::RemoveQueued(request_id) => {
-            if let Some(req) = take_from_queues(high_queue, normal_queue, &request_id) {
-                if let Some(count) = per_user_counts.get_mut(&req.viewer_id) {
-                    *count = count.saturating_sub(1);
-                    if *count == 0 {
-                        per_user_counts.remove(&req.viewer_id);
-                    }
-                }
-                let _ = event_tx.send(SpeakEvent::Removed {
-                    request_id: request_id.clone(),
-                });
-                publish(
-                    deps.event_bus.as_ref(),
-                    "speak.removed",
-                    serde_json::json!({
-                        "request_id": request_id.0,
-                        "viewer_name": req.viewer_name,
-                        "text": req.text,
-                    }),
-                    req.source_event_id,
+            remove_queued(
+                &request_id,
+                deps,
+                event_tx,
+                high_queue,
+                normal_queue,
+                per_user_counts,
+            );
+        }
+        SpeakCommand::Cancel(request_id) => {
+            if active_request_id.as_ref() == Some(&request_id) {
+                stop_active(
+                    "cancelled by its requester",
+                    "cancelled",
+                    deps,
+                    event_tx,
+                    active_request_id,
+                    current_playback,
+                    progress_ticker,
                 );
-                let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+            } else {
+                remove_queued(
+                    &request_id,
+                    deps,
+                    event_tx,
+                    high_queue,
+                    normal_queue,
+                    per_user_counts,
+                );
             }
         }
         SpeakCommand::Reorder { request_id, before } => {
@@ -1229,9 +1265,7 @@ fn handle_command(
                 current_playback,
                 progress_ticker,
             );
-            high_queue.clear();
-            normal_queue.clear();
-            per_user_counts.clear();
+            drop_pending(event_tx, high_queue, normal_queue, per_user_counts);
             let _ = event_tx.send(SpeakEvent::Cleared);
             publish(
                 deps.event_bus.as_ref(),
@@ -1242,9 +1276,7 @@ fn handle_command(
             let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
         }
         SpeakCommand::ClearPending => {
-            high_queue.clear();
-            normal_queue.clear();
-            per_user_counts.clear();
+            drop_pending(event_tx, high_queue, normal_queue, per_user_counts);
             publish(
                 deps.event_bus.as_ref(),
                 "speak.cleared",
@@ -1324,6 +1356,7 @@ fn handle_command(
                 let mut replay = last.clone();
                 replay.request_id = RequestId::new();
                 replay.priority = Priority::High;
+                replay.target = None;
                 admit_request(
                     replay,
                     config,
@@ -1357,6 +1390,54 @@ fn handle_command(
             );
         }
     }
+}
+
+fn remove_queued(
+    request_id: &RequestId,
+    deps: &QueueDeps,
+    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
+    high_queue: &mut VecDeque<SpeakRequest>,
+    normal_queue: &mut VecDeque<SpeakRequest>,
+    per_user_counts: &mut HashMap<String, usize>,
+) {
+    let Some(req) = take_from_queues(high_queue, normal_queue, request_id) else {
+        return;
+    };
+    if let Some(count) = per_user_counts.get_mut(&req.viewer_id) {
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            per_user_counts.remove(&req.viewer_id);
+        }
+    }
+    let _ = event_tx.send(SpeakEvent::Removed {
+        request_id: request_id.clone(),
+    });
+    publish(
+        deps.event_bus.as_ref(),
+        "speak.removed",
+        serde_json::json!({
+            "request_id": request_id.0,
+            "viewer_name": req.viewer_name,
+            "text": req.text,
+        }),
+        req.source_event_id,
+    );
+    let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
+}
+
+/// Every dropped request still reaches its one terminal outcome, so a waiter never hangs on it.
+fn drop_pending(
+    event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
+    high_queue: &mut VecDeque<SpeakRequest>,
+    normal_queue: &mut VecDeque<SpeakRequest>,
+    per_user_counts: &mut HashMap<String, usize>,
+) {
+    for req in high_queue.drain(..).chain(normal_queue.drain(..)) {
+        let _ = event_tx.send(SpeakEvent::Removed {
+            request_id: req.request_id,
+        });
+    }
+    per_user_counts.clear();
 }
 
 fn pop_next(

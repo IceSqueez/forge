@@ -1131,4 +1131,255 @@ mod tests {
         assert_eq!(args_in.get("a"), Some(&"99".to_owned()));
         assert_eq!(args_in.get("b"), Some(&"2".to_owned()));
     }
+
+    const LOOP_EVENT_KIND: &str = "test.loop_event";
+
+    struct EmitRunner;
+
+    #[async_trait]
+    impl forge_registry::SubActionRunner for EmitRunner {
+        fn id(&self) -> &str {
+            "test.emit"
+        }
+        fn category(&self) -> SubActionCategory {
+            SubActionCategory::Util
+        }
+        fn label(&self) -> &str {
+            ""
+        }
+        fn summary(&self) -> &str {
+            ""
+        }
+        fn search_text(&self) -> &str {
+            ""
+        }
+        fn icon_name(&self) -> &str {
+            ""
+        }
+        fn default_config(&self) -> forge_registry::SubActionConfig {
+            BTreeMap::new()
+        }
+        fn config_fields(&self) -> Vec<FormField> {
+            Vec::new()
+        }
+        fn validate_config(
+            &self,
+            _: &forge_registry::SubActionConfig,
+        ) -> Result<(), RegistryError> {
+            Ok(())
+        }
+        async fn execute(
+            &self,
+            _: &forge_registry::SubActionConfig,
+            ctx: &RunContext<'_>,
+        ) -> (SubActionTelemetry, Option<ArgStack>) {
+            ctx.publisher.publish(Event::caused_by(
+                EventSource::Core,
+                LOOP_EVENT_KIND,
+                serde_json::Value::Null,
+                ctx.parent_event_id,
+            ));
+            (
+                SubActionTelemetry {
+                    args_in: BTreeMap::new(),
+                    produced: BTreeMap::new(),
+                    index: ctx.index,
+                    kind: "test.emit".to_owned(),
+                    started_at: OffsetDateTime::now_utc(),
+                    duration_ms: 0,
+                    outcome: SubActionOutcome::Success,
+                },
+                None,
+            )
+        }
+    }
+
+    struct SelfLoopRig {
+        dp: crate::test_support::Sandboxed<Arc<dyn DataProvider>>,
+        bus: Arc<EventBus>,
+        engine: ActionEngineHandle,
+        action_id: ActionId,
+    }
+
+    async fn self_loop_rig() -> SelfLoopRig {
+        let dp = sandboxed_backend([0x16; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(EmitRunner)).unwrap();
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(reg),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+        let action_id = ActionId::new();
+        let action = forge_types::Action {
+            id: action_id,
+            name: "echo".to_owned(),
+            group: None,
+            queue_id: serde_json::from_str("\"00000000000000000000000000\"").unwrap(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
+            description: None,
+            sub_actions: vec![SubActionStep {
+                kind_id: "test.emit".to_owned(),
+                config: BTreeMap::new(),
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            }],
+        };
+        dp.action_repo().save(&action).await.unwrap();
+        SelfLoopRig {
+            dp,
+            bus,
+            engine,
+            action_id,
+        }
+    }
+
+    fn platform_event(bus: &EventBus) -> EventId {
+        let event = Event::new(EventSource::Twitch, "twitch.chat", serde_json::Value::Null);
+        let id = event.id;
+        bus.publish(event);
+        id
+    }
+
+    async fn run_to_completion(rig: &SelfLoopRig, trigger_event_id: EventId) {
+        let (done_tx, done_rx) = oneshot::channel();
+        rig.engine
+            .dispatch_tracked(
+                ExecutionRequest {
+                    action_id: rig.action_id,
+                    trigger_event_id,
+                    trigger_kind: None,
+                    initial_args: ArgStack::new(),
+                },
+                CancelSignal::new(),
+                done_tx,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), done_rx)
+            .await
+            .expect("run did not finish")
+            .unwrap();
+    }
+
+    struct LoopTrace {
+        starts: usize,
+        skipped: Option<Event>,
+        last_trigger: EventId,
+    }
+
+    // Plays the trigger evaluator: every loop event the action emits dispatches the same action again.
+    async fn drive_self_loop(rig: &SelfLoopRig, root: EventId) -> LoopTrace {
+        let mut sub = rig.bus.subscribe();
+        let mut trace = LoopTrace {
+            starts: 0,
+            skipped: None,
+            last_trigger: root,
+        };
+        for _ in 0..(MAX_CAUSATION_DEPTH * 2) {
+            run_to_completion(rig, trace.last_trigger).await;
+            let mut next = None;
+            while let Ok(Some(event)) = sub.try_recv() {
+                match event.kind.as_str() {
+                    ACTION_START_KIND => trace.starts += 1,
+                    LOOP_EVENT_KIND => next = Some(event.id),
+                    "action.skipped" => trace.skipped = Some(event),
+                    _ => {}
+                }
+            }
+            match next {
+                Some(id) if trace.skipped.is_none() => trace.last_trigger = id,
+                _ => break,
+            }
+        }
+        trace
+    }
+
+    #[tokio::test]
+    async fn action_retriggered_by_its_own_event_runs_exactly_the_depth_limit_times() {
+        let rig = self_loop_rig().await;
+        let root = platform_event(&rig.bus);
+
+        let trace = drive_self_loop(&rig, root).await;
+
+        assert_eq!(trace.starts, MAX_CAUSATION_DEPTH);
+    }
+
+    #[tokio::test]
+    async fn run_refused_for_depth_publishes_a_skip_linked_to_its_trigger() {
+        let rig = self_loop_rig().await;
+        let root = platform_event(&rig.bus);
+
+        let trace = drive_self_loop(&rig, root).await;
+
+        let skipped = trace.skipped.expect("no action.skipped published");
+        assert_eq!(
+            (
+                skipped.payload["reason"].as_str(),
+                skipped.payload["action_id"].as_str(),
+                skipped.caused_by,
+            ),
+            (
+                Some(CAUSATION_DEPTH_SKIP_REASON),
+                Some(rig.action_id.to_string().as_str()),
+                Some(trace.last_trigger),
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn run_refused_for_depth_is_recorded_as_one_failed_history_entry() {
+        let rig = self_loop_rig().await;
+        let root = platform_event(&rig.bus);
+
+        let trace = drive_self_loop(&rig, root).await;
+
+        let history = rig
+            .dp
+            .history_repo()
+            .recent_for_action(rig.action_id, 100)
+            .await
+            .unwrap();
+        let failed: Vec<_> = history
+            .iter()
+            .filter(|ctx| matches!(ctx.outcome, ExecutionOutcome::Failed(_)))
+            .map(|ctx| match &ctx.metadata {
+                ExecutionMetadata::Trigger { event_id, .. } => Some(*event_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            (history.len(), failed),
+            (MAX_CAUSATION_DEPTH + 1, vec![Some(trace.last_trigger)])
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_platform_event_after_a_refused_loop_starts_the_action_again() {
+        let rig = self_loop_rig().await;
+        let first_root = platform_event(&rig.bus);
+        drive_self_loop(&rig, first_root).await;
+        let mut sub = rig.bus.subscribe();
+
+        run_to_completion(&rig, platform_event(&rig.bus)).await;
+
+        let mut started = false;
+        while let Ok(Some(event)) = sub.try_recv() {
+            started |= event.kind == ACTION_START_KIND;
+        }
+        assert!(
+            started,
+            "an unrelated platform event must not inherit the refused loop's depth"
+        );
+    }
 }

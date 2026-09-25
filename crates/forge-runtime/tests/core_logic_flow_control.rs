@@ -656,3 +656,104 @@ async fn a_loop_run_as_a_concurrent_step_still_honours_a_break_in_its_body() {
         "the loop body runs as a sequential child chain, so break must end the loop",
     );
 }
+
+const FOREACH_LIMIT: usize = 10_000;
+
+fn foreach_cfg(body: Variant) -> SubActionConfig {
+    let mut c = SubActionConfig::new();
+    c.insert("mode".to_owned(), s("foreach_array"));
+    c.insert("array_source".to_owned(), s("items"));
+    c.insert("body".to_owned(), body);
+    c
+}
+
+async fn run_foreach(engine: &Arc<ChainEngine>, len: usize, steps: Vec<SubActionStep>) -> ChainRun {
+    let items = (0..len as i64).map(Variant::Int).collect();
+    let stack = ArgStack::new().set("items".to_owned(), Variant::Array(items));
+    engine
+        .run_sequential(&steps, &stack, EventId::new(), &CancelSignal::new())
+        .await
+}
+
+#[tokio::test]
+async fn foreach_hands_each_array_item_to_the_body_in_order() {
+    let eng = engine();
+    let body = inline(vec![chain_step(
+        "core.args.set",
+        args_set("seen", "%seen%%loop.item%"),
+    )]);
+    let items = Variant::Array(vec![s("a"), s("b"), s("c")]);
+    let stack = ArgStack::new()
+        .set("items".to_owned(), items)
+        .set("seen".to_owned(), s(""));
+    let run = eng
+        .run_sequential(
+            &[step("core.logic.loop", foreach_cfg(body))],
+            &stack,
+            EventId::new(),
+            &CancelSignal::new(),
+        )
+        .await;
+
+    assert_eq!(run.arg_stack.get("seen"), Some(&s("abc")));
+}
+
+#[tokio::test]
+async fn foreach_up_to_the_iteration_limit_visits_every_item() {
+    let eng = engine();
+    for len in [FOREACH_LIMIT - 1, FOREACH_LIMIT] {
+        let steps = vec![step("core.logic.loop", foreach_cfg(inline(vec![])))];
+        let run = run_foreach(&eng, len, steps).await;
+
+        assert_eq!(
+            (
+                run.signal,
+                run.arg_stack.get("loop.iterations_completed"),
+                run.arg_stack.get("loop.exit_reason"),
+            ),
+            (
+                ChainSignal::Completed,
+                Some(&Variant::Int(len as i64)),
+                Some(&s("completed")),
+            ),
+            "len={len}",
+        );
+    }
+}
+
+#[tokio::test]
+async fn foreach_one_item_past_the_limit_fails_the_step_after_the_limit() {
+    let eng = engine();
+    let steps = vec![step("core.logic.loop", foreach_cfg(inline(vec![])))];
+    let run = run_foreach(&eng, FOREACH_LIMIT + 1, steps).await;
+
+    assert!(
+        matches!(run.signal, ChainSignal::Error(_)),
+        "got {:?}",
+        run.signal
+    );
+    assert_eq!(
+        (
+            run.arg_stack.get("loop.iterations_completed"),
+            run.arg_stack.get("loop.exit_reason"),
+        ),
+        (
+            Some(&Variant::Int(FOREACH_LIMIT as i64)),
+            Some(&s("foreach_limit")),
+        ),
+    );
+}
+
+#[tokio::test]
+async fn foreach_limit_exit_reason_reaches_the_next_step_when_the_loop_continues_on_error() {
+    let eng = engine();
+    let mut loop_step = step("core.logic.loop", foreach_cfg(inline(vec![])));
+    loop_step.continue_on_error = true;
+    let steps = vec![
+        loop_step,
+        step("core.args.set", args_set("observed", "%loop.exit_reason%")),
+    ];
+    let run = run_foreach(&eng, FOREACH_LIMIT + 1, steps).await;
+
+    assert_eq!(run.arg_stack.get("observed"), Some(&s("foreach_limit")));
+}

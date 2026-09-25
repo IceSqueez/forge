@@ -1,4 +1,5 @@
 mod expression_set;
+mod hold_registry;
 mod hotkey_trigger;
 mod item_load;
 mod item_move;
@@ -23,6 +24,8 @@ mod test_support;
 use std::sync::Arc;
 
 use forge_registry::{RegistryError, SubActionRegistry};
+
+use hold_registry::HoldRegistry;
 
 pub use expression_set::ExpressionSetRunner;
 pub use hotkey_trigger::HotkeyTriggerRunner;
@@ -49,11 +52,15 @@ pub fn register_vtube_sub_actions(
     reg: &mut SubActionRegistry,
     sink: Arc<dyn VTubeSink>,
 ) -> Result<(), RegistryError> {
+    let holds = Arc::new(HoldRegistry::new());
     reg.register(Box::new(HotkeyTriggerRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ExpressionSetRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ParamSetRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ParamSetRunner::new(
+        Arc::clone(&sink),
+        Arc::clone(&holds),
+    )))?;
     reg.register(Box::new(ModelLoadRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(ParamsResetRunner::new(Arc::clone(&sink))))?;
+    reg.register(Box::new(ParamsResetRunner::new(Arc::clone(&sink), holds)))?;
     reg.register(Box::new(ModelMoveRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ItemMoveRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(LookupCurrentModelRunner::new(Arc::clone(&sink))))?;

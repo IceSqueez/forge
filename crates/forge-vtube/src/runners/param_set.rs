@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex};
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -9,8 +9,8 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
-use tokio::task::JoinHandle;
 
+use crate::runners::hold_registry::HoldRegistry;
 use crate::runners::numeric::{accepts_number, optional_number, required_number};
 use crate::sink::VTubeSink;
 
@@ -19,23 +19,15 @@ const PARAM_HOLD_MAX_SECS: f64 = 600.0;
 
 pub struct ParamSetRunner {
     sink: Arc<dyn VTubeSink>,
-    holds: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    holds: Arc<HoldRegistry>,
 }
 
 impl ParamSetRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
-        Self {
-            sink,
-            holds: Arc::new(Mutex::new(HashMap::new())),
-        }
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>, holds: Arc<HoldRegistry>) -> Self {
+        Self { sink, holds }
     }
 
     fn start_hold(&self, param_id: String, value: f64, hold_secs: f64) {
-        let mut holds = self.holds.lock().unwrap_or_else(|e| e.into_inner());
-        holds.retain(|_, handle| !handle.is_finished());
-        if let Some(previous) = holds.remove(&param_id) {
-            previous.abort();
-        }
         let sink = Arc::clone(&self.sink);
         let resend_id = param_id.clone();
         let ticks = (hold_secs / PARAM_HOLD_RESEND_INTERVAL.as_secs_f64()).ceil() as u32;
@@ -47,7 +39,7 @@ impl ParamSetRunner {
                 }
             }
         });
-        holds.insert(param_id, handle);
+        self.holds.insert(param_id, handle);
     }
 }
 
@@ -146,6 +138,7 @@ impl SubActionRunner for ParamSetRunner {
         let outcome = match required_number(config, "value", ctx) {
             Ok(value) => match optional_number(config, "hold_secs", ctx) {
                 Ok(hold_secs) => {
+                    self.holds.abort(&param_id);
                     let result = self.sink.set_param(&param_id, value).await;
                     let hold_secs = hold_secs.unwrap_or(0.0).clamp(0.0, PARAM_HOLD_MAX_SECS);
                     if result.is_ok() && hold_secs > 0.0 {

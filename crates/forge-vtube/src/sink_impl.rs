@@ -58,10 +58,26 @@ impl VTubeSink for VTubeClient {
             .filter(|entry| entry["active"].as_bool().unwrap_or(false))
             .filter_map(|entry| entry["file"].as_str().map(str::to_owned))
             .collect();
+        let mut failed: Vec<(String, i64)> = Vec::new();
         for file in &active_files {
-            self.set_expression(file, false).await?;
+            if let Err(err) = self.set_expression(file, false).await {
+                let error_id = match err {
+                    VTubeError::Rejected { error_id, .. } => error_id,
+                    _ => EXPRESSION_ERROR_ID_UNKNOWN,
+                };
+                failed.push((file.clone(), error_id));
+            }
         }
-        Ok(())
+        match failed.first() {
+            None => Ok(()),
+            Some((_, error_id)) => {
+                let names: Vec<&str> = failed.iter().map(|(file, _)| file.as_str()).collect();
+                Err(VTubeError::Rejected {
+                    error_id: *error_id,
+                    message: format!("could not deactivate expression(s): {}", names.join(", ")),
+                })
+            }
+        }
     }
 
     async fn move_model(
@@ -374,6 +390,7 @@ fn check_items_moved(data: &Value) -> Result<(), VTubeError> {
 const ITEM_ERROR_ID_UNKNOWN: i64 = -1;
 const ITEM_IGNORE_SENTINEL: f64 = -1000.0;
 const ITEM_IGNORE_SENTINEL_ORDER: i64 = -1000;
+const EXPRESSION_ERROR_ID_UNKNOWN: i64 = -1;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]

@@ -8,15 +8,17 @@ use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, Su
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry};
 use time::OffsetDateTime;
 
+use crate::runners::hold_registry::HoldRegistry;
 use crate::sink::VTubeSink;
 
 pub struct ParamsResetRunner {
     sink: Arc<dyn VTubeSink>,
+    holds: Arc<HoldRegistry>,
 }
 
 impl ParamsResetRunner {
-    pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
-        Self { sink }
+    pub(crate) fn new(sink: Arc<dyn VTubeSink>, holds: Arc<HoldRegistry>) -> Self {
+        Self { sink, holds }
     }
 }
 
@@ -66,6 +68,7 @@ impl SubActionRunner for ParamsResetRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
+        self.holds.abort_all();
         let outcome = SubActionOutcome::from_result(&self.sink.reset_params().await);
 
         (

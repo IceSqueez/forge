@@ -17,6 +17,7 @@ use crate::actions::{GoActions, GoChat, GoHome, GoSettings, GoTriggers, GoTwitch
 use crate::actions_screen::ScreenActionsView;
 use crate::chat::ChatView;
 use crate::chrome::Chrome;
+use crate::clip_key_state::ClipKeyState;
 use crate::discord_screen::DiscordScreenView;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
@@ -312,7 +313,11 @@ impl AppShell {
                     Arc::clone(&handles.backend) as Arc<dyn forge_storage::SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
                 let bus = Arc::clone(&handles.bus);
-                cx.new(|cx| SoundboardView::new(player, settings_repo, rt_handle, bus, cx))
+                let keys = ClipKeyState::new(
+                    handles.hotkey_reconciler.clone(),
+                    Arc::clone(&handles.backend),
+                );
+                cx.new(|cx| SoundboardView::new(player, settings_repo, rt_handle, bus, keys, cx))
                     .into()
             }
             Screen::Tts(preselect) => {

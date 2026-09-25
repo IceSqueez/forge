@@ -7,7 +7,7 @@ use forge_components::{
     page_frame, status_dot, toggle, tr,
 };
 use forge_events::Event;
-use forge_hotkey::{HotkeyClient, HotkeyCombo};
+use forge_hotkey::HotkeyClient;
 use forge_runtime::EventBus;
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, StorageError, set_bool_setting};
@@ -21,14 +21,18 @@ use time::OffsetDateTime;
 use crate::actions::{SHORTCUTS, ShortcutEntry, chord_caps, shortcut_entry};
 use crate::app_shortcut_modal::{AppShortcutModal, AppShortcutModalEvent};
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
+use crate::combo_capture::{CapturedKey, ComboCapture, captured_key, warn_if_typing_key};
+use crate::combo_conflict::{
+    Claimant, ClipKey, ComboHolder, clip_keys, combo_holder, conflict_prompt, holder_of_combo,
+    release_holder,
+};
 use crate::hotkey_action_modal::{
     ActionModalLaunch, BindingDraft, HotkeyActionModal, HotkeyActionModalEvent, keycaps,
 };
 use crate::hotkey_bindings::{
     BindingRow, HOTKEY_ENABLED_KEY, HOTKEY_EVENT_PREFIX, HOTKEY_PRESSED_KIND, HotkeyEdge,
-    conflict_count, delete_binding, delete_binding_half, do_bind, keystroke_to_combo,
-    load_bindings, rebind_combo, registered_combos, relink_action, set_binding_edge,
-    set_binding_enabled,
+    conflict_count, delete_binding, delete_binding_half, do_bind, load_bindings, rebind_combo,
+    registered_combos, relink_action, set_binding_edge, set_binding_enabled,
 };
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::presentation::ActivePresentation;
@@ -127,6 +131,13 @@ impl Capture {
             _ => None,
         }
     }
+
+    fn claimant(self) -> Claimant {
+        match self.target() {
+            Some(id) => Claimant::Trigger(id),
+            None => Claimant::NewTrigger,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -140,6 +151,7 @@ struct ConflictPrompt {
     holder: String,
     capture: Capture,
     app_owner: Option<&'static str>,
+    taken_by: Option<ComboHolder>,
 }
 
 #[derive(Clone, Copy)]
@@ -182,12 +194,13 @@ pub struct HotkeysScreenView {
     rt_handle: tokio::runtime::Handle,
     enabled: bool,
     bindings: Vec<BindingRow>,
+    clip_keys: Vec<ClipKey>,
     shortcuts: ShortcutOverrides,
     conflicts: usize,
     last_fired: Option<LastFired>,
     last_synthesized: Option<OffsetDateTime>,
     capture: Capture,
-    capture_sub: Option<Subscription>,
+    key_capture: ComboCapture,
     conflict: Option<ConflictPrompt>,
     delete_prompt: Option<DeletePrompt>,
     modal: Option<OpenModal>,
@@ -217,11 +230,12 @@ impl HotkeysScreenView {
             settings_repo,
             rt_handle,
             bindings: Vec::new(),
+            clip_keys: Vec::new(),
             shortcuts: ShortcutOverrides::default(),
             last_fired: None,
             last_synthesized: None,
             capture: Capture::Off,
-            capture_sub: None,
+            key_capture: ComboCapture::default(),
             conflict: None,
             delete_prompt: None,
             modal: None,
@@ -289,16 +303,29 @@ impl HotkeysScreenView {
         let registered = registered_combos(&self.client);
         async_bridge::run_async(
             &self.rt_handle,
-            load_bindings(backend, registered),
+            async move {
+                let clips = backend
+                    .soundboard_clips_repo()
+                    .list()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let rows = load_bindings(backend, registered).await?;
+                Ok((rows, clip_keys(&clips)))
+            },
             |this, result, cx| this.apply_bindings(result, cx),
             cx,
         );
     }
 
-    fn apply_bindings(&mut self, result: Result<Vec<BindingRow>, String>, cx: &mut Context<Self>) {
+    fn apply_bindings(
+        &mut self,
+        result: Result<(Vec<BindingRow>, Vec<ClipKey>), String>,
+        cx: &mut Context<Self>,
+    ) {
         match result {
-            Ok(rows) => {
+            Ok((rows, clips)) => {
                 self.bindings = rows;
+                self.clip_keys = clips;
                 self.refresh_from_client(cx);
             }
             Err(message) => self.on_repo_error(&message, cx),
@@ -428,16 +455,7 @@ impl HotkeysScreenView {
     fn start_capture(&mut self, capture: Capture, cx: &mut Context<Self>) {
         self.capture = capture;
         self.menu_open = None;
-        let weak = cx.entity().downgrade();
-        self.capture_sub = Some(cx.intercept_keystrokes(move |event, _window, cx| {
-            let keystroke = event.keystroke.clone();
-            let handled = weak
-                .update(cx, |this, cx| this.on_capture_keystroke(keystroke, cx))
-                .unwrap_or(false);
-            if handled {
-                cx.stop_propagation();
-            }
-        }));
+        self.key_capture.start(cx, Self::on_capture_keystroke);
         cx.notify();
     }
 
@@ -445,7 +463,8 @@ impl HotkeysScreenView {
         if self.capture == Capture::Off {
             return false;
         }
-        if keystroke.key == "escape" && !keystroke.modifiers.modified() {
+        let key = captured_key(&keystroke);
+        if key == CapturedKey::Cancel {
             self.cancel_capture(cx);
             return true;
         }
@@ -453,10 +472,9 @@ impl HotkeysScreenView {
             self.on_app_capture(id, &keystroke, cx);
             return true;
         }
-        let Some(combo) = keystroke_to_combo(&keystroke) else {
-            return true;
-        };
-        self.on_capture_combo(combo, cx);
+        if let CapturedKey::Combo(combo) = key {
+            self.on_capture_combo(combo, cx);
+        }
         true
     }
 
@@ -482,6 +500,7 @@ impl HotkeysScreenView {
                         .unwrap_or_default(),
                     capture,
                     app_owner: Some(owner_id),
+                    taken_by: None,
                 });
                 cx.notify();
             }
@@ -494,7 +513,7 @@ impl HotkeysScreenView {
 
     fn end_capture(&mut self) {
         self.capture = Capture::Off;
-        self.capture_sub = None;
+        self.key_capture.stop();
     }
 
     fn stop_app_modal_capture(&mut self, cx: &mut Context<Self>) {
@@ -505,7 +524,7 @@ impl HotkeysScreenView {
 
     fn cancel_capture(&mut self, cx: &mut Context<Self>) {
         let capture = std::mem::replace(&mut self.capture, Capture::Off);
-        self.capture_sub = None;
+        self.key_capture.stop();
         if matches!(capture, Capture::Modal(_))
             && let Some(open) = &self.modal
         {
@@ -519,27 +538,16 @@ impl HotkeysScreenView {
 
     fn on_capture_combo(&mut self, combo: String, cx: &mut Context<Self>) {
         let capture = std::mem::replace(&mut self.capture, Capture::Off);
-        self.capture_sub = None;
-        if HotkeyCombo::parse(&combo).is_ok_and(|parsed| parsed.swallows_typing()) {
-            cx.push_toast(
-                ToastKind::Warn,
-                tr!("hotkeys_toast_bare_key_global", combo = combo.as_str()),
-            );
-        }
-        let adding = matches!(capture, Capture::Add | Capture::Modal(None));
-        let holder = combo_holder(&self.bindings, &combo, capture.target())
-            .filter(|row| !(adding && row.free_edge().is_some()))
-            .map(|row| match row.primary_action() {
-                Some((_, name)) => name.clone(),
-                None => tr!("hotkeys_conflict_holder_unassigned"),
-            });
-        match holder {
+        self.key_capture.stop();
+        warn_if_typing_key(&combo, cx);
+        match holder_of_combo(&self.bindings, &self.clip_keys, &combo, capture.claimant()) {
             Some(holder) => {
                 self.conflict = Some(ConflictPrompt {
                     combo,
-                    holder,
+                    holder: holder.label(),
                     capture,
                     app_owner: None,
+                    taken_by: Some(holder),
                 });
                 cx.notify();
             }
@@ -583,6 +591,7 @@ impl HotkeysScreenView {
             combo,
             capture,
             app_owner,
+            taken_by,
             ..
         } = prompt;
         if let Some(owner) = app_owner {
@@ -594,12 +603,16 @@ impl HotkeysScreenView {
             }
             return;
         }
+        let Some(holder) = taken_by else {
+            self.apply_capture(capture, combo, cx);
+            return;
+        };
         let reconciler = Arc::clone(&self.reconciler);
         let backend = Arc::clone(&self.backend);
         let doomed = combo.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            delete_binding(reconciler, backend, doomed),
+            release_holder(holder, doomed, reconciler, backend),
             move |this, result: Result<(), String>, cx| match result {
                 Ok(()) => {
                     if capture.target().is_none() {
@@ -690,8 +703,7 @@ impl HotkeysScreenView {
 
     fn close_modal(&mut self, cx: &mut Context<Self>) {
         self.modal = None;
-        self.capture = Capture::Off;
-        self.capture_sub = None;
+        self.end_capture();
         cx.notify();
     }
 
@@ -1723,49 +1735,20 @@ impl HotkeysScreenView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let card = confirm_modal(
-            tr!("hotkeys_conflict_title"),
-            tr!("hotkeys_conflict_body", holder = prompt.holder.as_str()),
-            ConfirmTone::Destructive,
-            palette,
-        )
-        .item_name(match prompt.capture {
+        let item_name = match prompt.capture {
             Capture::App(_) => chord_caps(&prompt.combo),
             _ => prompt.combo.clone(),
-        })
-        .on_cancel(
-            "hotkeys-conflict-cancel",
-            tr!("common_cancel"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_cancel(cx)),
+        };
+        conflict_prompt(
+            "hotkeys",
+            item_name,
+            &prompt.holder,
+            palette,
+            cx,
+            Self::conflict_cancel,
+            Self::conflict_replace,
         )
-        .on_confirm(
-            "hotkeys-conflict-replace",
-            tr!("hotkeys_conflict_replace"),
-            cx.listener(|this, _: &ClickEvent, _, cx| this.conflict_replace(cx)),
-        );
-
-        let weak = cx.entity().downgrade();
-        overlay(card, palette)
-            .position(OverlayPosition::Center)
-            .on_dismiss("hotkeys-conflict-dismiss", move |_window, cx| {
-                let _ = weak.update(cx, |this, cx| this.conflict_cancel(cx));
-            })
-            .into_any_element()
     }
-}
-
-/// Excludes the target by half membership, not by row key: a hold's release half is keyed by its press partner.
-fn combo_holder<'a>(
-    rows: &'a [BindingRow],
-    combo: &str,
-    target: Option<TriggerInstanceId>,
-) -> Option<&'a BindingRow> {
-    rows.iter().find(|row| {
-        row.combo == combo
-            && !row
-                .halves()
-                .any(|(_, half)| Some(half.instance_id) == target)
-    })
 }
 
 fn footer_text(text: String, palette: &ForgePalette) -> impl IntoElement {

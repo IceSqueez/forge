@@ -1115,6 +1115,16 @@ soundboard_modal_loop_label = Loop playback
 soundboard_modal_loop_hint = Repeat the clip until you stop it.
 soundboard_modal_ready = Ready to add
 soundboard_modal_fill_required = Fill required fields
+soundboard_modal_section_key = GLOBAL KEY
+soundboard_modal_key_none = None
+soundboard_modal_key_set = Set key
+soundboard_modal_key_change = Change
+soundboard_modal_key_clear = Clear
+soundboard_modal_key_hint = Toggles the clip from anywhere, even while forge is in the background. Esc cancels.
+soundboard_toast_key_not_registered = { $name } is saved, but { $combo } could not be registered as a global key. It stays saved and is retried on the next change.
+soundboard_pad_key_not_live = { $combo } is saved but not active: the system refused it or another program holds it. It is retried on the next change.
+soundboard_pad_key_engine_unavailable = Global hotkeys are unavailable on this system, so { $combo } does not fire.
+soundboard_pad_key_shared = { $combo } is also bound to { $holder }. One press fires both.
 soundboard_routing_section = Output routing
 soundboard_routing_device = DEVICE
 soundboard_routing_hint = Add this device as an Audio Input Capture in OBS.
@@ -2130,6 +2140,7 @@ hotkeys_confirm_delete_release_half = Only the release half is removed, so the h
 hotkeys_conflict_title = Combination already bound
 hotkeys_conflict_body = is already bound to { $holder }. Replace the existing binding or cancel?
 hotkeys_conflict_holder_unassigned = an unassigned binding
+hotkeys_conflict_holder_clip = Soundboard: { $name }
 hotkeys_conflict_replace = Replace
 
 ## Hotkeys - modal

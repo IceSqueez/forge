@@ -23,18 +23,35 @@ pub type ClipBindings = BTreeMap<String, Vec<ClipId>>;
 pub fn clip_bindings_of(clips: &[StoredClip]) -> ClipBindings {
     let mut bindings = ClipBindings::new();
     for clip in clips {
-        let Some(raw) = clip.hotkey.as_deref().map(str::trim) else {
-            continue;
-        };
-        if raw.is_empty() {
-            continue;
+        if let Some(combo) = stored_combo(clip) {
+            bindings.entry(combo).or_default().push(clip.id);
         }
-        let combo = HotkeyCombo::parse(raw)
-            .map(|parsed| parsed.as_str().to_owned())
-            .unwrap_or_else(|_| raw.to_owned());
-        bindings.entry(combo).or_default().push(clip.id);
     }
     bindings
+}
+
+/// Canonical when the stored text parses, so a hand-typed `f5` matches a captured `F5`.
+pub fn stored_combo(clip: &StoredClip) -> Option<String> {
+    let raw = clip.hotkey.as_deref().map(str::trim)?;
+    if raw.is_empty() {
+        return None;
+    }
+    Some(
+        HotkeyCombo::parse(raw)
+            .map(|parsed| parsed.as_str().to_owned())
+            .unwrap_or_else(|_| raw.to_owned()),
+    )
+}
+
+pub async fn clear_clip_combo(
+    repo: Arc<dyn SoundboardClipsRepo>,
+    id: ClipId,
+) -> Result<(), String> {
+    let Some(mut clip) = repo.get(id).await.map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+    clip.hotkey = None;
+    repo.save(&clip).await.map_err(|e| e.to_string())
 }
 
 /// A blank combo is stored as no binding; an unparseable one is refused on the binding field.

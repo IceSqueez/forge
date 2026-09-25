@@ -1124,6 +1124,16 @@ soundboard_modal_loop_label = Циклічне відтворення
 soundboard_modal_loop_hint = Повторювати кліп, доки ви його не зупините.
 soundboard_modal_ready = Готово до додавання
 soundboard_modal_fill_required = Заповніть обовʼязкові поля
+soundboard_modal_section_key = ГЛОБАЛЬНА КЛАВІША
+soundboard_modal_key_none = Немає
+soundboard_modal_key_set = Призначити
+soundboard_modal_key_change = Змінити
+soundboard_modal_key_clear = Очистити
+soundboard_modal_key_hint = Вмикає й вимикає кліп звідусіль, навіть коли forge у фоні. Esc скасовує.
+soundboard_toast_key_not_registered = { $name } збережено, але { $combo } не вдалося зареєструвати як глобальну клавішу. Прив'язка лишається збереженою, повторна спроба буде під час наступної зміни.
+soundboard_pad_key_not_live = { $combo } збережено, але вона не активна: система відмовила або клавішу утримує інша програма. Повторна спроба буде під час наступної зміни.
+soundboard_pad_key_engine_unavailable = Глобальні клавіші недоступні в цій системі, тому { $combo } не спрацьовує.
+soundboard_pad_key_shared = { $combo } також прив'язано до { $holder }. Одне натискання запускає обидва.
 soundboard_routing_section = Маршрутизація виходу
 soundboard_routing_device = ПРИСТРІЙ
 soundboard_routing_hint = Додайте цей пристрій як Audio Input Capture в OBS.
@@ -2169,6 +2179,7 @@ hotkeys_confirm_delete_release_half = Буде видалено лише пол�
 hotkeys_conflict_title = Комбінацію вже прив'язано
 hotkeys_conflict_body = вже прив'язана до { $holder }. Замінити наявну прив'язку чи скасувати?
 hotkeys_conflict_holder_unassigned = непризначеної прив'язки
+hotkeys_conflict_holder_clip = Звукова панель: { $name }
 hotkeys_conflict_replace = Замінити
 
 ## Hotkeys - modal

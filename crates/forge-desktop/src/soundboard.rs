@@ -7,9 +7,9 @@ use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, ConfirmTone, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput,
-    body_family, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, ghost_button_with_icon,
-    icon, modal, mono_family, overlay, pad_tile, page_frame, primary_button, radius,
-    secondary_button, slider, spacing, status_dot, toggle, tooltip_builder, tr, with_alpha,
+    ToastKind, body_family, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, icon,
+    mono_family, overlay, pad_tile, page_frame, radius, secondary_button, slider, spacing,
+    status_dot, toggle, tooltip_builder, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
@@ -26,15 +26,20 @@ use forge_storage::{
 };
 use forge_types::{ClipId, OutputDevice};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
-    Subscription, Task, Window, div, prelude::*, px, svg,
+    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Task,
+    Window, div, prelude::*, px, svg,
 };
 use time::OffsetDateTime;
 
 use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::clip_editor::{ClipDraft, ClipEditor, ClipEditorEvent, ClipEditorLaunch};
+use crate::clip_key_state::{ClipKeyState, PadKey, canonical_combo, changes_registrations};
 use crate::clip_messages::{clip_refusal_message, failure_message};
 use crate::clip_playback::{PadPlayClaims, clip_id_of};
+use crate::combo_conflict::release_holder;
+use crate::hotkey_sync::HotkeyReconciler;
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -53,6 +58,10 @@ const PADS_PER_ROW: usize = 4;
 const PAD_GLYPH: Pixels = px(15.0);
 const HOTKEY_FS: Pixels = px(10.0);
 const HOTKEY_RADIUS: Pixels = px(4.0);
+const HOTKEY_PAD_X: Pixels = px(6.0);
+const HOTKEY_PAD_Y: Pixels = px(1.0);
+const HOTKEY_WARN_GAP: Pixels = px(3.0);
+const HOTKEY_WARN_GLYPH: Pixels = px(10.0);
 const LOOP_ICON: Pixels = px(10.0);
 const PROGRESS_WIDTH: f32 = 0.46;
 const PAD_ACTION_TILE: Pixels = px(20.0);
@@ -73,7 +82,7 @@ const FOOTER_DOT: Pixels = px(6.0);
 const FOOTER_PAD_Y: Pixels = px(7.0);
 const FOOTER_PAD_X: Pixels = px(14.0);
 const ADOPT_SUMMARY_SEPARATOR: &str = " · ";
-const CATEGORY_ORDER: &[&str] = &["memes", "alerts", "music", "voice"];
+pub(crate) const CATEGORY_ORDER: &[&str] = &["memes", "alerts", "music", "voice"];
 
 type AdoptionResults = Vec<(ClipId, Result<AdoptionVerdict, SoundboardError>)>;
 
@@ -95,344 +104,6 @@ struct PlaybackProgress {
     looped: bool,
 }
 
-struct ClipDraft {
-    edit_id: Option<ClipId>,
-    name: String,
-    file_path: PathBuf,
-    category: String,
-    loop_playback: bool,
-}
-
-enum AddModalEvent {
-    Submit(ClipDraft),
-    Cancel,
-}
-
-struct AddModal {
-    file_path: Option<PathBuf>,
-    name_input: Entity<TextInput>,
-    category: String,
-    loop_playback: bool,
-    saving: bool,
-    error: Option<SharedString>,
-    edit_id: Option<ClipId>,
-    rt_handle: tokio::runtime::Handle,
-    _name_sub: Subscription,
-}
-
-impl EventEmitter<AddModalEvent> for AddModal {}
-
-impl AddModal {
-    fn new(
-        edit_id: Option<ClipId>,
-        name: &str,
-        category: String,
-        file_path: Option<PathBuf>,
-        loop_playback: bool,
-        rt_handle: tokio::runtime::Handle,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let palette = cx.palette();
-        let name_input = cx.new(|cx| {
-            TextInput::new(tr!("soundboard_modal_name_placeholder"), cx).with_palette(palette)
-        });
-        if !name.is_empty() {
-            let name = name.to_owned();
-            name_input.update(cx, |ti, cx| ti.set_content(name, cx));
-        }
-        let name_sub = cx.subscribe(
-            &name_input,
-            |this, _input, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.submit(cx),
-                InputEvent::Cancelled => this.cancel(cx),
-                InputEvent::Changed(_) => cx.notify(),
-                InputEvent::Blurred(_) => {}
-            },
-        );
-        AddModal {
-            file_path,
-            name_input,
-            category,
-            loop_playback,
-            saving: false,
-            error: None,
-            edit_id,
-            rt_handle,
-            _name_sub: name_sub,
-        }
-    }
-
-    fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        self.name_input.update(cx, |f, cx| f.focus(window, cx));
-    }
-
-    fn set_category(&mut self, category: String, cx: &mut Context<Self>) {
-        self.category = category;
-        cx.notify();
-    }
-
-    fn toggle_loop(&mut self, cx: &mut Context<Self>) {
-        self.loop_playback = !self.loop_playback;
-        cx.notify();
-    }
-
-    fn browse_file(&mut self, cx: &mut Context<Self>) {
-        let filter = async_bridge::DialogFilter {
-            name: tr!("soundboard_file_filter_audio"),
-            extensions: audio_dialog_extensions(),
-        };
-        async_bridge::spawn_dialog(
-            &self.rt_handle,
-            async_bridge::pick_file(Some(filter)),
-            |this, result, cx| {
-                if let Ok(path) = result {
-                    this.apply_picked_file(path, cx);
-                }
-            },
-            cx,
-        );
-    }
-
-    fn apply_picked_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.file_path = Some(path.clone());
-        self.error = None;
-        let name_input = self.name_input.clone();
-        if name_input.read(cx).content().trim().is_empty()
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-        {
-            let stem = stem.to_owned();
-            name_input.update(cx, |ti, cx| ti.set_content(stem, cx));
-        }
-        cx.notify();
-    }
-
-    fn is_saveable(&self, cx: &App) -> bool {
-        !self.saving
-            && self.file_path.is_some()
-            && !self.name_input.read(cx).content().trim().is_empty()
-    }
-
-    fn submit(&mut self, cx: &mut Context<Self>) {
-        if !self.is_saveable(cx) {
-            self.error = Some(tr!("soundboard_modal_validation_error").into());
-            cx.notify();
-            return;
-        }
-        let draft = ClipDraft {
-            edit_id: self.edit_id,
-            name: self.name_input.read(cx).content().trim().to_owned(),
-            file_path: self.file_path.clone().unwrap_or_default(),
-            category: self.category.clone(),
-            loop_playback: self.loop_playback,
-        };
-        self.error = None;
-        cx.emit(AddModalEvent::Submit(draft));
-    }
-
-    fn cancel(&mut self, cx: &mut Context<Self>) {
-        cx.emit(AddModalEvent::Cancel);
-    }
-}
-
-impl Render for AddModal {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = cx.palette();
-        let density = cx.density();
-        let file_set = self.file_path.is_some();
-        let file_label: String = self
-            .file_path
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .map(str::to_owned)
-            .unwrap_or_else(|| tr!("soundboard_modal_no_file").to_string());
-        let browse = ghost_button_with_icon(
-            Icon::FolderOpen,
-            tr!("soundboard_modal_browse_btn"),
-            &palette,
-        )
-        .density(density)
-        .on_click(
-            "sb-modal-browse",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.browse_file(cx)),
-        );
-        let file_row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .font_family(mono_family())
-                    .text_size(FONT_XS)
-                    .text_color(if file_set {
-                        palette.text_secondary
-                    } else {
-                        palette.text_muted
-                    })
-                    .child(file_label),
-            )
-            .child(browse);
-
-        let mut category_row = div().flex().items_center().gap(px(4.0));
-        for (idx, cat) in CATEGORY_ORDER.iter().enumerate() {
-            let active = self.category == *cat;
-            let color = category_color(cat, &palette);
-            let value = (*cat).to_owned();
-            category_row = category_row.child(
-                chip(category_label(cat), ChipGlyph::Dot(color), active, &palette)
-                    .density(density)
-                    .on_click(
-                        ("sb-modal-cat", idx),
-                        cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.set_category(value.clone(), cx)
-                        }),
-                    ),
-            );
-        }
-
-        let loop_row = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_primary)
-                            .child(tr!("soundboard_modal_loop_label")),
-                    )
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(HINT_FS)
-                            .text_color(palette.text_faint)
-                            .child(tr!("soundboard_modal_loop_hint")),
-                    ),
-            )
-            .child(toggle(self.loop_playback, &palette).on_click(
-                "sb-modal-loop",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_loop(cx)),
-            ));
-
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(field_lite_label(
-                tr!("soundboard_modal_section_name"),
-                &palette,
-            ))
-            .child(div().child(self.name_input.clone()))
-            .child(field_lite_label(
-                tr!("soundboard_modal_section_category"),
-                &palette,
-            ))
-            .child(category_row)
-            .child(field_lite_label(
-                tr!("soundboard_modal_section_file"),
-                &palette,
-            ))
-            .child(file_row)
-            .child(field_lite_label(
-                tr!("soundboard_modal_section_playback"),
-                &palette,
-            ))
-            .child(loop_row);
-
-        if let Some(error) = self.error.clone() {
-            body = body.child(
-                div()
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .p(spacing(Spacing::Xs, density))
-                    .rounded(radius(Radius::Sm))
-                    .bg(with_alpha(palette.random, 0.10))
-                    .border(BORDER_THIN)
-                    .border_color(with_alpha(palette.random, 0.30))
-                    .child(icon(Icon::InfoCircle, FONT_XS, palette.random))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_primary)
-                            .child(error),
-                    ),
-            );
-        }
-
-        let saveable = self.is_saveable(cx);
-        let hint = div()
-            .flex_1()
-            .font_family(body_family())
-            .text_size(LABEL_FS)
-            .text_color(palette.text_faint)
-            .child(if saveable {
-                tr!("soundboard_modal_ready")
-            } else {
-                tr!("soundboard_modal_fill_required")
-            });
-        let cancel = secondary_button(tr!("soundboard_modal_cancel_btn"), &palette).on_click(
-            "sb-modal-cancel",
-            cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-        );
-        let save = primary_button(tr!("soundboard_modal_save_btn"), &palette)
-            .disabled(!saveable)
-            .on_click(
-                "sb-modal-save",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
-            );
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(spacing(Spacing::Sm, density))
-            .child(hint)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(cancel)
-                    .child(save),
-            );
-
-        let title = if self.edit_id.is_some() {
-            tr!("soundboard_modal_title_edit")
-        } else {
-            tr!("soundboard_modal_title_add")
-        };
-        let card = modal(title, body, &palette)
-            .header_icon(Icon::Music, palette.bits)
-            .width(px(440.0))
-            .footer(footer)
-            .on_close(
-                "sb-modal-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-            );
-        let view = cx.entity();
-        overlay(card, &palette)
-            .position(OverlayPosition::Center)
-            .busy(self.saving)
-            .on_dismiss("sb-modal-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel(cx));
-            })
-            .into_any_element()
-    }
-}
-
 pub struct SoundboardView {
     clips: Vec<SoundClip>,
     loading: bool,
@@ -450,7 +121,8 @@ pub struct SoundboardView {
     device_menu_open: bool,
     search: SearchState,
     category_filter: Option<String>,
-    modal: Option<Entity<AddModal>>,
+    modal: Option<Entity<ClipEditor>>,
+    keys: ClipKeyState,
     _modal_sub: Option<Subscription>,
     pending_delete: Confirm<ClipId>,
     _search_sub: Subscription,
@@ -470,6 +142,7 @@ impl SoundboardView {
         settings_repo: Arc<dyn SettingsRepo>,
         rt_handle: tokio::runtime::Handle,
         bus: Arc<EventBus>,
+        keys: ClipKeyState,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -510,6 +183,7 @@ impl SoundboardView {
             search,
             category_filter: None,
             modal: None,
+            keys,
             _modal_sub: None,
             pending_delete: Confirm::default(),
             _search_sub: search_sub,
@@ -526,10 +200,40 @@ impl SoundboardView {
         };
         view.reload(cx);
         view.reload_devices(cx);
+        view.reload_key_holders(cx);
         view
     }
 
+    fn reload_key_holders(&self, cx: &mut Context<Self>) {
+        let Some(load) = self.keys.load_rows() else {
+            return;
+        };
+        async_bridge::run_async(
+            &self.rt_handle,
+            load,
+            |this, result, cx| match result {
+                Ok(rows) => {
+                    this.keys.set_rows(rows);
+                    let holders = this.keys.holders();
+                    if let Some(modal) = this.modal.as_ref() {
+                        modal.update(cx, |editor, cx| editor.set_holders(holders, cx));
+                    }
+                    cx.notify();
+                }
+                Err(message) => {
+                    tracing::warn!(error = %message, "hotkey bindings unavailable for clip key checks");
+                }
+            },
+            cx,
+        );
+    }
+
     fn on_bus_event(&mut self, event: &Event, cx: &mut Context<Self>) {
+        if changes_registrations(event) {
+            self.keys.refresh_live();
+            cx.notify();
+            return;
+        }
         if event.source != EventSource::Audio {
             return;
         }
@@ -682,6 +386,8 @@ impl SoundboardView {
     }
 
     fn apply_clips(&mut self, clips: Vec<StoredClip>, cx: &mut Context<Self>) {
+        self.keys.set_clips(&clips);
+        self.keys.refresh_live();
         self.refresh_availability(clips.clone(), cx);
         self.clips = clips.into_iter().map(stored_to_clip).collect();
         self.loading = false;
@@ -1049,59 +755,60 @@ impl SoundboardView {
     }
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let rt_handle = self.rt_handle.clone();
-        let modal = cx.new(|cx| {
-            AddModal::new(
-                None,
-                "",
-                CATEGORY_ORDER[0].to_owned(),
-                None,
-                false,
-                rt_handle,
-                cx,
-            )
-        });
-        modal.update(cx, |m, cx| m.focus(window, cx));
-        self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
-        self.modal = Some(modal);
-        cx.notify();
+        self.open_editor(
+            ClipEditorLaunch {
+                edit_id: None,
+                name: String::new(),
+                category: CATEGORY_ORDER[0].to_owned(),
+                file_path: None,
+                loop_playback: false,
+                hotkey: None,
+            },
+            window,
+            cx,
+        );
     }
 
     fn open_edit(&mut self, id: ClipId, window: &mut Window, cx: &mut Context<Self>) {
         let Some(clip) = self.clips.iter().find(|c| c.id == id) else {
             return;
         };
-        let name = clip.name.clone();
-        let category = clip.category.clone();
-        let file_path = clip.file_path.clone();
-        let loop_playback = clip.loop_playback;
+        let launch = ClipEditorLaunch {
+            edit_id: Some(id),
+            name: clip.name.clone(),
+            category: clip.category.clone(),
+            file_path: Some(clip.file_path.clone()),
+            loop_playback: clip.loop_playback,
+            hotkey: clip.hotkey.as_deref().map(canonical_combo),
+        };
+        self.open_editor(launch, window, cx);
+    }
+
+    fn open_editor(
+        &mut self,
+        launch: ClipEditorLaunch,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let rt_handle = self.rt_handle.clone();
-        let modal = cx.new(|cx| {
-            AddModal::new(
-                Some(id),
-                &name,
-                category,
-                Some(file_path),
-                loop_playback,
-                rt_handle,
-                cx,
-            )
-        });
+        let holders = self.keys.available().then(|| self.keys.holders());
+        let modal = cx.new(|cx| ClipEditor::new(launch, holders, rt_handle, cx));
         modal.update(cx, |m, cx| m.focus(window, cx));
         self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
+        self.reload_key_holders(cx);
         cx.notify();
     }
 
     fn on_modal_event(
         &mut self,
-        _modal: Entity<AddModal>,
-        event: &AddModalEvent,
+        _modal: Entity<ClipEditor>,
+        event: &ClipEditorEvent,
         cx: &mut Context<Self>,
     ) {
         match event {
-            AddModalEvent::Submit(draft) => self.persist(draft, cx),
-            AddModalEvent::Cancel => self.close_modal(cx),
+            ClipEditorEvent::Submit(draft) => self.persist(draft, cx),
+            ClipEditorEvent::Cancel => self.close_modal(cx),
         }
     }
 
@@ -1146,23 +853,35 @@ impl SoundboardView {
         let category = draft.category.clone();
         let loop_playback = draft.loop_playback;
         let edit_id = draft.edit_id;
+        let hotkey = draft.hotkey.clone();
+        let release = match (draft.release.clone(), draft.hotkey.clone()) {
+            (Some(holder), Some(combo)) => self
+                .keys
+                .reconciler()
+                .map(|reconciler| (holder, combo, Arc::clone(reconciler))),
+            _ => None,
+        };
+        let reconciler = self.keys.reconciler().cloned();
+        let backend = Arc::clone(self.keys.backend());
 
         if let Some(modal) = self.modal.as_ref() {
-            modal.update(cx, |m, cx| {
-                m.saving = true;
-                m.error = None;
-                cx.notify();
-            });
+            modal.update(cx, |m, cx| m.set_saving(cx));
         }
         let library = Arc::clone(&self.library);
         let player = Arc::clone(&self.player);
+        let saved_name = name.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
+                if let Some((holder, combo, reconciler)) = release {
+                    release_holder(holder, combo, reconciler, backend)
+                        .await
+                        .map_err(ClipSaveFailure::Release)?;
+                }
                 let (clip, target_id) = match edit_id {
                     Some(id) => {
                         let Some(mut clip) = library.get(id).await? else {
-                            return Err(SoundboardError::ClipNotFound(id.to_string()));
+                            return Err(SoundboardError::ClipNotFound(id.to_string()).into());
                         };
                         clip.name = name;
                         if clip.file_path != file_path {
@@ -1171,6 +890,7 @@ impl SoundboardView {
                         }
                         clip.category = category;
                         clip.loop_playback = loop_playback;
+                        clip.hotkey = hotkey.clone();
                         (clip, id)
                     }
                     None => {
@@ -1181,7 +901,7 @@ impl SoundboardView {
                             file_path,
                             volume: 1.0,
                             output_device: OutputDevice::Default,
-                            hotkey: None,
+                            hotkey: hotkey.clone(),
                             created_at: OffsetDateTime::now_utc(),
                             category,
                             loop_playback,
@@ -1193,29 +913,39 @@ impl SoundboardView {
                 };
                 library.save_clip(&clip).await?;
                 let _ = player.ensure_clip_duration(target_id).await;
-                Ok(())
+                Ok(unregistered_combo(hotkey.as_deref(), reconciler.as_deref()))
             },
-            |this, result, cx| match result {
-                Ok(()) => this.on_saved(cx),
-                Err(error) => this.on_save_error(failure_message(&error), cx),
+            move |this, result, cx| match result {
+                Ok(unregistered) => this.on_saved(&saved_name, unregistered, cx),
+                Err(ClipSaveFailure::Clip(error)) => {
+                    this.on_save_error(failure_message(&error), cx)
+                }
+                Err(ClipSaveFailure::Release(message)) => this.on_save_error(message, cx),
             },
             cx,
         );
         cx.notify();
     }
 
-    fn on_saved(&mut self, cx: &mut Context<Self>) {
+    fn on_saved(&mut self, name: &str, unregistered: Option<String>, cx: &mut Context<Self>) {
+        if let Some(combo) = unregistered {
+            cx.push_toast(
+                ToastKind::Warn,
+                tr!(
+                    "soundboard_toast_key_not_registered",
+                    name = name,
+                    combo = combo.as_str()
+                ),
+            );
+        }
         self.close_modal(cx);
         self.reload(cx);
+        self.reload_key_holders(cx);
     }
 
     fn on_save_error(&mut self, message: String, cx: &mut Context<Self>) {
         if let Some(modal) = self.modal.as_ref() {
-            modal.update(cx, |m, cx| {
-                m.saving = false;
-                m.error = Some(message.into());
-                cx.notify();
-            });
+            modal.update(cx, |m, cx| m.fail_save(message, cx));
         }
         cx.notify();
     }
@@ -1459,19 +1189,10 @@ impl SoundboardView {
             clip.glyph
         };
 
-        let hotkey_badge = clip.hotkey.clone().map(|hk| {
-            div()
-                .font_family(mono_family())
-                .text_size(HOTKEY_FS)
-                .text_color(palette.text_secondary)
-                .bg(palette.shell)
-                .border(BORDER_THIN)
-                .border_color(palette.surface_overlay)
-                .rounded(HOTKEY_RADIUS)
-                .px(px(6.0))
-                .py(px(1.0))
-                .child(hk)
-        });
+        let hotkey_badge = clip
+            .hotkey
+            .as_deref()
+            .map(|hk| self.render_hotkey_badge(index, id, hk, palette));
 
         let edit_btn = self.pad_action_button(
             ("sb-pad-edit", index),
@@ -1617,6 +1338,60 @@ impl SoundboardView {
                 palette,
             ))
             .child(pad)
+            .into_any_element()
+    }
+
+    fn render_hotkey_badge(
+        &self,
+        index: usize,
+        id: ClipId,
+        hotkey: &str,
+        palette: &ForgePalette,
+    ) -> AnyElement {
+        let combo = canonical_combo(hotkey);
+        let state = self.keys.pad_key(id, &combo);
+        let (text, border) = if state.is_warning() {
+            (palette.warning, palette.warning)
+        } else {
+            (palette.text_secondary, palette.surface_overlay)
+        };
+        let badge = div()
+            .id(("sb-pad-key", index))
+            .flex()
+            .items_center()
+            .gap(HOTKEY_WARN_GAP)
+            .font_family(mono_family())
+            .text_size(HOTKEY_FS)
+            .text_color(text)
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(border)
+            .rounded(HOTKEY_RADIUS)
+            .px(HOTKEY_PAD_X)
+            .py(HOTKEY_PAD_Y);
+        let reason = match &state {
+            PadKey::Live => return badge.child(combo).into_any_element(),
+            PadKey::NotLive => tr!("soundboard_pad_key_not_live", combo = combo.as_str()),
+            PadKey::EngineUnavailable => {
+                tr!(
+                    "soundboard_pad_key_engine_unavailable",
+                    combo = combo.as_str()
+                )
+            }
+            PadKey::Shared(holder) => tr!(
+                "soundboard_pad_key_shared",
+                combo = combo.as_str(),
+                holder = holder.label()
+            ),
+        };
+        badge
+            .tooltip(tooltip_builder(reason, palette))
+            .child(icon(
+                Icon::AlertTriangle,
+                HOTKEY_WARN_GLYPH,
+                palette.warning,
+            ))
+            .child(combo)
             .into_any_element()
     }
 
@@ -2232,6 +2007,32 @@ impl Render for SoundboardView {
     }
 }
 
+enum ClipSaveFailure {
+    Release(String),
+    Clip(SoundboardError),
+}
+
+impl From<SoundboardError> for ClipSaveFailure {
+    fn from(error: SoundboardError) -> Self {
+        ClipSaveFailure::Clip(error)
+    }
+}
+
+/// Read after the save's own reconcile has run, so a combo the OS refused shows up missing here; `None` without a hotkey engine.
+fn unregistered_combo(
+    hotkey: Option<&str>,
+    reconciler: Option<&HotkeyReconciler>,
+) -> Option<String> {
+    let reconciler = reconciler?;
+    let combo = canonical_combo(hotkey?);
+    let live = reconciler
+        .client()
+        .registered_combos()
+        .iter()
+        .any(|(_, registered)| registered.as_str() == combo);
+    (!live).then_some(combo)
+}
+
 fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
     div()
         .font_family(mono_family())
@@ -2240,7 +2041,10 @@ fn section_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl
         .child(label.into())
 }
 
-fn field_lite_label(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+pub(crate) fn field_lite_label(
+    label: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
     div()
         .mb(px(5.0))
         .font_family(mono_family())
@@ -2249,7 +2053,7 @@ fn field_lite_label(label: impl Into<SharedString>, palette: &ForgePalette) -> i
         .child(label.into())
 }
 
-fn audio_dialog_extensions() -> Vec<&'static str> {
+pub(crate) fn audio_dialog_extensions() -> Vec<&'static str> {
     MediaFormat::ACCEPTED
         .iter()
         .copied()
@@ -2412,7 +2216,7 @@ fn adoption_summary(tally: &AdoptionTally) -> String {
     parts.join(ADOPT_SUMMARY_SEPARATOR)
 }
 
-fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
+pub(crate) fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
     match cat {
         "memes" => palette.bits,
         "alerts" => palette.random,
@@ -2422,7 +2226,7 @@ fn category_color(cat: &str, palette: &ForgePalette) -> Rgba {
     }
 }
 
-fn category_label(cat: &str) -> SharedString {
+pub(crate) fn category_label(cat: &str) -> SharedString {
     match cat {
         "memes" => tr!("soundboard_category_memes").into(),
         "alerts" => tr!("soundboard_category_alerts").into(),

@@ -384,6 +384,7 @@ mod tests {
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             engine_gains: Shared::new(HashMap::new()),
+            targeted_legs: Shared::new(None),
         };
         let result = handle.send(SpeakCommand::Skip).await;
         assert!(matches!(result, Err(SpeakError::ActorGone)));
@@ -407,6 +408,7 @@ mod tests {
             ))),
             master_volume_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             engine_gains: Shared::new(HashMap::new()),
+            targeted_legs: Shared::new(None),
         };
         let mut sub = handle.subscribe();
         event_tx

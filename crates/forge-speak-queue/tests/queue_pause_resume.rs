@@ -127,6 +127,7 @@ fn speak_req(text: &str) -> SpeakRequest {
         voice_override: None,
         source_event_id: Some(EventId::new()),
         is_reward: false,
+        target: None,
     }
 }
 

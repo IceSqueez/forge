@@ -480,4 +480,95 @@ mod tests {
             started.elapsed()
         );
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wait_ends_at_once_when_its_speech_is_removed_from_the_queue() {
+        let (events, mut rx) = broadcast::channel(CAPACITY);
+        let request_id = RequestId::new();
+        events
+            .send(SpeakEvent::Removed {
+                request_id: request_id.clone(),
+            })
+            .unwrap();
+        let started = tokio::time::Instant::now();
+
+        let result = wait_for_terminal(&mut rx, &request_id, CancelSignal::new()).await;
+
+        assert!(
+            result.is_err() && started.elapsed() < SPEAK_WAIT_POLL_INTERVAL,
+            "a removed speech left its waiter with {result:?} after {:?}",
+            started.elapsed()
+        );
+    }
+
+    struct NullPublisher;
+
+    impl forge_events::EventPublisher for NullPublisher {
+        fn publish(&self, _: forge_events::Event) {}
+    }
+
+    fn paused_queue() -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
+        let resolver = forge_voice::VoiceAliasResolver::new(
+            vec![],
+            forge_voice::AssignmentStrategy::DeterministicByName,
+            forge_voice::IgnoreProfile::default(),
+            forge_voice::SynthesisDefaults::default(),
+        );
+        let deps = forge_speak_queue::QueueDeps {
+            registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
+            resolver: Arc::new(std::sync::RwLock::new(resolver)),
+            pipeline: forge_speak_queue::PipelineConfigHandle::new(
+                forge_tts_pipeline::PipelineConfig::default(),
+            ),
+            audio_sink: Arc::new(forge_audio::NullSink),
+            event_bus: Arc::new(NullPublisher),
+            disabled_engines: std::collections::HashSet::new(),
+            engine_gains: std::collections::HashMap::new(),
+        };
+        let (handle, stream) =
+            forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps);
+        (Arc::new(handle), stream)
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_show_speech_is_taken_out_of_the_queue_rather_than_left_to_play_later() {
+        let (handle, mut stream) = paused_queue();
+        handle.send(SpeakCommand::Pause).await.unwrap();
+        let bridge = SpeakBridge::new(Arc::clone(&handle));
+        let cancel = CancelSignal::new();
+        let speech = ShowSpeech {
+            text: "thanks for the five".to_owned(),
+            voice_alias: None,
+            overlay: "stage-alert".to_owned(),
+            show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
+        };
+
+        // Why: without the cancel reaching the queue no removal ever arrives, so the test must
+        // fail rather than stall.
+        let (outcome, removed) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(bridge.speak_for_show(speech, cancel.clone()), async {
+                let queued = loop {
+                    if let Ok(SpeakEvent::Enqueued { request_id, .. }) = stream.recv().await {
+                        break request_id;
+                    }
+                };
+                cancel.cancel();
+                loop {
+                    if let Ok(SpeakEvent::Removed { request_id }) = stream.recv().await
+                        && request_id == queued
+                    {
+                        return handle.queue_depth();
+                    }
+                }
+            })
+        })
+        .await
+        .expect("the cancelled speech never left the queue");
+
+        assert!(
+            outcome.is_err() && removed == 0,
+            "a show speech cut at the ceiling was still waiting in the queue ({removed} left, \
+             outcome {outcome:?})"
+        );
+    }
 }

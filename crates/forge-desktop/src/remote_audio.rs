@@ -231,7 +231,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use forge_audio::RemoteClip;
+    use forge_audio::{PlaybackCorrelation, RemoteClip};
     use forge_overlay::kinds::alert::KIND_ID as RECEIVER_KIND;
     use forge_overlay::{OverlayKindRegistry, config, register_builtin_kinds};
     use forge_runtime::{EventBus, OverlayFrameSink, OverlayReceivers};
@@ -307,6 +307,7 @@ mod tests {
             bytes: vec![0_u8; 64],
             media_type: forge_audio::ClipMediaType::Wave,
             duration_ms: 250,
+            correlation: None,
         }
     }
 
@@ -385,6 +386,37 @@ mod tests {
                 second.clip_id.expose().to_owned()
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn a_show_clip_announcement_carries_its_show_token_and_any_other_clip_none() {
+        const SHOW_TOKEN: &str = "01J9ZC4W6R7Q2N3M4K5P6S7T8V";
+        for (correlation, expected) in [
+            (Some(PlaybackCorrelation::new(SHOW_TOKEN)), Some(SHOW_TOKEN)),
+            (None, None),
+        ] {
+            let (destination, pages) = listening().await;
+
+            destination
+                .deliver(
+                    &destination_id(),
+                    RemoteClip {
+                        correlation,
+                        ..clip()
+                    },
+                )
+                .await
+                .expect("the clip is announced");
+
+            let content = pages.pushed().pop().expect("one announcement was pushed");
+            assert_eq!(
+                content
+                    .get(config::SHOW)
+                    .and_then(serde_json::Value::as_str),
+                expected,
+                "the page cannot join this clip to the right show"
+            );
+        }
     }
 
     #[tokio::test]

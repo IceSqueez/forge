@@ -114,6 +114,7 @@ fn make_request(viewer: &str, text: &str, priority: Priority) -> SpeakRequest {
         voice_override: None,
         source_event_id: Some(EventId::new()),
         is_reward: false,
+        target: None,
     }
 }
 

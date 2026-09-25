@@ -733,4 +733,73 @@ mod tests {
             "the clip route was not holding the overlay sink the speech side got"
         );
     }
+
+    #[derive(Default)]
+    struct DeliveredTo(std::sync::Mutex<Vec<String>>);
+
+    #[async_trait::async_trait]
+    impl RemoteAudioDestination for DeliveredTo {
+        async fn deliver(
+            &self,
+            destination: &forge_audio::RemoteDestinationId,
+            _: forge_audio::RemoteClip,
+        ) -> Result<forge_audio::RemoteDelivery, forge_audio::AudioError> {
+            self.0.lock().unwrap().push(destination.to_string());
+            Ok(forge_audio::RemoteDelivery {
+                clip_id: forge_audio::RemoteClipId::new("clip-1"),
+                live_players: 1,
+            })
+        }
+
+        async fn control(
+            &self,
+            _: &forge_audio::RemoteDestinationId,
+            _: &forge_audio::RemoteClipId,
+            _: forge_audio::RemoteCommand,
+        ) -> Result<(), forge_audio::AudioError> {
+            Ok(())
+        }
+
+        async fn verdict(
+            &self,
+            _: &forge_audio::RemoteClipId,
+        ) -> Result<forge_audio::RemoteVerdict, forge_audio::AudioError> {
+            Ok(forge_audio::RemoteVerdict::Played)
+        }
+    }
+
+    #[tokio::test]
+    async fn show_speech_reaches_the_showing_overlay_and_the_local_device_only_when_speech_plays_locally()
+     {
+        const SHOWING: &str = "stage-alert";
+        for (route, local_plays) in [
+            (AudioRoute::Local, 1),
+            (AudioRoute::Overlay, 0),
+            (AudioRoute::Both, 1),
+        ] {
+            let local = RecordingSink::new();
+            let remote = Arc::new(DeliveredTo::default());
+            let legs = show_speech_legs(
+                &plan_with(route, Some(CHOSEN)),
+                Arc::clone(&remote) as Arc<dyn RemoteAudioDestination>,
+                Arc::clone(&local) as Arc<dyn AudioSink>,
+            );
+
+            legs.sink_for(&forge_audio::PlaybackTarget {
+                destination: forge_audio::RemoteDestinationId::new(SHOWING),
+                correlation: forge_audio::PlaybackCorrelation::new("show-1"),
+            })
+            .play_controlled(tone())
+            .await
+            .expect("the show legs start")
+            .await
+            .expect("the show legs finish");
+
+            assert_eq!(
+                (local.calls(), remote.0.lock().unwrap().clone()),
+                (local_plays, vec![SHOWING.to_owned()]),
+                "{route:?}: show speech took the wrong legs or reached the global receiver"
+            );
+        }
+    }
 }

@@ -2,9 +2,10 @@
 
 use std::time::Duration;
 
-use forge_overlay::config::{DURATION, SOUND};
+use forge_overlay::config::{DURATION, SOUND, SPEECH, SPEECH_VOICE};
 use forge_overlay::{
-    DeliveryDisposition, OverlayConfig, OverlayKindRegistry, display_window, register_builtin_kinds,
+    DeliveryDisposition, OverlayConfig, OverlayKindRegistry, SpeechProgram, display_window,
+    register_builtin_kinds, take_speech,
 };
 use forge_registry::FormField;
 use forge_types::Variant;
@@ -180,6 +181,58 @@ fn a_display_window_prefers_a_positive_step_override_then_the_stored_duration_th
             display_window(descriptor, &stored, override_ms),
             expected,
             "{label}"
+        );
+    }
+}
+
+#[test]
+fn speech_is_always_stripped_from_the_content_and_spoken_only_when_it_has_words() {
+    let registry = registry();
+    let descriptor = registry
+        .get(ALERT_KIND)
+        .expect("the look ships in this build");
+    let text = |value: &str| Variant::String(value.to_owned());
+    let program = |voice: Option<&str>| {
+        Some(SpeechProgram {
+            text: "thanks Mira".to_owned(),
+            voice_alias: voice.map(str::to_owned),
+        })
+    };
+    for (speech, voice, expected, label) in [
+        (
+            text("  thanks Mira \n"),
+            text(" amy "),
+            program(Some("amy")),
+            "a voiced speech",
+        ),
+        (
+            text("thanks Mira"),
+            text("   "),
+            program(None),
+            "a blank voice",
+        ),
+        (
+            text(" \t "),
+            text("amy"),
+            None,
+            "a speech of only whitespace",
+        ),
+        (
+            Variant::Int(7),
+            text("amy"),
+            None,
+            "a speech that is not text",
+        ),
+    ] {
+        let stored = OverlayConfig::from([(SPEECH_VOICE.to_owned(), voice)]);
+        let mut content = OverlayConfig::from([(SPEECH.to_owned(), speech)]);
+
+        let taken = take_speech(descriptor, &stored, &mut content);
+
+        assert_eq!(
+            (taken, content.contains_key(SPEECH)),
+            (expected, false),
+            "{label}: the wrong speech was taken, or its text stayed in the page content"
         );
     }
 }

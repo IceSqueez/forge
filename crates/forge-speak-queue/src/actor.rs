@@ -1608,6 +1608,7 @@ mod tests {
             voice_override: None,
             source_event_id: Some(forge_types::EventId::new()),
             is_reward: false,
+            target: None,
         }
     }
 

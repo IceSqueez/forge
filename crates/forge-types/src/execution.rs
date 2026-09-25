@@ -256,16 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn interpolate_trims_whitespace_inside_the_token_before_lookup() {
-        let stack = stack_with(&[("index", Variant::Int(3))]);
-        for template in ["%index %", "% index%", "% index %"] {
-            assert_eq!(stack.interpolate(template), "3", "template {template:?}");
-        }
-    }
-
-    /// Pinned as the shared contract with the overlay client runtime, which ports this scanner to JS.
-    #[test]
-    fn interpolate_holds_the_three_behaviours_a_regex_port_would_get_wrong() {
+    fn interpolate_reprints_unresolvable_text_verbatim_and_never_rescans() {
         let stack = stack_with(&[
             ("known", Variant::String("value".to_string())),
             ("recursive", Variant::String("%known%".to_string())),
@@ -274,20 +265,15 @@ mod tests {
         for (label, template, expected) in [
             ("unknown token reprinted verbatim", "%missing%", "%missing%"),
             (
-                "unknown token reprinted untrimmed",
-                "% missing %",
-                "% missing %",
-            ),
-            (
-                "unterminated tail collapses to a lone percent",
+                "unterminated tail kept verbatim",
                 "start %missing",
-                "start %",
+                "start %missing",
             ),
-            ("unterminated token alone", "%", "%"),
+            ("lone percent", "%", "%"),
             (
                 "a closed token before an unterminated tail still resolves",
                 "%known% then %dangling",
-                "value then %",
+                "value then %dangling",
             ),
             (
                 "a substituted value is never rescanned",
@@ -296,6 +282,53 @@ mod tests {
             ),
         ] {
             assert_eq!(stack.interpolate(template), expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn interpolate_treats_a_percent_opening_no_valid_name_as_literal_and_resumes_after_it() {
+        let stack = stack_with(&[
+            ("user", Variant::String("alice".to_string())),
+            ("count", Variant::Int(3)),
+            ("користувач", Variant::String("Оля".to_string())),
+        ]);
+
+        for (template, expected) in [
+            ("%user% gets 50% off", "alice gets 50% off"),
+            ("100%", "100%"),
+            ("%%", "%%"),
+            ("50%%user%", "50%alice"),
+            ("%user%%count%", "alice3"),
+            ("%користувач%!", "Оля!"),
+            ("%名前%", "%名前%"),
+            ("50% the prize %user%", "50% the prize alice"),
+            ("%a$b%user%", "%a$balice"),
+        ] {
+            assert_eq!(
+                stack.interpolate(template),
+                expected,
+                "template {template:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn interpolate_never_reads_space_padded_text_between_percents_as_a_token() {
+        let stack = stack_with(&[
+            ("user", Variant::String("alice".to_string())),
+            ("amount", Variant::Int(20)),
+        ]);
+        for (template, expected) in [
+            ("Discount 50% for %user%!", "Discount 50% for alice!"),
+            ("50% of %amount%", "50% of 20"),
+            ("% user %", "% user %"),
+            ("%user %", "%user %"),
+        ] {
+            assert_eq!(
+                stack.interpolate(template),
+                expected,
+                "template {template:?}"
+            );
         }
     }
 

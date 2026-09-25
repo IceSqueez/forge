@@ -58,3 +58,49 @@ impl<'a> Iterator for TemplatePieces<'a> {
         Some(TemplatePiece::Literal(&rest[..1]))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn variable_references_yields_only_names_of_valid_tokens_in_order() {
+        for (template, expected) in [
+            ("%user% gets 50% off", vec!["user"]),
+            ("50%%user%", vec!["user"]),
+            ("% user %", vec![]),
+            ("Discount 50% for %user%!", vec!["user"]),
+            ("%a%%b%", vec!["a", "b"]),
+            ("%user% then %dangling", vec!["user"]),
+            ("50% the prize %user%", vec!["user"]),
+            ("%名前%", vec!["名前"]),
+            ("100%", vec![]),
+            ("%%", vec![]),
+            ("", vec![]),
+        ] {
+            assert_eq!(
+                variable_references(template).collect::<Vec<_>>(),
+                expected,
+                "template {template:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_variable_reference_accepts_letters_digits_underscore_dot_and_dash_only() {
+        for name in [
+            "user",
+            "user.name",
+            "a-b",
+            "a_b",
+            "1st",
+            "名前",
+            "користувач",
+        ] {
+            assert!(is_variable_reference(name), "expected accept for {name:?}");
+        }
+        for name in ["", "a b", " user", "a$b", "a!", "a/b"] {
+            assert!(!is_variable_reference(name), "expected reject for {name:?}");
+        }
+    }
+}

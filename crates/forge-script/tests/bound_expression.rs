@@ -87,6 +87,18 @@ fn text_around_a_token_inside_a_literal_is_kept() {
 }
 
 #[test]
+fn a_percent_opening_no_valid_name_inside_a_literal_stays_text_and_the_next_token_binds() {
+    let stack = args(&[("name", s("Alice"))]);
+    for expr in [
+        r#""50% the prize %name%" == "50% the prize Alice""#,
+        r#""Discount 50% for %name%!" == "Discount 50% for Alice!""#,
+        r#""% name %" == "%" + " name %""#,
+    ] {
+        assert!(condition(expr, &stack), "{expr}");
+    }
+}
+
+#[test]
 fn code_position_tokens_bind_as_typed_values() {
     let mut obj = BTreeMap::new();
     obj.insert("a".to_owned(), Variant::Int(1));

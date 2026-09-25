@@ -31,15 +31,15 @@ impl SubActionRunner for ParamsResetRunner {
     }
 
     fn label(&self) -> &str {
-        "Reset Parameters"
+        "Reset to Idle"
     }
 
     fn summary(&self) -> &str {
-        "Clears all injected parameter values, reverting to face-tracking defaults."
+        "Deactivates every currently active expression, returning the model to idle."
     }
 
     fn search_text(&self) -> &str {
-        "vtube parameter reset clear default face tracking vts"
+        "vtube expression reset idle deactivate default vts"
     }
 
     fn icon_name(&self) -> &str {

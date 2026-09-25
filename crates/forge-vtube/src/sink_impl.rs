@@ -47,15 +47,21 @@ impl VTubeSink for VTubeClient {
     }
 
     async fn reset_params(&self) -> Result<(), VTubeError> {
-        let data = json!({
-            "faceFound": false,
-            "mode": "set",
-            "parameterValues": []
-        });
         let resp = self
-            .send_json_request("InjectParameterDataRequest", data)
+            .send_json_request("ExpressionStateRequest", json!({}))
             .await?;
-        check_response(&resp)
+        check_response(&resp)?;
+        let active_files: Vec<String> = resp["expressions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry["active"].as_bool().unwrap_or(false))
+            .filter_map(|entry| entry["file"].as_str().map(str::to_owned))
+            .collect();
+        for file in &active_files {
+            self.set_expression(file, false).await?;
+        }
+        Ok(())
     }
 
     async fn move_model(

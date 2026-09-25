@@ -2342,7 +2342,46 @@ overlays_bindings_pending = The bindings reference for the source editor is not 
 overlays_panel_section_content = Content
 overlays_panel_section_style = Style
 overlays_panel_section_behavior = Behavior
-overlays_panel_no_properties = This overlay type declares no properties.
+overlays_panel_section_look = Look
+overlays_panel_section_audio = Audio
+overlays_panel_section_display = Display
+overlays_panel_section_receiver = Receiver
+overlays_look_hint = Changing the look keeps the audio, display and style settings.
+overlays_look_picker_title = Choose a look
+overlays_base_sound = Sound
+overlays_base_speech = Speech text
+overlays_base_speech_hint = Read aloud when the show appears. Event variables like %message% work here.
+overlays_base_voice = Voice
+overlays_base_voice_hint = A voice alias; empty uses the viewer's alias or the default voice.
+overlays_base_duration = Duration
+overlays_base_duration_hint = Stays up this long, or until its speech ends if that is later.
+overlays_display_draws_nothing = Shows nothing on screen - it only plays its sound and speech.
+overlays_display_replace = Stays on screen until the next update replaces it.
+overlays_display_append = Each update is added to what is already on screen.
+overlays_display_own_hide = The custom overlay.js hides the show on its own timer, so the duration and the hold for speech may not apply.
+overlays_queue_label = Show queue
+overlays_queue_waiting = { $count } waiting
+overlays_queue_clear = Clear queue
+overlays_show_fire = Play full show
+overlays_show_fire_hint = Queues a sample show with its sound and speech, the way an action would.
+overlays_show_fire_hint_arrival = Sends sample content with its sound and speech, the way an action would.
+overlays_show_sending = Sending the show...
+overlays_show_delivered = { $count ->
+    [one] Show sent to { $count } browser source
+   *[other] Show sent to { $count } browser sources
+}
+overlays_show_preview_only = { $count ->
+    [one] Show sent, but only a preview tab is connected
+   *[other] Show sent, but only { $count } preview tabs are connected
+}
+overlays_show_no_page = Show sent, but no page is connected - nothing is seen or heard.
+overlays_show_ended = The show has ended.
+overlays_show_cleared = The show was cleared from the queue before it played.
+overlays_show_withdrawn = The show was withdrawn before it played.
+overlays_receiver_toggle = Receives forge TTS and soundboard
+overlays_receiver_hint_on = Speech and soundboard audio routed to an overlay play here. Turning it on elsewhere turns it off here. Takes effect after forge restarts.
+overlays_receiver_hint_off = Only one overlay receives forge audio; turning it on here moves it off the other one. Takes effect after forge restarts.
+overlays_receiver_save_failed = The audio receiver could not be saved: { $reason }
 overlays_panel_unavailable = This build has no overlay type for this record, so there is nothing to configure.
 overlays_panel_choice_empty = No choices available.
 overlays_sound_none = No sound

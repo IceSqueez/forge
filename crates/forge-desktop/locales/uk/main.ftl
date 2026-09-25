@@ -2385,7 +2385,50 @@ overlays_bindings_pending = Довідник прив'язок для редак
 overlays_panel_section_content = Вміст
 overlays_panel_section_style = Стиль
 overlays_panel_section_behavior = Поведінка
-overlays_panel_no_properties = Цей тип оверлея не оголошує властивостей.
+overlays_panel_section_look = Вигляд
+overlays_panel_section_audio = Звук
+overlays_panel_section_display = Показ
+overlays_panel_section_receiver = Приймач
+overlays_look_hint = Зміна вигляду зберігає налаштування звуку, показу та стилю.
+overlays_look_picker_title = Оберіть вигляд
+overlays_base_sound = Звук
+overlays_base_speech = Текст для озвучення
+overlays_base_speech_hint = Читається вголос, коли з'являється показ. Тут працюють змінні події, як-от %message%.
+overlays_base_voice = Голос
+overlays_base_voice_hint = Псевдонім голосу; порожнє поле - псевдонім глядача або типовий голос.
+overlays_base_duration = Тривалість
+overlays_base_duration_hint = Залишається на екрані стільки часу або до кінця озвучення, якщо воно довше.
+overlays_display_draws_nothing = Нічого не показує на екрані - лише відтворює свій звук і озвучення.
+overlays_display_replace = Залишається на екрані, доки наступне оновлення не замінить його.
+overlays_display_append = Кожне оновлення додається до того, що вже на екрані.
+overlays_display_own_hide = Власний overlay.js ховає показ за своїм таймером, тож тривалість і утримання на час озвучення можуть не діяти.
+overlays_queue_label = Черга показів
+overlays_queue_waiting = У черзі: { $count }
+overlays_queue_clear = Очистити чергу
+overlays_show_fire = Повний тестовий показ
+overlays_show_fire_hint = Ставить у чергу зразковий показ зі звуком і озвученням, як це зробила б дія.
+overlays_show_fire_hint_arrival = Надсилає зразковий вміст зі звуком і озвученням, як це зробила б дія.
+overlays_show_sending = Надсилаємо показ...
+overlays_show_delivered = { $count ->
+    [one] Показ надіслано в { $count } браузерне джерело
+    [few] Показ надіслано в { $count } браузерні джерела
+    [many] Показ надіслано в { $count } браузерних джерел
+   *[other] Показ надіслано в { $count } браузерних джерел
+}
+overlays_show_preview_only = { $count ->
+    [one] Показ надіслано, але підключена лише { $count } вкладка перегляду
+    [few] Показ надіслано, але підключені лише { $count } вкладки перегляду
+    [many] Показ надіслано, але підключено лише { $count } вкладок перегляду
+   *[other] Показ надіслано, але підключено лише { $count } вкладок перегляду
+}
+overlays_show_no_page = Показ надіслано, але жодна сторінка не підключена - нічого не видно й не чутно.
+overlays_show_ended = Показ завершився.
+overlays_show_cleared = Показ прибрано з черги до того, як він відбувся.
+overlays_show_withdrawn = Показ відкликано до того, як він відбувся.
+overlays_receiver_toggle = Приймає TTS і звуки саундборду forge
+overlays_receiver_hint_on = Тут звучать озвучення й саундборд, спрямовані на оверлей. Увімкнення на іншому оверлеї вимикає його тут. Діє після перезапуску forge.
+overlays_receiver_hint_off = Звук forge приймає лише один оверлей; увімкнення тут забирає його з іншого. Діє після перезапуску forge.
+overlays_receiver_save_failed = Не вдалося зберегти приймач звуку: { $reason }
 overlays_panel_unavailable = У цій збірці немає типу оверлея для цього запису, тож налаштовувати нічого.
 overlays_panel_choice_empty = Немає доступних варіантів.
 overlays_sound_none = Без звуку

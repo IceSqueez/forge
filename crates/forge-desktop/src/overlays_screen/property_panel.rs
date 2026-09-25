@@ -17,6 +17,9 @@ use gpui::{
     Subscription, Window, div, prelude::*, px,
 };
 
+use super::base_sections::{
+    BaseEvent, BaseState, FIELD_SECTIONS, PanelSection, base_hint, base_label, hinted,
+};
 use super::icon_choice::{IconImage, icon_field_row};
 use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
 use super::store_config;
@@ -30,33 +33,19 @@ use crate::presentation::ActivePresentation;
 const PANE_W: Pixels = px(246.0);
 const PANE_PAD: Pixels = px(14.0);
 
-const SECTION_GAP: Pixels = px(10.0);
-const SECTION_TOP_GAP: Pixels = px(16.0);
-const FIELD_GAP: Pixels = px(12.0);
+pub(super) const SECTION_GAP: Pixels = px(10.0);
+pub(super) const SECTION_TOP_GAP: Pixels = px(16.0);
+pub(super) const FIELD_GAP: Pixels = px(12.0);
 
-const NOTICE_PAD: Pixels = px(9.0);
-const NOTICE_RADIUS: Pixels = px(6.0);
-const NOTICE_LINE_H: Pixels = px(15.0);
+pub(super) const NOTICE_PAD: Pixels = px(9.0);
+pub(super) const NOTICE_RADIUS: Pixels = px(6.0);
+pub(super) const NOTICE_LINE_H: Pixels = px(15.0);
 
 /// A slider fires while the pointer moves; a save per step would rewrite the page and reload the
 /// browser source dozens of times per drag.
 const SLIDE_SETTLE: Duration = Duration::from_millis(400);
 
 const RELEASE_PERSIST_CONTEXT: &str = "overlay property panel teardown";
-
-const SECTION_ORDER: [ConfigSection; 3] = [
-    ConfigSection::Content,
-    ConfigSection::Style,
-    ConfigSection::Behavior,
-];
-
-fn section_heading(section: ConfigSection) -> String {
-    match section {
-        ConfigSection::Content => tr!("overlays_panel_section_content"),
-        ConfigSection::Style => tr!("overlays_panel_section_style"),
-        ConfigSection::Behavior => tr!("overlays_panel_section_behavior"),
-    }
-}
 
 pub(super) enum PropertyPanelEvent {
     Save(OverlayConfig),
@@ -104,11 +93,11 @@ struct ChoicePicker {
 }
 
 pub(super) struct OverlayPropertyPanel {
-    overlay_id: OverlayId,
+    pub(super) overlay_id: OverlayId,
     defaults: OverlayConfig,
-    stored: OverlayConfig,
+    pub(super) stored: OverlayConfig,
     labels: HashMap<String, String>,
-    sections: HashMap<String, ConfigSection>,
+    sections: HashMap<String, PanelSection>,
     fields: Vec<ConfigField>,
     choices: HashMap<String, Vec<(String, String)>>,
     icon_images: Vec<IconImage>,
@@ -119,8 +108,9 @@ pub(super) struct OverlayPropertyPanel {
     pick_refusal: Option<(String, String)>,
     settle_epoch: u64,
     repo: Arc<dyn OverlayRepo>,
-    service: OverlayServiceHandle,
-    rt_handle: tokio::runtime::Handle,
+    pub(super) service: OverlayServiceHandle,
+    pub(super) rt_handle: tokio::runtime::Handle,
+    pub(super) base: BaseState,
     _release: Subscription,
 }
 
@@ -129,6 +119,8 @@ impl EventEmitter<PropertyPanelEvent> for OverlayPropertyPanel {}
 impl EventEmitter<AdoptClipRequested> for OverlayPropertyPanel {}
 
 impl EventEmitter<IconPickRequested> for OverlayPropertyPanel {}
+
+impl EventEmitter<BaseEvent> for OverlayPropertyPanel {}
 
 impl OverlayPropertyPanel {
     pub(super) fn new(launch: PanelLaunch, cx: &mut Context<Self>) -> Self {
@@ -165,6 +157,7 @@ impl OverlayPropertyPanel {
             repo: launch.repo,
             service: launch.service,
             rt_handle: launch.rt_handle,
+            base: BaseState::unset(),
             _release: release,
         };
         panel.refresh_media_choices();
@@ -281,7 +274,7 @@ impl OverlayPropertyPanel {
 
     /// Keys a retired build wrote are dropped instead of being carried forward, so a save is the
     /// moment a record stops mentioning them.
-    fn pending_config(&self, cx: &App) -> OverlayConfig {
+    pub(super) fn pending_config(&self, cx: &App) -> OverlayConfig {
         let mut buffer = self.defaults.clone();
         for (key, value) in &self.stored {
             if RETIRED_KEYS.contains(&key.as_str()) {
@@ -295,7 +288,7 @@ impl OverlayPropertyPanel {
 
     /// Regenerating the files reloads every connected page, so a commit that changes nothing -
     /// a blur on an untouched field, a swatch clicked twice - never reaches the record.
-    fn emit_save(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn emit_save(&mut self, cx: &mut Context<Self>) {
         let sparse = self.pending_config(cx);
         if sparse == self.stored {
             return;
@@ -534,6 +527,9 @@ impl OverlayPropertyPanel {
     }
 
     fn label_of(&self, key: &str) -> String {
+        if let Some(label) = base_label(key) {
+            return label;
+        }
         self.labels
             .get(key)
             .cloned()
@@ -542,11 +538,11 @@ impl OverlayPropertyPanel {
 
     /// A control the fold produced for a key the kind never declared still gets a home rather than
     /// disappearing from the panel.
-    fn section_of(&self, key: &str) -> ConfigSection {
+    fn section_of(&self, key: &str) -> PanelSection {
         self.sections
             .get(key)
             .copied()
-            .unwrap_or(ConfigSection::Content)
+            .unwrap_or(PanelSection::Content)
     }
 
     fn notes_for(&self, key: &str) -> Vec<String> {
@@ -607,8 +603,7 @@ impl OverlayPropertyPanel {
 
     fn render_section(
         &self,
-        section: ConfigSection,
-        first: bool,
+        section: PanelSection,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
@@ -617,18 +612,15 @@ impl OverlayPropertyPanel {
             .iter()
             .filter(|field| self.section_of(field.key()) == section)
             .collect();
-        if members.is_empty() {
+        if members.is_empty() && section != PanelSection::Display {
             return None;
         }
 
-        let mut column = div()
-            .flex()
-            .flex_col()
-            .when(!first, |col| col.pt(SECTION_TOP_GAP))
-            .child(div().pb(SECTION_GAP).child(section_label(
-                section_heading(section).to_uppercase(),
-                palette,
-            )));
+        let mut column = div().flex().flex_col().pt(SECTION_TOP_GAP).child(
+            div()
+                .pb(SECTION_GAP)
+                .child(section_label(section.heading().to_uppercase(), palette)),
+        );
 
         let view = cx.entity();
         let handlers = Self::handlers();
@@ -646,12 +638,19 @@ impl OverlayPropertyPanel {
                     .into_any_element(),
                 None => control,
             };
+            let body = match base_hint(field.key()) {
+                Some(hint) => hinted(body, hint, palette),
+                None => body,
+            };
             column = column.child(
                 div().pb(FIELD_GAP).child(
                     field_label(palette, self.label_of(field.key()).to_uppercase(), body)
                         .tone(palette.text_faint),
                 ),
             );
+        }
+        if section == PanelSection::Display {
+            column = column.children(self.render_display_extras(palette, cx));
         }
 
         Some(column.into_any_element())
@@ -687,7 +686,7 @@ pub(super) fn override_notice(files: &[String], palette: &ForgePalette) -> Optio
 
 struct FieldIndex {
     labels: HashMap<String, String>,
-    sections: HashMap<String, ConfigSection>,
+    sections: HashMap<String, PanelSection>,
 }
 
 fn index_fields(specs: &[SectionedField]) -> FieldIndex {
@@ -720,11 +719,13 @@ fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
         | FormField::SubChain { key, label }
         | FormField::CaseList { key, label } => {
             out.labels.insert((*key).to_owned(), (*label).to_owned());
-            out.sections.insert((*key).to_owned(), section);
+            out.sections
+                .insert((*key).to_owned(), PanelSection::of(key, section));
         }
         FormField::Optional { key, label, inner } => {
             out.labels.insert((*key).to_owned(), (*label).to_owned());
-            out.sections.insert((*key).to_owned(), section);
+            out.sections
+                .insert((*key).to_owned(), PanelSection::of(key, section));
             index_field(inner, section, out);
         }
     }
@@ -743,27 +744,18 @@ impl Render for OverlayPropertyPanel {
             .flex()
             .flex_col();
 
-        body = body.children(override_notice(&self.overridden_files, &palette));
+        body = body
+            .children(override_notice(&self.overridden_files, &palette))
+            .child(self.render_look_section(&palette, cx));
 
-        let mut rendered = 0usize;
-        for section in SECTION_ORDER {
-            if let Some(block) = self.render_section(section, rendered == 0, &palette, cx) {
-                rendered += 1;
-                body = body.child(block);
-            }
+        for section in FIELD_SECTIONS {
+            body = body.children(self.render_section(section, &palette, cx));
         }
+        body = body
+            .children(self.render_section(PanelSection::Display, &palette, cx))
+            .child(self.render_receiver_section(&palette, cx));
 
-        if rendered == 0 {
-            body = body.child(
-                div()
-                    .italic()
-                    .font_family(body_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("overlays_panel_no_properties")),
-            );
-        }
-
+        let look_popover = self.look_popover(cx);
         let popover = self.picker.as_ref().map(|open| {
             let view = cx.entity();
             anchored_popover(open.position, open.picker.clone())
@@ -786,6 +778,7 @@ impl Render for OverlayPropertyPanel {
             .border_color(palette.border_regular)
             .child(body)
             .children(popover)
+            .children(look_popover)
     }
 }
 

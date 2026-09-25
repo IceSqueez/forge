@@ -1,12 +1,16 @@
+mod base_sections;
 mod code_pane;
 mod editor_pane;
 mod event_wiring;
 mod form_modal;
+mod hide_timing;
 mod icon_choice;
 mod kind_visuals;
+mod look_change;
 mod preview_shapes;
 mod preview_stage;
 mod property_panel;
+mod receiver;
 mod registry_pane;
 mod sound_choice;
 
@@ -38,6 +42,7 @@ use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
 use crate::toasts::{PushToast, copy_to_clipboard};
 
+use base_sections::BaseEvent;
 use code_pane::{CodeState, LeaveIntent};
 use event_wiring::{EventWiringView, WiringLaunch};
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
@@ -65,6 +70,7 @@ struct OpenPanel {
     _sub: Subscription,
     _media_sub: Subscription,
     _icon_sub: Subscription,
+    _base_sub: Subscription,
 }
 
 struct PendingDelete {
@@ -154,6 +160,8 @@ pub struct OverlaysView {
     fire_epoch: u64,
     stage: StageState,
     wiring: WiringLink,
+    receiver: Option<OverlayId>,
+    hide_probe_gen: async_bridge::Generation,
 }
 
 pub struct OverlaysLaunch {
@@ -231,8 +239,11 @@ impl OverlaysView {
                 _nav: nav,
                 _repaint: repaint,
             },
+            receiver: None,
+            hide_probe_gen: async_bridge::Generation::default(),
         };
         view.load(cx);
+        view.load_receiver(cx);
         view.load_clips(cx);
         view.load_images(cx);
         view.load_icon_favorites(cx);
@@ -545,11 +556,11 @@ impl OverlaysView {
             self.panel = None;
             return;
         };
-        if self
-            .panel
-            .as_ref()
-            .is_some_and(|open| open.view.read(cx).overlay_id() == &definition.id)
-        {
+        if self.panel.as_ref().is_some_and(|open| {
+            let panel = open.view.read(cx);
+            panel.overlay_id() == &definition.id && panel.look_kind() == definition.kind_id
+        }) {
+            self.probe_hide_timing(&definition, cx);
             return;
         }
         let Some(descriptor) = self.kinds.get(&definition.kind_id) else {
@@ -575,18 +586,40 @@ impl OverlaysView {
         };
 
         let issues = self.issues_of(&definition.id).to_vec();
+        let base = self.base_launch(descriptor, &definition.id);
         let view = cx.new(|cx| OverlayPropertyPanel::new(launch, cx));
-        view.update(cx, |panel, cx| panel.set_media_issues(issues, cx));
+        view.update(cx, |panel, cx| {
+            panel.set_media_issues(issues, cx);
+            panel.adopt_base(base, cx);
+        });
         let sub = cx.subscribe(&view, Self::on_panel_event);
         let media_sub = cx.subscribe(&view, Self::on_adopt_requested);
         let icon_sub = cx.subscribe(&view, Self::on_icon_pick_requested);
+        let base_sub = cx.subscribe(&view, Self::on_base_event);
         self.panel = Some(OpenPanel {
             view,
             _sub: sub,
             _media_sub: media_sub,
             _icon_sub: icon_sub,
+            _base_sub: base_sub,
         });
         self.load_clips(cx);
+        self.probe_hide_timing(&definition, cx);
+    }
+
+    fn on_base_event(
+        &mut self,
+        view: Entity<OverlayPropertyPanel>,
+        event: &BaseEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let id = view.read(cx).overlay_id().clone();
+        match event {
+            BaseEvent::ChangeLook { kind_id, config } => {
+                self.change_look(id, kind_id.clone(), config.clone(), cx);
+            }
+            BaseEvent::SetReceiver(on) => self.set_receiver(id, *on, cx),
+        }
     }
 
     fn on_panel_event(

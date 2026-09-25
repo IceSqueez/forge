@@ -8,7 +8,8 @@
  *   forge.content(callback)      callback(values, durationMs) per delivery
  *   forge.set(name, text)        writes text into every [data-bind="name"] node
  *   forge.show(selector)         reveals matching elements
- *   forge.show(selector, ms)     reveals them, hides them again after ms
+ *   forge.show(selector, ms)     reveals them, hides them again after ms, or
+ *                                once the show's speech has ended if later
  *   forge.sound(name)            plays a file from this overlay's folder
  *
  * config.json sits next to the page. Its config object is what the ready callback
@@ -63,6 +64,20 @@
  * Actions reach a transient overlay one show at a time: forge sends the next
  * delivery only once the previous one has been up for its whole duration, and
  * holds the rest back in arrival order.
+ *
+ * A show that forge will also speak carries a "show" token in its content. The
+ * page holds such a show back, unseen, until the clip announced with the same
+ * token is ready: then the show is revealed, its sound plays, and its speech
+ * starts once the sound has ended. A hide the look asked for waits until that
+ * speech has ended too, so a show stays up for its duration or its speech,
+ * whichever is longer. A show whose speech never comes is still shown, silently:
+ * at once when its clip is refused, when forge sends
+ *
+ *   { command: "reveal", show: "<token>" }
+ *
+ * or when the page's own wait runs out. The token is removed before the look
+ * sees the content. A clip whose token matches no held show plays as it
+ * arrives, which is how a look that applies content on arrival speaks.
  *
  * A page reached with ?preview=1 in its query previews itself. It reads
  * sample.json, the generated sample document sitting beside config.json, and
@@ -140,6 +155,10 @@
   var COMMAND_STOP = "stop";
   var COMMAND_PAUSE = "pause";
   var COMMAND_RESUME = "resume";
+  var COMMAND_REVEAL = "reveal";
+  var SHOW_KEY = "show";
+  var SPEECH_WAIT_MS = 12000;
+  var SOUND_LEAD_CAP_MS = 10000;
   var AUTOPLAY_ERROR = "NotAllowedError";
   var REPORT_METHOD = "POST";
   var JSON_MEDIA_TYPE = "application/json";
@@ -167,6 +186,9 @@
   var contentCallbacks = [];
   var hideTimers = new Map();
   var clipsInFlight = new Map();
+  var waitingShow = null;
+  var shownToken = "";
+  var hidesAfterSpeech = [];
 
   var config = null;
   var credential = "";
@@ -420,6 +442,10 @@
       announceClip(values);
       return;
     }
+    if (textOf(values.command) === COMMAND_REVEAL) {
+      revealWaitingShow(textOf(values[SHOW_KEY]), null);
+      return;
+    }
     controlClips(values);
   }
 
@@ -434,9 +460,11 @@
     var clip = {
       reportPath: reportPath,
       mediaType: textOf(values.clip_media_type),
+      show: textOf(values[SHOW_KEY]),
       element: null,
       objectUrl: "",
       held: false,
+      leading: false,
       settled: false,
     };
     clipsInFlight.set(clipId, clip);
@@ -474,6 +502,17 @@
       settleClip(clipId, clip, VERDICT_REFUSED, REASON_DECODE_FAILED);
     });
     element.src = clip.objectUrl;
+
+    if (waitingShow && clip.show && waitingShow.token === clip.show) {
+      clip.leading = true;
+      revealWaitingShow(clip.show, function () {
+        clip.leading = false;
+        if (!clip.held && !clip.settled) {
+          startClip(clipId, clip);
+        }
+      });
+      return;
+    }
     if (!clip.held) {
       startClip(clipId, clip);
     }
@@ -527,7 +566,7 @@
     }
     if (command === COMMAND_RESUME) {
       clip.held = false;
-      if (clip.element) {
+      if (clip.element && !clip.leading) {
         startClip(clipId, clip);
       }
     }
@@ -541,6 +580,8 @@
     clipsInFlight.delete(clipId);
     releaseClip(clip);
     reportVerdict(clip.reportPath, verdict, reason);
+    revealWaitingShow(clip.show, null);
+    speechEnded(clip.show);
   }
 
   function releaseClip(clip) {
@@ -570,9 +611,93 @@
   }
 
   function deliver(values, durationMs) {
+    var token = textOf(values[SHOW_KEY]);
+    var shown = withoutShowToken(values);
+    dropWaitingShow();
+    if (!token || previewing) {
+      present(shown, durationMs, "", null);
+      return;
+    }
+
+    waitingShow = {
+      token: token,
+      values: shown,
+      durationMs: durationMs,
+      timer: window.setTimeout(function () {
+        revealWaitingShow(token, null);
+      }, SPEECH_WAIT_MS),
+    };
+    var early = clipOfShow(token);
+    if (early && early.element && !early.leading) {
+      revealWaitingShow(token, null);
+    }
+  }
+
+  function withoutShowToken(values) {
+    var copy = {};
+    Object.keys(values).forEach(function (key) {
+      if (key !== SHOW_KEY) {
+        copy[key] = values[key];
+      }
+    });
+    return copy;
+  }
+
+  function dropWaitingShow() {
+    if (waitingShow) {
+      window.clearTimeout(waitingShow.timer);
+      waitingShow = null;
+    }
+  }
+
+  function revealWaitingShow(token, afterSound) {
+    if (!token || !waitingShow || waitingShow.token !== token) {
+      if (afterSound) {
+        afterSound();
+      }
+      return;
+    }
+    var show = waitingShow;
+    dropWaitingShow();
+    present(show.values, show.durationMs, token, afterSound);
+  }
+
+  function clipOfShow(token) {
+    var found = null;
+    clipsInFlight.forEach(function (clip) {
+      if (!found && token && clip.show === token) {
+        found = clip;
+      }
+    });
+    return found;
+  }
+
+  function hideAfterSpeech(hide) {
+    if (clipOfShow(shownToken)) {
+      hidesAfterSpeech.push(hide);
+    } else {
+      hide();
+    }
+  }
+
+  function speechEnded(token) {
+    if (!token || token !== shownToken || clipOfShow(token)) {
+      return;
+    }
+    var hides = hidesAfterSpeech;
+    hidesAfterSpeech = [];
+    hides.forEach(function (hide) {
+      hide();
+    });
+  }
+
+  function present(values, durationMs, token, afterSound) {
     unclear();
-    playedThisDelivery = (config && config.sound) || "";
-    sound(config && config.sound);
+    shownToken = token;
+    hidesAfterSpeech = [];
+    var configured = (config && config.sound) || "";
+    playSound(configured, afterSound);
+    playedThisDelivery = configured;
     contentCallbacks.forEach(function (callback) {
       invoke(callback, values, durationMs);
     });
@@ -580,6 +705,9 @@
   }
 
   function clear() {
+    dropWaitingShow();
+    shownToken = "";
+    hidesAfterSpeech = [];
     document_.body.style.visibility = "hidden";
   }
 
@@ -656,8 +784,10 @@
       selector,
       window.setTimeout(function () {
         hideTimers.delete(selector);
-        nodes.forEach(function (node) {
-          node.classList.add(HIDDEN_CLASS);
+        hideAfterSpeech(function () {
+          nodes.forEach(function (node) {
+            node.classList.add(HIDDEN_CLASS);
+          });
         });
       }, milliseconds),
     );
@@ -666,16 +796,39 @@
   /* The page plays the sound, so it reaches the stream through the browser
      source's own audio rather than the local output device. */
   function sound(name) {
+    playSound(name, null);
+  }
+
+  function playSound(name, then) {
+    var finish = once(then);
     if (!name || name === playedThisDelivery) {
+      finish();
       return;
     }
     var audio = new Audio(new URL(name, document_.baseURI).href);
+    audio.addEventListener("ended", finish);
+    audio.addEventListener("error", finish);
+    if (then) {
+      window.setTimeout(finish, SOUND_LEAD_CAP_MS);
+    }
     var started = audio.play();
     if (started && started.catch) {
       started.catch(function (error) {
         warn("could not play " + name + " (" + error.message + ")");
+        finish();
       });
     }
+  }
+
+  function once(callback) {
+    var called = false;
+    return function () {
+      if (called || !callback) {
+        return;
+      }
+      called = true;
+      callback();
+    };
   }
 
   window.forge = Object.freeze({

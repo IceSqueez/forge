@@ -2,12 +2,15 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use forge_overlay::silent_reveal_content;
 use forge_registry::CancelSignal;
 use forge_storage::OverlayId;
 use tokio::sync::oneshot;
+use tokio::task::{JoinError, JoinHandle};
+use tokio::time::Instant;
 
-use crate::overlay_service::{OverlayDelivery, OverlayFrameSink};
-use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher};
+use crate::overlay_service::{OverlayDelivery, OverlayFrameSink, content_json};
+use crate::speak_dispatcher::{ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal};
 
 /// A memory guard on shows waiting behind the one on screen, not a pacing limit: a backlog below
 /// it is always shown in full, however late.
@@ -15,6 +18,9 @@ pub const SHOW_QUEUE_CAPACITY: usize = 64;
 
 /// No show holds its overlay longer than this, whatever duration it asked for.
 pub const SHOW_CEILING: Duration = Duration::from_secs(120);
+
+/// The page runtime's own wait before a silent reveal must stay longer than this.
+pub const SHOW_SPEECH_START_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShowEnd {
@@ -41,6 +47,12 @@ pub(crate) struct Show {
 }
 
 pub(crate) struct QueueFull;
+
+enum SpeechOpening {
+    Started,
+    Ended(Result<Result<(), SpeakDispatchError>, JoinError>),
+    TooLate,
+}
 
 struct Pending {
     show: Show,
@@ -127,43 +139,63 @@ impl ShowSequencer {
         }
     }
 
-    /// Speech is enqueued only with its show on screen; the show stays up until both its window
-    /// and its speech have ended, never past [`SHOW_CEILING`].
+    /// The page reveals a show when its speech begins, so the window runs from that start; speech
+    /// not begun within [`SHOW_SPEECH_START_WAIT`] is withdrawn and the show is shown silently.
     async fn hold(&self, id: &OverlayId, show: Show) {
         let window = show.window.min(SHOW_CEILING);
         let (Some(speaker), Some(speech)) = (self.speaker.clone(), show.speech) else {
             tokio::time::sleep(window).await;
             return;
         };
+        let ceiling = Instant::now() + SHOW_CEILING;
+        let token = speech.show.clone();
         let cancel = CancelSignal::new();
+        let started = SpeechStartSignal::new();
         let mut spoken = tokio::spawn({
             let cancel = cancel.clone();
-            async move { speaker.speak_for_show(speech, cancel).await }
+            let started = started.clone();
+            async move { speaker.speak_for_show(speech, cancel, started).await }
         });
-        let held = async {
-            tokio::time::sleep(window).await;
-            (&mut spoken).await
+        let opening = tokio::select! {
+            biased;
+            () = started.started() => SpeechOpening::Started,
+            outcome = &mut spoken => SpeechOpening::Ended(outcome),
+            () = tokio::time::sleep(SHOW_SPEECH_START_WAIT) => SpeechOpening::TooLate,
         };
-        match tokio::time::timeout(SHOW_CEILING, held).await {
-            Ok(Ok(Ok(()))) => {}
-            Ok(Ok(Err(e))) => tracing::info!(
-                overlay = %id,
-                reason = %e,
-                "show speech did not play in full; the show kept its display window"
-            ),
-            Ok(Err(e)) => {
-                tracing::warn!(overlay = %id, error = %e, "show speech task ended abnormally")
+        match opening {
+            SpeechOpening::Started => {
+                hold_with_speech(id, window, ceiling, cancel, spoken).await;
             }
-            Err(_) => {
+            SpeechOpening::Ended(outcome) => {
+                if let Some(reason) = unspoken_reason(outcome) {
+                    tracing::info!(
+                        overlay = %id,
+                        reason = %reason,
+                        "show speech never played; the show was shown without it"
+                    );
+                }
+                self.show_silently(id, &token, window, ceiling).await;
+            }
+            SpeechOpening::TooLate => {
                 cancel.cancel();
                 let _ = spoken.await;
                 tracing::info!(
                     overlay = %id,
-                    ceiling_secs = SHOW_CEILING.as_secs(),
-                    "show speech ran past the show ceiling and was ended with the show"
+                    wait_secs = SHOW_SPEECH_START_WAIT.as_secs(),
+                    "show speech did not begin in time, so it was withdrawn and the show was shown without it"
                 );
+                self.show_silently(id, &token, window, ceiling).await;
             }
         }
+    }
+
+    async fn show_silently(&self, id: &OverlayId, show: &str, window: Duration, ceiling: Instant) {
+        if let Some(frames) = &self.frames {
+            frames
+                .deliver_content(id, content_json(&silent_reveal_content(show)), None)
+                .await;
+        }
+        tokio::time::sleep_until((Instant::now() + window).min(ceiling)).await;
     }
 
     async fn present(&self, id: &OverlayId, show: &Show) -> OverlayDelivery {
@@ -184,5 +216,46 @@ impl ShowSequencer {
             lanes.remove(id);
         }
         next
+    }
+}
+
+async fn hold_with_speech(
+    id: &OverlayId,
+    window: Duration,
+    ceiling: Instant,
+    cancel: CancelSignal,
+    mut spoken: JoinHandle<Result<(), SpeakDispatchError>>,
+) {
+    let held = async {
+        tokio::time::sleep(window).await;
+        (&mut spoken).await
+    };
+    match tokio::time::timeout_at(ceiling, held).await {
+        Ok(Ok(Ok(()))) => {}
+        Ok(Ok(Err(e))) => tracing::info!(
+            overlay = %id,
+            reason = %e,
+            "show speech did not play in full; the show kept its display window"
+        ),
+        Ok(Err(e)) => {
+            tracing::warn!(overlay = %id, error = %e, "show speech task ended abnormally")
+        }
+        Err(_) => {
+            cancel.cancel();
+            let _ = spoken.await;
+            tracing::info!(
+                overlay = %id,
+                ceiling_secs = SHOW_CEILING.as_secs(),
+                "show speech ran past the show ceiling and was ended with the show"
+            );
+        }
+    }
+}
+
+fn unspoken_reason(outcome: Result<Result<(), SpeakDispatchError>, JoinError>) -> Option<String> {
+    match outcome {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(e.to_string()),
+        Err(e) => Some(e.to_string()),
     }
 }

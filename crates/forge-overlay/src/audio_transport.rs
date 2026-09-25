@@ -6,6 +6,7 @@ use crate::descriptor::OverlayConfig;
 const STOP: &str = "stop";
 const PAUSE: &str = "pause";
 const RESUME: &str = "resume";
+const REVEAL: &str = "reveal";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioCommand {
@@ -67,6 +68,17 @@ pub fn announcement_content(announcement: &AudioAnnouncement<'_>) -> OverlayConf
 pub fn joined_to_show(mut content: OverlayConfig, show: &str) -> OverlayConfig {
     content.insert(config::SHOW.to_owned(), Variant::String(show.to_owned()));
     content
+}
+
+/// Ends the page's wait for the speech of `show`, which is then shown at once without it.
+pub fn silent_reveal_content(show: &str) -> OverlayConfig {
+    OverlayConfig::from([
+        (
+            config::COMMAND.to_owned(),
+            Variant::String(REVEAL.to_owned()),
+        ),
+        (config::SHOW.to_owned(), Variant::String(show.to_owned())),
+    ])
 }
 
 /// A `None` clip reaches every clip the page still holds.

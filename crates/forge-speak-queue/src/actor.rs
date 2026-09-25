@@ -1356,7 +1356,6 @@ fn handle_command(
                 let mut replay = last.clone();
                 replay.request_id = RequestId::new();
                 replay.priority = Priority::High;
-                replay.target = None;
                 admit_request(
                     replay,
                     config,

@@ -53,7 +53,9 @@ pub use overlay_service::{
     MaterializePass, OverlayConnectListener, OverlayDelivery, OverlayDispatch, OverlayFrameSink,
     OverlayReceivers, OverlayServiceCell, OverlayServiceError, OverlayServiceHandle, TestFire,
 };
-pub use overlay_shows::{SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowEnd, ShowTicket};
+pub use overlay_shows::{
+    SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowEnd, ShowTicket,
+};
 pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
     QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,
@@ -61,7 +63,9 @@ pub use queue_scheduler::{
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
-pub use speak_dispatcher::{ShowSpeech, SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
+pub use speak_dispatcher::{
+    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal, VoiceDescriptor,
+};
 pub use sub_action_runners::{
     CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
     overlay_send_targets, register_core_sub_actions,

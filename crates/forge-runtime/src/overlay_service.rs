@@ -30,7 +30,7 @@ use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 use crate::overlay_shows::{
     QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowEnd, ShowSequencer, ShowTicket,
 };
-use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher};
+use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechStartSignal};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -464,7 +464,10 @@ impl OverlayServiceHandle {
         };
         tokio::spawn(async move {
             let overlay = speech.overlay.clone();
-            if let Err(e) = speaker.speak_for_show(speech, CancelSignal::new()).await {
+            if let Err(e) = speaker
+                .speak_for_show(speech, CancelSignal::new(), SpeechStartSignal::new())
+                .await
+            {
                 tracing::info!(overlay = %overlay, reason = %e, "overlay speech did not play in full");
             }
         });
@@ -673,7 +676,7 @@ impl OverlayConnectListener for OverlayServiceHandle {
     }
 }
 
-fn content_json(content: &OverlayConfig) -> serde_json::Value {
+pub(crate) fn content_json(content: &OverlayConfig) -> serde_json::Value {
     serde_json::Value::Object(
         content
             .iter()

@@ -4,7 +4,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_audio::{PlaybackCorrelation, RemoteDestinationId};
 use forge_registry::CancelSignal;
-use forge_runtime::{ShowSpeech, SpeakDispatchError, SpeakDispatcher, VoiceDescriptor};
+use forge_runtime::{
+    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal, VoiceDescriptor,
+};
 use forge_script::SpeakRequester;
 use forge_speak_queue::{
     PlaybackTarget, Priority, RequestId, SpeakCommand, SpeakEvent, SpeakQueueHandle, SpeakRequest,
@@ -70,6 +72,15 @@ async fn wait_for_terminal(
     request_id: &RequestId,
     cancel: CancelSignal,
 ) -> Result<(), SpeakDispatchError> {
+    wait_marking_start(events, request_id, cancel, None).await
+}
+
+async fn wait_marking_start(
+    events: &mut broadcast::Receiver<SpeakEvent>,
+    request_id: &RequestId,
+    cancel: CancelSignal,
+    started: Option<&SpeechStartSignal>,
+) -> Result<(), SpeakDispatchError> {
     let mut events_lost = false;
     let wait = async {
         loop {
@@ -83,6 +94,13 @@ async fn wait_for_terminal(
                 }
                 event = events.recv() => {
                     match event {
+                        Ok(SpeakEvent::Started { request_id: rid, voice_id, .. })
+                            if &rid == request_id && !voice_id.0.is_empty() =>
+                        {
+                            if let Some(started) = started {
+                                started.mark_started();
+                            }
+                        }
                         Ok(SpeakEvent::Finished { request_id: rid }) if &rid == request_id => {
                             return Ok(());
                         }
@@ -238,6 +256,7 @@ impl SpeakDispatcher for SpeakBridge {
         &self,
         speech: ShowSpeech,
         cancel: CancelSignal,
+        started: SpeechStartSignal,
     ) -> Result<(), SpeakDispatchError> {
         let target = PlaybackTarget {
             destination: RemoteDestinationId::new(speech.overlay),
@@ -255,7 +274,8 @@ impl SpeakDispatcher for SpeakBridge {
             )
             .await
             .map_err(SpeakDispatchError::Dispatch)?;
-        let outcome = wait_for_terminal(&mut events, &request_id, cancel.clone()).await;
+        let outcome =
+            wait_marking_start(&mut events, &request_id, cancel.clone(), Some(&started)).await;
         if cancel.is_cancelled() {
             self.dispatch(SpeakCommand::Cancel(request_id)).await?;
         }

@@ -25,6 +25,7 @@ pub use assets::{
 };
 pub use audio_transport::{
     AudioAnnouncement, AudioCommand, announcement_content, command_content, joined_to_show,
+    silent_reveal_content,
 };
 pub use base::{DEFAULT_DISPLAY_SECS, SpeechProgram, display_window, take_speech};
 pub use browser_preview::{

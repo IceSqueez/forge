@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use forge_registry::CancelSignal;
+use tokio::sync::watch;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpeakDispatchError {
@@ -26,6 +29,31 @@ pub struct ShowSpeech {
     pub voice_alias: Option<String>,
     pub overlay: String,
     pub show: String,
+}
+
+/// Latches: once marked it stays started, and every clone sees it.
+#[derive(Debug, Clone)]
+pub struct SpeechStartSignal(Arc<watch::Sender<bool>>);
+
+impl SpeechStartSignal {
+    pub fn new() -> Self {
+        Self(Arc::new(watch::Sender::new(false)))
+    }
+
+    pub fn mark_started(&self) {
+        self.0.send_replace(true);
+    }
+
+    pub(crate) async fn started(&self) {
+        let mut seen = self.0.subscribe();
+        let _ = seen.wait_for(|started| *started).await;
+    }
+}
+
+impl Default for SpeechStartSignal {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Lives here to avoid a dependency cycle; every method except `speak` defaults to a no-op/empty.
@@ -99,12 +127,14 @@ pub trait SpeakDispatcher: Send + Sync {
     }
 
     /// Resolves on the request's one terminal outcome; a cancel ends the speech wherever it is.
+    /// `started` is marked when the speech begins to play, which a speech that never plays skips.
     async fn speak_for_show(
         &self,
         speech: ShowSpeech,
         cancel: CancelSignal,
+        started: SpeechStartSignal,
     ) -> Result<(), SpeakDispatchError> {
-        let _ = (speech, cancel);
+        let _ = (speech, cancel, started);
         Err(SpeakDispatchError::Dispatch(
             SHOW_SPEECH_UNAVAILABLE.to_owned(),
         ))

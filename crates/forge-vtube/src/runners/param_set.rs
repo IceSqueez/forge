@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::Instant;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
@@ -9,17 +9,45 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
+use tokio::task::JoinHandle;
 
-use crate::runners::numeric::{accepts_number, required_number};
+use crate::runners::numeric::{accepts_number, optional_number, required_number};
 use crate::sink::VTubeSink;
+
+const PARAM_HOLD_RESEND_INTERVAL: Duration = Duration::from_millis(400);
+const PARAM_HOLD_MAX_SECS: f64 = 600.0;
 
 pub struct ParamSetRunner {
     sink: Arc<dyn VTubeSink>,
+    holds: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
 }
 
 impl ParamSetRunner {
     pub fn new(sink: Arc<dyn VTubeSink>) -> Self {
-        Self { sink }
+        Self {
+            sink,
+            holds: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn start_hold(&self, param_id: String, value: f64, hold_secs: f64) {
+        let mut holds = self.holds.lock().unwrap_or_else(|e| e.into_inner());
+        holds.retain(|_, handle| !handle.is_finished());
+        if let Some(previous) = holds.remove(&param_id) {
+            previous.abort();
+        }
+        let sink = Arc::clone(&self.sink);
+        let resend_id = param_id.clone();
+        let ticks = (hold_secs / PARAM_HOLD_RESEND_INTERVAL.as_secs_f64()).ceil() as u32;
+        let handle = tokio::spawn(async move {
+            for _ in 0..ticks {
+                tokio::time::sleep(PARAM_HOLD_RESEND_INTERVAL).await;
+                if sink.set_param(&resend_id, value).await.is_err() {
+                    break;
+                }
+            }
+        });
+        holds.insert(param_id, handle);
     }
 }
 
@@ -38,11 +66,11 @@ impl SubActionRunner for ParamSetRunner {
     }
 
     fn summary(&self) -> &str {
-        "Injects a value into a VTube Studio parameter."
+        "Injects a value into a VTube Studio parameter, optionally held for a duration."
     }
 
     fn search_text(&self) -> &str {
-        "vtube parameter inject set value face tracking vts"
+        "vtube parameter inject set value hold face tracking vts"
     }
 
     fn icon_name(&self) -> &str {
@@ -53,6 +81,7 @@ impl SubActionRunner for ParamSetRunner {
         BTreeMap::from([
             ("param_id".to_owned(), Variant::String(String::new())),
             ("value".to_owned(), Variant::Float(0.0)),
+            ("hold_secs".to_owned(), Variant::Float(0.0)),
         ])
     }
 
@@ -68,6 +97,11 @@ impl SubActionRunner for ParamSetRunner {
                 label: "Value",
                 placeholder: "0.0",
             },
+            FormField::Text {
+                key: "hold_secs",
+                label: "Hold (seconds, 0 = one-shot)",
+                placeholder: "0",
+            },
         ]
     }
 
@@ -80,13 +114,22 @@ impl SubActionRunner for ParamSetRunner {
                 ));
             }
         }
-        if accepts_number(config.get("value")) {
-            Ok(())
-        } else {
-            Err(RegistryError::InvalidConfig(
+        if !accepts_number(config.get("value")) {
+            return Err(RegistryError::InvalidConfig(
                 "vtube.param.set: 'value' must be a number".to_owned(),
-            ))
+            ));
         }
+        let hold_is_blank =
+            matches!(config.get("hold_secs"), Some(Variant::String(s)) if s.trim().is_empty());
+        if config.get("hold_secs").is_some()
+            && !hold_is_blank
+            && !accepts_number(config.get("hold_secs"))
+        {
+            return Err(RegistryError::InvalidConfig(
+                "vtube.param.set: 'hold_secs' must be a number".to_owned(),
+            ));
+        }
+        Ok(())
     }
 
     async fn execute(
@@ -101,9 +144,17 @@ impl SubActionRunner for ParamSetRunner {
         let param_id = ctx.arg_stack.interpolate(raw_id);
 
         let outcome = match required_number(config, "value", ctx) {
-            Ok(value) => {
-                SubActionOutcome::from_result(&self.sink.set_param(&param_id, value).await)
-            }
+            Ok(value) => match optional_number(config, "hold_secs", ctx) {
+                Ok(hold_secs) => {
+                    let result = self.sink.set_param(&param_id, value).await;
+                    let hold_secs = hold_secs.unwrap_or(0.0).clamp(0.0, PARAM_HOLD_MAX_SECS);
+                    if result.is_ok() && hold_secs > 0.0 {
+                        self.start_hold(param_id.clone(), value, hold_secs);
+                    }
+                    SubActionOutcome::from_result(&result)
+                }
+                Err(reason) => SubActionOutcome::Failed(format!("vtube.param.set: {reason}")),
+            },
             Err(reason) => SubActionOutcome::Failed(format!("vtube.param.set: {reason}")),
         };
 

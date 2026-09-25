@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use forge_components::tr;
-use forge_storage::OverlayId;
+use forge_storage::{OverlayId, SettingsRepo, StorageError};
 use gpui::Context;
 
 use super::OverlaysView;
@@ -20,7 +20,11 @@ impl OverlaysView {
         );
     }
 
-    fn apply_receiver(&mut self, destination: Option<OverlayId>, cx: &mut Context<Self>) {
+    pub(super) fn apply_receiver(
+        &mut self,
+        destination: Option<OverlayId>,
+        cx: &mut Context<Self>,
+    ) {
         self.receiver = destination;
         if let Some(panel) = self.panel_view() {
             let on = {
@@ -67,5 +71,24 @@ impl OverlaysView {
             },
             cx,
         );
+    }
+}
+
+/// Clears the stored receiver when it is `id`, before the overlay goes away: overlay ids are
+/// minted from the name, so a stale id would hand the audio to a re-created namesake.
+pub(super) async fn release_receiver(
+    settings: &dyn SettingsRepo,
+    id: &OverlayId,
+) -> Result<bool, StorageError> {
+    if load_audio_routes(settings).await.destination.as_ref() != Some(id) {
+        return Ok(false);
+    }
+    set_destination(settings, None).await?;
+    Ok(true)
+}
+
+pub(super) async fn restore_receiver(settings: &dyn SettingsRepo, id: &OverlayId) {
+    if let Err(error) = set_destination(settings, Some(id)).await {
+        tracing::warn!(overlay = %id, %error, "audio receiver not restored after a failed delete");
     }
 }

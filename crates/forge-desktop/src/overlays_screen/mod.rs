@@ -871,17 +871,32 @@ impl OverlaysView {
             self.clear_test();
         }
         let service = self.service.clone();
-        let router =
-            (self.receiver.as_ref() == Some(&prompt.id)).then(|| Arc::clone(&self.audio_router));
+        let settings = Arc::clone(&self.settings_repo);
+        let router = Arc::clone(&self.audio_router);
         let id = prompt.id;
+        let deleted = id.clone();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let removed = service.delete(&id).await.map_err(|e| e.to_string())?;
+                let was_receiver = receiver::release_receiver(settings.as_ref(), &id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let removed = match service.delete(&id).await {
+                    Ok(removed) => removed,
+                    Err(error) => {
+                        if was_receiver {
+                            receiver::restore_receiver(settings.as_ref(), &id).await;
+                        }
+                        return Err(error.to_string());
+                    }
+                };
                 if !removed {
+                    if was_receiver {
+                        receiver::restore_receiver(settings.as_ref(), &id).await;
+                    }
                     return Ok((false, None));
                 }
-                if let Some(router) = router {
+                if was_receiver {
                     router.apply().await;
                 }
                 if let Err(error) = service.release_media(&id).await {
@@ -894,8 +909,11 @@ impl OverlaysView {
                     .map(|e| e.to_string());
                 Ok((true, swept))
             },
-            |this, result: Result<(bool, Option<String>), String>, cx| match result {
+            move |this, result: Result<(bool, Option<String>), String>, cx| match result {
                 Ok((true, swept)) => {
+                    if this.receiver.as_ref() == Some(&deleted) {
+                        this.apply_receiver(None, cx);
+                    }
                     cx.push_toast(ToastKind::Success, tr!("overlays_toast_deleted"));
                     if let Some(message) = swept {
                         this.report(&message, cx);

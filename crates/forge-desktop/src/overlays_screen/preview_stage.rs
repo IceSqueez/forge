@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, ForgePalette, GlyphArt, Icon, body_family, empty_state, ghost_button_with_icon,
-    icon, mono_family, section_label, segment, segmented, tr,
+    icon, mono_family, section_label, segment, segmented, tooltip_builder, tr,
 };
 use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_overlay::{
@@ -422,12 +422,17 @@ impl OverlaysView {
             .children(wire_button)
             .children(open_button)
             .child(
-                ghost_button_with_icon(Icon::PlayerPlay, tr!("overlays_test_send"), palette)
-                    .ink(palette.brand)
-                    .disabled(self.is_sending() || !test_fire_ok)
-                    .on_click(
-                        "overlays-send-test",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.send_test(cx)),
+                div()
+                    .id("overlays-send-test-hint")
+                    .flex_none()
+                    .tooltip(tooltip_builder(tr!("overlays_test_send_hint"), palette))
+                    .child(
+                        ghost_button_with_icon(Icon::Eye, tr!("overlays_test_send"), palette)
+                            .disabled(self.is_sending() || !test_fire_ok)
+                            .on_click(
+                                "overlays-send-test",
+                                cx.listener(|this, _: &ClickEvent, _, cx| this.send_test(cx)),
+                            ),
                     ),
             )
             .into_any_element()

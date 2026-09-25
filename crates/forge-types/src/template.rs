@@ -13,17 +13,17 @@ pub fn variable_references(template: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-pub(crate) enum TemplatePiece<'a> {
+pub enum TemplatePiece<'a> {
     Literal(&'a str),
     Reference { name: &'a str, raw: &'a str },
 }
 
-pub(crate) struct TemplatePieces<'a> {
+pub struct TemplatePieces<'a> {
     rest: &'a str,
 }
 
 impl<'a> TemplatePieces<'a> {
-    pub(crate) fn new(template: &'a str) -> Self {
+    pub fn new(template: &'a str) -> Self {
         Self { rest: template }
     }
 }

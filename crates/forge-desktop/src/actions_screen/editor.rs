@@ -412,38 +412,12 @@ fn build_recent_group(
 }
 
 pub(crate) fn parse_variable_segments(s: &str) -> Vec<(&str, bool)> {
-    let bytes = s.as_bytes();
-    let mut segs: Vec<(&str, bool)> = Vec::new();
-    let mut plain_start = 0;
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            let var_start = i + 1;
-            let mut j = var_start;
-            if j < bytes.len() && (bytes[j].is_ascii_alphabetic() || bytes[j] == b'_') {
-                j += 1;
-                while j < bytes.len()
-                    && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'.')
-                {
-                    j += 1;
-                }
-                if j < bytes.len() && bytes[j] == b'%' && j > var_start {
-                    if plain_start < i {
-                        segs.push((&s[plain_start..i], false));
-                    }
-                    segs.push((&s[i..j + 1], true));
-                    i = j + 1;
-                    plain_start = i;
-                    continue;
-                }
-            }
-        }
-        i += 1;
-    }
-    if plain_start < s.len() {
-        segs.push((&s[plain_start..], false));
-    }
-    segs
+    forge_types::TemplatePieces::new(s)
+        .map(|piece| match piece {
+            forge_types::TemplatePiece::Literal(text) => (text, false),
+            forge_types::TemplatePiece::Reference { raw, .. } => (raw, true),
+        })
+        .collect()
 }
 
 fn variable_text(s: &str, palette: &ForgePalette) -> AnyElement {

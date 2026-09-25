@@ -42,7 +42,7 @@ pub use script::{ScriptContract, ScriptInput};
 pub use shared::Shared;
 pub use sub_action::{LogLevel, OutputDevice};
 pub use sub_action_step::{SubActionConfig, SubActionStep};
-pub use template::{is_variable_reference, variable_references};
+pub use template::{TemplatePiece, TemplatePieces, is_variable_reference, variable_references};
 pub use token::{OAuthToken, RefreshToken};
 pub use trigger_config::TriggerConfig;
 pub use trigger_instance::TriggerInstance;

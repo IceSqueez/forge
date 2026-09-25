@@ -1,0 +1,64 @@
+{
+  "source": "kick",
+  "kind": "kick.chat.message.sent",
+  "raw": {
+    "id": "3f2b8c1e-5d4a-4f6b-9c7e-1a2b3c4d5e6f",
+    "chatroom_id": 12345,
+    "content": "gg kick chat",
+    "type": "message",
+    "created_at": "2026-09-25T12:00:00+00:00",
+    "sender": {
+      "id": 99,
+      "username": "Kick_Viewer",
+      "slug": "kick-viewer",
+      "identity": {
+        "color": "#E9113C",
+        "badges": [
+          {
+            "type": "subscriber",
+            "text": "Subscriber",
+            "count": 3
+          }
+        ]
+      }
+    },
+    "metadata": {
+      "message_ref": "1727265600000"
+    }
+  },
+  "payload": {
+    "_chat": {
+      "author": "kick-viewer",
+      "author_color": "#E9113C",
+      "badges": [
+        {
+          "kind": "subscriber",
+          "months": 3
+        }
+      ],
+      "event_detail": null,
+      "is_event": false,
+      "moderation": {
+        "banned": false,
+        "deleted": false,
+        "timed_out": false
+      },
+      "platform_msg_id": "3f2b8c1e-5d4a-4f6b-9c7e-1a2b3c4d5e6f",
+      "segments": [
+        {
+          "text": "gg kick chat",
+          "type": "text"
+        }
+      ]
+    },
+    "content": "gg kick chat",
+    "message_id": "3f2b8c1e-5d4a-4f6b-9c7e-1a2b3c4d5e6f",
+    "reply_to_message_id": null,
+    "sender": {
+      "color": "#E9113C",
+      "display_name": "kick-viewer",
+      "id": 99,
+      "username": "Kick_Viewer"
+    }
+  }
+}

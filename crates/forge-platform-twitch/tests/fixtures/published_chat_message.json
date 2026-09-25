@@ -1,0 +1,126 @@
+{
+  "source": "twitch",
+  "kind": "twitch.channel.chat.message",
+  "raw": {
+    "broadcaster_user_id": "1971641",
+    "broadcaster_user_login": "streamer",
+    "broadcaster_user_name": "streamer",
+    "chatter_user_id": "4145994",
+    "chatter_user_login": "viewer32",
+    "chatter_user_name": "Viewer32",
+    "message_id": "cc106a89-1814-919d-454c-f4f2f970aae7",
+    "message": {
+      "text": "Hi chat @streamer Kappa",
+      "fragments": [
+        {
+          "type": "text",
+          "text": "Hi chat ",
+          "cheermote": null,
+          "emote": null,
+          "mention": null
+        },
+        {
+          "type": "mention",
+          "text": "@streamer",
+          "cheermote": null,
+          "emote": null,
+          "mention": {
+            "user_id": "1971641",
+            "user_name": "streamer",
+            "user_login": "streamer"
+          }
+        },
+        {
+          "type": "text",
+          "text": " ",
+          "cheermote": null,
+          "emote": null,
+          "mention": null
+        },
+        {
+          "type": "emote",
+          "text": "Kappa",
+          "cheermote": null,
+          "emote": {
+            "id": "25",
+            "emote_set_id": "0",
+            "owner_id": "0",
+            "format": [
+              "static"
+            ]
+          },
+          "mention": null
+        }
+      ]
+    },
+    "color": "#00FF7F",
+    "badges": [
+      {
+        "set_id": "moderator",
+        "id": "1",
+        "info": ""
+      }
+    ],
+    "message_type": "text",
+    "cheer": null,
+    "reply": null,
+    "channel_points_custom_reward_id": null,
+    "source_broadcaster_user_id": null,
+    "source_broadcaster_user_login": null,
+    "source_broadcaster_user_name": null,
+    "source_message_id": null,
+    "source_badges": null
+  },
+  "payload": {
+    "_chat": {
+      "author": "Viewer32",
+      "author_color": "#00FF7F",
+      "badges": [
+        {
+          "kind": "moderator"
+        }
+      ],
+      "event_detail": null,
+      "is_event": false,
+      "moderation": {
+        "banned": false,
+        "deleted": false,
+        "timed_out": false
+      },
+      "platform_msg_id": "cc106a89-1814-919d-454c-f4f2f970aae7",
+      "segments": [
+        {
+          "text": "Hi chat ",
+          "type": "text"
+        },
+        {
+          "type": "mention",
+          "username": "streamer"
+        },
+        {
+          "text": " ",
+          "type": "text"
+        },
+        {
+          "id": "25",
+          "name": "Kappa",
+          "type": "emote"
+        }
+      ]
+    },
+    "badges": [
+      "moderator"
+    ],
+    "channel": "streamer",
+    "color": "#00FF7F",
+    "message": "Hi chat @streamer Kappa",
+    "user": {
+      "display_name": "Viewer32",
+      "id": "4145994",
+      "login": "viewer32",
+      "roles": [
+        "moderator"
+      ]
+    }
+  }
+}

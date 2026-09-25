@@ -2262,4 +2262,39 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn a_text_message_publishes_exactly_the_shared_fixture_payload() {
+        // Why: the desktop event-feed tests consume this fixture as the real published chat event.
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            make_quota(),
+        );
+
+        let ev = poller
+            .build_event(&fixture["raw"], &mut DedupSet::bounded(DEDUP_WINDOW_SIZE))
+            .unwrap();
+
+        let actual = json!({ "source": ev.source, "kind": ev.kind, "payload": ev.payload });
+        let expected = json!({
+            "source": fixture["source"],
+            "kind": fixture["kind"],
+            "payload": fixture["payload"],
+        });
+        assert_eq!(
+            actual,
+            expected,
+            "published chat event drifted from the fixture; actual:\n{}",
+            serde_json::to_string_pretty(&actual).unwrap()
+        );
+    }
 }

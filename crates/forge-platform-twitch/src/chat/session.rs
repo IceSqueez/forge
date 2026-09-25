@@ -8541,4 +8541,33 @@ mod tests {
         );
         assert!(base.no_dial_pending());
     }
+
+    #[tokio::test]
+    async fn a_chat_message_publishes_exactly_the_shared_fixture_payload() {
+        // Why: the desktop event-feed tests consume this fixture as the real published chat event.
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        let bus = Arc::new(PlatformEventChannel::new());
+        let session = make_session(&bus);
+        let sub = bus.subscribe();
+
+        session.publish_chat_message(&fixture["raw"]);
+        let ev = published(sub).await;
+
+        let actual =
+            serde_json::json!({ "source": ev.source, "kind": ev.kind, "payload": ev.payload });
+        let expected = serde_json::json!({
+            "source": fixture["source"],
+            "kind": fixture["kind"],
+            "payload": fixture["payload"],
+        });
+        assert_eq!(
+            actual,
+            expected,
+            "published chat event drifted from the fixture; actual:\n{}",
+            serde_json::to_string_pretty(&actual).unwrap()
+        );
+    }
 }

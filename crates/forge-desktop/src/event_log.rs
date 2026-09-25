@@ -214,3 +214,67 @@ impl EventLog {
         out
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    const TWITCH_CHAT: &str =
+        include_str!("../../forge-platform-twitch/tests/fixtures/published_chat_message.json");
+    const YOUTUBE_CHAT: &str =
+        include_str!("../../forge-platform-youtube/tests/fixtures/published_chat_message.json");
+    const KICK_CHAT: &str =
+        include_str!("../../forge-platform-kick/tests/fixtures/published_chat_message.json");
+
+    fn published_event(fixture: &str) -> Event {
+        let fixture: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        Event::new(
+            serde_json::from_value(fixture["source"].clone()).unwrap(),
+            fixture["kind"].as_str().unwrap(),
+            fixture["payload"].clone(),
+        )
+    }
+
+    #[test]
+    fn chat_summary_shows_author_and_text_of_each_platforms_published_message() {
+        for (fixture, expected) in [
+            (TWITCH_CHAT, "Viewer32: Hi chat @streamer Kappa"),
+            (YOUTUBE_CHAT, "Глядач Ютубу: привіт з ютубу"),
+            (KICK_CHAT, "kick-viewer: gg kick chat"),
+        ] {
+            let event = published_event(fixture);
+            assert_eq!(EventLog::summarize(&event), expected, "kind={}", event.kind);
+        }
+    }
+
+    #[test]
+    fn chat_summary_is_empty_when_the_chat_envelope_is_missing_or_unreadable() {
+        for envelope in [None, Some(serde_json::json!("not an envelope"))] {
+            let mut event = published_event(TWITCH_CHAT);
+            let payload = event.payload.as_object_mut().unwrap();
+            payload.remove(ChatPayload::KEY);
+            if let Some(envelope) = &envelope {
+                payload.insert(ChatPayload::KEY.to_owned(), envelope.clone());
+            }
+            assert_eq!(EventLog::summarize(&event), "", "envelope={envelope:?}");
+        }
+    }
+
+    #[test]
+    fn acting_user_is_the_chat_author_on_the_platform_that_published_the_message() {
+        for (fixture, author, platform) in [
+            (TWITCH_CHAT, "Viewer32", "twitch"),
+            (YOUTUBE_CHAT, "Глядач Ютубу", "youtube"),
+            (KICK_CHAT, "kick-viewer", "kick"),
+        ] {
+            let event = published_event(fixture);
+            assert_eq!(
+                EventLog::acting_user(&event),
+                (author.to_owned(), platform.to_owned()),
+                "kind={}",
+                event.kind
+            );
+        }
+    }
+}

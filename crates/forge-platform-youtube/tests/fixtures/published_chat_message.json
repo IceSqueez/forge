@@ -1,0 +1,62 @@
+{
+  "source": "you_tube",
+  "kind": "youtube.chat.message",
+  "raw": {
+    "kind": "youtube#liveChatMessage",
+    "etag": "etag-1",
+    "id": "LCC.EhwKGkNKNzV",
+    "snippet": {
+      "type": "textMessageEvent",
+      "liveChatId": "KicKGFVDdGVzdA",
+      "authorChannelId": "UCviewer",
+      "publishedAt": "2026-09-25T12:00:00.000Z",
+      "hasDisplayContent": true,
+      "displayMessage": "привіт з ютубу",
+      "textMessageDetails": {
+        "messageText": "привіт з ютубу"
+      }
+    },
+    "authorDetails": {
+      "channelId": "UCviewer",
+      "channelUrl": "http://www.youtube.com/channel/UCviewer",
+      "displayName": "Глядач Ютубу",
+      "profileImageUrl": "https://yt3.ggpht.com/avatar",
+      "isVerified": false,
+      "isChatOwner": false,
+      "isChatSponsor": true,
+      "isChatModerator": false
+    }
+  },
+  "payload": {
+    "_chat": {
+      "author": "Глядач Ютубу",
+      "author_color": null,
+      "badges": [
+        {
+          "kind": "member",
+          "level": "member"
+        }
+      ],
+      "event_detail": null,
+      "is_event": false,
+      "moderation": {
+        "banned": false,
+        "deleted": false,
+        "timed_out": false
+      },
+      "platform_msg_id": "LCC.EhwKGkNKNzV",
+      "segments": [
+        {
+          "text": "привіт з ютубу",
+          "type": "text"
+        }
+      ]
+    },
+    "author": {
+      "channel_id": "UCviewer",
+      "display_name": "Глядач Ютубу"
+    },
+    "broadcaster_channel_id": "UCtest",
+    "message_text": "привіт з ютубу"
+  }
+}

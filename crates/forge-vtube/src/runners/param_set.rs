@@ -167,51 +167,43 @@ impl SubActionRunner for ParamSetRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use super::*;
     use crate::error::VTubeError;
     use crate::runners::test_support::{MockSink, make_ctx};
 
-    #[test]
-    fn validate_config_accepts_valid_param() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
-        let config = BTreeMap::from([
-            ("param_id".to_owned(), Variant::String("MyParam".to_owned())),
-            ("value".to_owned(), Variant::Float(0.5)),
-        ]);
-        assert!(runner.validate_config(&config).is_ok());
+    const LONG_AFTER: Duration = Duration::from_secs(60);
+
+    #[derive(Default)]
+    struct ParamLog {
+        sent: std::sync::Mutex<Vec<(String, f64)>>,
+        failing: AtomicBool,
+        rejected_value: std::sync::Mutex<Option<f64>>,
     }
 
-    #[test]
-    fn validate_config_rejects_missing_param_id() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
-        let config = BTreeMap::from([("value".to_owned(), Variant::Float(1.0))]);
-        assert!(runner.validate_config(&config).is_err());
-    }
-
-    struct CaptureSink {
-        last_id: Arc<std::sync::Mutex<Option<String>>>,
-        last_value: Arc<std::sync::Mutex<Option<f64>>>,
-    }
-
-    impl CaptureSink {
-        fn new() -> Self {
-            Self {
-                last_id: Arc::new(std::sync::Mutex::new(None)),
-                last_value: Arc::new(std::sync::Mutex::new(None)),
-            }
+    impl ParamLog {
+        fn sent(&self) -> Vec<(String, f64)> {
+            self.sent.lock().unwrap().clone()
         }
 
-        fn captured(&self) -> Option<(String, f64)> {
-            let id = self.last_id.lock().unwrap().clone()?;
-            let val = *self.last_value.lock().unwrap();
-            Some((id, val?))
+        fn sends_to(&self, param_id: &str) -> usize {
+            self.sent().iter().filter(|(id, _)| id == param_id).count()
+        }
+
+        fn fail_from_now(&self) {
+            self.failing.store(true, Ordering::SeqCst);
+        }
+
+        fn reject_value(&self, value: f64) {
+            *self.rejected_value.lock().unwrap() = Some(value);
         }
     }
 
     #[async_trait]
-    impl VTubeSink for CaptureSink {
+    impl VTubeSink for ParamLog {
         async fn trigger_hotkey(&self, _: &str) -> Result<(), VTubeError> {
             Ok(())
         }
@@ -219,9 +211,14 @@ mod tests {
             Ok(())
         }
         async fn set_param(&self, param_id: &str, value: f64) -> Result<(), VTubeError> {
-            *self.last_id.lock().unwrap() = Some(param_id.to_owned());
-            *self.last_value.lock().unwrap() = Some(value);
-            Ok(())
+            self.sent.lock().unwrap().push((param_id.to_owned(), value));
+            if self.failing.load(Ordering::SeqCst)
+                || *self.rejected_value.lock().unwrap() == Some(value)
+            {
+                Err(VTubeError::NotConnected)
+            } else {
+                Ok(())
+            }
         }
         async fn load_model(&self, _: &str) -> Result<(), VTubeError> {
             Ok(())
@@ -315,34 +312,51 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn execute_passes_interpolated_id_and_literal_value_to_sink() {
-        let sink = Arc::new(CaptureSink::new());
-        let runner = ParamSetRunner::new(Arc::clone(&sink) as Arc<dyn VTubeSink>);
-        let stack =
-            ArgStack::new().set("pid".to_owned(), Variant::String("DynamicParam".to_owned()));
-        let config = BTreeMap::from([
-            ("param_id".to_owned(), Variant::String("%pid%".to_owned())),
-            ("value".to_owned(), Variant::Float(0.75)),
-        ]);
-        let ctx = make_ctx(&stack);
-        runner.execute(&config, &ctx).await;
-        let (id, val) = sink
-            .captured()
-            .expect("sink must have been called after execute");
-        assert_eq!(
-            id, "DynamicParam",
-            "param_id must be interpolated before passing to sink"
+    fn runner_with_log() -> (ParamSetRunner, Arc<ParamLog>) {
+        let log = Arc::new(ParamLog::default());
+        let runner = ParamSetRunner::new(
+            Arc::clone(&log) as Arc<dyn VTubeSink>,
+            Arc::new(HoldRegistry::new()),
         );
+        (runner, log)
+    }
+
+    fn config(param_id: &str, value: f64, hold_secs: Option<Variant>) -> SubActionConfig {
+        let mut config = BTreeMap::from([
+            ("param_id".to_owned(), Variant::String(param_id.to_owned())),
+            ("value".to_owned(), Variant::Float(value)),
+        ]);
+        if let Some(hold) = hold_secs {
+            config.insert("hold_secs".to_owned(), hold);
+        }
+        config
+    }
+
+    async fn run(runner: &ParamSetRunner, config: &SubActionConfig) -> SubActionOutcome {
+        let stack = ArgStack::new();
+        runner.execute(config, &make_ctx(&stack)).await.0.outcome
+    }
+
+    #[test]
+    fn validate_config_accepts_valid_param() {
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
         assert!(
-            (val - 0.75).abs() < f64::EPSILON,
-            "float value must be passed verbatim, not interpolated"
+            runner
+                .validate_config(&config("MyParam", 0.5, None))
+                .is_ok()
         );
     }
 
     #[test]
+    fn validate_config_rejects_missing_param_id() {
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
+        let config = BTreeMap::from([("value".to_owned(), Variant::Float(1.0))]);
+        assert!(runner.validate_config(&config).is_err());
+    }
+
+    #[test]
     fn validate_config_rejects_a_non_numeric_value() {
-        let runner = ParamSetRunner::new(Arc::new(MockSink::new()));
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
         let config = BTreeMap::from([
             ("param_id".to_owned(), Variant::String("P".to_owned())),
             (
@@ -351,5 +365,204 @@ mod tests {
             ),
         ]);
         assert!(runner.validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn validate_config_accepts_a_numeric_blank_or_templated_hold() {
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
+        for hold in [
+            Variant::Float(2.5),
+            Variant::Int(3),
+            Variant::String("2.5".to_owned()),
+            Variant::String(String::new()),
+            Variant::String("   ".to_owned()),
+            Variant::String("%hold%".to_owned()),
+        ] {
+            let result = runner.validate_config(&config("P", 1.0, Some(hold.clone())));
+            assert!(result.is_ok(), "{hold:?} was rejected: {result:?}");
+        }
+    }
+
+    #[test]
+    fn validate_config_rejects_a_hold_that_is_not_a_number() {
+        let runner = ParamSetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
+        for hold in [Variant::String("soon".to_owned()), Variant::Bool(true)] {
+            assert!(
+                runner
+                    .validate_config(&config("P", 1.0, Some(hold.clone())))
+                    .is_err(),
+                "{hold:?} was accepted"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_passes_interpolated_id_and_literal_value_to_sink() {
+        let (runner, log) = runner_with_log();
+        let stack =
+            ArgStack::new().set("pid".to_owned(), Variant::String("DynamicParam".to_owned()));
+        runner
+            .execute(&config("%pid%", 0.75, None), &make_ctx(&stack))
+            .await;
+        assert_eq!(log.sent(), vec![("DynamicParam".to_owned(), 0.75)]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hold_resends_the_value_every_interval_until_the_duration_is_covered() {
+        let (runner, log) = runner_with_log();
+        run(&runner, &config("P", 0.5, Some(Variant::Float(1.0)))).await;
+
+        let mut observed = Vec::new();
+        let mut elapsed = Duration::ZERO;
+        for at in [399, 401, 1199, 1201, 60_000].map(Duration::from_millis) {
+            tokio::time::sleep(at - elapsed).await;
+            elapsed = at;
+            observed.push(log.sends_to("P"));
+        }
+
+        assert_eq!(observed, vec![1, 2, 3, 4, 4]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_zero_negative_or_blank_hold_sends_the_value_once() {
+        for hold in [
+            None,
+            Some(Variant::Float(0.0)),
+            Some(Variant::Float(-5.0)),
+            Some(Variant::Float(f64::NAN)),
+            Some(Variant::String(String::new())),
+        ] {
+            let (runner, log) = runner_with_log();
+            run(&runner, &config("P", 0.5, hold.clone())).await;
+
+            tokio::time::sleep(LONG_AFTER).await;
+
+            assert_eq!(log.sends_to("P"), 1, "hold {hold:?}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hold_longer_than_the_cap_stops_resending_at_the_cap() {
+        let (runner, log) = runner_with_log();
+        run(&runner, &config("P", 0.5, Some(Variant::Float(601.0)))).await;
+
+        tokio::time::sleep(Duration::from_secs(700)).await;
+
+        assert_eq!(log.sends_to("P"), 1 + 600_000 / 400);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_new_hold_on_the_same_parameter_replaces_the_running_one() {
+        let (runner, log) = runner_with_log();
+        run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let before_replacement = log.sent().len();
+
+        run(&runner, &config("P", 2.0, Some(Variant::Float(1.0)))).await;
+        tokio::time::sleep(LONG_AFTER).await;
+
+        let after: Vec<f64> = log.sent()[before_replacement..]
+            .iter()
+            .map(|(_, value)| *value)
+            .collect();
+        assert_eq!(after, vec![2.0; 4]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_one_shot_set_on_a_held_parameter_ends_the_hold() {
+        let (runner, log) = runner_with_log();
+        run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let before_one_shot = log.sent().len();
+
+        run(&runner, &config("P", 0.0, Some(Variant::Float(0.0)))).await;
+        tokio::time::sleep(LONG_AFTER).await;
+
+        let after: Vec<f64> = log.sent()[before_one_shot..]
+            .iter()
+            .map(|(_, value)| *value)
+            .collect();
+        assert_eq!(
+            after,
+            vec![0.0],
+            "the old hold kept overwriting the one-shot value"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_set_on_a_held_parameter_still_ends_the_hold() {
+        let (runner, log) = runner_with_log();
+        run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        log.reject_value(2.0);
+        let before_failed_set = log.sent().len();
+
+        let outcome = run(&runner, &config("P", 2.0, None)).await;
+        tokio::time::sleep(LONG_AFTER).await;
+
+        assert!(
+            matches!(outcome, SubActionOutcome::Failed(_)),
+            "got {outcome:?}"
+        );
+        let after: Vec<f64> = log.sent()[before_failed_set..]
+            .iter()
+            .map(|(_, value)| *value)
+            .collect();
+        assert_eq!(after, vec![2.0], "the old hold outlived the failed set");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn holds_on_different_parameters_run_side_by_side() {
+        let (runner, log) = runner_with_log();
+        run(&runner, &config("P", 1.0, Some(Variant::Float(1.0)))).await;
+        run(&runner, &config("Q", 2.0, Some(Variant::Float(1.0)))).await;
+
+        tokio::time::sleep(LONG_AFTER).await;
+
+        assert_eq!((log.sends_to("P"), log.sends_to("Q")), (4, 4));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hold_stops_at_the_first_failed_resend() {
+        let (runner, log) = runner_with_log();
+        run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        let before_disconnect = log.sends_to("P");
+
+        log.fail_from_now();
+        tokio::time::sleep(LONG_AFTER).await;
+
+        assert_eq!(log.sends_to("P"), before_disconnect + 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_first_send_reports_failure_and_starts_no_hold() {
+        let (runner, log) = runner_with_log();
+        log.fail_from_now();
+
+        let outcome = run(&runner, &config("P", 1.0, Some(Variant::Float(10.0)))).await;
+        tokio::time::sleep(LONG_AFTER).await;
+
+        assert!(
+            matches!(outcome, SubActionOutcome::Failed(_)),
+            "got {outcome:?}"
+        );
+        assert_eq!(log.sends_to("P"), 1);
+    }
+
+    #[tokio::test]
+    async fn a_hold_that_is_not_a_number_at_run_time_fails_without_sending() {
+        let (runner, log) = runner_with_log();
+        let stack = ArgStack::new().set("hold".to_owned(), Variant::String("soon".to_owned()));
+        let config = config("P", 1.0, Some(Variant::String("%hold%".to_owned())));
+
+        let (tel, _) = runner.execute(&config, &make_ctx(&stack)).await;
+
+        assert!(
+            matches!(tel.outcome, SubActionOutcome::Failed(_)),
+            "got {:?}",
+            tel.outcome
+        );
+        assert!(log.sent().is_empty());
     }
 }

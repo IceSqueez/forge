@@ -400,12 +400,16 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::client::tests::{FakeVts, MockPublisher, PeerConn, stored_token_creds, wait_paused};
+    use crate::client::tests::{
+        FakeVts, MockPublisher, PeerConn, freeze_clock, stored_token_creds, wait_paused,
+    };
     use crate::request::REQUEST_TIMEOUT;
 
     const SETTLE: Duration = Duration::from_secs(5);
     const REJECTION_ERROR_ID: i64 = 452;
     const ITEM_ERROR_ID: i64 = 751;
+    const NO_MODEL_ERROR_ID: i64 = 50;
+    const EXPRESSION_ERROR_ID: i64 = 400;
 
     async fn connected_client(vts: &mut FakeVts) -> (VTubeClient, PeerConn) {
         let client = vts.connect(&MockPublisher::new(), &stored_token_creds());
@@ -485,5 +489,189 @@ mod tests {
                 );
             }
         }
+    }
+
+    struct ExpressionScript {
+        state: Result<serde_json::Value, i64>,
+        reject_deactivation_of: &'static [&'static str],
+    }
+
+    /// Plays VTube Studio for one reset: every expression-state query gets `script.state`,
+    /// every other request succeeds. Returns the reset outcome and each activation request
+    /// as `(file, active)` in the order forge sent them.
+    async fn reset_against(
+        client: &VTubeClient,
+        conn: &mut PeerConn,
+        script: ExpressionScript,
+    ) -> (Result<(), VTubeError>, Vec<(String, serde_json::Value)>) {
+        let _frozen = freeze_clock();
+        let reset = client.reset_params();
+        tokio::pin!(reset);
+        let mut activations = Vec::new();
+        let outcome = loop {
+            tokio::select! {
+                outcome = &mut reset => break outcome,
+                Some(frame) = conn.next_frame() => match frame["messageType"].as_str() {
+                    Some("ExpressionStateRequest") => match &script.state {
+                        Ok(expressions) => conn
+                            .tx
+                            .reply(&frame, json!({ "expressions": expressions })),
+                        Err(error_id) => conn.tx.api_error(&frame, *error_id, "No model loaded"),
+                    },
+                    Some("ExpressionActivationRequest") => {
+                        let file = frame["data"]["expressionFile"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_owned();
+                        if script.reject_deactivation_of.contains(&file.as_str()) {
+                            conn.tx
+                                .api_error(&frame, EXPRESSION_ERROR_ID, "Expression not found");
+                        } else {
+                            conn.tx.reply(&frame, json!({}));
+                        }
+                        activations.push((file, frame["data"]["active"].clone()));
+                    }
+                    _ => conn.tx.reply(&frame, json!({})),
+                },
+            }
+        };
+        (outcome, activations)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn resetting_deactivates_exactly_the_expressions_vts_reports_active() {
+        let cases: [(&str, serde_json::Value, &[&str]); 5] = [
+            (
+                "none active",
+                json!([{ "file": "smile.exp3.json", "active": false }]),
+                &[],
+            ),
+            ("no expression list", serde_json::Value::Null, &[]),
+            (
+                "one active",
+                json!([
+                    { "file": "smile.exp3.json", "active": false },
+                    { "file": "blush.exp3.json", "active": true },
+                ]),
+                &["blush.exp3.json"],
+            ),
+            (
+                "several active",
+                json!([
+                    { "file": "smile.exp3.json", "active": true },
+                    { "file": "blush.exp3.json", "active": false },
+                    { "file": "tears.exp3.json", "active": true },
+                    { "file": "angry.exp3.json", "active": true },
+                ]),
+                &["smile.exp3.json", "tears.exp3.json", "angry.exp3.json"],
+            ),
+            (
+                "entries without a file or an active flag",
+                json!([
+                    { "active": true },
+                    { "file": "smile.exp3.json" },
+                    { "file": "tears.exp3.json", "active": true },
+                ]),
+                &["tears.exp3.json"],
+            ),
+        ];
+
+        for (case, expressions, expected) in cases {
+            let mut vts = FakeVts::bind().await;
+            let (client, mut conn) = connected_client(&mut vts).await;
+
+            let (outcome, activations) = reset_against(
+                &client,
+                &mut conn,
+                ExpressionScript {
+                    state: Ok(expressions),
+                    reject_deactivation_of: &[],
+                },
+            )
+            .await;
+
+            assert!(outcome.is_ok(), "{case}: reset failed with {outcome:?}");
+            let expected: Vec<_> = expected
+                .iter()
+                .map(|file| ((*file).to_owned(), json!(false)))
+                .collect();
+            assert_eq!(activations, expected, "{case}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_rejected_state_query_fails_the_reset() {
+        let mut vts = FakeVts::bind().await;
+        let (client, mut conn) = connected_client(&mut vts).await;
+
+        let (outcome, _) = reset_against(
+            &client,
+            &mut conn,
+            ExpressionScript {
+                state: Err(NO_MODEL_ERROR_ID),
+                reject_deactivation_of: &[],
+            },
+        )
+        .await;
+
+        assert!(
+            matches!(
+                outcome,
+                Err(VTubeError::Rejected { error_id, .. }) if error_id == NO_MODEL_ERROR_ID
+            ),
+            "got {outcome:?}"
+        );
+    }
+
+    async fn reset_rejecting(
+        rejected: &'static [&'static str],
+    ) -> (Result<(), VTubeError>, Vec<(String, serde_json::Value)>) {
+        let mut vts = FakeVts::bind().await;
+        let (client, mut conn) = connected_client(&mut vts).await;
+        reset_against(
+            &client,
+            &mut conn,
+            ExpressionScript {
+                state: Ok(json!([
+                    { "file": "smile.exp3.json", "active": true },
+                    { "file": "tears.exp3.json", "active": true },
+                    { "file": "angry.exp3.json", "active": true },
+                    { "file": "blush.exp3.json", "active": true },
+                ])),
+                reject_deactivation_of: rejected,
+            },
+        )
+        .await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_rejected_deactivation_does_not_stop_the_remaining_ones() {
+        let (_, activations) = reset_rejecting(&["smile.exp3.json"]).await;
+
+        let files: Vec<&str> = activations.iter().map(|(file, _)| file.as_str()).collect();
+        assert_eq!(
+            files,
+            [
+                "smile.exp3.json",
+                "tears.exp3.json",
+                "angry.exp3.json",
+                "blush.exp3.json"
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_reset_with_rejected_deactivations_fails_naming_only_those_expressions() {
+        let (outcome, _) = reset_rejecting(&["tears.exp3.json", "blush.exp3.json"]).await;
+
+        let Err(VTubeError::Rejected { error_id, message }) = outcome else {
+            panic!("got {outcome:?}");
+        };
+        assert_eq!(error_id, EXPRESSION_ERROR_ID);
+        let named: Vec<&str> = ["smile", "tears", "angry", "blush"]
+            .into_iter()
+            .filter(|name| message.contains(&format!("{name}.exp3.json")))
+            .collect();
+        assert_eq!(named, ["tears", "blush"], "message: {message}");
     }
 }

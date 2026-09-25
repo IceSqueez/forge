@@ -270,6 +270,13 @@ impl RecordingSink {
         self.calls.lock().is_ok_and(|calls| !calls.is_empty())
     }
 
+    pub(crate) fn methods_called(&self) -> Vec<&'static str> {
+        self.calls
+            .lock()
+            .map(|calls| calls.iter().map(|(name, _)| *name).collect())
+            .unwrap_or_default()
+    }
+
     fn record(&self, method: &'static str, args: Vec<Option<f64>>) {
         if let Ok(mut calls) = self.calls.lock() {
             calls.push((method, args));

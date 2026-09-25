@@ -1090,7 +1090,8 @@ mod tests {
         use super::super::HANDSHAKE_REPLY_TIMEOUT;
         use crate::client::VTubeClient;
         use crate::client::tests::{
-            FakeVts, MockCreds, MockPublisher, PeerConn, stored_token_creds, wait_paused,
+            FakeVts, MockCreds, MockPublisher, PeerConn, freeze_clock, stored_token_creds,
+            wait_paused,
         };
         use crate::sink::VTubeSink;
 
@@ -1184,10 +1185,12 @@ mod tests {
         async fn a_peer_silent_after_the_upgrade_fails_the_handshake_at_the_reply_deadline() {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
+            let frozen = freeze_clock();
             let _client = vts.connect(&publisher, &stored_token_creds());
             let mut conn = vts.next_conn(SETTLE).await.unwrap();
             conn.expect("AuthenticationRequest", SETTLE).await;
             let asked_at = tokio::time::Instant::now();
+            drop(frozen);
 
             assert!(
                 wait_paused(LONG_WAIT, || publisher
@@ -1196,7 +1199,7 @@ mod tests {
                 "a login nobody answers must end as auth_failed"
             );
             assert!(
-                asked_at.elapsed() >= HANDSHAKE_REPLY_TIMEOUT - Duration::from_millis(50),
+                asked_at.elapsed() >= HANDSHAKE_REPLY_TIMEOUT,
                 "auth_failed arrived after {:?}, before the handshake deadline",
                 asked_at.elapsed()
             );

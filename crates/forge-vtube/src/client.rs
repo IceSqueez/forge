@@ -499,6 +499,23 @@ pub(crate) mod tests {
         cond()
     }
 
+    const CLOCK_FREEZE_REAL_LIMIT: Duration = Duration::from_secs(30);
+
+    /// While alive, the paused clock cannot auto-advance: tokio holds time still as long as a
+    /// blocking task runs. Frames crossing the loopback socket then arrive at the paused instant
+    /// they were sent, even when a loaded kernel delivers them late in real time.
+    pub(crate) struct ClockFreeze {
+        _release: std::sync::mpsc::Sender<()>,
+    }
+
+    pub(crate) fn freeze_clock() -> ClockFreeze {
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        drop(tokio::task::spawn_blocking(move || {
+            let _ = released.recv_timeout(CLOCK_FREEZE_REAL_LIMIT);
+        }));
+        ClockFreeze { _release: release }
+    }
+
     pub(crate) fn stored_token_creds() -> Arc<MockCreds> {
         let creds = MockCreds::new();
         creds.insert(
@@ -583,6 +600,13 @@ pub(crate) mod tests {
                 }
             }
             panic!("no {message_type} from forge within {budget:?}");
+        }
+
+        pub(crate) async fn next_frame(&mut self) -> Option<serde_json::Value> {
+            match self.backlog.pop_front() {
+                Some(frame) => Some(frame),
+                None => self.frames.recv().await,
+            }
         }
 
         pub(crate) async fn accept_login(&mut self) {

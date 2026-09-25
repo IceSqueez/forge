@@ -373,4 +373,38 @@ mod tests {
             }
         }
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn reset_to_idle_cancels_a_running_parameter_hold() {
+        let sink = Arc::new(RecordingSink::default());
+        let mut reg = SubActionRegistry::new();
+        register_vtube_sub_actions(&mut reg, Arc::clone(&sink) as Arc<dyn VTubeSink>).unwrap();
+        let stack = ArgStack::new();
+        let hold: SubActionConfig = [
+            ("param_id", Variant::String("P".to_owned())),
+            ("value", Variant::Float(1.0)),
+            ("hold_secs", Variant::Float(10.0)),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect();
+
+        reg.get("vtube.param.set")
+            .unwrap()
+            .execute(&hold, &make_ctx(&stack))
+            .await;
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        reg.get("vtube.params.reset")
+            .unwrap()
+            .execute(&SubActionConfig::new(), &make_ctx(&stack))
+            .await;
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+
+        let calls = sink.methods_called();
+        assert_eq!(
+            calls,
+            [vec!["set_param"; 3], vec!["reset_params"]].concat(),
+            "the hold kept injecting after the reset"
+        );
+    }
 }

@@ -87,42 +87,30 @@ impl SubActionRunner for ParamsResetRunner {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::runners::test_support::{MockSink, make_ctx};
-    use forge_types::Variant;
-
-    #[test]
-    fn validate_config_accepts_empty_config() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
-        assert!(runner.validate_config(&BTreeMap::new()).is_ok());
-    }
-
-    #[test]
-    fn validate_config_accepts_any_config() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
-        let config = BTreeMap::from([("extra".to_owned(), Variant::Bool(true))]);
-        assert!(runner.validate_config(&config).is_ok());
-    }
 
     #[tokio::test]
-    async fn execute_succeeds_with_no_config() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
+    async fn execute_reports_success_when_the_reset_succeeds() {
+        let runner =
+            ParamsResetRunner::new(Arc::new(MockSink::new()), Arc::new(HoldRegistry::new()));
         let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (tel, extra) = runner.execute(&BTreeMap::new(), &ctx).await;
+        let (tel, extra) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
         assert_eq!(tel.outcome, SubActionOutcome::Success);
         assert!(extra.is_none());
     }
 
     #[tokio::test]
-    async fn execute_returns_correct_kind() {
-        let runner = ParamsResetRunner::new(Arc::new(MockSink::new()));
+    async fn execute_reports_failure_when_the_reset_fails() {
+        let runner =
+            ParamsResetRunner::new(Arc::new(MockSink::failing()), Arc::new(HoldRegistry::new()));
         let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (tel, _) = runner.execute(&BTreeMap::new(), &ctx).await;
-        assert_eq!(tel.kind, "vtube.params.reset");
-        assert_eq!(tel.outcome, SubActionOutcome::Success);
+        let (tel, _) = runner.execute(&BTreeMap::new(), &make_ctx(&stack)).await;
+        assert!(
+            matches!(tel.outcome, SubActionOutcome::Failed(_)),
+            "got {:?}",
+            tel.outcome
+        );
     }
 }

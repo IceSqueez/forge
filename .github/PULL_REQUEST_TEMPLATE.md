@@ -30,7 +30,7 @@ Closes #
 - [ ] No `TODO` / `FIXME` / `XXX` comments added
 - [ ] Public items have `///` rustdoc only where contract is non-obvious
 - [ ] No new dependencies added (or justified in summary above)
-- [ ] If this changes UI: verified by running `cargo run -p forge-app` and clicking through affected screens
+- [ ] If this changes UI: verified by running `cargo run -p forge-desktop` and clicking through affected screens
 
 ## Screenshots / demo (if UI change)
 

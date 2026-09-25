@@ -858,7 +858,7 @@ impl SoundboardView {
             (Some(holder), Some(combo)) => self
                 .keys
                 .reconciler()
-                .map(|reconciler| (holder, combo, Arc::clone(reconciler))),
+                .map(|reconciler| (holder.label(), holder, combo, Arc::clone(reconciler))),
             _ => None,
         };
         let reconciler = self.keys.reconciler().cloned();
@@ -873,15 +873,10 @@ impl SoundboardView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                if let Some((holder, combo, reconciler)) = release {
-                    release_holder(holder, combo, reconciler, backend)
-                        .await
-                        .map_err(ClipSaveFailure::Release)?;
-                }
                 let (clip, target_id) = match edit_id {
                     Some(id) => {
                         let Some(mut clip) = library.get(id).await? else {
-                            return Err(SoundboardError::ClipNotFound(id.to_string()).into());
+                            return Err(SoundboardError::ClipNotFound(id.to_string()));
                         };
                         clip.name = name;
                         if clip.file_path != file_path {
@@ -912,23 +907,46 @@ impl SoundboardView {
                     }
                 };
                 library.save_clip(&clip).await?;
+                let shared = match release {
+                    Some((label, holder, combo, reconciler)) => {
+                        release_holder(holder, combo.clone(), reconciler, backend)
+                            .await
+                            .err()
+                            .map(|_| SharedCombo {
+                                combo: canonical_combo(&combo),
+                                holder: label,
+                            })
+                    }
+                    None => None,
+                };
                 let _ = player.ensure_clip_duration(target_id).await;
-                Ok(unregistered_combo(hotkey.as_deref(), reconciler.as_deref()))
+                Ok::<_, SoundboardError>(ClipSaved {
+                    unregistered: unregistered_combo(hotkey.as_deref(), reconciler.as_deref()),
+                    shared,
+                })
             },
             move |this, result, cx| match result {
-                Ok(unregistered) => this.on_saved(&saved_name, unregistered, cx),
-                Err(ClipSaveFailure::Clip(error)) => {
-                    this.on_save_error(failure_message(&error), cx)
-                }
-                Err(ClipSaveFailure::Release(message)) => this.on_save_error(message, cx),
+                Ok(saved) => this.on_saved(&saved_name, saved, cx),
+                Err(error) => this.on_save_error(failure_message(&error), cx),
             },
             cx,
         );
         cx.notify();
     }
 
-    fn on_saved(&mut self, name: &str, unregistered: Option<String>, cx: &mut Context<Self>) {
-        if let Some(combo) = unregistered {
+    fn on_saved(&mut self, name: &str, saved: ClipSaved, cx: &mut Context<Self>) {
+        if let Some(shared) = saved.shared {
+            cx.push_toast(
+                ToastKind::Warn,
+                tr!(
+                    "soundboard_toast_key_still_shared",
+                    name = name,
+                    combo = shared.combo.as_str(),
+                    holder = shared.holder.as_str()
+                ),
+            );
+        }
+        if let Some(combo) = saved.unregistered {
             cx.push_toast(
                 ToastKind::Warn,
                 tr!(
@@ -2007,15 +2025,14 @@ impl Render for SoundboardView {
     }
 }
 
-enum ClipSaveFailure {
-    Release(String),
-    Clip(SoundboardError),
+struct ClipSaved {
+    unregistered: Option<String>,
+    shared: Option<SharedCombo>,
 }
 
-impl From<SoundboardError> for ClipSaveFailure {
-    fn from(error: SoundboardError) -> Self {
-        ClipSaveFailure::Clip(error)
-    }
+struct SharedCombo {
+    combo: String,
+    holder: String,
 }
 
 /// Read after the save's own reconcile has run, so a combo the OS refused shows up missing here; `None` without a hotkey engine.

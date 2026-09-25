@@ -566,10 +566,12 @@ impl Render for ClipEditor {
             .font_family(body_family())
             .text_size(LABEL_FS)
             .text_color(palette.text_faint)
-            .child(if saveable {
-                tr!("soundboard_modal_ready")
-            } else {
+            .child(if !saveable {
                 tr!("soundboard_modal_fill_required")
+            } else if self.edit_id.is_some() {
+                tr!("soundboard_modal_ready_edit")
+            } else {
+                tr!("soundboard_modal_ready")
             });
         let cancel = secondary_button(tr!("soundboard_modal_cancel_btn"), &palette).on_click(
             "sb-modal-cancel",

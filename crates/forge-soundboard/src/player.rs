@@ -2005,4 +2005,161 @@ mod tests {
             "editing another setting undid the sub-action volume: {volume}"
         );
     }
+    struct GatedToggle {
+        player: Arc<SoundboardPlayer>,
+        clip_id: ClipId,
+        entered: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+        opened: Arc<std::sync::atomic::AtomicUsize>,
+        _source: tempfile::NamedTempFile,
+    }
+
+    impl GatedToggle {
+        fn new() -> Self {
+            let clip_id = ClipId::new();
+            let source = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+            let entered = Arc::new(tokio::sync::Notify::new());
+            let release = Arc::new(tokio::sync::Notify::new());
+            let opened = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let factory = GatedFactory {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                opened: Arc::clone(&opened),
+            };
+            let (player, _events) = player_over(
+                Arc::new(factory),
+                make_stored_clip(clip_id, source.path().to_path_buf()),
+            );
+            Self {
+                player: Arc::new(player),
+                clip_id,
+                entered,
+                release,
+                opened,
+                _source: source,
+            }
+        }
+
+        async fn start_held_at_the_device(
+            &self,
+        ) -> tokio::task::JoinHandle<Result<ClipToggle, SoundboardError>> {
+            let starting = tokio::spawn({
+                let player = Arc::clone(&self.player);
+                let clip_id = self.clip_id;
+                async move { player.toggle(clip_id, None).await }
+            });
+            tokio::time::timeout(EVENT_DEADLINE, self.entered.notified())
+                .await
+                .unwrap();
+            starting
+        }
+
+        async fn finish(
+            &self,
+            starting: tokio::task::JoinHandle<Result<ClipToggle, SoundboardError>>,
+        ) -> ClipToggle {
+            self.release.notify_one();
+            tokio::time::timeout(EVENT_DEADLINE, starting)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_toggle_of_an_idle_clip_starts_it() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let (factory, played, _) = CountingFactory::new();
+        let (player, _events) = player_over(
+            Arc::new(factory),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+
+        let toggled = player.toggle(clip_id, None).await.unwrap();
+
+        assert_eq!((toggled, *played.lock().unwrap()), (ClipToggle::Started, 1));
+    }
+
+    #[tokio::test]
+    async fn a_second_toggle_while_the_clip_is_starting_stops_it_before_it_reaches_the_device() {
+        let rig = GatedToggle::new();
+        let starting = rig.start_held_at_the_device().await;
+
+        let second = rig.player.toggle(rig.clip_id, None).await.unwrap();
+        let first = rig.finish(starting).await;
+
+        assert_eq!(
+            (first, second, rig.opened.load(Ordering::SeqCst)),
+            (ClipToggle::Started, ClipToggle::Stopped, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_toggle_after_the_clip_finished_starts_it_again() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let (factory, played, _) = CountingFactory::new();
+        let (player, events) = player_over(
+            Arc::new(factory),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+        player.toggle(clip_id, None).await.unwrap();
+        wait_for_event(&events, |event| {
+            matches!(event, AudioEvent::PlaybackFinished { .. })
+        })
+        .await;
+
+        let again = player.toggle(clip_id, None).await.unwrap();
+
+        assert_eq!((again, *played.lock().unwrap()), (ClipToggle::Started, 2));
+    }
+
+    #[tokio::test]
+    async fn a_toggle_with_the_soundboard_disabled_leaves_an_idle_clip_silent() {
+        let clip_id = ClipId::new();
+        let tmp = make_wav_tempfile(22_050, 1, SHORT_CLIP_FRAMES);
+        let (factory, played, _) = CountingFactory::new();
+        let (player, _events) = player_over(
+            Arc::new(factory),
+            make_stored_clip(clip_id, tmp.path().to_path_buf()),
+        );
+        player.update_settings(|settings| settings.enabled = false);
+
+        let toggled = player.toggle(clip_id, None).await.unwrap();
+
+        assert_eq!((toggled, *played.lock().unwrap()), (ClipToggle::Ignored, 0));
+    }
+
+    #[tokio::test]
+    async fn a_toggle_with_the_soundboard_disabled_still_stops_a_clip_already_starting() {
+        let rig = GatedToggle::new();
+        let starting = rig.start_held_at_the_device().await;
+        rig.player
+            .update_settings(|settings| settings.enabled = false);
+
+        let second = rig.player.toggle(rig.clip_id, None).await.unwrap();
+        rig.finish(starting).await;
+
+        assert_eq!(
+            (second, rig.opened.load(Ordering::SeqCst)),
+            (ClipToggle::Stopped, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_toggle_of_a_clip_the_library_does_not_hold_reports_it_not_found() {
+        let (player, _events) = player_over(
+            Arc::new(CountingFactory::new().0),
+            make_stored_clip(ClipId::new(), PathBuf::from("/clips/other.wav")),
+        );
+
+        let outcome = player.toggle(ClipId::new(), None).await;
+
+        assert!(
+            matches!(outcome, Err(SoundboardError::ClipNotFound(_))),
+            "got {outcome:?}"
+        );
+    }
 }

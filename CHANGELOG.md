@@ -1,7 +1,183 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.5.4] - 2026-09-25
+### ⚙️ Miscellaneous Tasks
+- *(toolchain)* Pin Rust 1.98.1 and clear the lints it adds
+- *(emulator)* Sync the lockfile with the server's dependencies
+
+### 🐛 Bug Fixes
+- *(soundboard)* Fail an empty output route instead of panicking
+- *(ui)* Spell every ellipsis as three dots
+- *(ui)* Translate the route fallback and count the pages on an overlay
+- *(ui)* Keep a typed case match value when the field loses focus
+- *(ui)* Lay the overlay type tiles out in rows of three
+- *(runtime)* Keep a queue's buffered tasks when its concurrency changes
+- *(ui)* Close modals on Escape, show busy buttons and load errors
+- *(runtime)* Keep a queue's slot when its concurrency changes
+- *(runtime)* Hold a lowered queue limit for the next dispatch too
+- *(runtime)* Run each action as its own task so queues run in parallel
+- *(runtime)* Stop a wait step as soon as its run is cancelled
+- *(ui)* Release a pad claim with no outcome and translate refusals
+- *(actions)* Leave a loop's own break and continue unflagged
+- *(core)* Match trigger kinds only at a segment boundary
+- *(twitch)* Stop sessions on shutdown and share one credentials manager
+- *(ui)* Never drop a chat send request silently when the bus lags
+- *(twitch)* Report a chat message Twitch dropped instead of as sent
+- *(ui)* Report a bus lag once instead of feeding it forever
+- *(tts)* Replace text case-insensitively without slicing mid-character
+- *(tts)* Hold a clip paused mid-synthesis and time out a stuck engine
+- *(audio)* Stop, share and pause overlay clips as the route promises
+- *(overlays)* Keep a retained overlay's stored and sent content in step
+- *(tts)* Keep waiting for a speech when the event stream lags
+- *(obs)* Time out every request and recover from a drop mid-connect
+- *(storage)* Make global, user variable and action flag writes atomic
+- *(runtime)* Bind variables as data in strings, math and conditions
+- *(runtime)* Run a called action in its own random or concurrent mode
+- *(runtime)* Fail out-of-range random, time and decrement inputs
+- *(runtime)* Bind variables as data in a wait-until condition
+- *(server)* Apply token changes live and harden paths, hosts and limits
+- *(server)* Cap connections per host and close silent sockets early
+- *(ui)* Cap the live chat feed and keep viewer summaries incremental
+- *(ui)* End an integration screen's bus tasks when it closes
+- *(ui)* Describe the chat display limit as the live feed cap
+- *(ui)* Follow the health stream of a builtin connected from its screen
+- *(storage)* Keep the server up and flag lost logins on a key mismatch
+- *(platforms)* Ask to sign in again when a stored login cannot be read
+- *(storage)* Leave the self-minted server token out of lost logins
+- *(vtube)* Route VTS errors, fix pairing and read numeric step fields
+- *(soundboard)* Report device failures and honour stops and saved volume
+- *(hotkey)* Drive global hotkeys on the main thread and sync triggers live
+- *(hotkey)* Drop main-thread jobs whose caller already timed out
+- *(hotkey)* Keep a combo registered until the OS releases it
+- *(core)* Keep a literal percent sign in argument templates
+- *(vtube)* Make reset to idle deactivate active expressions
+- *(vtube)* End a parameter hold on any new set or reset to idle
+- *(ui)* Highlight variables in the editor by the runtime's rule
+- *(ui)* Cap the script console at the newest thousand lines
+- *(soundboard)* Cap every volume at the clip's own loudness
+- *(overlays)* Release the audio receiver when its overlay is deleted
+- *(overlays)* Route forge audio to an overlay made the receiver
+- *(overlays)* Label the visual-only test as a look preview
+- *(runtime)* Stop self-triggering action loops and cap foreach
+- *(storage)* Clear the soundboard key bindings the app assigned itself
+- *(soundboard)* Stop assigning keys to new and imported clips
+- *(overlays)* Let a thousand shows wait per overlay before refusing
+- *(soundboard)* Keep a replaced key until the new holder is saved
+- *(ui)* Show chat authors and text in the event feed for every platform
+
+### 📚 Documentation
+- *(components)* Ship the Tabler license with the vendored icons
+- *(readme)* Lead with highlights and screenshots, fold the catalogue
+
+### 🚀 Features
+- *(audio)* Play speech and clips on an audio overlay page
+- *(audio)* Route speech and clips to the audio overlay at boot
+- *(ui)* Choose where speech and clips play from Settings
+- *(server)* Count the pages connected to an overlay without a push
+- *(ui)* Size, name and remember icons in the overlay icon picker
+- *(soundboard)* Announce on the bus when a clip adoption settles
+- *(obs)* Lock and unlock a scene item from an action
+- *(obs)* Give scene and source rows their own actions
+- *(ui)* Show a clip failure anywhere and settle its library badge
+- *(ui)* Run scene and source rows through the quick action path
+- *(obs)* Announce a source added to or removed from a scene
+- *(actions)* Warn that flow control is a no-op in a concurrent action
+- *(runtime)* Report a quick action's outcome so a failure can toast
+- *(ui)* Back up the whole data folder and warn about a lost key
+- *(vtube)* Hold an injected parameter for a chosen duration
+- *(overlays)* Move audio into every overlay and add a blank look
+- *(overlays)* Queue shows per overlay with sound and duration on all
+- *(tts)* Speak a show's text through the overlay that shows it
+- *(overlays)* Reveal a show with its speech and hold it to the end
+- *(overlays)* Edit look, audio, display and receiver in the overlay pane
+- *(overlays)* Switch the audio receiver live and watch show queues
+- *(soundboard)* Toggle a clip in one step from outside the board
+- *(soundboard)* Play a clip from its global key via a shared registry
+- *(soundboard)* Capture a clip's global key in the clip editor
+
+### 🚜 Refactor
+- *(audio)* Decide the boot route composition in a pure function
+- *(storage)* Open a test backend only with an explicit media root
+- *(storage)* Name the chat display limit default once
+
+### 🧪 Testing
+- *(audio)* Cover the wave header and the remote sink's clip lifecycle
+- *(soundboard)* Cover clip routing across local, overlay and both legs
+- *(audio)* Cover route resolution, sink swapping and clip delivery
+- *(audio)* Cover the connected-page count and the translated fallback
+- *(emulator)* Inject any Twitch EventSub notification from a scenario
+- *(tools)* Keep the overlay page probes in the repo
+- *(update)* Cover the health metric that holds an update back
+- *(runtime)* Hold the wait clamp to a virtual clock, not a real minute
+- *(storage)* Keep every test backend inside its own media root
+- *(audio)* Pin the boot route composition to one shared overlay sink
+- *(overlays)* Cover the icon picker's names, sizes and favorites
+- *(emulator)* Cover the four Twitch alert paths and seed a crowd soak
+- *(queues)* Cover the buffer surviving a concurrency change
+- *(queues)* Drop the sleeps and stale names from the scheduler tests
+- *(soundboard)* Cover the bus announcement of a settled adoption
+- *(obs)* Cover locking and unlocking a scene item from an action
+- *(runtime)* Pin queue concurrency changes against running work
+- *(obs)* Pin scene and source row actions to the connected state
+- *(soundboard)* Cover clip failure toasts and settled badges
+- *(ui)* Cover clickable content rows and the OBS row refresh
+- *(soundboard)* Follow the refused verdict that carries no reason
+- *(ui)* Cover pad claim release, in-flight row steps, scene items
+- *(obs)* Cover scene item added and removed events and triggers
+- *(runtime)* Pin per-execution tasks, shutdown cancel, panic isolation
+- *(runtime)* Pin wait steps ending within one poll of a cancel
+- *(runtime)* Pin quick action outcomes and history-first reporting
+- *(ui)* Cover the quick step outcome mapping
+- *(actions)* Cover the concurrent flow-control warning
+- *(core)* Pin segment-boundary trigger kind matching
+- *(twitch)* Pin session shutdown, held frames, revocation, 401 refresh
+- *(ui)* Pin chat send queue capacity, ordering and lag reporting
+- *(twitch)* Pin dropped chat message reporting and the is_sent default
+- *(tts)* Pin case-insensitive replacement across multi-byte lowercase
+- *(tts)* Pin paused-synthesis hold, engine timeout and replay limits
+- *(audio)* Pin stop-on-drop and the pause-aware remote clip watchdog
+- *(server)* Pin multi-page clip fetches, verdicts and pause holds
+- *(audio)* Pin that a stop after a dropped verdict wait still revokes
+- *(overlays)* Pin retained content and sent frames staying in step
+- *(tts)* Pin speak waits surviving a lagged event stream
+- *(obs)* Pin request deadlines, catalog-load drops and overflow resync
+- *(runtime)* Pin argument binding in string and math steps
+- *(runtime)* Pin conditions treating argument text as data
+- *(runtime)* Pin run action honouring random and concurrent targets
+- *(runtime)* Pin out-of-range inputs failing without a panic
+- *(storage)* Pin atomic global, user variable and enabled-flag writes
+- *(runtime)* Pin wait-until ignoring condition text from arguments
+- *(server)* Pin live token policy, path, host and resource guards
+- *(overlays)* Pin live-page revoke on overlay delete
+- *(server)* Follow the per-host permit in the listener fixture
+- *(server)* Pin the per-IP cap and pre-auth window on silent sockets
+- *(ui)* Follow the incremental viewer summaries in the drawer tests
+- *(ui)* Pin the chat feed cap, change-only updates and task teardown
+- *(storage)* Pin key-loss recovery and the decryption error mapping
+- *(vtube)* Pin error replies, request deadlines and session liveness
+- *(soundboard)* Pin device failures, early stops and saved volume
+- *(hotkey)* Pin canonical combos, main-thread jobs and trigger sync
+- *(hotkey)* Pin live trigger sync and rebind ordering
+- *(core)* Pin literal-percent handling in argument templates
+- *(vtube)* Cover reset to idle, parameter holds and the auth deadline
+- *(overlays)* Cover the base audio transport and the blank migration
+- *(soundboard)* Pin the unity volume ceiling and its persistence
+- *(overlays)* Cover the show queue and the base sound and duration
+- *(tts)* Cover show speech targeting, holds and terminal outcomes
+- *(overlays)* Cover the show and speech join on the page and in forge
+- *(overlays)* Cover live receiver switch, show-queue watch and look carry
+- *(runtime)* Cover the causation-depth loop guard and foreach cap
+- *(hotkey)* Cover shared trigger and clip hotkey registration
+- *(soundboard)* Cover the one-step clip toggle
+- *(soundboard)* Cover clip key capture, conflicts and key badges
+- *(ui)* Cover event feed chat summary with real platform payloads
+
 ## [0.5.3] - 2026-09-23
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump taiki-e/install-action from 2.87.11 to 2.87.15 (#74)
+- Release
+
 ### ⚡ Performance
 - *(server)* Let browsers cache content-named overlay media for good
 
@@ -21,6 +197,9 @@ All notable changes to this project will be documented in this file.
 - *(server)* Serve every accepted media format with its own media type
 - *(ui)* Drop a late icon import answer after the user picked another
 - *(ui)* Tell apart a preview tab from a browser source after Send test
+
+### 📚 Documentation
+- *(release)* Release v0.5.3
 
 ### 🚀 Features
 - *(server)* Serve single-use audio clips and take a playback verdict

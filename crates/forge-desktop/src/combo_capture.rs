@@ -66,3 +66,39 @@ pub fn warn_if_typing_key(combo: &str, cx: &mut App) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::Modifiers;
+
+    use super::*;
+
+    fn keystroke(modifiers: Modifiers, key: &str) -> Keystroke {
+        Keystroke {
+            modifiers,
+            key: key.to_owned(),
+            key_char: None,
+        }
+    }
+
+    #[test]
+    fn only_a_bare_escape_cancels_capture() {
+        for (stroke, expected) in [
+            (
+                keystroke(Modifiers::default(), ESCAPE_KEY),
+                CapturedKey::Cancel,
+            ),
+            (
+                keystroke(Modifiers::shift(), ESCAPE_KEY),
+                CapturedKey::Combo("Shift+Escape".to_owned()),
+            ),
+            (
+                keystroke(Modifiers::control(), "f9"),
+                CapturedKey::Combo("Ctrl+F9".to_owned()),
+            ),
+            (keystroke(Modifiers::default(), ""), CapturedKey::Unusable),
+        ] {
+            assert_eq!(captured_key(&stroke), expected, "{stroke:?}");
+        }
+    }
+}

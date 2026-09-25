@@ -2835,4 +2835,50 @@ mod tests {
             assert_eq!(badge(availability.clone()), expected, "{availability:?}");
         }
     }
+
+    struct SilentPublisher;
+
+    impl forge_events::EventPublisher for SilentPublisher {
+        fn publish(&self, _: forge_events::Event) {}
+    }
+
+    #[tokio::test]
+    async fn the_save_warning_names_the_clip_key_only_when_the_os_did_not_take_it() {
+        let backend = crate::test_support::sandboxed_backend("sqlite::memory:", [0x11; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn forge_storage::DataProvider>);
+        let (client, _recorder) = forge_hotkey::testing::test_client(
+            forge_hotkey::HotkeyConfig::default(),
+            Arc::new(SilentPublisher),
+        );
+        let reconciler = HotkeyReconciler::new(
+            Arc::clone(&client),
+            backend.trigger_instance_repo(),
+            backend.soundboard_clips_repo(),
+        );
+        client
+            .register(forge_hotkey::HotkeyCombo::parse("F9").unwrap())
+            .await
+            .unwrap();
+
+        for (case, hotkey, engine, expected) in [
+            ("registered key", Some("F9"), Some(&*reconciler), None),
+            (
+                "hand-typed registered key",
+                Some("f9"),
+                Some(&*reconciler),
+                None,
+            ),
+            (
+                "refused key",
+                Some("f10"),
+                Some(&*reconciler),
+                Some("F10".to_owned()),
+            ),
+            ("no key", None, Some(&*reconciler), None),
+            ("no hotkey engine", Some("F10"), None, None),
+        ] {
+            assert_eq!(unregistered_combo(hotkey, engine), expected, "{case}");
+        }
+    }
 }

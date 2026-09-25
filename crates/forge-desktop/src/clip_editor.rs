@@ -626,3 +626,289 @@ impl Render for ClipEditor {
             .children(self.render_conflict(cx))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_components::{Density, ThemeId};
+    use forge_storage::Language;
+    use forge_types::{ActionId, TriggerInstanceId};
+    use gpui::{Modifiers, TestAppContext};
+
+    use super::*;
+    use crate::combo_conflict::ClipKey;
+    use crate::hotkey_bindings::{BindingHalf, BindingRow};
+    use crate::presentation::Presentation;
+    use crate::toasts::Toasts;
+
+    const ESCAPE: &str = "escape";
+
+    type Saved = (Option<String>, Option<ComboHolder>);
+
+    struct Drafts {
+        saved: Vec<Saved>,
+        _sub: Subscription,
+    }
+
+    struct Rig {
+        editor: Entity<ClipEditor>,
+        drafts: Entity<Drafts>,
+        _runtime: tokio::runtime::Runtime,
+    }
+
+    impl Rig {
+        fn open(
+            cx: &mut TestAppContext,
+            edit_id: Option<ClipId>,
+            hotkey: Option<&str>,
+            holders: Option<ComboHolders>,
+        ) -> Self {
+            crate::i18n::install_language(Language::En);
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+                cx.set_global(Toasts::new());
+            });
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap();
+            let handle = runtime.handle().clone();
+            let launch = ClipEditorLaunch {
+                edit_id,
+                name: "airhorn".to_owned(),
+                category: CATEGORY_ORDER[0].to_owned(),
+                file_path: Some(PathBuf::from("/clips/airhorn.wav")),
+                loop_playback: false,
+                hotkey: hotkey.map(str::to_owned),
+            };
+            let editor = cx.update(|cx| cx.new(|cx| ClipEditor::new(launch, holders, handle, cx)));
+            let drafts = cx.update(|cx| {
+                cx.new(|cx| Drafts {
+                    saved: Vec::new(),
+                    _sub: cx.subscribe(&editor, |this: &mut Drafts, _, event, _| {
+                        if let ClipEditorEvent::Submit(draft) = event {
+                            this.saved
+                                .push((draft.hotkey.clone(), draft.release.clone()));
+                        }
+                    }),
+                })
+            });
+            Self {
+                editor,
+                drafts,
+                _runtime: runtime,
+            }
+        }
+
+        fn act(
+            &self,
+            cx: &mut TestAppContext,
+            f: impl FnOnce(&mut ClipEditor, &mut Context<ClipEditor>),
+        ) {
+            cx.update(|cx| self.editor.update(cx, f));
+        }
+
+        fn press(&self, cx: &mut TestAppContext, modifiers: Modifiers, key: &str) -> bool {
+            let stroke = Keystroke {
+                modifiers,
+                key: key.to_owned(),
+                key_char: None,
+            };
+            cx.update(|cx| {
+                self.editor
+                    .update(cx, |editor, cx| editor.on_capture_keystroke(stroke, cx))
+            })
+        }
+
+        fn capture(&self, cx: &mut TestAppContext, key: &str) {
+            self.act(cx, |editor, cx| editor.start_key_capture(cx));
+            self.press(cx, Modifiers::default(), key);
+        }
+
+        fn capturing(&self, cx: &mut TestAppContext) -> bool {
+            cx.update(|cx| self.editor.read(cx).capturing())
+        }
+
+        fn has_conflict(&self, cx: &mut TestAppContext) -> bool {
+            cx.update(|cx| {
+                self.editor
+                    .read(cx)
+                    .key
+                    .as_ref()
+                    .is_some_and(|key| key.conflict.is_some())
+            })
+        }
+
+        fn save(&self, cx: &mut TestAppContext) -> Vec<Saved> {
+            self.act(cx, |editor, cx| editor.submit(cx));
+            cx.update(|cx| self.drafts.read(cx).saved.clone())
+        }
+    }
+
+    fn clip_holder(combo: &str) -> (ComboHolders, ComboHolder) {
+        let id = ClipId::new();
+        let holders = ComboHolders {
+            rows: Arc::new(Vec::new()),
+            clips: vec![ClipKey {
+                id,
+                name: "bell".to_owned(),
+                combo: combo.to_owned(),
+            }],
+        };
+        let holder = ComboHolder::Clip {
+            id,
+            name: "bell".to_owned(),
+        };
+        (holders, holder)
+    }
+
+    fn trigger_holder(combo: &str) -> (ComboHolders, ComboHolder) {
+        let press = TriggerInstanceId::new();
+        let holders = ComboHolders {
+            rows: Arc::new(vec![BindingRow {
+                key: press,
+                combo: combo.to_owned(),
+                registered: true,
+                press: Some(BindingHalf {
+                    instance_id: press,
+                    enabled: true,
+                    action: Some((ActionId::new(), "Scene".to_owned())),
+                }),
+                release: None,
+            }]),
+            clips: Vec::new(),
+        };
+        (holders, ComboHolder::Action(Some("Scene".to_owned())))
+    }
+
+    #[gpui::test]
+    fn a_captured_free_key_is_saved_as_the_clip_key(cx: &mut TestAppContext) {
+        let rig = Rig::open(cx, None, None, Some(ComboHolders::default()));
+
+        rig.capture(cx, "f9");
+
+        assert_eq!(rig.save(cx), [(Some("F9".to_owned()), None)]);
+    }
+
+    #[gpui::test]
+    fn escape_ends_capture_and_keeps_the_previous_key(cx: &mut TestAppContext) {
+        let rig = Rig::open(cx, None, Some("F5"), Some(ComboHolders::default()));
+
+        rig.capture(cx, ESCAPE);
+
+        assert_eq!(rig.save(cx), [(Some("F5".to_owned()), None)]);
+    }
+
+    #[gpui::test]
+    fn save_is_refused_while_the_key_field_is_listening(cx: &mut TestAppContext) {
+        let rig = Rig::open(cx, None, Some("F5"), Some(ComboHolders::default()));
+
+        rig.act(cx, |editor, cx| editor.start_key_capture(cx));
+
+        assert_eq!(rig.save(cx), []);
+    }
+
+    #[gpui::test]
+    fn an_unusable_keystroke_is_swallowed_and_keeps_the_field_listening(cx: &mut TestAppContext) {
+        let rig = Rig::open(cx, None, None, Some(ComboHolders::default()));
+        rig.act(cx, |editor, cx| editor.start_key_capture(cx));
+
+        let consumed = rig.press(cx, Modifiers::default(), "");
+
+        assert_eq!((consumed, rig.capturing(cx)), (true, true));
+    }
+
+    #[gpui::test]
+    fn a_keystroke_outside_capture_is_left_for_the_rest_of_the_app(cx: &mut TestAppContext) {
+        let rig = Rig::open(cx, None, None, Some(ComboHolders::default()));
+
+        assert!(!rig.press(cx, Modifiers::default(), "f9"));
+    }
+
+    #[gpui::test]
+    fn replace_saves_the_key_and_names_the_other_holder_to_release(cx: &mut TestAppContext) {
+        for (holders, holder) in [clip_holder("F9"), trigger_holder("F9")] {
+            let rig = Rig::open(cx, None, None, Some(holders));
+            rig.capture(cx, "f9");
+
+            rig.act(cx, |editor, cx| editor.replace_holder(cx));
+
+            assert_eq!(
+                rig.save(cx),
+                [(Some("F9".to_owned()), Some(holder.clone()))],
+                "{holder:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_held_key_waits_for_the_conflict_answer_before_taking_the_field(cx: &mut TestAppContext) {
+        let (holders, _) = clip_holder("F9");
+        let rig = Rig::open(cx, None, Some("F5"), Some(holders));
+
+        rig.capture(cx, "f9");
+
+        assert!(rig.has_conflict(cx));
+    }
+
+    #[gpui::test]
+    fn cancelling_a_conflict_keeps_the_previous_key_and_releases_nothing(cx: &mut TestAppContext) {
+        let (holders, _) = clip_holder("F9");
+        let rig = Rig::open(cx, None, Some("F5"), Some(holders));
+        rig.capture(cx, "f9");
+
+        rig.act(cx, |editor, cx| editor.cancel_conflict(cx));
+
+        assert_eq!(rig.save(cx), [(Some("F5".to_owned()), None)]);
+    }
+
+    #[gpui::test]
+    fn a_later_free_capture_drops_the_holder_an_earlier_replace_named(cx: &mut TestAppContext) {
+        let (holders, _) = clip_holder("F9");
+        let rig = Rig::open(cx, None, None, Some(holders));
+        rig.capture(cx, "f9");
+        rig.act(cx, |editor, cx| editor.replace_holder(cx));
+
+        rig.capture(cx, "f10");
+
+        assert_eq!(rig.save(cx), [(Some("F10".to_owned()), None)]);
+    }
+
+    #[gpui::test]
+    fn clear_drops_the_key_and_the_holder_a_replace_named(cx: &mut TestAppContext) {
+        let (holders, _) = clip_holder("F9");
+        let rig = Rig::open(cx, None, None, Some(holders));
+        rig.capture(cx, "f9");
+        rig.act(cx, |editor, cx| editor.replace_holder(cx));
+
+        rig.act(cx, |editor, cx| editor.clear_key(cx));
+
+        assert_eq!(rig.save(cx), [(None, None)]);
+    }
+
+    #[gpui::test]
+    fn an_edited_clip_recapturing_its_own_key_raises_no_conflict(cx: &mut TestAppContext) {
+        let own = ClipId::new();
+        let holders = ComboHolders {
+            rows: Arc::new(Vec::new()),
+            clips: vec![ClipKey {
+                id: own,
+                name: "airhorn".to_owned(),
+                combo: "F9".to_owned(),
+            }],
+        };
+        let rig = Rig::open(cx, Some(own), Some("F9"), Some(holders));
+
+        rig.capture(cx, "f9");
+
+        assert!(!rig.has_conflict(cx));
+    }
+
+    #[gpui::test]
+    fn without_a_hotkey_engine_the_stored_key_is_written_back_unchanged(cx: &mut TestAppContext) {
+        let rig = Rig::open(cx, Some(ClipId::new()), Some("F5"), None);
+
+        assert_eq!(rig.save(cx), [(Some("F5".to_owned()), None)]);
+    }
+}

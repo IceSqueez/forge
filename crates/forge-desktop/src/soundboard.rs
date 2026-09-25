@@ -73,9 +73,6 @@ const FOOTER_DOT: Pixels = px(6.0);
 const FOOTER_PAD_Y: Pixels = px(7.0);
 const FOOTER_PAD_X: Pixels = px(14.0);
 const ADOPT_SUMMARY_SEPARATOR: &str = " · ";
-const HOTKEY_SEQUENCE: &[&str] = &[
-    "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Q", "W", "E", "R", "T", "Y",
-];
 const CATEGORY_ORDER: &[&str] = &["memes", "alerts", "music", "voice"];
 
 type AdoptionResults = Vec<(ClipId, Result<AdoptionVerdict, SoundboardError>)>;
@@ -1012,11 +1009,6 @@ impl SoundboardView {
     }
 
     fn import_builtin(&mut self, entry: BuiltinSoundEntry, cx: &mut Context<Self>) {
-        let hotkey = if self.hotkey_is_free(entry.suggested_hotkey) {
-            Some(entry.suggested_hotkey.to_owned())
-        } else {
-            self.next_free_hotkey()
-        };
         let builtin_id = entry.builtin_id.to_owned();
         let name = entry.display_name.to_owned();
         let category = entry.category.to_owned();
@@ -1037,7 +1029,7 @@ impl SoundboardView {
                     file_path: path,
                     volume: 1.0,
                     output_device: OutputDevice::Default,
-                    hotkey,
+                    hotkey: None,
                     created_at: OffsetDateTime::now_utc(),
                     category,
                     loop_playback,
@@ -1054,20 +1046,6 @@ impl SoundboardView {
             },
             cx,
         );
-    }
-
-    fn hotkey_is_free(&self, hotkey: &str) -> bool {
-        !self
-            .clips
-            .iter()
-            .any(|c| c.hotkey.as_deref() == Some(hotkey))
-    }
-
-    fn next_free_hotkey(&self) -> Option<String> {
-        HOTKEY_SEQUENCE
-            .iter()
-            .find(|k| self.hotkey_is_free(k))
-            .map(|k| (*k).to_owned())
     }
 
     fn open_add(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1178,7 +1156,6 @@ impl SoundboardView {
         }
         let library = Arc::clone(&self.library);
         let player = Arc::clone(&self.player);
-        let new_hotkey = self.next_free_hotkey();
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -1204,7 +1181,7 @@ impl SoundboardView {
                             file_path,
                             volume: 1.0,
                             output_device: OutputDevice::Default,
-                            hotkey: new_hotkey,
+                            hotkey: None,
                             created_at: OffsetDateTime::now_utc(),
                             category,
                             loop_playback,

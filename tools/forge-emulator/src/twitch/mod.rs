@@ -11,4 +11,6 @@ mod state;
 pub use chat::{Viewer, ViewerBadge};
 pub use config::FakeTwitchConfig;
 pub use fake::FakeTwitch;
-pub use ledger::{CredentialCheck, Ledger, RecordedRequest, RecordedSession, RecordedSubscription};
+pub use ledger::{
+    CredentialCheck, Ledger, RecordedRequest, RecordedSession, RecordedSubscription, TappedRequest,
+};

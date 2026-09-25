@@ -506,6 +506,48 @@ async fn user_lookup_resolves_the_broadcaster_and_known_viewers_only() {
 }
 
 #[tokio::test]
+async fn a_tapped_fake_streams_helix_requests_to_the_tap_and_keeps_none() {
+    let fake = start().await;
+    let mut tap = fake.tap_requests();
+    let body = json!({ "broadcaster_id": "1", "sender_id": "1", "message": "hello" });
+
+    let (status, _) = post_json(&fake, "/helix/chat/messages", &body).await;
+    let tapped = timeout(DEADLINE, tap.recv()).await.unwrap().unwrap();
+
+    assert_eq!(status, 200);
+    assert_eq!(tapped.request.body, Some(body));
+    assert!(fake.ledger().requests.is_empty());
+}
+
+#[tokio::test]
+async fn a_viewer_who_renamed_is_found_by_the_new_login_only() {
+    let fake = start().await;
+    let (_socket, session_id) = connect_to(fake.eventsub_ws_url()).await;
+    subscribe(&fake, CHAT, &session_id).await;
+    for login in ["old_name", "new_name"] {
+        fake.inject_chat_message(&Viewer::new("200000077", login), "hi")
+            .await
+            .unwrap();
+    }
+    let lookup = |login: &'static str| {
+        let url = format!("{}/helix/users?login={login}", fake.api_base_url());
+        async move {
+            let body: Value = authorized(&reqwest::Client::new(), reqwest::Method::GET, url)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            body["data"].as_array().unwrap().len()
+        }
+    };
+
+    assert_eq!(lookup("new_name").await, 1);
+    assert_eq!(lookup("old_name").await, 0);
+}
+
+#[tokio::test]
 async fn session_holding_two_subscriptions_of_one_type_gets_one_notification() {
     let fake = start().await;
     let (mut socket, session_id) = connect_to(fake.eventsub_ws_url()).await;

@@ -214,6 +214,19 @@ async fn a_content_frame_is_recorded_exactly_as_it_came_off_the_wire() {
 }
 
 #[tokio::test]
+async fn taken_frames_are_handed_over_once_and_the_page_starts_empty_again() {
+    let stub = Stub::start(Behaviour::AnswerThenDeliver, Some(default_document())).await;
+    let page = stub.open().await.expect("forge accepted the page");
+    first_frame(&page).await;
+
+    let taken = page.take_frames();
+
+    assert_eq!(taken.len(), 1);
+    assert!(page.is_empty());
+    assert!(page.take_frames().is_empty());
+}
+
+#[tokio::test]
 async fn content_delivered_before_the_credential_is_answered_is_still_recorded() {
     let stub = Stub::start(Behaviour::DeliverThenAnswer, Some(default_document())).await;
     let page = stub.open().await.expect("forge accepted the page");

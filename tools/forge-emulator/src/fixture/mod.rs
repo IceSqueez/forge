@@ -15,6 +15,6 @@ pub use report::{
 pub use seeder::seed_forge_environment;
 pub use spawn::seed;
 pub use spec::{
-    ChatCommand, EventTrigger, Fixture, FixtureAction, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY,
-    OverlayFixture, TwitchAccount, overlay_targets,
+    ChatCommand, DEFAULT_QUEUE_NAME, EventTrigger, Fixture, FixtureAction, OVERLAY_SEND_KIND,
+    OVERLAY_TARGET_KEY, OverlayFixture, QueueFixture, TwitchAccount, overlay_targets,
 };

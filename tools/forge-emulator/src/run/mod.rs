@@ -12,6 +12,7 @@ mod steps;
 
 pub use journal::{Journal, JournalEntry, JournalView};
 pub use log_record::LogRecord;
+pub(crate) use log_tail::LogTail;
 pub use outcome::{
     ActionDetail, ActionReport, CausationEvidence, EVIDENCE_LIMIT, EventEvidence, Evidence,
     ExpectationOutcome, FailureCause, ForgeEvidence, Gap, GapKind, JournaledEvent, LedgerExcerpt,

@@ -16,6 +16,7 @@ use forge_emulator::launch::{
 use forge_emulator::report::{RunContext, RunReport, write_report};
 use forge_emulator::run::{RunOptions, ScenarioVerdict, run_scenario};
 use forge_emulator::scenario::load_scenario;
+use forge_emulator::stress::{StressOptions, load_profile, run_stress, write_stress_report};
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
 use forge_events::Event;
 use time::OffsetDateTime;
@@ -81,6 +82,35 @@ enum Command {
     Scenario {
         #[command(subcommand)]
         command: ScenarioCommand,
+    },
+    /// Throughput runs: step the inbound event rate until forge degrades.
+    Stress {
+        #[command(subcommand)]
+        command: StressCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum StressCommand {
+    /// Validate a stress profile without launching anything.
+    Check { file: PathBuf },
+    /// Run a stress profile against a freshly seeded forge and write `stress-report.md` and
+    /// `samples.jsonl` into the run root. Opens a forge window; refuses while a game may be
+    /// running.
+    Run {
+        file: PathBuf,
+        /// The built forge binary; measure memory only on a release build.
+        #[arg(long)]
+        forge: PathBuf,
+        #[arg(long)]
+        run_root: Option<PathBuf>,
+        /// forge's RUST_LOG filter; a debug filter distorts throughput.
+        #[arg(long, default_value = "info")]
+        log: String,
+        #[arg(long, default_value_t = 3)]
+        attempts: u32,
+        #[arg(long)]
+        allow_over_game: bool,
     },
 }
 
@@ -166,6 +196,33 @@ async fn main() -> ExitCode {
             })
             .await
         }
+        Command::Stress {
+            command: StressCommand::Check { file },
+        } => load_profile(&file).map(|profile| {
+            println!("{}: ok, `{}`", file.display(), profile.name);
+            ExitCode::SUCCESS
+        }),
+        Command::Stress {
+            command:
+                StressCommand::Run {
+                    file,
+                    forge,
+                    run_root,
+                    log,
+                    attempts,
+                    allow_over_game,
+                },
+        } => {
+            stress(RunArgs {
+                file,
+                forge,
+                run_root,
+                log,
+                attempts,
+                allow_over_game,
+            })
+            .await
+        }
     };
     match outcome {
         Ok(code) => code,
@@ -187,6 +244,8 @@ fn exit_code(error: &EmulatorError) -> u8 {
         EmulatorError::ScenarioUnreadable { .. } => 9,
         EmulatorError::ScenarioSyntax { .. } => 10,
         EmulatorError::ScenarioInvalid { .. } => 11,
+        EmulatorError::StressProfileUnreadable { .. } => 10,
+        EmulatorError::StressProfileInvalid { .. } => 11,
         _ => 1,
     }
 }
@@ -347,6 +406,30 @@ async fn run(args: RunArgs) -> Result<ExitCode, EmulatorError> {
         ScenarioVerdict::Failed => ExitCode::from(SCENARIO_FAILED),
         ScenarioVerdict::Interrupted => ExitCode::from(INTERRUPTED),
     })
+}
+
+async fn stress(args: RunArgs) -> Result<ExitCode, EmulatorError> {
+    let profile = load_profile(&args.file)?;
+    let run_root = prepare_run_root(args.run_root)?;
+    eprintln!("forge-emulator: run root {}", run_root.display());
+    let options = StressOptions {
+        emulator: own_executable()?,
+        forge: ForgeCommand::binary(args.forge.clone()),
+        run_root: run_root.clone(),
+        log_directives: args.log,
+        guard: game_guard(args.allow_over_game),
+        live: LivePaths::discover()?,
+        max_attempts: args.attempts,
+        shutdown_grace: SHUTDOWN_GRACE,
+    };
+    let outcome = tokio::select! {
+        outcome = run_stress(&profile, options) => outcome?,
+        () = stop_requested() => return Ok(ExitCode::from(INTERRUPTED)),
+    };
+    let files = write_stress_report(&profile, &outcome, &run_root, &absolute(&args.forge))?;
+    println!("report: {}", files.markdown.display());
+    println!("samples: {}", files.samples.display());
+    Ok(ExitCode::SUCCESS)
 }
 
 fn absolute(path: &std::path::Path) -> PathBuf {

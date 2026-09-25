@@ -7,6 +7,8 @@ use crate::EmulatorError;
 /// The step kind that addresses an overlay, and the config key naming its target.
 pub const OVERLAY_SEND_KIND: &str = "overlay.send";
 pub const OVERLAY_TARGET_KEY: &str = "overlay_id";
+/// The queue every forge database carries from its first migration.
+pub const DEFAULT_QUEUE_NAME: &str = "Default";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,6 +21,17 @@ pub struct Fixture {
     pub chat_commands: Vec<ChatCommand>,
     #[serde(default)]
     pub event_triggers: Vec<EventTrigger>,
+    /// Queues created beside the built-in `Default` one; an action names its queue by `name`.
+    #[serde(default)]
+    pub queues: Vec<QueueFixture>,
+}
+
+/// `concurrency` 1 makes a blocking queue: one execution at a time, the rest wait in line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueFixture {
+    pub name: String,
+    pub concurrency: u32,
 }
 
 /// Defaults are fake values that are safe to publish in a scenario report.
@@ -50,6 +63,9 @@ pub struct ChatCommand {
     pub action_name: String,
     #[serde(default)]
     pub steps: Vec<SubActionStep>,
+    /// The fixture queue the action runs on; the built-in `Default` queue when omitted.
+    #[serde(default)]
+    pub queue: Option<String>,
 }
 
 /// A trigger instance of any kind wired to its own action; `trigger_kind` is a trigger descriptor
@@ -63,12 +79,15 @@ pub struct EventTrigger {
     pub config: TriggerConfig,
     #[serde(default)]
     pub steps: Vec<SubActionStep>,
+    #[serde(default)]
+    pub queue: Option<String>,
 }
 
 pub struct FixtureAction<'a> {
     pub location: String,
     pub name: &'a str,
     pub steps: &'a [SubActionStep],
+    pub queue: Option<&'a str>,
 }
 
 /// An overlay the fixture creates through forge's own repository, which mints its identity slug
@@ -92,8 +111,10 @@ impl Fixture {
                 phrase: "!ping".to_owned(),
                 action_name: "Ping".to_owned(),
                 steps: Vec::new(),
+                queue: None,
             }],
             event_triggers: Vec::new(),
+            queues: Vec::new(),
         }
     }
 
@@ -107,6 +128,7 @@ impl Fixture {
                 location: format!("chat_commands[{index}]"),
                 name: &command.action_name,
                 steps: &command.steps,
+                queue: command.queue.as_deref(),
             });
         let triggers = self
             .event_triggers
@@ -116,6 +138,7 @@ impl Fixture {
                 location: format!("event_triggers[{index}]"),
                 name: &trigger.action_name,
                 steps: &trigger.steps,
+                queue: trigger.queue.as_deref(),
             });
         commands.chain(triggers).collect()
     }
@@ -167,7 +190,37 @@ impl Fixture {
                 )));
             }
         }
+        for (index, queue) in self.queues.iter().enumerate() {
+            if queue.name.trim().is_empty() {
+                return Err(invalid(format!("queues[{index}] has a blank name")));
+            }
+            if queue.concurrency == 0 {
+                return Err(invalid(format!(
+                    "queue `{}` has concurrency 0, so it would never run anything",
+                    queue.name
+                )));
+            }
+            if queue.name == DEFAULT_QUEUE_NAME
+                || self.queues[..index]
+                    .iter()
+                    .any(|earlier| earlier.name == queue.name)
+            {
+                return Err(invalid(format!(
+                    "two queues are both named `{}`, so an action could not tell them apart",
+                    queue.name
+                )));
+            }
+        }
         for action in self.actions() {
+            if let Some(queue) = action.queue
+                && queue != DEFAULT_QUEUE_NAME
+                && !self.queues.iter().any(|declared| declared.name == queue)
+            {
+                return Err(invalid(format!(
+                    "action `{}` runs on queue `{queue}`, which the fixture does not declare",
+                    action.name
+                )));
+            }
             for target in overlay_targets(action.steps) {
                 if !self.declares_overlay(target) {
                     return Err(invalid(format!(
@@ -203,6 +256,7 @@ mod tests {
             phrase: String::new(),
             action_name: "Silent".to_owned(),
             steps: Vec::new(),
+            queue: None,
         });
         let refusal = fixture.validate();
         assert!(
@@ -218,6 +272,7 @@ mod tests {
             phrase: "!".to_owned(),
             action_name: "Bang".to_owned(),
             steps: Vec::new(),
+            queue: None,
         });
         assert!(fixture.validate().is_ok());
     }
@@ -236,6 +291,7 @@ mod tests {
             action_name: "Announce".to_owned(),
             config: TriggerConfig::new(),
             steps: sends_to(target).steps,
+            queue: None,
         }
     }
 
@@ -256,6 +312,7 @@ mod tests {
                 condition: None,
                 label: None,
             }],
+            queue: None,
         }
     }
 
@@ -346,6 +403,70 @@ mod tests {
         };
 
         assert!(fixture.validate().is_ok());
+    }
+
+    fn on_queue(queue: Option<&str>, queues: Vec<QueueFixture>) -> Fixture {
+        let mut command = sends_to("   ");
+        command.queue = queue.map(str::to_owned);
+        Fixture {
+            chat_commands: vec![command],
+            queues,
+            ..Fixture::default()
+        }
+    }
+
+    fn queue(name: &str, concurrency: u32) -> QueueFixture {
+        QueueFixture {
+            name: name.to_owned(),
+            concurrency,
+        }
+    }
+
+    #[test]
+    fn queues_no_action_could_run_on_unambiguously_are_refused() {
+        for (fixture, expected, label) in [
+            (
+                on_queue(None, vec![queue(" ", 1)]),
+                "blank name",
+                "a queue with no name",
+            ),
+            (
+                on_queue(None, vec![queue("Alerts", 0)]),
+                "concurrency 0",
+                "a queue that never runs",
+            ),
+            (
+                on_queue(None, vec![queue("Alerts", 1), queue("Alerts", 4)]),
+                "both named `Alerts`",
+                "two queues sharing a name",
+            ),
+            (
+                on_queue(None, vec![queue(DEFAULT_QUEUE_NAME, 2)]),
+                "both named `Default`",
+                "a queue shadowing the built-in one",
+            ),
+            (
+                on_queue(Some("Alerts"), Vec::new()),
+                "runs on queue `Alerts`, which the fixture does not declare",
+                "an action on a queue nothing seeds",
+            ),
+        ] {
+            let refusal = fixture.validate();
+            assert!(
+                matches!(&refusal, Err(EmulatorError::InvalidFixture { reason }) if reason.contains(expected)),
+                "{label}: got {refusal:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_action_may_name_the_built_in_queue_or_a_declared_one() {
+        for fixture in [
+            on_queue(Some(DEFAULT_QUEUE_NAME), Vec::new()),
+            on_queue(Some("Alerts"), vec![queue("Alerts", 1)]),
+        ] {
+            assert!(fixture.validate().is_ok(), "{fixture:?}");
+        }
     }
 
     #[test]

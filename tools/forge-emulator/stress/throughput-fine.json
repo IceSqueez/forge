@@ -1,0 +1,417 @@
+{
+  "name": "throughput fine ramp",
+  "purpose": "Re-steps the region between the last clean step and the first lossy one of the coarse ramp, one minute per step, to place the knee where forge starts losing triggers.",
+  "fixture": {
+    "twitch": {},
+    "queues": [
+      {
+        "name": "Alerts",
+        "concurrency": 1
+      },
+      {
+        "name": "Chat",
+        "concurrency": 4
+      }
+    ],
+    "overlays": [
+      {
+        "display_name": "Chat Box",
+        "kind_id": "overlay.chat"
+      },
+      {
+        "display_name": "Alert Box",
+        "kind_id": "overlay.alert"
+      },
+      {
+        "display_name": "Hype Goal",
+        "kind_id": "overlay.goal"
+      }
+    ],
+    "chat_commands": [
+      {
+        "phrase": "!hype",
+        "action_name": "Hype Command",
+        "steps": [
+          {
+            "kind_id": "core.globals.increment",
+            "config": {
+              "name": {
+                "type": "string",
+                "value": "hype_count"
+              },
+              "amount": {
+                "type": "int",
+                "value": 1
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "twitch.chat.send_message",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "thanks for the hype %user_name% %message_text%"
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": {
+                "type": "string",
+                "value": "Hype Goal"
+              },
+              "label": {
+                "type": "string",
+                "value": "hype from %user_name% %message_text%"
+              },
+              "value": {
+                "type": "string",
+                "value": "1"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ],
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.chat.message",
+        "action_name": "Chat Message",
+        "queue": "Chat",
+        "steps": [
+          {
+            "kind_id": "core.args.set",
+            "config": {
+              "name": {
+                "type": "string",
+                "value": "speaker"
+              },
+              "value": {
+                "type": "string",
+                "value": "%user_name%"
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "core.globals.increment",
+            "config": {
+              "name": {
+                "type": "string",
+                "value": "chat_count"
+              },
+              "amount": {
+                "type": "int",
+                "value": 1
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": {
+                "type": "string",
+                "value": "Chat Box"
+              },
+              "author": {
+                "type": "string",
+                "value": "%speaker%"
+              },
+              "message": {
+                "type": "string",
+                "value": "%message_text%"
+              }
+            },
+            "enabled": true,
+            "condition": "%message_text% != \"spam\""
+          }
+        ]
+      },
+      {
+        "trigger_kind": "twitch.channel.follow",
+        "action_name": "Follow Alert",
+        "queue": "Alerts",
+        "steps": [
+          {
+            "kind_id": "core.args.set",
+            "config": {
+              "name": {
+                "type": "string",
+                "value": "who"
+              },
+              "value": {
+                "type": "string",
+                "value": "%user_name%"
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": {
+                "type": "string",
+                "value": "Alert Box"
+              },
+              "headline": {
+                "type": "string",
+                "value": "%who% just followed"
+              },
+              "duration_secs": {
+                "type": "int",
+                "value": 1
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "core.logic.wait",
+            "config": {
+              "ms": {
+                "type": "int",
+                "value": 1000
+              }
+            },
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "trigger_kind": "twitch.support.subscriber",
+        "action_name": "Sub Alert",
+        "queue": "Alerts",
+        "config": {
+          "tier": {
+            "type": "string",
+            "value": "1000"
+          }
+        },
+        "steps": [
+          {
+            "kind_id": "core.globals.increment",
+            "config": {
+              "name": {
+                "type": "string",
+                "value": "sub_count"
+              },
+              "amount": {
+                "type": "int",
+                "value": 1
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": {
+                "type": "string",
+                "value": "Alert Box"
+              },
+              "headline": {
+                "type": "string",
+                "value": "%user_name% just subscribed"
+              },
+              "duration_secs": {
+                "type": "int",
+                "value": 1
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "core.logic.wait",
+            "config": {
+              "ms": {
+                "type": "int",
+                "value": 1000
+              }
+            },
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "trigger_kind": "twitch.support.cheer",
+        "action_name": "Cheer Alert",
+        "queue": "Alerts",
+        "config": {
+          "min_bits": {
+            "type": "int",
+            "value": 100
+          }
+        },
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": {
+                "type": "string",
+                "value": "Alert Box"
+              },
+              "headline": {
+                "type": "string",
+                "value": "%user_name% cheered %bits_amount% bits"
+              },
+              "duration_secs": {
+                "type": "int",
+                "value": 1
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "core.logic.wait",
+            "config": {
+              "ms": {
+                "type": "int",
+                "value": 1000
+              }
+            },
+            "enabled": true,
+            "condition": "%bits_amount% >= 100"
+          }
+        ]
+      },
+      {
+        "trigger_kind": "twitch.channel_points.redemption",
+        "action_name": "Reward Redeem",
+        "config": {
+          "reward_id": {
+            "type": "string",
+            "value": "stress-reward"
+          }
+        },
+        "steps": [
+          {
+            "kind_id": "core.globals.increment",
+            "config": {
+              "name": {
+                "type": "string",
+                "value": "hydrate_count"
+              },
+              "amount": {
+                "type": "int",
+                "value": 1
+              }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": {
+                "type": "string",
+                "value": "Hype Goal"
+              },
+              "label": {
+                "type": "string",
+                "value": "%user_name% redeemed %reward.title%"
+              },
+              "value": {
+                "type": "string",
+                "value": "1"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {},
+  "globals": {
+    "chat_count": 0,
+    "hype_count": 0,
+    "sub_count": 0,
+    "hydrate_count": 0
+  },
+  "pages": [
+    "Chat Box",
+    "Alert Box",
+    "Hype Goal"
+  ],
+  "senders": 50000,
+  "stimuli": [
+    {
+      "kind": "chat",
+      "weight": 98,
+      "runs": [
+        "Chat Message"
+      ]
+    },
+    {
+      "kind": "command",
+      "weight": 2,
+      "text": "!hype",
+      "runs": [
+        "Chat Message",
+        "Hype Command"
+      ]
+    },
+    {
+      "kind": "follow",
+      "per_minute": 12,
+      "runs": [
+        "Follow Alert"
+      ]
+    },
+    {
+      "kind": "subscribe",
+      "per_minute": 6,
+      "runs": [
+        "Sub Alert"
+      ]
+    },
+    {
+      "kind": "cheer",
+      "per_minute": 6,
+      "runs": [
+        "Cheer Alert"
+      ]
+    },
+    {
+      "kind": "reward",
+      "per_minute": 12,
+      "runs": [
+        "Reward Redeem"
+      ]
+    }
+  ],
+  "ramp": {
+    "rates": [
+      1000,
+      1200,
+      1400,
+      1600,
+      1800,
+      2000,
+      2200,
+      2400,
+      2800,
+      3200
+    ],
+    "hold_secs": 60
+  },
+  "burst": {
+    "multiplier": 3.0,
+    "secs": 20
+  },
+  "recovery_secs": 60,
+  "sample_ms": 1000,
+  "knee": {
+    "watch": [
+      "Chat Message"
+    ],
+    "max_backlog_secs": 5.0,
+    "min_achieved_share": 0.9,
+    "fatal_warnings": [
+      "those events fired no trigger"
+    ]
+  }
+}

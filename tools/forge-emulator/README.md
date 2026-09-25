@@ -120,6 +120,58 @@ Two pieces of scenario vocabulary follow:
 Content delivered while the credential is still being checked counts as the opening step's own,
 so a page opened after a Replace-kind delivery can be judged on the content forge replays to it.
 
+## Fixture queues
+
+A fixture can create queues beside the built-in `Default` one, and any chat command or event
+trigger can put its action on one by name:
+
+```json
+"queues": [{ "name": "Alerts", "concurrency": 1 }, { "name": "Chat", "concurrency": 4 }],
+"event_triggers": [{ "trigger_kind": "twitch.channel.follow", "action_name": "Follow Alert",
+                     "queue": "Alerts", "steps": [...] }]
+```
+
+Concurrency 1 is a blocking queue. An action with no `queue` runs on `Default`; naming a queue
+the fixture does not declare fails validation.
+
+## Throughput runs
+
+`stress run <profile> --forge <binary>` is a separate mode from scenarios: it seeds the profile's
+fixture, connects a browser source to every overlay in `pages`, sets the profile's `globals`
+over the control socket, and then drives a load instead of checking expectations. Profiles live
+in `stress/`; `throughput-smoke.json` proves the tooling in about a minute and
+`throughput-ramp.json` is the full run; `throughput-fine.json` re-steps the region around the
+knee one minute per step. `stress check <profile>` validates one without launching.
+
+The load has two parts. Stimuli with a `weight` share the flood rate, which steps through
+`ramp.rates` (events per second), each step held for `ramp.hold_secs`. Stimuli with a
+`per_minute` trickle in at that rate whatever the step, the way alerts do on a real stream, so a
+blocking alert queue is never flooded by design. Senders cycle through `senders` distinct
+viewers. After each step the `knee` rule judges it: the step is degraded when the generator
+delivered less than `min_achieved_share` of the target because forge stopped reading its
+EventSub socket, when forge logged any message listed in `fatal_warnings` (the throughput
+profiles list the trigger evaluator's "those events fired no trigger", which means actions were
+lost), or when the watched actions' unfinished work exceeds `max_backlog_secs` of the step's rate
+or any of them was skipped. The last check is skipped for a step in which forge's server dropped
+events for the observer, because its counts undercount then; the phase table shows how many. The ramp stops at the first degraded step, forge is left to
+recover for `recovery_secs`, a burst runs at `burst.multiplier` times the last stable step for
+`burst.secs`, and a second recovery follows.
+
+Every injected event carries a marker (`~q<sequence>~`) in its chat text or its `user_name`, and
+the actions render those variables into their overlay sends and chat replies, so each effect is
+traced back to the moment it was injected. Per phase the report gives p50/p95/p99 latency from
+injection to the Twitch event forge published, to `action.start` and `action.done` per action,
+to the frame each connected page received, and to the chat reply reaching the fake Helix;
+per-action started/done/skipped/unstarted/in-flight counts at each phase end; process CPU (whole
+process and the UI thread), RSS and anonymous memory from `smaps_rollup`, threads, file
+descriptors, database size, table row counts, the machine's load average, and every WARN/ERROR
+log line grouped by message. `samples.jsonl` holds one row per `sample_ms`.
+
+Measure memory only on a release forge build, and run with the default `--log info`: a debug
+filter makes logging the bottleneck. The observer subscribes to every Twitch event and to
+`action.start`, `action.done`, `action.skipped`, `command.matched` and `chat.send.failed`, so it
+costs forge what one connected dashboard would.
+
 ## Where reports land
 
 Each run writes `report.md` and `report.json` into the run root, and prints the verdict line
@@ -212,11 +264,10 @@ is delivered as received rather than sent only because its `to_broadcaster_user_
 seeded account's, which is what forge reads to tell the two directions apart on the one topic.
 
 `crowd-soak-short.json` is the load case rather than a feature case: a thousand viewers send
-nine chatter lines and one command each, ten thousand messages - the ceiling the crowd model
-allows - twelve milliseconds apart, so the load is sustained for about two minutes instead of
-bursting. It asserts one command match and one finished action per sender, no `request.fail`
-for the whole run, and no unexpected request to the fake. Lengthen it by raising `spacing_ms`,
-never the message count, which has no room left.
+nine chatter lines and one command each, ten thousand messages twelve milliseconds apart, so the
+load is sustained for about two minutes instead of bursting. It asserts one command match and one
+finished action per sender, no `request.fail` for the whole run, and no unexpected request to the
+fake. A crowd may hold up to 100 000 viewers and a million messages.
 
 `reconnect-keeps-subscriptions.json` was the first defect this harness found - forge ran a
 second full subscription pass on a successor EventSub session - and was kept red as evidence

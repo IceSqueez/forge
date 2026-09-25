@@ -8,7 +8,9 @@ use super::chat::Viewer;
 use super::config::FakeTwitchConfig;
 use super::frames;
 use super::ids;
-use super::ledger::{Ledger, RecordedRequest, RecordedSession, RecordedSubscription};
+use super::ledger::{
+    Ledger, RecordedRequest, RecordedSession, RecordedSubscription, TappedRequest,
+};
 
 pub(crate) type Outbox = mpsc::Sender<String>;
 
@@ -29,7 +31,9 @@ pub(crate) enum SubscriptionOutcome {
 pub(crate) struct Inner {
     pub(crate) ledger: Ledger,
     outboxes: HashMap<String, Outbox>,
-    pub(crate) viewers: Vec<Viewer>,
+    /// Keyed by user id: a crowd of tens of thousands must not cost a scan per message.
+    pub(crate) viewers: HashMap<String, Viewer>,
+    request_tap: Option<mpsc::UnboundedSender<TappedRequest>>,
 }
 
 impl Inner {
@@ -135,12 +139,33 @@ impl Inner {
     }
 
     pub(crate) fn remember_viewer(&mut self, viewer: &Viewer) {
-        self.viewers.retain(|known| known.user_id != viewer.user_id);
-        self.viewers.push(viewer.clone());
+        if self.viewers.get(&viewer.user_id) != Some(viewer) {
+            self.viewers.insert(viewer.user_id.clone(), viewer.clone());
+        }
     }
 
+    /// A tapped fake streams requests to the tap instead of keeping them, so a long load run
+    /// holds no request history.
     pub(crate) fn record_request(&mut self, request: RecordedRequest) {
-        self.ledger.requests.push(request);
+        match &self.request_tap {
+            Some(tap) => {
+                let tapped = TappedRequest {
+                    arrived: tokio::time::Instant::now(),
+                    request,
+                };
+                if let Err(unsent) = tap.send(tapped) {
+                    self.request_tap = None;
+                    self.ledger.requests.push(unsent.0.request);
+                }
+            }
+            None => self.ledger.requests.push(request),
+        }
+    }
+
+    pub(crate) fn tap_requests(&mut self) -> mpsc::UnboundedReceiver<TappedRequest> {
+        let (tap, requests) = mpsc::unbounded_channel();
+        self.request_tap = Some(tap);
+        requests
     }
 }
 

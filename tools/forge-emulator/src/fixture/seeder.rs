@@ -7,8 +7,8 @@ use forge_server::ServerSettings;
 use forge_storage::{CredentialId, DataProvider, SettingsRepo, StorageError};
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
-    Action, ActionId, ExecutionMode, OAuthToken, PermissionRung, PlatformScope, SubActionStep,
-    TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    Action, ActionId, ExecutionMode, OAuthToken, PermissionRung, PlatformScope, Queue, QueueId,
+    SubActionStep, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
 };
 use rand::Rng as _;
 
@@ -18,15 +18,14 @@ use super::report::{
     SeedReport, SeededCommand, SeededEventTrigger, SeededOverlay, SeededServer, SeededTwitch,
 };
 use super::spec::{
-    ChatCommand, EventTrigger, Fixture, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, OverlayFixture,
-    TwitchAccount,
+    ChatCommand, DEFAULT_QUEUE_NAME, EventTrigger, Fixture, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY,
+    OverlayFixture, QueueFixture, TwitchAccount,
 };
 use crate::EmulatorError;
 
 const DATABASE_FILE: &str = "forge.db";
 const SERVER_BEARER_CREDENTIAL: &str = "server:bearer";
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
-const DEFAULT_QUEUE: &str = "Default";
 const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const BEARER_TOKEN_BYTES: usize = 32;
@@ -97,6 +96,9 @@ async fn write_fixture(
         Some(account) => Some(seed_twitch_account(provider, account).await?),
         None => None,
     };
+    for queue in &fixture.queues {
+        seed_queue(provider, queue).await?;
+    }
     let kinds = builtin_overlay_kinds()?;
     let mut overlays = Vec::with_capacity(fixture.overlays.len());
     for overlay in &fixture.overlays {
@@ -116,6 +118,22 @@ async fn write_fixture(
         chat_commands,
         event_triggers,
     })
+}
+
+async fn seed_queue(
+    provider: &dyn DataProvider,
+    queue: &QueueFixture,
+) -> Result<(), EmulatorError> {
+    provider
+        .queue_repo()
+        .save(&Queue {
+            id: QueueId::new(),
+            name: queue.name.clone(),
+            description: String::new(),
+            concurrency: queue.concurrency,
+        })
+        .await
+        .map_err(storage_error)
 }
 
 fn builtin_overlay_kinds() -> Result<OverlayKindRegistry, EmulatorError> {
@@ -228,6 +246,7 @@ async fn seed_chat_command(
             kind_id: CHAT_COMMAND_TRIGGER_KIND,
             instance_name: &command.phrase,
             overrides,
+            queue: command.queue.as_deref(),
         },
         overlays,
     )
@@ -254,6 +273,7 @@ async fn seed_event_trigger(
             kind_id: &trigger.trigger_kind,
             instance_name: &trigger.trigger_kind,
             overrides: trigger.config.clone(),
+            queue: trigger.queue.as_deref(),
         },
         overlays,
     )
@@ -273,6 +293,7 @@ struct TriggeredAction<'a> {
     kind_id: &'a str,
     instance_name: &'a str,
     overrides: TriggerConfig,
+    queue: Option<&'a str>,
 }
 
 struct Triggered {
@@ -285,13 +306,14 @@ async fn seed_triggered_action(
     spec: TriggeredAction<'_>,
     overlays: &[SeededOverlay],
 ) -> Result<Triggered, EmulatorError> {
+    let queue_name = spec.queue.unwrap_or(DEFAULT_QUEUE_NAME);
     let queue = provider
         .queue_repo()
-        .get_by_name(DEFAULT_QUEUE)
+        .get_by_name(queue_name)
         .await
         .map_err(storage_error)?
         .ok_or_else(|| EmulatorError::Storage {
-            reason: format!("the `{DEFAULT_QUEUE}` queue is missing"),
+            reason: format!("the `{queue_name}` queue is missing"),
         })?;
     let action = Action {
         id: ActionId::new(),

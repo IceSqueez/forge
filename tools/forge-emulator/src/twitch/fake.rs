@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use super::chat::{self, Viewer};
 use super::config::FakeTwitchConfig;
 use super::ids;
-use super::ledger::Ledger;
+use super::ledger::{Ledger, TappedRequest};
 use super::rest;
 use super::socket;
 use super::state::{Outbox, Shared};
@@ -86,6 +86,11 @@ impl FakeTwitch {
                 self.eventsub_ws_url().to_owned(),
             ),
         ]
+    }
+
+    /// From here on every Helix request goes to the returned receiver and not into the ledger.
+    pub fn tap_requests(&self) -> tokio::sync::mpsc::UnboundedReceiver<TappedRequest> {
+        self.shared.mutate(super::state::Inner::tap_requests)
     }
 
     pub fn ledger(&self) -> Ledger {

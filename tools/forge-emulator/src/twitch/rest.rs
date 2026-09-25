@@ -222,7 +222,7 @@ fn users(inner: &Inner, config: &FakeTwitchConfig, query: &[(String, String)]) -
         return vec![broadcaster];
     }
     std::iter::once(broadcaster)
-        .chain(inner.viewers.iter().map(Viewer::user_json))
+        .chain(inner.viewers.values().map(Viewer::user_json))
         .filter(|user| {
             let id = user["id"].as_str().unwrap_or_default();
             let login = user["login"].as_str().unwrap_or_default();

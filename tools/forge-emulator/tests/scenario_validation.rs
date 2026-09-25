@@ -374,15 +374,17 @@ fn crowd_problems_are_located() {
             with_steps([step(crowd(json!({ "viewers": 0, "chatter": ["hi"] })))]),
             vec![(
                 "steps[2].do.crowd.viewers",
-                "must be between 1 and 1000, got 0",
+                "must be between 1 and 100000, got 0",
             )],
         ),
         (
             "one viewer over the ceiling",
-            with_steps([step(crowd(json!({ "viewers": 1001, "chatter": ["hi"] })))]),
+            with_steps([step(crowd(
+                json!({ "viewers": 100_001, "chatter": ["hi"] }),
+            ))]),
             vec![(
                 "steps[2].do.crowd.viewers",
-                "must be between 1 and 1000, got 1001",
+                "must be between 1 and 100000, got 100001",
             )],
         ),
         (
@@ -468,7 +470,7 @@ fn crowd_problems_are_located() {
         (
             "one message over the crowd ceiling",
             with_steps([step(crowd(json!({
-                "viewers": 1000,
+                "viewers": 100_000,
                 "chatter": ["hi"],
                 "chatter_per_viewer": 10,
                 "command_senders": 1,
@@ -476,7 +478,7 @@ fn crowd_problems_are_located() {
             })))]),
             vec![(
                 "steps[2].do.crowd",
-                "sends 10001 messages, more than the limit of 10000",
+                "sends 1000001 messages, more than the limit of 1000000",
             )],
         ),
         (

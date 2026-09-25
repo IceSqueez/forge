@@ -101,6 +101,12 @@ impl OverlayPage {
         self.len() == 0
     }
 
+    /// Hands over every frame recorded so far and forgets them, so a page left open under
+    /// sustained load does not keep its whole history. `len` restarts from zero afterwards.
+    pub fn take_frames(&self) -> Vec<ReceivedFrame> {
+        std::mem::take(&mut *self.lock())
+    }
+
     pub fn read<R>(&self, f: impl FnOnce(&[ReceivedFrame]) -> R) -> R {
         f(&self.lock())
     }

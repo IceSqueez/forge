@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use forge_emulator::EmulatorError;
 use forge_emulator::fixture::{
-    ChatCommand, EventTrigger, Fixture, SeedReport, TwitchAccount, seed,
+    ChatCommand, EventTrigger, Fixture, QueueFixture, SeedReport, TwitchAccount, seed,
 };
 use forge_events::{Event, EventSource};
 use forge_platform_twitch::TwitchCredentialsManager;
@@ -167,6 +167,7 @@ async fn seeded_chat_command_action_is_enabled_on_the_default_queue_with_its_ste
             phrase: "!ping".to_owned(),
             action_name: "Ping".to_owned(),
             steps: steps.clone(),
+            queue: None,
         }],
         ..Fixture::default()
     };
@@ -190,6 +191,38 @@ async fn seeded_chat_command_action_is_enabled_on_the_default_queue_with_its_ste
     assert!(action.enabled);
     assert_eq!(action.queue_id, default_queue.id);
     assert_eq!(action.sub_actions, steps);
+}
+
+#[tokio::test]
+async fn an_action_naming_a_fixture_queue_is_stored_on_it_with_the_declared_concurrency() {
+    let mut trigger = subscriber_trigger(Vec::new());
+    trigger.queue = Some("Alerts".to_owned());
+    let fixture = Fixture {
+        queues: vec![QueueFixture {
+            name: "Alerts".to_owned(),
+            concurrency: 1,
+        }],
+        event_triggers: vec![trigger],
+        ..Fixture::default()
+    };
+    let (dir, report) = seed_fresh(&fixture).await;
+    let backend = reopen(dir.path()).await;
+    let action = backend
+        .action_repo()
+        .get(report.event_triggers[0].action_id)
+        .await
+        .unwrap()
+        .expect("action is stored");
+    let queue = backend
+        .queue_repo()
+        .get(action.queue_id)
+        .await
+        .unwrap()
+        .expect("the action's queue is stored");
+    backend.shutdown().await;
+
+    assert_eq!(queue.name, "Alerts");
+    assert_eq!(queue.concurrency, 1);
 }
 
 #[tokio::test]
@@ -268,6 +301,7 @@ async fn seeder_process_refuses_to_write_outside_a_fresh_fixture_environment() {
             phrase: String::new(),
             action_name: "Silent".to_owned(),
             steps: Vec::new(),
+            queue: None,
         }],
         ..Fixture::default()
     })
@@ -377,6 +411,7 @@ fn alert_fixture() -> Fixture {
                 "Alert Box",
                 "%user_login% raised an alert",
             )],
+            queue: None,
         }],
         ..Fixture::default()
     }
@@ -479,6 +514,7 @@ fn subscriber_trigger(steps: Vec<SubActionStep>) -> EventTrigger {
         action_name: "Announce Subscriber".to_owned(),
         config: BTreeMap::from([("tier".to_owned(), Variant::String("1000".to_owned()))]),
         steps,
+        queue: None,
     }
 }
 

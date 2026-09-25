@@ -25,6 +25,12 @@ pub struct RecordedRequest {
     pub modeled: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct TappedRequest {
+    pub arrived: tokio::time::Instant,
+    pub request: RecordedRequest,
+}
+
 /// One row per session holding the subscription: a reconnect copies rows under the same id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecordedSubscription {

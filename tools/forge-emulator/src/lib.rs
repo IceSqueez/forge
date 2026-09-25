@@ -6,6 +6,7 @@ pub mod overlay;
 pub mod report;
 pub mod run;
 pub mod scenario;
+pub mod stress;
 pub mod twitch;
 
 pub use error::EmulatorError;

@@ -70,7 +70,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p",
 "fixture": {"twich": {}}, "steps": []}"#,
             (2, 19),
-            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`",
+            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`",
         ),
         (
             "missing deadline",

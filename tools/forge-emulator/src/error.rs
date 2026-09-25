@@ -159,6 +159,22 @@ pub enum EmulatorError {
         path: PathBuf,
         problems: Vec<ScenarioProblem>,
     },
+
+    #[error("stress profile {}: {reason}", path.display())]
+    StressProfileUnreadable { path: PathBuf, reason: String },
+
+    #[error("{}: invalid stress profile{}", path.display(), lines(problems))]
+    StressProfileInvalid {
+        path: PathBuf,
+        problems: Vec<String>,
+    },
+}
+
+fn lines(problems: &[String]) -> String {
+    problems
+        .iter()
+        .map(|problem| format!("\n  {problem}"))
+        .collect()
 }
 
 fn listed(problems: &[ScenarioProblem]) -> String {

@@ -18,9 +18,9 @@ pub const MAX_WAIT_MS: u64 = 120_000;
 pub const MAX_PAUSE_MS: u64 = 5_000;
 /// forge drops an EventSub session that stays silent for 15 s.
 pub const MAX_KEEPALIVE_MS: u64 = 14_000;
-pub const MAX_CROWD_VIEWERS: u32 = 1_000;
+pub const MAX_CROWD_VIEWERS: u32 = 100_000;
 pub const MAX_CHATTER_PER_VIEWER: u32 = 20;
-pub const MAX_CROWD_MESSAGES: u64 = 10_000;
+pub const MAX_CROWD_MESSAGES: u64 = 1_000_000;
 pub const MAX_CROWD_SPACING_MS: u64 = 1_000;
 
 const CHAT_SUBSCRIPTION: &str = "channel.chat.message";

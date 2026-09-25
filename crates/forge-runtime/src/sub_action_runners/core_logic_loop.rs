@@ -15,6 +15,7 @@ use crate::ConditionGate;
 
 const MAX_COUNT: i64 = 1000;
 const MAX_WHILE_ITERATIONS: i64 = 1_000_000;
+const MAX_FOREACH_ITERATIONS: i64 = 10_000;
 
 pub struct CoreLogicLoopRunner {
     gate: Arc<ConditionGate>,
@@ -182,6 +183,14 @@ impl SubActionRunner for CoreLogicLoopRunner {
                     let Some(item) = items.get(iterations as usize) else {
                         break;
                     };
+                    if iterations >= MAX_FOREACH_ITERATIONS {
+                        exit_reason = "foreach_limit";
+                        failure = Some(format!(
+                            "core.logic.loop: foreach stopped after {MAX_FOREACH_ITERATIONS} iterations; the array has {} items",
+                            items.len()
+                        ));
+                        break;
+                    }
                     current
                         .clone()
                         .set("loop.index".to_owned(), Variant::Int(iterations))

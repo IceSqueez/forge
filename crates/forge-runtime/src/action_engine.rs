@@ -4,7 +4,7 @@ use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{CancelSignal, ChainSignal, RunContext, SubActionRegistry, effective_config};
 use forge_storage::{ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
-    ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
+    Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
     SubActionOutcome, SubActionStep, SubActionTelemetry,
 };
 use serde_json::json;
@@ -18,6 +18,9 @@ use crate::{Config, EventBus};
 
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
 const QUICK_ACTION_INTAKE_CAPACITY: usize = 64;
+const ACTION_START_KIND: &str = "action.start";
+const MAX_CAUSATION_DEPTH: usize = 16;
+const CAUSATION_DEPTH_SKIP_REASON: &str = "causation_depth_exceeded";
 
 struct QuickActionRequest {
     step: SubActionStep,
@@ -214,6 +217,50 @@ impl ActionEngine {
         });
     }
 
+    async fn refuse_too_deep(
+        &self,
+        action: &Action,
+        trigger_event_id: EventId,
+        trigger_kind: Option<String>,
+        arg_stack: ArgStack,
+        started_at: OffsetDateTime,
+    ) {
+        warn!(
+            action = %action.id,
+            action_name = %action.name,
+            event = %trigger_event_id,
+            max_depth = MAX_CAUSATION_DEPTH,
+            "action not started: its triggering event descends from too many action runs, likely an event loop between actions"
+        );
+        self.bus.publish(Event::caused_by(
+            EventSource::Core,
+            "action.skipped",
+            json!({
+                "action_id": action.id.to_string(),
+                "reason": CAUSATION_DEPTH_SKIP_REASON,
+                "queue_id": action.queue_id.to_string(),
+            }),
+            trigger_event_id,
+        ));
+        let ctx = ExecutionContext {
+            action_id: action.id,
+            metadata: ExecutionMetadata::Trigger {
+                event_id: trigger_event_id,
+                trigger_kind,
+            },
+            arg_stack_snapshot: arg_stack.snapshot(),
+            started_at,
+            completed_at: Some(started_at),
+            telemetry: Vec::new(),
+            outcome: ExecutionOutcome::Failed(format!(
+                "not started: the triggering event is more than {MAX_CAUSATION_DEPTH} action runs deep (event loop between actions?)"
+            )),
+        };
+        if let Err(e) = self.history.save(&ctx).await {
+            warn!("history_repo.save failed: {e}");
+        }
+    }
+
     async fn run_execution(&self, req: ExecutionRequest, cancel: &CancelSignal) {
         let action = match self.actions.get(req.action_id).await {
             Ok(Some(a)) if a.enabled => a,
@@ -227,6 +274,23 @@ impl ActionEngine {
         let arg_stack = req.initial_args;
         let trigger_kind = req.trigger_kind;
         let started_at = OffsetDateTime::now_utc();
+
+        let ancestor_runs = self.bus.count_in_lineage(
+            req.trigger_event_id,
+            |event| event.kind == ACTION_START_KIND,
+            MAX_CAUSATION_DEPTH,
+        );
+        if ancestor_runs >= MAX_CAUSATION_DEPTH {
+            self.refuse_too_deep(
+                &action,
+                req.trigger_event_id,
+                trigger_kind,
+                arg_stack,
+                started_at,
+            )
+            .await;
+            return;
+        }
 
         let mut ctx = ExecutionContext {
             action_id: req.action_id,
@@ -243,7 +307,7 @@ impl ActionEngine {
 
         let start_event = Event::caused_by(
             EventSource::Core,
-            "action.start",
+            ACTION_START_KIND,
             json!({
                 "action_id": action.id.to_string(),
                 "action_name": action.name,

@@ -113,11 +113,11 @@ impl EventBus {
 
     /// Slow subscribers lag (broadcast semantics); publisher never blocks on them.
     pub fn publish(&self, event: Event) {
-        let _ = self.sender.send(event.clone());
         self.ring
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .push(event);
+            .push(event.clone());
+        let _ = self.sender.send(event);
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -141,6 +141,29 @@ impl EventBus {
             .iter()
             .find(|e| e.id == event_id)
             .cloned()
+    }
+
+    pub(crate) fn count_in_lineage(
+        &self,
+        from: EventId,
+        counts: impl Fn(&Event) -> bool,
+        ceiling: usize,
+    ) -> usize {
+        let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+        let mut matched = 0;
+        let mut cursor = Some(from);
+        while let Some(id) = cursor
+            && matched < ceiling
+        {
+            let Some(event) = ring.iter().rev().find(|e| e.id == id) else {
+                break;
+            };
+            if counts(event) {
+                matched += 1;
+            }
+            cursor = event.caused_by;
+        }
+        matched
     }
 
     pub fn recent(&self, limit: usize) -> Vec<Event> {

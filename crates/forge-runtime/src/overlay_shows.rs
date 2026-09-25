@@ -14,7 +14,7 @@ use crate::speak_dispatcher::{ShowSpeech, SpeakDispatchError, SpeakDispatcher, S
 
 /// A memory guard on shows waiting behind the one on screen, not a pacing limit: a backlog below
 /// it is always shown in full, however late.
-pub const SHOW_QUEUE_CAPACITY: usize = 64;
+pub const SHOW_QUEUE_CAPACITY: usize = 1000;
 
 /// No show holds its overlay longer than this, whatever duration it asked for.
 pub const SHOW_CEILING: Duration = Duration::from_secs(120);

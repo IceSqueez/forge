@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use forge_events::{Event, EventSource};
+use forge_types::{ChatPayload, ChatSegment};
 use gpui::SharedString;
 use serde::Serialize;
 
@@ -143,11 +144,10 @@ impl EventLog {
     pub(crate) fn summarize(event: &Event) -> String {
         let p = &event.payload;
         match event.kind.as_str() {
-            k if is_chat_message_kind(k) => {
-                let author = p.get("author").and_then(|v| v.as_str()).unwrap_or("?");
-                let text = p.get("text").and_then(|v| v.as_str()).unwrap_or("");
-                format!("{author}: {text}")
-            }
+            k if is_chat_message_kind(k) => match Self::chat_envelope(event) {
+                Some(chat) => format!("{}: {}", chat.author, Self::chat_text(&chat.segments)),
+                None => String::new(),
+            },
             "timer.tick" => p
                 .get("name")
                 .and_then(|v| v.as_str())
@@ -182,18 +182,35 @@ impl EventLog {
         if !is_chat_message_kind(&event.kind) {
             return (String::new(), String::new());
         }
-        let login = event
-            .payload
-            .get("author")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+        let login = Self::chat_envelope(event)
+            .map(|chat| chat.author)
+            .unwrap_or_default();
         let platform = event
-            .payload
-            .get("platform")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
+            .source
+            .to_platform_id()
+            .map(|id| id.as_str().to_owned())
+            .unwrap_or_default();
         (login, platform)
+    }
+
+    fn chat_envelope(event: &Event) -> Option<ChatPayload> {
+        let value = event.payload.get(ChatPayload::KEY)?;
+        serde_json::from_value(value.clone()).ok()
+    }
+
+    fn chat_text(segments: &[ChatSegment]) -> String {
+        let mut out = String::new();
+        for segment in segments {
+            match segment {
+                ChatSegment::Text { text } => out.push_str(text),
+                ChatSegment::Mention { username } => {
+                    out.push('@');
+                    out.push_str(username);
+                }
+                ChatSegment::Emote { name, .. } => out.push_str(name),
+                ChatSegment::Link { display, .. } => out.push_str(display),
+            }
+        }
+        out
     }
 }

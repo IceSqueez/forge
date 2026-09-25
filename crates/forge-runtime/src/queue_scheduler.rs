@@ -843,6 +843,11 @@ mod tests {
     ) -> QueueSchedulerHandle {
         let engine = spawn_action_engine(
             Arc::clone(bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             registry,
@@ -911,6 +916,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -956,6 +966,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1008,6 +1023,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1060,6 +1080,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1101,6 +1126,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1202,6 +1232,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1247,6 +1282,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1289,6 +1329,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1338,6 +1383,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1374,6 +1424,11 @@ mod tests {
         let dp = make_dp().await;
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1398,6 +1453,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1441,6 +1501,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1484,6 +1549,11 @@ mod tests {
         let dp = make_dp().await;
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1646,6 +1716,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             waiting_registry(),
@@ -1704,6 +1779,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             waiting_registry(),
@@ -1743,6 +1823,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1768,6 +1853,11 @@ mod tests {
         let dp = make_dp().await;
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1790,6 +1880,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),

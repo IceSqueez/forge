@@ -2160,6 +2160,7 @@ mod tests {
         viewers.expect_list().returning(|| Ok(Vec::new()));
         let engine = spawn_action_engine(
             EventBus::new(Arc::new(StubEventLog)),
+            crate::test_support::stub_catalog(),
             Arc::new(StubActions),
             Arc::new(StubHistory),
             Arc::new(SubActionRegistry::new()),

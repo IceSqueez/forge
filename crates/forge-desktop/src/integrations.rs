@@ -1617,6 +1617,7 @@ mod tests {
             let bus = EventBus::new(Arc::new(StubEventLog));
             let engine = spawn_action_engine(
                 Arc::clone(&bus),
+                crate::test_support::stub_catalog(),
                 Arc::new(StubActions),
                 Arc::new(StubHistory),
                 Arc::new(SubActionRegistry::new()),

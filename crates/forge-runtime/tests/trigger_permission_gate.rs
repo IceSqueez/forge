@@ -254,6 +254,11 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     let sub = bus.subscribe();
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(sub_reg),
@@ -263,8 +268,11 @@ async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     let evaluator = spawn_trigger_evaluator(
         Arc::clone(&bus),
         fake_registry(),
-        dp.action_repo(),
-        dp.trigger_instance_repo(),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         scheduler,
         forge_runtime::Config::default(),
     );

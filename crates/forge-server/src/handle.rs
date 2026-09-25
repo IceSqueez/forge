@@ -365,6 +365,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
+            forge_runtime::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),

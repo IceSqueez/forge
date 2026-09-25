@@ -644,8 +644,7 @@ mod tests {
     struct EvaluatorFixture {
         bus: Arc<EventBus>,
         registry: Arc<TriggerRegistry>,
-        actions: Arc<dyn ActionRepo>,
-        trigger_instances: Arc<dyn TriggerInstanceRepo>,
+        catalog: Arc<Catalog>,
         scheduler: QueueSchedulerHandle,
         _backend: Sandboxed<Arc<SqliteBackend>>,
     }
@@ -681,8 +680,10 @@ mod tests {
             dp.action_repo(),
         );
 
+        let catalog = Catalog::from_provider(dp.as_ref());
         let engine = crate::action_engine::spawn_action_engine(
             Arc::clone(&bus),
+            Arc::clone(&catalog),
             dp.action_repo(),
             dp.history_repo(),
             sub_reg,
@@ -693,8 +694,7 @@ mod tests {
         EvaluatorFixture {
             bus,
             registry: trig_reg,
-            actions: dp.action_repo(),
-            trigger_instances: dp.trigger_instance_repo(),
+            catalog,
             scheduler,
             _backend: backend,
         }
@@ -705,8 +705,7 @@ mod tests {
             spawn_trigger_evaluator(
                 Arc::clone(&self.bus),
                 Arc::clone(&self.registry),
-                Arc::clone(&self.actions),
-                Arc::clone(&self.trigger_instances),
+                Arc::clone(&self.catalog),
                 self.scheduler.clone(),
                 Config::default(),
             )
@@ -717,11 +716,11 @@ mod tests {
             TriggerEvaluator {
                 bus: Arc::clone(&self.bus),
                 registry: Arc::clone(&self.registry),
-                actions: Arc::clone(&self.actions),
-                trigger_instances: Arc::clone(&self.trigger_instances),
+                catalog: Arc::clone(&self.catalog),
                 scheduler: self.scheduler.clone(),
                 subscription,
                 cooldowns: CooldownMap::new(Config::default().max_cooldown_entries),
+                resolved: ResolvedBindings::default(),
             }
         }
     }
@@ -1241,11 +1240,11 @@ mod tests {
         let evaluator = TriggerEvaluator {
             bus: Arc::clone(&bus),
             registry: Arc::new(registry),
-            actions: Arc::clone(&fixture.actions),
-            trigger_instances: Arc::clone(&fixture.trigger_instances),
+            catalog: Arc::clone(&fixture.catalog),
             scheduler: fixture.scheduler.clone(),
             subscription: bus.subscribe(),
             cooldowns: CooldownMap::new(Config::default().max_cooldown_entries),
+            resolved: ResolvedBindings::default(),
         };
         (fixture, evaluator)
     }
@@ -1645,6 +1644,249 @@ mod tests {
                     "{id} must not fire on {sibling}"
                 );
             }
+        }
+    }
+
+    const CATALOG_WAIT: Duration = Duration::from_secs(5);
+
+    /// A fence action and (optionally) a target action, both on one serial queue, so a
+    /// fence start proves every earlier dispatch has already started.
+    struct CatalogRig {
+        bus: Arc<EventBus>,
+        dp: Arc<dyn DataProvider>,
+        fence: ActionId,
+        target: Action,
+        target_instance: TriggerInstance,
+        _evaluator: TriggerEvaluatorHandle,
+        _backend: Sandboxed<Arc<SqliteBackend>>,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum CatalogWrite {
+        CreateAndLinkTarget,
+        EnableTargetAction,
+        EnableTargetInstance,
+        DisableTargetAction,
+        DeleteTargetAction,
+        DisableTargetInstance,
+        RenameTargetEvent,
+        UnlinkTarget,
+        MoveTargetToUnscheduledQueue,
+    }
+
+    impl CatalogWrite {
+        fn target_linked_at_start(self) -> bool {
+            !matches!(self, Self::CreateAndLinkTarget)
+        }
+
+        fn target_enabled_at_start(self) -> (bool, bool) {
+            match self {
+                Self::EnableTargetAction => (false, true),
+                Self::EnableTargetInstance => (true, false),
+                _ => (true, true),
+            }
+        }
+
+        fn fires_after(self) -> bool {
+            matches!(
+                self,
+                Self::CreateAndLinkTarget | Self::EnableTargetAction | Self::EnableTargetInstance
+            )
+        }
+    }
+
+    async fn catalog_rig(write: CatalogWrite) -> CatalogRig {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let backend = make_backend().await;
+        let dp: Arc<dyn DataProvider> = Arc::clone(&backend) as Arc<dyn DataProvider>;
+        let queue = Queue {
+            id: QueueId::new(),
+            name: "serial".into(),
+            description: String::new(),
+            concurrency: 1,
+        };
+        dp.queue_repo().save(&queue).await.unwrap();
+
+        let fence = log_action(ActionId::new(), queue.id);
+        let fence_instance = custom_event_instance("fence");
+        dp.action_repo().save(&fence).await.unwrap();
+        dp.trigger_instance_repo()
+            .save(&fence_instance)
+            .await
+            .unwrap();
+        dp.trigger_instance_repo()
+            .link_action(fence.id, fence_instance.id, 0)
+            .await
+            .unwrap();
+
+        let (action_enabled, instance_enabled) = write.target_enabled_at_start();
+        let target = Action {
+            enabled: action_enabled,
+            ..log_action(ActionId::new(), queue.id)
+        };
+        let target_instance = TriggerInstance {
+            enabled: instance_enabled,
+            ..custom_event_instance("target")
+        };
+        if write.target_linked_at_start() {
+            dp.action_repo().save(&target).await.unwrap();
+            dp.trigger_instance_repo()
+                .save(&target_instance)
+                .await
+                .unwrap();
+            dp.trigger_instance_repo()
+                .link_action(target.id, target_instance.id, 0)
+                .await
+                .unwrap();
+        }
+
+        let (sub_reg, trig_reg) = build_registries(
+            Arc::clone(&dp) as Arc<dyn GlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn UserGlobalsRepo>,
+            Arc::clone(&dp) as Arc<dyn SettingsRepo>,
+            dp.trigger_instance_repo(),
+            dp.action_repo(),
+        );
+        let catalog = Catalog::from_provider(dp.as_ref());
+        let engine = crate::action_engine::spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&catalog),
+            dp.action_repo(),
+            dp.history_repo(),
+            sub_reg,
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+        let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
+        let evaluator = spawn_trigger_evaluator(
+            Arc::clone(&bus),
+            trig_reg,
+            catalog,
+            scheduler,
+            Config::default(),
+        );
+
+        CatalogRig {
+            bus,
+            dp,
+            fence: fence.id,
+            target,
+            target_instance,
+            _evaluator: evaluator,
+            _backend: backend,
+        }
+    }
+
+    impl CatalogRig {
+        /// Publishes the target event then the fence event; reports whether the target
+        /// action started before the fence did.
+        async fn target_fires(&self) -> bool {
+            let mut sub = self.bus.subscribe();
+            self.bus
+                .publish(Event::new(EventSource::Server, "custom.target", json!({})));
+            self.bus
+                .publish(Event::new(EventSource::Server, "custom.fence", json!({})));
+            let fence = self.fence.to_string();
+            let target = self.target.id.to_string();
+            let mut target_started = false;
+            loop {
+                let event = tokio::time::timeout(CATALOG_WAIT, sub.recv())
+                    .await
+                    .expect("the fence action never started")
+                    .unwrap();
+                if event.kind != "action.start" {
+                    continue;
+                }
+                let started = event.payload["action_id"].as_str().unwrap_or_default();
+                if started == target {
+                    target_started = true;
+                } else if started == fence {
+                    return target_started;
+                }
+            }
+        }
+
+        async fn apply(&self, write: CatalogWrite) {
+            let actions = self.dp.action_repo();
+            let instances = self.dp.trigger_instance_repo();
+            let (target, instance) = (self.target.id, self.target_instance.id);
+            match write {
+                CatalogWrite::CreateAndLinkTarget => {
+                    actions.save(&self.target).await.unwrap();
+                    instances.save(&self.target_instance).await.unwrap();
+                    instances.link_action(target, instance, 0).await.unwrap();
+                }
+                CatalogWrite::EnableTargetAction => {
+                    actions.set_enabled(target, true).await.unwrap();
+                }
+                CatalogWrite::EnableTargetInstance => {
+                    instances.set_enabled(instance, true).await.unwrap();
+                }
+                CatalogWrite::DisableTargetAction => {
+                    actions.set_enabled(target, false).await.unwrap();
+                }
+                CatalogWrite::DeleteTargetAction => {
+                    actions.delete(target).await.unwrap();
+                }
+                CatalogWrite::DisableTargetInstance => {
+                    instances.set_enabled(instance, false).await.unwrap();
+                }
+                CatalogWrite::RenameTargetEvent => {
+                    instances
+                        .save(&TriggerInstance {
+                            id: instance,
+                            ..custom_event_instance("renamed")
+                        })
+                        .await
+                        .unwrap();
+                }
+                CatalogWrite::UnlinkTarget => {
+                    instances.unlink_action(target, instance).await.unwrap();
+                }
+                CatalogWrite::MoveTargetToUnscheduledQueue => {
+                    let unscheduled = Queue {
+                        id: QueueId::new(),
+                        name: "unscheduled".into(),
+                        description: String::new(),
+                        concurrency: 1,
+                    };
+                    self.dp.queue_repo().save(&unscheduled).await.unwrap();
+                    actions
+                        .save(&Action {
+                            queue_id: unscheduled.id,
+                            ..self.target.clone()
+                        })
+                        .await
+                        .unwrap();
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_event_after_a_catalog_write_returns_is_evaluated_against_that_write() {
+        for write in [
+            CatalogWrite::CreateAndLinkTarget,
+            CatalogWrite::EnableTargetAction,
+            CatalogWrite::EnableTargetInstance,
+            CatalogWrite::DisableTargetAction,
+            CatalogWrite::DeleteTargetAction,
+            CatalogWrite::DisableTargetInstance,
+            CatalogWrite::RenameTargetEvent,
+            CatalogWrite::UnlinkTarget,
+            CatalogWrite::MoveTargetToUnscheduledQueue,
+        ] {
+            let rig = catalog_rig(write).await;
+            assert_eq!(
+                rig.target_fires().await,
+                !write.fires_after(),
+                "{write:?}: the pre-write catalog must be built and resolved first",
+            );
+            rig.apply(write).await;
+            assert_eq!(
+                rig.target_fires().await,
+                write.fires_after(),
+                "{write:?}: the next event must see the write",
+            );
         }
     }
 }

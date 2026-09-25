@@ -757,6 +757,11 @@ mod tests {
         .unwrap();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(reg),
@@ -845,6 +850,11 @@ mod tests {
         reg.register(runner).unwrap();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(reg),
@@ -888,6 +898,11 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -1005,6 +1020,11 @@ mod tests {
 
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             history,
             Arc::new(reg),
@@ -1040,6 +1060,11 @@ mod tests {
         let (history, mut rx) = capturing_history();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             history,
             Arc::new(SubActionRegistry::new()),
@@ -1077,6 +1102,11 @@ mod tests {
         let (history, mut rx) = capturing_history();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             history,
             Arc::new(SubActionRegistry::new()),
@@ -1122,6 +1152,11 @@ mod tests {
         .unwrap();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             history,
             Arc::new(reg),
@@ -1224,6 +1259,11 @@ mod tests {
         reg.register(Box::new(EmitRunner)).unwrap();
         let engine = spawn_action_engine(
             Arc::clone(&bus),
+            crate::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(reg),
@@ -1395,5 +1435,63 @@ mod tests {
             started,
             "an unrelated platform event must not inherit the refused loop's depth"
         );
+    }
+
+    #[tokio::test]
+    async fn a_run_started_after_an_action_edit_returns_executes_the_edited_action() {
+        let dp = sandboxed_backend([0x5e; 32])
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            crate::Catalog::from_provider(dp.as_ref()),
+            dp.action_repo(),
+            dp.history_repo(),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(crate::action_cancel::ActionCancelRegistry::new()),
+        );
+        let default_queue: forge_types::QueueId =
+            serde_json::from_str("\"00000000000000000000000000\"").unwrap();
+        let mut action = forge_types::Action {
+            id: ActionId::new(),
+            name: "before".to_owned(),
+            group: None,
+            queue_id: default_queue,
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: forge_types::ExecutionMode::Sequential,
+            description: None,
+            sub_actions: vec![],
+        };
+
+        let mut started = Vec::new();
+        for name in ["before", "after"] {
+            action.name = name.to_owned();
+            dp.action_repo().save(&action).await.unwrap();
+            let mut sub = bus.subscribe();
+            engine
+                .dispatch(ExecutionRequest {
+                    action_id: action.id,
+                    trigger_event_id: EventId::new(),
+                    trigger_kind: None,
+                    initial_args: ArgStack::new(),
+                })
+                .await
+                .unwrap();
+            let start = loop {
+                let event = tokio::time::timeout(Duration::from_secs(5), sub.recv())
+                    .await
+                    .expect("the dispatched run never started")
+                    .unwrap();
+                if event.kind == ACTION_START_KIND {
+                    break event;
+                }
+            };
+            started.push(start.payload["action_name"].as_str().unwrap().to_owned());
+        }
+
+        assert_eq!(started, ["before", "after"]);
     }
 }

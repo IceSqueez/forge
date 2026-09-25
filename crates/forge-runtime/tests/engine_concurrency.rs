@@ -12,12 +12,14 @@ use forge_registry::{
 };
 use forge_runtime::sub_action_runners::{CoreLogicWaitRunner, WAIT_KIND_ID, WAIT_MS_KEY};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, DispatchError, EventBus, EventSubscription,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, DispatchError, EventBus, EventSubscription,
     NullEventLogRepo, PendingQuickAction, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
     SchedulerRequest, spawn_action_engine,
 };
+use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
-    ActionRepo, ActionStats, ActionTelemetry, ExecutionStatus, HistoryRepo, StorageError,
+    ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ExecutionStatus, HistoryRepo,
+    StorageError,
 };
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionMode,
@@ -299,9 +301,19 @@ async fn rig(queues: Vec<Queue>, actions: &[&Action]) -> Rig {
     let (saved_tx, saved) = mpsc::unbounded_channel();
     let (save_gate, save_open) = watch::channel(true);
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let repo: Arc<dyn ActionRepo> = Arc::new(repo);
+    let mut instances = MockTriggerInstanceRepo::new();
+    instances
+        .expect_list_for_action()
+        .returning(|_| Ok(Vec::new()));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::new(repo),
+        Catalog::new(
+            Arc::clone(&repo),
+            Arc::new(instances),
+            CatalogRevision::new(),
+        ),
+        repo,
         Arc::new(CapturingHistoryRepo {
             saved: saved_tx,
             gate: save_open,

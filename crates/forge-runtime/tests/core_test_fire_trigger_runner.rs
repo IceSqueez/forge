@@ -73,6 +73,11 @@ async fn harness(queue: Queue) -> Harness {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            backend.action_repo(),
+            backend.trigger_instance_repo(),
+            backend.catalog_revision(),
+        ),
         backend.action_repo(),
         backend.history_repo(),
         Arc::new(reg),

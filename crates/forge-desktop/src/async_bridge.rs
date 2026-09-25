@@ -457,6 +457,7 @@ mod tests {
         history.expect_save().returning(|_| Ok(()));
         spawn_action_engine(
             EventBus::new(Arc::new(StubEventLog)),
+            crate::test_support::stub_catalog(),
             Arc::new(StubActions),
             Arc::new(history),
             Arc::new(registry),

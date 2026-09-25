@@ -152,6 +152,11 @@ async fn cancel_runner_aborts_a_live_in_flight_execution() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(reg),
@@ -211,6 +216,11 @@ async fn cancel_guard_deregisters_after_a_run_completes() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(SubActionRegistry::new()),

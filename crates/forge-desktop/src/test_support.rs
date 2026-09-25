@@ -10,15 +10,16 @@ use forge_registry::{
     ActorBlock, ActorIdentity, EventFilter, FormField, KindPlatformContract, LoginSlot,
     SubActionRegistry, TriggerCategory, TriggerKindDescriptor, TriggerRegistry, TriggerVariables,
 };
-use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
+use forge_runtime::{ActionCancelRegistry, Catalog, EventBus, spawn_action_engine};
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
+use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
-    ActionRepo, ActionStats, ActionTelemetry, ChatHistoryRepo, CredentialId, CredentialsRepo,
-    DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, MediaRepo,
-    OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, QueueRepo,
-    ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo,
+    ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ChatHistoryRepo, CredentialId,
+    CredentialsRepo, DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo,
+    HistoryRepo, MediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
+    OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, ActorRole, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig,
@@ -263,6 +264,10 @@ impl DataProvider for TestBackend {
         unreachable!("the settings pane reaches no sub-repo")
     }
 
+    fn catalog_revision(&self) -> CatalogRevision {
+        unreachable!("the settings pane reaches no catalog")
+    }
+
     async fn schema_version(&self) -> Result<u32, StorageError> {
         unreachable!("the settings pane never reads the schema version")
     }
@@ -393,6 +398,15 @@ impl ActionRepo for StubActions {
     async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
         Ok(0)
     }
+}
+
+/// A catalog over [`StubActions`], which lists no action, so no trigger link is ever read.
+pub(crate) fn stub_catalog() -> Arc<Catalog> {
+    Catalog::new(
+        Arc::new(StubActions),
+        Arc::new(MockTriggerInstanceRepo::new()),
+        CatalogRevision::new(),
+    )
 }
 
 pub(crate) struct StubHistory;
@@ -587,6 +601,7 @@ pub(crate) async fn stopped_server_handle(backend: &Arc<TestBackend>) -> ServerH
     let bus = EventBus::new(Arc::new(StubEventLog));
     let engine = Arc::new(spawn_action_engine(
         Arc::clone(&bus),
+        stub_catalog(),
         Arc::new(StubActions),
         Arc::new(StubHistory),
         Arc::new(SubActionRegistry::new()),

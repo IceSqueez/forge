@@ -265,3 +265,98 @@ impl QueueRepo for RevisingQueueRepo {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::pin::pin;
+    use std::task::Poll;
+
+    use tokio::sync::Semaphore;
+
+    use super::*;
+
+    /// A queue repo whose `save` blocks until the test hands it a permit.
+    struct GatedQueueRepo {
+        permits: Arc<Semaphore>,
+    }
+
+    #[async_trait]
+    impl QueueRepo for GatedQueueRepo {
+        async fn list(&self) -> Result<Vec<Queue>, StorageError> {
+            Ok(Vec::new())
+        }
+        async fn get(&self, _id: QueueId) -> Result<Option<Queue>, StorageError> {
+            Ok(None)
+        }
+        async fn get_by_name(&self, _name: &str) -> Result<Option<Queue>, StorageError> {
+            Ok(None)
+        }
+        async fn save(&self, _queue: &Queue) -> Result<(), StorageError> {
+            self.permits.acquire().await.unwrap().forget();
+            Ok(())
+        }
+        async fn delete(&self, _id: QueueId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+    }
+
+    fn gated() -> (Arc<dyn QueueRepo>, Arc<Semaphore>, CatalogRevision) {
+        let permits = Arc::new(Semaphore::new(0));
+        let revision = CatalogRevision::new();
+        let repo = RevisingQueueRepo::wrap(
+            Arc::new(GatedQueueRepo {
+                permits: Arc::clone(&permits),
+            }),
+            revision.clone(),
+        );
+        (repo, permits, revision)
+    }
+
+    fn queue() -> Queue {
+        Queue {
+            id: QueueId::new(),
+            name: "q".to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        }
+    }
+
+    async fn poll_once<F: Future>(fut: std::pin::Pin<&mut F>) -> Poll<F::Output> {
+        let mut fut = fut;
+        std::future::poll_fn(|cx| Poll::Ready(fut.as_mut().poll(cx))).await
+    }
+
+    #[tokio::test]
+    async fn revision_advances_only_once_the_write_returns() {
+        let (repo, permits, revision) = gated();
+        let queue = queue();
+        let mut save = pin!(repo.save(&queue));
+
+        assert!(poll_once(save.as_mut()).await.is_pending());
+        let while_in_flight = revision.current();
+        permits.add_permits(1);
+        save.await.unwrap();
+
+        assert_eq!(
+            (while_in_flight, revision.current()),
+            (0, 1),
+            "an in-flight write must not be visible as a new revision until it returns",
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_in_flight_write_still_advances_the_revision() {
+        let (repo, _permits, revision) = gated();
+        let queue = queue();
+        {
+            let mut save = pin!(repo.save(&queue));
+            assert!(poll_once(save.as_mut()).await.is_pending());
+        }
+
+        assert_eq!(
+            revision.current(),
+            1,
+            "a dropped write may still commit, so readers must be told to rebuild",
+        );
+    }
+}

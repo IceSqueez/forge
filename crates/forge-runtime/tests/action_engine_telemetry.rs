@@ -10,10 +10,13 @@ use forge_registry::{
     FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry, SubActionRunner,
 };
 use forge_runtime::{
-    ActionCancelRegistry, EventBus, ExecutionRequest, NullEventLogRepo, spawn_action_engine,
+    ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo,
+    spawn_action_engine,
 };
+use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
-    ActionRepo, ActionStats, ActionTelemetry, ExecutionStatus, HistoryRepo, StorageError,
+    ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ExecutionStatus, HistoryRepo,
+    StorageError,
 };
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, ExecutionOutcome,
@@ -294,6 +297,12 @@ fn request(action_id: ActionId) -> ExecutionRequest {
     }
 }
 
+fn catalog_over(repo: &Arc<SpyActionRepo>) -> Arc<Catalog> {
+    let mut instances = MockTriggerInstanceRepo::new();
+    instances.expect_list_for_action().returning(|_| Ok(vec![]));
+    Catalog::new(repo.clone(), Arc::new(instances), CatalogRevision::new())
+}
+
 async fn eventually<F: Fn() -> bool>(pred: F) -> bool {
     for _ in 0..80 {
         if pred() {
@@ -314,6 +323,7 @@ async fn successful_execution_records_one_success_row() {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        catalog_over(&repo),
         repo.clone(),
         Arc::new(SpyHistoryRepo::new()),
         Arc::new(SubActionRegistry::new()),
@@ -343,6 +353,7 @@ async fn failed_execution_records_one_error_row() {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        catalog_over(&repo),
         repo.clone(),
         Arc::new(SpyHistoryRepo::new()),
         Arc::new(reg),
@@ -385,6 +396,7 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        catalog_over(&repo),
         repo.clone(),
         history.clone(),
         Arc::new(reg),
@@ -422,6 +434,7 @@ async fn telemetry_write_error_is_swallowed_and_engine_keeps_running() {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        catalog_over(&repo),
         repo.clone(),
         Arc::new(SpyHistoryRepo::new()),
         Arc::new(SubActionRegistry::new()),

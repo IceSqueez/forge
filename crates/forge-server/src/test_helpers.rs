@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use forge_storage::CatalogRevision;
 use forge_storage::action::MockActionRepo;
 use forge_storage::chat_history::MockChatHistoryRepo;
 use forge_storage::credentials::MockCredentialsRepo;
@@ -50,6 +51,7 @@ pub struct TestDataProvider {
     pub settings_repo: Arc<MockSettingsRepo>,
     pub script_repo: Arc<MockScriptRepo>,
     pub credentials_repo: Arc<MockCredentialsRepo>,
+    pub catalog_revision: CatalogRevision,
 }
 
 impl TestDataProvider {
@@ -58,6 +60,7 @@ impl TestDataProvider {
         overlay_repo.expect_get().returning(|_| Ok(None));
 
         Self {
+            catalog_revision: CatalogRevision::new(),
             action_repo: Arc::new(MockActionRepo::new()),
             trigger_instance_repo: Arc::new(MockTriggerInstanceRepo::new()),
             queue_repo: Arc::new(MockQueueRepo::new()),
@@ -80,6 +83,10 @@ impl TestDataProvider {
 
     pub fn action(&mut self) -> &mut MockActionRepo {
         Arc::get_mut(&mut self.action_repo).expect("action_repo already shared")
+    }
+
+    pub fn trigger_instance(&mut self) -> &mut MockTriggerInstanceRepo {
+        Arc::get_mut(&mut self.trigger_instance_repo).expect("trigger_instance_repo already shared")
     }
 
     pub fn queue(&mut self) -> &mut MockQueueRepo {
@@ -368,6 +375,10 @@ impl DataProvider for TestDataProvider {
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {
         Arc::clone(&self.media_repo) as Arc<dyn MediaRepo>
+    }
+
+    fn catalog_revision(&self) -> CatalogRevision {
+        self.catalog_revision.clone()
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

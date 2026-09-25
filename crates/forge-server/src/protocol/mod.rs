@@ -196,6 +196,11 @@ mod tests {
         let _registry = Arc::new(ScriptRegistry::new());
         Arc::new(spawn_action_engine(
             Arc::clone(bus),
+            forge_runtime::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),
@@ -564,9 +569,16 @@ mod tests {
         let action_id_str = action.id.to_string();
         let action_clone = action.clone();
         let mut tdp = TestDataProvider::new();
+        let listed = action.clone();
         tdp.action()
             .expect_get()
             .returning(move |_| Ok(Some(action_clone.clone())));
+        tdp.action()
+            .expect_list()
+            .returning(move || Ok(vec![listed.clone()]));
+        tdp.trigger_instance()
+            .expect_list_for_action()
+            .returning(|_| Ok(Vec::new()));
         tdp.history().expect_save().returning(|_| Ok(()));
         let dp: Arc<dyn DataProvider> = Arc::new(tdp);
         let ctx = make_ctx_with_dp(true, dp);

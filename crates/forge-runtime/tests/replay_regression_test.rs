@@ -115,6 +115,11 @@ async fn spawn_pipeline() -> PipelineFixture {
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(SubActionRegistry::new()),

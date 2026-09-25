@@ -269,6 +269,11 @@ mod tests {
         let dp: Arc<dyn DataProvider> = test_dp();
         let action_engine = Arc::new(spawn_action_engine(
             Arc::clone(&bus),
+            forge_runtime::Catalog::new(
+                dp.action_repo(),
+                dp.trigger_instance_repo(),
+                dp.catalog_revision(),
+            ),
             dp.action_repo(),
             dp.history_repo(),
             Arc::new(SubActionRegistry::new()),

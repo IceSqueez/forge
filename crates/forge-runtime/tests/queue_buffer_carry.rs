@@ -11,12 +11,14 @@ use forge_registry::{
     SubActionRunner,
 };
 use forge_runtime::{
-    ActionCancelRegistry, EventBus, EventSubscription, MAX_PENDING_PER_QUEUE, NullEventLogRepo,
-    QueueMode, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerRequest,
-    spawn_action_engine,
+    ActionCancelRegistry, Catalog, EventBus, EventSubscription, MAX_PENDING_PER_QUEUE,
+    NullEventLogRepo, QueueMode, QueueRuntimeState, QueueScheduler, QueueSchedulerHandle,
+    SchedulerRequest, spawn_action_engine,
 };
+use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
-    ActionRepo, ActionStats, ActionTelemetry, ExecutionStatus, HistoryRepo, StorageError,
+    ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ExecutionStatus, HistoryRepo,
+    StorageError,
 };
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, Queue, QueueId,
@@ -237,9 +239,19 @@ async fn gated_queue(concurrency: u32, actions: &[ActionId]) -> GatedQueue {
     registry.register(Box::new(GateRunner { open })).unwrap();
 
     let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let repo: Arc<dyn ActionRepo> = Arc::new(repo);
+    let mut instances = MockTriggerInstanceRepo::new();
+    instances
+        .expect_list_for_action()
+        .returning(|_| Ok(Vec::new()));
     let engine = spawn_action_engine(
         Arc::clone(&bus),
-        Arc::new(repo),
+        Catalog::new(
+            Arc::clone(&repo),
+            Arc::new(instances),
+            CatalogRevision::new(),
+        ),
+        repo,
         Arc::new(NullHistoryRepo),
         Arc::new(registry),
         Arc::new(ActionCancelRegistry::new()),

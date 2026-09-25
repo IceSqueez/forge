@@ -257,6 +257,11 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         dp.action_repo(),
         dp.history_repo(),
         sub_reg,
@@ -266,8 +271,11 @@ async fn trigger_evaluator_applies_effective_config_overrides() {
     let _eval = spawn_trigger_evaluator(
         Arc::clone(&bus),
         trig_reg,
-        dp.action_repo(),
-        dp.trigger_instance_repo(),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         sched,
         forge_runtime::Config::default(),
     );
@@ -361,6 +369,11 @@ async fn sub_action_runner_sees_merged_default_and_override() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         dp.action_repo(),
         dp.history_repo(),
         Arc::new(sub_reg),
@@ -370,8 +383,11 @@ async fn sub_action_runner_sees_merged_default_and_override() {
     let _eval = spawn_trigger_evaluator(
         Arc::clone(&bus),
         Arc::new(trig_reg),
-        dp.action_repo(),
-        dp.trigger_instance_repo(),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         sched,
         forge_runtime::Config::default(),
     );
@@ -434,6 +450,11 @@ async fn linked_action_executes_via_join_table_only() {
 
     let engine = spawn_action_engine(
         Arc::clone(&bus),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         dp.action_repo(),
         dp.history_repo(),
         sub_reg,
@@ -443,8 +464,11 @@ async fn linked_action_executes_via_join_table_only() {
     let _eval = spawn_trigger_evaluator(
         Arc::clone(&bus),
         trig_reg,
-        dp.action_repo(),
-        dp.trigger_instance_repo(),
+        forge_runtime::Catalog::new(
+            dp.action_repo(),
+            dp.trigger_instance_repo(),
+            dp.catalog_revision(),
+        ),
         sched,
         forge_runtime::Config::default(),
     );

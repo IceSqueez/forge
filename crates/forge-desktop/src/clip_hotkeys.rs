@@ -141,3 +141,214 @@ pub fn spawn_clip_hotkey_dispatcher(
     })
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use forge_audio::{AudioError, AudioSink, NullAudioEventSink};
+    use forge_runtime::EventBus;
+    use forge_soundboard::{AudioSinkFactory, ClipLibrary, SoundboardSettingsHandle};
+    use forge_storage::MockMediaRepo;
+    use forge_types::OutputDevice;
+    use serde_json::json;
+    use time::OffsetDateTime;
+    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+
+    use super::*;
+    use crate::hotkey_bindings::HOTKEY_RELEASED_KIND;
+    use crate::test_support::StubEventLog;
+
+    const EVENT_DEADLINE: Duration = Duration::from_secs(2);
+
+    fn clip(hotkey: Option<&str>) -> StoredClip {
+        StoredClip {
+            id: ClipId::new(),
+            name: "airhorn".to_owned(),
+            file_path: PathBuf::from("/clips/airhorn.wav"),
+            volume: 1.0,
+            output_device: OutputDevice::Default,
+            hotkey: hotkey.map(str::to_owned),
+            created_at: OffsetDateTime::now_utc(),
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
+        }
+    }
+
+    struct LookupProbe(UnboundedSender<ClipId>);
+
+    #[async_trait]
+    impl SoundboardClipsRepo for LookupProbe {
+        async fn list(&self) -> Result<Vec<StoredClip>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn get(&self, id: ClipId) -> Result<Option<StoredClip>, StorageError> {
+            self.0.send(id).unwrap();
+            Ok(None)
+        }
+
+        async fn save(&self, _clip: &StoredClip) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn delete(&self, _id: ClipId) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+    }
+
+    struct NoDevice;
+
+    #[async_trait]
+    impl AudioSinkFactory for NoDevice {
+        async fn build(&self, _device: &OutputDevice) -> Result<Arc<dyn AudioSink>, AudioError> {
+            Err(AudioError::Host("no device in tests".to_owned()))
+        }
+    }
+
+    struct Dispatching {
+        bus: Arc<EventBus>,
+        bindings: watch::Sender<Arc<ClipBindings>>,
+        toggled: UnboundedReceiver<ClipId>,
+    }
+
+    impl Dispatching {
+        fn start(bindings: ClipBindings) -> Self {
+            let (probe, toggled) = unbounded_channel();
+            let library = Arc::new(ClipLibrary::new(
+                Arc::new(LookupProbe(probe)),
+                Arc::new(MockMediaRepo::new()),
+            ));
+            let player = Arc::new(SoundboardPlayer::with_settings(
+                Arc::new(NoDevice),
+                Arc::new(NullAudioEventSink),
+                library,
+                SoundboardSettingsHandle::default(),
+            ));
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let (bindings, snapshot) = watch::channel(Arc::new(bindings));
+            spawn_clip_hotkey_dispatcher(bus.subscribe(), snapshot, player);
+            Self {
+                bus,
+                bindings,
+                toggled,
+            }
+        }
+
+        fn press(&self, combo: &str) {
+            self.bus.publish(Event::new(
+                EventSource::Hotkey,
+                HOTKEY_PRESSED_KIND,
+                json!({ PRESSED_COMBO_KEY: combo }),
+            ));
+        }
+
+        async fn next_toggled(&mut self) -> ClipId {
+            tokio::time::timeout(EVENT_DEADLINE, self.toggled.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        }
+    }
+
+    fn bound(combo: &str, clips: &[ClipId]) -> ClipBindings {
+        ClipBindings::from([(combo.to_owned(), clips.to_vec())])
+    }
+
+    #[test]
+    fn pressed_combo_answers_only_a_hotkey_press_that_names_its_combo() {
+        for (source, kind, payload, expected) in [
+            (
+                EventSource::Hotkey,
+                HOTKEY_PRESSED_KIND,
+                json!({ "combo": "F9" }),
+                Some("F9"),
+            ),
+            (
+                EventSource::Hotkey,
+                HOTKEY_RELEASED_KIND,
+                json!({ "combo": "F9" }),
+                None,
+            ),
+            (
+                EventSource::Midi,
+                HOTKEY_PRESSED_KIND,
+                json!({ "combo": "F9" }),
+                None,
+            ),
+            (EventSource::Hotkey, HOTKEY_PRESSED_KIND, json!({}), None),
+            (
+                EventSource::Hotkey,
+                HOTKEY_PRESSED_KIND,
+                json!({ "combo": 9 }),
+                None,
+            ),
+        ] {
+            let event = Event::new(source, kind, payload.clone());
+
+            assert_eq!(
+                pressed_combo(&event),
+                expected,
+                "{source:?} {kind} {payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn clip_bindings_group_every_clip_on_a_combo_under_its_canonical_spelling() {
+        let typed = clip(Some("f9"));
+        let canonical = clip(Some("F9"));
+        let clips = [
+            typed.clone(),
+            canonical.clone(),
+            clip(None),
+            clip(Some("  ")),
+        ];
+
+        let bindings = clip_bindings_of(&clips);
+
+        assert_eq!(bindings, bound("F9", &[typed.id, canonical.id]));
+    }
+
+    #[tokio::test]
+    async fn a_press_toggles_every_clip_bound_to_the_combo_and_no_other() {
+        let first = ClipId::new();
+        let second = ClipId::new();
+        let elsewhere = ClipId::new();
+        let mut bindings = bound("F9", &[first, second]);
+        bindings.insert("F10".to_owned(), vec![elsewhere]);
+        let mut dispatching = Dispatching::start(bindings);
+
+        dispatching.press("F9");
+        dispatching.press("F10");
+
+        let mut toggled = [
+            dispatching.next_toggled().await,
+            dispatching.next_toggled().await,
+        ];
+        toggled.sort();
+        let mut expected = [first, second];
+        expected.sort();
+        assert_eq!(
+            (toggled, dispatching.next_toggled().await),
+            (expected, elsewhere)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_press_follows_the_latest_published_bindings() {
+        let before = ClipId::new();
+        let after = ClipId::new();
+        let mut dispatching = Dispatching::start(bound("F9", &[before]));
+
+        dispatching
+            .bindings
+            .send_replace(Arc::new(bound("F9", &[after])));
+        dispatching.press("F9");
+
+        assert_eq!(dispatching.next_toggled().await, after);
+    }
+}

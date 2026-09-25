@@ -244,13 +244,21 @@ impl TriggerInstanceRepo for HotkeySyncedTriggerRepo {
 mod tests {
     use std::collections::BTreeMap;
 
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
     use forge_events::{Event, EventPublisher};
     use forge_hotkey::HotkeyConfig;
     use forge_hotkey::testing::{RecordedCall, RecordingBackend, test_client};
-    use forge_storage::{DataProvider, MockTriggerInstanceRepo};
-    use forge_types::{PermissionRung, PlatformScope};
+    use forge_soundboard::ClipLibrary;
+    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_storage::{DataProvider, MockTriggerInstanceRepo, StoredClip};
+    use forge_types::{ClipId, OutputDevice, PermissionRung, PlatformScope};
+    use time::OffsetDateTime;
+    use tokio::sync::Notify;
 
     use super::*;
+    use crate::clip_hotkeys::HotkeySyncedClipsRepo;
     use crate::hotkey_bindings::{HOTKEY_PRESSED_KIND, HOTKEY_RELEASED_KIND};
     use crate::test_support::{Sandboxed, sandboxed_backend};
 
@@ -267,27 +275,70 @@ mod tests {
         test_client(HotkeyConfig::default(), Arc::new(SilentPublisher))
     }
 
+    const EVENT_DEADLINE: Duration = Duration::from_secs(2);
+    const STILL_WAITING: Duration = Duration::from_millis(50);
+
     struct Synced {
-        _storage: Sandboxed<Arc<dyn DataProvider>>,
+        storage: Sandboxed<Arc<dyn DataProvider>>,
         stored: Arc<dyn TriggerInstanceRepo>,
+        stored_clips: Arc<dyn SoundboardClipsRepo>,
         repo: Arc<dyn TriggerInstanceRepo>,
+        clips: Arc<dyn SoundboardClipsRepo>,
+        reconciler: Arc<HotkeyReconciler>,
         client: Arc<HotkeyClient>,
         backend: Arc<RecordingBackend>,
     }
 
-    async fn synced() -> Synced {
-        let storage = sandboxed_backend("sqlite::memory:", TEST_KEY)
+    async fn storage() -> Sandboxed<Arc<dyn DataProvider>> {
+        sandboxed_backend("sqlite::memory:", TEST_KEY)
             .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>);
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
+    }
+
+    async fn synced() -> Synced {
+        let storage = storage().await;
         let stored = storage_repo(&storage);
+        let stored_clips = clips_repo(&storage);
         let (client, backend) = recording_client();
-        let repo = HotkeySyncedTriggerRepo::wrap(Arc::clone(&stored), Some(Arc::clone(&client)));
+        let reconciler = HotkeyReconciler::new(
+            Arc::clone(&client),
+            Arc::clone(&stored),
+            Arc::clone(&stored_clips),
+        );
+        let repo =
+            HotkeySyncedTriggerRepo::wrap(Arc::clone(&stored), Some(Arc::clone(&reconciler)));
+        let clips =
+            HotkeySyncedClipsRepo::wrap(Arc::clone(&stored_clips), Some(Arc::clone(&reconciler)));
         Synced {
-            _storage: storage,
+            storage,
             stored,
+            stored_clips,
             repo,
+            clips,
+            reconciler,
             client,
             backend,
+        }
+    }
+
+    fn clips_repo(storage: &Sandboxed<Arc<dyn DataProvider>>) -> Arc<dyn SoundboardClipsRepo> {
+        let provider: &Arc<dyn DataProvider> = storage;
+        provider.soundboard_clips_repo()
+    }
+
+    fn clip(hotkey: Option<&str>) -> StoredClip {
+        StoredClip {
+            id: ClipId::new(),
+            name: "airhorn".to_owned(),
+            file_path: "/clips/airhorn.wav".into(),
+            volume: 1.0,
+            output_device: OutputDevice::Default,
+            hotkey: hotkey.map(str::to_owned),
+            created_at: OffsetDateTime::now_utc(),
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
         }
     }
 
@@ -480,7 +531,13 @@ mod tests {
             inner.expect_archive().returning(move |_| Err(failure()));
             inner.expect_restore().returning(move |_| Err(failure()));
             let (client, backend) = recording_client();
-            let repo = HotkeySyncedTriggerRepo::wrap(Arc::new(inner), Some(Arc::clone(&client)));
+            let inner: Arc<dyn TriggerInstanceRepo> = Arc::new(inner);
+            let reconciler = HotkeyReconciler::new(
+                client,
+                Arc::clone(&inner),
+                Arc::new(MockSoundboardClipsRepo::new()),
+            );
+            let repo = HotkeySyncedTriggerRepo::wrap(inner, Some(reconciler));
 
             let outcome = match write {
                 "invalid combo" => repo.save(&unparseable).await.map(|_| ()),
@@ -530,5 +587,290 @@ mod tests {
             .unwrap();
 
         assert_eq!(registered(&synced.client), ["F7", "F8"]);
+    }
+    struct ListGate {
+        entered: Arc<Notify>,
+        release: Arc<Notify>,
+    }
+
+    struct ProbeClips {
+        inner: Arc<dyn SoundboardClipsRepo>,
+        unreadable: AtomicBool,
+        gate: std::sync::Mutex<Option<ListGate>>,
+    }
+
+    impl ProbeClips {
+        fn over(inner: Arc<dyn SoundboardClipsRepo>, gate: Option<ListGate>) -> Arc<Self> {
+            Arc::new(Self {
+                inner,
+                unreadable: AtomicBool::new(false),
+                gate: std::sync::Mutex::new(gate),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl SoundboardClipsRepo for ProbeClips {
+        async fn list(&self) -> Result<Vec<StoredClip>, StorageError> {
+            if self.unreadable.load(Ordering::SeqCst) {
+                return Err(StorageError::Connection {
+                    reason: "disk gone".to_owned(),
+                });
+            }
+            let listed = self.inner.list().await;
+            let gate = self.gate.lock().unwrap().take();
+            if let Some(gate) = gate {
+                gate.entered.notify_one();
+                gate.release.notified().await;
+            }
+            listed
+        }
+
+        async fn get(&self, id: ClipId) -> Result<Option<StoredClip>, StorageError> {
+            self.inner.get(id).await
+        }
+
+        async fn save(&self, clip: &StoredClip) -> Result<(), StorageError> {
+            self.inner.save(clip).await
+        }
+
+        async fn delete(&self, id: ClipId) -> Result<bool, StorageError> {
+            self.inner.delete(id).await
+        }
+    }
+
+    #[tokio::test]
+    async fn a_trigger_write_leaves_the_combos_clips_are_bound_to_registered() {
+        let synced = synced().await;
+        synced.clips.save(&clip(Some("F9"))).await.unwrap();
+        let trigger = instance(HOTKEY_PRESSED_KIND, Some("F5"));
+        synced.repo.save(&trigger).await.unwrap();
+
+        synced.repo.delete(trigger.id).await.unwrap();
+
+        assert_eq!(registered(&synced.client), ["F9"]);
+    }
+
+    #[tokio::test]
+    async fn a_clip_write_leaves_the_combos_triggers_are_bound_to_registered() {
+        let synced = synced().await;
+        synced
+            .repo
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .await
+            .unwrap();
+        let bound = clip(Some("F9"));
+        synced.clips.save(&bound).await.unwrap();
+
+        synced.clips.delete(bound.id).await.unwrap();
+
+        assert_eq!(registered(&synced.client), ["F5"]);
+    }
+
+    #[tokio::test]
+    async fn reconcile_registers_the_union_of_stored_trigger_and_clip_combos() {
+        let synced = synced().await;
+        synced
+            .stored
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .await
+            .unwrap();
+        for combo in ["f5", "shift+f6"] {
+            synced.stored_clips.save(&clip(Some(combo))).await.unwrap();
+        }
+
+        synced.reconciler.reconcile().await;
+
+        assert_eq!(registered(&synced.client), ["F5", "Shift+F6"]);
+    }
+
+    #[tokio::test]
+    async fn saving_a_clip_registers_its_combo_in_canonical_form() {
+        let synced = synced().await;
+
+        synced
+            .clips
+            .save(&clip(Some("shift+ctrl+f9")))
+            .await
+            .unwrap();
+
+        assert_eq!(registered(&synced.client), ["Ctrl+Shift+F9"]);
+    }
+
+    #[tokio::test]
+    async fn changing_a_clips_combo_moves_the_registration_to_the_new_combo() {
+        let synced = synced().await;
+        let original = clip(Some("F9"));
+        synced.clips.save(&original).await.unwrap();
+
+        let moved = StoredClip {
+            hotkey: Some("F10".to_owned()),
+            ..original
+        };
+        synced.clips.save(&moved).await.unwrap();
+
+        assert_eq!(registered(&synced.client), ["F10"]);
+    }
+
+    #[tokio::test]
+    async fn a_clip_that_loses_its_combo_releases_the_registration() {
+        for removal in ["delete", "blank", "none"] {
+            let synced = synced().await;
+            let bound = clip(Some("F9"));
+            synced.clips.save(&bound).await.unwrap();
+
+            match removal {
+                "delete" => {
+                    synced.clips.delete(bound.id).await.unwrap();
+                }
+                "blank" => {
+                    let blanked = StoredClip {
+                        hotkey: Some("   ".to_owned()),
+                        ..bound
+                    };
+                    synced.clips.save(&blanked).await.unwrap();
+                }
+                _ => {
+                    let cleared = StoredClip {
+                        hotkey: None,
+                        ..bound
+                    };
+                    synced.clips.save(&cleared).await.unwrap();
+                }
+            }
+
+            assert!(registered(&synced.client).is_empty(), "after {removal}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_clip_imported_through_the_library_registers_its_combo() {
+        let synced = synced().await;
+        let provider: &Arc<dyn DataProvider> = &synced.storage;
+        let library = ClipLibrary::new(Arc::clone(&synced.clips), provider.media_repo());
+        let source = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+        std::fs::write(source.path(), b"RIFF\x24\0\0\0WAVEfmt \x10\0\0\0").unwrap();
+        let imported = StoredClip {
+            file_path: source.path().to_owned(),
+            ..clip(Some("F9"))
+        };
+
+        library.save_clip(&imported).await.unwrap();
+
+        assert_eq!(registered(&synced.client), ["F9"]);
+    }
+
+    #[tokio::test]
+    async fn a_clip_is_stored_with_its_combo_canonical_and_a_blank_combo_as_no_binding() {
+        let synced = synced().await;
+        for (typed, expected) in [
+            (Some("shift+ctrl+f5"), Some("Ctrl+Shift+F5")),
+            (Some(" F5 "), Some("F5")),
+            (Some(""), None),
+            (Some("   "), None),
+            (None, None),
+        ] {
+            let saved = clip(typed);
+
+            synced.clips.save(&saved).await.unwrap();
+
+            let stored = synced.stored_clips.get(saved.id).await.unwrap().unwrap();
+            assert_eq!(stored.hotkey.as_deref(), expected, "typed {typed:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_clip_with_an_unparseable_combo_is_refused_unstored_and_leaves_the_client_alone() {
+        let synced = synced().await;
+        let refused = clip(Some("Ctrl+XYZ"));
+
+        let outcome = synced.clips.save(&refused).await;
+
+        assert!(
+            matches!(outcome, Err(StorageError::ValidationFailed { ref field, .. }) if field == crate::clip_hotkeys::CLIP_COMBO_FIELD),
+            "got {outcome:?}"
+        );
+        assert!(synced.stored_clips.get(refused.id).await.unwrap().is_none());
+        assert!(synced.backend.calls().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_clip_write_publishes_the_combo_to_clip_snapshot_the_dispatcher_reads() {
+        let synced = synced().await;
+        let snapshot = synced.reconciler.clip_bindings();
+        let bound = clip(Some("f9"));
+
+        synced.clips.save(&bound).await.unwrap();
+
+        assert_eq!(snapshot.borrow().get("F9"), Some(&vec![bound.id]));
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_clip_table_keeps_the_clip_combos_registered() {
+        let storage = storage().await;
+        let stored_clips = clips_repo(&storage);
+        stored_clips.save(&clip(Some("F9"))).await.unwrap();
+        let probe = ProbeClips::over(stored_clips, None);
+        let (client, _backend) = recording_client();
+        let reconciler = HotkeyReconciler::new(
+            Arc::clone(&client),
+            storage_repo(&storage),
+            Arc::clone(&probe) as Arc<dyn SoundboardClipsRepo>,
+        );
+        reconciler.reconcile().await;
+        probe.unreadable.store(true, Ordering::SeqCst);
+
+        reconciler.reconcile().await;
+
+        assert_eq!(registered(&client), ["F9"]);
+    }
+
+    #[tokio::test]
+    async fn a_reconcile_waits_for_the_one_in_flight_so_a_stale_snapshot_never_lands_last() {
+        let storage = storage().await;
+        let stored = storage_repo(&storage);
+        let stored_clips = clips_repo(&storage);
+        stored
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .await
+            .unwrap();
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let probe = ProbeClips::over(
+            Arc::clone(&stored_clips),
+            Some(ListGate {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+        );
+        let (client, _backend) = recording_client();
+        let reconciler = HotkeyReconciler::new(Arc::clone(&client), stored, probe);
+        let stale = tokio::spawn({
+            let reconciler = Arc::clone(&reconciler);
+            async move { reconciler.reconcile().await }
+        });
+        tokio::time::timeout(EVENT_DEADLINE, entered.notified())
+            .await
+            .unwrap();
+        stored_clips.save(&clip(Some("F9"))).await.unwrap();
+
+        let mut fresh = tokio::spawn({
+            let reconciler = Arc::clone(&reconciler);
+            async move { reconciler.reconcile().await }
+        });
+        let overtook = tokio::time::timeout(STILL_WAITING, &mut fresh)
+            .await
+            .is_ok();
+        release.notify_one();
+        stale.await.unwrap();
+        if !overtook {
+            fresh.await.unwrap();
+        }
+
+        assert!(
+            !overtook,
+            "a second run finished while the first was mid-diff"
+        );
+        assert_eq!(registered(&client), ["F5", "F9"]);
     }
 }

@@ -1272,22 +1272,67 @@ mod tests {
         fn publish(&self, _: forge_events::Event) {}
     }
 
-    async fn client_holding(
-        combo: &str,
-    ) -> (
-        Arc<HotkeyClient>,
-        Arc<forge_hotkey::testing::RecordingBackend>,
-        HotkeyId,
-    ) {
+    struct Reconciled {
+        reconciler: Arc<HotkeyReconciler>,
+        client: Arc<HotkeyClient>,
+        recorder: Arc<forge_hotkey::testing::RecordingBackend>,
+    }
+
+    impl Reconciled {
+        fn id_of(&self, combo: &str) -> HotkeyId {
+            self.client
+                .registered_combos()
+                .into_iter()
+                .find(|(_, known)| known.as_str() == combo)
+                .map(|(id, _)| id)
+                .unwrap()
+        }
+
+        fn registered(&self) -> Vec<String> {
+            let mut combos: Vec<String> = self
+                .client
+                .registered_combos()
+                .into_iter()
+                .map(|(_, combo)| combo.as_str().to_owned())
+                .collect();
+            combos.sort();
+            combos
+        }
+    }
+
+    async fn reconciled(backend: &Arc<dyn DataProvider>) -> Reconciled {
         let (client, recorder) = forge_hotkey::testing::test_client(
             forge_hotkey::HotkeyConfig::default(),
             Arc::new(SilentPublisher),
         );
-        let id = client
-            .register(HotkeyCombo::parse(combo).unwrap())
-            .await
-            .unwrap();
-        (client, recorder, id)
+        let reconciler = HotkeyReconciler::new(
+            Arc::clone(&client),
+            backend.trigger_instance_repo(),
+            backend.soundboard_clips_repo(),
+        );
+        reconciler.reconcile().await;
+        Reconciled {
+            reconciler,
+            client,
+            recorder,
+        }
+    }
+
+    async fn seed_clip_on(backend: &Arc<dyn DataProvider>, combo: &str) {
+        let clip = forge_storage::StoredClip {
+            id: forge_types::ClipId::new(),
+            name: "airhorn".to_owned(),
+            file_path: "/clips/airhorn.wav".into(),
+            volume: 1.0,
+            output_device: forge_types::OutputDevice::Default,
+            hotkey: Some(combo.to_owned()),
+            created_at: time::OffsetDateTime::now_utc(),
+            category: String::new(),
+            loop_playback: false,
+            duration_secs: None,
+            builtin_id: None,
+        };
+        backend.soundboard_clips_repo().save(&clip).await.unwrap();
     }
 
     fn stored_combos(instances: &[TriggerInstance]) -> Vec<(String, Option<String>)> {
@@ -1309,11 +1354,12 @@ mod tests {
     async fn rebind_combo_registers_the_new_combo_before_releasing_the_old_one() {
         let backend = provider().await;
         seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
-        let (client, recorder, old_id) = client_holding("F1").await;
-        let before = recorder.calls().len();
+        let rig = reconciled(&backend).await;
+        let old_id = rig.id_of("F1");
+        let before = rig.recorder.calls().len();
 
         rebind_combo(
-            Arc::clone(&client),
+            Arc::clone(&rig.reconciler),
             Arc::clone(&backend),
             "F1".to_owned(),
             "F2".to_owned(),
@@ -1321,7 +1367,7 @@ mod tests {
         .await
         .unwrap();
 
-        let calls = recorder.calls().split_off(before);
+        let calls = rig.recorder.calls().split_off(before);
         assert!(
             matches!(
                 calls.as_slice(),
@@ -1338,11 +1384,13 @@ mod tests {
     async fn rebind_combo_keeps_the_old_binding_live_and_stored_when_the_new_combo_is_refused() {
         let backend = provider().await;
         seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
-        let (client, recorder, old_id) = client_holding("F1").await;
-        recorder.fail_next_register(&HotkeyCombo::parse("F2").unwrap());
+        let rig = reconciled(&backend).await;
+        let old_id = rig.id_of("F1");
+        rig.recorder
+            .fail_next_register(&HotkeyCombo::parse("F2").unwrap());
 
         let outcome = rebind_combo(
-            Arc::clone(&client),
+            Arc::clone(&rig.reconciler),
             Arc::clone(&backend),
             "F1".to_owned(),
             "F2".to_owned(),
@@ -1350,7 +1398,8 @@ mod tests {
         .await;
 
         assert!(outcome.is_err());
-        let live: Vec<(HotkeyId, String)> = client
+        let live: Vec<(HotkeyId, String)> = rig
+            .client
             .registered_combos()
             .into_iter()
             .map(|(id, combo)| (id, combo.as_str().to_owned()))
@@ -1371,10 +1420,10 @@ mod tests {
         seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("F1")).await;
         let repo = backend.trigger_instance_repo();
         repo.link_action(action, press, 0).await.unwrap();
-        let (client, _recorder, _) = client_holding("F1").await;
+        let rig = reconciled(&backend).await;
 
         rebind_combo(
-            client,
+            rig.reconciler,
             Arc::clone(&backend),
             "F1".to_owned(),
             "F2".to_owned(),
@@ -1397,11 +1446,11 @@ mod tests {
     async fn rebind_combo_to_the_same_combo_leaves_the_client_and_storage_alone() {
         let backend = provider().await;
         let press = seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
-        let (client, recorder, _) = client_holding("F1").await;
-        let before = recorder.calls();
+        let rig = reconciled(&backend).await;
+        let before = rig.recorder.calls();
 
         rebind_combo(
-            Arc::clone(&client),
+            Arc::clone(&rig.reconciler),
             Arc::clone(&backend),
             "F1".to_owned(),
             "F1".to_owned(),
@@ -1409,8 +1458,108 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(recorder.calls(), before);
+        assert_eq!(rig.recorder.calls(), before);
         let kept = backend.trigger_instance_repo().get(press).await.unwrap();
         assert!(kept.is_some(), "rebinding onto itself dropped the binding");
+    }
+    #[tokio::test]
+    async fn do_bind_registers_the_combo_and_stores_the_binding() {
+        let backend = provider().await;
+        let action = seed_action(&backend, "Scene swap").await;
+        let rig = reconciled(&backend).await;
+
+        do_bind(
+            Arc::clone(&rig.reconciler),
+            Arc::clone(&backend),
+            "F3".to_owned(),
+            HotkeyEdge::Press,
+            action,
+        )
+        .await
+        .unwrap();
+
+        let stored = backend.trigger_instance_repo().list_all().await.unwrap();
+        assert_eq!(
+            stored_combos(&stored),
+            [(HOTKEY_PRESSED_KIND.to_owned(), Some("F3".to_owned()))]
+        );
+        assert_eq!(rig.registered(), ["F3"]);
+    }
+
+    #[tokio::test]
+    async fn do_bind_with_a_combo_the_os_refuses_stores_nothing() {
+        let backend = provider().await;
+        let action = seed_action(&backend, "Scene swap").await;
+        let rig = reconciled(&backend).await;
+        rig.recorder
+            .fail_next_register(&HotkeyCombo::parse("F3").unwrap());
+
+        let outcome = do_bind(
+            Arc::clone(&rig.reconciler),
+            Arc::clone(&backend),
+            "F3".to_owned(),
+            HotkeyEdge::Press,
+            action,
+        )
+        .await;
+
+        assert!(outcome.is_err());
+        let stored = backend.trigger_instance_repo().list_all().await.unwrap();
+        assert!(stored.is_empty(), "stored {stored:?}");
+    }
+
+    #[tokio::test]
+    async fn delete_binding_releases_a_combo_nothing_else_binds() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F5")).await;
+        seed_instance(&backend, HOTKEY_RELEASED_KIND, Some("F5")).await;
+        let rig = reconciled(&backend).await;
+
+        delete_binding(
+            Arc::clone(&rig.reconciler),
+            Arc::clone(&backend),
+            "F5".to_owned(),
+        )
+        .await
+        .unwrap();
+
+        assert!(rig.registered().is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_binding_keeps_the_registration_a_clip_is_still_bound_to() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F5")).await;
+        seed_clip_on(&backend, "F5").await;
+        let rig = reconciled(&backend).await;
+
+        delete_binding(
+            Arc::clone(&rig.reconciler),
+            Arc::clone(&backend),
+            "F5".to_owned(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rig.registered(), ["F5"]);
+    }
+
+    #[tokio::test]
+    async fn rebind_combo_off_a_combo_a_clip_uses_keeps_that_combo_registered() {
+        let backend = provider().await;
+        seed_instance(&backend, HOTKEY_PRESSED_KIND, Some("F1")).await;
+        seed_clip_on(&backend, "F1").await;
+        let rig = reconciled(&backend).await;
+
+        rebind_combo(
+            Arc::clone(&rig.reconciler),
+            Arc::clone(&backend),
+            "F1".to_owned(),
+            "F2".to_owned(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rig.registered(), ["F1", "F2"]);
     }
 }

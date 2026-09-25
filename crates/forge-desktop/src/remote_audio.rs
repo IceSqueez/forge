@@ -114,11 +114,7 @@ impl RemoteAudioDestination for OverlayAudioDestination {
         });
         self.register(clip_id.clone(), ticket.capability().clone(), outcome);
 
-        match self
-            .overlays
-            .deliver_content(&identity, content, None)
-            .await
-        {
+        match self.overlays.deliver_audio(&identity, content).await {
             Ok(delivery) => {
                 let live_players = live_players(delivery);
                 self.server
@@ -160,10 +156,7 @@ impl RemoteAudioDestination for OverlayAudioDestination {
 
         let identity = OverlayId::new(destination.as_str());
         let content = command_content(overlay_command(command), Some(clip_id.expose()));
-        let pushed = self
-            .overlays
-            .deliver_content(&identity, content, None)
-            .await;
+        let pushed = self.overlays.deliver_audio(&identity, content).await;
 
         if matches!(command, RemoteCommand::Stop) {
             self.forget(clip_id.expose());

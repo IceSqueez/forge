@@ -1,13 +1,7 @@
 use forge_types::Variant;
 
-use crate::assets::PageAssets;
 use crate::config;
-use crate::descriptor::{
-    DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
-};
-use crate::preview::{PreviewComposition, PreviewShape, compose};
-
-pub const KIND_ID: &str = "overlay.audio";
+use crate::descriptor::OverlayConfig;
 
 const STOP: &str = "stop";
 const PAUSE: &str = "pause";
@@ -81,67 +75,4 @@ pub fn command_content(command: AudioCommand, clip_id: Option<&str>) -> OverlayC
             Variant::String(clip_id.unwrap_or_default().to_owned()),
         ),
     ])
-}
-
-pub struct AudioOverlayKind;
-
-impl OverlayKindDescriptor for AudioOverlayKind {
-    fn id(&self) -> &str {
-        KIND_ID
-    }
-
-    fn label(&self) -> &str {
-        "Audio"
-    }
-
-    fn summary(&self) -> &str {
-        "Plays what forge says and the clips it fires, drawing nothing on the canvas"
-    }
-
-    fn icon_name(&self) -> &str {
-        "volume"
-    }
-
-    /// An announcement spends its capability when the page fetches it, so replaying the last one
-    /// on reconnect would announce a clip that no longer exists.
-    fn delivery_disposition(&self) -> DeliveryDisposition {
-        DeliveryDisposition::Transient
-    }
-
-    /// A command that overtakes the announcement it addresses reaches a clip the page has not met.
-    fn order_sensitive(&self) -> bool {
-        true
-    }
-
-    fn config_schema_version(&self) -> u32 {
-        1
-    }
-
-    fn default_config(&self) -> OverlayConfig {
-        config::audio_content_defaults()
-    }
-
-    fn config_fields(&self) -> Vec<SectionedField> {
-        config::audio_content_fields()
-    }
-
-    fn page_assets(&self) -> PageAssets {
-        PageAssets {
-            markup: include_str!("../../assets/audio/index.html"),
-            style: include_str!("../../assets/audio/overlay.css"),
-            behavior: include_str!("../../assets/audio/overlay.js"),
-        }
-    }
-
-    fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::AudioPlayer, config)
-    }
-
-    fn has_visual_page(&self) -> bool {
-        false
-    }
-
-    fn content_is_machine_filled(&self) -> bool {
-        true
-    }
 }

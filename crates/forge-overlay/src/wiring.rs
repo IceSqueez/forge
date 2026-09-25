@@ -68,7 +68,7 @@ struct Wording {
 
 pub fn accepts_event_wiring(descriptor: &dyn OverlayKindDescriptor) -> bool {
     descriptor.delivery_disposition() == DeliveryDisposition::Transient
-        && !descriptor.content_is_machine_filled()
+        && descriptor.has_visual_page()
 }
 
 pub fn is_curated(trigger_kind_id: &str) -> bool {

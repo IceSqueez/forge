@@ -833,7 +833,6 @@ impl ScreenActionsView {
         let soundboard_repo = Arc::clone(&self.soundboard_repo);
         let globals_repo = Arc::clone(&self.globals_repo);
         let overlay_repo = Arc::clone(&self.overlay_repo);
-        let overlay_schema = Arc::clone(&self.overlay_schema);
         let tts_registry = self.tts_registry.clone();
         let speak = self.speak.clone();
         async_bridge::run_async(
@@ -902,10 +901,6 @@ impl ScreenActionsView {
                     );
                 }
                 if let Ok(overlays) = overlay_repo.list().await {
-                    let overlays: Vec<_> = overlays
-                        .into_iter()
-                        .filter(|o| overlay_schema.is_sendable_kind(&o.kind_id))
-                        .collect();
                     map.insert(
                         "overlay.ids".to_owned(),
                         overlays

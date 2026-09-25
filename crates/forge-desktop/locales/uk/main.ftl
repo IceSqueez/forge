@@ -1812,7 +1812,7 @@ settings_audio_route_overlay = Аудіооверлей
 settings_audio_route_both = Обидва
 settings_audio_routing_destination = АУДІООВЕРЛЕЙ
 settings_audio_routing_destination_none = Немає
-settings_audio_routing_no_overlays = Спочатку створи аудіооверлей на екрані оверлеїв.
+settings_audio_routing_no_overlays = Спочатку створи оверлей на екрані оверлеїв.
 settings_audio_routing_restart_note = Зміни маршрутизації набувають чинності після перезапуску forge.
 settings_audio_routing_test = Тест на оверлеї
 settings_audio_routing_testing = Відтворення
@@ -1824,7 +1824,6 @@ settings_audio_routing_fallback_unchosen = не вибрано аудіоове�
 settings_audio_routing_fallback_server_off = сервер, який передає звук оверлея, не запущено
 settings_audio_routing_fallback_unreadable = не вдалося знайти вибраний аудіооверлей
 settings_audio_routing_fallback_missing = вибраного аудіооверлея більше не існує
-settings_audio_routing_fallback_wrong_kind = вибраний оверлей не є аудіооверлеєм
 settings_audio_routing_pages_none = Жодної сторінки не підключено
 settings_audio_routing_pages_connected =
     { $count ->
@@ -2382,7 +2381,6 @@ overlays_test_preview_only = { $count ->
 }
 overlays_test_undelivered = Сервер зупинено, тому жодне браузерне джерело не отримало цей зразок. Перегляд вище відпрацював локально.
 overlays_test_no_browser_source = Сервер працює, але до цього оверлея не підключене жодне браузерне джерело. Перевірте URL оверлея в OBS і оновіть джерело.
-overlays_test_unavailable = Надіслати тест поки недоступно - вміст цього оверлея заповнюється лише тоді, коли forge виконує реальний крок.
 overlays_bindings_pending = Довідник прив'язок для редактора джерела ще не побудовано.
 overlays_panel_section_content = Вміст
 overlays_panel_section_style = Стиль

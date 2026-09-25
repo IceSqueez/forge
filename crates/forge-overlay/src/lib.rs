@@ -1,4 +1,5 @@
 pub mod assets;
+pub mod audio_transport;
 pub mod browser_preview;
 pub mod config;
 pub mod content;
@@ -21,6 +22,7 @@ pub use assets::{
     BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, PageAssets, RESERVED_DIRECTORY,
     RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE, STYLE_FILE,
 };
+pub use audio_transport::{AudioAnnouncement, AudioCommand, announcement_content, command_content};
 pub use browser_preview::{
     PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, preview_page_url,
 };
@@ -35,7 +37,6 @@ pub use document::{
 pub use error::OverlayError;
 pub use icons::{CURATED_ICONS, CuratedIcon, IconCategory, curated_icon};
 pub use instance::OverlayInstance;
-pub use kinds::audio::{AudioAnnouncement, AudioCommand, announcement_content, command_content};
 pub use kinds::register_builtin_kinds;
 pub use materialize::{
     GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,

@@ -56,10 +56,4 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn has_visual_page(&self) -> bool {
         true
     }
-    /// A later runtime step supplies real values, not a person authoring the overlay: the
-    /// Content section is hidden from the properties panel, the kind is refused as an
-    /// `overlay.send` target, and a test fire has nothing of its own to replay.
-    fn content_is_machine_filled(&self) -> bool {
-        false
-    }
 }

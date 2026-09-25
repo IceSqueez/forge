@@ -39,9 +39,6 @@ pub enum OverlayServiceError {
     #[error("overlay '{id}' needs an overlay type this build does not carry: {kind_id}")]
     UnavailableKind { id: OverlayId, kind_id: String },
 
-    #[error("overlay '{id}' of type {kind_id} fills its own content and cannot take a send")]
-    ContentNotAuthorable { id: OverlayId, kind_id: String },
-
     #[error(transparent)]
     Storage(#[from] StorageError),
 
@@ -352,18 +349,15 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// Replace content is persisted before it is sent, so a page that reconnects is handed the
-    /// same values it was showing.
-    pub async fn deliver_content(
+    /// Reaches any overlay whatever its look, and is never retained: a replayed announcement
+    /// would address a clip whose capability is already spent.
+    pub async fn deliver_audio(
         &self,
         id: &OverlayId,
         content: OverlayConfig,
-        duration_ms: Option<u64>,
     ) -> Result<OverlayDelivery, OverlayServiceError> {
         let definition = self.load(id).await?;
-        let disposition = self.disposition_of(&definition)?;
-        self.push(&definition.id, disposition, &content, duration_ms)
-            .await
+        Ok(self.send(&definition.id, &content, None).await)
     }
 
     /// The send-to-overlay step's funnel: the supplied fields are laid over the overlay's own
@@ -382,13 +376,6 @@ impl OverlayServiceHandle {
                 kind_id: definition.kind_id,
             });
         };
-        if descriptor.content_is_machine_filled() {
-            return Err(OverlayServiceError::ContentNotAuthorable {
-                id: definition.id,
-                kind_id: definition.kind_id,
-            });
-        }
-
         let content = delivered_content(descriptor, &definition.config, supplied, args);
         let disposition = descriptor.delivery_disposition();
         self.push(&definition.id, disposition, &content, duration_ms)
@@ -463,20 +450,6 @@ impl OverlayServiceHandle {
             .deliver_content(id, content_json(content), duration_ms)
             .await
             .outcome()
-    }
-
-    fn disposition_of(
-        &self,
-        definition: &OverlayDefinition,
-    ) -> Result<DeliveryDisposition, OverlayServiceError> {
-        self.inner
-            .kinds
-            .get(&definition.kind_id)
-            .map(|descriptor| descriptor.delivery_disposition())
-            .ok_or_else(|| OverlayServiceError::UnavailableKind {
-                id: definition.id.clone(),
-                kind_id: definition.kind_id.clone(),
-            })
     }
 
     async fn load(&self, id: &OverlayId) -> Result<OverlayDefinition, OverlayServiceError> {

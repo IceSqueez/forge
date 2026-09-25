@@ -107,7 +107,7 @@ fn axis_extent(
 
 pub(super) fn body_padding(shape: PreviewShape) -> Option<f32> {
     match shape {
-        PreviewShape::AudioPlayer => None,
+        PreviewShape::Blank => None,
         PreviewShape::BadgeBanner => Some(ALERT.body_padding),
         PreviewShape::MessageFeed => Some(CHAT.body_padding),
         PreviewShape::ProgressBar => Some(GOAL.body_padding),
@@ -142,7 +142,7 @@ pub(super) fn render_composition(
     };
 
     match composition.shape {
-        PreviewShape::AudioPlayer => audio_player(glyphs.badge, family, palette),
+        PreviewShape::Blank => blank_note(glyphs.badge, family, palette),
         PreviewShape::BadgeBanner => badge_banner(
             composition,
             plan,
@@ -163,7 +163,7 @@ pub(super) fn render_composition(
     }
 }
 
-fn audio_player(badge: Icon, family: SharedString, palette: &ForgePalette) -> AnyElement {
+fn blank_note(badge: Icon, family: SharedString, palette: &ForgePalette) -> AnyElement {
     div()
         .flex_none()
         .flex()

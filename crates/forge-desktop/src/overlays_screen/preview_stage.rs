@@ -377,7 +377,7 @@ impl OverlaysView {
     ) -> AnyElement {
         let descriptor = self.kinds.get(&definition.kind_id);
         let page = descriptor.is_some_and(|d| d.has_visual_page());
-        let test_fire_ok = descriptor.is_some_and(|d| !d.content_is_machine_filled());
+        let test_fire_ok = descriptor.is_some();
         let wire_button = self
             .wiring
             .view
@@ -520,23 +520,11 @@ impl OverlaysView {
         served: bool,
         palette: &ForgePalette,
     ) -> AnyElement {
-        let test_fire_ok = self
-            .kinds
-            .get(&definition.kind_id)
-            .is_some_and(|d| !d.content_is_machine_filled());
         let stopped = (!served).then(|| {
             hint_row(
                 Icon::AlertTriangle,
                 palette.text_faint,
                 tr!("overlays_url_not_served"),
-                palette.text_faint,
-            )
-        });
-        let test_unavailable = (!test_fire_ok).then(|| {
-            hint_row(
-                Icon::InfoCircle,
-                palette.text_faint,
-                tr!("overlays_test_unavailable"),
                 palette.text_faint,
             )
         });
@@ -561,7 +549,6 @@ impl OverlaysView {
                 palette.text_faint,
             ))
             .children(stopped)
-            .children(test_unavailable)
             .children(self.render_delivery_hint(definition, palette))
             .into_any_element()
     }

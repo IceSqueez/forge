@@ -3,7 +3,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use forge_audio::{AudioRoute, AudioSink, FanOutSink};
-use forge_overlay::kinds::audio::KIND_ID as AUDIO_OVERLAY_KIND;
 use forge_soundboard::ClipRoute;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo, StorageError, reserved_keys};
 
@@ -102,7 +101,6 @@ pub enum AudioDestination {
     ServerOff,
     Unreadable,
     NotFound,
-    NotAudioOverlay,
     Ready(OverlayId),
 }
 
@@ -127,10 +125,7 @@ pub async fn resolve_destination(
         return AudioDestination::ServerOff;
     }
     match repo.get(id).await {
-        Ok(Some(overlay)) if overlay.kind_id == AUDIO_OVERLAY_KIND => {
-            AudioDestination::Ready(id.clone())
-        }
-        Ok(Some(_)) => AudioDestination::NotAudioOverlay,
+        Ok(Some(_)) => AudioDestination::Ready(id.clone()),
         Ok(None) => AudioDestination::NotFound,
         Err(e) => {
             tracing::warn!(error = %e, "could not look up the chosen audio overlay");
@@ -145,7 +140,6 @@ pub enum RouteFallback {
     ServerUnavailable,
     DestinationUnreadable,
     DestinationNotFound,
-    DestinationNotAudioOverlay,
 }
 
 impl fmt::Display for RouteFallback {
@@ -155,7 +149,6 @@ impl fmt::Display for RouteFallback {
             Self::ServerUnavailable => "the server that carries overlay audio is not running",
             Self::DestinationUnreadable => "the chosen audio overlay could not be looked up",
             Self::DestinationNotFound => "the chosen audio overlay no longer exists",
-            Self::DestinationNotAudioOverlay => "the chosen overlay is not an audio overlay",
         })
     }
 }
@@ -186,7 +179,6 @@ pub fn plan_route(requested: AudioRoute, destination: &AudioDestination) -> Rout
         AudioDestination::ServerOff => fall_back(RouteFallback::ServerUnavailable),
         AudioDestination::Unreadable => fall_back(RouteFallback::DestinationUnreadable),
         AudioDestination::NotFound => fall_back(RouteFallback::DestinationNotFound),
-        AudioDestination::NotAudioOverlay => fall_back(RouteFallback::DestinationNotAudioOverlay),
     }
 }
 

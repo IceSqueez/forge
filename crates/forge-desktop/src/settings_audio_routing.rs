@@ -6,7 +6,6 @@ use forge_components::{
     anchored_popover_below, body_family, drive_overlay_focus, field_hint, icon, mono_family,
     radius, segment, segmented, setting_row, spacing, tr, with_alpha,
 };
-use forge_overlay::kinds::audio::KIND_ID as AUDIO_OVERLAY_KIND;
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo};
 use gpui::{
@@ -758,7 +757,6 @@ fn fallback_label(fallback: RouteFallback) -> String {
         RouteFallback::ServerUnavailable => "settings_audio_routing_fallback_server_off",
         RouteFallback::DestinationUnreadable => "settings_audio_routing_fallback_unreadable",
         RouteFallback::DestinationNotFound => "settings_audio_routing_fallback_missing",
-        RouteFallback::DestinationNotAudioOverlay => "settings_audio_routing_fallback_wrong_kind",
     })
 }
 
@@ -784,7 +782,6 @@ async fn load_routing(
         .await
         .map_err(|e| e.to_string())?
         .into_iter()
-        .filter(|definition| definition.kind_id == AUDIO_OVERLAY_KIND)
         .map(|definition| OverlayChoice {
             id: definition.id,
             name: definition.display_name,

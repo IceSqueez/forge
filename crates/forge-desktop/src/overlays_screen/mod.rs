@@ -18,9 +18,7 @@ use forge_components::{
     body_family, confirm_modal, icon, overlay, page_frame, tr,
 };
 use forge_overlay::config::SOUND_OPTIONS_KEY;
-use forge_overlay::{
-    ConfigSection, MediaIssue, OverlayKindRegistry, SectionedField, effective_overlay_config,
-};
+use forge_overlay::{MediaIssue, OverlayKindRegistry, SectionedField, effective_overlay_config};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::ActionsService;
 use forge_runtime::{OverlayServiceHandle, QueueSchedulerHandle};
@@ -560,14 +558,7 @@ impl OverlaysView {
         };
 
         let effective = effective_overlay_config(descriptor, &definition.config);
-        let specs: Vec<SectionedField> = descriptor
-            .config_fields()
-            .into_iter()
-            .filter(|sectioned| {
-                !(descriptor.content_is_machine_filled()
-                    && sectioned.section == ConfigSection::Content)
-            })
-            .collect();
+        let specs: Vec<SectionedField> = descriptor.config_fields();
 
         let launch = PanelLaunch {
             overlay_id: definition.id.clone(),

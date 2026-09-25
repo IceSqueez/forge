@@ -9,8 +9,8 @@ pub const CANVAS_HEIGHT_PX: u32 = 1080;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewShape {
-    AudioPlayer,
     BadgeBanner,
+    Blank,
     BorderedFrame,
     MessageFeed,
     ProgressBar,
@@ -130,7 +130,7 @@ fn position_of(config: &OverlayConfig) -> PreviewPosition {
 
 fn sizing_of(shape: PreviewShape) -> Option<ElementSizing> {
     match shape {
-        PreviewShape::AudioPlayer => None,
+        PreviewShape::Blank => None,
         PreviewShape::BadgeBanner => Some(metrics::ALERT_SIZING),
         PreviewShape::BorderedFrame => Some(metrics::FRAME_SIZING),
         PreviewShape::MessageFeed => Some(metrics::CHAT_SIZING),
@@ -182,7 +182,7 @@ fn bounded_px(config: &OverlayConfig, key: &str, min: i64, max: i64) -> Option<u
 /// headline and subline vocabulary.
 fn lines_of(shape: PreviewShape, config: &OverlayConfig) -> Vec<PreviewLine> {
     match shape {
-        PreviewShape::AudioPlayer => Vec::new(),
+        PreviewShape::Blank => Vec::new(),
         PreviewShape::MessageFeed => paired_lines(config, config::AUTHOR, config::MESSAGE),
         PreviewShape::ProgressBar => progress_lines(config),
         _ => paired_lines(config, config::HEADLINE, config::SUBLINE),

@@ -1789,7 +1789,7 @@ settings_audio_route_overlay = Audio overlay
 settings_audio_route_both = Both
 settings_audio_routing_destination = AUDIO OVERLAY
 settings_audio_routing_destination_none = None
-settings_audio_routing_no_overlays = Create an Audio overlay on the Overlays screen first.
+settings_audio_routing_no_overlays = Create an overlay on the Overlays screen first.
 settings_audio_routing_restart_note = Routing changes take effect after forge restarts.
 settings_audio_routing_test = Test on overlay
 settings_audio_routing_testing = Playing
@@ -1801,7 +1801,6 @@ settings_audio_routing_fallback_unchosen = no audio overlay is chosen
 settings_audio_routing_fallback_server_off = the server that carries overlay audio is not running
 settings_audio_routing_fallback_unreadable = the chosen audio overlay could not be looked up
 settings_audio_routing_fallback_missing = the chosen audio overlay no longer exists
-settings_audio_routing_fallback_wrong_kind = the chosen overlay is not an audio overlay
 settings_audio_routing_pages_none = No page connected
 settings_audio_routing_pages_connected =
     { $count ->
@@ -2339,7 +2338,6 @@ overlays_test_preview_only = { $count ->
 }
 overlays_test_undelivered = The server is stopped, so no browser source received this sample. The preview above ran on its own.
 overlays_test_no_browser_source = The server is running, but no browser source is connected to this overlay. Check the overlay URL in OBS and refresh the source.
-overlays_test_unavailable = Send test is not available yet - this overlay's content is filled in only when forge fires a real step.
 overlays_bindings_pending = The bindings reference for the source editor is not built yet.
 overlays_panel_section_content = Content
 overlays_panel_section_style = Style

@@ -72,6 +72,28 @@
  * rewriting an overlay's files, which is why hand-edited pages pick up regenerated
  * markup without the browser source being refreshed by hand.
  *
+ * Every overlay also receives forge's audio, whatever its look draws. A content
+ * frame whose content carries a non-empty clip_path or command is audio
+ * transport: it is handled here and never reaches the page's content callbacks,
+ * so a look is not shown or cleared by it. Two shapes arrive:
+ *
+ *   an announcement  { clip_id, clip_path, report_path, clip_media_type,
+ *                      clip_duration_ms }
+ *   a command        { command: "stop" | "pause" | "resume", clip_id }
+ *
+ * An announcement is fetched exactly once, played through its own element, and
+ * answered with exactly one verdict posted back to report_path: "played" once
+ * the element reached its end, otherwise "refused" with a short reason. The
+ * body carries the verdict and nothing else. A command with no clip_id reaches
+ * every clip still in flight; clips overlap freely and each one settles on its
+ * own. A clip paused before its bytes arrive waits for resume before it starts.
+ * Several pages can carry the same overlay: each fetches and reports once, and
+ * forge settles the clip from all of their verdicts. The addresses an
+ * announcement carries authorize that one clip and are never written into the
+ * page, the console, or any request body. No audio timer runs here: a verdict
+ * that cannot be delivered, and a clip that never produces one, are both left
+ * to forge's own window to close. A preview page ignores audio transport.
+ *
  * A clear frame arrives just before forge closes the connection because this
  * overlay was disabled. The page is hidden in place, not reloaded, so nothing
  * stale keeps showing while the socket sits closed. The connection's own
@@ -102,6 +124,21 @@
   var RELOAD_DELAY_MS = 250;
   var LOG_PREFIX = "forge overlay:";
 
+  var VERDICT_PLAYED = "played";
+  var VERDICT_REFUSED = "refused";
+  var REASON_FETCH_FAILED = "the clip could not be fetched";
+  var REASON_AUTOPLAY_BLOCKED = "the browser blocked playback without a click";
+  var REASON_DECODE_FAILED = "the clip could not be decoded";
+  var REASON_STOPPED = "stopped";
+  var REASON_STOPPED_BEFORE_START = "stopped before it started";
+  var COMMAND_STOP = "stop";
+  var COMMAND_PAUSE = "pause";
+  var COMMAND_RESUME = "resume";
+  var AUTOPLAY_ERROR = "NotAllowedError";
+  var REPORT_METHOD = "POST";
+  var JSON_MEDIA_TYPE = "application/json";
+  var NO_STORE = "no-store";
+
   var ACCENT_HEX = {
     mauve: "#cba6f7",
     sky: "#89dceb",
@@ -123,6 +160,7 @@
   var readyCallbacks = [];
   var contentCallbacks = [];
   var hideTimers = new Map();
+  var clipsInFlight = new Map();
 
   var config = null;
   var credential = "";
@@ -352,7 +390,176 @@
         ? frame.durationMs
         : 0;
 
+    if (isAudioTransport(values)) {
+      if (!previewing) {
+        audioTransport(values);
+      }
+      return;
+    }
+
     deliver(values, durationMs);
+  }
+
+  function textOf(value) {
+    return typeof value === "string" ? value : "";
+  }
+
+  function isAudioTransport(values) {
+    return Boolean(textOf(values.clip_path) || textOf(values.command));
+  }
+
+  function audioTransport(values) {
+    if (textOf(values.clip_path)) {
+      announceClip(values);
+      return;
+    }
+    controlClips(values);
+  }
+
+  function announceClip(values) {
+    var clipId = textOf(values.clip_id);
+    var clipPath = textOf(values.clip_path);
+    var reportPath = textOf(values.report_path);
+    if (!clipId || !reportPath || clipsInFlight.has(clipId)) {
+      return;
+    }
+
+    var clip = {
+      reportPath: reportPath,
+      mediaType: textOf(values.clip_media_type),
+      element: null,
+      objectUrl: "",
+      held: false,
+      settled: false,
+    };
+    clipsInFlight.set(clipId, clip);
+
+    window
+      .fetch(clipPath, { cache: NO_STORE })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error(REASON_FETCH_FAILED);
+        }
+        return response.arrayBuffer();
+      })
+      .then(function (bytes) {
+        if (!clip.settled) {
+          playClip(clipId, clip, bytes);
+        }
+      })
+      .catch(function () {
+        settleClip(clipId, clip, VERDICT_REFUSED, REASON_FETCH_FAILED);
+      });
+  }
+
+  function playClip(clipId, clip, bytes) {
+    var blob = clip.mediaType
+      ? new window.Blob([bytes], { type: clip.mediaType })
+      : new window.Blob([bytes]);
+    clip.objectUrl = window.URL.createObjectURL(blob);
+
+    var element = new window.Audio();
+    clip.element = element;
+    element.addEventListener("ended", function () {
+      settleClip(clipId, clip, VERDICT_PLAYED, "");
+    });
+    element.addEventListener("error", function () {
+      settleClip(clipId, clip, VERDICT_REFUSED, REASON_DECODE_FAILED);
+    });
+    element.src = clip.objectUrl;
+    if (!clip.held) {
+      startClip(clipId, clip);
+    }
+  }
+
+  function startClip(clipId, clip) {
+    var started = clip.element.play();
+    if (!started || !started.catch) {
+      return;
+    }
+    started.catch(function (error) {
+      settleClip(
+        clipId,
+        clip,
+        VERDICT_REFUSED,
+        error && error.name === AUTOPLAY_ERROR
+          ? REASON_AUTOPLAY_BLOCKED
+          : REASON_DECODE_FAILED,
+      );
+    });
+  }
+
+  function controlClips(values) {
+    var command = textOf(values.command);
+    var addressed = textOf(values.clip_id);
+
+    Array.from(clipsInFlight.keys()).forEach(function (clipId) {
+      var clip = clipsInFlight.get(clipId);
+      if (clip && (!addressed || addressed === clipId)) {
+        applyClipCommand(clipId, clip, command);
+      }
+    });
+  }
+
+  function applyClipCommand(clipId, clip, command) {
+    if (command === COMMAND_STOP) {
+      settleClip(
+        clipId,
+        clip,
+        VERDICT_REFUSED,
+        clip.element ? REASON_STOPPED : REASON_STOPPED_BEFORE_START,
+      );
+      return;
+    }
+    if (command === COMMAND_PAUSE) {
+      clip.held = true;
+      if (clip.element) {
+        clip.element.pause();
+      }
+      return;
+    }
+    if (command === COMMAND_RESUME) {
+      clip.held = false;
+      if (clip.element) {
+        startClip(clipId, clip);
+      }
+    }
+  }
+
+  function settleClip(clipId, clip, verdict, reason) {
+    if (clip.settled) {
+      return;
+    }
+    clip.settled = true;
+    clipsInFlight.delete(clipId);
+    releaseClip(clip);
+    reportVerdict(clip.reportPath, verdict, reason);
+  }
+
+  function releaseClip(clip) {
+    if (clip.element) {
+      clip.element.pause();
+    }
+    if (clip.objectUrl) {
+      window.URL.revokeObjectURL(clip.objectUrl);
+      clip.objectUrl = "";
+    }
+  }
+
+  function reportVerdict(reportPath, verdict, reason) {
+    var body =
+      verdict === VERDICT_REFUSED
+        ? { verdict: verdict, reason: reason }
+        : { verdict: verdict };
+
+    window
+      .fetch(reportPath, {
+        method: REPORT_METHOD,
+        headers: { "Content-Type": JSON_MEDIA_TYPE },
+        body: JSON.stringify(body),
+        cache: NO_STORE,
+      })
+      .catch(function () {});
   }
 
   function deliver(values, durationMs) {

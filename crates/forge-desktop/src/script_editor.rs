@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,8 +25,8 @@ use forge_types::{
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, MouseButton,
-    MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Task, Window, div, prelude::*,
-    px,
+    MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Task, UniformListScrollHandle,
+    Window, div, prelude::*, px, uniform_list,
 };
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -61,6 +62,8 @@ const GLYPH_SIGNATURE_ACTION: Pixels = px(11.0);
 const SIGNATURE_NAME_MIN_W: Pixels = px(56.0);
 
 const COMPILE_DEBOUNCE: Duration = Duration::from_millis(300);
+
+const CONSOLE_LOG_CAP: usize = 1000;
 
 const CONTRACT_KINDS: [VariantKind; 7] = [
     VariantKind::Int,
@@ -517,7 +520,8 @@ pub struct ScriptEditorView {
     code_input: Entity<TextArea>,
     _code_sub: Subscription,
 
-    console: Vec<ConsoleLine>,
+    console: VecDeque<ConsoleLine>,
+    console_scroll: UniformListScrollHandle,
     console_tab: ConsoleTab,
     console_collapsed: bool,
     problems: Vec<EditorProblem>,
@@ -612,7 +616,8 @@ impl ScriptEditorView {
             contract_error: None,
             code_input,
             _code_sub: code_sub,
-            console: Vec::new(),
+            console: VecDeque::new(),
+            console_scroll: UniformListScrollHandle::new(),
             console_tab: ConsoleTab::Output,
             console_collapsed: false,
             problems: Vec::new(),
@@ -684,7 +689,10 @@ impl ScriptEditorView {
     }
 
     fn push_console(&mut self, tag: LogTag, text: impl Into<SharedString>) {
-        self.console.push(ConsoleLine {
+        if self.console.len() >= CONSOLE_LOG_CAP {
+            self.console.pop_front();
+        }
+        self.console.push_back(ConsoleLine {
             time: now_timestamp().into(),
             tag,
             text: text.into(),
@@ -2343,7 +2351,7 @@ impl ScriptEditorView {
             return console.into_any_element();
         }
 
-        let console = console.child(self.console_body(palette, density));
+        let console = console.child(self.console_body(palette, density, cx));
 
         install_resize(
             console,
@@ -2478,15 +2486,18 @@ impl ScriptEditorView {
             .into_any_element()
     }
 
-    fn console_body(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        let body = div()
+    fn console_body(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let base = div()
             .id("script-console-scroll")
             .w_full()
             .flex()
             .flex_col()
             .h(self.console_height)
-            .overflow_y_scroll()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
             .py(spacing(Spacing::Xs, density))
             .px(spacing(Spacing::Md, density))
             .font_family(mono_family())
@@ -2495,20 +2506,40 @@ impl ScriptEditorView {
         match self.console_tab {
             ConsoleTab::Output => {
                 if self.console.is_empty() {
-                    body.child(muted_line(tr!("script_editor_console_cleared"), palette))
+                    base.overflow_y_scroll()
+                        .child(muted_line(tr!("script_editor_console_cleared"), palette))
                 } else {
-                    let mut b = body;
-                    for line in &self.console {
-                        b = b.child(console_row(line, palette));
-                    }
-                    b
+                    let count = self.console.len();
+                    let pal = *palette;
+                    let rows = uniform_list(
+                        "script-console-rows",
+                        count,
+                        cx.processor(move |this, range: std::ops::Range<usize>, _window, _cx| {
+                            let mut rows = Vec::with_capacity(range.len());
+                            for ix in range {
+                                let Some(line) = this.console.get(ix) else {
+                                    continue;
+                                };
+                                rows.push(console_row(line, &pal).into_any_element());
+                            }
+                            rows
+                        }),
+                    )
+                    .track_scroll(&self.console_scroll)
+                    .gap(spacing(Spacing::Xxs, Density::Cozy))
+                    .flex_1()
+                    .min_h(px(0.0));
+                    base.child(rows)
                 }
             }
             ConsoleTab::Problems => {
+                let base = base
+                    .overflow_y_scroll()
+                    .gap(spacing(Spacing::Xxs, Density::Cozy));
                 if self.problems.is_empty() {
-                    body.child(muted_line(tr!("script_editor_no_problems"), palette))
+                    base.child(muted_line(tr!("script_editor_no_problems"), palette))
                 } else {
-                    let mut b = body;
+                    let mut b = base;
                     for problem in &self.problems {
                         let (glyph, tint) = match problem.level {
                             ProblemLevel::Error => (Icon::AlertTriangle, palette.warning),

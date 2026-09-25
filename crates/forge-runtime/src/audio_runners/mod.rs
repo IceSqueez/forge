@@ -580,13 +580,15 @@ mod tests {
 
     #[tokio::test]
     async fn set_master_volume_converts_db_to_linear_gain_with_clamping() {
+        // Why: the ceiling is unity (0 dB) - a stream's own recorded loudness,
+        // no boost above it (closes QA finding S6).
         let cases: Vec<(SubActionConfig, f32)> = vec![
-            (config(&[("volume_db", Variant::Int(0))]), 1.0),
-            (config(&[("volume_db", Variant::Float(-6.0))]), 0.501_187),
-            (config(&[("volume_db", Variant::Int(6))]), 1.995_262),
-            (config(&[("volume_db", Variant::Float(-60.0))]), 0.031_623),
-            (config(&[("volume_db", Variant::Int(30))]), 1.995_262),
-            (SubActionConfig::new(), 1.0),
+            (config(&[("volume_db", Variant::Int(0))]), 1.0), // ceiling boundary
+            (config(&[("volume_db", Variant::Int(6))]), 1.0), // one step past the ceiling clamps to unity
+            (config(&[("volume_db", Variant::Float(-6.0))]), 0.501_187), // happy path
+            (config(&[("volume_db", Variant::Float(-30.0))]), 0.031_623), // floor boundary
+            (config(&[("volume_db", Variant::Float(-60.0))]), 0.031_623), // past the floor clamps to it
+            (SubActionConfig::new(), 1.0), // missing field defaults to 0 dB
         ];
 
         let stack = ArgStack::new();

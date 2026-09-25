@@ -1074,10 +1074,20 @@ mod tests {
 
     #[tokio::test]
     async fn master_volume_clamps_gain_above_ceiling() {
+        // Why: the ceiling is unity (the clip's own recorded loudness) - no boost
+        // above it (closes QA finding S6).
         let samples = vec![100, -100, 4_000, -4_000];
         let baseline = capture_played_samples(&samples, 1.0, None).await;
         let out = capture_played_samples(&samples, 1.0, Some(10.0)).await;
-        assert_proportional(&baseline, &out, 4.0);
+        assert_proportional(&baseline, &out, 1.0);
+    }
+
+    #[tokio::test]
+    async fn clip_volume_clamps_gain_above_ceiling() {
+        let samples = vec![100, -100, 4_000, -4_000];
+        let baseline = capture_played_samples(&samples, 1.0, None).await;
+        let out = capture_played_samples(&samples, 10.0, None).await;
+        assert_proportional(&baseline, &out, 1.0);
     }
 
     #[tokio::test]
@@ -1878,6 +1888,27 @@ mod tests {
         assert!(
             (persisted - SUB_ACTION_VOLUME).abs() < f32::EPSILON,
             "the sub-action volume did not reach the store: {persisted}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_master_volume_above_ceiling_persists_the_same_clamped_gain_the_live_setting_holds() {
+        let store = Arc::new(MemorySettings::default());
+        let player = idle_player();
+        player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
+
+        // A +6 dB step now overshoots the 0 dB ceiling; it must clamp to unity
+        // (1.0), and restart must not revert to a stale, unclamped value.
+        SoundPlayer::set_master_volume(&player, 10.0).await.unwrap();
+
+        let persisted = forge_storage::soundboard_master_volume(store.as_ref())
+            .await
+            .unwrap();
+        let live = player.settings_handle().load().master_volume;
+        assert_eq!(
+            (persisted, live),
+            (1.0, 1.0),
+            "persisted and live master volume must both clamp to unity"
         );
     }
 

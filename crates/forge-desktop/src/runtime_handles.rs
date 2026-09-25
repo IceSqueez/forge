@@ -8,6 +8,7 @@ use forge_runtime::{
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
+use crate::audio_router::AudioRouter;
 use crate::integrations::{
     BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed, VTubeInstallSeed,
     YoutubeInstallSeed,
@@ -58,8 +59,9 @@ pub struct RuntimeHandles {
     pub tts_registry: Option<Arc<std::sync::RwLock<forge_tts_core::TtsRegistry>>>,
     /// The same sink instance the speak queue plays through; swapping its device handle reroutes the next utterance.
     pub speech_output: Arc<forge_audio::DeviceSink>,
-    /// The composed speech route as boot resolved it, so a test fires wherever utterances actually go.
+    /// The composed speech route currently installed, so a test fires wherever utterances actually go.
     pub speech_sink: Arc<dyn forge_audio::AudioSink>,
+    pub audio_router: Arc<AudioRouter>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
     pub voice_gate: Arc<VoiceGateOwner>,

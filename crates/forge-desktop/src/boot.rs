@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_audio::{AudioSink, RemoteAudioDestination, RemoteDestinationId, RemoteSink};
+use forge_audio::AudioSink;
 use forge_components::{Density, ThemeId};
 use forge_events::EventPublisher;
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
@@ -27,14 +27,10 @@ use forge_storage::{
 };
 use forge_storage_sqlite::SqliteBackend;
 
-use crate::audio_routes::{
-    AudioDomain, compose_routes, load_audio_routes, plan_route, report_plan, resolve_destination,
-    show_speech_legs,
-};
+use crate::audio_router::{AudioRouter, AudioRouterParts};
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
 use crate::overlay_frame_sink::ServerOverlayFrameSink;
-use crate::remote_audio::OverlayAudioDestination;
 use crate::routed_sink::RoutedSink;
 use crate::runtime_handles::RuntimeHandles;
 use crate::speak_boot::{build_speak_queue, build_speech_output};
@@ -382,16 +378,16 @@ pub async fn build_runtime(
         Err(e) => eprintln!("forge-desktop: overlay materialization pass failed: {e}"),
     }
 
-    install_audio_routes(
-        &backend,
-        &server,
-        &overlays,
-        &speech_sink,
-        Arc::clone(&speech_output) as Arc<dyn AudioSink>,
-        &soundboard_player,
-        speak.as_ref(),
-    )
-    .await;
+    let audio_router = Arc::new(AudioRouter::new(AudioRouterParts {
+        backend: Arc::clone(&backend),
+        server: server.clone(),
+        overlays: overlays.clone(),
+        speech_sink: Arc::clone(&speech_sink),
+        speech_output: Arc::clone(&speech_output) as Arc<dyn AudioSink>,
+        soundboard_player: Arc::clone(&soundboard_player),
+        speak: speak.clone(),
+    }));
+    audio_router.apply().await;
 
     Ok(RuntimeHandles {
         rt_handle: tokio::runtime::Handle::current(),
@@ -425,59 +421,10 @@ pub async fn build_runtime(
         tts_registry,
         speech_output,
         speech_sink: speech_sink as Arc<dyn AudioSink>,
+        audio_router,
         soundboard_player,
         voice_gate,
     })
-}
-
-/// Fixed for the life of the process: a stored route change reaches playback only after a restart.
-async fn install_audio_routes(
-    backend: &Arc<dyn DataProvider>,
-    server: &Option<forge_server::ServerHandle>,
-    overlays: &OverlayServiceHandle,
-    speech_sink: &RoutedSink,
-    speech_output: Arc<dyn AudioSink>,
-    soundboard_player: &SoundboardPlayer,
-    speak: Option<&forge_speak_queue::SpeakQueueHandle>,
-) {
-    let settings: &dyn SettingsRepo = backend.as_ref();
-    let routes = load_audio_routes(settings).await;
-    let destination = resolve_destination(
-        backend.overlay_repo().as_ref(),
-        server.is_some(),
-        routes.destination.as_ref(),
-    )
-    .await;
-
-    let speech_plan = plan_route(routes.speech, &destination);
-    let clips_plan = plan_route(routes.clips, &destination);
-    report_plan(AudioDomain::Speech, &speech_plan);
-    report_plan(AudioDomain::Clips, &clips_plan);
-
-    let remote = server.clone().map(|handle| {
-        Arc::new(OverlayAudioDestination::new(handle, overlays.clone()))
-            as Arc<dyn RemoteAudioDestination>
-    });
-    let install = compose_routes(
-        &speech_plan,
-        &clips_plan,
-        &destination,
-        Arc::clone(&speech_output),
-        |id| {
-            remote.clone().map(|destination| {
-                Arc::new(RemoteSink::new(
-                    destination,
-                    RemoteDestinationId::new(id.as_str()),
-                )) as Arc<dyn AudioSink>
-            })
-        },
-    );
-
-    speech_sink.install(install.speech_sink);
-    soundboard_player.install_route(install.clip_route);
-    if let (Some(remote), Some(speak)) = (remote, speak) {
-        speak.install_targeted_legs(show_speech_legs(&speech_plan, remote, speech_output));
-    }
 }
 
 async fn build_voice_gate(

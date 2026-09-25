@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_audio::{AudioRoute, AudioSink};
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    anchored_popover_below, body_family, drive_overlay_focus, field_hint, icon, mono_family,
-    radius, segment, segmented, setting_row, spacing, tr, with_alpha,
+    anchored_popover_below, body_family, drive_overlay_focus, icon, mono_family, radius, segment,
+    segmented, setting_row, spacing, tr, with_alpha,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo};
@@ -13,6 +13,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::audio_router::{AppliedRoutes, AudioRouter};
 use crate::audio_routes::{
     AudioDomain, RouteFallback, RoutePlan, load_audio_routes, plan_route, resolve_destination,
     set_destination, set_route,
@@ -46,7 +47,6 @@ struct Loaded {
     clips_plan: RoutePlan,
 }
 
-/// Resolved once at mount from the stored values, so it keeps reporting what this process boots with while the selectors move.
 struct InEffect {
     speech: RoutePlan,
     clips: RoutePlan,
@@ -58,6 +58,7 @@ pub struct SettingsAudioRoutingView {
     overlay_service: OverlayServiceHandle,
     rt_handle: tokio::runtime::Handle,
     speech_sink: Arc<dyn AudioSink>,
+    router: Arc<AudioRouter>,
     server_available: bool,
     loading: bool,
     load_error: Option<String>,
@@ -82,7 +83,7 @@ impl SettingsAudioRoutingView {
         overlays: Arc<dyn OverlayRepo>,
         overlay_service: OverlayServiceHandle,
         rt_handle: tokio::runtime::Handle,
-        speech_sink: Arc<dyn AudioSink>,
+        router: Arc<AudioRouter>,
         server_available: bool,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -91,7 +92,8 @@ impl SettingsAudioRoutingView {
             overlays,
             overlay_service,
             rt_handle,
-            speech_sink,
+            speech_sink: router.speech_sink(),
+            router,
             server_available,
             loading: true,
             load_error: None,
@@ -155,12 +157,14 @@ impl SettingsAudioRoutingView {
         }
         self.persist_error = None;
         let settings = Arc::clone(&self.settings);
+        let router = Arc::clone(&self.router);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 set_route(settings.as_ref(), domain, route)
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                Ok(router.apply().await)
             },
             |this, result, cx| this.apply_persisted(result, cx),
             cx,
@@ -175,12 +179,14 @@ impl SettingsAudioRoutingView {
         self.connected_pages = None;
         self.count_pages(cx);
         let settings = Arc::clone(&self.settings);
+        let router = Arc::clone(&self.router);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 set_destination(settings.as_ref(), destination.as_ref())
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                Ok(router.apply().await)
             },
             |this, result, cx| this.apply_persisted(result, cx),
             cx,
@@ -210,12 +216,25 @@ impl SettingsAudioRoutingView {
         );
     }
 
-    fn apply_persisted(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
-        if let Err(message) = result {
-            tracing::warn!(error = %message, "failed to persist an audio routing setting");
-            self.persist_error = Some(message);
-            cx.notify();
+    fn apply_persisted(
+        &mut self,
+        result: Result<Option<AppliedRoutes>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(Some(applied)) => {
+                self.in_effect = Some(InEffect {
+                    speech: applied.speech,
+                    clips: applied.clips,
+                });
+            }
+            Ok(None) => return,
+            Err(message) => {
+                tracing::warn!(error = %message, "failed to persist an audio routing setting");
+                self.persist_error = Some(message);
+            }
         }
+        cx.notify();
     }
 
     fn test_on_overlay(&mut self, cx: &mut Context<Self>) {
@@ -542,18 +561,6 @@ impl SettingsAudioRoutingView {
         item
     }
 
-    fn restart_note(&self, palette: &ForgePalette, density: Density) -> impl IntoElement {
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(icon(Icon::InfoCircle, FONT_XS, palette.text_faint))
-            .child(field_hint(
-                tr!("settings_audio_routing_restart_note"),
-                palette,
-            ))
-    }
-
     fn in_effect_section(
         &self,
         palette: &ForgePalette,
@@ -682,7 +689,6 @@ impl Render for SettingsAudioRoutingView {
                 ))
                 .child(self.section_label("settings_audio_routing_destination", &palette))
                 .child(self.destination_section(&palette, density, cx))
-                .child(self.restart_note(&palette, density))
                 .children(self.in_effect_section(&palette, density));
 
             if let Some(message) = &self.test_error {

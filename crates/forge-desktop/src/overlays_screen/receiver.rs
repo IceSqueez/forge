@@ -46,12 +46,15 @@ impl OverlaysView {
         self.apply_receiver(next.clone(), cx);
 
         let settings = Arc::clone(&self.settings_repo);
+        let router = Arc::clone(&self.audio_router);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 set_destination(settings.as_ref(), next.as_ref())
                     .await
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string())?;
+                router.apply().await;
+                Ok(())
             },
             move |this, result: Result<(), String>, cx| {
                 if let Err(message) = result {

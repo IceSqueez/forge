@@ -198,7 +198,7 @@ impl SoundboardPlayer {
         }
     }
 
-    /// Installed once at boot; a later install reaches the next clip and leaves a playing one untouched.
+    /// A later install reaches the next clip and leaves a playing one untouched.
     pub fn install_route(&self, route: ClipRoute) {
         self.clip_route.store(route);
     }

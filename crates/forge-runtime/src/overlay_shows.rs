@@ -5,7 +5,7 @@ use std::time::Duration;
 use forge_overlay::silent_reveal_content;
 use forge_registry::CancelSignal;
 use forge_storage::OverlayId;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::Instant;
 
@@ -48,6 +48,38 @@ pub(crate) struct Show {
 
 pub(crate) struct QueueFull;
 
+type Depths = HashMap<OverlayId, usize>;
+
+/// Yields only when the watched overlay's count of waiting shows moves; other overlays' traffic
+/// is absorbed.
+pub struct ShowDepthWatch {
+    depths: watch::Receiver<Depths>,
+    id: OverlayId,
+    last: usize,
+}
+
+impl ShowDepthWatch {
+    pub fn depth(&self) -> usize {
+        self.last
+    }
+
+    /// `None` once the show queue behind this watch is gone.
+    pub async fn changed(&mut self) -> Option<usize> {
+        loop {
+            self.depths.changed().await.ok()?;
+            let depth = depth_in(&self.depths.borrow_and_update(), &self.id);
+            if depth != self.last {
+                self.last = depth;
+                return Some(depth);
+            }
+        }
+    }
+}
+
+fn depth_in(depths: &Depths, id: &OverlayId) -> usize {
+    depths.get(id).copied().unwrap_or(0)
+}
+
 enum SpeechOpening {
     Started,
     Ended(Result<Result<(), SpeakDispatchError>, JoinError>),
@@ -71,6 +103,7 @@ pub(crate) struct ShowSequencer {
     frames: Option<Arc<dyn OverlayFrameSink>>,
     speaker: Option<Arc<dyn SpeakDispatcher>>,
     lanes: Mutex<HashMap<OverlayId, Lane>>,
+    depths: watch::Sender<Depths>,
 }
 
 impl ShowSequencer {
@@ -82,7 +115,30 @@ impl ShowSequencer {
             frames,
             speaker,
             lanes: Mutex::default(),
+            depths: watch::Sender::new(Depths::new()),
         }
+    }
+
+    pub(crate) fn watch_depth(&self, id: &OverlayId) -> ShowDepthWatch {
+        let depths = self.depths.subscribe();
+        let last = depth_in(&depths.borrow(), id);
+        ShowDepthWatch {
+            depths,
+            id: id.clone(),
+            last,
+        }
+    }
+
+    /// Called with the lanes lock held, so published depths follow the queue's own order.
+    fn publish_depth(&self, id: &OverlayId, depth: usize) {
+        self.depths.send_if_modified(|depths| {
+            let previous = if depth == 0 {
+                depths.remove(id)
+            } else {
+                depths.insert(id.clone(), depth)
+            };
+            previous.unwrap_or(0) != depth
+        });
     }
 
     pub(crate) fn enqueue(
@@ -98,6 +154,7 @@ impl ShowSequencer {
                 return Err(QueueFull);
             }
             lane.pending.push_back(Pending { show, done });
+            self.publish_depth(id, lane.pending.len());
             !std::mem::replace(&mut lane.running, true)
         };
         if start_presenter {
@@ -119,10 +176,12 @@ impl ShowSequencer {
     pub(crate) fn drop_pending(&self, id: &OverlayId, end: ShowEnd) -> usize {
         let dropped: Vec<Pending> = {
             let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
-            lanes
+            let drained: Vec<Pending> = lanes
                 .get_mut(id)
                 .map(|lane| lane.pending.drain(..).collect())
-                .unwrap_or_default()
+                .unwrap_or_default();
+            self.publish_depth(id, 0);
+            drained
         };
         let count = dropped.len();
         for pending in dropped {
@@ -212,9 +271,11 @@ impl ShowSequencer {
         let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
         let lane = lanes.get_mut(id)?;
         let next = lane.pending.pop_front();
+        let depth = lane.pending.len();
         if next.is_none() {
             lanes.remove(id);
         }
+        self.publish_depth(id, depth);
         next
     }
 }

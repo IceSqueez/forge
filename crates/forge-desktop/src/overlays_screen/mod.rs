@@ -37,6 +37,7 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::audio_router::AudioRouter;
 use crate::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
 use crate::presentation::ActivePresentation;
 use crate::sidebar::NavRequested;
@@ -136,6 +137,7 @@ pub struct OverlaysView {
     library: Arc<ClipLibrary>,
     media: Arc<dyn MediaRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
+    audio_router: Arc<AudioRouter>,
     clip_choices: Vec<(String, String)>,
     clips_gen: async_bridge::Generation,
     icon_images: Vec<IconImage>,
@@ -173,6 +175,7 @@ pub struct OverlaysLaunch {
     pub library: Arc<ClipLibrary>,
     pub media: Arc<dyn MediaRepo>,
     pub settings_repo: Arc<dyn SettingsRepo>,
+    pub audio_router: Arc<AudioRouter>,
     pub actions: Arc<ActionsService>,
     pub triggers: Arc<TriggerRegistry>,
     pub sub_actions: Arc<SubActionRegistry>,
@@ -211,6 +214,7 @@ impl OverlaysView {
             library: launch.library,
             media: launch.media,
             settings_repo: launch.settings_repo,
+            audio_router: launch.audio_router,
             clip_choices: Vec::new(),
             clips_gen: async_bridge::Generation::default(),
             icon_images: Vec::new(),
@@ -867,6 +871,8 @@ impl OverlaysView {
             self.clear_test();
         }
         let service = self.service.clone();
+        let router =
+            (self.receiver.as_ref() == Some(&prompt.id)).then(|| Arc::clone(&self.audio_router));
         let id = prompt.id;
         async_bridge::run_async(
             &self.rt_handle,
@@ -874,6 +880,9 @@ impl OverlaysView {
                 let removed = service.delete(&id).await.map_err(|e| e.to_string())?;
                 if !removed {
                     return Ok((false, None));
+                }
+                if let Some(router) = router {
+                    router.apply().await;
                 }
                 if let Err(error) = service.release_media(&id).await {
                     tracing::warn!(overlay = %id, %error, "overlay media references not released");

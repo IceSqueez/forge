@@ -54,7 +54,7 @@ pub use overlay_service::{
     OverlayReceivers, OverlayServiceCell, OverlayServiceError, OverlayServiceHandle, TestFire,
 };
 pub use overlay_shows::{
-    SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowEnd, ShowTicket,
+    SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowDepthWatch, ShowEnd, ShowTicket,
 };
 pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,

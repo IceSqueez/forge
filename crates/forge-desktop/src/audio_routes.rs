@@ -248,7 +248,7 @@ pub fn report_plan(domain: AudioDomain, plan: &RoutePlan) {
         Some(fallback) => tracing::warn!(
             domain = domain.as_str(),
             reason = %fallback,
-            "audio route falls back to local playback until the next restart"
+            "audio route falls back to local playback until the routing changes"
         ),
         None => tracing::info!(
             domain = domain.as_str(),

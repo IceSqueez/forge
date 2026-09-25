@@ -1,12 +1,10 @@
-use std::time::Duration;
-
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Picker, PickerEvent, PickerItem,
     PickerLabels, body_family, field_label, ghost_button_with_icon, icon, section_label, toggle,
     tr,
 };
 use forge_overlay::config::{DURATION, SOUND, SPEECH, SPEECH_VOICE};
-use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig, SampleContext};
+use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, SharedString, Subscription, Task,
@@ -21,7 +19,6 @@ use crate::async_bridge;
 use crate::config_form::{ConfigField, ConfigFieldHandlers, render_config_control};
 use crate::presentation::ActivePresentation;
 
-const QUEUE_REFRESH: Duration = Duration::from_secs(1);
 const LOOK_FIELD_KEY: &str = "look";
 const ROW_GAP: Pixels = px(8.0);
 const HINT_TOP: Pixels = px(4.0);
@@ -212,33 +209,20 @@ impl OverlayPropertyPanel {
         self.base.kind_id()
     }
 
-    /// Queue depth has no change signal, so it is read on a short cadence while the panel of a
-    /// look that queues its shows is open; dropping the panel drops the task.
     fn watch_queue(&mut self, cx: &mut Context<Self>) {
         if !self.base.queues_shows() {
             return;
         }
-        let service = self.service.clone();
-        let id = self.overlay_id.clone();
-        let rt = self.rt_handle.clone();
+        let mut depth = self.service.watch_pending_shows(&self.overlay_id);
+        self.base.waiting = depth.depth();
         self.base.queue_watch = Some(cx.spawn(async move |this, cx| {
-            loop {
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                let probe = service.clone();
-                let target = id.clone();
-                rt.spawn(async move {
-                    let _ = tx.send(probe.pending_shows(&target));
-                });
-                let Ok(waiting) = rx.await else {
-                    break;
-                };
+            while let Some(waiting) = depth.changed().await {
                 if this
                     .update(cx, |this, cx| this.apply_waiting(waiting, cx))
                     .is_err()
                 {
                     break;
                 }
-                cx.background_executor().timer(QUEUE_REFRESH).await;
             }
         }));
     }
@@ -251,18 +235,8 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    fn clear_queue(&mut self, cx: &mut Context<Self>) {
-        let service = self.service.clone();
-        let id = self.overlay_id.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move {
-                service.clear_shows(&id);
-                service.pending_shows(&id)
-            },
-            |this, waiting, cx| this.apply_waiting(waiting, cx),
-            cx,
-        );
+    fn clear_queue(&mut self) {
+        self.service.clear_shows(&self.overlay_id);
     }
 
     fn toggle_receiver(&mut self, cx: &mut Context<Self>) {
@@ -288,7 +262,7 @@ impl OverlayPropertyPanel {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                let args = SampleContext::neutral().args();
+                let args = service.sample(&id).await.args();
                 match service
                     .send_to(&id, &OverlayConfig::new(), &args, None)
                     .await
@@ -506,7 +480,7 @@ impl OverlayPropertyPanel {
                     .disabled(waiting == 0)
                     .on_click(
                         "overlays-panel-clear-queue",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.clear_queue(cx)),
+                        cx.listener(|this, _: &ClickEvent, _, _| this.clear_queue()),
                     ),
             );
         field_label(palette, tr!("overlays_queue_label").to_uppercase(), line)

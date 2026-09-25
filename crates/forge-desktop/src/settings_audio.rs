@@ -84,7 +84,7 @@ impl SettingsAudioView {
                 backend.overlay_repo(),
                 handles.overlays.clone(),
                 rt_handle.clone(),
-                Arc::clone(&handles.speech_sink),
+                Arc::clone(&handles.audio_router),
                 handles.server.is_some(),
                 cx,
             )

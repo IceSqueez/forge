@@ -28,7 +28,8 @@ use crate::bus::EventBus;
 use crate::overlay_lanes::OverlayLanes;
 use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 use crate::overlay_shows::{
-    QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowEnd, ShowSequencer, ShowTicket,
+    QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowDepthWatch, ShowEnd, ShowSequencer,
+    ShowTicket,
 };
 use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechStartSignal};
 
@@ -478,6 +479,10 @@ impl OverlayServiceHandle {
         self.inner.shows.depth(id)
     }
 
+    pub fn watch_pending_shows(&self, id: &OverlayId) -> ShowDepthWatch {
+        self.inner.shows.watch_depth(id)
+    }
+
     /// Drops the shows still waiting and returns how many; the one on screen runs out its window,
     /// and a step waiting on a dropped show ends as cleared.
     pub fn clear_shows(&self, id: &OverlayId) -> usize {
@@ -505,7 +510,7 @@ impl OverlayServiceHandle {
         let content = sample_content(
             descriptor,
             &definition.config,
-            &self.sample_pass(&definition.id).await,
+            &self.sample(&definition.id).await,
         );
         let disposition = descriptor.delivery_disposition();
         self.inner.bus.record(Event::new(
@@ -521,12 +526,22 @@ impl OverlayServiceHandle {
         Ok(TestFire { content, delivery })
     }
 
-    /// Only a Replace kind ever has a retained row, so what is stored is what may be replayed.
+    /// A row survives a look change, so it replays only while the overlay's current look keeps
+    /// its last content.
     async fn replay_retained(&self, id: &OverlayId) -> Result<(), OverlayServiceError> {
         let _lane = self.inner.lanes.enter(id).await;
         let Some(content) = self.inner.repo.get_retained_content(id).await? else {
             return Ok(());
         };
+        let definition = self.load(id).await?;
+        let retains = self
+            .inner
+            .kinds
+            .get(&definition.kind_id)
+            .is_some_and(|descriptor| descriptor.delivery_disposition().retains_last_content());
+        if !retains {
+            return Ok(());
+        }
         self.send(id, &content, None).await;
         Ok(())
     }
@@ -577,7 +592,7 @@ impl OverlayServiceHandle {
         let instance = instance_of(
             definition,
             self.media_pass(definition).await,
-            self.sample_pass(&definition.id).await,
+            self.sample(&definition.id).await,
         );
         let kinds = Arc::clone(&self.inner.kinds);
         let report = blocking(move || materialize_overlay(&root, &instance, &kinds)).await??;
@@ -606,7 +621,8 @@ impl OverlayServiceHandle {
         Ok(report)
     }
 
-    async fn sample_pass(&self, id: &OverlayId) -> SampleContext {
+    /// Drawn from the trigger that feeds this overlay when exactly one kind does; neutral otherwise.
+    pub async fn sample(&self, id: &OverlayId) -> SampleContext {
         let Some(wiring) = &self.inner.wiring else {
             return SampleContext::neutral();
         };

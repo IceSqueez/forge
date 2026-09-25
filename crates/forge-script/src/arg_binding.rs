@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use forge_types::{ArgStack, Variant};
+use forge_types::{ArgStack, Variant, is_variable_reference};
 
 use crate::convert::variant_to_dynamic;
 
@@ -288,9 +288,8 @@ fn token_at(chars: &[char], start: usize, scope: TokenScope) -> Option<(String, 
     let mut end = start + 1;
     while let Some(&c) = chars.get(end) {
         if c == '%' {
-            let raw: String = chars[start + 1..end].iter().collect();
-            let key = raw.trim();
-            return is_variable_name(key).then(|| (key.to_owned(), end + 1));
+            let key: String = chars[start + 1..end].iter().collect();
+            return is_variable_reference(&key).then(|| (key, end + 1));
         }
         let leaves_literal = match scope {
             TokenScope::Code => false,
@@ -303,13 +302,6 @@ fn token_at(chars: &[char], start: usize, scope: TokenScope) -> Option<(String, 
         end += 1;
     }
     None
-}
-
-fn is_variable_name(key: &str) -> bool {
-    !key.is_empty()
-        && key
-            .chars()
-            .all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
 fn as_code_value(value: &Variant) -> Variant {

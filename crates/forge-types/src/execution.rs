@@ -1,5 +1,6 @@
 use crate::ids::{ActionId, EventId};
 use crate::redaction::RedactedText;
+use crate::template::{TemplatePiece, TemplatePieces};
 use crate::variant::Variant;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -177,35 +178,16 @@ impl ArgStack {
         Some(current)
     }
 
-    /// Single-pass `%name%` substitution over `template`. Unknown tokens remain verbatim.
+    /// Single-pass `%name%` substitution over `template`. Unknown tokens and any `%` that does not open a valid token remain verbatim.
     pub fn interpolate(&self, template: &str) -> String {
         let mut result = String::with_capacity(template.len());
-        let mut chars = template.chars().peekable();
-        while let Some(ch) = chars.next() {
-            if ch != '%' {
-                result.push(ch);
-                continue;
-            }
-            let token_start = result.len();
-            result.push('%');
-            let mut key = String::new();
-            let mut closed = false;
-            for inner in chars.by_ref() {
-                if inner == '%' {
-                    closed = true;
-                    break;
-                }
-                key.push(inner);
-            }
-            if !closed {
-                continue;
-            }
-            if let Some(val) = self.resolve(key.trim()) {
-                result.truncate(token_start);
-                result.push_str(&val.to_string());
-            } else {
-                result.push_str(&key);
-                result.push('%');
+        for piece in TemplatePieces::new(template) {
+            match piece {
+                TemplatePiece::Literal(text) => result.push_str(text),
+                TemplatePiece::Reference { name, raw } => match self.resolve(name) {
+                    Some(value) => result.push_str(&value.to_string()),
+                    None => result.push_str(raw),
+                },
             }
         }
         result

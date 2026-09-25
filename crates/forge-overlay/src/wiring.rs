@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use forge_registry::TriggerVariable;
-use forge_types::{ActorRole, ActorSlot, CanonicalVariable, VariableStanding};
+use forge_types::{ActorRole, ActorSlot, CanonicalVariable, VariableStanding, variable_references};
 
 use crate::config;
 use crate::descriptor::{ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor};
@@ -186,28 +186,10 @@ fn token(name: &str) -> String {
     format!("%{name}%")
 }
 
-/// Mirrors the argument scanner: a token closes on the next `%`, is trimmed before lookup, and an
-/// unterminated tail is not a token at all.
-fn tokens(template: &str) -> Vec<&str> {
-    let segments: Vec<&str> = template.split('%').collect();
-    let closed = if segments.len().is_multiple_of(2) {
-        &segments[..segments.len() - 1]
-    } else {
-        &segments[..]
-    };
-    closed
-        .iter()
-        .skip(1)
-        .step_by(2)
-        .map(|segment| segment.trim())
-        .collect()
-}
-
 impl CuratedWording {
     fn names_nothing_outside(&self, declared: &BTreeSet<&str>) -> bool {
-        tokens(self.headline)
-            .into_iter()
-            .chain(tokens(self.subline))
+        variable_references(self.headline)
+            .chain(variable_references(self.subline))
             .all(|name| declared.contains(name))
     }
 

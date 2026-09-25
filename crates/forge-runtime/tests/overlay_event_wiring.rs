@@ -149,7 +149,7 @@ impl TriggerKindDescriptor for StubTrigger {
 
 struct Tuned {
     disposition: DeliveryDisposition,
-    machine_filled: bool,
+    draws: bool,
     reveal_secs: Option<i64>,
 }
 
@@ -157,7 +157,7 @@ impl Tuned {
     fn eligible(reveal_secs: Option<i64>) -> Self {
         Self {
             disposition: DeliveryDisposition::Transient,
-            machine_filled: false,
+            draws: true,
             reveal_secs,
         }
     }
@@ -213,8 +213,8 @@ impl OverlayKindDescriptor for Tuned {
         AlertOverlayKind.preview(config)
     }
 
-    fn content_is_machine_filled(&self) -> bool {
-        self.machine_filled
+    fn has_visual_page(&self) -> bool {
+        self.draws
     }
 }
 
@@ -258,7 +258,7 @@ fn an_overlay_kind_that_takes_no_event_wiring_is_refused_by_the_overlays_kind_id
         (
             Tuned {
                 disposition: DeliveryDisposition::Replace,
-                machine_filled: false,
+                draws: true,
                 reveal_secs: Some(ALERT_DEFAULT_SECS),
             },
             "a kind that keeps showing what it was last given",
@@ -266,7 +266,7 @@ fn an_overlay_kind_that_takes_no_event_wiring_is_refused_by_the_overlays_kind_id
         (
             Tuned {
                 disposition: DeliveryDisposition::Append,
-                machine_filled: false,
+                draws: true,
                 reveal_secs: Some(ALERT_DEFAULT_SECS),
             },
             "a kind that appends what it is given",
@@ -274,10 +274,10 @@ fn an_overlay_kind_that_takes_no_event_wiring_is_refused_by_the_overlays_kind_id
         (
             Tuned {
                 disposition: DeliveryDisposition::Transient,
-                machine_filled: true,
+                draws: false,
                 reveal_secs: Some(ALERT_DEFAULT_SECS),
             },
-            "a kind whose content a later step fills",
+            "a kind that draws nothing",
         ),
     ] {
         let refusal = plan_overlay_wiring(

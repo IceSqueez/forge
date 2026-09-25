@@ -809,6 +809,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
+    use forge_overlay::kinds::blank::KIND_ID as BLANK_OVERLAY_KIND;
     use forge_storage::{Language, MockOverlayRepo, StorageError, reserved_keys};
 
     use super::*;
@@ -817,12 +818,11 @@ mod tests {
 
     const CHOSEN: &str = "stage-audio";
 
-    const EVERY_FALLBACK: [RouteFallback; 5] = [
+    const EVERY_FALLBACK: [RouteFallback; 4] = [
         RouteFallback::NoDestinationChosen,
         RouteFallback::ServerUnavailable,
         RouteFallback::DestinationUnreadable,
         RouteFallback::DestinationNotFound,
-        RouteFallback::DestinationNotAudioOverlay,
     ];
 
     /// A key that reached the pane untranslated renders as the key itself, which every message
@@ -1015,11 +1015,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn only_audio_overlays_are_offered_as_destinations() {
+    async fn every_overlay_is_offered_as_a_destination_whatever_its_look() {
         let (backend, _writes) = test_backend();
         let overlays = catalog(vec![
             overlay_named("alert-box", ALERT_OVERLAY_KIND),
-            overlay_named(CHOSEN, AUDIO_OVERLAY_KIND),
+            overlay_named(CHOSEN, BLANK_OVERLAY_KIND),
         ]);
 
         let loaded = load_routing(backend as Arc<dyn SettingsRepo>, overlays, true)
@@ -1032,7 +1032,7 @@ mod tests {
                 .iter()
                 .map(|choice| choice.id.as_str().to_owned())
                 .collect::<Vec<_>>(),
-            vec![CHOSEN.to_owned()]
+            vec!["alert-box".to_owned(), CHOSEN.to_owned()]
         );
     }
 
@@ -1070,7 +1070,7 @@ mod tests {
             .set_string(reserved_keys::AUDIO_OVERLAY_ID, CHOSEN)
             .await
             .expect("the stored destination is written");
-        let overlays = catalog(vec![overlay_named(CHOSEN, AUDIO_OVERLAY_KIND)]);
+        let overlays = catalog(vec![overlay_named(CHOSEN, BLANK_OVERLAY_KIND)]);
 
         let loaded = load_routing(backend as Arc<dyn SettingsRepo>, overlays, false)
             .await

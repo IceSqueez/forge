@@ -12,7 +12,7 @@ use forge_types::Variant;
 use serde_json::Value;
 
 const ALERT_KIND: &str = "overlay.alert";
-const AUDIO_KIND: &str = "overlay.audio";
+const BLANK_KIND: &str = "overlay.blank";
 const CHAT_KIND: &str = "overlay.chat";
 const FRAME_KIND: &str = "overlay.frame";
 const GOAL_KIND: &str = "overlay.goal";
@@ -45,7 +45,7 @@ const STYLE_FIELDS: &[(&str, &[&str])] = &[
             ICON,
         ],
     ),
-    (AUDIO_KIND, &[]),
+    (BLANK_KIND, &[]),
     (
         CHAT_KIND,
         &[
@@ -103,7 +103,7 @@ const ELEMENT_EXTENTS: &[(&str, &[&str])] = &[
 
 const CONFIG_SCHEMA_VERSIONS: &[(&str, u64)] = &[
     (ALERT_KIND, 2),
-    (AUDIO_KIND, 1),
+    (BLANK_KIND, 1),
     (CHAT_KIND, 1),
     (FRAME_KIND, 1),
     (GOAL_KIND, 1),
@@ -112,7 +112,7 @@ const CONFIG_SCHEMA_VERSIONS: &[(&str, u64)] = &[
 
 const BASE_TEXT_SIZE: &[(&str, Option<u32>)] = &[
     (ALERT_KIND, Some(20)),
-    (AUDIO_KIND, None),
+    (BLANK_KIND, None),
     (CHAT_KIND, Some(13)),
     (FRAME_KIND, Some(13)),
     (GOAL_KIND, Some(14)),
@@ -352,8 +352,8 @@ fn an_element_side_is_drawn_only_from_a_whole_number_on_an_axis_its_kind_offers(
         (TICKER_KIND, ELEMENT_WIDTH, Variant::Int(500), None),
         (FRAME_KIND, ELEMENT_WIDTH, Variant::Int(500), None),
         (FRAME_KIND, ELEMENT_HEIGHT, Variant::Int(500), None),
-        (AUDIO_KIND, ELEMENT_WIDTH, Variant::Int(500), None),
-        (AUDIO_KIND, ELEMENT_HEIGHT, Variant::Int(500), None),
+        (BLANK_KIND, ELEMENT_WIDTH, Variant::Int(500), None),
+        (BLANK_KIND, ELEMENT_HEIGHT, Variant::Int(500), None),
         (ALERT_KIND, ELEMENT_WIDTH, Variant::Float(640.0), None),
         (
             ALERT_KIND,

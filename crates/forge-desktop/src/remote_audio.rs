@@ -225,7 +225,7 @@ mod tests {
     use std::time::Duration;
 
     use forge_audio::RemoteClip;
-    use forge_overlay::kinds::audio::KIND_ID as AUDIO_OVERLAY_KIND;
+    use forge_overlay::kinds::alert::KIND_ID as RECEIVER_KIND;
     use forge_overlay::{OverlayKindRegistry, config, register_builtin_kinds};
     use forge_runtime::{EventBus, OverlayFrameSink, OverlayReceivers};
     use forge_storage::{MockOverlayRepo, OverlayRepo, SettingsRepo};
@@ -317,7 +317,7 @@ mod tests {
 
         let mut repo = MockOverlayRepo::new();
         repo.expect_get()
-            .returning(move |id| Ok(known.then(|| overlay_named(id.as_str(), AUDIO_OVERLAY_KIND))));
+            .returning(move |id| Ok(known.then(|| overlay_named(id.as_str(), RECEIVER_KIND))));
 
         let mut kinds = OverlayKindRegistry::new();
         register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");

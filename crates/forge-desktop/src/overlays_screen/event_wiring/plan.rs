@@ -187,7 +187,7 @@ mod tests {
     use forge_components::ThemeId;
     use forge_overlay::config;
     use forge_overlay::kinds::alert::{self, AlertOverlayKind};
-    use forge_overlay::kinds::audio::{self, AudioOverlayKind};
+    use forge_overlay::kinds::blank::{self, BlankOverlayKind};
     use forge_registry::TriggerCategory;
     use forge_storage::Language;
     use forge_types::{
@@ -385,12 +385,12 @@ mod tests {
         let speaking = speaks(SUBSCRIBER, "Subscribed", TriggerCategory::Subscriptions);
         let silent = StubTrigger::new(SILENT, "Silent", TriggerCategory::Chat, Declares::Nothing);
 
-        let Err(machine_filled) = draft_wiring(
-            &overlay_definition(audio::KIND_ID, OverlayConfig::new()),
-            &AudioOverlayKind,
+        let Err(drawless) = draft_wiring(
+            &overlay_definition(blank::KIND_ID, OverlayConfig::new()),
+            &BlankOverlayKind,
             &speaking,
         ) else {
-            panic!("a machine-filled overlay kind was drafted a wiring")
+            panic!("a look that draws nothing was drafted a wiring")
         };
         let Err(wordless) = draft_wiring(
             &overlay_definition(alert::KIND_ID, OverlayConfig::new()),
@@ -401,7 +401,7 @@ mod tests {
         };
 
         assert!(matches!(
-            machine_filled,
+            drawless,
             OverlayWiringRefusal::OverlayKindNotEligible { .. }
         ));
         assert!(matches!(

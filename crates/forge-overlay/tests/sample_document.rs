@@ -10,7 +10,7 @@ use serde_json::Value;
 
 const BUILTIN_IDS: &[&str] = &[
     "overlay.alert",
-    "overlay.audio",
+    "overlay.blank",
     "overlay.chat",
     "overlay.frame",
     "overlay.goal",
@@ -25,17 +25,7 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
             ("subline", "61 months subscribed"),
         ],
     ),
-    (
-        "overlay.audio",
-        &[
-            ("clip_duration_ms", "0"),
-            ("clip_id", ""),
-            ("clip_media_type", ""),
-            ("clip_path", ""),
-            ("command", ""),
-            ("report_path", ""),
-        ],
-    ),
+    ("overlay.blank", &[]),
     (
         "overlay.chat",
         &[
@@ -187,12 +177,17 @@ fn a_sample_document_never_carries_the_page_credential() {
 
 #[test]
 fn every_sample_content_value_reaches_the_page_as_a_plain_json_value() {
+    let reg = registry();
     for kind_id in BUILTIN_IDS {
         let document = sample(kind_id);
         let content = content_of(&document);
+        let draws = reg
+            .get(kind_id)
+            .expect("a registered builtin kind")
+            .has_visual_page();
 
         assert!(
-            !content.is_empty(),
+            !draws || !content.is_empty(),
             "{kind_id} samples nothing, so its preview page has nothing to draw"
         );
         assert!(

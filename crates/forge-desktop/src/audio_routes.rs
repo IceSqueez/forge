@@ -250,6 +250,7 @@ mod tests {
     use std::cell::Cell;
 
     use forge_overlay::kinds::alert::KIND_ID as ALERT_OVERLAY_KIND;
+    use forge_overlay::kinds::blank::KIND_ID as BLANK_OVERLAY_KIND;
     use forge_storage::MockOverlayRepo;
     use forge_storage::settings::MockSettingsRepo;
 
@@ -260,8 +261,8 @@ mod tests {
 
     #[derive(Clone, Copy, Debug)]
     enum Lookup {
-        AnAudioOverlay,
-        AnotherKind,
+        ABlankOverlay,
+        AnotherLook,
         Nothing,
         AFailure,
     }
@@ -269,8 +270,8 @@ mod tests {
     fn overlays(lookup: Lookup) -> Arc<dyn OverlayRepo> {
         let mut repo = MockOverlayRepo::new();
         repo.expect_get().returning(move |id| match lookup {
-            Lookup::AnAudioOverlay => Ok(Some(overlay_named(id.as_str(), AUDIO_OVERLAY_KIND))),
-            Lookup::AnotherKind => Ok(Some(overlay_named(id.as_str(), ALERT_OVERLAY_KIND))),
+            Lookup::ABlankOverlay => Ok(Some(overlay_named(id.as_str(), BLANK_OVERLAY_KIND))),
+            Lookup::AnotherLook => Ok(Some(overlay_named(id.as_str(), ALERT_OVERLAY_KIND))),
             Lookup::Nothing => Ok(None),
             Lookup::AFailure => Err(StorageError::Connection {
                 reason: "the database went away".to_owned(),
@@ -405,6 +406,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn choosing_a_second_receiver_moves_the_audio_off_the_first() {
+        let (backend, _writes) = test_backend();
+        for receiver in ["sub-alert", CHOSEN] {
+            set_destination(backend.as_ref(), Some(&OverlayId::new(receiver)))
+                .await
+                .expect("the receiver is chosen");
+        }
+
+        assert_eq!(
+            load_audio_routes(backend.as_ref()).await.destination,
+            Some(OverlayId::new(CHOSEN)),
+            "two overlays both believe they receive the audio, so every clip plays twice"
+        );
+    }
+
+    #[tokio::test]
     async fn a_padded_destination_is_stored_and_read_without_its_padding() {
         let (backend, _writes) = test_backend();
         set_destination(backend.as_ref(), Some(&OverlayId::new("  stage-audio  ")))
@@ -421,12 +438,12 @@ mod tests {
     async fn every_lookup_state_has_its_own_destination_verdict() {
         let chosen = OverlayId::new(CHOSEN);
         for (server_available, destination, lookup, expected) in [
-            (true, None, Lookup::AnAudioOverlay, AudioDestination::Unset),
-            (false, None, Lookup::AnAudioOverlay, AudioDestination::Unset),
+            (true, None, Lookup::ABlankOverlay, AudioDestination::Unset),
+            (false, None, Lookup::ABlankOverlay, AudioDestination::Unset),
             (
                 false,
                 Some(&chosen),
-                Lookup::AnAudioOverlay,
+                Lookup::ABlankOverlay,
                 AudioDestination::ServerOff,
             ),
             (
@@ -444,13 +461,13 @@ mod tests {
             (
                 true,
                 Some(&chosen),
-                Lookup::AnotherKind,
-                AudioDestination::NotAudioOverlay,
+                Lookup::AnotherLook,
+                AudioDestination::Ready(OverlayId::new(CHOSEN)),
             ),
             (
                 true,
                 Some(&chosen),
-                Lookup::AnAudioOverlay,
+                Lookup::ABlankOverlay,
                 AudioDestination::Ready(OverlayId::new(CHOSEN)),
             ),
         ] {
@@ -480,10 +497,6 @@ mod tests {
             (
                 AudioDestination::NotFound,
                 RouteFallback::DestinationNotFound,
-            ),
-            (
-                AudioDestination::NotAudioOverlay,
-                RouteFallback::DestinationNotAudioOverlay,
             ),
         ];
 
@@ -520,7 +533,6 @@ mod tests {
             AudioDestination::ServerOff,
             AudioDestination::Unreadable,
             AudioDestination::NotFound,
-            AudioDestination::NotAudioOverlay,
         ] {
             assert_eq!(
                 plan_route(AudioRoute::Local, &state),
@@ -626,12 +638,6 @@ mod tests {
                 AudioRoute::Both,
                 AudioRoute::Both,
                 AudioDestination::NotFound,
-                0,
-            ),
-            (
-                AudioRoute::Overlay,
-                AudioRoute::Local,
-                AudioDestination::NotAudioOverlay,
                 0,
             ),
         ] {

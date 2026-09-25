@@ -34,7 +34,7 @@ const RESOLVED: &str = "resolved";
 
 struct Retuned {
     disposition: DeliveryDisposition,
-    machine_filled: bool,
+    draws: bool,
 }
 
 impl OverlayKindDescriptor for Retuned {
@@ -82,8 +82,8 @@ impl OverlayKindDescriptor for Retuned {
         AlertOverlayKind.preview(config)
     }
 
-    fn content_is_machine_filled(&self) -> bool {
-        self.machine_filled
+    fn has_visual_page(&self) -> bool {
+        self.draws
     }
 }
 
@@ -168,23 +168,23 @@ fn resolving_every(names: &BTreeSet<String>) -> ArgStack {
 }
 
 #[test]
-fn a_kind_is_wireable_only_when_its_delivery_is_transient_and_its_content_is_author_written() {
+fn a_kind_is_wireable_only_when_its_delivery_is_transient_and_it_draws_a_page() {
     let accepted: Vec<(DeliveryDisposition, bool)> = [
         DeliveryDisposition::Transient,
         DeliveryDisposition::Replace,
         DeliveryDisposition::Append,
     ]
     .into_iter()
-    .flat_map(|disposition| [false, true].map(move |machine_filled| (disposition, machine_filled)))
-    .filter(|(disposition, machine_filled)| {
+    .flat_map(|disposition| [false, true].map(move |draws| (disposition, draws)))
+    .filter(|(disposition, draws)| {
         accepts_event_wiring(&Retuned {
             disposition: *disposition,
-            machine_filled: *machine_filled,
+            draws: *draws,
         })
     })
     .collect();
 
-    assert_eq!(accepted, vec![(DeliveryDisposition::Transient, false)]);
+    assert_eq!(accepted, vec![(DeliveryDisposition::Transient, true)]);
 }
 
 #[test]
@@ -203,7 +203,7 @@ fn exactly_the_alert_and_the_ticker_of_the_shipped_kinds_accept_event_wiring() {
 }
 
 #[test]
-fn the_shipped_kind_refused_despite_a_transient_delivery_is_refused_by_the_machine_filled_clause() {
+fn the_shipped_kind_refused_despite_a_transient_delivery_is_the_one_that_draws_nothing() {
     let kinds = builtin_kinds();
     let refused: BTreeSet<&str> = kinds
         .all()
@@ -212,12 +212,12 @@ fn the_shipped_kind_refused_despite_a_transient_delivery_is_refused_by_the_machi
         .map(OverlayKindDescriptor::id)
         .collect();
 
-    assert_eq!(refused, BTreeSet::from(["overlay.audio"]));
+    assert_eq!(refused, BTreeSet::from(["overlay.blank"]));
     assert!(
-        kinds
-            .get("overlay.audio")
-            .expect("the audio kind ships")
-            .content_is_machine_filled(),
+        !kinds
+            .get("overlay.blank")
+            .expect("the blank look ships")
+            .has_visual_page(),
     );
 }
 

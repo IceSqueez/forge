@@ -15,13 +15,14 @@ use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo,
 };
-use forge_types::Variant;
+use forge_types::{ArgStack, Variant};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
 const ALERT_KIND: &str = "overlay.alert";
 const GOAL_KIND: &str = "overlay.goal";
 const VALUE_KEY: &str = "value";
+const HEADLINE_KEY: &str = "headline";
 
 const HELD: &str = "held";
 const WAIT_BOUND: Duration = Duration::from_secs(5);
@@ -55,7 +56,11 @@ impl OverlayFrameSink for GatedSink {
         content: serde_json::Value,
         _: Option<u64>,
     ) -> OverlayReceivers {
-        let value = content[VALUE_KEY].as_str().unwrap().to_owned();
+        let value = content[VALUE_KEY]
+            .as_str()
+            .or_else(|| content[HEADLINE_KEY].as_str())
+            .unwrap()
+            .to_owned();
         if value == self.held {
             self.entered.notify_one();
             self.release.notified().await;
@@ -98,7 +103,7 @@ impl Harness {
         let content = content(value);
         tokio::spawn(async move {
             service
-                .deliver_content(&id, content, None)
+                .send_to(&id, &content, &ArgStack::new(), None)
                 .await
                 .expect("a bound overlay accepts content");
         })
@@ -112,7 +117,10 @@ impl Harness {
 }
 
 fn content(value: &str) -> OverlayConfig {
-    OverlayConfig::from([(VALUE_KEY.to_owned(), Variant::String(value.to_owned()))])
+    OverlayConfig::from([
+        (VALUE_KEY.to_owned(), Variant::String(value.to_owned())),
+        (HEADLINE_KEY.to_owned(), Variant::String(value.to_owned())),
+    ])
 }
 
 fn definition(id: &str, kind_id: &str) -> OverlayDefinition {
@@ -245,7 +253,7 @@ async fn a_push_held_on_one_overlay_does_not_hold_up_a_push_to_another() {
         WAIT_BOUND,
         harness
             .service
-            .deliver_content(&other, content("free"), None),
+            .send_to(&other, &content("free"), &ArgStack::new(), None),
     )
     .await;
     harness.sink.release.notify_one();
@@ -268,7 +276,7 @@ async fn pushes_to_an_overlay_that_retains_nothing_are_not_serialised() {
         WAIT_BOUND,
         harness
             .service
-            .deliver_content(&alert, content("free"), None),
+            .send_to(&alert, &content("free"), &ArgStack::new(), None),
     )
     .await;
     harness.sink.release.notify_one();

@@ -26,7 +26,7 @@ use tempfile::TempDir;
 use time::OffsetDateTime;
 
 const ALERT_KIND: &str = "overlay.alert";
-const AUDIO_KIND: &str = "overlay.audio";
+const BLANK_KIND: &str = "overlay.blank";
 const CHAT_KIND: &str = "overlay.chat";
 const GOAL_KIND: &str = "overlay.goal";
 const UNSHIPPED_KIND: &str = "overlay.vendor_unshipped";
@@ -643,14 +643,13 @@ async fn delivered_content_is_kept_for_replay_only_by_a_kind_whose_delivery_is_t
 
         harness
             .service
-            .deliver_content(&stored.id, content.clone(), None)
+            .send_to(&stored.id, &content, &ArgStack::new(), None)
             .await
             .expect("a bound overlay accepts content");
 
-        let expected = (kind_id == GOAL_KIND).then(|| content.clone());
         assert_eq!(
-            harness.retained_for(&stored.id),
-            expected,
+            harness.retained_for(&stored.id).is_some(),
+            kind_id == GOAL_KIND,
             "{label} retained the wrong thing, so the next connection replays the wrong thing"
         );
     }
@@ -687,7 +686,7 @@ async fn every_variant_kind_reaches_the_page_as_a_plain_json_value() {
 
         harness
             .service
-            .deliver_content(&stored.id, content, None)
+            .send_to(&stored.id, &content, &ArgStack::new(), None)
             .await
             .expect("a bound overlay accepts content");
 
@@ -697,8 +696,7 @@ async fn every_variant_kind_reaches_the_page_as_a_plain_json_value() {
             .pop()
             .expect("the delivery reached the sink");
         assert_eq!(
-            frame.content,
-            serde_json::json!({ VALUE_KEY: expected }),
+            frame.content[VALUE_KEY], expected,
             "{held:?} reached the page in a shape its runtime renders as something else"
         );
         assert_eq!(
@@ -716,7 +714,7 @@ async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
     let content = text_config(&[(LABEL_KEY, "Sub goal"), (VALUE_KEY, "42")]);
     harness
         .service
-        .deliver_content(&stored.id, content.clone(), Some(4_000))
+        .send_to(&stored.id, &content, &ArgStack::new(), Some(4_000))
         .await
         .expect("a bound overlay accepts content");
 
@@ -733,7 +731,7 @@ async fn a_reconnecting_page_is_handed_back_the_content_it_was_last_showing() {
         frames[1],
         ContentFrame {
             identity: stored.id.clone(),
-            content: serde_json::json!({ LABEL_KEY: "Sub goal", VALUE_KEY: "42" }),
+            content: frames[0].content.clone(),
             duration_ms: None,
         },
         "the replay must restore the display without re-running the original timer"
@@ -838,10 +836,9 @@ async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_conn
 }
 
 #[tokio::test]
-async fn sending_content_refuses_an_identity_or_an_overlay_type_no_step_may_author() {
+async fn sending_content_refuses_an_unknown_identity_or_an_overlay_type_this_build_lacks() {
     let unshipped = definition_of_kind("vendor-box", UNSHIPPED_KIND);
-    let audio = definition_of_kind("clip-player", AUDIO_KIND);
-    let harness = harness(vec![unshipped.clone(), audio.clone()], true);
+    let harness = harness(vec![unshipped.clone()], true);
 
     type Check = fn(&OverlayServiceError) -> bool;
     for (id, matches_expected, label) in [
@@ -855,13 +852,6 @@ async fn sending_content_refuses_an_identity_or_an_overlay_type_no_step_may_auth
             (|e: &OverlayServiceError| matches!(e, OverlayServiceError::UnavailableKind { .. }))
                 as Check,
             "an overlay type this build lacks",
-        ),
-        (
-            audio.id.clone(),
-            (|e: &OverlayServiceError| {
-                matches!(e, OverlayServiceError::ContentNotAuthorable { .. })
-            }) as Check,
-            "an overlay type that fills its own content",
         ),
     ] {
         let err = harness
@@ -883,89 +873,96 @@ async fn sending_content_refuses_an_identity_or_an_overlay_type_no_step_may_auth
         "a refused send still pushed a frame to connected pages"
     );
     assert!(
-        harness.retained_for(&audio.id).is_none(),
+        harness.retained_for(&unshipped.id).is_none(),
         "a refused send left content behind for the next connection to replay"
     );
 }
 
-#[tokio::test]
-async fn a_direct_delivery_to_a_machine_filled_overlay_reaches_the_page_and_is_never_retained() {
-    let audio = definition_of_kind("clip-player", AUDIO_KIND);
-    let harness = harness(vec![audio.clone()], true);
+fn announcement() -> OverlayConfig {
+    announcement_content(&AudioAnnouncement {
+        clip_id: CLIP_ID,
+        clip_path: CLIP_PATH,
+        report_path: REPORT_PATH,
+        media_type: CLIP_MEDIA_TYPE,
+        duration_ms: CLIP_DURATION_MS,
+    })
+}
 
-    let delivered = harness
+#[tokio::test]
+async fn audio_reaches_an_overlay_of_any_look_untouched_by_its_content_funnel() {
+    for kind_id in [BLANK_KIND, ALERT_KIND, GOAL_KIND, CHAT_KIND, UNSHIPPED_KIND] {
+        let receiver = definition_of_kind("receiver", kind_id);
+        let harness = harness(vec![receiver.clone()], true);
+
+        let delivered = harness
+            .service
+            .deliver_audio(&receiver.id, announcement())
+            .await
+            .expect("any stored overlay can carry audio");
+
+        assert_eq!(
+            (delivered, harness.sink.frames()),
+            (
+                OverlayDelivery::Delivered { sources: 1 },
+                vec![ContentFrame {
+                    identity: receiver.id.clone(),
+                    content: serde_json::json!({
+                        "clip_id": CLIP_ID,
+                        "clip_path": CLIP_PATH,
+                        "report_path": REPORT_PATH,
+                        "clip_media_type": CLIP_MEDIA_TYPE,
+                        "clip_duration_ms": CLIP_DURATION_MS,
+                    }),
+                    duration_ms: None,
+                }],
+            ),
+            "a {kind_id} receiver got the announcement filtered, tagged or timed by its look"
+        );
+    }
+}
+
+#[tokio::test]
+async fn audio_is_never_retained_even_by_a_look_that_keeps_its_last_content() {
+    let goal = definition_of_kind("goal-box", GOAL_KIND);
+    let harness = harness(vec![goal.clone()], true);
+    harness
         .service
-        .deliver_content(
-            &audio.id,
-            announcement_content(&AudioAnnouncement {
-                clip_id: CLIP_ID,
-                clip_path: CLIP_PATH,
-                report_path: REPORT_PATH,
-                media_type: CLIP_MEDIA_TYPE,
-                duration_ms: CLIP_DURATION_MS,
-            }),
+        .send_to(
+            &goal.id,
+            &text_config(&[(VALUE_KEY, "42")]),
+            &ArgStack::new(),
             None,
         )
         .await
-        .expect("the sink that fills this overlay's content is not the step funnel");
+        .expect("a goal accepts a send");
+    let shown = harness.retained_for(&goal.id);
+
+    harness
+        .service
+        .deliver_audio(&goal.id, announcement())
+        .await
+        .expect("a goal can carry audio");
 
     assert_eq!(
-        delivered,
-        OverlayDelivery::Delivered { sources: 1 },
-        "a connected page was not counted as reached"
-    );
-    assert_eq!(
-        harness.sink.frames(),
-        vec![ContentFrame {
-            identity: audio.id.clone(),
-            content: serde_json::json!({
-                "clip_id": CLIP_ID,
-                "clip_path": CLIP_PATH,
-                "report_path": REPORT_PATH,
-                "clip_media_type": CLIP_MEDIA_TYPE,
-                "clip_duration_ms": CLIP_DURATION_MS,
-            }),
-            duration_ms: None,
-        }],
-        "the page received something other than the announcement, or received it tagged"
-    );
-    assert!(
-        harness.retained_for(&audio.id).is_none(),
-        "an announcement was retained, so a reconnect replays a capability already spent"
+        harness.retained_for(&goal.id),
+        shown,
+        "an announcement replaced what the goal keeps, so a reconnect replays a spent capability"
     );
 }
 
 #[tokio::test]
-async fn a_test_fire_on_a_machine_filled_overlay_announces_no_clip_and_no_address() {
-    let audio = definition_of_kind("clip-player", AUDIO_KIND);
-    let harness = harness(vec![audio.clone()], true);
+async fn audio_to_an_identity_no_record_carries_is_refused_without_a_frame() {
+    let harness = harness(Vec::new(), true);
 
-    let fired = harness
+    let err = harness
         .service
-        .test_fire(&audio.id)
+        .deliver_audio(&OverlayId::new("nobody"), announcement())
         .await
-        .expect("a test fire builds a sample for every shipped kind");
+        .expect_err("an unknown receiver must be refused");
 
-    assert_eq!(
-        harness.sink.frames(),
-        vec![ContentFrame {
-            identity: audio.id.clone(),
-            content: serde_json::json!({
-                "clip_id": "",
-                "clip_path": "",
-                "report_path": "",
-                "clip_media_type": "",
-                "clip_duration_ms": 0,
-                "command": "",
-            }),
-            duration_ms: None,
-        }],
-        "a test fire reached the page with something a browser source would act on"
-    );
-    assert_eq!(
-        fired.content.get("clip_path").and_then(Variant::as_str),
-        Some(""),
-        "the previewed sample names an address the caller could read back"
+    assert!(
+        matches!(err, OverlayServiceError::Unknown(_)) && harness.sink.frames().is_empty(),
+        "an unknown receiver produced {err:?} or still pushed a frame"
     );
 }
 

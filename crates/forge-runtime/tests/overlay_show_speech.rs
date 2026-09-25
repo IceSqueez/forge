@@ -9,8 +9,8 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::CancelSignal;
 use forge_runtime::{
     EventBus, NullEventLogRepo, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceHandle, SHOW_CEILING, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError,
-    SpeakDispatcher,
+    OverlayServiceHandle, SHOW_CEILING, SHOW_SPEECH_START_WAIT, ShowEnd, ShowSpeech, ShowTicket,
+    SpeakDispatchError, SpeakDispatcher, SpeechStartSignal,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -27,6 +27,8 @@ const GOAL_KIND: &str = "overlay.goal";
 const STAGE: &str = "stage-alert";
 
 const HEADLINE_KEY: &str = "headline";
+const COMMAND_KEY: &str = "command";
+const REVEAL: &str = "reveal";
 const ALERT_WINDOW: Duration = Duration::from_secs(5);
 const NEVER: Duration = Duration::from_secs(24 * 60 * 60);
 const CANCEL_POLL: Duration = Duration::from_millis(10);
@@ -48,7 +50,18 @@ impl TimedPage {
     }
 
     fn arrivals(&self) -> Vec<Duration> {
-        self.frames().into_iter().map(|frame| frame.at).collect()
+        self.frames()
+            .into_iter()
+            .filter(|frame| frame.content.get(HEADLINE_KEY).is_some())
+            .map(|frame| frame.at)
+            .collect()
+    }
+
+    fn reveals(&self) -> Vec<Frame> {
+        self.frames()
+            .into_iter()
+            .filter(|frame| frame.content[COMMAND_KEY].as_str() == Some(REVEAL))
+            .collect()
     }
 }
 
@@ -77,9 +90,21 @@ impl OverlayFrameSink for TimedPage {
 
 #[derive(Debug, Clone, Copy)]
 enum Speaks {
-    For(Duration),
+    Starts { after: Duration, lasts: Duration },
     FailsAtOnce,
 }
+
+fn plays_for(lasts: Duration) -> Speaks {
+    Speaks::Starts {
+        after: Duration::ZERO,
+        lasts,
+    }
+}
+
+const NEVER_STARTS: Speaks = Speaks::Starts {
+    after: NEVER,
+    lasts: NEVER,
+};
 
 #[derive(Debug, Clone)]
 struct Spoken {
@@ -110,6 +135,7 @@ impl SpeakDispatcher for ScriptedSpeaker {
         &self,
         speech: ShowSpeech,
         cancel: CancelSignal,
+        started: SpeechStartSignal,
     ) -> Result<(), SpeakDispatchError> {
         let index = {
             let mut spoken = self.spoken.lock().unwrap();
@@ -120,13 +146,26 @@ impl SpeakDispatcher for ScriptedSpeaker {
             });
             spoken.len() - 1
         };
-        let lasts = match self.speaks {
+        let (after, lasts) = match self.speaks {
             Speaks::FailsAtOnce => {
                 return Err(SpeakDispatchError::Dispatch("rejected by a filter".into()));
             }
-            Speaks::For(lasts) => lasts,
+            Speaks::Starts { after, lasts } => (after, lasts),
         };
-        let ends = Instant::now() + lasts;
+        self.until(index, after, &cancel).await?;
+        started.mark_started();
+        self.until(index, lasts, &cancel).await
+    }
+}
+
+impl ScriptedSpeaker {
+    async fn until(
+        &self,
+        index: usize,
+        span: Duration,
+        cancel: &CancelSignal,
+    ) -> Result<(), SpeakDispatchError> {
+        let ends = Instant::now() + span;
         while Instant::now() < ends {
             if cancel.is_cancelled() {
                 self.spoken.lock().unwrap()[index].cancelled = true;
@@ -246,7 +285,7 @@ async fn finished(ticket: ShowTicket) -> ShowEnd {
 
 #[tokio::test(start_paused = true)]
 async fn a_waiting_shows_speech_is_requested_only_when_that_show_reaches_the_page() {
-    let harness = harness(ALERT_KIND, Speaks::For(Duration::from_secs(1)));
+    let harness = harness(ALERT_KIND, plays_for(Duration::from_secs(1)));
 
     let first = harness.queue("first").await;
     let second = harness.queue("second").await;
@@ -270,12 +309,22 @@ async fn a_waiting_shows_speech_is_requested_only_when_that_show_reaches_the_pag
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_show_is_held_for_the_longer_of_its_window_and_its_speech() {
-    for (speech_lasts, next_show_at) in [
-        (Duration::from_secs(2), ALERT_WINDOW),
-        (Duration::from_secs(9), Duration::from_secs(9)),
+async fn a_started_show_is_held_for_its_window_or_speech_counted_from_the_speech_start() {
+    let secs = Duration::from_secs;
+    for (starts_after, lasts, next_show_at) in [
+        (Duration::ZERO, secs(2), ALERT_WINDOW),
+        (Duration::ZERO, secs(9), secs(9)),
+        (secs(3), secs(1), secs(3) + ALERT_WINDOW),
+        (secs(3), secs(9), secs(12)),
+        (secs(9), secs(1), secs(9) + ALERT_WINDOW),
     ] {
-        let harness = harness(ALERT_KIND, Speaks::For(speech_lasts));
+        let harness = harness(
+            ALERT_KIND,
+            Speaks::Starts {
+                after: starts_after,
+                lasts,
+            },
+        );
 
         let head = harness.queue("head").await;
         let next = harness.queue("next").await;
@@ -283,16 +332,23 @@ async fn a_show_is_held_for_the_longer_of_its_window_and_its_speech() {
         finished(next).await;
 
         assert_eq!(
-            harness.page.arrivals()[1],
-            next_show_at,
-            "with speech lasting {speech_lasts:?} the show left the page at the wrong moment"
+            (harness.page.arrivals()[1], harness.page.reveals().len()),
+            (next_show_at, 0),
+            "speech starting after {starts_after:?} and lasting {lasts:?} ended the show at the \
+             wrong moment, or the show was also revealed silently"
         );
     }
 }
 
 #[tokio::test(start_paused = true)]
 async fn speech_still_playing_at_the_ceiling_is_cancelled_and_the_show_ends_there() {
-    let harness = harness(ALERT_KIND, Speaks::For(NEVER));
+    let harness = harness(
+        ALERT_KIND,
+        Speaks::Starts {
+            after: Duration::from_secs(5),
+            lasts: NEVER,
+        },
+    );
 
     let head = harness.queue("head").await;
     let next = harness.queue("next").await;
@@ -303,30 +359,63 @@ async fn speech_still_playing_at_the_ceiling_is_cancelled_and_the_show_ends_ther
     assert_eq!(
         (harness.page.arrivals()[1], first.cancelled),
         (SHOW_CEILING, true),
-        "a show whose speech never ends was not ended at the ceiling with its speech cut"
+        "the ceiling was not counted from the head of the show, or the speech was not cut there"
     );
     drop(next);
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_speech_that_never_plays_leaves_the_show_its_display_window() {
-    let harness = harness(ALERT_KIND, Speaks::FailsAtOnce);
+async fn a_show_whose_speech_never_starts_is_revealed_silently_for_its_whole_window() {
+    for (speaks, revealed_at) in [
+        (Speaks::FailsAtOnce, Duration::ZERO),
+        (NEVER_STARTS, SHOW_SPEECH_START_WAIT),
+    ] {
+        let harness = harness(ALERT_KIND, speaks);
+
+        let head = harness.queue("head").await;
+        let next = harness.queue("next").await;
+        finished(head).await;
+        finished(next).await;
+
+        let frames = harness.page.frames();
+        let next_at = frames
+            .iter()
+            .rposition(|frame| frame.content.get(HEADLINE_KEY).is_some())
+            .expect("the next show reached the page");
+        let reveals: Vec<Duration> = frames[..next_at]
+            .iter()
+            .filter(|frame| frame.content[COMMAND_KEY].as_str() == Some(REVEAL))
+            .map(|frame| frame.at)
+            .collect();
+        assert_eq!(
+            (reveals, frames[next_at].at),
+            (vec![revealed_at], revealed_at + ALERT_WINDOW),
+            "{speaks:?}: the page was not told to reveal the show once, when its speech was given \
+             up, with the whole window after it"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn speech_not_started_within_the_wait_is_withdrawn_and_the_reveal_names_its_show() {
+    let harness = harness(ALERT_KIND, NEVER_STARTS);
 
     let head = harness.queue("head").await;
-    let next = harness.queue("next").await;
     finished(head).await;
-    finished(next).await;
 
+    let spoken = harness.speaker.spoken().remove(0);
+    let reveal = harness.page.reveals().remove(0);
     assert_eq!(
-        harness.page.arrivals()[1],
-        ALERT_WINDOW,
-        "a rejected speech cut its show short or hung it"
+        (spoken.cancelled, reveal.content[SHOW].as_str()),
+        (true, Some(spoken.speech.show.as_str())),
+        "speech that never began (a paused or backed-up queue) was left queued, or the reveal \
+         frame named another show"
     );
 }
 
 #[tokio::test(start_paused = true)]
 async fn the_show_frame_carries_the_same_token_as_its_speech() {
-    let harness = harness(ALERT_KIND, Speaks::For(Duration::from_secs(1)));
+    let harness = harness(ALERT_KIND, plays_for(Duration::from_secs(1)));
 
     finished(harness.queue("head").await).await;
 
@@ -347,7 +436,7 @@ async fn the_show_frame_carries_the_same_token_as_its_speech() {
 #[tokio::test(start_paused = true)]
 async fn speech_text_never_reaches_the_page_for_any_look() {
     for kind in [ALERT_KIND, CHAT_KIND, GOAL_KIND] {
-        let harness = harness(kind, Speaks::For(Duration::from_secs(1)));
+        let harness = harness(kind, plays_for(Duration::from_secs(1)));
 
         if let OverlayDispatch::Queued(ticket) = harness.dispatch("secret").await {
             finished(ticket).await;
@@ -373,7 +462,7 @@ async fn speech_text_never_reaches_the_page_for_any_look() {
 #[tokio::test(start_paused = true)]
 async fn a_look_that_applies_on_arrival_speaks_at_once_without_holding_the_page() {
     for kind in [CHAT_KIND, GOAL_KIND] {
-        let harness = harness(kind, Speaks::For(NEVER));
+        let harness = harness(kind, plays_for(NEVER));
 
         let dispatch = harness.dispatch("line").await;
         harness.until_spoken(1).await;

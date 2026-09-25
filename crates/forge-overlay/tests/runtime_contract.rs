@@ -236,11 +236,7 @@ fn a_transient_overlay_is_never_hidden_on_a_timer_while_previewing() {
 }
 
 #[test]
-fn every_content_delivery_plays_the_overlays_sound_and_no_look_plays_it_a_second_time() {
-    assert!(
-        function_body("deliver").contains("sound(config && config.sound)"),
-        "a delivery no longer plays the overlay's own sound, so no look plays any"
-    );
+fn no_look_plays_the_overlays_sound_on_top_of_the_runtime() {
     for descriptor in registry().all() {
         assert!(
             !members_called_on(descriptor.page_assets().behavior, "forge.").contains("sound"),

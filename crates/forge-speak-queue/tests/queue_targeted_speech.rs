@@ -179,6 +179,44 @@ async fn untargeted_speech_keeps_the_queue_sink_while_targeted_legs_are_installe
     );
 }
 
+#[tokio::test]
+async fn a_replayed_show_speech_plays_on_its_overlay_again_never_on_the_global_receiver() {
+    let (global, global_plays) = recording_sink();
+    let deps = make_deps(
+        standard_registry(),
+        global,
+        AssignmentStrategy::DeterministicByName,
+        vec![],
+    );
+    let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
+    let legs = RecordingLegs::new();
+    handle.install_targeted_legs(legs.clone());
+    let speech = targeted("thanks for the five");
+    let id = speech.request_id.clone();
+    handle.send(SpeakCommand::Enqueue(speech)).await.unwrap();
+    terminal_of(&mut stream, &id).await;
+
+    handle.send(SpeakCommand::Replay).await.unwrap();
+    let replayed = loop {
+        match stream.recv().await {
+            Ok(SpeakEvent::Enqueued { request_id, .. }) => break request_id,
+            Ok(_) => continue,
+            Err(e) => panic!("the replay was never admitted: {e:?}"),
+        }
+    };
+    let outcome = terminal_of(&mut stream, &replayed).await;
+
+    assert_eq!(
+        (
+            matches!(outcome, SpeakEvent::Finished { .. }),
+            *global_plays.lock().unwrap(),
+            legs.targets.lock().unwrap().clone()
+        ),
+        (true, 0, vec![target(), target()]),
+        "a replayed show speech lost its overlay target and reached the global receiver"
+    );
+}
+
 struct GatedEngine {
     gate: Arc<Notify>,
 }

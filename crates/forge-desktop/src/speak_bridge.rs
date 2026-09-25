@@ -527,7 +527,7 @@ mod tests {
         fn publish(&self, _: forge_events::Event) {}
     }
 
-    fn paused_queue() -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
+    fn voiceless_queue() -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
         let resolver = forge_voice::VoiceAliasResolver::new(
             vec![],
             forge_voice::AssignmentStrategy::DeterministicByName,
@@ -552,7 +552,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_cancelled_show_speech_is_taken_out_of_the_queue_rather_than_left_to_play_later() {
-        let (handle, mut stream) = paused_queue();
+        let (handle, mut stream) = voiceless_queue();
         handle.send(SpeakCommand::Pause).await.unwrap();
         let bridge = SpeakBridge::new(Arc::clone(&handle));
         let cancel = CancelSignal::new();
@@ -566,21 +566,24 @@ mod tests {
         // Why: without the cancel reaching the queue no removal ever arrives, so the test must
         // fail rather than stall.
         let (outcome, removed) = tokio::time::timeout(Duration::from_secs(5), async {
-            tokio::join!(bridge.speak_for_show(speech, cancel.clone()), async {
-                let queued = loop {
-                    if let Ok(SpeakEvent::Enqueued { request_id, .. }) = stream.recv().await {
-                        break request_id;
-                    }
-                };
-                cancel.cancel();
-                loop {
-                    if let Ok(SpeakEvent::Removed { request_id }) = stream.recv().await
-                        && request_id == queued
-                    {
-                        return handle.queue_depth();
+            tokio::join!(
+                bridge.speak_for_show(speech, cancel.clone(), SpeechStartSignal::new()),
+                async {
+                    let queued = loop {
+                        if let Ok(SpeakEvent::Enqueued { request_id, .. }) = stream.recv().await {
+                            break request_id;
+                        }
+                    };
+                    cancel.cancel();
+                    loop {
+                        if let Ok(SpeakEvent::Removed { request_id }) = stream.recv().await
+                            && request_id == queued
+                        {
+                            return handle.queue_depth();
+                        }
                     }
                 }
-            })
+            )
         })
         .await
         .expect("the cancelled speech never left the queue");
@@ -589,6 +592,109 @@ mod tests {
             outcome.is_err() && removed == 0,
             "a show speech cut at the ceiling was still waiting in the queue ({removed} left, \
              outcome {outcome:?})"
+        );
+    }
+
+    struct RecordingPages {
+        pushed: std::sync::Mutex<Vec<serde_json::Value>>,
+        arrived: tokio::sync::Notify,
+    }
+
+    #[async_trait]
+    impl forge_runtime::OverlayFrameSink for RecordingPages {
+        async fn deliver_content(
+            &self,
+            _: &forge_storage::OverlayId,
+            content: serde_json::Value,
+            _: Option<u64>,
+        ) -> forge_runtime::OverlayReceivers {
+            self.pushed.lock().unwrap().push(content);
+            self.arrived.notify_waiters();
+            forge_runtime::OverlayReceivers {
+                sources: 1,
+                preview_tabs: 0,
+            }
+        }
+
+        async fn deliver_reload(&self, _: &forge_storage::OverlayId) {}
+
+        async fn revoke(&self, _: &forge_storage::OverlayId) {}
+    }
+
+    impl RecordingPages {
+        fn reveal(&self) -> Option<serde_json::Value> {
+            self.pushed
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|frame| frame["command"].as_str() == Some("reveal"))
+                .cloned()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_show_whose_speech_is_dropped_before_it_plays_is_revealed_silently_at_once() {
+        use forge_overlay::kinds::alert::KIND_ID as ALERT;
+        use forge_storage::{MockOverlayRepo, OverlayConfig, OverlayId, OverlayRepo, SettingsRepo};
+        use forge_types::Variant;
+
+        let (handle, _stream) = voiceless_queue();
+        let (backend, _writes) = crate::test_support::test_backend();
+        let mut repo = MockOverlayRepo::new();
+        repo.expect_get()
+            .returning(|id| Ok(Some(crate::test_support::overlay_named(id.as_str(), ALERT))));
+        let mut kinds = forge_overlay::OverlayKindRegistry::new();
+        forge_overlay::register_builtin_kinds(&mut kinds).unwrap();
+        let pages = Arc::new(RecordingPages {
+            pushed: std::sync::Mutex::new(Vec::new()),
+            arrived: tokio::sync::Notify::new(),
+        });
+        let overlays = forge_runtime::OverlayServiceHandle::new(
+            Arc::new(repo) as Arc<dyn OverlayRepo>,
+            backend as Arc<dyn SettingsRepo>,
+            Arc::new(kinds),
+            forge_runtime::EventBus::new(Arc::new(crate::test_support::StubEventLog)),
+            Some(Arc::clone(&pages) as Arc<dyn forge_runtime::OverlayFrameSink>),
+        )
+        .with_speech(Arc::new(SpeakBridge::new(handle)));
+        let content = OverlayConfig::from([
+            (
+                "headline".to_owned(),
+                Variant::String("new donation".to_owned()),
+            ),
+            (
+                forge_overlay::config::SPEECH.to_owned(),
+                Variant::String("thanks for the five".to_owned()),
+            ),
+        ]);
+
+        overlays
+            .send_to(
+                &OverlayId::new("stage-alert"),
+                &content,
+                &forge_types::ArgStack::new(),
+                None,
+            )
+            .await
+            .unwrap();
+        // Why: with no voice the queue drops the speech right after taking it, so the reveal is
+        // due within milliseconds; the bound only turns a missing reveal into a failure.
+        let revealed = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let arrived = pages.arrived.notified();
+                if let Some(frame) = pages.reveal() {
+                    return frame;
+                }
+                arrived.await;
+            }
+        })
+        .await;
+
+        assert!(
+            revealed.is_ok(),
+            "speech the queue took and then dropped (no voice, a TTS filter) was treated as \
+             started, so the page is never told to show the alert: {:?}",
+            pages.pushed.lock().unwrap()
         );
     }
 }

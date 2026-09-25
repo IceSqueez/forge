@@ -13,6 +13,7 @@ Setup once: `npm ci` (downloads Chromium for puppeteer on first run).
 | `soundprobe.js` | `node soundprobe.js <page url> <wait ms>` | media responses and `Audio` element events |
 | `audioprobe.js` | `node audioprobe.js <page url> <action :do url> <bearer token> <wait ms>` | an audio overlay's clip fetch, playback events and verdict report after firing an action over HTTP |
 | `iconprobe.js` | `node iconprobe.js <page url> <png>` | the alert icon's geometry and tint, and whether any SVG was injected |
+| `showjoin.js` | `node showjoin.js [case ...]` | runs the shared runtime's show/speech join against its own mock host (reveal on clip, sound then speech, hides after speech, silent reveals, orphan clips); exits 1 on a failed case |
 | `watchlive.js` | `node watchlive.js <page url> ...` | frames a live page receives |
 | `serve.js` | required by `shoot.js` / `overflow.js` / `probe.js` | a mock page host serving the crate assets plus a config you pass |
 | `shoot.js` | `node shoot.js '<json cases>'` | screenshots of one overlay kind under several configs |

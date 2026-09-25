@@ -263,6 +263,7 @@ mod tests {
         let cfg = config(&[
             (OVERLAY_TARGET_KEY, Variant::String("goal-box".to_owned())),
             (DURATION_KEY, Variant::Int(5)),
+            (WAIT_KEY, Variant::Bool(true)),
             ("value", Variant::String("42".to_owned())),
             ("target", Variant::Int(100)),
         ]);

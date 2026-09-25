@@ -159,9 +159,9 @@ fn every_kind_that_draws_a_page_takes_its_accent_and_font_from_runtime_custom_pr
 }
 
 #[test]
-fn a_kind_that_draws_no_page_declares_no_style_or_behavior_field_to_draw_with() {
+fn a_look_that_draws_no_page_adds_no_style_or_behavior_field_of_its_own() {
     for descriptor in registry().all().filter(|d| !d.has_visual_page()) {
-        for sectioned in descriptor.config_fields() {
+        for sectioned in descriptor.look_fields() {
             assert_eq!(
                 sectioned.section,
                 ConfigSection::Content,

@@ -234,3 +234,18 @@ fn a_transient_overlay_is_never_hidden_on_a_timer_while_previewing() {
         "a previewed overlay disappears before it can be looked at"
     );
 }
+
+#[test]
+fn every_content_delivery_plays_the_overlays_sound_and_no_look_plays_it_a_second_time() {
+    assert!(
+        function_body("deliver").contains("sound(config && config.sound)"),
+        "a delivery no longer plays the overlay's own sound, so no look plays any"
+    );
+    for descriptor in registry().all() {
+        assert!(
+            !members_called_on(descriptor.page_assets().behavior, "forge.").contains("sound"),
+            "{} plays the sound itself on top of the runtime, so every show plays it twice",
+            descriptor.id()
+        );
+    }
+}

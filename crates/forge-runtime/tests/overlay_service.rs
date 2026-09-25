@@ -14,7 +14,7 @@ use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
     EventBus, MaterializePass, NullEventLogRepo, OverlayConnectListener, OverlayDelivery,
-    OverlayFrameSink, OverlayReceivers, OverlayServiceError, OverlayServiceHandle,
+    OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceError, OverlayServiceHandle,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -778,10 +778,12 @@ async fn sending_content_funnels_the_step_fields_over_the_overlays_own_and_retai
         .await
         .expect("a bound overlay of a shipped kind accepts a send");
 
-    assert_eq!(
-        delivered,
-        OverlayDelivery::Delivered { sources: 1 },
-        "a connected page was not counted as reached"
+    assert!(
+        matches!(
+            delivered,
+            OverlayDispatch::Applied(OverlayDelivery::Delivered { sources: 1 })
+        ),
+        "a replacing look was queued instead of applied, or its connected page went uncounted: {delivered:?}"
     );
     let expected = text_config(&[
         (LABEL_KEY, "Sub goal"),
@@ -824,10 +826,9 @@ async fn sending_content_with_nothing_serving_still_retains_it_for_the_next_conn
         .await
         .expect("a send does not fail merely because no page is connected");
 
-    assert_eq!(
-        delivered,
-        OverlayDelivery::NoPage,
-        "nothing is serving, so the caller must be told the content landed nowhere"
+    assert!(
+        matches!(delivered, OverlayDispatch::Applied(OverlayDelivery::NoPage)),
+        "nothing is serving, so the caller must be told the content landed nowhere: {delivered:?}"
     );
     assert!(
         harness.retained_for(&stored.id).is_some(),

@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
+use forge_audio::AudioRoute;
 use forge_components::tr;
 use forge_storage::{OverlayId, SettingsRepo, StorageError};
 use gpui::Context;
 
 use super::OverlaysView;
 use crate::async_bridge;
-use crate::audio_routes::{load_audio_routes, set_destination};
+use crate::audio_routes::{AudioDomain, load_audio_routes, set_destination, set_route};
 
 impl OverlaysView {
     /// Read once when the screen mounts; afterwards this screen is the only writer it can observe.
@@ -54,7 +55,7 @@ impl OverlaysView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                set_destination(settings.as_ref(), next.as_ref())
+                route_audio_to(settings.as_ref(), next.as_ref())
                     .await
                     .map_err(|e| e.to_string())?;
                 router.apply().await;
@@ -71,6 +72,35 @@ impl OverlaysView {
             },
             cx,
         );
+    }
+}
+
+/// A receiver only hears audio whose route plays an overlay, so choosing one moves every
+/// local-only domain onto the overlay; clearing it leaves the routes as they are.
+pub(super) async fn route_audio_to(
+    settings: &dyn SettingsRepo,
+    destination: Option<&OverlayId>,
+) -> Result<(), StorageError> {
+    if destination.is_some() {
+        let routes = load_audio_routes(settings).await;
+        for (domain, route) in [
+            (AudioDomain::Speech, routes.speech),
+            (AudioDomain::Clips, routes.clips),
+        ] {
+            let claimed = route_for_receiver(route);
+            if claimed != route {
+                set_route(settings, domain, claimed).await?;
+            }
+        }
+    }
+    set_destination(settings, destination).await
+}
+
+pub(super) fn route_for_receiver(route: AudioRoute) -> AudioRoute {
+    if route.plays_overlay() {
+        route
+    } else {
+        AudioRoute::Overlay
     }
 }
 

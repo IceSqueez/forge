@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 use crate::sound_player::SoundPlayer;
 
 const MIN_VOLUME_DB: f64 = -30.0;
-const MAX_VOLUME_DB: f64 = 6.0;
+const MAX_VOLUME_DB: f64 = 0.0;
 
 pub struct SetMasterVolumeRunner {
     sound_player: Arc<dyn SoundPlayer>,

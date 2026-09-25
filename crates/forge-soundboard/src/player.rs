@@ -19,8 +19,7 @@ use crate::library::{ClipLibrary, ClipSource};
 use crate::settings::{SoundboardSettings, SoundboardSettingsHandle};
 use crate::sink_factory::AudioSinkFactory;
 
-/// Linear gain; the +6 dB catalog ceiling is ~2.0, this leaves headroom above it.
-const MAX_MASTER_GAIN: f32 = 4.0;
+const MAX_VOLUME: f32 = 1.0;
 
 /// Registry entry outlives clip playback by this much so a late `stop` still lands.
 const PLAYBACK_TAIL_MS: u64 = 200;
@@ -223,7 +222,7 @@ impl SoundboardPlayer {
     ) -> Arc<SoundboardSettings> {
         self.settings.update(|settings| {
             change(settings);
-            settings.master_volume = settings.master_volume.clamp(0.0, MAX_MASTER_GAIN);
+            settings.master_volume = settings.master_volume.clamp(0.0, MAX_VOLUME);
         })
     }
 
@@ -414,7 +413,9 @@ impl SoundboardPlayer {
         let mut buffer = tokio::task::spawn_blocking(move || forge_audio::decode_file(&path))
             .await
             .map_err(|e| SoundboardError::JoinError(e.to_string()))??;
-        buffer.apply_gain(clip.volume * settings.master_volume.clamp(0.0, MAX_MASTER_GAIN));
+        buffer.apply_gain(
+            clip.volume.clamp(0.0, MAX_VOLUME) * settings.master_volume.clamp(0.0, MAX_VOLUME),
+        );
 
         let sample_rate = buffer.sample_rate.max(1) as u64;
         let channels = buffer.channels.max(1) as u64;

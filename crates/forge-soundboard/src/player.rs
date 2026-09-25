@@ -10,7 +10,7 @@ use forge_audio::{
     PlaybackHandle,
 };
 use forge_runtime::{SoundPlayer, SoundPlayerError};
-use forge_storage::SettingsRepo;
+use forge_storage::{SettingsRepo, StoredClip};
 use forge_types::{ClipId, OutputDevice, Shared};
 use tokio::sync::oneshot;
 
@@ -80,6 +80,19 @@ impl PlayControl {
             None => true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClipToggle {
+    Started,
+    Stopped,
+    Ignored,
+}
+
+enum ToggleDecision {
+    Stop(Vec<ActivePlay>),
+    Start(Box<StoredClip>, Reservation),
+    Ignore,
 }
 
 struct ActivePlay {
@@ -233,17 +246,65 @@ impl SoundboardPlayer {
 
     pub fn stop(&self, clip_id: ClipId) {
         let plays = lock(&self.active).remove(&clip_id).unwrap_or_default();
+        self.halt(clip_id, &plays);
+    }
+
+    fn halt(&self, clip_id: ClipId, plays: &[ActivePlay]) {
         if plays.is_empty() {
             return;
         }
         let clip_label = plays.first().map(|play| play.label.clone());
-        for play in &plays {
+        for play in plays {
             play.control.stop();
         }
         self.event_sink.emit(AudioEvent::PlaybackFinished {
             clip_id: Some(clip_id),
             clip_label,
         });
+    }
+
+    pub async fn toggle(
+        &self,
+        clip_id: ClipId,
+        override_device: Option<OutputDevice>,
+    ) -> Result<ClipToggle, SoundboardError> {
+        let settings = self.settings.load();
+        let lookup = if settings.enabled {
+            Some(self.library.get(clip_id).await)
+        } else {
+            None
+        };
+
+        let decision = {
+            let mut guard = lock(&self.active);
+            match guard.remove(&clip_id).filter(|plays| !plays.is_empty()) {
+                Some(plays) => ToggleDecision::Stop(plays),
+                None => match lookup {
+                    None => ToggleDecision::Ignore,
+                    Some(lookup) => {
+                        let clip = lookup?
+                            .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
+                        let play = self.reserve_in(&mut guard, clip_id, clip.name.clone());
+                        ToggleDecision::Start(Box::new(clip), play)
+                    }
+                },
+            }
+        };
+
+        match decision {
+            ToggleDecision::Stop(plays) => {
+                self.halt(clip_id, &plays);
+                Ok(ClipToggle::Stopped)
+            }
+            ToggleDecision::Start(clip, play) => {
+                self.start(*clip, play, override_device, &settings).await?;
+                Ok(ClipToggle::Started)
+            }
+            ToggleDecision::Ignore => {
+                tracing::debug!(clip_id = %clip_id, "soundboard disabled by settings; toggle request ignored");
+                Ok(ClipToggle::Ignored)
+            }
+        }
     }
 
     pub fn stop_all(&self) {
@@ -312,9 +373,20 @@ impl SoundboardPlayer {
             .ok_or_else(|| SoundboardError::ClipNotFound(clip_id.to_string()))?;
 
         let play = self.reserve(clip_id, clip.name.clone());
+        self.start(clip, play, override_device, &settings).await
+    }
+
+    async fn start(
+        &self,
+        clip: StoredClip,
+        play: Reservation,
+        override_device: Option<OutputDevice>,
+        settings: &SoundboardSettings,
+    ) -> Result<(), SoundboardError> {
+        let clip_id = clip.id;
         let reporter = self.reporter();
 
-        let prepared = match self.prepare(&clip, override_device, &settings).await {
+        let prepared = match self.prepare(&clip, override_device, settings).await {
             Ok(prepared) => prepared,
             Err(e) => return reported_failure(&reporter, &play, e),
         };
@@ -373,16 +445,22 @@ impl SoundboardPlayer {
     }
 
     fn reserve(&self, clip_id: ClipId, label: String) -> Reservation {
+        self.reserve_in(&mut lock(&self.active), clip_id, label)
+    }
+
+    fn reserve_in(
+        &self,
+        active: &mut HashMap<ClipId, Vec<ActivePlay>>,
+        clip_id: ClipId,
+        label: String,
+    ) -> Reservation {
         let play_id = self.next_play_id.fetch_add(1, Ordering::Relaxed);
         let control = Arc::new(PlayControl::default());
-        lock(&self.active)
-            .entry(clip_id)
-            .or_default()
-            .push(ActivePlay {
-                play_id,
-                control: Arc::clone(&control),
-                label: label.clone(),
-            });
+        active.entry(clip_id).or_default().push(ActivePlay {
+            play_id,
+            control: Arc::clone(&control),
+            label: label.clone(),
+        });
         Reservation {
             clip_id,
             play_id,
@@ -393,7 +471,7 @@ impl SoundboardPlayer {
 
     async fn prepare(
         &self,
-        clip: &forge_storage::StoredClip,
+        clip: &StoredClip,
         override_device: Option<OutputDevice>,
         settings: &SoundboardSettings,
     ) -> Result<PreparedClip, SoundboardError> {

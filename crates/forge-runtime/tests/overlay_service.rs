@@ -1021,3 +1021,29 @@ async fn only_a_real_disable_revokes_the_connected_page() {
         "exactly the disable, and only the disable, revokes the page"
     );
 }
+
+#[tokio::test]
+async fn content_kept_under_an_earlier_look_replays_only_while_the_current_look_keeps_its_last_content()
+ {
+    for (kind_id, replays) in [
+        (GOAL_KIND, true),
+        (ALERT_KIND, false),
+        (CHAT_KIND, false),
+        (UNSHIPPED_KIND, false),
+    ] {
+        let stored = definition_of_kind("switched-look", kind_id);
+        let harness = harness(vec![stored.clone()], true);
+        harness.retained.lock().unwrap().push((
+            stored.id.clone(),
+            text_config(&[(LABEL_KEY, "Sub goal"), (VALUE_KEY, "42")]),
+        ));
+
+        harness.service.overlay_connected(&stored.id).await;
+
+        assert_eq!(
+            harness.sink.frames().len(),
+            usize::from(replays),
+            "a page of look {kind_id} connecting over a row kept by an earlier look"
+        );
+    }
+}

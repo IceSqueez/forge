@@ -12,7 +12,7 @@ use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
     EventBus, NullEventLogRepo, OVERLAY_TARGET_KEY, OverlayDelivery, OverlayDispatch,
     OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
-    OverlayServiceHandle, SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowEnd, ShowTicket,
+    OverlayServiceHandle, SHOW_CEILING, SHOW_QUEUE_CAPACITY, ShowDepthWatch, ShowEnd, ShowTicket,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -640,4 +640,92 @@ async fn a_page_briefly_absent_mid_burst_does_not_flush_the_rest_of_the_queue() 
         "one delivery that found no page let the rest of the burst through at once, so a browser \
          source reloading mid-burst loses every show behind it: {arrivals:?}"
     );
+}
+
+async fn next_depth(watch: &mut ShowDepthWatch) -> Option<usize> {
+    tokio::time::timeout(NEVER, watch.changed())
+        .await
+        .expect("the waiting count moved but the watch never woke")
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_depth_watch_opened_over_a_backlog_starts_from_what_already_waits() {
+    let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
+    for text in ["on-screen", "waiting-1", "waiting-2"] {
+        harness.queue(STAGE, text, None).await;
+    }
+    harness.until_on_screen(STAGE, 1).await;
+
+    let watch = harness.service.watch_pending_shows(&OverlayId::new(STAGE));
+
+    assert_eq!(watch.depth(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_depth_watch_rises_with_each_queued_show_and_falls_as_the_queue_drains() {
+    let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
+    let mut watch = harness.service.watch_pending_shows(&OverlayId::new(STAGE));
+    let on_screen = harness.queue(STAGE, "on-screen", None).await;
+    harness.until_on_screen(STAGE, 1).await;
+    harness.queue(STAGE, "waiting-1", None).await;
+    harness.queue(STAGE, "waiting-2", None).await;
+
+    let queued = next_depth(&mut watch).await;
+    finished(on_screen).await;
+    let after_one_ended = next_depth(&mut watch).await;
+
+    assert_eq!(
+        (queued, after_one_ended),
+        (Some(2), Some(1)),
+        "the pane would show a stale waiting count"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn clearing_the_queue_wakes_the_depth_watch_while_the_show_on_screen_still_runs() {
+    let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
+    for text in ["on-screen", "waiting-1", "waiting-2"] {
+        harness.queue(STAGE, text, None).await;
+    }
+    harness.until_on_screen(STAGE, 1).await;
+    let mut watch = harness.service.watch_pending_shows(&OverlayId::new(STAGE));
+
+    harness.service.clear_shows(&OverlayId::new(STAGE));
+    let woke = tokio::time::timeout(ALERT_WINDOW / 2, watch.changed()).await;
+
+    assert_eq!(
+        woke.ok(),
+        Some(Some(0)),
+        "the cleared queue reached the pane only once the show on screen ended"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn another_overlays_queue_never_wakes_a_depth_watch() {
+    let harness = harness(vec![
+        definition(STAGE, ALERT_KIND),
+        definition(SIDE, ALERT_KIND),
+    ]);
+    let mut watch = harness.service.watch_pending_shows(&OverlayId::new(SIDE));
+    let mut tickets = Vec::new();
+    for text in ["on-screen", "waiting-1", "waiting-2"] {
+        tickets.push(harness.queue(STAGE, text, None).await);
+    }
+
+    let woke = tokio::time::timeout(ALERT_WINDOW * 4, watch.changed()).await;
+
+    assert!(
+        woke.is_err(),
+        "the watch woke with {woke:?} for traffic on an overlay it does not follow"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_depth_watch_ends_once_the_overlay_service_is_gone() {
+    let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
+    let mut watch = harness.service.watch_pending_shows(&OverlayId::new(STAGE));
+
+    drop(harness);
+
+    assert_eq!(next_depth(&mut watch).await, None);
 }

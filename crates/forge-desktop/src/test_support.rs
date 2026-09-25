@@ -34,14 +34,28 @@ pub(crate) type SettingWrite = (String, String);
 pub(crate) struct TestBackend {
     values: Mutex<HashMap<String, String>>,
     writes: UnboundedSender<SettingWrite>,
+    overlays: Option<Arc<dyn OverlayRepo>>,
 }
 
 pub(crate) fn test_backend() -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
+    backend_over(None)
+}
+
+pub(crate) fn test_backend_with_overlays(
+    overlays: Arc<dyn OverlayRepo>,
+) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
+    backend_over(Some(overlays))
+}
+
+fn backend_over(
+    overlays: Option<Arc<dyn OverlayRepo>>,
+) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
     let (writes, rx) = unbounded_channel();
     (
         Arc::new(TestBackend {
             values: Mutex::new(HashMap::new()),
             writes,
+            overlays,
         }),
         rx,
     )
@@ -240,7 +254,9 @@ impl DataProvider for TestBackend {
     }
 
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo> {
-        unreachable!("the settings pane reaches no sub-repo")
+        self.overlays
+            .clone()
+            .unwrap_or_else(|| unreachable!("the settings pane reaches no sub-repo"))
     }
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {

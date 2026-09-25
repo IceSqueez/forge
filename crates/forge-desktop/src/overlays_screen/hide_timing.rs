@@ -65,3 +65,20 @@ impl OverlaysView {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_behavior_that_arms_a_timer_of_its_own_is_flagged_as_hiding_itself() {
+        for (behavior, flagged) in [
+            ("setTimeout(() => stage.hidden = true, 4000);", true),
+            ("const tick = setInterval(fade, 50);", true),
+            ("forge.onShow(show => render(show));", false),
+            ("", false),
+        ] {
+            assert_eq!(times_own_hide(behavior), flagged, "{behavior:?}");
+        }
+    }
+}

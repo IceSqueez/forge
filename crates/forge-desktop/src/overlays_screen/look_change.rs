@@ -101,3 +101,129 @@ impl OverlaysView {
         );
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use forge_overlay::config::{ACCENT, DURATION, HEADLINE, ICON, SOUND, SPEECH, SPEECH_VOICE};
+    use forge_overlay::kinds::alert::AlertOverlayKind;
+    use forge_overlay::kinds::chat::ChatOverlayKind;
+    use forge_overlay::{
+        ConfigSection, DeliveryDisposition, PageAssets, PreviewComposition, SectionedField,
+    };
+    use forge_types::Variant;
+
+    use super::*;
+
+    const GUARDED: &str = "outline";
+    const GUARDED_VALUE: &str = "outline_width";
+
+    fn stored(keys: &[&str]) -> OverlayConfig {
+        keys.iter()
+            .map(|key| ((*key).to_owned(), Variant::String(format!("{key}-value"))))
+            .collect()
+    }
+
+    fn keys(config: &OverlayConfig) -> Vec<&str> {
+        config.keys().map(String::as_str).collect()
+    }
+
+    struct GuardedLook;
+
+    impl OverlayKindDescriptor for GuardedLook {
+        fn id(&self) -> &str {
+            "overlay.guarded"
+        }
+
+        fn label(&self) -> &str {
+            "Guarded"
+        }
+
+        fn summary(&self) -> &str {
+            ""
+        }
+
+        fn icon_name(&self) -> &str {
+            ""
+        }
+
+        fn delivery_disposition(&self) -> DeliveryDisposition {
+            DeliveryDisposition::Replace
+        }
+
+        fn order_sensitive(&self) -> bool {
+            false
+        }
+
+        fn config_schema_version(&self) -> u32 {
+            1
+        }
+
+        fn look_fields(&self) -> Vec<SectionedField> {
+            vec![SectionedField {
+                section: ConfigSection::Style,
+                field: FormField::Optional {
+                    key: GUARDED,
+                    label: "Outline",
+                    inner: Box::new(FormField::Integer {
+                        key: GUARDED_VALUE,
+                        label: "Width",
+                        min: 0,
+                        max: 10,
+                    }),
+                },
+            }]
+        }
+
+        fn page_assets(&self) -> forge_overlay::PageAssets {
+            PageAssets {
+                markup: "",
+                style: "",
+                behavior: "",
+            }
+        }
+
+        fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
+            AlertOverlayKind.preview(config)
+        }
+    }
+
+    #[test]
+    fn a_look_change_keeps_the_base_and_shared_style_and_drops_what_only_the_old_look_read() {
+        let from_alert = stored(&[
+            HEADLINE,
+            ICON,
+            DURATION,
+            ACCENT,
+            SOUND,
+            SPEECH,
+            SPEECH_VOICE,
+        ]);
+
+        let carried = carried_config(&ChatOverlayKind, &from_alert);
+
+        assert_eq!(
+            keys(&carried),
+            vec![ACCENT, SOUND, SPEECH, SPEECH_VOICE],
+            "a chat look must keep the sound, speech and accent and drop the alert's own fields"
+        );
+    }
+
+    #[test]
+    fn a_carried_value_keeps_what_the_old_look_stored_rather_than_the_new_looks_default() {
+        let from_alert = stored(&[ACCENT, SPEECH]);
+
+        let carried = carried_config(&ChatOverlayKind, &from_alert);
+
+        assert_eq!(carried, from_alert);
+    }
+
+    #[test]
+    fn the_value_an_optional_field_guards_survives_with_its_toggle() {
+        let before = stored(&[GUARDED, GUARDED_VALUE]);
+
+        let carried = carried_config(&GuardedLook, &before);
+
+        assert_eq!(keys(&carried), vec![GUARDED, GUARDED_VALUE]);
+    }
+}

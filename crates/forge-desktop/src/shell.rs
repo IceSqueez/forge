@@ -21,7 +21,7 @@ use crate::discord_screen::DiscordScreenView;
 use crate::event_feed::EventFeedView;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
-use crate::hotkey_sync::HotkeySyncedTriggerRepo;
+use crate::hotkey_sync::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
@@ -217,8 +217,8 @@ impl AppShell {
                         Some(client) => return Self::midi_screen(handles, client, cx),
                         None => handles.builtins.get(id),
                     },
-                    HOTKEY_BUILTIN_ID => match handles.hotkey_client.clone() {
-                        Some(client) => return Self::hotkeys_screen(handles, client, cx),
+                    HOTKEY_BUILTIN_ID => match handles.hotkey_reconciler.clone() {
+                        Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
                         None => handles.builtins.get(id),
                     },
                     DISCORD_BUILTIN_ID => return Self::discord_screen(handles, cx),
@@ -394,7 +394,7 @@ impl AppShell {
                 ));
                 let trigger_instance_repo = HotkeySyncedTriggerRepo::wrap(
                     handles.backend.trigger_instance_repo(),
-                    handles.hotkey_client.clone(),
+                    handles.hotkey_reconciler.clone(),
                 );
                 let script_repo = Arc::clone(&handles.backend) as Arc<dyn ScriptRepo>;
                 let soundboard_repo = handles.backend.soundboard_clips_repo();
@@ -441,7 +441,7 @@ impl AppShell {
             Screen::Triggers(preselect) => {
                 let repo = HotkeySyncedTriggerRepo::wrap(
                     handles.backend.trigger_instance_repo(),
-                    handles.hotkey_client.clone(),
+                    handles.hotkey_reconciler.clone(),
                 );
                 let action_repo = handles.backend.action_repo();
                 let registry = handles.trigger_registry.clone();
@@ -502,14 +502,14 @@ impl AppShell {
 
     fn hotkeys_screen(
         handles: &Arc<RuntimeHandles>,
-        client: Arc<forge_hotkey::HotkeyClient>,
+        reconciler: Arc<HotkeyReconciler>,
         cx: &mut Context<Self>,
     ) -> AnyView {
         let backend = Arc::clone(&handles.backend);
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
         let bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();
-        cx.new(|cx| HotkeysScreenView::new(client, backend, settings, bus, rt_handle, cx))
+        cx.new(|cx| HotkeysScreenView::new(reconciler, backend, settings, bus, rt_handle, cx))
             .into()
     }
 

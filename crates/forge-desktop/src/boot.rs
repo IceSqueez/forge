@@ -28,6 +28,7 @@ use forge_storage::{
 use forge_storage_sqlite::SqliteBackend;
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
+use crate::clip_hotkeys::{HotkeySyncedClipsRepo, spawn_clip_hotkey_dispatcher};
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
 use crate::overlay_frame_sink::ServerOverlayFrameSink;
@@ -232,13 +233,31 @@ pub async fn build_runtime(
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
 
+    let mut trigger_reg = TriggerRegistry::new();
+    if let Err(e) = register_core_triggers(&mut trigger_reg) {
+        eprintln!("forge-desktop: core trigger registration failed: {e}");
+    }
+
+    let integrations = build_integrations(
+        &mut sub_action_reg,
+        &mut trigger_reg,
+        &backend,
+        &bus,
+        &endpoints,
+        hotkey_main_thread,
+    )
+    .await;
+
     let soundboard_settings_repo: Arc<dyn SettingsRepo> =
         Arc::clone(&backend) as Arc<dyn SettingsRepo>;
     let soundboard_settings = SoundboardSettingsHandle::new(
         load_soundboard_settings(soundboard_settings_repo.as_ref()).await,
     );
     let soundboard_library = Arc::new(ClipLibrary::new(
-        backend.soundboard_clips_repo(),
+        HotkeySyncedClipsRepo::wrap(
+            backend.soundboard_clips_repo(),
+            integrations.hotkey_reconciler.clone(),
+        ),
         backend.media_repo(),
     ));
     soundboard_library.install_event_publisher(Arc::clone(&bus) as Arc<dyn EventPublisher>);
@@ -264,20 +283,13 @@ pub async fn build_runtime(
         ),
     }
 
-    let mut trigger_reg = TriggerRegistry::new();
-    if let Err(e) = register_core_triggers(&mut trigger_reg) {
-        eprintln!("forge-desktop: core trigger registration failed: {e}");
+    if let Some(reconciler) = &integrations.hotkey_reconciler {
+        spawn_clip_hotkey_dispatcher(
+            bus.subscribe(),
+            reconciler.clip_bindings(),
+            Arc::clone(&soundboard_player),
+        );
     }
-
-    let integrations = build_integrations(
-        &mut sub_action_reg,
-        &mut trigger_reg,
-        &backend,
-        &bus,
-        &endpoints,
-        hotkey_main_thread,
-    )
-    .await;
 
     let sub_action_registry = Arc::new(sub_action_reg);
     let trigger_registry = Arc::new(trigger_reg);
@@ -412,6 +424,7 @@ pub async fn build_runtime(
         discord_client: integrations.discord_client,
         midi_client: integrations.midi_client,
         hotkey_client: integrations.hotkey_client,
+        hotkey_reconciler: integrations.hotkey_reconciler,
         server,
         overlays,
         overlay_kinds,

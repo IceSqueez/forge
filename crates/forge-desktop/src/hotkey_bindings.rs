@@ -9,6 +9,8 @@ use forge_types::{
 };
 use gpui::Keystroke;
 
+use crate::hotkey_sync::HotkeyReconciler;
+
 pub const HOTKEY_ENABLED_KEY: &str = "hotkey.enabled";
 pub const HOTKEY_HOLD_CEILING_KEY: &str = "hotkey.hold_ceiling_secs";
 pub const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
@@ -298,22 +300,6 @@ async fn remove_combo_edge(
     Ok(())
 }
 
-/// A second half re-uses the combo's existing registration; registering it twice is an error.
-async fn ensure_registered(client: &HotkeyClient, combo: HotkeyCombo) -> Result<(), String> {
-    if client
-        .registered_combos()
-        .iter()
-        .any(|(_, known)| known.as_str() == combo.as_str())
-    {
-        return Ok(());
-    }
-    client
-        .register(combo)
-        .await
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
-
 fn binding_instance(combo: String, edge: HotkeyEdge) -> TriggerInstance {
     let mut overrides = BTreeMap::new();
     overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo.clone()));
@@ -342,45 +328,43 @@ pub fn persisted_hotkey_combos(instances: &[TriggerInstance]) -> BTreeSet<String
 }
 
 pub async fn do_bind(
-    client: Arc<HotkeyClient>,
+    reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
     combo_str: String,
     edge: HotkeyEdge,
     action_id: ActionId,
 ) -> Result<(), String> {
     let combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
-    ensure_registered(&client, combo).await?;
+    reconciler.claim(combo).await.map_err(|e| e.to_string())?;
+    let stored = store_binding(&backend, combo_str, edge, action_id).await;
+    reconciler.reconcile().await;
+    stored
+}
 
-    remove_combo_edge(&backend, &combo_str, edge).await?;
+async fn store_binding(
+    backend: &Arc<dyn DataProvider>,
+    combo_str: String,
+    edge: HotkeyEdge,
+    action_id: ActionId,
+) -> Result<(), String> {
+    remove_combo_edge(backend, &combo_str, edge).await?;
 
+    let repo = backend.trigger_instance_repo();
     let instance = binding_instance(combo_str, edge);
-    backend
-        .trigger_instance_repo()
-        .save(&instance)
+    repo.save(&instance).await.map_err(|e| e.to_string())?;
+    repo.link_action(action_id, instance.id, 0)
         .await
-        .map_err(|e| e.to_string())?;
-    backend
-        .trigger_instance_repo()
-        .link_action(action_id, instance.id, 0)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+        .map_err(|e| e.to_string())
 }
 
 pub async fn delete_binding(
-    client: Arc<HotkeyClient>,
+    reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
     combo_str: String,
 ) -> Result<(), String> {
-    if let Some((id, _)) = client
-        .registered_combos()
-        .into_iter()
-        .find(|(_, combo)| combo.as_str() == combo_str)
-    {
-        client.unregister(id).await.map_err(|e| e.to_string())?;
-    }
-    cleanup_stale_combo_instances(&backend, &combo_str).await
+    let cleaned = cleanup_stale_combo_instances(&backend, &combo_str).await;
+    reconciler.reconcile().await;
+    cleaned
 }
 
 /// Keeps the OS registration, which the surviving partner half still needs.
@@ -408,7 +392,7 @@ pub async fn set_binding_enabled(
 
 /// Moves every half of the combo, so rebinding a hold keeps its press and release on one combo.
 pub async fn rebind_combo(
-    client: Arc<HotkeyClient>,
+    reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
     previous_combo: String,
     combo_str: String,
@@ -417,23 +401,28 @@ pub async fn rebind_combo(
         return Ok(());
     }
     let combo = HotkeyCombo::parse(&combo_str).map_err(|e| e.to_string())?;
-    ensure_registered(&client, combo).await?;
-    if let Some((id, _)) = client
-        .registered_combos()
-        .into_iter()
-        .find(|(_, known)| known.as_str() == previous_combo)
-    {
-        client.unregister(id).await.map_err(|e| e.to_string())?;
-    }
+    reconciler.claim(combo).await.map_err(|e| e.to_string())?;
+    let moved = move_combo_instances(&backend, &previous_combo, &combo_str).await;
+    reconciler.reconcile().await;
+    moved
+}
 
-    cleanup_stale_combo_instances(&backend, &combo_str).await?;
+async fn move_combo_instances(
+    backend: &Arc<dyn DataProvider>,
+    previous_combo: &str,
+    combo_str: &str,
+) -> Result<(), String> {
+    cleanup_stale_combo_instances(backend, combo_str).await?;
 
     let repo = backend.trigger_instance_repo();
-    for source in hotkey_instances_for_combo(&backend, &previous_combo).await? {
+    for source in hotkey_instances_for_combo(backend, previous_combo).await? {
         let mut overrides = source.overrides.clone();
-        overrides.insert(COMBO_FIELD.to_owned(), Variant::String(combo_str.clone()));
+        overrides.insert(
+            COMBO_FIELD.to_owned(),
+            Variant::String(combo_str.to_owned()),
+        );
         let updated = TriggerInstance {
-            name: combo_str.clone(),
+            name: combo_str.to_owned(),
             overrides,
             ..source
         };

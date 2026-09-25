@@ -1,53 +1,95 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_hotkey::{HotkeyClient, HotkeyCombo};
-use forge_storage::{StorageError, TriggerInstanceRepo};
+use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyError};
+use forge_storage::{SoundboardClipsRepo, StorageError, TriggerInstanceRepo};
 use forge_types::{ActionId, TriggerInstance, TriggerInstanceId, Variant};
+use tokio::sync::{Mutex, watch};
 
+use crate::clip_hotkeys::{ClipBindings, clip_bindings_of};
 use crate::hotkey_bindings::{COMBO_FIELD, HotkeyEdge, persisted_hotkey_combos};
 
-/// Keeps the OS hotkey registrations in step with the stored hotkey triggers for screens that
-/// edit trigger instances generically; hotkey combos are canonicalised on the way in.
-pub struct HotkeySyncedTriggerRepo {
-    inner: Arc<dyn TriggerInstanceRepo>,
+/// The only owner of OS hotkey registrations; runs are serialized so concurrent writes never interleave diffs.
+pub struct HotkeyReconciler {
     client: Arc<HotkeyClient>,
+    triggers: Arc<dyn TriggerInstanceRepo>,
+    clips: Arc<dyn SoundboardClipsRepo>,
+    serial: Mutex<()>,
+    clip_bindings: watch::Sender<Arc<ClipBindings>>,
 }
 
-impl HotkeySyncedTriggerRepo {
-    pub fn wrap(
-        inner: Arc<dyn TriggerInstanceRepo>,
-        client: Option<Arc<HotkeyClient>>,
-    ) -> Arc<dyn TriggerInstanceRepo> {
-        match client {
-            Some(client) => Arc::new(Self { inner, client }),
-            None => inner,
-        }
+impl HotkeyReconciler {
+    pub fn new(
+        client: Arc<HotkeyClient>,
+        triggers: Arc<dyn TriggerInstanceRepo>,
+        clips: Arc<dyn SoundboardClipsRepo>,
+    ) -> Arc<Self> {
+        let (clip_bindings, _) = watch::channel(Arc::new(ClipBindings::new()));
+        Arc::new(Self {
+            client,
+            triggers,
+            clips,
+            serial: Mutex::new(()),
+            clip_bindings,
+        })
     }
 
-    async fn sync(&self) {
-        sync_registrations(&self.client, self.inner.as_ref()).await;
+    pub fn client(&self) -> &Arc<HotkeyClient> {
+        &self.client
+    }
+
+    pub fn clip_bindings(&self) -> watch::Receiver<Arc<ClipBindings>> {
+        self.clip_bindings.subscribe()
+    }
+
+    /// An unreadable source leaves every registration as it is rather than releasing what it would keep.
+    pub async fn reconcile(&self) {
+        let _serial = self.serial.lock().await;
+        let instances = match self.triggers.list_all().await {
+            Ok(instances) => instances,
+            Err(e) => {
+                tracing::warn!(error = %e, "could not load hotkey triggers to sync registrations");
+                return;
+            }
+        };
+        let clips = match self.clips.list().await {
+            Ok(clips) => clips,
+            Err(e) => {
+                tracing::warn!(error = %e, "could not load clip hotkeys to sync registrations");
+                return;
+            }
+        };
+        let bindings = clip_bindings_of(&clips);
+        let mut wanted = persisted_hotkey_combos(&instances);
+        wanted.extend(bindings.keys().cloned());
+        self.clip_bindings.send_replace(Arc::new(bindings));
+        apply_wanted(&self.client, &wanted).await;
+    }
+
+    /// Registers ahead of the write, so a combo the OS refuses fails the write instead of being stored unregistered.
+    pub async fn claim(&self, combo: HotkeyCombo) -> Result<(), HotkeyError> {
+        let _serial = self.serial.lock().await;
+        if self
+            .client
+            .registered_combos()
+            .iter()
+            .any(|(_, known)| known.as_str() == combo.as_str())
+        {
+            return Ok(());
+        }
+        self.client.register(combo).await.map(|_| ())
     }
 }
 
-/// Registers every stored combo the client lacks and releases every registration no stored
-/// trigger references any more; failures are logged and never undo the write that triggered it.
-pub async fn sync_registrations(client: &HotkeyClient, repo: &dyn TriggerInstanceRepo) {
-    let instances = match repo.list_all().await {
-        Ok(instances) => instances,
-        Err(e) => {
-            tracing::warn!(error = %e, "could not load hotkey triggers to sync registrations");
-            return;
-        }
-    };
-    let wanted = persisted_hotkey_combos(&instances);
+async fn apply_wanted(client: &HotkeyClient, wanted: &BTreeSet<String>) {
     let registered = client.registered_combos();
 
     for (id, combo) in &registered {
         if !wanted.contains(combo.as_str())
             && let Err(e) = client.unregister(*id).await
         {
-            tracing::warn!(combo = %combo, error = %e, "could not release a hotkey no trigger uses");
+            tracing::warn!(combo = %combo, error = %e, "could not release a hotkey nothing binds");
         }
     }
 
@@ -60,8 +102,31 @@ pub async fn sync_registrations(client: &HotkeyClient, repo: &dyn TriggerInstanc
             Err(e) => Err(e),
         };
         if let Err(e) = outcome {
-            tracing::warn!(combo = %raw, error = %e, "could not register a stored hotkey trigger");
+            tracing::warn!(combo = %raw, error = %e, "could not register a stored hotkey binding");
         }
+    }
+}
+
+/// Keeps the OS hotkey registrations in step with the stored hotkey triggers for screens that
+/// edit trigger instances generically; hotkey combos are canonicalised on the way in.
+pub struct HotkeySyncedTriggerRepo {
+    inner: Arc<dyn TriggerInstanceRepo>,
+    reconciler: Arc<HotkeyReconciler>,
+}
+
+impl HotkeySyncedTriggerRepo {
+    pub fn wrap(
+        inner: Arc<dyn TriggerInstanceRepo>,
+        reconciler: Option<Arc<HotkeyReconciler>>,
+    ) -> Arc<dyn TriggerInstanceRepo> {
+        match reconciler {
+            Some(reconciler) => Arc::new(Self { inner, reconciler }),
+            None => inner,
+        }
+    }
+
+    async fn sync(&self) {
+        self.reconciler.reconcile().await;
     }
 }
 

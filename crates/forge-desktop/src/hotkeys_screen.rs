@@ -30,6 +30,7 @@ use crate::hotkey_bindings::{
     load_bindings, rebind_combo, registered_combos, relink_action, set_binding_edge,
     set_binding_enabled,
 };
+use crate::hotkey_sync::HotkeyReconciler;
 use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
 use crate::toasts::PushToast;
@@ -175,6 +176,7 @@ struct OpenAppModal {
 
 pub struct HotkeysScreenView {
     client: Arc<HotkeyClient>,
+    reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -197,7 +199,7 @@ pub struct HotkeysScreenView {
 
 impl HotkeysScreenView {
     pub fn new(
-        client: Arc<HotkeyClient>,
+        reconciler: Arc<HotkeyReconciler>,
         backend: Arc<dyn DataProvider>,
         settings_repo: Arc<dyn SettingsRepo>,
         bus: Arc<EventBus>,
@@ -205,10 +207,12 @@ impl HotkeysScreenView {
         cx: &mut Context<Self>,
     ) -> Self {
         let bus_bridge = Self::spawn_bus_bridge(bus, cx);
+        let client = Arc::clone(reconciler.client());
         let mut view = Self {
             enabled: client.is_enabled(),
             conflicts: conflict_count(&client),
             client,
+            reconciler,
             backend,
             settings_repo,
             rt_handle,
@@ -590,12 +594,12 @@ impl HotkeysScreenView {
             }
             return;
         }
-        let client = Arc::clone(&self.client);
+        let reconciler = Arc::clone(&self.reconciler);
         let backend = Arc::clone(&self.backend);
         let doomed = combo.clone();
         async_bridge::run_async(
             &self.rt_handle,
-            delete_binding(client, backend, doomed),
+            delete_binding(reconciler, backend, doomed),
             move |this, result: Result<(), String>, cx| match result {
                 Ok(()) => {
                     if capture.target().is_none() {
@@ -692,7 +696,7 @@ impl HotkeysScreenView {
     }
 
     fn persist_draft(&mut self, draft: BindingDraft, cx: &mut Context<Self>) {
-        let client = Arc::clone(&self.client);
+        let reconciler = Arc::clone(&self.reconciler);
         let backend = Arc::clone(&self.backend);
         let BindingDraft {
             instance_id,
@@ -701,7 +705,7 @@ impl HotkeysScreenView {
             action_id,
         } = draft;
         let Some(instance_id) = instance_id else {
-            self.run_reload(do_bind(client, backend, combo, edge, action_id), cx);
+            self.run_reload(do_bind(reconciler, backend, combo, edge, action_id), cx);
             return;
         };
         let previous = self
@@ -710,7 +714,7 @@ impl HotkeysScreenView {
             .unwrap_or_else(|| combo.clone());
         self.run_reload(
             async move {
-                rebind_combo(client, Arc::clone(&backend), previous, combo).await?;
+                rebind_combo(reconciler, Arc::clone(&backend), previous, combo).await?;
                 set_binding_edge(Arc::clone(&backend), instance_id, edge).await?;
                 relink_action(backend, instance_id, action_id).await
             },
@@ -723,9 +727,9 @@ impl HotkeysScreenView {
             cx.notify();
             return;
         };
-        let client = Arc::clone(&self.client);
+        let reconciler = Arc::clone(&self.reconciler);
         let backend = Arc::clone(&self.backend);
-        self.run_reload(rebind_combo(client, backend, previous, combo), cx);
+        self.run_reload(rebind_combo(reconciler, backend, previous, combo), cx);
     }
 
     fn edit_half(&mut self, instance_id: TriggerInstanceId, cx: &mut Context<Self>) {
@@ -797,11 +801,11 @@ impl HotkeysScreenView {
         let Some(prompt) = self.delete_prompt.take() else {
             return;
         };
-        let client = Arc::clone(&self.client);
+        let reconciler = Arc::clone(&self.reconciler);
         let backend = Arc::clone(&self.backend);
         match prompt.scope {
             DeleteScope::Row => {
-                self.run_reload(delete_binding(client, backend, prompt.combo), cx);
+                self.run_reload(delete_binding(reconciler, backend, prompt.combo), cx);
             }
             DeleteScope::Half(instance_id, _) => {
                 self.run_reload(delete_binding_half(backend, instance_id), cx);

@@ -10,6 +10,7 @@ mod chat;
 mod chat_drawer;
 mod chat_feed;
 mod chrome;
+mod clip_hotkeys;
 mod clip_messages;
 mod clip_playback;
 mod cloud_credentials;

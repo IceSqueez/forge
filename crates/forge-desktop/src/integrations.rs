@@ -14,7 +14,8 @@ use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_settin
 use forge_types::EventId;
 use tokio::sync::mpsc;
 
-use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, load_hold_ceiling, persisted_hotkey_combos};
+use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, load_hold_ceiling};
+use crate::hotkey_sync::HotkeyReconciler;
 use crate::midi_screen::MIDI_ENABLED_KEY;
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
@@ -81,6 +82,7 @@ pub struct Integrations {
     /// `None` when the platform MIDI backend failed to initialize.
     pub midi_client: Option<Arc<forge_midi::MidiClient>>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
+    pub hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
 }
 
 /// Holds the same `SwitchableObsSink` the registered OBS runners resolve through, so a post-boot
@@ -295,7 +297,8 @@ pub async fn build_integrations(
     insert("discord", discord);
     let (midi, midi_client) = build_midi(sub_actions, backend, bus).await;
     insert("midi", midi);
-    let (hotkey, hotkey_client) = build_hotkey(backend, bus, hotkey_main_thread).await;
+    let (hotkey, hotkey_client, hotkey_reconciler) =
+        build_hotkey(backend, bus, hotkey_main_thread).await;
     insert("hotkey", hotkey);
 
     let (youtube, youtube_viewers, youtube_install_seed) =
@@ -322,6 +325,7 @@ pub async fn build_integrations(
         discord_client,
         midi_client,
         hotkey_client,
+        hotkey_reconciler,
     }
 }
 
@@ -728,6 +732,7 @@ async fn build_hotkey(
 ) -> (
     Option<BuiltinObject>,
     Option<Arc<forge_hotkey::HotkeyClient>>,
+    Option<Arc<HotkeyReconciler>>,
 ) {
     let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
     let config = forge_hotkey::HotkeyConfig {
@@ -735,7 +740,12 @@ async fn build_hotkey(
         ..forge_hotkey::HotkeyConfig::default()
     };
     let client = forge_hotkey::HotkeyClient::new(config, publisher(bus), main_thread).await;
-    reregister_persisted_hotkeys(&client, backend).await;
+    let reconciler = HotkeyReconciler::new(
+        Arc::clone(&client),
+        backend.trigger_instance_repo(),
+        backend.soundboard_clips_repo(),
+    );
+    reconciler.reconcile().await;
 
     if !get_bool_setting(&*settings, HOTKEY_ENABLED_KEY, true).await
         && let Err(e) = client.disable().await
@@ -752,34 +762,7 @@ async fn build_hotkey(
         control: Some(client.clone()),
         obs_client: None,
     };
-    (Some(object), Some(client))
-}
-
-async fn reregister_persisted_hotkeys(
-    client: &Arc<forge_hotkey::HotkeyClient>,
-    backend: &Arc<dyn DataProvider>,
-) {
-    let instances = match backend.trigger_instance_repo().list_all().await {
-        Ok(instances) => instances,
-        Err(e) => {
-            eprintln!("forge-desktop: failed to load persisted hotkey bindings: {e}");
-            return;
-        }
-    };
-    for combo_str in persisted_hotkey_combos(&instances) {
-        let combo = match forge_hotkey::HotkeyCombo::parse(&combo_str) {
-            Ok(combo) => combo,
-            Err(e) => {
-                eprintln!(
-                    "forge-desktop: persisted hotkey combo '{combo_str}' failed to parse: {e}"
-                );
-                continue;
-            }
-        };
-        if let Err(e) = client.register(combo).await {
-            eprintln!("forge-desktop: failed to re-register hotkey '{combo_str}': {e}");
-        }
-    }
+    (Some(object), Some(client), Some(reconciler))
 }
 
 async fn build_youtube(

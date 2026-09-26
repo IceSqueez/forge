@@ -57,6 +57,7 @@ pub mod reserved_keys {
     pub const SOUNDBOARD_ALSO_HEADPHONES: &str = "soundboard.also_headphones";
     pub const DIAGNOSTICS_LOG_LEVEL: &str = "diagnostics.log_level";
     pub const UPDATES_NOTIFY: &str = "updates.notify";
+    pub const STAY_AWAKE: &str = "app.stay_awake";
     pub const UPDATES_DISMISSED_VERSION: &str = "updates.dismissed_version";
     pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
 }
@@ -121,6 +122,7 @@ pub mod disclosure {
             | reserved_keys::SOUNDBOARD_MASTER_VOLUME
             | reserved_keys::SOUNDBOARD_ALSO_HEADPHONES
             | reserved_keys::UPDATES_NOTIFY
+            | reserved_keys::STAY_AWAKE
             | reserved_keys::UPDATES_DISMISSED_VERSION
             | reserved_keys::CREDENTIALS_KEY_LOSS => Verbatim,
 

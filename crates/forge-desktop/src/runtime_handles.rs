@@ -66,4 +66,5 @@ pub struct RuntimeHandles {
     pub hotkey_reconciler: Option<Arc<crate::hotkey_sync::HotkeyReconciler>>,
     pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
     pub voice_gate: Arc<VoiceGateOwner>,
+    pub stay_awake: forge_awake::StayAwake,
 }

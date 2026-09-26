@@ -202,7 +202,9 @@ pub fn run_boot(
                     });
                     let mut shutdown =
                         Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
+                    let stay_awake = handles.stay_awake.clone();
                     cx.on_app_quit(move |_root, _cx| {
+                        stay_awake.release();
                         let taken = shutdown.take();
                         async move {
                             if let Some(handles) = taken {

@@ -159,6 +159,7 @@ pub async fn build_runtime(
             }
         };
     apply_persisted_log_level(settings_repo.as_ref()).await;
+    let stay_awake = crate::stay_awake::start_stay_awake(Arc::clone(&settings_repo)).await;
 
     let (startup_language, persist) =
         crate::i18n::resolve_startup_language(Arc::clone(&settings_repo)).await;
@@ -437,6 +438,7 @@ pub async fn build_runtime(
         audio_router,
         soundboard_player,
         voice_gate,
+        stay_awake,
     })
 }
 

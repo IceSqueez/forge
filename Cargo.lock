@@ -2506,6 +2506,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-awake"
+version = "0.5.4"
+dependencies = [
+ "async-trait",
+ "objc2-core-foundation",
+ "serde",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "windows 0.62.2",
+ "zbus",
+]
+
+[[package]]
 name = "forge-components"
 version = "0.5.4"
 dependencies = [
@@ -2526,6 +2541,7 @@ dependencies = [
  "fluent",
  "fluent-langneg",
  "forge-audio",
+ "forge-awake",
  "forge-components",
  "forge-discord",
  "forge-events",

@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 async-trait = { workspace = true }
 forge-audio = { path = "../forge-audio" }
+forge-awake = { path = "../forge-awake" }
 forge-components = { path = "../forge-components" }
 forge-discord = { path = "../forge-discord" }
 forge-events = { path = "../forge-events" }

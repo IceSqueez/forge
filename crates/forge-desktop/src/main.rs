@@ -92,6 +92,7 @@ mod soundboard;
 mod speak_boot;
 mod speak_bridge;
 mod speak_state;
+mod stay_awake;
 mod stream_apps;
 #[cfg(test)]
 mod test_support;

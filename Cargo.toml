@@ -18,6 +18,7 @@ members = [
   "crates/forge-discord",
   "crates/forge-midi",
   "crates/forge-hotkey",
+  "crates/forge-awake",
   "crates/forge-server",
   "crates/forge-audio",
   "crates/forge-soundboard",
@@ -120,6 +121,7 @@ windows = { version = "0.62", features = [
 hmac = { version = "0.13" }
 
 objc2 = { version = "0.6" }
+objc2-core-foundation = { version = "0.3", default-features = false }
 objc2-foundation = { version = "0.3", features = ["NSRunLoop", "NSDate"] }
 objc2-avf-audio = { version = "0.3", features = [
   "AVSpeechSynthesis",

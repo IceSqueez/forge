@@ -5,31 +5,24 @@ use forge_events::{Event, EventSource};
 use forge_types::{ChatPayload, ChatSource, UnifiedChatRow};
 use futures_core::Stream;
 use futures_util::stream;
-use tokio::sync::broadcast;
 
 use crate::bus::EventBus;
+use crate::delivery::CHAT_HISTORY;
 
 const DEDUP_WINDOW: usize = 500;
 
-/// Dedups per-source on a sliding window of 500 `platform_msg_id`s; a lagged broadcast is logged and skipped, never yielded.
+/// Lossless (critical tier); dedups per-source on a sliding window of 500 `platform_msg_id`s.
 pub fn chat_stream(bus: Arc<EventBus>) -> impl Stream<Item = UnifiedChatRow> + Send + 'static {
-    let receiver = bus.subscribe().into_receiver();
+    let subscription = bus.subscribe_critical(CHAT_HISTORY);
     stream::unfold(
-        (receiver, HashMap::<ChatSource, VecDeque<String>>::new()),
-        |(mut rx, mut dedup)| async move {
-            loop {
-                match rx.recv().await {
-                    Ok(ev) => {
-                        if let Some(row) = try_map_chat_event(ev, &mut dedup) {
-                            return Some((row, (rx, dedup)));
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!(missed = n, "chat stream subscriber lagged");
-                    }
-                    Err(broadcast::error::RecvError::Closed) => return None,
+        (subscription, HashMap::<ChatSource, VecDeque<String>>::new()),
+        |(mut subscription, mut dedup)| async move {
+            while let Some(event) = subscription.recv().await {
+                if let Some(row) = try_map_chat_event(&event, &mut dedup) {
+                    return Some((row, (subscription, dedup)));
                 }
             }
+            None
         },
     )
 }
@@ -54,7 +47,7 @@ pub(crate) fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource
 }
 
 fn try_map_chat_event(
-    ev: Event,
+    ev: &Event,
     dedup: &mut HashMap<ChatSource, VecDeque<String>>,
 ) -> Option<UnifiedChatRow> {
     let source = event_source_to_chat_source(ev.source)?;

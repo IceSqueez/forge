@@ -5,8 +5,8 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use forge_events::{Event, EventSource, EventsError};
-use forge_runtime::{EventBus, OverlayConnectListener, OverlayReceivers};
+use forge_events::{Event, EventSource};
+use forge_runtime::{Delivery, EventBus, OverlayConnectListener, OverlayReceivers};
 use forge_storage::OverlayId;
 use forge_types::EventId;
 use serde::Serialize;
@@ -17,6 +17,8 @@ pub(crate) const CLIENT_CHANNEL_CAP: usize = 1024;
 /// Below the general 1024 bound: append/transient overlay content gains nothing from a deep
 /// backlog, and a stalled page should rejoin near-live rather than crawl through history.
 pub(crate) const OVERLAY_CHANNEL_CAP: usize = 64;
+
+const BUS_CONSUMER: &str = "ws_server";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClientId(pub(crate) u64);
@@ -206,6 +208,21 @@ async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
     }
 }
 
+/// Every event-subscribed client may have lost some of the skipped events, so each is told the full count.
+async fn notify_skipped(registry: &RwLock<Vec<ConnectedClient>>, missed: u64) {
+    let frame = WsFrame::Text(dropped_notification(missed));
+    let reg = registry.read().await;
+    for client in reg.iter() {
+        if client.overlay.is_none() && !client.filters.subscriptions.is_empty() {
+            let _ = client.sender.send(frame.clone());
+        }
+    }
+}
+
+pub(crate) fn dropped_notification(n: u64) -> String {
+    serde_json::json!({ "dropped": n }).to_string()
+}
+
 /// `identity: None` addresses every overlay-class connection; a non-overlay client never
 /// matches, since it carries no overlay connection at all.
 async fn send_to_overlay(
@@ -274,17 +291,18 @@ impl BusAdapter {
 
     pub fn spawn(self: &Arc<Self>) {
         let registry = Arc::clone(&self.registry);
-        let subscription = self.bus.subscribe();
+        let subscription = self.bus.subscribe_observer(BUS_CONSUMER);
         tokio::spawn(async move {
             let mut subscription = subscription;
             loop {
-                let event = match subscription.recv().await {
-                    Ok(e) => e,
-                    Err(EventsError::BusClosed) => break,
-                    Err(EventsError::LaggingReceiver | EventsError::ReplayMiss(_)) => continue,
-                };
-
-                fan_out(&registry, &event).await;
+                match subscription.next().await {
+                    Delivery::Event(event) => fan_out(&registry, &event).await,
+                    Delivery::Skipped(missed) => {
+                        tracing::warn!(missed, "server fan-out fell behind the bus");
+                        notify_skipped(&registry, missed).await;
+                    }
+                    Delivery::Closed => break,
+                }
             }
         });
     }

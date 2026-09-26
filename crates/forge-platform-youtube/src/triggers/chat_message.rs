@@ -1,4 +1,4 @@
-use forge_events::{Event, EventSource};
+use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
     ActorDeclaration, ActorIdentity, ChatTriggerFamily, EventFilter, FormField,
     KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
@@ -99,6 +99,10 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
 
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         Some(ChatTriggerFamily::Message)
+    }
+
+    fn delivery_lane(&self) -> DeliveryLane {
+        DeliveryLane::Bulk
     }
 }
 

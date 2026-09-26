@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_events::{Event, EventSource, EventsError};
+use forge_events::{Event, EventSource};
 use forge_registry::{
     CancelSignal, ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
     kind_matches_prefix,
@@ -13,13 +13,13 @@ use forge_types::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use tokio::sync::broadcast;
 use tracing::{Level, debug, enabled, trace, warn};
 
 use crate::catalog::{Catalog, CatalogSnapshot};
 use crate::cooldown::CooldownMap;
+use crate::delivery::{CriticalSubscription, TRIGGER_EVALUATOR};
 use crate::event_log_bridge::identity_digest;
-use crate::{Config, EventBus, EventSubscription, QueueSchedulerHandle, SchedulerRequest};
+use crate::{Config, EventBus, QueueSchedulerHandle, SchedulerRequest};
 
 /// Sibling of `forge::event`, so a reproduction can raise the evaluator's decisions alone.
 const DECISION_TARGET: &str = "forge::trigger";
@@ -45,7 +45,7 @@ pub struct TriggerEvaluator {
     registry: Arc<TriggerRegistry>,
     catalog: Arc<Catalog>,
     scheduler: QueueSchedulerHandle,
-    subscription: EventSubscription,
+    subscription: CriticalSubscription,
     cooldowns: CooldownMap,
     resolved: ResolvedBindings,
 }
@@ -66,7 +66,7 @@ impl TriggerEvaluator {
         scheduler: QueueSchedulerHandle,
         config: Config,
     ) -> TriggerEvaluatorHandle {
-        let subscription = bus.subscribe();
+        let subscription = bus.subscribe_critical(TRIGGER_EVALUATOR);
         let evaluator = Self {
             bus,
             registry,
@@ -84,33 +84,22 @@ impl TriggerEvaluator {
 
     async fn run(mut self, cancel: CancelSignal) {
         while !cancel.is_cancelled() {
-            let received = self.subscription.receiver_mut().recv().await;
-            match received {
-                Ok(event) => self.handle(event).await,
-                Err(broadcast::error::RecvError::Lagged(missed)) => warn!(
-                    target: DECISION_TARGET,
-                    missed,
-                    "evaluation fell behind the bus; those events fired no trigger"
-                ),
-                Err(broadcast::error::RecvError::Closed) => break,
-            }
+            let Some(event) = self.subscription.recv().await else {
+                break;
+            };
+            self.handle(&event).await;
         }
         self.drain_backlog().await;
     }
 
     /// Events published before the cancel still dispatch; only what arrives after it is dropped.
     async fn drain_backlog(&mut self) {
-        loop {
-            match self.subscription.try_recv() {
-                Ok(Some(event)) => self.handle(event).await,
-                Ok(None) => return,
-                Err(EventsError::LaggingReceiver) => continue,
-                Err(_) => return,
-            }
+        while let Some(event) = self.subscription.try_recv() {
+            self.handle(&event).await;
         }
     }
 
-    async fn handle(&mut self, event: forge_events::Event) {
+    async fn handle(&mut self, event: &Event) {
         let catalog = match self.catalog.current().await {
             Ok(catalog) => catalog,
             Err(e) => {
@@ -118,7 +107,7 @@ impl TriggerEvaluator {
                 return;
             }
         };
-        let bindings = self.resolve(&catalog, &event);
+        let bindings = self.resolve(&catalog, event);
         if bindings.is_empty() {
             return;
         }
@@ -134,7 +123,7 @@ impl TriggerEvaluator {
             let decision = match decided.get(&instance.id) {
                 Some(cached) => cached.clone(),
                 None => {
-                    let fresh = self.decide(instance, &event);
+                    let fresh = self.decide(instance, event);
                     decided.insert(instance.id, fresh.clone());
                     fresh
                 }

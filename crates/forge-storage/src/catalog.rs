@@ -26,16 +26,31 @@ impl CatalogRevision {
         self.0.fetch_add(1, Ordering::AcqRel);
     }
 
-    async fn after<T>(&self, write: impl Future<Output = T>) -> T {
-        let _advance_on_exit = AdvanceOnDrop(self);
-        write.await
+    /// The write runs detached from its caller, so a cancelled caller cannot hide a commit that lands later.
+    async fn after<T, W>(&self, write: W) -> Result<T, StorageError>
+    where
+        T: Send + 'static,
+        W: Future<Output = Result<T, StorageError>> + Send + 'static,
+    {
+        let advance_on_exit = AdvanceOnDrop(self.clone());
+        let landed = tokio::spawn(async move {
+            let _advance_on_exit = advance_on_exit;
+            write.await
+        });
+        match landed.await {
+            Ok(outcome) => outcome,
+            Err(aborted) if aborted.is_panic() => std::panic::resume_unwind(aborted.into_panic()),
+            Err(_) => Err(StorageError::Connection {
+                reason: "catalog write aborted by runtime shutdown".to_owned(),
+            }),
+        }
     }
 }
 
-/// Advances even when the write future is dropped mid-flight, since the backend may still commit it.
-struct AdvanceOnDrop<'a>(&'a CatalogRevision);
+/// Advances when the detached write finishes, panics or is aborted, since the backend may have committed it.
+struct AdvanceOnDrop(CatalogRevision);
 
-impl Drop for AdvanceOnDrop<'_> {
+impl Drop for AdvanceOnDrop {
     fn drop(&mut self) {
         self.0.advance();
     }
@@ -63,11 +78,18 @@ impl ActionRepo for RevisingActionRepo {
     }
 
     async fn save(&self, action: &Action) -> Result<(), StorageError> {
-        self.revision.after(self.inner.save(action)).await
+        let inner = Arc::clone(&self.inner);
+        let action = action.clone();
+        self.revision
+            .after(async move { inner.save(&action).await })
+            .await
     }
 
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
-        self.revision.after(self.inner.delete(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.delete(id).await })
+            .await
     }
 
     async fn list_by_group<'a>(
@@ -98,13 +120,17 @@ impl ActionRepo for RevisingActionRepo {
     }
 
     async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError> {
+        let inner = Arc::clone(&self.inner);
         self.revision
-            .after(self.inner.set_enabled(id, enabled))
+            .after(async move { inner.set_enabled(id, enabled).await })
             .await
     }
 
     async fn toggle_enabled(&self, id: ActionId) -> Result<Option<bool>, StorageError> {
-        self.revision.after(self.inner.toggle_enabled(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.toggle_enabled(id).await })
+            .await
     }
 
     async fn duplicate(
@@ -113,17 +139,25 @@ impl ActionRepo for RevisingActionRepo {
         new_id: ActionId,
         new_name: &str,
     ) -> Result<(), StorageError> {
+        let inner = Arc::clone(&self.inner);
+        let new_name = new_name.to_owned();
         self.revision
-            .after(self.inner.duplicate(source_id, new_id, new_name))
+            .after(async move { inner.duplicate(source_id, new_id, &new_name).await })
             .await
     }
 
     async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
-        self.revision.after(self.inner.archive(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.archive(id).await })
+            .await
     }
 
     async fn restore(&self, id: ActionId) -> Result<bool, StorageError> {
-        self.revision.after(self.inner.restore(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.restore(id).await })
+            .await
     }
 
     async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
@@ -175,8 +209,9 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
         instance_id: TriggerInstanceId,
         position: i64,
     ) -> Result<(), StorageError> {
+        let inner = Arc::clone(&self.inner);
         self.revision
-            .after(self.inner.link_action(action_id, instance_id, position))
+            .after(async move { inner.link_action(action_id, instance_id, position).await })
             .await
     }
 
@@ -185,8 +220,9 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
         action_id: ActionId,
         instance_id: TriggerInstanceId,
     ) -> Result<bool, StorageError> {
+        let inner = Arc::clone(&self.inner);
         self.revision
-            .after(self.inner.unlink_action(action_id, instance_id))
+            .after(async move { inner.unlink_action(action_id, instance_id).await })
             .await
     }
 
@@ -195,11 +231,18 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
     }
 
     async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
-        self.revision.after(self.inner.save(instance)).await
+        let inner = Arc::clone(&self.inner);
+        let instance = instance.clone();
+        self.revision
+            .after(async move { inner.save(&instance).await })
+            .await
     }
 
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
-        self.revision.after(self.inner.delete(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.delete(id).await })
+            .await
     }
 
     async fn upsert_default(
@@ -207,23 +250,33 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
         kind_id: &str,
         name: &str,
     ) -> Result<TriggerInstanceId, StorageError> {
+        let inner = Arc::clone(&self.inner);
+        let kind_id = kind_id.to_owned();
+        let name = name.to_owned();
         self.revision
-            .after(self.inner.upsert_default(kind_id, name))
+            .after(async move { inner.upsert_default(&kind_id, &name).await })
             .await
     }
 
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError> {
+        let inner = Arc::clone(&self.inner);
         self.revision
-            .after(self.inner.set_enabled(id, enabled))
+            .after(async move { inner.set_enabled(id, enabled).await })
             .await
     }
 
     async fn archive(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
-        self.revision.after(self.inner.archive(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.archive(id).await })
+            .await
     }
 
     async fn restore(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
-        self.revision.after(self.inner.restore(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.restore(id).await })
+            .await
     }
 
     async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
@@ -257,11 +310,18 @@ impl QueueRepo for RevisingQueueRepo {
     }
 
     async fn save(&self, queue: &Queue) -> Result<(), StorageError> {
-        self.revision.after(self.inner.save(queue)).await
+        let inner = Arc::clone(&self.inner);
+        let queue = queue.clone();
+        self.revision
+            .after(async move { inner.save(&queue).await })
+            .await
     }
 
     async fn delete(&self, id: QueueId) -> Result<bool, StorageError> {
-        self.revision.after(self.inner.delete(id)).await
+        let inner = Arc::clone(&self.inner);
+        self.revision
+            .after(async move { inner.delete(id).await })
+            .await
     }
 }
 

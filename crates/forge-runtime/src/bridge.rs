@@ -1,18 +1,20 @@
-use crate::bus::EventBus;
+use crate::bus::{Delivery, EventBus};
 use forge_events::Event;
 use futures_core::Stream;
+use futures_util::stream;
 use std::sync::Arc;
-use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::{StreamExt as _, wrappers::errors::BroadcastStreamRecvError};
 
-/// Lagged items are silently dropped; the lag count is logged at WARN.
+/// Lagged items are skipped and counted in drop accounting; the lag count is logged at WARN.
 pub fn bus_subscription(bus: Arc<EventBus>) -> impl Stream<Item = Event> + Send + 'static {
-    let receiver = bus.subscribe().into_receiver();
-    BroadcastStream::new(receiver).filter_map(|result| match result {
-        Ok(event) => Some(event),
-        Err(BroadcastStreamRecvError::Lagged(n)) => {
-            tracing::warn!(missed = n, "event bus subscriber lagged");
-            None
+    stream::unfold(bus.subscribe(), |mut subscription| async move {
+        loop {
+            match subscription.next().await {
+                Delivery::Event(event) => return Some((Arc::unwrap_or_clone(event), subscription)),
+                Delivery::Skipped(missed) => {
+                    tracing::warn!(missed, "event bus subscriber lagged");
+                }
+                Delivery::Closed => return None,
+            }
         }
     })
 }

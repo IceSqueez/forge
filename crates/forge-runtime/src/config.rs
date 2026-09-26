@@ -6,6 +6,10 @@ pub struct Config {
     /// Deliberately tighter than a full-script budget: re-evaluated on every poll.
     pub condition_wall_time_ms: u64,
     pub max_cooldown_entries: usize,
+    pub bus_ring_retention: usize,
+    pub bus_observer_capacity: usize,
+    pub critical_priority_capacity: usize,
+    pub critical_bulk_capacity: usize,
 }
 
 impl Default for Config {
@@ -15,6 +19,10 @@ impl Default for Config {
             condition_op_limit: 10_000,
             condition_wall_time_ms: 50,
             max_cooldown_entries: 4096,
+            bus_ring_retention: 131_072,
+            bus_observer_capacity: 65_536,
+            critical_priority_capacity: 16_384,
+            critical_bulk_capacity: 65_536,
         }
     }
 }

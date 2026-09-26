@@ -1,13 +1,12 @@
 use std::fmt::{self, Write as _};
 use std::sync::{Arc, OnceLock};
 
+use crate::bus::{Delivery, EventBus};
+use crate::delivery::EVENT_TRAIL;
 use forge_events::Event;
 use forge_types::redaction::RedactedText;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use tokio::sync::broadcast;
-
-use crate::bus::EventBus;
 
 /// Filterable on its own, so a reproduction can raise the event trail without raising every crate.
 const TARGET: &str = "forge::event";
@@ -31,24 +30,23 @@ const HANDLE_KEYS: &[&str] = &[
 ];
 
 pub fn spawn_event_log_bridge(bus: Arc<EventBus>) {
-    tokio::spawn(run(bus));
-}
-
-async fn run(bus: Arc<EventBus>) {
-    let mut rx = bus.subscribe().into_receiver();
-    loop {
-        match rx.recv().await {
-            Ok(event) => emit(&event),
-            Err(broadcast::error::RecvError::Lagged(missed)) => {
-                tracing::warn!(
-                    target: TARGET,
-                    missed,
-                    "event trail has a gap; the bridge fell behind the bus"
-                );
+    let subscription = bus.subscribe_observer(EVENT_TRAIL);
+    tokio::spawn(async move {
+        let mut subscription = subscription;
+        loop {
+            match subscription.next().await {
+                Delivery::Event(event) => emit(&event),
+                Delivery::Skipped(missed) => {
+                    tracing::warn!(
+                        target: TARGET,
+                        missed,
+                        "event trail has a gap; the bridge fell behind the bus"
+                    );
+                }
+                Delivery::Closed => break,
             }
-            Err(broadcast::error::RecvError::Closed) => break,
         }
-    }
+    });
 }
 
 /// The projection is a field expression, so it never runs unless the subscriber wants the record.

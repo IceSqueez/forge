@@ -18,10 +18,9 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
+tokio = { workspace = true }
 mockall = { workspace = true, optional = true }
 
 [features]
 test-mocks = ["dep:mockall"]
 
-[dev-dependencies]
-tokio = { workspace = true }

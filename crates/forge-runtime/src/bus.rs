@@ -1,6 +1,15 @@
-use crate::buf::RingBuffer;
+use crate::config::Config;
+use crate::delivery::{
+    CriticalSink, CriticalSinks, CriticalSubscription, EVENT_LOG, LaneTable, UNNAMED_OBSERVER,
+};
+use crate::delivery_loss::{
+    ConsumerLoss, ConsumerLossCounters, DeliveryTier, LossLedger, LossWatch,
+};
+use crate::event_ring::EventRing;
+use arc_swap::ArcSwap;
 use async_trait::async_trait;
-use forge_events::{Event, EventPublisher, EventsError};
+use forge_events::{DeliveryLane, Event, EventPublisher, EventsError};
+use forge_registry::TriggerRegistry;
 use forge_storage::{EventLogRepo, StorageError};
 use forge_types::EventId;
 use std::sync::{
@@ -9,9 +18,6 @@ use std::sync::{
 };
 use time::OffsetDateTime;
 use tokio::sync::{Notify, broadcast, oneshot};
-
-const CHANNEL_CAP: usize = 1_024;
-const RING_CAP: usize = 10_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BusError {
@@ -51,8 +57,13 @@ impl EventLogRepo for NullEventLogRepo {
 }
 
 pub struct EventBus {
-    sender: broadcast::Sender<Event>,
-    ring: Mutex<RingBuffer<Event>>,
+    sender: broadcast::Sender<Arc<Event>>,
+    ring: Mutex<EventRing>,
+    lanes: ArcSwap<LaneTable>,
+    critical: CriticalSinks,
+    loss: Arc<LossLedger>,
+    priority_capacity: usize,
+    bulk_capacity: usize,
     total_published: AtomicU64,
     event_log: Arc<dyn EventLogRepo>,
     flush_shutdown: Arc<Notify>,
@@ -60,50 +71,67 @@ pub struct EventBus {
     flush_complete: Mutex<Option<oneshot::Receiver<()>>>,
 }
 
-pub struct EventSubscription(broadcast::Receiver<Event>);
+pub enum Delivery {
+    Event(Arc<Event>),
+    /// This observer fell behind by that many events; they are already counted in drop accounting.
+    Skipped(u64),
+    Closed,
+}
+
+pub struct EventSubscription {
+    receiver: broadcast::Receiver<Arc<Event>>,
+    loss: Arc<ConsumerLossCounters>,
+}
 
 impl EventSubscription {
+    pub async fn next(&mut self) -> Delivery {
+        match self.receiver.recv().await {
+            Ok(event) => Delivery::Event(event),
+            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                self.loss.lagged(skipped);
+                Delivery::Skipped(skipped)
+            }
+            Err(broadcast::error::RecvError::Closed) => Delivery::Closed,
+        }
+    }
+
     pub async fn recv(&mut self) -> Result<Event, EventsError> {
-        match self.0.recv().await {
-            Ok(event) => Ok(event),
-            Err(broadcast::error::RecvError::Closed) => Err(EventsError::BusClosed),
-            Err(broadcast::error::RecvError::Lagged(_)) => Err(EventsError::LaggingReceiver),
+        match self.next().await {
+            Delivery::Event(event) => Ok(Arc::unwrap_or_clone(event)),
+            Delivery::Skipped(_) => Err(EventsError::LaggingReceiver),
+            Delivery::Closed => Err(EventsError::BusClosed),
         }
     }
 
     /// `Ok(None)` signals the channel is momentarily empty; the caller stops draining.
     pub fn try_recv(&mut self) -> Result<Option<Event>, EventsError> {
-        match self.0.try_recv() {
-            Ok(event) => Ok(Some(event)),
+        match self.receiver.try_recv() {
+            Ok(event) => Ok(Some(Arc::unwrap_or_clone(event))),
             Err(broadcast::error::TryRecvError::Empty) => Ok(None),
             Err(broadcast::error::TryRecvError::Closed) => Err(EventsError::BusClosed),
-            Err(broadcast::error::TryRecvError::Lagged(_)) => Err(EventsError::LaggingReceiver),
+            Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
+                self.loss.lagged(skipped);
+                Err(EventsError::LaggingReceiver)
+            }
         }
-    }
-
-    pub(crate) fn into_receiver(self) -> broadcast::Receiver<Event> {
-        self.0
-    }
-
-    pub(crate) fn receiver_mut(&mut self) -> &mut broadcast::Receiver<Event> {
-        &mut self.0
     }
 }
 
 impl EventBus {
     pub fn new(event_log: Arc<dyn EventLogRepo>) -> Arc<Self> {
-        Self::with_caps(event_log, CHANNEL_CAP, RING_CAP)
+        Self::with_config(event_log, &Config::default())
     }
 
-    pub(crate) fn with_caps(
-        event_log: Arc<dyn EventLogRepo>,
-        channel_cap: usize,
-        ring_cap: usize,
-    ) -> Arc<Self> {
-        let (sender, _) = broadcast::channel(channel_cap);
+    pub fn with_config(event_log: Arc<dyn EventLogRepo>, config: &Config) -> Arc<Self> {
+        let (sender, _) = broadcast::channel(config.bus_observer_capacity.max(1));
         Arc::new(Self {
             sender,
-            ring: Mutex::new(RingBuffer::new(ring_cap)),
+            ring: Mutex::new(EventRing::new(config.bus_ring_retention)),
+            lanes: ArcSwap::from_pointee(LaneTable::default()),
+            critical: CriticalSinks::new(),
+            loss: LossLedger::new(),
+            priority_capacity: config.critical_priority_capacity,
+            bulk_capacity: config.critical_bulk_capacity,
             total_published: AtomicU64::new(0),
             event_log,
             flush_shutdown: Arc::new(Notify::new()),
@@ -111,12 +139,15 @@ impl EventBus {
         })
     }
 
-    /// Slow subscribers lag (broadcast semantics); publisher never blocks on them.
+    /// Never blocks: a full critical lane or a lagging observer loses events to drop accounting, not the publisher's time.
     pub fn publish(&self, event: Event) {
+        let event = Arc::new(event);
         self.ring
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .push(event.clone());
+            .push(Arc::clone(&event));
+        let lane = self.lanes.load().lane_of(&event);
+        self.critical.deliver(&event, lane);
         let _ = self.sender.send(event);
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }
@@ -126,11 +157,49 @@ impl EventBus {
         self.ring
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .push(event);
+            .push(Arc::new(event));
+    }
+
+    /// Replaces any earlier declaration; until the first one, platform events ride the priority lane
+    /// and only core run telemetry is bulk.
+    pub fn declare_lanes(&self, registry: &TriggerRegistry) {
+        self.lanes
+            .store(Arc::new(LaneTable::from_registry(registry)));
+    }
+
+    pub fn lane_of(&self, event: &Event) -> DeliveryLane {
+        self.lanes.load().lane_of(event)
     }
 
     pub fn subscribe(&self) -> EventSubscription {
-        EventSubscription(self.sender.subscribe())
+        self.subscribe_observer(UNNAMED_OBSERVER)
+    }
+
+    /// Lossy tier: lag is counted under `consumer` in drop accounting.
+    pub fn subscribe_observer(&self, consumer: &'static str) -> EventSubscription {
+        EventSubscription {
+            receiver: self.sender.subscribe(),
+            loss: self.loss.counters(consumer, DeliveryTier::Observer),
+        }
+    }
+
+    /// Lossless tier: a queue of this consumer's own, fed on every publish from now on.
+    pub fn subscribe_critical(&self, consumer: &'static str) -> CriticalSubscription {
+        let (sink, subscription) = CriticalSink::open(
+            self.priority_capacity,
+            self.bulk_capacity,
+            self.loss.counters(consumer, DeliveryTier::Critical),
+        );
+        self.critical.add(sink);
+        subscription
+    }
+
+    pub fn loss_report(&self) -> Vec<ConsumerLoss> {
+        self.loss.report()
+    }
+
+    pub fn watch_loss(&self) -> LossWatch {
+        self.loss.watch()
     }
 
     /// Returns `None` when `event_id` is not in the retained ring.
@@ -138,9 +207,8 @@ impl EventBus {
         self.ring
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .iter()
-            .find(|e| e.id == event_id)
-            .cloned()
+            .get(event_id)
+            .map(|event| Event::clone(event))
     }
 
     pub(crate) fn count_in_lineage(
@@ -155,7 +223,7 @@ impl EventBus {
         while let Some(id) = cursor
             && matched < ceiling
         {
-            let Some(event) = ring.iter().rev().find(|e| e.id == id) else {
+            let Some(event) = ring.get(id) else {
                 break;
             };
             if counts(event) {
@@ -173,7 +241,7 @@ impl EventBus {
             .iter()
             .rev()
             .take(limit)
-            .cloned()
+            .map(|event| Event::clone(event))
             .collect()
     }
 
@@ -185,14 +253,12 @@ impl EventBus {
         };
 
         let ring_result = {
-            let guard = self.ring.lock().unwrap_or_else(|p| p.into_inner());
-            let items: Vec<&Event> = guard.iter().collect();
-            items.iter().position(|e| e.id == since_id).map(|pos| {
-                items[pos + 1..]
-                    .iter()
+            let ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+            ring.position(since_id).map(|pos| {
+                ring.after(pos)
                     .rev()
                     .take(limit)
-                    .map(|e| (*e).clone())
+                    .map(|event| Event::clone(event))
                     .collect::<Vec<Event>>()
             })
         };
@@ -222,9 +288,9 @@ impl EventBus {
         let replayed = Event {
             id: EventId::new(),
             source: original.source,
-            kind: original.kind.clone(),
+            kind: original.kind,
             timestamp: OffsetDateTime::now_utc(),
-            payload: original.payload.clone(),
+            payload: original.payload,
             caused_by: original.caused_by,
             replay: true,
         };
@@ -235,12 +301,12 @@ impl EventBus {
 
     /// Subscribes before spawning the flush task, so events published immediately after never get missed.
     pub fn spawn_flush_task(bus: Arc<Self>) {
-        let recv = bus.sender.subscribe();
+        let subscription = bus.subscribe_critical(EVENT_LOG);
         let repo = Arc::clone(&bus.event_log);
         let shutdown = Arc::clone(&bus.flush_shutdown);
         let (done_tx, done_rx) = oneshot::channel();
         *bus.flush_complete.lock().unwrap_or_else(|p| p.into_inner()) = Some(done_rx);
-        tokio::spawn(event_log_flush_task(recv, repo, shutdown, done_tx));
+        tokio::spawn(event_log_flush_task(subscription, repo, shutdown, done_tx));
     }
 
     /// Uses `notify_one` so the permit is stored even if the flush task hasn't polled yet.
@@ -262,7 +328,7 @@ impl EventBus {
 }
 
 async fn event_log_flush_task(
-    mut recv: broadcast::Receiver<Event>,
+    mut subscription: CriticalSubscription,
     repo: Arc<dyn EventLogRepo>,
     shutdown: Arc<Notify>,
     done: oneshot::Sender<()>,
@@ -271,30 +337,20 @@ async fn event_log_flush_task(
         tokio::select! {
             biased;
             _ = shutdown.notified() => {
-                while let Ok(ev) = recv.try_recv() {
-                    if let Err(e) = repo.insert(&ev).await {
-                        // Event remains in ring until evicted; persistence is lossy on error - no retry.
+                while let Some(event) = subscription.try_recv() {
+                    if let Err(e) = repo.insert(&event).await {
                         tracing::warn!(error = %e, "event_log drain insert failed");
                     }
                 }
                 let _ = done.send(());
                 return;
             }
-            result = recv.recv() => {
-                match result {
-                    Ok(ev) => {
-                        if let Err(e) = repo.insert(&ev).await {
-                            // Event remains in ring until evicted; persistence is lossy on error - no retry.
-                            tracing::warn!(error = %e, "event_log insert failed; event not persisted");
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!(
-                            skipped = n,
-                            "event_log flush task lagged; events may not be persisted"
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Closed) => return,
+            received = subscription.recv() => {
+                let Some(event) = received else {
+                    return;
+                };
+                if let Err(e) = repo.insert(&event).await {
+                    tracing::warn!(error = %e, "event_log insert failed; event not persisted");
                 }
             }
         }

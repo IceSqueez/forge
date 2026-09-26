@@ -1,4 +1,4 @@
-use forge_events::Event;
+use forge_events::{DeliveryLane, Event};
 use forge_types::{ArgStack, TriggerConfig, VariableSchema};
 
 use crate::category::TriggerCategory;
@@ -47,5 +47,10 @@ pub trait TriggerKindDescriptor: Send + Sync {
     /// attached to cheer, sub, gift and raid events do not qualify.
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         None
+    }
+    /// `Bulk` only for event kinds that arrive in floods; every kind this descriptor's filter
+    /// covers then rides the sheddable lane for every lossless consumer.
+    fn delivery_lane(&self) -> DeliveryLane {
+        DeliveryLane::Priority
     }
 }

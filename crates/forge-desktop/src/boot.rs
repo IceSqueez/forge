@@ -293,6 +293,7 @@ pub async fn build_runtime(
 
     let sub_action_registry = Arc::new(sub_action_reg);
     let trigger_registry = Arc::new(trigger_reg);
+    bus.declare_lanes(&trigger_registry);
     let trigger_instance_repo = backend.trigger_instance_repo();
     for descriptor in trigger_registry.all() {
         if let Err(e) = trigger_instance_repo

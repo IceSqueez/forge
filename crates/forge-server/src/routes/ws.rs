@@ -12,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::auth::AuthState;
-use crate::bus_adapter::{ClientFilterSet, WsFrame};
+use crate::bus_adapter::{ClientFilterSet, WsFrame, dropped_notification};
 use crate::listener::PeerInfo;
 use crate::origin::{accepts_origin, is_well_formed_origin};
 use crate::protocol::{
@@ -275,10 +275,6 @@ fn message_limit(client: &WsClient, auth: &AuthState) -> usize {
     } else {
         PRE_AUTH_MAX_MESSAGE_BYTES
     }
-}
-
-fn dropped_notification(n: u64) -> String {
-    serde_json::json!({ "dropped": n }).to_string()
 }
 
 #[cfg(test)]

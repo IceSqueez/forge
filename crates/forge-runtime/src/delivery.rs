@@ -563,7 +563,7 @@ mod tests {
         sinks.add(kept);
         drop(gone_subscription);
 
-        sinks.deliver(&core("global.set"), DeliveryLane::Priority);
+        sinks.deliver(&core("global.set"), DeliveryLane::Priority, false);
 
         assert_eq!(sinks.0.load().len(), 1);
     }
@@ -652,5 +652,250 @@ mod tests {
             (levels(PRIORITY_OVERFLOW), levels(BULK_OVERFLOW)),
             (vec![Level::ERROR], vec![Level::WARN])
         );
+    }
+
+    fn chat_bulk_table() -> LaneTable {
+        LaneTable::from_registry(&registry(vec![LaneDescriptor {
+            source: Some(EventSource::Twitch),
+            kind_prefix: "twitch.channel.chat.message",
+            lane: DeliveryLane::Bulk,
+        }]))
+    }
+
+    fn chat() -> Arc<Event> {
+        event(EventSource::Twitch, "twitch.channel.chat.message")
+    }
+
+    fn follow() -> Arc<Event> {
+        event(EventSource::Twitch, "twitch.channel.follow")
+    }
+
+    fn child(parent: &Event, kind: &str) -> Arc<Event> {
+        Arc::new(Event::caused_by(
+            EventSource::Core,
+            kind,
+            serde_json::Value::Null,
+            parent.id,
+        ))
+    }
+
+    /// Every event from the root down to the last one, the last being the event under test.
+    fn lineage(root: Arc<Event>, kinds: &[&str]) -> Vec<Arc<Event>> {
+        let mut chain = vec![root];
+        for kind in kinds {
+            let next = child(chain.last().unwrap(), kind);
+            chain.push(next);
+        }
+        chain
+    }
+
+    fn transient_in_ring(table: &LaneTable, chain: &[Arc<Event>], retained_from: usize) -> bool {
+        let mut ring = EventRing::new(chain.len());
+        for ancestor in &chain[retained_from..chain.len() - 1] {
+            ring.push(Arc::clone(ancestor));
+        }
+        table.is_transient(chain.last().unwrap(), &ring)
+    }
+
+    #[test]
+    fn only_run_telemetry_rooted_at_a_declared_flood_platform_event_is_transient() {
+        let table = chat_bulk_table();
+        let uncaused_run = core("action.start");
+        for (case, chain, expected) in [
+            (
+                "run of a chat message",
+                lineage(chat(), &["action.start"]),
+                true,
+            ),
+            (
+                "nested run of a chat message",
+                lineage(
+                    chat(),
+                    &[
+                        "action.start",
+                        "subaction.run",
+                        "action.start",
+                        "action.done",
+                    ],
+                ),
+                true,
+            ),
+            (
+                "run of a follow",
+                lineage(follow(), &["action.start"]),
+                false,
+            ),
+            (
+                "step of a manual run",
+                lineage(uncaused_run, &["subaction.run"]),
+                false,
+            ),
+            (
+                "run of a timer tick",
+                lineage(core("timer.tick"), &["action.start"]),
+                false,
+            ),
+            (
+                "global written by a chat run",
+                lineage(chat(), &["action.start", "global.set"]),
+                false,
+            ),
+            ("uncaused run", vec![core("action.start")], false),
+        ] {
+            assert_eq!(transient_in_ring(&table, &chain, 0), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn run_telemetry_whose_root_left_the_ring_stays_durable() {
+        let chain = lineage(chat(), &["action.start", "subaction.run"]);
+
+        assert!(!transient_in_ring(&chat_bulk_table(), &chain, 1));
+    }
+
+    #[test]
+    fn the_lineage_walk_gives_up_one_hop_past_its_ceiling() {
+        let table = chat_bulk_table();
+        let verdict = |hops: usize| {
+            let chain = lineage(chat(), &vec!["action.start"; hops]);
+            transient_in_ring(&table, &chain, 0)
+        };
+
+        assert_eq!(
+            (
+                verdict(LINEAGE_WALK_CEILING),
+                verdict(LINEAGE_WALK_CEILING + 1)
+            ),
+            (true, false)
+        );
+    }
+
+    #[test]
+    fn a_durable_only_sink_skips_transient_events_that_a_regular_sink_still_receives() {
+        let sinks = CriticalSinks::new();
+        let (durable, mut durable_subscription, _durable_ledger) =
+            sink(LANE_CAPACITY, LANE_CAPACITY);
+        let (regular, mut regular_subscription, _regular_ledger) =
+            sink(LANE_CAPACITY, LANE_CAPACITY);
+        sinks.add(durable.durable_only());
+        sinks.add(regular);
+        let transient = core("action.start");
+        let durable_event = core("action.start");
+
+        sinks.deliver(&transient, DeliveryLane::Bulk, true);
+        sinks.deliver(&durable_event, DeliveryLane::Bulk, false);
+
+        assert_eq!(
+            (
+                drain(&mut durable_subscription),
+                drain(&mut regular_subscription)
+            ),
+            (vec![durable_event.id], vec![transient.id, durable_event.id])
+        );
+    }
+
+    #[test]
+    fn a_closed_durable_only_sink_is_forgotten_on_a_transient_delivery() {
+        let sinks = CriticalSinks::new();
+        let (durable, durable_subscription, _ledger) = sink(LANE_CAPACITY, LANE_CAPACITY);
+        sinks.add(durable.durable_only());
+        drop(durable_subscription);
+
+        sinks.deliver(&core("action.start"), DeliveryLane::Bulk, true);
+
+        assert_eq!(sinks.0.load().len(), 0);
+    }
+
+    struct StoredIds(std::sync::Mutex<Vec<EventId>>);
+
+    #[async_trait::async_trait]
+    impl forge_storage::EventLogRepo for StoredIds {
+        async fn insert(&self, event: &Event) -> Result<(), forge_storage::StorageError> {
+            self.0.lock().unwrap().push(event.id);
+            Ok(())
+        }
+        async fn get(&self, _: EventId) -> Result<Option<Event>, forge_storage::StorageError> {
+            Ok(None)
+        }
+        async fn recent(&self, _: usize) -> Result<Vec<Event>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
+        async fn recent_since(
+            &self,
+            _: usize,
+            _: Option<EventId>,
+        ) -> Result<Vec<Event>, forge_storage::StorageError> {
+            Ok(Vec::new())
+        }
+        async fn prune_before(
+            &self,
+            _: time::OffsetDateTime,
+        ) -> Result<u64, forge_storage::StorageError> {
+            Ok(0)
+        }
+    }
+
+    /// Publishes a chat message, a follow, a manual run and one run under each; returns the ids
+    /// in publish order.
+    fn publish_mixed_traffic(bus: &crate::EventBus) -> Vec<EventId> {
+        let chat = chat();
+        let follow = follow();
+        let manual = core("action.start");
+        let events = [
+            Arc::clone(&chat),
+            child(&chat, "action.start"),
+            Arc::clone(&follow),
+            child(&follow, "action.start"),
+            Arc::clone(&manual),
+            child(&manual, "subaction.run"),
+        ];
+        let ids = events.iter().map(|event| event.id).collect();
+        for event in events {
+            bus.publish(Arc::unwrap_or_clone(event));
+        }
+        ids
+    }
+
+    fn mixed_bus() -> (Arc<crate::EventBus>, Arc<StoredIds>) {
+        let repo = Arc::new(StoredIds(std::sync::Mutex::new(Vec::new())));
+        let bus = crate::EventBus::new(Arc::clone(&repo) as Arc<dyn forge_storage::EventLogRepo>);
+        bus.declare_lanes(&registry(vec![LaneDescriptor {
+            source: Some(EventSource::Twitch),
+            kind_prefix: "twitch.channel.chat.message",
+            lane: DeliveryLane::Bulk,
+        }]));
+        (bus, repo)
+    }
+
+    #[tokio::test]
+    async fn the_event_log_keeps_everything_but_the_run_telemetry_of_chat_messages() {
+        let (bus, repo) = mixed_bus();
+        crate::EventBus::spawn_flush_task(Arc::clone(&bus));
+
+        let ids = publish_mixed_traffic(&bus);
+        bus.shutdown();
+        bus.await_flush().await;
+
+        let mut stored = repo.0.lock().unwrap().clone();
+        stored.sort();
+        let mut expected = vec![ids[0], ids[2], ids[3], ids[4], ids[5]];
+        expected.sort();
+        assert_eq!(
+            stored, expected,
+            "the chat message, the follow and its run, the manual run and its step"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_observer_sees_chat_run_telemetry_the_event_log_skips() {
+        let (bus, _repo) = mixed_bus();
+        crate::EventBus::spawn_flush_task(Arc::clone(&bus));
+        let mut feed = bus.subscribe_observer("feed");
+
+        let ids = publish_mixed_traffic(&bus);
+
+        let seen: Vec<EventId> =
+            std::iter::from_fn(|| feed.try_recv().unwrap().map(|event| event.id)).collect();
+        assert_eq!(seen, ids);
     }
 }

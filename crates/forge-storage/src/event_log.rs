@@ -70,8 +70,87 @@ pub fn clamp_event_log_retention_days(days: u32) -> u32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
     use super::*;
 
-    fn _check(_: &dyn EventLogRepo) {}
+    #[derive(Default)]
+    struct MapRepo(Mutex<HashMap<String, String>>);
+
+    #[async_trait]
+    impl SettingsRepo for MapRepo {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self.0.lock().unwrap().get(key).cloned())
+        }
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), value.to_owned());
+            Ok(())
+        }
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(key).is_some())
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+    }
+
+    async fn stored_raw(raw: Option<&str>) -> u32 {
+        let repo = MapRepo::default();
+        if let Some(raw) = raw {
+            repo.set_string(reserved_keys::EVENT_LOG_RETENTION_DAYS, raw)
+                .await
+                .unwrap();
+        }
+        event_log_retention_days(&repo).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn reading_the_retention_clamps_stored_values_to_one_through_365_days() {
+        for (raw, expected) in [
+            ("0", 1),
+            ("1", 1),
+            ("2", 2),
+            ("364", 364),
+            ("365", 365),
+            ("366", 365),
+            ("4294967295", 365),
+            (" 30 ", 30),
+        ] {
+            assert_eq!(stored_raw(Some(raw)).await, expected, "stored {raw:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unset_or_unparsable_retention_reads_as_seven_days() {
+        for raw in [None, Some(""), Some("abc"), Some("-5"), Some("1.5")] {
+            assert_eq!(stored_raw(raw).await, 7, "stored {raw:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn setting_the_retention_stores_the_clamped_value() {
+        let mut stored = Vec::new();
+        for days in [0, 1, 365, 366] {
+            let repo = MapRepo::default();
+            set_event_log_retention_days(&repo, days).await.unwrap();
+            stored.push(
+                repo.get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS)
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        assert_eq!(
+            stored,
+            ["1", "1", "365", "365"]
+                .map(|v| Some(v.to_owned()))
+                .to_vec()
+        );
+    }
 }

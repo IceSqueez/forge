@@ -393,7 +393,7 @@ fn info_row(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_limit;
+    use super::{parse_limit, parse_retention_days};
 
     #[test]
     fn parse_limit_accepts_positive_integers_and_rejects_everything_else() {
@@ -408,6 +408,25 @@ mod tests {
             ("1.5", None),
         ] {
             assert_eq!(parse_limit(raw), expected, "parse_limit({raw:?})");
+        }
+    }
+
+    #[test]
+    fn parse_retention_days_accepts_exactly_the_range_storage_honours() {
+        for (raw, expected) in [
+            ("0", None),
+            ("1", Some(1)),
+            ("365", Some(365)),
+            ("366", None),
+            (" 30 ", Some(30)),
+            ("", None),
+            ("-1", None),
+        ] {
+            assert_eq!(
+                parse_retention_days(raw),
+                expected,
+                "parse_retention_days({raw:?})"
+            );
         }
     }
 }

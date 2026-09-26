@@ -723,3 +723,45 @@ pub(crate) async fn sandboxed_backend(
         _media_root: media_root,
     }
 }
+
+/// A scheduler whose single queue holds every dispatch, so its pending depth only grows.
+pub(crate) fn held_queue_scheduler(
+    rt: &tokio::runtime::Runtime,
+    queue: forge_types::Queue,
+) -> forge_runtime::QueueSchedulerHandle {
+    rt.block_on(async {
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let engine = spawn_action_engine(
+            Arc::clone(&bus),
+            stub_catalog(),
+            Arc::new(StubActions),
+            Arc::new(StubHistory),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(ActionCancelRegistry::new()),
+        );
+        let id = queue.id;
+        let scheduler = forge_runtime::QueueScheduler::spawn(engine, bus, vec![queue]);
+        scheduler
+            .set_mode(id, forge_runtime::QueueMode::HOLDING)
+            .await
+            .expect("the queue was registered at spawn");
+        scheduler
+    })
+}
+
+pub(crate) fn hold_one_dispatch(
+    rt: &tokio::runtime::Runtime,
+    scheduler: &forge_runtime::QueueSchedulerHandle,
+    queue_id: forge_types::QueueId,
+) {
+    rt.block_on(scheduler.dispatch(forge_runtime::SchedulerRequest {
+        queue_id,
+        action_id: ActionId::new(),
+        trigger_event_id: EventId::new(),
+        trigger_kind: None,
+        initial_args: forge_types::ArgStack::new(),
+        bypass_pause: false,
+    }))
+    .expect("the scheduler is running");
+    pump(rt);
+}

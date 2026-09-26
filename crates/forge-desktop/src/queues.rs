@@ -1871,3 +1871,108 @@ fn not_live_badge(palette: &ForgePalette) -> AnyElement {
         )
         .into_any_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{Density, ThemeId};
+    use forge_runtime::{QueueDepth, QueueDepths};
+    use forge_storage::Language;
+    use forge_storage::queue::MockQueueRepo;
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::presentation::Presentation;
+    use crate::test_support::{StubActions, held_queue_scheduler, pump, runtime};
+    use crate::toasts::Toasts;
+
+    fn queue(id: QueueId) -> Queue {
+        Queue {
+            id,
+            name: "Default".to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        }
+    }
+
+    fn busy(id: QueueId) -> QueueDepths {
+        QueueDepths::from([(
+            id,
+            QueueDepth {
+                pending: 4,
+                in_flight: 1,
+                overflowed: 2,
+            },
+        )])
+    }
+
+    fn mount(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        id: QueueId,
+        health: Entity<QueueHealth>,
+    ) -> Entity<QueuesView> {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let scheduler = held_queue_scheduler(rt, queue(id));
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(move || Ok(vec![queue(id)]));
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                QueuesView::new(
+                    health,
+                    scheduler,
+                    Arc::new(repo),
+                    Arc::new(StubActions),
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        pump(rt);
+        cx.run_until_parked();
+        view
+    }
+
+    fn row_depth(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Option<(u32, u32, u64)> {
+        view.read_with(cx, |view, _| {
+            view.queues
+                .first()
+                .map(|row| (row.pending, row.in_flight, row.overflowed))
+        })
+    }
+
+    #[gpui::test]
+    fn a_depth_change_in_queue_health_repaints_the_row_without_a_reload(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let health = cx.new(|_| QueueHealth::new());
+        let view = mount(cx, &rt, id, health.clone());
+
+        health.update(cx, |health, cx| {
+            health.apply_depths(busy(id));
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        assert_eq!(row_depth(&view, cx), Some((4, 1, 2)));
+    }
+
+    #[gpui::test]
+    fn rows_loaded_after_the_depths_arrived_show_them(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let health = cx.new(|_| {
+            let mut health = QueueHealth::new();
+            health.apply_depths(busy(id));
+            health
+        });
+
+        let view = mount(cx, &rt, id, health);
+
+        assert_eq!(row_depth(&view, cx), Some((4, 1, 2)));
+    }
+}

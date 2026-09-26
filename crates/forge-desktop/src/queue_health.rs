@@ -170,4 +170,29 @@ mod tests {
             "malformed events must not overwrite the tracked mode"
         );
     }
+
+    #[test]
+    fn a_depth_snapshot_reports_a_change_only_when_it_differs_from_the_held_one() {
+        let id = QueueId::new();
+        let busy = QueueDepths::from([(
+            id,
+            QueueDepth {
+                pending: 2,
+                in_flight: 1,
+                overflowed: 0,
+            },
+        )]);
+        let mut health = QueueHealth::new();
+
+        assert_eq!(
+            (
+                health.apply_depths(busy.clone()),
+                health.apply_depths(busy),
+                health.apply_depths(QueueDepths::new()),
+                health.depth(id),
+            ),
+            (true, false, true, None),
+            "new depths repaint, a repeat does not, a removed queue does and is forgotten"
+        );
+    }
 }

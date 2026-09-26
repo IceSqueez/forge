@@ -103,3 +103,91 @@ impl DepthCell {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use futures_util::FutureExt as _;
+
+    use super::*;
+
+    fn pending(depths: &QueueDepths, id: QueueId) -> Option<usize> {
+        depths.get(&id).map(|depth| depth.pending)
+    }
+
+    #[tokio::test]
+    async fn a_burst_between_reads_coalesces_into_one_change_carrying_the_final_depth() {
+        let board = DepthBoard::new();
+        let id = QueueId::new();
+        let cell = board.register(id);
+        let mut watch = board.watch();
+
+        for n in 1..=3 {
+            cell.update(|depth| depth.pending = n);
+        }
+
+        let first = watch.changed().await.map(|depths| pending(&depths, id));
+        let second = watch.changed().now_or_never();
+        assert_eq!(
+            (first, second.is_none()),
+            (Some(Some(3)), true),
+            "one read must see the last value of the burst and nothing may be left over"
+        );
+    }
+
+    #[test]
+    fn a_write_that_changes_nothing_wakes_no_watcher() {
+        let board = DepthBoard::new();
+        let id = QueueId::new();
+        let cell = board.register(id);
+        let mut watch = board.watch();
+
+        cell.update(|depth| depth.pending = 0);
+        board.deregister(&QueueId::new());
+
+        assert!(watch.changed().now_or_never().is_none());
+    }
+
+    #[test]
+    fn a_cell_from_a_replaced_registration_no_longer_writes_the_depth() {
+        let board = DepthBoard::new();
+        let id = QueueId::new();
+        let stale = board.register(id);
+        let fresh = board.register(id);
+
+        stale.update(|depth| depth.pending = 5);
+        fresh.update(|depth| depth.in_flight = 1);
+
+        assert_eq!(
+            board.watch().current().get(&id).copied(),
+            Some(QueueDepth {
+                pending: 0,
+                in_flight: 1,
+                overflowed: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn a_deregistered_queue_leaves_the_depths_and_its_cell_cannot_bring_it_back() {
+        let board = DepthBoard::new();
+        let id = QueueId::new();
+        let cell = board.register(id);
+        cell.update(|depth| depth.pending = 2);
+
+        board.deregister(&id);
+        cell.update(|depth| depth.pending = 7);
+
+        assert!(!board.watch().current().contains_key(&id));
+    }
+
+    #[tokio::test]
+    async fn the_watch_ends_once_the_board_and_every_cell_are_gone() {
+        let board = DepthBoard::new();
+        let cell = board.register(QueueId::new());
+        let mut watch = board.watch();
+
+        drop(cell);
+        drop(board);
+
+        assert!(watch.changed().await.is_none());
+    }
+}

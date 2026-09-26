@@ -344,13 +344,52 @@ mod tests {
     }
 
     #[test]
-    fn an_evicted_annotation_is_not_counted_as_a_dropped_message() {
+    fn overflow_evicts_messages_behind_an_older_annotation_and_keeps_the_annotation() {
         let mut pushed = vec![annotation("m0")];
-        pushed.extend((1..=CAP).map(|i| message(&format!("m{i}"))));
+        pushed.extend((0..=CAP).map(|i| message(&format!("m{i}"))));
 
         assert_eq!(
             inbox_after(pushed),
-            vec![msg("m1"), msg("m2"), msg("m3"), msg("m4")]
+            vec![
+                Shape::Note,
+                Shape::Gap(2, 0),
+                msg("m2"),
+                msg("m3"),
+                msg("m4")
+            ]
+        );
+    }
+
+    #[test]
+    fn an_annotation_is_evicted_only_when_no_message_is_left_and_counts_as_a_skipped_event() {
+        let pushed = (0..=CAP).map(|i| annotation(&format!("m{i}"))).collect();
+
+        assert_eq!(
+            inbox_after(pushed),
+            vec![
+                Shape::Gap(0, 1),
+                Shape::Note,
+                Shape::Note,
+                Shape::Note,
+                Shape::Note
+            ]
+        );
+    }
+
+    #[test]
+    fn an_evicted_message_between_two_gaps_merges_them_into_one() {
+        let mut pushed = vec![annotation("x"), gap(0, 2), message("m0"), gap(0, 3)];
+        pushed.extend((1..CAP).map(|i| message(&format!("m{i}"))));
+
+        assert_eq!(
+            inbox_after(pushed),
+            vec![
+                Shape::Note,
+                Shape::Gap(1, 5),
+                msg("m1"),
+                msg("m2"),
+                msg("m3")
+            ]
         );
     }
 
@@ -519,6 +558,35 @@ mod tests {
                     }
                 )
             );
+        });
+    }
+
+    #[gpui::test]
+    fn a_deletion_queued_ahead_of_a_flood_still_marks_its_row_on_screen(cx: &mut TestAppContext) {
+        let channel = Arc::new(FeedChannel {
+            inbox: Mutex::new(FeedInbox::new(CAP)),
+            wake: Notify::new(),
+        });
+        channel.push(annotation("m0"));
+        for i in 1..=2 * CAP {
+            channel.push(message(&format!("m{i}")));
+        }
+        let feed = cx.new(|_| {
+            let mut feed = ChatFeed::new();
+            feed.apply_event(&chat_event("m0"));
+            feed
+        });
+
+        ChatFeedBridge { channel }.start(
+            &mut cx.to_async(),
+            feed.clone(),
+            cx.new(|_| EventLoss::new()),
+        );
+        cx.run_until_parked();
+
+        feed.read_with(cx, |feed, _| {
+            let first = feed.get(feed.start_seq()).unwrap();
+            assert_eq!((first.id.as_ref(), first.moderated), ("m0", true));
         });
     }
 

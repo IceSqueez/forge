@@ -649,3 +649,47 @@ fn retry_screen(
         .child(retry);
     centered(card(body, palette), palette, density)
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::{Queue, QueueId};
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::{held_queue_scheduler, hold_one_dispatch, runtime};
+
+    fn queue(id: QueueId) -> Queue {
+        Queue {
+            id,
+            name: "Default".to_owned(),
+            description: String::new(),
+            concurrency: 1,
+        }
+    }
+
+    fn pending_in(
+        health: &Entity<QueueHealth>,
+        id: QueueId,
+        cx: &mut TestAppContext,
+    ) -> Option<usize> {
+        health.read_with(cx, |health, _| health.depth(id).map(|depth| depth.pending))
+    }
+
+    #[gpui::test]
+    fn the_depth_bridge_carries_every_later_depth_into_queue_health(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, queue(id));
+        hold_one_dispatch(&rt, &scheduler, id);
+        let health = cx.new(|_| QueueHealth::new());
+
+        start_queue_depth_bridge(&mut cx.to_async(), health.clone(), scheduler.watch_depths());
+        cx.run_until_parked();
+        let at_start = pending_in(&health, id, cx);
+        hold_one_dispatch(&rt, &scheduler, id);
+        cx.executor().advance_clock(QUEUE_DEPTH_REPAINT_INTERVAL);
+        cx.run_until_parked();
+
+        assert_eq!((at_start, pending_in(&health, id, cx)), (Some(1), Some(2)));
+    }
+}

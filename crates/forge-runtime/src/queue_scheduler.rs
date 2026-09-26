@@ -2265,4 +2265,180 @@ mod tests {
             "a widened limit must wake the acquire without waiting for a permit drop"
         );
     }
+
+    async fn await_depths(
+        watch: &mut QueueDepthWatch,
+        settled: impl Fn(&crate::QueueDepths) -> bool,
+    ) -> crate::QueueDepths {
+        let mut depths = watch.current();
+        while !settled(&depths) {
+            match tokio::time::timeout(Duration::from_secs(3), watch.changed()).await {
+                Ok(Some(next)) => depths = next,
+                _ => break,
+            }
+        }
+        depths
+    }
+
+    async fn settled_depth(
+        watch: &mut QueueDepthWatch,
+        q_id: QueueId,
+        expected: crate::QueueDepth,
+    ) -> Option<crate::QueueDepth> {
+        await_depths(watch, |depths| depths.get(&q_id) == Some(&expected))
+            .await
+            .get(&q_id)
+            .copied()
+    }
+
+    fn depth(pending: usize, in_flight: usize, overflowed: u64) -> crate::QueueDepth {
+        crate::QueueDepth {
+            pending,
+            in_flight,
+            overflowed,
+        }
+    }
+
+    async fn held_log_queues(
+        q_ids: &[QueueId],
+        a_id: ActionId,
+    ) -> (Sandboxed<Arc<dyn DataProvider>>, QueueSchedulerHandle) {
+        let dp = make_dp().await;
+        for q_id in q_ids {
+            seed(&dp, &nonblocking(*q_id), &log_action(a_id, *q_id)).await;
+        }
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let queues = q_ids.iter().map(|q_id| nonblocking(*q_id)).collect();
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), queues);
+        for q_id in q_ids {
+            sched.set_mode(*q_id, QueueMode::HOLDING).await.unwrap();
+        }
+        (dp, sched)
+    }
+
+    #[tokio::test]
+    async fn depth_watch_counts_work_held_by_a_frozen_queue_and_empties_once_it_runs() {
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let (_dp, sched) = held_log_queues(&[q_id], a_id).await;
+        let mut watch = sched.watch_depths();
+
+        for _ in 0..3 {
+            sched.dispatch(req(q_id, a_id)).await.unwrap();
+        }
+        assert_eq!(
+            settled_depth(&mut watch, q_id, depth(3, 0, 0)).await,
+            Some(depth(3, 0, 0))
+        );
+
+        sched.set_mode(q_id, QueueMode::RUNNING).await.unwrap();
+        assert_eq!(
+            settled_depth(&mut watch, q_id, depth(0, 0, 0)).await,
+            Some(depth(0, 0, 0))
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn depth_watch_shows_the_running_task_in_flight_and_clears_it_when_it_finishes() {
+        let q_id = QueueId::new();
+        let (a, b) = (ActionId::new(), ActionId::new());
+        let (_dp, _bus, sched) = serial_queue_with_waits(&[(a, 300), (b, 0)], q_id).await;
+        let mut watch = sched.watch_depths();
+
+        sched.dispatch(req(q_id, a)).await.unwrap();
+        sched.dispatch(req(q_id, b)).await.unwrap();
+        assert_eq!(
+            settled_depth(&mut watch, q_id, depth(1, 1, 0)).await,
+            Some(depth(1, 1, 0))
+        );
+
+        assert_eq!(
+            settled_depth(&mut watch, q_id, depth(0, 0, 0)).await,
+            Some(depth(0, 0, 0))
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn depth_watch_carries_the_overflow_count_and_zeroes_it_on_a_real_mode_change() {
+        let (q_id, _bus, sched) = frozen_queue_filled_to_the_cap().await;
+        let mut watch = sched.watch_depths();
+
+        sched.dispatch(req(q_id, ActionId::new())).await.unwrap();
+        assert_eq!(
+            settled_depth(&mut watch, q_id, depth(MAX_PENDING_PER_QUEUE, 0, 1)).await,
+            Some(depth(MAX_PENDING_PER_QUEUE, 0, 1))
+        );
+
+        sched.set_mode(q_id, QueueMode::PAUSED).await.unwrap();
+        assert_eq!(
+            settled_depth(&mut watch, q_id, depth(MAX_PENDING_PER_QUEUE, 0, 0)).await,
+            Some(depth(MAX_PENDING_PER_QUEUE, 0, 0))
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn clearing_a_held_queue_publishes_an_empty_pending_depth() {
+        let q_id = QueueId::new();
+        let a_id = ActionId::new();
+        let (_dp, sched) = held_log_queues(&[q_id], a_id).await;
+        let mut watch = sched.watch_depths();
+        for _ in 0..2 {
+            sched.dispatch(req(q_id, a_id)).await.unwrap();
+        }
+        assert_eq!(
+            settled_depth(&mut watch, q_id, depth(2, 0, 0)).await,
+            Some(depth(2, 0, 0))
+        );
+
+        sched.clear(q_id, true).await.unwrap();
+
+        assert_eq!(watch.current().get(&q_id), Some(&depth(0, 0, 0)));
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn depth_watch_keeps_each_queue_on_its_own_counts() {
+        let (first, second) = (QueueId::new(), QueueId::new());
+        let a_id = ActionId::new();
+        let (_dp, sched) = held_log_queues(&[first, second], a_id).await;
+        let mut watch = sched.watch_depths();
+
+        for _ in 0..2 {
+            sched.dispatch(req(first, a_id)).await.unwrap();
+        }
+        sched.dispatch(req(second, a_id)).await.unwrap();
+
+        let depths = await_depths(&mut watch, |depths| {
+            depths.values().map(|depth| depth.pending).sum::<usize>() == 3
+        })
+        .await;
+        assert_eq!(
+            (
+                depths.get(&first).map(|d| d.pending),
+                depths.get(&second).map(|d| d.pending)
+            ),
+            (Some(2), Some(1))
+        );
+        sched.shutdown();
+    }
+
+    #[tokio::test]
+    async fn a_registered_queue_joins_the_depths_and_a_deregistered_one_leaves_them() {
+        let dp = make_dp().await;
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let sched = spawn_sched(&dp, &bus, Arc::new(SubActionRegistry::new()), vec![]);
+        let q_id = QueueId::new();
+        let mut watch = sched.watch_depths();
+
+        sched.register(nonblocking(q_id)).await.unwrap();
+        let joined = watch.current().get(&q_id).copied();
+        sched.deregister(q_id).await.unwrap();
+        let left = await_depths(&mut watch, |depths| !depths.contains_key(&q_id)).await;
+
+        assert_eq!((joined, left.len()), (Some(depth(0, 0, 0)), 0));
+        sched.shutdown();
+    }
 }

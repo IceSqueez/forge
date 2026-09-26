@@ -1,5 +1,6 @@
 use gpui::{AppContext, Context, Entity};
 
+use crate::event_loss::EventLoss;
 use crate::footer::Footer;
 use crate::platforms::PlatformConnectivity;
 use crate::runtime_status::RuntimeStatus;
@@ -18,12 +19,13 @@ impl Chrome {
     pub fn new(
         status: Entity<RuntimeStatus>,
         connectivity: Entity<PlatformConnectivity>,
+        event_loss: Entity<EventLoss>,
         current: Screen,
         cx: &mut Context<AppShell>,
     ) -> Self {
         let titlebar = cx.new(TitleBar::new);
         let sidebar = cx.new(|cx| SidebarNav::new(current, connectivity.clone(), cx));
-        let footer = cx.new(|cx| Footer::new(status, connectivity, cx));
+        let footer = cx.new(|cx| Footer::new(status, connectivity, event_loss, cx));
         Self {
             titlebar,
             sidebar,

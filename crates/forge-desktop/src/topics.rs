@@ -2,6 +2,7 @@ use gpui::Entity;
 
 use crate::chat_feed::ChatFeed;
 use crate::event_log::EventLog;
+use crate::event_loss::EventLoss;
 use crate::globals::Globals;
 use crate::home_stats::HomeStats;
 use crate::platforms::PlatformConnectivity;
@@ -16,6 +17,7 @@ pub struct Topics {
     pub platforms: Entity<PlatformConnectivity>,
     pub speak: Entity<SpeakState>,
     pub queue_health: Entity<QueueHealth>,
+    pub event_loss: Entity<EventLoss>,
 }
 
 impl Topics {
@@ -28,6 +30,7 @@ impl Topics {
         platforms: Entity<PlatformConnectivity>,
         speak: Entity<SpeakState>,
         queue_health: Entity<QueueHealth>,
+        event_loss: Entity<EventLoss>,
     ) -> Self {
         Self {
             chat_feed,
@@ -37,6 +40,7 @@ impl Topics {
             platforms,
             speak,
             queue_health,
+            event_loss,
         }
     }
 }

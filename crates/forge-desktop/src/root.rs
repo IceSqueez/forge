@@ -6,9 +6,8 @@ use forge_components::{
     icon, mono_family, primary_button, radius, spacing, tr,
 };
 use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
-use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle};
+use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle, LossWatch};
 use forge_storage::CredentialsKeyLoss;
-use forge_types::{ChatModerationAction, ChatModerationPayload};
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, App, AppContext, AsyncApp, Context, Entity, Window, WindowHandle, div, prelude::*,
@@ -16,8 +15,10 @@ use gpui::{
 
 use crate::async_bridge::{BridgeFlow, drain_subscription};
 use crate::boot::{BootFailure, build_runtime};
-use crate::chat_feed::{ChatFeed, ChatMessage, DEFAULT_DISPLAY_LIMIT, chat_source, platform_of};
+use crate::chat_feed::{ChatFeed, ChatMessage, DEFAULT_DISPLAY_LIMIT};
+use crate::chat_feed_bridge::ChatFeedBridge;
 use crate::event_log::EventLog;
+use crate::event_loss::{EventLoss, UI_EVENTS};
 use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
 use crate::log_tail::LogTail;
@@ -32,6 +33,8 @@ use crate::speak_state::SpeakState;
 use crate::toasts::PushToast;
 use crate::topics::Topics;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
+
+const LOSS_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
 
 enum BootState {
     Booting,
@@ -115,6 +118,7 @@ pub fn run_boot(
     let platforms = cx.new(|_| PlatformConnectivity::new());
     let speak = cx.new(|_| SpeakState::new());
     let queue_health = cx.new(|_| QueueHealth::new());
+    let event_loss = cx.new(|_| EventLoss::new());
 
     let (hotkey_host, hotkey_main_thread) = forge_hotkey::main_thread_channel();
     cx.spawn(async move |_| hotkey_host.run().await).detach();
@@ -139,10 +143,13 @@ pub fn run_boot(
                 let handles = Arc::new(handles);
                 // Subscribe BEFORE seeding: a platform that flips to Connected between
                 // the seed snapshot and the bridge starting would otherwise be lost.
-                let bridge_sub = handles.bus.subscribe();
+                let bridge_sub = handles.bus.subscribe_observer(UI_EVENTS);
+                let chat_feed_bridge = ChatFeedBridge::subscribe(&handles.bus, &handles.rt_handle);
+                let loss_watch = handles.bus.watch_loss();
+                let event_loss_for_bridge = event_loss.clone();
+                let event_loss_for_chat = event_loss.clone();
                 let handles_for_shell = Arc::clone(&handles);
                 let status_for_clock = status.clone();
-                let chat_feed_for_bridge = chat_feed.clone();
                 let home_stats_for_bridge = home_stats.clone();
                 let home_stats_for_viewers = home_stats.clone();
                 let event_log_for_bridge = event_log.clone();
@@ -178,6 +185,7 @@ pub fn run_boot(
                         platforms,
                         speak,
                         queue_health,
+                        event_loss,
                     );
                     let shell = cx.new(|cx| {
                         AppShell::new(
@@ -209,14 +217,15 @@ pub fn run_boot(
                     }
                     seed_chat_history(
                         cx,
-                        chat_feed_for_history,
+                        chat_feed_for_history.clone(),
                         backend_for_history,
                         rt_handle_for_history,
                     )
                     .await;
+                    start_loss_bridge(cx, event_loss_for_bridge, loss_watch);
+                    chat_feed_bridge.start(cx, chat_feed_for_history, event_loss_for_chat);
                     start_bridge(
                         cx,
-                        chat_feed_for_bridge,
                         home_stats_for_bridge,
                         event_log_for_bridge,
                         platforms_for_bridge,
@@ -294,7 +303,6 @@ async fn seed_chat_history(
 
 fn start_bridge(
     cx: &mut AsyncApp,
-    chat_feed: Entity<ChatFeed>,
     home_stats: Entity<HomeStats>,
     event_log: Entity<EventLog>,
     platforms: Entity<PlatformConnectivity>,
@@ -350,47 +358,6 @@ fn start_bridge(
                 }
             });
 
-            chat_feed.update(cx, |feed, cx| {
-                let mut changed = false;
-                for event in batch {
-                    if let Some(message) = ChatFeed::message_from_event(event) {
-                        feed.push(message);
-                        changed = true;
-                    }
-                    if let Some(value) = event.payload.get(ChatModerationPayload::KEY)
-                        && let Ok(payload) =
-                            serde_json::from_value::<ChatModerationPayload>(value.clone())
-                        && let Some(platform) = chat_source(event.source).map(platform_of)
-                    {
-                        changed |= match payload.action {
-                            ChatModerationAction::DeleteMessage { message_id } => {
-                                feed.mark_deleted(&message_id)
-                            }
-                            ChatModerationAction::RemoveUser { user_name, .. } => {
-                                feed.mark_user(platform, &user_name)
-                            }
-                            ChatModerationAction::ClearChat => feed.clear_platform(platform),
-                        };
-                    }
-                    if event.kind == "command.matched"
-                        && let Some(caused_by) = event.caused_by
-                        && let Some(command) = event.payload.get("command").and_then(|v| v.as_str())
-                    {
-                        changed |= feed.mark_command(caused_by, command);
-                    }
-                    if event.kind == "action.start"
-                        && let Some(caused_by) = event.caused_by
-                        && let Some(action_name) =
-                            event.payload.get("action_name").and_then(|v| v.as_str())
-                    {
-                        changed |= feed.set_triggered(caused_by, action_name);
-                    }
-                }
-                if changed {
-                    cx.notify();
-                }
-            });
-
             queue_health.update(cx, |health, cx| {
                 let mut changed = false;
                 for event in batch {
@@ -410,6 +377,25 @@ fn start_bridge(
             BridgeFlow::Continue
         })
         .await;
+    })
+    .detach();
+}
+
+fn start_loss_bridge(cx: &mut AsyncApp, loss: Entity<EventLoss>, mut watch: LossWatch) {
+    cx.spawn(async move |cx| {
+        let mut report = watch.current();
+        loop {
+            loss.update(cx, |loss, cx| {
+                if loss.apply_report(report) {
+                    cx.notify();
+                }
+            });
+            cx.background_executor().timer(LOSS_REPAINT_INTERVAL).await;
+            match watch.changed().await {
+                Some(next) => report = next,
+                None => break,
+            }
+        }
     })
     .detach();
 }
@@ -633,132 +619,4 @@ fn retry_screen(
         )
         .child(retry);
     centered(card(body, palette), palette, density)
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)]
-mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
-    use std::sync::Arc;
-
-    use forge_events::{Event, EventSource};
-    use forge_runtime::EventBus;
-    use forge_types::{
-        ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSegment, EventId,
-        ModerationMarks,
-    };
-    use gpui::{AppContext as _, TestAppContext};
-
-    use super::start_bridge;
-    use crate::chat_feed::ChatFeed;
-    use crate::event_log::EventLog;
-    use crate::home_stats::HomeStats;
-    use crate::platforms::PlatformConnectivity;
-    use crate::queue_health::QueueHealth;
-    use crate::test_support::StubEventLog;
-
-    const MSG_ID: &str = "m1";
-
-    fn chat_message() -> Event {
-        let payload = ChatPayload {
-            platform_msg_id: MSG_ID.to_owned(),
-            author: "bob".to_owned(),
-            author_color: None,
-            segments: vec![ChatSegment::Text {
-                text: "!lurk".to_owned(),
-            }],
-            badges: vec![],
-            is_event: false,
-            event_detail: None,
-            moderation: ModerationMarks::default(),
-        };
-        Event::new(
-            EventSource::Twitch,
-            "chat.message",
-            serde_json::json!({ ChatPayload::KEY: payload }),
-        )
-    }
-
-    fn caused(kind: &str, payload: serde_json::Value, parent: EventId) -> Event {
-        Event::caused_by(EventSource::Core, kind, payload, parent)
-    }
-
-    fn delete(message_id: &str) -> Event {
-        let payload = ChatModerationPayload {
-            action: ChatModerationAction::DeleteMessage {
-                message_id: message_id.to_owned(),
-            },
-        };
-        Event::new(
-            EventSource::Twitch,
-            "chat.moderation",
-            serde_json::json!({ ChatModerationPayload::KEY: payload }),
-        )
-    }
-
-    #[gpui::test]
-    fn the_bridge_notifies_the_chat_feed_only_for_events_that_change_a_row(
-        cx: &mut TestAppContext,
-    ) {
-        let bus = EventBus::new(Arc::new(StubEventLog));
-        let feed = cx.new(|_| ChatFeed::new());
-        let notified = Rc::new(Cell::new(0_usize));
-        let _observer = cx.update(|cx| {
-            let notified = Rc::clone(&notified);
-            cx.observe(&feed, move |_, _| notified.set(notified.get() + 1))
-        });
-        start_bridge(
-            &mut cx.to_async(),
-            feed.clone(),
-            cx.new(|_| HomeStats::new()),
-            cx.new(|_| EventLog::new()),
-            cx.new(|_| PlatformConnectivity::new()),
-            cx.new(|_| QueueHealth::new()),
-            bus.subscribe(),
-        );
-
-        let message = chat_message();
-        let message_id = message.id;
-        let stranger = EventId::new();
-        let action = serde_json::json!({ "action_name": "Greet" });
-        let command = serde_json::json!({ "command": "!lurk" });
-        let steps = [
-            ("chat message", message, true),
-            (
-                "action.start for an unknown event",
-                caused("action.start", action.clone(), stranger),
-                false,
-            ),
-            (
-                "command.matched for an unknown event",
-                caused("command.matched", command.clone(), stranger),
-                false,
-            ),
-            (
-                "action.start on a plain message row",
-                caused("action.start", action.clone(), message_id),
-                false,
-            ),
-            ("delete of an unknown message", delete("ghost"), false),
-            (
-                "command.matched on the row",
-                caused("command.matched", command, message_id),
-                true,
-            ),
-            (
-                "action.start on the command row",
-                caused("action.start", action, message_id),
-                true,
-            ),
-            ("delete of the row", delete(MSG_ID), true),
-            ("repeated delete of the row", delete(MSG_ID), false),
-        ];
-        for (label, event, expect_notify) in steps {
-            let before = notified.get();
-            bus.publish(event);
-            cx.run_until_parked();
-            assert_eq!(notified.get() > before, expect_notify, "{label}");
-        }
-    }
 }

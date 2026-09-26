@@ -3,12 +3,16 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
 use forge_types::{
-    ChatEventDetail, ChatPayload, ChatReply, ChatSource, EventId, UnifiedChatRow, UserBadge,
+    ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
+    ChatSource, EventId, UnifiedChatRow, UserBadge,
 };
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
 
 pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
+
+const COMMAND_MATCHED_KIND: &str = "command.matched";
+const ACTION_START_KIND: &str = "action.start";
 
 #[derive(Clone, Debug)]
 pub struct ChatMessage {
@@ -143,12 +147,42 @@ impl AuthorIndex {
     }
 }
 
+/// `events` are observer-lag skips whose kinds are unknown, so how many of them were chat messages is not known.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FeedGap {
+    pub messages: u64,
+    pub events: u64,
+}
+
+impl FeedGap {
+    pub fn is_empty(&self) -> bool {
+        self.messages == 0 && self.events == 0
+    }
+
+    pub fn absorb(&mut self, other: FeedGap) {
+        self.messages = self.messages.saturating_add(other.messages);
+        self.events = self.events.saturating_add(other.events);
+    }
+
+    pub fn label(&self) -> String {
+        let messages = i64::try_from(self.messages).unwrap_or(i64::MAX);
+        let events = i64::try_from(self.events).unwrap_or(i64::MAX);
+        match (self.messages, self.events) {
+            (_, 0) => tr!("chat_gap_messages", count = messages),
+            (0, _) => tr!("chat_gap_events", count = events),
+            _ => tr!("chat_gap_both", messages = messages, events = events),
+        }
+    }
+}
+
 /// Rows carry a monotonic sequence number that survives eviction: `start_seq()` is the oldest retained row.
 pub struct ChatFeed {
     messages: VecDeque<ChatMessage>,
     capacity: usize,
     start_seq: u64,
     authors: AuthorIndex,
+    /// Keyed by the sequence number of the first row that arrived after the gap.
+    gaps: BTreeMap<u64, FeedGap>,
 }
 
 impl ChatFeed {
@@ -158,6 +192,7 @@ impl ChatFeed {
             capacity: DEFAULT_DISPLAY_LIMIT as usize,
             start_seq: 0,
             authors: AuthorIndex::default(),
+            gaps: BTreeMap::new(),
         }
     }
 
@@ -198,21 +233,107 @@ impl ChatFeed {
     /// Live rows already present are re-sequenced after the history, so observers see them as evicted and re-appended.
     pub fn seed(&mut self, history: Vec<ChatMessage>) {
         let live = std::mem::take(&mut self.messages);
+        let shift = (live.len() + history.len()) as u64;
+        let gaps = std::mem::take(&mut self.gaps);
         self.start_seq += live.len() as u64;
         self.authors = AuthorIndex::default();
         for message in history.into_iter().chain(live) {
             self.push(message);
         }
+        self.gaps = gaps
+            .into_iter()
+            .map(|(seq, gap)| (seq + shift, gap))
+            .filter(|(seq, _)| *seq >= self.start_seq)
+            .collect();
     }
 
     fn evict_overflow(&mut self) {
+        let mut evicted = false;
         while self.messages.len() > self.capacity {
             let Some(oldest) = self.messages.pop_front() else {
                 break;
             };
             self.authors.forget_oldest(&oldest);
             self.start_seq += 1;
+            evicted = true;
         }
+        if evicted {
+            self.gaps = self.gaps.split_off(&self.start_seq);
+        }
+    }
+
+    pub fn record_gap(&mut self, gap: FeedGap) -> bool {
+        if gap.is_empty() {
+            return false;
+        }
+        let at = self.end_seq();
+        self.gaps.entry(at).or_default().absorb(gap);
+        true
+    }
+
+    /// Sums every gap recorded after row `after` (the previous shown row, if any) up to and including row `seq`.
+    pub fn gap_before(&self, after: Option<u64>, seq: u64) -> FeedGap {
+        let from = after.map_or(self.start_seq, |after| after.saturating_add(1));
+        let mut total = FeedGap::default();
+        if from > seq {
+            return total;
+        }
+        for gap in self.gaps.range(from..=seq).map(|(_, gap)| gap) {
+            total.absorb(*gap);
+        }
+        total
+    }
+
+    pub fn apply_event(&mut self, event: &Event) -> bool {
+        if let Some(message) = Self::message_from_event(event) {
+            self.push(message);
+            return true;
+        }
+        if let Some(value) = event.payload.get(ChatModerationPayload::KEY)
+            && let Ok(payload) = serde_json::from_value::<ChatModerationPayload>(value.clone())
+            && let Some(platform) = chat_source(event.source).map(platform_of)
+        {
+            return match payload.action {
+                ChatModerationAction::DeleteMessage { message_id } => {
+                    self.mark_deleted(&message_id)
+                }
+                ChatModerationAction::RemoveUser { user_name, .. } => {
+                    self.mark_user(platform, &user_name)
+                }
+                ChatModerationAction::ClearChat => self.clear_platform(platform),
+            };
+        }
+        let Some(caused_by) = event.caused_by else {
+            return false;
+        };
+        match event.kind.as_str() {
+            COMMAND_MATCHED_KIND => event
+                .payload
+                .get("command")
+                .and_then(|v| v.as_str())
+                .is_some_and(|command| self.mark_command(caused_by, command)),
+            ACTION_START_KIND => event
+                .payload
+                .get("action_name")
+                .and_then(|v| v.as_str())
+                .is_some_and(|action_name| self.set_triggered(caused_by, action_name)),
+            _ => false,
+        }
+    }
+
+    pub fn annotates_rows(event: &Event) -> bool {
+        let moderation = chat_source(event.source).is_some()
+            && event.payload.get(ChatModerationPayload::KEY).is_some();
+        let run_mark = event.caused_by.is_some()
+            && matches!(
+                event.kind.as_str(),
+                COMMAND_MATCHED_KIND | ACTION_START_KIND
+            );
+        moderation || run_mark
+    }
+
+    pub fn is_message(event: &Event) -> bool {
+        chat_source(event.source).is_some() && event.payload.get(ChatPayload::KEY).is_some()
     }
 
     pub fn set_triggered(&mut self, event_id: EventId, action_name: &str) -> bool {

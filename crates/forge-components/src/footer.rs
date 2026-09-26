@@ -1,9 +1,13 @@
-use gpui::{IntoElement, ParentElement, Pixels, Rgba, SharedString, Styled, div, px};
+use gpui::{
+    AnyElement, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels, Rgba,
+    SharedString, StatefulInteractiveElement, Styled, div, px,
+};
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
 use crate::status::status_dot;
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, mono_family, spacing};
+use crate::tooltip::tooltip_lines_builder;
 
 /// Overlays reserve this bottom clearance so they never paint under the bar.
 pub const FOOTER_HEIGHT: Pixels = px(24.0);
@@ -18,6 +22,8 @@ const RIGHT_GAP: Pixels = px(12.0);
 const STATUS_DOT_SIZE: Pixels = px(6.0);
 
 const CLOCK_ICON_SIZE: Pixels = px(10.0);
+const ALERT_ICON_SIZE: Pixels = CLOCK_ICON_SIZE;
+const ALERT_GAP: Pixels = UPTIME_GAP;
 
 pub fn split_version_stage(version: &str) -> (&str, Option<&str>) {
     match version.split_once('-') {
@@ -40,6 +46,7 @@ pub fn app_footer(
     connected: u8,
     connected_label: impl Into<SharedString>,
     uptime_label: impl Into<SharedString>,
+    trailing: Option<AnyElement>,
     palette: &ForgePalette,
 ) -> impl IntoElement {
     let shell = palette.shell;
@@ -91,13 +98,18 @@ pub fn app_footer(
         .child(icon(Icon::Clock, CLOCK_ICON_SIZE, text_faint))
         .child(mono_cell(uptime_label, text_secondary, FONT_XS));
 
-    let right = div()
+    let mut right = div()
         .flex()
         .items_center()
         .gap(RIGHT_GAP)
         .child(conn_row)
         .child(mono_cell("·", text_faint, FONT_XS))
         .child(uptime_row);
+    if let Some(trailing) = trailing {
+        right = right
+            .child(mono_cell("·", text_faint, FONT_XS))
+            .child(trailing);
+    }
 
     div()
         .w_full()
@@ -111,6 +123,23 @@ pub fn app_footer(
         .bg(shell)
         .child(left)
         .child(right)
+}
+
+pub fn footer_alert(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    color: Rgba,
+    details: Vec<SharedString>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(ALERT_GAP)
+        .child(icon(Icon::AlertTriangle, ALERT_ICON_SIZE, color))
+        .child(mono_cell(label, color, FONT_XS))
+        .tooltip(tooltip_lines_builder(details, palette))
 }
 
 #[cfg(test)]

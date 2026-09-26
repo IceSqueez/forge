@@ -78,6 +78,43 @@ home_health_dropped_label = DROPPED · OBS
 home_health_fps_label = FPS
 home_health_cpu_label = CPU
 
+## Home - event loss card and footer badge
+
+event_loss_title = Event loss
+event_loss_scope_hint = since start · resets on restart
+event_loss_none = No events lost since start
+event_loss_footer_badge = { $count } dropped
+event_loss_tooltip_title = Events lost since start
+event_loss_tooltip_row = { $consumer } ({ $tier }) - { $detail }
+event_loss_tier_critical = lossless
+event_loss_tier_observer = display
+event_loss_part_priority = { $count ->
+    [one] { $count } priority dropped
+   *[other] { $count } priority dropped
+}
+event_loss_part_bulk = { $count ->
+    [one] { $count } bulk dropped
+   *[other] { $count } bulk dropped
+}
+event_loss_part_skipped = { $count ->
+    [one] { $count } skipped
+   *[other] { $count } skipped
+}
+event_loss_part_unwritten = { $count ->
+    [one] { $count } not saved
+   *[other] { $count } not saved
+}
+event_loss_consumer_trigger_evaluator = Trigger evaluation
+event_loss_consumer_event_log = Event log
+event_loss_consumer_chat_history = Chat history
+event_loss_consumer_viewer_tracker = Viewer tracking
+event_loss_consumer_run_history = Run history
+event_loss_consumer_event_trail = Event trail
+event_loss_consumer_observer = Other views
+event_loss_consumer_ui_events = App views
+event_loss_consumer_ui_chat_feed = Chat feed
+event_loss_consumer_ui_chat_display = Chat feed display
+
 ## Home - connections strip
 
 home_connections_title = Integrations
@@ -1468,6 +1505,15 @@ chat_send_placeholder_to = Send to {$platform} chat...
 chat_search_placeholder = Search messages...
 chat_new_message = 1 new message
 chat_new_messages = { $count } new messages
+chat_gap_messages = { $count ->
+    [one] { $count } message skipped here
+   *[other] { $count } messages skipped here
+}
+chat_gap_events = { $count ->
+    [one] { $count } event skipped here - some may have been messages
+   *[other] { $count } events skipped here - some may have been messages
+}
+chat_gap_both = { $messages } messages and { $events } other events skipped here
 chat_viewers_title = Viewers
 
 ## Live Chat - viewer drawer

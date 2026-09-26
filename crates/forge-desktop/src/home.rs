@@ -14,6 +14,8 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::event_loss::EventLoss;
+use crate::event_loss_card::event_loss_card;
 use crate::home_stats::{HomeEvent, HomeStats, Integration, ObsHealth};
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
@@ -80,27 +82,33 @@ struct JumpCard {
 
 pub struct HomeView {
     stats: Entity<HomeStats>,
+    event_loss: Entity<EventLoss>,
     backend: Arc<dyn DataProvider>,
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
     _stats_obs: Subscription,
+    _loss_obs: Subscription,
 }
 
 impl HomeView {
     pub fn new(
         stats: Entity<HomeStats>,
+        event_loss: Entity<EventLoss>,
         backend: Arc<dyn DataProvider>,
         trigger_registry: Arc<TriggerRegistry>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
         let stats_obs = cx.observe(&stats, |_, _, cx| cx.notify());
+        let loss_obs = cx.observe(&event_loss, |_, _, cx| cx.notify());
         Self {
             stats,
+            event_loss,
             backend,
             trigger_registry,
             rt_handle,
             _stats_obs: stats_obs,
+            _loss_obs: loss_obs,
         }
     }
 
@@ -1037,6 +1045,7 @@ impl Render for HomeView {
             self.render_connections(connections, connected, total, &palette, density, cx);
         let recent_card = self.render_recent_events(recent, &palette, density, cx);
         let glance_card = self.render_glance(actions, commands, fired, globals, &palette, density);
+        let loss_card = event_loss_card(self.event_loss.read(cx), &palette, density);
 
         let bottom = div()
             .w_full()
@@ -1053,6 +1062,7 @@ impl Render for HomeView {
             .child(hero)
             .child(jump_cards)
             .child(self.render_stream_health(obs_health, &palette, density))
+            .child(loss_card)
             .child(connections_strip)
             .child(bottom);
 

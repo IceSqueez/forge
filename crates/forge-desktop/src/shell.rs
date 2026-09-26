@@ -82,7 +82,13 @@ impl AppShell {
         let screen = initial_screen;
         let content = Self::content_for(&screen, &topics, &handles, cx);
         let focus = cx.focus_handle();
-        let chrome = Chrome::new(status, topics.platforms.clone(), screen.clone(), cx);
+        let chrome = Chrome::new(
+            status,
+            topics.platforms.clone(),
+            topics.event_loss.clone(),
+            screen.clone(),
+            cx,
+        );
 
         cx.subscribe(
             &chrome.sidebar,
@@ -132,6 +138,7 @@ impl AppShell {
                 let home = cx.new(|cx| {
                     HomeView::new(
                         topics.home_stats.clone(),
+                        topics.event_loss.clone(),
                         home_backend,
                         home_registry,
                         home_rt,

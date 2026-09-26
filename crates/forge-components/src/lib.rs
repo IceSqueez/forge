@@ -2,6 +2,7 @@ pub mod avatar;
 pub mod breadcrumb;
 pub mod buttons;
 pub mod cards;
+pub mod chat_gap_row;
 pub mod chat_row;
 pub mod chip;
 pub mod confirm;
@@ -53,6 +54,7 @@ pub use cards::{
     Card, EmptyState, PadTile, RowCard, ToolbarRow, card, empty_state, field_hint, field_label,
     field_title, metric_card, nav_card, pad_tile, row_card, setting_row, stat_row, toolbar_row,
 };
+pub use chat_gap_row::chat_gap_row;
 pub use chat_row::{
     BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, badge_color, badge_label, chat_row,
 };
@@ -66,7 +68,7 @@ pub use data::{
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
 pub use error_row::error_row;
 pub use fonts::embedded_fonts;
-pub use footer::{FOOTER_HEIGHT, app_footer, split_version_stage};
+pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, split_version_stage};
 pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
     GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup,

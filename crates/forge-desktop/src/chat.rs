@@ -7,9 +7,10 @@ use forge_components::{
     BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, Density, FONT_MD,
     FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputBar, InputBarEvent, InputEvent,
     MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge, ResizeRange, SearchState, Spacing,
-    TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label, body_family, chat_row,
-    chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider, menu_header,
-    menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot, tr,
+    TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label, body_family, chat_gap_row,
+    chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider,
+    menu_header, menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot,
+    tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -1147,9 +1148,17 @@ impl ChatView {
         let pal = *palette;
         let view = cx.entity();
         let list_el = list(self.chat_list.clone(), move |ix, _window, app| {
-            let Some(msg) = snapshot.get(ix).and_then(|seq| feed.read(app).get(*seq)) else {
+            let Some(seq) = snapshot.get(ix).copied() else {
                 return div().into_any_element();
             };
+            let previous = ix
+                .checked_sub(1)
+                .and_then(|prev| snapshot.get(prev).copied());
+            let feed_state = feed.read(app);
+            let Some(msg) = feed_state.get(seq) else {
+                return div().into_any_element();
+            };
+            let gap = feed_state.gap_before(previous, seq);
             let data = ChatRow {
                 id: msg.id.clone(),
                 timestamp: msg.timestamp.clone(),
@@ -1174,7 +1183,15 @@ impl ChatView {
                     view.update(app, |this, cx| this.open_viewer(username.clone(), cx));
                 },
             );
-            let mut framed = div().pb(row_gap).child(row);
+            let mut framed = div().pb(row_gap);
+            if !gap.is_empty() {
+                framed = framed.child(div().pb(row_gap).child(chat_gap_row(
+                    gap.label(),
+                    &pal,
+                    density,
+                )));
+            }
+            framed = framed.child(row);
             if has_user {
                 framed = framed.on_mouse_down(
                     MouseButton::Right,

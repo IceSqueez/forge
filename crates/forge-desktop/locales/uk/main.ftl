@@ -78,6 +78,51 @@ home_health_dropped_label = ВТРАЧЕНІ · OBS
 home_health_fps_label = FPS
 home_health_cpu_label = CPU
 
+## Головна - картка втрат подій і значок у підвалі
+
+event_loss_title = Втрати подій
+event_loss_scope_hint = від запуску · скидається після перезапуску
+event_loss_none = Від запуску жодної події не втрачено
+event_loss_footer_badge = { $count } втрачено
+event_loss_tooltip_title = Події, втрачені від запуску
+event_loss_tooltip_row = { $consumer } ({ $tier }) - { $detail }
+event_loss_tier_critical = без втрат
+event_loss_tier_observer = відображення
+event_loss_part_priority = { $count ->
+    [one] { $count } пріоритетна відкинута
+    [few] { $count } пріоритетні відкинуто
+    [many] { $count } пріоритетних відкинуто
+   *[other] { $count } пріоритетних відкинуто
+}
+event_loss_part_bulk = { $count ->
+    [one] { $count } масова відкинута
+    [few] { $count } масові відкинуто
+    [many] { $count } масових відкинуто
+   *[other] { $count } масових відкинуто
+}
+event_loss_part_skipped = { $count ->
+    [one] { $count } пропущена
+    [few] { $count } пропущені
+    [many] { $count } пропущених
+   *[other] { $count } пропущених
+}
+event_loss_part_unwritten = { $count ->
+    [one] { $count } не збережена
+    [few] { $count } не збережені
+    [many] { $count } не збережених
+   *[other] { $count } не збережених
+}
+event_loss_consumer_trigger_evaluator = Перевірка тригерів
+event_loss_consumer_event_log = Журнал подій
+event_loss_consumer_chat_history = Історія чату
+event_loss_consumer_viewer_tracker = Облік глядачів
+event_loss_consumer_run_history = Історія запусків
+event_loss_consumer_event_trail = Слід подій
+event_loss_consumer_observer = Інші вікна
+event_loss_consumer_ui_events = Вікна застосунку
+event_loss_consumer_ui_chat_feed = Стрічка чату
+event_loss_consumer_ui_chat_display = Показ стрічки чату
+
 ## Головна - смуга підключень
 
 home_connections_title = Інтеграції
@@ -1490,6 +1535,19 @@ chat_new_messages = { $count ->
     [many] { $count } нових повідомлень
    *[other] { $count } нових повідомлень
 }
+chat_gap_messages = { $count ->
+    [one] Тут пропущено { $count } повідомлення
+    [few] Тут пропущено { $count } повідомлення
+    [many] Тут пропущено { $count } повідомлень
+   *[other] Тут пропущено { $count } повідомлень
+}
+chat_gap_events = { $count ->
+    [one] Тут пропущено { $count } подію - серед них могли бути повідомлення
+    [few] Тут пропущено { $count } події - серед них могли бути повідомлення
+    [many] Тут пропущено { $count } подій - серед них могли бути повідомлення
+   *[other] Тут пропущено { $count } подій - серед них могли бути повідомлення
+}
+chat_gap_both = Тут пропущено повідомлень: { $messages }, інших подій: { $events }
 chat_viewers_title = Глядачі
 
 ## Живий чат - бічна панель глядачів

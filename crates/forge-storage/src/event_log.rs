@@ -38,19 +38,35 @@ pub trait EventLogRepo: Send + Sync {
     async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 
+pub const DEFAULT_EVENT_LOG_RETENTION_DAYS: u32 = 7;
+pub const MIN_EVENT_LOG_RETENTION_DAYS: u32 = 1;
+pub const MAX_EVENT_LOG_RETENTION_DAYS: u32 = 365;
+
+/// Clamped to `MIN_EVENT_LOG_RETENTION_DAYS..=MAX_EVENT_LOG_RETENTION_DAYS`; unset or unparsable reads as the default.
 pub async fn event_log_retention_days(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
     let raw = repo
         .get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS)
         .await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(7))
+    Ok(raw.as_deref().and_then(|s| s.trim().parse().ok()).map_or(
+        DEFAULT_EVENT_LOG_RETENTION_DAYS,
+        clamp_event_log_retention_days,
+    ))
 }
 
+/// Stores the clamped value, so a caller never persists a window the pruner would not honour.
 pub async fn set_event_log_retention_days(
     repo: &dyn SettingsRepo,
     days: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(reserved_keys::EVENT_LOG_RETENTION_DAYS, &days.to_string())
-        .await
+    repo.set_string(
+        reserved_keys::EVENT_LOG_RETENTION_DAYS,
+        &clamp_event_log_retention_days(days).to_string(),
+    )
+    .await
+}
+
+pub fn clamp_event_log_retention_days(days: u32) -> u32 {
+    days.clamp(MIN_EVENT_LOG_RETENTION_DAYS, MAX_EVENT_LOG_RETENTION_DAYS)
 }
 
 #[cfg(test)]

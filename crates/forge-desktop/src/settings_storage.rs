@@ -8,9 +8,10 @@ use forge_components::{
     spacing, tr,
 };
 use forge_storage::{
-    DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DataProvider, SettingsRepo, chat_history_display_limit,
-    chat_history_store_limit, event_log_retention_days, set_chat_history_display_limit,
-    set_chat_history_store_limit, set_event_log_retention_days,
+    DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider,
+    MAX_EVENT_LOG_RETENTION_DAYS, MIN_EVENT_LOG_RETENTION_DAYS, SettingsRepo,
+    chat_history_display_limit, chat_history_store_limit, event_log_retention_days,
+    set_chat_history_display_limit, set_chat_history_store_limit, set_event_log_retention_days,
 };
 use gpui::{
     ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div, prelude::*,
@@ -23,9 +24,6 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
 const DEFAULT_STORE_LIMIT: u32 = 5000;
-const DEFAULT_RETENTION_DAYS: u32 = 7;
-const MIN_RETENTION_DAYS: u32 = 1;
-const MAX_RETENTION_DAYS: u32 = 365;
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 
 pub struct SettingsStorageView {
@@ -61,7 +59,7 @@ impl SettingsStorageView {
                 .with_font_size(FONT_SM)
         });
         let retention_input = cx.new(|cx| {
-            TextInput::new(DEFAULT_RETENTION_DAYS.to_string(), cx)
+            TextInput::new(DEFAULT_EVENT_LOG_RETENTION_DAYS.to_string(), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
         });
@@ -89,7 +87,7 @@ impl SettingsStorageView {
             rt_handle,
             store_limit: DEFAULT_STORE_LIMIT,
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
-            retention_days: DEFAULT_RETENTION_DAYS,
+            retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
             backing_up: false,
             store_input,
             display_input,
@@ -344,7 +342,7 @@ fn parse_retention_days(raw: &str) -> Option<u32> {
     raw.trim()
         .parse::<u32>()
         .ok()
-        .filter(|v| (MIN_RETENTION_DAYS..=MAX_RETENTION_DAYS).contains(v))
+        .filter(|v| (MIN_EVENT_LOG_RETENTION_DAYS..=MAX_EVENT_LOG_RETENTION_DAYS).contains(v))
 }
 
 fn pane_header(

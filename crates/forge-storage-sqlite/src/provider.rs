@@ -9,7 +9,7 @@ use forge_storage::{
     GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo, QueueRepo,
     RevisingActionRepo, RevisingQueueRepo, RevisingTriggerInstanceRepo, ScriptRecord, ScriptRepo,
     ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -18,7 +18,7 @@ use tokio::sync::Notify;
 use crate::checkpoint_task::spawn_checkpoint_task;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
-use crate::retention_task::spawn_retention_task;
+use crate::retention_task::{RetentionSignals, RetentionTargets, spawn_retention_task};
 use crate::{
     SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
@@ -70,7 +70,14 @@ pub struct SqliteBackend {
     chat_history: Arc<SqliteChatHistoryRepo>,
     overlay: Arc<SqliteOverlayRepo>,
     media: Arc<SqliteMediaRepo>,
+    retention_window_changed: Arc<Notify>,
     shutdown: Arc<Notify>,
+}
+
+impl Drop for SqliteBackend {
+    fn drop(&mut self) {
+        self.shutdown.notify_one();
+    }
 }
 
 impl SqliteBackend {
@@ -131,6 +138,12 @@ impl SqliteBackend {
         self.shutdown.notify_one();
     }
 
+    fn signal_setting_changed(&self, key: &str) {
+        if key == reserved_keys::EVENT_LOG_RETENTION_DAYS {
+            self.retention_window_changed.notify_one();
+        }
+    }
+
     fn from_pool_and_credentials(
         pool: SqlitePools,
         credentials: SqliteCredentialsRepo,
@@ -138,26 +151,24 @@ impl SqliteBackend {
         media_root: std::path::PathBuf,
     ) -> Self {
         let shutdown = Arc::new(Notify::new());
+        let retention_window_changed = Arc::new(Notify::new());
         let catalog_revision = CatalogRevision::new();
-
-        let event_log_for_task =
-            Arc::new(SqliteEventLogRepo::new(pool.clone())) as Arc<dyn EventLogRepo>;
-        let history_for_task =
-            Arc::new(SqliteHistoryRepo::new(pool.clone())) as Arc<dyn HistoryRepo>;
-        let action_for_task = Arc::new(SqliteActionRepo::new(pool.clone())) as Arc<dyn ActionRepo>;
-        let settings_for_task =
-            Arc::new(SqliteSettingsRepo::new(pool.clone())) as Arc<dyn SettingsRepo>;
 
         if let Some(checkpointer) = pool.checkpointer() {
             spawn_checkpoint_task(checkpointer.clone(), pool.writer().clone());
         }
         spawn_retention_task(
-            event_log_for_task,
-            history_for_task,
-            action_for_task,
-            settings_for_task,
+            RetentionTargets {
+                event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
+                history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
+                action: Arc::new(SqliteActionRepo::new(pool.clone())),
+                settings: Arc::new(SqliteSettingsRepo::new(pool.clone())),
+            },
             prune_interval,
-            Arc::clone(&shutdown),
+            RetentionSignals {
+                window_changed: Arc::clone(&retention_window_changed),
+                shutdown: Arc::clone(&shutdown),
+            },
         );
 
         Self {
@@ -188,6 +199,7 @@ impl SqliteBackend {
             overlay: Arc::new(SqliteOverlayRepo::new(pool.clone())),
             media: Arc::new(SqliteMediaRepo::new(pool.clone(), media_root)),
             credentials,
+            retention_window_changed,
             shutdown,
             pool,
         }
@@ -387,11 +399,15 @@ impl SettingsRepo for SqliteBackend {
     }
 
     async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
-        self.settings.set_string(key, value).await
+        self.settings.set_string(key, value).await?;
+        self.signal_setting_changed(key);
+        Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<bool, StorageError> {
-        self.settings.delete(key).await
+        let deleted = self.settings.delete(key).await?;
+        self.signal_setting_changed(key);
+        Ok(deleted)
     }
 
     async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {

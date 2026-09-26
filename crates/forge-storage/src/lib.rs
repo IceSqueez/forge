@@ -29,7 +29,11 @@ pub use catalog::{
 pub use chat_history::ChatHistoryRepo;
 pub use credentials::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
 pub use error::StorageError;
-pub use event_log::{EventLogRepo, event_log_retention_days, set_event_log_retention_days};
+pub use event_log::{
+    DEFAULT_EVENT_LOG_RETENTION_DAYS, EventLogRepo, MAX_EVENT_LOG_RETENTION_DAYS,
+    MIN_EVENT_LOG_RETENTION_DAYS, clamp_event_log_retention_days, event_log_retention_days,
+    set_event_log_retention_days,
+};
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
 pub use media::{

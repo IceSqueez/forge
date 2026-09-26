@@ -154,12 +154,15 @@ impl EventBus {
     /// Never blocks: a full critical lane or a lagging observer loses events to drop accounting, not the publisher's time.
     pub fn publish(&self, event: Event) {
         let event = Arc::new(event);
-        self.ring
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .push(Arc::clone(&event));
-        let lane = self.lanes.load().lane_of(&event);
-        self.critical.deliver(&event, lane);
+        let lanes = self.lanes.load();
+        let transient = {
+            let mut ring = self.ring.lock().unwrap_or_else(|p| p.into_inner());
+            let transient = lanes.is_transient(&event, &ring);
+            ring.push(Arc::clone(&event));
+            transient
+        };
+        let lane = lanes.lane_of(&event);
+        self.critical.deliver(&event, lane, transient);
         let _ = self.sender.send(event);
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }
@@ -197,13 +200,23 @@ impl EventBus {
 
     /// Lossless tier: a queue of this consumer's own, fed on every publish from now on.
     pub fn subscribe_critical(&self, consumer: &'static str) -> CriticalSubscription {
-        let (sink, subscription) = CriticalSink::open(
+        let (sink, subscription) = self.open_critical(consumer);
+        self.critical.add(sink);
+        subscription
+    }
+
+    fn subscribe_critical_durable(&self, consumer: &'static str) -> CriticalSubscription {
+        let (sink, subscription) = self.open_critical(consumer);
+        self.critical.add(sink.durable_only());
+        subscription
+    }
+
+    fn open_critical(&self, consumer: &'static str) -> (CriticalSink, CriticalSubscription) {
+        CriticalSink::open(
             self.priority_capacity,
             self.bulk_capacity,
             self.loss.counters(consumer, DeliveryTier::Critical),
-        );
-        self.critical.add(sink);
-        subscription
+        )
     }
 
     pub fn loss_report(&self) -> Vec<ConsumerLoss> {
@@ -313,7 +326,7 @@ impl EventBus {
 
     /// Subscribes before spawning the flush task, so events published immediately after never get missed.
     pub fn spawn_flush_task(bus: Arc<Self>) {
-        let subscription = bus.subscribe_critical(EVENT_LOG);
+        let subscription = bus.subscribe_critical_durable(EVENT_LOG);
         let sink = EventLogSink::new(
             Arc::clone(&bus.event_log),
             bus.loss.counters(EVENT_LOG, DeliveryTier::Critical),

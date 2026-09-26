@@ -96,6 +96,24 @@ impl SqliteEventLogRepo {
     pub fn new(db: impl Into<SqlitePools>) -> Self {
         Self { db: db.into() }
     }
+
+    /// Oldest first, at most `max_rows` per call; fewer than `max_rows` deleted means none older remain.
+    pub(crate) async fn prune_chunk_before(
+        &self,
+        cutoff: OffsetDateTime,
+        max_rows: u32,
+    ) -> Result<u64, SqliteStorageError> {
+        let result = sqlx::query(
+            "DELETE FROM event_log WHERE rowid IN (
+                 SELECT rowid FROM event_log WHERE timestamp < ? ORDER BY timestamp LIMIT ?
+             )",
+        )
+        .bind(to_epoch_secs(cutoff))
+        .bind(i64::from(max_rows))
+        .execute(self.db.writer())
+        .await?;
+        Ok(result.rows_affected())
+    }
 }
 
 #[async_trait]

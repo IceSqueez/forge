@@ -6,6 +6,7 @@ use forge_registry::{TriggerRegistry, kind_matches_prefix};
 use tokio::sync::mpsc::{self, error::TrySendError};
 
 use crate::delivery_loss::ConsumerLossCounters;
+use crate::event_ring::EventRing;
 
 /// A lane counts as recovered only once this share of it is free again, so a consumer hovering
 /// at the edge logs one episode instead of one per event.
@@ -29,6 +30,8 @@ const CORE_BULK_KINDS: &[&str] = &[
     "command.matched",
     "trigger.blocked",
 ];
+
+const LINEAGE_WALK_CEILING: usize = 64;
 
 struct BulkRule {
     source: Option<EventSource>,
@@ -57,7 +60,7 @@ impl LaneTable {
     }
 
     pub(crate) fn lane_of(&self, event: &Event) -> DeliveryLane {
-        if event.source == EventSource::Core && CORE_BULK_KINDS.contains(&event.kind.as_str()) {
+        if is_run_telemetry(event) {
             return DeliveryLane::Bulk;
         }
         let declared_bulk = self.declared.iter().any(|rule| {
@@ -73,12 +76,39 @@ impl LaneTable {
             DeliveryLane::Priority
         }
     }
+
+    /// Run telemetry whose causation chain starts at a declared flood-lane platform event stays
+    /// out of durable storage; an ancestor already evicted from `ring` keeps the event durable.
+    pub(crate) fn is_transient(&self, event: &Event, ring: &EventRing) -> bool {
+        if !is_run_telemetry(event) {
+            return false;
+        }
+        let mut cursor = event.caused_by;
+        for _ in 0..LINEAGE_WALK_CEILING {
+            let Some(parent) = cursor.and_then(|id| ring.get(id)) else {
+                return false;
+            };
+            match parent.caused_by {
+                Some(next) => cursor = Some(next),
+                None => {
+                    return parent.source != EventSource::Core
+                        && self.lane_of(parent) == DeliveryLane::Bulk;
+                }
+            }
+        }
+        false
+    }
+}
+
+fn is_run_telemetry(event: &Event) -> bool {
+    event.source == EventSource::Core && CORE_BULK_KINDS.contains(&event.kind.as_str())
 }
 
 pub(crate) struct CriticalSink {
     priority: mpsc::Sender<Arc<Event>>,
     bulk: mpsc::Sender<Arc<Event>>,
     loss: Arc<ConsumerLossCounters>,
+    durable_only: bool,
 }
 
 impl CriticalSink {
@@ -94,12 +124,19 @@ impl CriticalSink {
                 priority: priority_tx,
                 bulk: bulk_tx,
                 loss,
+                durable_only: false,
             },
             CriticalSubscription {
                 priority: priority_rx,
                 bulk: bulk_rx,
             },
         )
+    }
+
+    /// Transient events never reach this sink; see `LaneTable::is_transient`.
+    pub(crate) fn durable_only(mut self) -> Self {
+        self.durable_only = true;
+        self
     }
 
     /// `false` once the consumer is gone, so the bus can forget this sink.
@@ -150,10 +187,14 @@ impl CriticalSinks {
         });
     }
 
-    pub(crate) fn deliver(&self, event: &Arc<Event>, lane: DeliveryLane) {
+    pub(crate) fn deliver(&self, event: &Arc<Event>, lane: DeliveryLane, transient: bool) {
         let sinks = self.0.load();
         let mut any_closed = false;
         for sink in sinks.iter() {
+            if transient && sink.durable_only {
+                any_closed |= sink.is_closed();
+                continue;
+            }
             any_closed |= !sink.offer(event, lane);
         }
         if any_closed {

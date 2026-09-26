@@ -1634,6 +1634,15 @@ mod tests {
         socket
     }
 
+    // Why: a clock left paused auto-advances whenever the runtime idles, and on macOS a loopback
+    // reply is not always readable at that instant, so the frame budget elapsed before the reply
+    // landed. The clock is paused only for the jump itself; every socket round trip runs on real time.
+    async fn elapse(by: std::time::Duration) {
+        tokio::time::pause();
+        tokio::time::advance(by).await;
+        tokio::time::resume();
+    }
+
     async fn assert_still_serving(socket: &mut ClientSocket, who: &str) {
         for _ in 0..ROUND_TRIPS {
             send_text(socket, get_info_request().to_string()).await;
@@ -1922,24 +1931,24 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn an_upgraded_websocket_outlives_the_read_deadline() {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let mut socket = open_ws(addr).await;
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
 
-        tokio::time::sleep(crate::listener::REQUEST_READ_TIMEOUT * 2).await;
+        elapse(crate::listener::REQUEST_READ_TIMEOUT * 2).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
         handle.abort();
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_silent_socket_is_closed_with_policy_at_the_pre_auth_window() {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let mut socket = open_ws(addr).await;
 
-        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_eq!(
             close_code_of(next_message(&mut socket).await),
@@ -1949,13 +1958,13 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_socket_that_spoke_once_stays_open_past_the_window_when_reads_are_open() {
         let (handle, addr) = make_server(false, MemCreds::new()).await;
         let mut socket = open_ws(addr).await;
 
         assert_eq!(ask(&mut socket, get_info_request()).await["status"], "ok");
-        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut socket, "a reader that had spoken while reads are open").await;
         handle.abort();
@@ -1964,7 +1973,7 @@ mod tests {
     // Why: under reads-required, `stays_open` only checks `authenticated`, so a session that
     // spoke without ever authenticating must still be closed once the window passes - having
     // sent a message must not stand in for a bearer or overlay credential.
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn an_unauthenticated_socket_that_spoke_is_still_closed_at_the_window_when_reads_are_required()
      {
         let (handle, addr) = make_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
@@ -1975,7 +1984,7 @@ mod tests {
             "UNAUTHENTICATED",
             "an unauthenticated request must be answered, not silently dropped"
         );
-        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_eq!(
             close_code_of(next_message(&mut socket).await),
@@ -1985,18 +1994,18 @@ mod tests {
         handle.abort();
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_bearer_authenticated_socket_stays_open_past_the_window_when_reads_are_required() {
         let (handle, addr) = make_server(true, MemCreds::with_token(BEARER_TOKEN)).await;
         let mut session = authenticated_ws(addr, BEARER_TOKEN).await;
 
-        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut session, "a bearer-authenticated session").await;
         handle.abort();
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn an_overlay_session_stays_open_past_the_window_when_reads_are_required() {
         let (handle, addr) = make_server_serving_one_overlay().await;
         handle.auth_state().await.set_reads_required(true);
@@ -2015,7 +2024,7 @@ mod tests {
             "the page never became an overlay session"
         );
 
-        tokio::time::sleep(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
+        elapse(PRE_AUTH_WINDOW + PRE_AUTH_MARGIN).await;
 
         assert_still_serving(&mut page, "an overlay session").await;
         handle.abort();

@@ -564,12 +564,12 @@ mod tests {
     use forge_components::{BadgeKind, ChatBody, Platform};
     use forge_events::{Event, EventSource};
     use forge_types::{
-        ChatEventDetail, ChatPayload, ChatReply, ChatSegment, ChatSource, EventId, ModerationMarks,
-        UnifiedChatRow, UserBadge,
+        ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
+        ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow, UserBadge,
     };
     use time::OffsetDateTime;
 
-    use super::{ChatFeed, ChatMessage, badge_kind, event_body};
+    use super::{ChatFeed, ChatMessage, FeedGap, badge_kind, event_body};
 
     fn message_with(event_id: EventId, body: ChatBody) -> ChatMessage {
         ChatMessage {
@@ -1347,6 +1347,230 @@ mod tests {
                     "seed={seed} step={step}"
                 );
             }
+        }
+    }
+
+    fn skipped(messages: u64, events: u64) -> FeedGap {
+        FeedGap { messages, events }
+    }
+
+    fn pushed(feed: &mut ChatFeed, id: &str) -> u64 {
+        let seq = feed.end_seq();
+        feed.push(authored(id, "a", vec![], 0));
+        seq
+    }
+
+    #[test]
+    fn a_feed_with_no_recorded_gap_shows_no_gap_before_any_row() {
+        let mut feed = feed_with_capacity(10);
+        let first = pushed(&mut feed, "m0");
+        let second = pushed(&mut feed, "m1");
+
+        assert!(feed.gap_before(None, first).is_empty());
+        assert!(feed.gap_before(Some(first), second).is_empty());
+    }
+
+    #[test]
+    fn recording_an_empty_gap_reports_no_change() {
+        let mut feed = feed_with_capacity(10);
+        pushed(&mut feed, "m0");
+
+        assert!(!feed.record_gap(FeedGap::default()));
+    }
+
+    #[test]
+    fn a_gap_is_shown_before_the_first_row_that_arrived_after_it_and_nowhere_else() {
+        let mut feed = feed_with_capacity(10);
+        let before = pushed(&mut feed, "m0");
+        feed.record_gap(skipped(3, 0));
+        let after = pushed(&mut feed, "m1");
+        let later = pushed(&mut feed, "m2");
+
+        assert_eq!(
+            (
+                feed.gap_before(None, before),
+                feed.gap_before(Some(before), after),
+                feed.gap_before(Some(after), later),
+            ),
+            (FeedGap::default(), skipped(3, 0), FeedGap::default())
+        );
+    }
+
+    #[test]
+    fn a_gap_recorded_before_the_next_row_arrives_is_not_shown_yet() {
+        let mut feed = feed_with_capacity(10);
+        let last = pushed(&mut feed, "m0");
+        feed.record_gap(skipped(2, 0));
+
+        assert!(feed.gap_before(None, last).is_empty());
+    }
+
+    #[test]
+    fn gaps_with_no_row_between_them_show_as_one_combined_gap() {
+        let mut feed = feed_with_capacity(10);
+        let before = pushed(&mut feed, "m0");
+        feed.record_gap(skipped(2, 0));
+        feed.record_gap(skipped(1, 4));
+        let after = pushed(&mut feed, "m1");
+
+        assert_eq!(feed.gap_before(Some(before), after), skipped(3, 4));
+    }
+
+    #[test]
+    fn gaps_separated_by_a_row_stay_separate() {
+        let mut feed = feed_with_capacity(10);
+        let first = pushed(&mut feed, "m0");
+        feed.record_gap(skipped(2, 0));
+        let second = pushed(&mut feed, "m1");
+        feed.record_gap(skipped(5, 0));
+        let third = pushed(&mut feed, "m2");
+
+        assert_eq!(
+            (
+                feed.gap_before(Some(first), second),
+                feed.gap_before(Some(second), third)
+            ),
+            (skipped(2, 0), skipped(5, 0))
+        );
+    }
+
+    #[test]
+    fn a_filtered_view_sums_every_gap_hidden_between_two_shown_rows() {
+        let mut feed = feed_with_capacity(10);
+        let shown = pushed(&mut feed, "m0");
+        feed.record_gap(skipped(1, 0));
+        pushed(&mut feed, "hidden");
+        feed.record_gap(skipped(2, 0));
+        let next_shown = pushed(&mut feed, "m2");
+
+        assert_eq!(feed.gap_before(Some(shown), next_shown), skipped(3, 0));
+    }
+
+    #[test]
+    fn eviction_keeps_the_gap_in_front_of_the_oldest_retained_row() {
+        let mut feed = feed_with_capacity(2);
+        pushed(&mut feed, "m0");
+        feed.record_gap(skipped(4, 0));
+        pushed(&mut feed, "m1");
+        pushed(&mut feed, "m2");
+
+        assert_eq!(feed.gap_before(None, feed.start_seq()), skipped(4, 0));
+    }
+
+    #[test]
+    fn seeding_history_keeps_each_live_gap_in_front_of_the_same_live_row() {
+        let mut feed = feed_with_capacity(10);
+        pushed(&mut feed, "live0");
+        feed.record_gap(skipped(4, 0));
+        pushed(&mut feed, "live1");
+        feed.record_gap(skipped(0, 6));
+
+        feed.seed(vec![
+            authored("hist0", "c", vec![], 0),
+            authored("hist1", "c", vec![], 0),
+        ]);
+        let live2 = pushed(&mut feed, "live2");
+
+        let seq_of = |id: &str| {
+            (feed.start_seq()..feed.end_seq())
+                .find(|seq| feed.get(*seq).unwrap().id == id)
+                .unwrap()
+        };
+        let (live0, live1) = (seq_of("live0"), seq_of("live1"));
+        assert_eq!(
+            (
+                feed.gap_before(None, live0),
+                feed.gap_before(Some(live0), live1),
+                feed.gap_before(Some(live1), live2),
+            ),
+            (FeedGap::default(), skipped(4, 0), skipped(0, 6))
+        );
+    }
+
+    #[test]
+    fn a_gap_label_names_exact_counts_and_says_when_skipped_events_were_of_unknown_kind() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let plain = |gap: FeedGap| gap.label().replace(['\u{2068}', '\u{2069}'], "");
+
+        assert_eq!(
+            [
+                plain(skipped(1, 0)),
+                plain(skipped(12, 0)),
+                plain(skipped(0, 7)),
+                plain(skipped(3, 9)),
+            ],
+            [
+                "1 message skipped here",
+                "12 messages skipped here",
+                "7 events skipped here - some may have been messages",
+                "3 messages and 9 other events skipped here",
+            ]
+        );
+    }
+
+    fn delete(message_id: &str) -> Event {
+        let payload = ChatModerationPayload {
+            action: ChatModerationAction::DeleteMessage {
+                message_id: message_id.to_owned(),
+            },
+        };
+        Event::new(
+            EventSource::Twitch,
+            "chat.moderation",
+            serde_json::json!({ ChatModerationPayload::KEY: payload }),
+        )
+    }
+
+    fn caused(kind: &str, payload: serde_json::Value, parent: EventId) -> Event {
+        Event::caused_by(EventSource::Core, kind, payload, parent)
+    }
+
+    #[test]
+    fn apply_event_reports_a_change_only_for_events_that_change_a_row() {
+        let mut feed = ChatFeed::new();
+        let message = chat_event(None);
+        let message_id = message.id;
+        let stranger = EventId::new();
+        let action = serde_json::json!({ "action_name": "Greet" });
+        let command = serde_json::json!({ "command": "!lurk" });
+        let steps = [
+            ("chat message", message, true),
+            (
+                "action.start for an unknown event",
+                caused("action.start", action.clone(), stranger),
+                false,
+            ),
+            (
+                "command.matched for an unknown event",
+                caused("command.matched", command.clone(), stranger),
+                false,
+            ),
+            (
+                "command.matched with no cause",
+                Event::new(EventSource::Core, "command.matched", command.clone()),
+                false,
+            ),
+            (
+                "action.start on a plain message row",
+                caused("action.start", action.clone(), message_id),
+                false,
+            ),
+            ("delete of an unknown message", delete("ghost"), false),
+            (
+                "command.matched on the row",
+                caused("command.matched", command, message_id),
+                true,
+            ),
+            (
+                "action.start on the command row",
+                caused("action.start", action, message_id),
+                true,
+            ),
+            ("delete of the row", delete("m1"), true),
+            ("repeated delete of the row", delete("m1"), false),
+        ];
+        for (label, event, expect_change) in steps {
+            assert_eq!(feed.apply_event(&event), expect_change, "{label}");
         }
     }
 }

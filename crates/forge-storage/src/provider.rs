@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// Schema version this build expects. The startup gate compares `schema_version()`
-/// against this constant; a mismatch routes to `Screen::SchemaUpgradeRequired`.
+/// against this constant; a mismatch stops boot with an upgrade-required failure.
 pub const EXPECTED_SCHEMA_VERSION: u32 = 46;
 
 #[async_trait]

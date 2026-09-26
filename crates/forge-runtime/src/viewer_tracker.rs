@@ -123,11 +123,12 @@ mod tests {
     async fn the_tracker_records_every_message_of_a_burst_larger_than_the_observer_buffer() {
         let (recorded_tx, mut recorded) = mpsc::unbounded_channel();
         let mut repo = MockViewerRepo::new();
-        repo.expect_record_message()
-            .returning(move |_, _, username| {
-                let _ = recorded_tx.send(username.to_owned());
-                Ok(())
-            });
+        repo.expect_record_messages().returning(move |messages| {
+            for message in messages {
+                let _ = recorded_tx.send(message.username.clone());
+            }
+            Ok(())
+        });
         let config = Config {
             bus_observer_capacity: OBSERVER_CAPACITY,
             ..Config::default()

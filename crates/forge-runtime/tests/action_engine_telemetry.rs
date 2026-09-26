@@ -425,7 +425,7 @@ async fn cancelled_execution_records_no_row_but_saves_history() {
 }
 
 #[tokio::test]
-async fn telemetry_write_error_is_swallowed_and_engine_keeps_running() {
+async fn a_failed_telemetry_write_does_not_stop_later_runs_from_recording() {
     let repo = Arc::new(SpyActionRepo::failing_record());
     let action = action_with(vec![]);
     let id = action.id;
@@ -442,10 +442,14 @@ async fn telemetry_write_error_is_swallowed_and_engine_keeps_running() {
     );
 
     engine.dispatch(request(id)).await.unwrap();
+    assert!(
+        eventually(|| repo.records().len() == 1).await,
+        "the first run never reached its telemetry write",
+    );
     engine.dispatch(request(id)).await.unwrap();
 
     assert!(
         eventually(|| repo.records().len() == 2).await,
-        "engine must keep processing after a swallowed telemetry write error",
+        "a later run must still record telemetry after a failed write",
     );
 }

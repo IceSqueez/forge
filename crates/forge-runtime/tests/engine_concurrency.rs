@@ -736,19 +736,27 @@ async fn a_quick_action_whose_outcome_nobody_awaits_still_runs_and_is_saved() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_quick_action_reports_its_outcome_only_after_its_run_is_saved() {
-    let r = rig(Vec::new(), &[]).await;
+async fn a_quick_action_reports_its_outcome_without_waiting_for_its_run_to_be_saved() {
+    let mut r = rig(Vec::new(), &[]).await;
     r.save_gate.send_replace(false);
 
-    let outcome = quick(&r.engine, INSTANT_KIND_ID).await.outcome();
-    tokio::pin!(outcome);
-
+    let outcome = tokio::time::timeout(
+        QUIET_STEP,
+        quick(&r.engine, INSTANT_KIND_ID).await.outcome(),
+    )
+    .await;
     assert!(
-        tokio::time::timeout(QUIET_STEP, &mut outcome)
-            .await
-            .is_err(),
-        "the outcome must not arrive while the history row is still being saved"
+        matches!(outcome, Ok(Ok(SubActionOutcome::Success))),
+        "a slow history write must not hold back the caller's outcome"
     );
+
     r.save_gate.send_replace(true);
-    assert!(matches!(outcome.await, Ok(SubActionOutcome::Success)));
+    let saved = tokio::time::timeout(Duration::from_secs(5), r.saved.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        saved.metadata,
+        ExecutionMetadata::QuickAction { .. }
+    ));
 }

@@ -241,3 +241,204 @@ async fn linger<I: BatchIntake>(
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Mutex;
+
+    use super::*;
+
+    const DEADLINE: Duration = Duration::from_secs(5);
+
+    #[derive(Clone, Default)]
+    struct RecordingSink {
+        batches: Arc<Mutex<Vec<Vec<u32>>>>,
+    }
+
+    impl RecordingSink {
+        fn sizes(&self) -> Vec<usize> {
+            self.batches.lock().unwrap().iter().map(Vec::len).collect()
+        }
+    }
+
+    impl BatchSink for RecordingSink {
+        type Item = u32;
+
+        async fn flush(&mut self, batch: &mut Vec<u32>) {
+            self.batches.lock().unwrap().push(std::mem::take(batch));
+        }
+    }
+
+    fn default_policy() -> BatchPolicy {
+        BatchPolicy::from_config(&Config::default())
+    }
+
+    fn ticket() -> (watch::Sender<bool>, FlushTicket, oneshot::Receiver<()>) {
+        let (stop, stopping) = watch::channel(false);
+        let (done, finished) = oneshot::channel();
+        (stop, FlushTicket::new(stopping, done), finished)
+    }
+
+    async fn queued(rows: usize) -> (mpsc::Sender<u32>, mpsc::Receiver<u32>) {
+        let (tx, rx) = mpsc::channel(rows.max(1));
+        for row in 0..rows {
+            tx.send(row as u32).await.unwrap();
+        }
+        (tx, rx)
+    }
+
+    #[tokio::test]
+    async fn a_queued_backlog_commits_in_batches_capped_at_max_rows() {
+        let max = default_policy().max_rows;
+        for (depth, expected) in [
+            (1, vec![1]),
+            (max - 1, vec![max - 1]),
+            (max, vec![max]),
+            (max + 1, vec![max, 1]),
+        ] {
+            let (tx, rx) = queued(depth).await;
+            drop(tx);
+            let sink = RecordingSink::default();
+            let (_stop, ticket, _done) = ticket();
+
+            tokio::time::timeout(
+                DEADLINE,
+                run_batched(rx, sink.clone(), default_policy(), ticket),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(sink.sizes(), expected, "queue depth {depth}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rows_arriving_within_the_linger_share_a_commit_and_later_rows_do_not() {
+        let policy = BatchPolicy {
+            max_rows: 16,
+            linger: Duration::from_millis(50),
+        };
+        let (tx, rx) = mpsc::channel(16);
+        let sink = RecordingSink::default();
+        let (_stop, ticket, done) = ticket();
+        tx.send(1).await.unwrap();
+        tokio::spawn(run_batched(rx, sink.clone(), policy, ticket));
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        tx.send(2).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        tx.send(3).await.unwrap();
+        drop(tx);
+        done.await.unwrap();
+
+        assert_eq!(sink.sizes(), vec![2, 1]);
+    }
+
+    #[tokio::test]
+    async fn a_stop_drains_every_queued_row_in_capped_batches_then_reports_done() {
+        let max = default_policy().max_rows;
+        let (_tx, rx) = queued(2 * max + 1).await;
+        let sink = RecordingSink::default();
+        let (stop, ticket, done) = ticket();
+        stop.send_replace(true);
+
+        tokio::time::timeout(
+            DEADLINE,
+            run_batched(rx, sink.clone(), default_policy(), ticket),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            (sink.sizes(), done.await.is_ok()),
+            (vec![max, max, 1], true)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stop_while_idle_ends_the_writer_though_its_producer_is_alive() {
+        let (_tx, rx) = queued(0).await;
+        let sink = RecordingSink::default();
+        let (stop, ticket, done) = ticket();
+        let writer = tokio::spawn(run_batched(rx, sink.clone(), default_policy(), ticket));
+        tokio::task::yield_now().await;
+
+        stop.send_replace(true);
+
+        assert!(tokio::time::timeout(DEADLINE, done).await.unwrap().is_ok());
+        writer.await.unwrap();
+        assert!(sink.sizes().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_stop_during_the_linger_commits_the_pending_row_at_once() {
+        let policy = BatchPolicy {
+            max_rows: 16,
+            linger: Duration::from_secs(60),
+        };
+        let (_tx, rx) = queued(1).await;
+        let sink = RecordingSink::default();
+        let (stop, ticket, done) = ticket();
+        tokio::spawn(run_batched(rx, sink.clone(), policy, ticket));
+        tokio::task::yield_now().await;
+
+        stop.send_replace(true);
+
+        assert!(tokio::time::timeout(DEADLINE, done).await.unwrap().is_ok());
+        assert_eq!(sink.sizes(), vec![1]);
+    }
+
+    struct StuckSink {
+        committing: Arc<tokio::sync::Notify>,
+        handed_back: Arc<Mutex<Option<u64>>>,
+        held_by_sink: u64,
+    }
+
+    impl BatchSink for StuckSink {
+        type Item = u32;
+
+        async fn flush(&mut self, _batch: &mut Vec<u32>) {
+            self.committing.notify_one();
+            std::future::pending::<()>().await;
+        }
+
+        fn abandon(&mut self, rows: u64) -> u64 {
+            *self.handed_back.lock().unwrap() = Some(rows);
+            rows + self.held_by_sink
+        }
+    }
+
+    #[tokio::test]
+    async fn an_abandon_during_a_stuck_commit_counts_the_batch_the_queue_and_what_the_sink_holds() {
+        let policy = BatchPolicy {
+            max_rows: 2,
+            linger: Duration::ZERO,
+        };
+        let (_tx, rx) = queued(5).await;
+        let committing = Arc::new(tokio::sync::Notify::new());
+        let handed_back = Arc::new(Mutex::new(None));
+        let sink = StuckSink {
+            committing: Arc::clone(&committing),
+            handed_back: Arc::clone(&handed_back),
+            held_by_sink: 7,
+        };
+        let (abandon, abandoning) = watch::channel(false);
+        let given_up = Arc::new(AtomicU64::new(0));
+        let (stop, ticket, done) = ticket();
+        let ticket = ticket.abandonable(abandoning, Arc::clone(&given_up));
+        tokio::spawn(run_batched(rx, sink, policy, ticket));
+        committing.notified().await;
+
+        stop.send_replace(true);
+        abandon.send_replace(true);
+        tokio::time::timeout(DEADLINE, done).await.unwrap().unwrap();
+
+        assert_eq!(
+            (
+                *handed_back.lock().unwrap(),
+                given_up.load(Ordering::Relaxed)
+            ),
+            (Some(5), 12)
+        );
+    }
+}

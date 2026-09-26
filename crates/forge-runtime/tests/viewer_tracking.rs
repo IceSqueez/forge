@@ -37,11 +37,16 @@ async fn wait_until_subscribed() {
 
 fn tracker_recording_into(tx: mpsc::UnboundedSender<Recorded>) -> MockViewerRepo {
     let mut repo = MockViewerRepo::new();
-    repo.expect_record_message()
-        .returning(move |platform, id, login| {
-            let _ = tx.send((platform, id.to_string(), login.to_string()));
-            Ok(())
-        });
+    repo.expect_record_messages().returning(move |messages| {
+        for message in messages {
+            let _ = tx.send((
+                message.platform.clone(),
+                message.viewer_id.clone(),
+                message.username.clone(),
+            ));
+        }
+        Ok(())
+    });
     repo
 }
 

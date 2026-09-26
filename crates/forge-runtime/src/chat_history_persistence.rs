@@ -203,3 +203,340 @@ async fn prune(repo: &dyn ChatHistoryRepo, settings: &dyn SettingsRepo) {
         Err(_) => tracing::warn!("chat history prune timed out"),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use forge_storage::chat_history::MockChatHistoryRepo;
+    use forge_storage::settings::MockSettingsRepo;
+    use forge_storage::{DataProvider, StorageError};
+    use forge_types::{ModerationMarks, UnifiedChatRow};
+
+    use super::*;
+    use crate::NullEventLogRepo;
+    use crate::test_support::{Sandboxed, sandboxed_backend};
+
+    const KEY: [u8; 32] = [0x5a; 32];
+    const MINUTE: time::Duration = time::Duration::minutes(1);
+
+    struct Rig {
+        backend: Sandboxed<forge_storage_sqlite::SqliteBackend>,
+        sink: ChatHistorySink,
+    }
+
+    async fn rig() -> Rig {
+        let backend = sandboxed_backend(KEY).await;
+        let sink = sink_over(
+            backend.chat_history_repo(),
+            &EventBus::new(Arc::new(NullEventLogRepo)),
+        );
+        Rig { backend, sink }
+    }
+
+    fn sink_over(repo: Arc<dyn ChatHistoryRepo>, bus: &EventBus) -> ChatHistorySink {
+        ChatHistorySink {
+            repo,
+            settings: Arc::new(MockSettingsRepo::new()),
+            loss: bus.loss_counters(CHAT_HISTORY, DeliveryTier::Critical),
+            pending: Vec::new(),
+            appended_since_prune: 0,
+            recent_moderation: VecDeque::new(),
+        }
+    }
+
+    fn row(id: &str, source: ChatSource, author: &str, received_at: OffsetDateTime) -> ChatRecord {
+        ChatRecord::Row(UnifiedChatRow {
+            id: id.to_string(),
+            event_id: forge_types::EventId::new(),
+            source,
+            received_at,
+            author: author.to_string(),
+            author_color: None,
+            body_segments: vec![],
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        })
+    }
+
+    fn mark(source: ChatSource, action: ChatModerationAction, at: OffsetDateTime) -> ChatRecord {
+        ChatRecord::Moderation { source, action, at }
+    }
+
+    fn delete(id: &str) -> ChatModerationAction {
+        ChatModerationAction::DeleteMessage {
+            message_id: id.to_string(),
+        }
+    }
+
+    async fn flush(sink: &mut ChatHistorySink, records: Vec<ChatRecord>) {
+        let mut batch = records;
+        sink.flush(&mut batch).await;
+    }
+
+    async fn marks_of(rig: &Rig, id: &str) -> ModerationMarks {
+        rig.backend
+            .chat_history_repo()
+            .list_recent(1_000)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|stored| stored.id == id)
+            .map(|stored| stored.moderation)
+            .unwrap_or_else(|| panic!("row {id} was not stored"))
+    }
+
+    fn deleted_only() -> ModerationMarks {
+        ModerationMarks {
+            deleted: true,
+            ..ModerationMarks::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mark_that_follows_its_row_in_one_batch_lands_on_the_stored_row() {
+        let mut rig = rig().await;
+        let now = OffsetDateTime::now_utc();
+
+        flush(
+            &mut rig.sink,
+            vec![
+                row("m1", ChatSource::Twitch, "bob", now),
+                mark(ChatSource::Twitch, delete("m1"), now),
+            ],
+        )
+        .await;
+
+        assert_eq!(marks_of(&rig, "m1").await, deleted_only());
+    }
+
+    #[tokio::test]
+    async fn a_row_that_arrives_after_its_delete_mark_is_stored_deleted() {
+        let mut rig = rig().await;
+        let now = OffsetDateTime::now_utc();
+        flush(
+            &mut rig.sink,
+            vec![mark(ChatSource::Twitch, delete("m1"), now)],
+        )
+        .await;
+
+        flush(
+            &mut rig.sink,
+            vec![row("m1", ChatSource::Twitch, "bob", now)],
+        )
+        .await;
+
+        assert_eq!(marks_of(&rig, "m1").await, deleted_only());
+    }
+
+    #[tokio::test]
+    async fn a_user_removal_marks_that_users_late_rows_received_before_it_only() {
+        for timeout in [true, false] {
+            let mut rig = rig().await;
+            let at = OffsetDateTime::now_utc();
+            let removal = ChatModerationAction::RemoveUser {
+                user_name: "bob".to_string(),
+                timeout,
+            };
+            flush(&mut rig.sink, vec![mark(ChatSource::Twitch, removal, at)]).await;
+
+            flush(
+                &mut rig.sink,
+                vec![
+                    row("before", ChatSource::Twitch, "bob", at - MINUTE),
+                    row("after", ChatSource::Twitch, "bob", at + MINUTE),
+                    row("other-user", ChatSource::Twitch, "alice", at - MINUTE),
+                    row("other-source", ChatSource::Kick, "bob", at - MINUTE),
+                ],
+            )
+            .await;
+
+            let removed = ModerationMarks {
+                deleted: true,
+                timed_out: timeout,
+                banned: !timeout,
+            };
+            assert_eq!(
+                [
+                    marks_of(&rig, "before").await,
+                    marks_of(&rig, "after").await,
+                    marks_of(&rig, "other-user").await,
+                    marks_of(&rig, "other-source").await,
+                ],
+                [
+                    removed,
+                    ModerationMarks::default(),
+                    ModerationMarks::default(),
+                    ModerationMarks::default(),
+                ],
+                "timeout = {timeout}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_chat_clear_marks_late_rows_of_its_source_received_before_it_only() {
+        let mut rig = rig().await;
+        let at = OffsetDateTime::now_utc();
+        flush(
+            &mut rig.sink,
+            vec![mark(
+                ChatSource::YouTube,
+                ChatModerationAction::ClearChat,
+                at,
+            )],
+        )
+        .await;
+
+        flush(
+            &mut rig.sink,
+            vec![
+                row("before", ChatSource::YouTube, "bob", at - MINUTE),
+                row("after", ChatSource::YouTube, "bob", at + MINUTE),
+                row("other-source", ChatSource::Twitch, "bob", at - MINUTE),
+            ],
+        )
+        .await;
+
+        assert_eq!(
+            [
+                marks_of(&rig, "before").await,
+                marks_of(&rig, "after").await,
+                marks_of(&rig, "other-source").await,
+            ],
+            [
+                deleted_only(),
+                ModerationMarks::default(),
+                ModerationMarks::default()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_oldest_mark_is_forgotten_once_the_memory_overflows_by_one() {
+        let mut rig = rig().await;
+        let now = OffsetDateTime::now_utc();
+        let marks = (0..=MODERATION_MEMORY)
+            .map(|i| mark(ChatSource::Twitch, delete(&format!("d{i}")), now))
+            .collect();
+        flush(&mut rig.sink, marks).await;
+
+        flush(
+            &mut rig.sink,
+            vec![
+                row("d0", ChatSource::Twitch, "bob", now),
+                row("d1", ChatSource::Twitch, "bob", now),
+            ],
+        )
+        .await;
+
+        assert_eq!(
+            [marks_of(&rig, "d0").await, marks_of(&rig, "d1").await],
+            [ModerationMarks::default(), deleted_only()]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_batch_counts_every_row_it_carried_as_unwritten() {
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_append_batch().returning(|_| {
+            Err(StorageError::Connection {
+                reason: "disk full".to_string(),
+            })
+        });
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let mut sink = sink_over(Arc::new(repo), &bus);
+        let now = OffsetDateTime::now_utc();
+
+        flush(
+            &mut sink,
+            (0..3)
+                .map(|i| row(&format!("m{i}"), ChatSource::Twitch, "bob", now))
+                .collect(),
+        )
+        .await;
+
+        let unwritten = bus
+            .loss_report()
+            .into_iter()
+            .find(|entry| entry.consumer == CHAT_HISTORY)
+            .map(|entry| entry.loss.unwritten);
+        assert_eq!(unwritten, Some(3));
+    }
+
+    struct StuckAppends {
+        appending: Arc<tokio::sync::Notify>,
+    }
+
+    #[async_trait::async_trait]
+    impl ChatHistoryRepo for StuckAppends {
+        async fn append(&self, _: &UnifiedChatRow) -> Result<(), StorageError> {
+            self.appending.notify_one();
+            std::future::pending().await
+        }
+
+        async fn list_recent(&self, _: usize) -> Result<Vec<UnifiedChatRow>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn prune_to_limit(&self, _: usize) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn mark_message_deleted(&self, _: &str) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn mark_user_messages_moderated(
+            &self,
+            _: ChatSource,
+            _: &str,
+            _: bool,
+        ) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn clear_platform(&self, _: ChatSource) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    #[tokio::test]
+    async fn an_abandon_while_rows_before_a_mark_are_committing_counts_the_rows_after_it_too() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let appending = Arc::new(tokio::sync::Notify::new());
+        let sink = sink_over(
+            Arc::new(StuckAppends {
+                appending: Arc::clone(&appending),
+            }),
+            &bus,
+        );
+        let now = OffsetDateTime::now_utc();
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        for record in [
+            row("before", ChatSource::Twitch, "bob", now),
+            mark(ChatSource::Twitch, delete("elsewhere"), now),
+            row("after", ChatSource::Twitch, "bob", now),
+        ] {
+            tx.send(record).await.unwrap();
+        }
+        tokio::spawn(run_batched(
+            rx,
+            sink,
+            bus.batch_policy(),
+            bus.flush_ticket(),
+        ));
+        appending.notified().await;
+
+        bus.shutdown();
+        let given_up = tokio::time::timeout(Duration::from_secs(5), bus.abandon_flush())
+            .await
+            .unwrap();
+
+        assert!(
+            given_up >= 2,
+            "both chat rows went unstored, {given_up} counted"
+        );
+    }
+}

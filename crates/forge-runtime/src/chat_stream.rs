@@ -100,24 +100,15 @@ fn try_map_chat_event(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
-    use std::time::Duration;
-
     use forge_events::{Event, EventSource};
     use forge_types::{ChatModerationAction, ChatModerationPayload, ChatSegment, ModerationMarks};
-    use tokio::time::timeout;
-    use tokio_stream::StreamExt as _;
 
     use super::*;
-    use crate::{Config, EventBus, NullEventLogRepo};
 
-    fn null_bus() -> Arc<EventBus> {
-        EventBus::new(Arc::new(NullEventLogRepo))
-    }
-
-    fn minimal_payload(msg_id: &str) -> ChatPayload {
-        ChatPayload {
+    fn chat_event(source: EventSource, msg_id: &str) -> Event {
+        let payload = ChatPayload {
             platform_msg_id: msg_id.to_string(),
             author: "user".to_string(),
             author_color: None,
@@ -128,189 +119,135 @@ mod tests {
             is_event: false,
             event_detail: None,
             moderation: ModerationMarks::default(),
-        }
-    }
-
-    fn chat_event(source: EventSource, msg_id: &str) -> Event {
-        let payload = minimal_payload(msg_id);
-        Event::new(
-            source,
-            "chat.message",
-            serde_json::json!({ "_chat": serde_json::to_value(&payload).unwrap() }),
-        )
-    }
-
-    #[tokio::test]
-    async fn chat_stream_delivers_matching_event() {
-        let bus = null_bus();
-        let stream = chat_stream(Arc::clone(&bus));
-        tokio::pin!(stream);
-        bus.publish(chat_event(EventSource::Twitch, "msg-1"));
-        let row = timeout(Duration::from_millis(200), stream.next())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(row.id, "msg-1");
-        assert_eq!(row.source, ChatSource::Twitch);
-    }
-
-    #[tokio::test]
-    async fn chat_stream_filters_out_events_without_chat_key() {
-        let bus = null_bus();
-        let stream = chat_stream(Arc::clone(&bus));
-        tokio::pin!(stream);
-        bus.publish(Event::new(
-            EventSource::Twitch,
-            "chat.message",
-            serde_json::json!({ "user": "foo", "text": "no chat key here" }),
-        ));
-        let result = timeout(Duration::from_millis(50), stream.next()).await;
-        assert!(result.is_err(), "no row should arrive without _chat key");
-    }
-
-    #[tokio::test]
-    async fn chat_stream_filters_out_non_chat_sources() {
-        let bus = null_bus();
-        let stream = chat_stream(Arc::clone(&bus));
-        tokio::pin!(stream);
-        let payload = minimal_payload("core-msg");
-        bus.publish(Event::new(
-            EventSource::Core,
-            "action.start",
-            serde_json::json!({ "_chat": serde_json::to_value(&payload).unwrap() }),
-        ));
-        let result = timeout(Duration::from_millis(50), stream.next()).await;
-        assert!(result.is_err(), "Core source must be silently filtered");
-    }
-
-    #[tokio::test]
-    async fn chat_stream_dedups_within_same_source() {
-        let bus = null_bus();
-        let stream = chat_stream(Arc::clone(&bus));
-        tokio::pin!(stream);
-        bus.publish(chat_event(EventSource::Twitch, "dup-id"));
-        bus.publish(chat_event(EventSource::Twitch, "dup-id"));
-        let first = timeout(Duration::from_millis(200), stream.next())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(first.id, "dup-id");
-        let second = timeout(Duration::from_millis(50), stream.next()).await;
-        assert!(
-            second.is_err(),
-            "duplicate id in same source must be dropped"
-        );
-    }
-
-    #[tokio::test]
-    async fn chat_stream_allows_same_id_across_different_sources() {
-        let bus = null_bus();
-        let stream = chat_stream(Arc::clone(&bus));
-        tokio::pin!(stream);
-        bus.publish(chat_event(EventSource::Twitch, "shared-id"));
-        bus.publish(chat_event(EventSource::YouTube, "shared-id"));
-        let first = timeout(Duration::from_millis(200), stream.next())
-            .await
-            .unwrap()
-            .unwrap();
-        let second = timeout(Duration::from_millis(200), stream.next())
-            .await
-            .unwrap()
-            .unwrap();
-        let sources: std::collections::HashSet<ChatSource> =
-            [first.source, second.source].into_iter().collect();
-        assert!(sources.contains(&ChatSource::Twitch));
-        assert!(sources.contains(&ChatSource::YouTube));
-    }
-
-    #[tokio::test]
-    async fn chat_stream_readmits_an_id_evicted_from_the_dedup_window() {
-        let bus = null_bus();
-        let stream = chat_stream(Arc::clone(&bus));
-        tokio::pin!(stream);
-
-        let past_window = DEDUP_WINDOW + 1;
-        for i in 0..past_window {
-            bus.publish(chat_event(EventSource::Twitch, &format!("id-{i}")));
-        }
-
-        for _ in 0..past_window {
-            timeout(Duration::from_millis(500), stream.next())
-                .await
-                .unwrap()
-                .unwrap();
-        }
-
-        bus.publish(chat_event(EventSource::Twitch, "id-0"));
-        let row = timeout(Duration::from_millis(200), stream.next())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(row.id, "id-0");
-    }
-
-    const OBSERVER_CAPACITY: usize = 16;
-    const BURST: usize = OBSERVER_CAPACITY * 4;
-
-    type UnitStream = std::pin::Pin<Box<dyn Stream<Item = ()> + Send>>;
-    type StreamBurstCase = (
-        &'static str,
-        fn(Arc<EventBus>) -> UnitStream,
-        fn(usize) -> Event,
-    );
-
-    fn moderation_event(source: EventSource) -> Event {
-        let payload = ChatModerationPayload {
-            action: ChatModerationAction::ClearChat,
         };
         Event::new(
             source,
-            "chat.moderation",
-            serde_json::json!({
-                (ChatModerationPayload::KEY): serde_json::to_value(&payload).unwrap(),
-            }),
+            "chat.message",
+            serde_json::json!({ (ChatPayload::KEY): serde_json::to_value(&payload).unwrap() }),
         )
     }
 
-    #[tokio::test]
-    async fn both_chat_streams_yield_every_event_of_a_burst_larger_than_the_observer_buffer() {
-        let cases: [StreamBurstCase; 2] = [
-            (
-                "chat",
-                |bus| Box::pin(chat_stream(bus).map(|_| ())),
-                |i| chat_event(EventSource::Twitch, &format!("burst-{i}")),
+    fn moderation_event(source: EventSource, action: ChatModerationAction) -> Event {
+        let payload = ChatModerationPayload { action };
+        Event::new(
+            source,
+            "chat.moderation",
+            serde_json::json!({ (ChatModerationPayload::KEY): serde_json::to_value(&payload).unwrap() }),
+        )
+    }
+
+    fn row_id(record: Option<ChatRecord>) -> Option<String> {
+        match record {
+            Some(ChatRecord::Row(row)) => Some(row.id),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_chat_event_maps_to_a_row_carrying_its_event_identity() {
+        let event = chat_event(EventSource::Twitch, "msg-1");
+
+        let Some(ChatRecord::Row(row)) = ChatRecordMapper::default().map(&event) else {
+            panic!("a chat event must map to a row");
+        };
+
+        assert_eq!(
+            (row.id.as_str(), row.source, row.event_id, row.received_at),
+            ("msg-1", ChatSource::Twitch, event.id, event.timestamp)
+        );
+    }
+
+    #[test]
+    fn events_that_are_not_chat_rows_or_marks_map_to_nothing() {
+        let unrelated = [
+            Event::new(
+                EventSource::Twitch,
+                "chat.message",
+                serde_json::json!({ "user": "foo", "text": "no chat key here" }),
             ),
-            (
-                "moderation",
-                |bus| Box::pin(crate::chat_moderation_stream(bus).map(|_| ())),
-                |_| moderation_event(EventSource::Twitch),
+            Event::new(
+                EventSource::Twitch,
+                "chat.message",
+                serde_json::json!({ (ChatPayload::KEY): { "platform_msg_id": 7 } }),
             ),
+            chat_event(EventSource::Core, "core-msg"),
+            moderation_event(EventSource::Core, ChatModerationAction::ClearChat),
         ];
 
-        for (label, build, event) in cases {
-            let config = Config {
-                bus_observer_capacity: OBSERVER_CAPACITY,
-                ..Config::default()
-            };
-            let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
-            let stream = build(Arc::clone(&bus));
-            tokio::pin!(stream);
-
-            for i in 0..BURST {
-                bus.publish(event(i));
-            }
-
-            let yielded = timeout(
-                Duration::from_millis(500),
-                stream.as_mut().take(BURST).collect::<Vec<()>>(),
-            )
-            .await
-            .map(|items| items.len());
-            assert_eq!(
-                yielded.ok(),
-                Some(BURST),
-                "{label} stream is a lossless consumer and must not lose a burst to lag"
+        let mut mapper = ChatRecordMapper::default();
+        for event in &unrelated {
+            assert!(
+                mapper.map(event).is_none(),
+                "{:?} must be dropped",
+                event.kind
             );
         }
+    }
+
+    #[test]
+    fn a_repeated_message_id_from_the_same_source_is_dropped() {
+        let mut mapper = ChatRecordMapper::default();
+        assert!(row_id(mapper.map(&chat_event(EventSource::Twitch, "dup"))).is_some());
+
+        assert!(
+            mapper
+                .map(&chat_event(EventSource::Twitch, "dup"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_same_message_id_from_another_source_is_kept() {
+        let mut mapper = ChatRecordMapper::default();
+        mapper.map(&chat_event(EventSource::Twitch, "shared"));
+
+        assert_eq!(
+            row_id(mapper.map(&chat_event(EventSource::YouTube, "shared"))).as_deref(),
+            Some("shared")
+        );
+    }
+
+    #[test]
+    fn an_id_stays_deduplicated_until_the_window_overflows_by_one() {
+        let mut mapper = ChatRecordMapper::default();
+        for i in 0..DEDUP_WINDOW {
+            mapper.map(&chat_event(EventSource::Twitch, &format!("id-{i}")));
+        }
+        assert!(
+            mapper
+                .map(&chat_event(EventSource::Twitch, "id-0"))
+                .is_none(),
+            "a full window still remembers its oldest id"
+        );
+
+        mapper.map(&chat_event(EventSource::Twitch, "one-past-the-window"));
+
+        assert_eq!(
+            row_id(mapper.map(&chat_event(EventSource::Twitch, "id-0"))).as_deref(),
+            Some("id-0")
+        );
+    }
+
+    #[test]
+    fn a_moderation_event_maps_to_a_mark_stamped_with_the_event_time() {
+        let action = ChatModerationAction::RemoveUser {
+            user_name: "bob".to_string(),
+            timeout: true,
+        };
+        let event = moderation_event(EventSource::Kick, action.clone());
+
+        let Some(ChatRecord::Moderation {
+            source,
+            action: mapped,
+            at,
+        }) = ChatRecordMapper::default().map(&event)
+        else {
+            panic!("a moderation event must map to a mark");
+        };
+
+        assert_eq!(
+            (source, mapped, at),
+            (ChatSource::Kick, action, event.timestamp)
+        );
     }
 }

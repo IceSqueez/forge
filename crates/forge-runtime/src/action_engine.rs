@@ -958,10 +958,14 @@ mod tests {
     ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let mut mock = forge_storage::history::MockHistoryRepo::new();
-        mock.expect_save().times(1..).returning(move |ctx| {
-            let _ = tx.send(ctx.clone());
-            Ok(())
-        });
+        mock.expect_save_batch()
+            .times(1..)
+            .returning(move |contexts| {
+                for ctx in contexts {
+                    let _ = tx.send(ctx.clone());
+                }
+                Ok(())
+            });
         (Arc::new(mock), rx)
     }
 
@@ -1389,6 +1393,8 @@ mod tests {
         let root = platform_event(&rig.bus);
 
         let trace = drive_self_loop(&rig, root).await;
+        rig.bus.shutdown();
+        rig.bus.await_flush().await;
 
         let history = rig
             .dp

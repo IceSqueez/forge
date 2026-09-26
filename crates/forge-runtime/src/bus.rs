@@ -446,6 +446,10 @@ mod tests {
             self.0.event_log_repo().insert(event).await
         }
 
+        async fn insert_batch(&self, events: &[Arc<Event>]) -> Result<(), StorageError> {
+            self.0.event_log_repo().insert_batch(events).await
+        }
+
         async fn get(&self, id: EventId) -> Result<Option<Event>, StorageError> {
             self.0.event_log_repo().get(id).await
         }
@@ -684,20 +688,22 @@ mod tests {
                 stored: Mutex::new(Vec::new()),
             }
         }
-
-        fn stored_count(&self) -> usize {
-            self.stored.lock().unwrap().len()
-        }
     }
 
     #[async_trait]
     impl EventLogRepo for FailFirstRepo {
         async fn insert(&self, event: &Event) -> Result<(), StorageError> {
-            let n = self.call_count.fetch_add(1, Ordering::SeqCst);
-            if n == 0 {
+            self.stored.lock().unwrap().push(event.clone());
+            Ok(())
+        }
+
+        async fn insert_batch(&self, events: &[Arc<Event>]) -> Result<(), StorageError> {
+            if self.call_count.fetch_add(1, Ordering::SeqCst) == 0 {
                 return Err(StorageError::NotReady);
             }
-            self.stored.lock().unwrap().push(event.clone());
+            for event in events {
+                self.insert(event).await?;
+            }
             Ok(())
         }
 
@@ -731,33 +737,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn flush_task_persists_published_events() {
+    async fn flush_task_persists_published_events_while_running() {
         let (bus, backend) = backed_bus_with_caps(CHANNEL_CAP, RING_CAP).await;
         EventBus::spawn_flush_task(Arc::clone(&bus));
 
-        let ev1 = core_event("flush.a");
-        let ev2 = core_event("flush.b");
-        let ev3 = core_event("flush.c");
-        let ids = [ev1.id, ev2.id, ev3.id];
-
-        bus.publish(ev1);
-        bus.publish(ev2);
-        bus.publish(ev3);
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let persisted = backend.event_log_repo().recent(100).await.unwrap();
-        let persisted_ids: Vec<_> = persisted.iter().map(|e| e.id).collect();
-        for id in ids {
-            assert!(
-                persisted_ids.contains(&id),
-                "event {id} not found in persisted log"
-            );
+        let events = [
+            core_event("flush.a"),
+            core_event("flush.b"),
+            core_event("flush.c"),
+        ];
+        let mut expected: Vec<EventId> = events.iter().map(|event| event.id).collect();
+        for event in events {
+            bus.publish(event);
         }
+
+        let mut persisted = Vec::new();
+        for _ in 0..500 {
+            persisted = backend
+                .event_log_repo()
+                .recent(100)
+                .await
+                .unwrap()
+                .iter()
+                .map(|event| event.id)
+                .collect::<Vec<_>>();
+            if persisted.len() >= expected.len() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        persisted.sort();
+        expected.sort();
+        assert_eq!(persisted, expected);
     }
 
     #[tokio::test]
-    async fn flush_task_continues_after_insert_error() {
+    async fn a_failed_event_log_batch_is_counted_unwritten_and_later_batches_are_stored() {
         let repo: Arc<FailFirstRepo> = Arc::new(FailFirstRepo::new());
         let bus = bus_with_caps(
             Arc::clone(&repo) as Arc<dyn EventLogRepo>,
@@ -769,41 +784,25 @@ mod tests {
         bus.publish(core_event("err.first"));
         bus.publish(core_event("err.second"));
         bus.publish(core_event("err.third"));
-
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        assert_eq!(
-            repo.stored_count(),
-            2,
-            "first insert must be rejected, subsequent two must succeed"
-        );
-    }
-
-    #[tokio::test]
-    async fn flush_task_shutdown_drains_pending_events() {
-        let (bus, backend) = backed_bus_with_caps(CHANNEL_CAP, RING_CAP).await;
-        EventBus::spawn_flush_task(Arc::clone(&bus));
-
-        let ev1 = core_event("drain.a");
-        let ev2 = core_event("drain.b");
-        let ev3 = core_event("drain.c");
-        let ids = [ev1.id, ev2.id, ev3.id];
-
-        bus.publish(ev1);
-        bus.publish(ev2);
-        bus.publish(ev3);
+        tokio::task::yield_now().await;
+        bus.publish(core_event("ok.fourth"));
         bus.shutdown();
+        bus.await_flush().await;
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        let persisted = backend.event_log_repo().recent(100).await.unwrap();
-        let persisted_ids: Vec<_> = persisted.iter().map(|e| e.id).collect();
-        for id in ids {
-            assert!(
-                persisted_ids.contains(&id),
-                "event {id} not persisted after shutdown drain"
-            );
-        }
+        let unwritten: u64 = bus
+            .loss_report()
+            .iter()
+            .filter(|entry| entry.consumer == EVENT_LOG)
+            .map(|entry| entry.loss.unwritten)
+            .sum();
+        let stored: Vec<String> = repo
+            .stored
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| event.kind.clone())
+            .collect();
+        assert_eq!((unwritten, stored), (3, vec!["ok.fourth".to_string()]));
     }
 
     #[tokio::test]

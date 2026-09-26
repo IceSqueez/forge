@@ -95,3 +95,145 @@ impl ShutdownHandles {
         tracing::info!("graceful shutdown: storage closed");
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::io::Write;
+    use std::sync::Mutex;
+
+    use forge_events::{Event, EventSource};
+    use forge_registry::{SubActionRegistry, TriggerRegistry};
+    use forge_runtime::{
+        ActionCancelRegistry, Config, QueueScheduler, spawn_action_engine, spawn_trigger_evaluator,
+    };
+    use forge_storage::action::MockActionRepo;
+    use forge_storage::history::MockHistoryRepo;
+    use forge_storage::{EventLogRepo, StorageError};
+    use forge_types::EventId;
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::test_support::{stub_catalog, test_backend};
+
+    struct StuckEventLog;
+
+    #[async_trait::async_trait]
+    impl EventLogRepo for StuckEventLog {
+        async fn insert(&self, _: &Event) -> Result<(), StorageError> {
+            std::future::pending().await
+        }
+
+        async fn get(&self, _: EventId) -> Result<Option<Event>, StorageError> {
+            Ok(None)
+        }
+
+        async fn recent(&self, _: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn recent_since(
+            &self,
+            _: usize,
+            _: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct Captured(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Captured {
+        fn lines_containing(&self, needle: &str) -> Vec<String> {
+            String::from_utf8(self.0.lock().unwrap().clone())
+                .unwrap()
+                .lines()
+                .filter(|line| line.contains(needle))
+                .map(str::to_owned)
+                .collect()
+        }
+    }
+
+    fn handles_over(bus: Arc<EventBus>) -> ShutdownHandles {
+        let catalog = stub_catalog();
+        let action_engine = spawn_action_engine(
+            Arc::clone(&bus),
+            Arc::clone(&catalog),
+            Arc::new(MockActionRepo::new()),
+            Arc::new(MockHistoryRepo::new()),
+            Arc::new(SubActionRegistry::new()),
+            Arc::new(ActionCancelRegistry::new()),
+        );
+        let scheduler = QueueScheduler::spawn(action_engine.clone(), Arc::clone(&bus), Vec::new());
+        let trigger_evaluator = spawn_trigger_evaluator(
+            Arc::clone(&bus),
+            Arc::new(TriggerRegistry::new()),
+            catalog,
+            scheduler.clone(),
+            Config::default(),
+        );
+        ShutdownHandles {
+            bus,
+            action_engine,
+            scheduler,
+            trigger_evaluator,
+            server: None,
+            speak: None,
+            hotkey: None,
+            storage: test_backend().0,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_flush_that_outlasts_its_budget_logs_the_rows_left_unwritten_once() {
+        let captured = Captured::default();
+        let sink = captured.clone();
+        let _logs = tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_ansi(false)
+                .with_writer(move || sink.clone())
+                .finish(),
+        );
+        let bus = EventBus::new(Arc::new(StuckEventLog));
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+        let handles = handles_over(Arc::clone(&bus));
+        for kind in ["a", "b", "c"] {
+            bus.publish(Event::new(EventSource::Core, kind, serde_json::Value::Null));
+        }
+
+        handles.run_graceful().await;
+
+        let lines = captured.lines_containing("flush budget ran out");
+        assert!(
+            matches!(lines.as_slice(), [only] if only.contains("rows=3")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn every_step_budget_up_to_the_unwritten_row_count_fits_inside_the_graceful_budget() {
+        let worst_case =
+            SETTLE + SERVER_STOP_BUDGET + SPEAK_STOP_BUDGET + FLUSH_BUDGET + ABANDON_BUDGET;
+
+        assert!(
+            worst_case <= GRACEFUL_BUDGET,
+            "{worst_case:?} of steps before the count is logged, {GRACEFUL_BUDGET:?} allowed"
+        );
+    }
+}

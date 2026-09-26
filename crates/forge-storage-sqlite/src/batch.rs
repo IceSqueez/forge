@@ -32,3 +32,19 @@ pub(crate) async fn insert_rows<T>(
     Ok(())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_column_count_keeps_a_statement_within_the_bound_parameter_ceiling() {
+        for columns in 1..=MAX_BOUND_PARAMETERS {
+            let rows = rows_per_statement(columns);
+            assert!(
+                (1..=MAX_ROWS_PER_STATEMENT).contains(&rows)
+                    && rows * columns <= MAX_BOUND_PARAMETERS,
+                "{columns} columns -> {rows} rows"
+            );
+        }
+    }
+}

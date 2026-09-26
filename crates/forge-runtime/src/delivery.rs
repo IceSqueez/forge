@@ -431,6 +431,7 @@ mod tests {
                 priority_dropped: 0,
                 bulk_dropped: (FLOOD - LANE_CAPACITY) as u64,
                 skipped: 0,
+                unwritten: 0,
             }
         );
     }

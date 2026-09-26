@@ -1,18 +1,32 @@
 use std::collections::HashMap;
 
 use forge_events::Event;
-use forge_runtime::{QueueIntake, QueueMode, QueueProcessing};
+use forge_runtime::{QueueDepth, QueueDepths, QueueIntake, QueueMode, QueueProcessing};
 use forge_types::QueueId;
 
 pub struct QueueHealth {
     modes: HashMap<QueueId, QueueMode>,
+    depths: QueueDepths,
 }
 
 impl QueueHealth {
     pub fn new() -> Self {
         Self {
             modes: HashMap::new(),
+            depths: QueueDepths::new(),
         }
+    }
+
+    pub fn apply_depths(&mut self, depths: QueueDepths) -> bool {
+        if self.depths == depths {
+            return false;
+        }
+        self.depths = depths;
+        true
+    }
+
+    pub fn depth(&self, id: QueueId) -> Option<QueueDepth> {
+        self.depths.get(&id).copied()
     }
 
     pub fn apply_event(&mut self, event: &Event) -> bool {

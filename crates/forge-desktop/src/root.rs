@@ -6,7 +6,7 @@ use forge_components::{
     icon, mono_family, primary_button, radius, spacing, tr,
 };
 use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
-use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle, LossWatch};
+use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
 use futures_util::StreamExt as _;
 use gpui::{
@@ -35,6 +35,7 @@ use crate::topics::Topics;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
 const LOSS_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
+const QUEUE_DEPTH_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
 
 enum BootState {
     Booting,
@@ -146,6 +147,7 @@ pub fn run_boot(
                 let bridge_sub = handles.bus.subscribe_observer(UI_EVENTS);
                 let chat_feed_bridge = ChatFeedBridge::subscribe(&handles.bus, &handles.rt_handle);
                 let loss_watch = handles.bus.watch_loss();
+                let depth_watch = handles.scheduler.watch_depths();
                 let event_loss_for_bridge = event_loss.clone();
                 let event_loss_for_chat = event_loss.clone();
                 let handles_for_shell = Arc::clone(&handles);
@@ -155,6 +157,7 @@ pub fn run_boot(
                 let event_log_for_bridge = event_log.clone();
                 let platforms_for_bridge = platforms.clone();
                 let queue_health_for_bridge = queue_health.clone();
+                let queue_health_for_depths = queue_health.clone();
                 let speak_for_bridge = speak.clone();
                 let live_viewers_handle = handles.live_viewers.clone();
                 let backend_for_shortcuts = Arc::clone(&handles.backend);
@@ -223,6 +226,7 @@ pub fn run_boot(
                     )
                     .await;
                     start_loss_bridge(cx, event_loss_for_bridge, loss_watch);
+                    start_queue_depth_bridge(cx, queue_health_for_depths, depth_watch);
                     chat_feed_bridge.start(cx, chat_feed_for_history, event_loss_for_chat);
                     start_bridge(
                         cx,
@@ -393,6 +397,31 @@ fn start_loss_bridge(cx: &mut AsyncApp, loss: Entity<EventLoss>, mut watch: Loss
             cx.background_executor().timer(LOSS_REPAINT_INTERVAL).await;
             match watch.changed().await {
                 Some(next) => report = next,
+                None => break,
+            }
+        }
+    })
+    .detach();
+}
+
+fn start_queue_depth_bridge(
+    cx: &mut AsyncApp,
+    health: Entity<QueueHealth>,
+    mut watch: QueueDepthWatch,
+) {
+    cx.spawn(async move |cx| {
+        let mut depths = watch.current();
+        loop {
+            health.update(cx, |health, cx| {
+                if health.apply_depths(depths) {
+                    cx.notify();
+                }
+            });
+            cx.background_executor()
+                .timer(QUEUE_DEPTH_REPAINT_INTERVAL)
+                .await;
+            match watch.changed().await {
+                Some(next) => depths = next,
                 None => break,
             }
         }

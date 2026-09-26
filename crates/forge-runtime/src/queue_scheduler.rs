@@ -10,6 +10,7 @@ use tokio::sync::futures::Notified;
 use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tracing::{info, warn};
 
+use crate::queue_depth::{DepthBoard, DepthCell, QueueDepthWatch};
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
 /// Defensive ceiling on tasks buffered per queue; a frozen queue accumulates until it is hit.
@@ -148,6 +149,7 @@ pub struct QueueRuntimeState {
 #[derive(Clone)]
 pub struct QueueSchedulerHandle {
     sender: mpsc::UnboundedSender<SchedulerCommand>,
+    depths: DepthBoard,
 }
 
 enum SchedulerCommand {
@@ -173,6 +175,7 @@ struct QueueSlot {
     name: String,
     gate: ConcurrencyGate,
     inflight: InflightTracker,
+    depth: DepthCell,
 }
 
 /// A lowered limit binds from the next dispatch; executions already running keep their slot.
@@ -268,14 +271,16 @@ struct PendingBuffer {
 struct PendingInner {
     tasks: Mutex<VecDeque<QueueTask>>,
     arrived: Notify,
+    depth: DepthCell,
 }
 
 impl PendingBuffer {
-    fn new() -> Self {
+    fn new(depth: DepthCell) -> Self {
         Self {
             inner: Arc::new(PendingInner {
                 tasks: Mutex::new(VecDeque::new()),
                 arrived: Notify::new(),
+                depth,
             }),
         }
     }
@@ -288,6 +293,7 @@ impl PendingBuffer {
                 return false;
             }
             tasks.push_back(task);
+            self.publish(tasks.len());
         }
         self.inner.arrived.notify_one();
         true
@@ -296,15 +302,25 @@ impl PendingBuffer {
     /// While frozen only a `bypass_pause` task is taken; the rest keep their arrival order.
     fn take_next(&self, frozen: bool) -> Option<QueueTask> {
         let mut tasks = self.lock();
-        if !frozen {
-            return tasks.pop_front();
-        }
-        let at = tasks.iter().position(|task| task.bypass_pause)?;
-        tasks.remove(at)
+        let taken = if frozen {
+            let at = tasks.iter().position(|task| task.bypass_pause)?;
+            tasks.remove(at)
+        } else {
+            tasks.pop_front()
+        };
+        self.publish(tasks.len());
+        taken
     }
 
     fn clear(&self) {
-        self.lock().clear();
+        let mut tasks = self.lock();
+        tasks.clear();
+        self.publish(0);
+    }
+
+    /// Called with the task lock held, so published depths follow the buffer's own order.
+    fn publish(&self, pending: usize) {
+        self.inner.depth.update(|depth| depth.pending = pending);
     }
 
     fn len(&self) -> usize {
@@ -321,9 +337,10 @@ impl PendingBuffer {
 }
 
 /// Tracks in-flight cancel signals so `Clear(keep_current = false)` never cancels a finished execution.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct InflightTracker {
     inner: Arc<Mutex<InflightInner>>,
+    depth: DepthCell,
 }
 
 #[derive(Default)]
@@ -333,16 +350,31 @@ struct InflightInner {
 }
 
 impl InflightTracker {
+    fn new(depth: DepthCell) -> Self {
+        Self {
+            inner: Arc::default(),
+            depth,
+        }
+    }
+
     fn register(&self, signal: CancelSignal) -> u64 {
         let mut inner = self.lock();
         let id = inner.next_id;
         inner.next_id = inner.next_id.wrapping_add(1);
         inner.signals.insert(id, signal);
+        self.publish(inner.signals.len());
         id
     }
 
     fn complete(&self, id: u64) {
-        self.lock().signals.remove(&id);
+        let mut inner = self.lock();
+        inner.signals.remove(&id);
+        self.publish(inner.signals.len());
+    }
+
+    /// Called with the tracker lock held, so published counts follow the tracker's own order.
+    fn publish(&self, in_flight: usize) {
+        self.depth.update(|depth| depth.in_flight = in_flight);
     }
 
     fn cancel_all(&self) {
@@ -416,6 +448,10 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| SchedulerError::ChannelClosed)
     }
 
+    pub fn watch_depths(&self) -> QueueDepthWatch {
+        self.depths.watch()
+    }
+
     pub fn shutdown(self) {
         let _ = self.sender.send(SchedulerCommand::Shutdown);
     }
@@ -441,24 +477,39 @@ impl QueueScheduler {
     ) -> QueueSchedulerHandle {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let engine = Arc::new(engine);
+        let depths = DepthBoard::new();
 
         let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
         for queue in initial_queues {
             let id = queue.id;
-            let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
+            let slot = Self::make_queue_slot(queue, Arc::clone(&engine), &depths);
             slots.insert(id, slot);
         }
 
-        tokio::spawn(Self::run_scheduler(cmd_rx, slots, bus, engine));
+        tokio::spawn(Self::run_scheduler(
+            cmd_rx,
+            slots,
+            bus,
+            engine,
+            depths.clone(),
+        ));
 
-        QueueSchedulerHandle { sender: cmd_tx }
+        QueueSchedulerHandle {
+            sender: cmd_tx,
+            depths,
+        }
     }
 
-    fn make_queue_slot(queue: Queue, engine: Arc<ActionEngineHandle>) -> QueueSlot {
+    fn make_queue_slot(
+        queue: Queue,
+        engine: Arc<ActionEngineHandle>,
+        depths: &DepthBoard,
+    ) -> QueueSlot {
         let mode = QueueMode::default();
         let (processing_tx, processing_rx) = watch::channel(mode.processing);
-        let inflight = InflightTracker::default();
-        let pending = PendingBuffer::new();
+        let depth = depths.register(queue.id);
+        let inflight = InflightTracker::new(depth.clone());
+        let pending = PendingBuffer::new(depth.clone());
         let gate = ConcurrencyGate::new(queue.concurrency.max(1) as usize);
 
         tokio::spawn(Self::run_bounded(
@@ -477,6 +528,7 @@ impl QueueScheduler {
             name: queue.name,
             gate,
             inflight,
+            depth,
         }
     }
 
@@ -546,6 +598,7 @@ impl QueueScheduler {
         mut slots: HashMap<QueueId, QueueSlot>,
         bus: Arc<EventBus>,
         engine: Arc<ActionEngineHandle>,
+        depths: DepthBoard,
     ) {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
@@ -565,7 +618,7 @@ impl QueueScheduler {
                         MembershipOutcome::AlreadyRegistered
                     } else {
                         let id = queue.id;
-                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine));
+                        let slot = Self::make_queue_slot(queue, Arc::clone(&engine), &depths);
                         slots.insert(id, slot);
                         MembershipOutcome::Applied
                     };
@@ -573,7 +626,10 @@ impl QueueScheduler {
                 }
                 SchedulerCommand::Deregister(queue_id, reply) => {
                     let outcome = match slots.remove(&queue_id) {
-                        Some(_) => MembershipOutcome::Applied,
+                        Some(_) => {
+                            depths.deregister(&queue_id);
+                            MembershipOutcome::Applied
+                        }
                         None => MembershipOutcome::NotFound,
                     };
                     let _ = reply.send(outcome);
@@ -632,6 +688,8 @@ impl QueueScheduler {
 
         if !accepted {
             slot.overflowed = slot.overflowed.saturating_add(1);
+            let overflowed = slot.overflowed;
+            slot.depth.update(|depth| depth.overflowed = overflowed);
             Self::publish_skip(
                 bus,
                 queue_id,
@@ -694,6 +752,7 @@ impl QueueScheduler {
 
         slot.mode = mode;
         slot.overflowed = 0;
+        slot.depth.update(|depth| depth.overflowed = 0);
         slot.processing.send_replace(mode.processing);
 
         bus.publish(Event::new(

@@ -33,7 +33,8 @@ impl FeedItem {
     }
 }
 
-/// Holds at most `capacity` events; overflow drops the oldest and folds each dropped message into a gap at the front.
+/// Holds at most `capacity` events; overflow drops the oldest message into a gap in its place, and
+/// an annotation only once no message is left, so moderation still reaches rows already on screen.
 pub struct FeedInbox {
     items: VecDeque<FeedItem>,
     queued: usize,
@@ -78,27 +79,54 @@ impl FeedInbox {
     }
 
     fn evict_oldest(&mut self) {
-        let mut gap = FeedGap::default();
-        while let Some(item) = self.items.pop_front() {
-            match item {
-                FeedItem::Gap(leading) => gap.absorb(leading),
-                FeedItem::Message(_) => {
-                    gap.messages += 1;
-                    self.queued -= 1;
-                    break;
-                }
-                FeedItem::Annotation(_) => {
-                    self.queued -= 1;
-                    break;
-                }
+        let victim = self
+            .items
+            .iter()
+            .position(|item| matches!(item, FeedItem::Message(_)))
+            .or_else(|| {
+                self.items
+                    .iter()
+                    .position(|item| matches!(item, FeedItem::Annotation(_)))
+            });
+        let Some(at) = victim else {
+            return;
+        };
+        let gap = match self.items.remove(at) {
+            Some(FeedItem::Message(_)) => FeedGap {
+                messages: 1,
+                events: 0,
+            },
+            Some(FeedItem::Annotation(_)) => FeedGap {
+                messages: 0,
+                events: 1,
+            },
+            _ => return,
+        };
+        self.queued -= 1;
+        self.place_gap(at, gap);
+    }
+
+    fn place_gap(&mut self, at: usize, gap: FeedGap) {
+        let previous_is_gap = at
+            .checked_sub(1)
+            .is_some_and(|before| matches!(self.items.get(before), Some(FeedItem::Gap(_))));
+        if !previous_is_gap {
+            match self.items.get_mut(at) {
+                Some(FeedItem::Gap(next)) => next.absorb(gap),
+                _ => self.items.insert(at, FeedItem::Gap(gap)),
             }
-        }
-        if gap.is_empty() {
             return;
         }
-        match self.items.front_mut() {
-            Some(FeedItem::Gap(next)) => next.absorb(gap),
-            _ => self.items.push_front(FeedItem::Gap(gap)),
+        let following = match self.items.get(at) {
+            Some(FeedItem::Gap(_)) => match self.items.remove(at) {
+                Some(FeedItem::Gap(next)) => next,
+                _ => FeedGap::default(),
+            },
+            _ => FeedGap::default(),
+        };
+        if let Some(FeedItem::Gap(previous)) = self.items.get_mut(at - 1) {
+            previous.absorb(gap);
+            previous.absorb(following);
         }
     }
 }

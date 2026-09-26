@@ -495,6 +495,7 @@ pub struct QueuesView {
     menu_open: Option<QueueId>,
     menu_click_pos: Option<Point<Pixels>>,
     diverged: HashSet<QueueId>,
+    queue_health: Entity<QueueHealth>,
     scheduler: QueueSchedulerHandle,
     queue_repo: Arc<dyn QueueRepo>,
     action_repo: Arc<dyn ActionRepo>,
@@ -517,6 +518,9 @@ impl QueuesView {
         let palette = cx.palette();
         let health_obs = cx.observe(&queue_health, |this, health, cx| {
             this.sync_modes(&health, cx);
+            if this.apply_depths(health.read(cx)) {
+                cx.notify();
+            }
         });
         let search = SearchState::new(cx, palette, tr!("queues_search_placeholder"));
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
@@ -529,6 +533,7 @@ impl QueuesView {
             menu_open: None,
             menu_click_pos: None,
             diverged: HashSet::new(),
+            queue_health,
             scheduler,
             queue_repo,
             action_repo,
@@ -577,6 +582,24 @@ impl QueuesView {
         }
     }
 
+    fn apply_depths(&mut self, health: &QueueHealth) -> bool {
+        let mut changed = false;
+        for row in &mut self.queues {
+            let depth = health.depth(row.id).unwrap_or_default();
+            let pending = u32::try_from(depth.pending).unwrap_or(u32::MAX);
+            let in_flight = u32::try_from(depth.in_flight).unwrap_or(u32::MAX);
+            if (row.pending, row.in_flight, row.overflowed)
+                != (pending, in_flight, depth.overflowed)
+            {
+                row.pending = pending;
+                row.in_flight = in_flight;
+                row.overflowed = depth.overflowed;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     fn visible_indices(&self) -> Vec<usize> {
         self.queues
             .iter()
@@ -605,6 +628,8 @@ impl QueuesView {
         self.diverged.retain(|id| rows.iter().any(|r| r.id == *id));
         self.queues = rows;
         self.loading = false;
+        let health = self.queue_health.clone();
+        self.apply_depths(health.read(cx));
         cx.notify();
     }
 
@@ -1772,17 +1797,17 @@ async fn load_queues(
         .map(|q| {
             let assigned = actions.iter().filter(|a| a.queue_id == q.id).count() as u32;
             let concurrency = q.concurrency.max(1);
-            let state = states.get(&q.id).copied();
+            let mode = states.get(&q.id).map_or(QueueMode::RUNNING, |s| s.mode);
             QueueRow {
                 id: q.id,
                 name: q.name,
                 description: q.description,
                 blocking: concurrency == SERIAL_CONCURRENCY,
                 concurrency,
-                mode: state.map_or(QueueMode::RUNNING, |s| s.mode),
-                pending: state.map_or(0, |s| s.pending as u32),
-                in_flight: state.map_or(0, |s| s.in_flight as u32),
-                overflowed: state.map_or(0, |s| s.overflowed),
+                mode,
+                pending: 0,
+                in_flight: 0,
+                overflowed: 0,
                 actions: assigned,
                 running: vec![],
             }

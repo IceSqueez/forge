@@ -24,6 +24,7 @@ pub mod overlay_media;
 pub mod overlay_service;
 mod overlay_shows;
 mod persist_batch;
+mod queue_depth;
 pub mod queue_scheduler;
 mod run_history;
 pub mod script_registry;
@@ -60,6 +61,7 @@ pub use overlay_service::{
 pub use overlay_shows::{
     SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowDepthWatch, ShowEnd, ShowTicket,
 };
+pub use queue_depth::{QueueDepth, QueueDepthWatch, QueueDepths};
 pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
     QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,

@@ -1427,9 +1427,13 @@ mod tests {
 
     #[tokio::test]
     async fn lagged_bus_reader_publishes_one_failure_naming_the_lag_and_keeps_serving() {
-        // Why: must exceed the event bus broadcast capacity so the bridge's receiver lags.
-        const FLOOD: usize = 2_048;
-        let bus = test_bus();
+        const OBSERVER_CAPACITY: usize = 64;
+        const FLOOD: usize = OBSERVER_CAPACITY * 2;
+        let config = forge_runtime::Config {
+            bus_observer_capacity: OBSERVER_CAPACITY,
+            ..forge_runtime::Config::default()
+        };
+        let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
         let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
         spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
         tokio::task::yield_now().await;

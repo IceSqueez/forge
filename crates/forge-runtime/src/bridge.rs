@@ -23,31 +23,57 @@ pub fn bus_subscription(bus: Arc<EventBus>) -> impl Stream<Item = Event> + Send 
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::NullEventLogRepo;
+    use crate::{Config, NullEventLogRepo};
     use forge_events::{Event, EventSource};
+    use forge_types::EventId;
+    use futures_util::StreamExt as _;
 
-    #[tokio::test]
-    async fn bus_subscription_delivers_published_event() {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let mut stream = bus_subscription(Arc::clone(&bus));
-        let ev = Event::new(EventSource::Core, "action.start", serde_json::Value::Null);
-        let expected_id = ev.id;
-        bus.publish(ev);
-        let received = stream.next().await.unwrap();
-        assert_eq!(received.id, expected_id);
+    const OBSERVER_CAPACITY: usize = 4;
+    const FLOOD: usize = OBSERVER_CAPACITY * 3;
+
+    fn published(bus: &EventBus, count: usize) -> Vec<EventId> {
+        (0..count)
+            .map(|i| {
+                let event = Event::new(
+                    EventSource::Core,
+                    format!("ev.{i}"),
+                    serde_json::Value::Null,
+                );
+                let id = event.id;
+                bus.publish(event);
+                id
+            })
+            .collect()
     }
 
     #[tokio::test]
-    async fn bus_subscription_delivers_multiple_events_in_order() {
+    async fn bus_subscription_delivers_events_in_publish_order() {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let mut stream = bus_subscription(Arc::clone(&bus));
-        let ev1 = Event::new(EventSource::Core, "ev.1", serde_json::Value::Null);
-        let ev2 = Event::new(EventSource::Core, "ev.2", serde_json::Value::Null);
-        let id1 = ev1.id;
-        let id2 = ev2.id;
-        bus.publish(ev1);
-        bus.publish(ev2);
-        assert_eq!(stream.next().await.unwrap().id, id1);
-        assert_eq!(stream.next().await.unwrap().id, id2);
+        let stream = bus_subscription(Arc::clone(&bus));
+        tokio::pin!(stream);
+        let ids = published(&bus, 2);
+
+        let received = vec![
+            stream.next().await.unwrap().id,
+            stream.next().await.unwrap().id,
+        ];
+
+        assert_eq!(received, ids);
+    }
+
+    #[tokio::test]
+    async fn a_lagged_bus_subscription_resumes_at_the_oldest_retained_event_instead_of_ending() {
+        let config = Config {
+            bus_observer_capacity: OBSERVER_CAPACITY,
+            ..Config::default()
+        };
+        let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
+        let stream = bus_subscription(Arc::clone(&bus));
+        tokio::pin!(stream);
+        let ids = published(&bus, FLOOD);
+
+        let first = stream.next().await.map(|event| event.id);
+
+        assert_eq!(first, Some(ids[FLOOD - OBSERVER_CAPACITY]));
     }
 }

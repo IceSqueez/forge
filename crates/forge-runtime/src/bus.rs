@@ -379,8 +379,24 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    const CHANNEL_CAP: usize = 16;
+    const RING_CAP: usize = 64;
+
     fn null_bus() -> Arc<EventBus> {
-        EventBus::new(Arc::new(NullEventLogRepo))
+        bus_with_caps(Arc::new(NullEventLogRepo), CHANNEL_CAP, RING_CAP)
+    }
+
+    fn bus_with_caps(
+        event_log: Arc<dyn EventLogRepo>,
+        observer_capacity: usize,
+        ring_retention: usize,
+    ) -> Arc<EventBus> {
+        let config = Config {
+            bus_observer_capacity: observer_capacity,
+            bus_ring_retention: ring_retention,
+            ..Config::default()
+        };
+        EventBus::with_config(event_log, &config)
     }
 
     fn core_event(kind: &str) -> Event {
@@ -422,7 +438,7 @@ mod tests {
     ) -> (Arc<EventBus>, Sandboxed<Arc<SqliteBackend>>) {
         let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
         let event_log: Arc<dyn EventLogRepo> = Arc::new(BackedEventLog(Arc::clone(&backend)));
-        let bus = EventBus::with_caps(event_log, channel_cap, ring_cap);
+        let bus = bus_with_caps(event_log, channel_cap, ring_cap);
         (bus, backend)
     }
 
@@ -479,12 +495,9 @@ mod tests {
     #[test]
     fn record_does_not_broadcast_to_subscribers() {
         let bus = null_bus();
-        let mut rx = bus.subscribe().into_receiver();
+        let mut sub = bus.subscribe();
         bus.record(core_event("silent.record"));
-        assert!(matches!(
-            rx.try_recv(),
-            Err(broadcast::error::TryRecvError::Empty)
-        ));
+        assert!(matches!(sub.try_recv(), Ok(None)));
     }
 
     #[test]
@@ -499,21 +512,21 @@ mod tests {
     #[tokio::test]
     async fn record_then_replay_delivers_event_exactly_once() {
         let bus = null_bus();
-        let mut rx = bus.subscribe().into_receiver();
+        let mut rx = bus.subscribe();
 
         let ev = core_event("trigger.candidate");
         let id = ev.id;
         bus.record(ev);
         bus.replay_and_publish(id).await.unwrap();
 
-        let first = rx.try_recv().unwrap();
+        let first = rx.try_recv().unwrap().unwrap();
         assert!(
             first.replay,
             "the single delivery must be the replayed event"
         );
         assert_eq!(first.kind, "trigger.candidate");
         assert!(
-            matches!(rx.try_recv(), Err(broadcast::error::TryRecvError::Empty)),
+            matches!(rx.try_recv(), Ok(None)),
             "record must not broadcast; only replay delivers, so exactly one event arrives"
         );
     }
@@ -711,7 +724,7 @@ mod tests {
     #[tokio::test]
     async fn flush_task_continues_after_insert_error() {
         let repo: Arc<FailFirstRepo> = Arc::new(FailFirstRepo::new());
-        let bus = EventBus::with_caps(
+        let bus = bus_with_caps(
             Arc::clone(&repo) as Arc<dyn EventLogRepo>,
             CHANNEL_CAP,
             RING_CAP,
@@ -898,7 +911,7 @@ mod tests {
 
     fn recording_bus() -> (Arc<EventBus>, Arc<RecordingRepo>) {
         let repo = Arc::new(RecordingRepo::new());
-        let bus = EventBus::with_caps(
+        let bus = bus_with_caps(
             Arc::clone(&repo) as Arc<dyn EventLogRepo>,
             CHANNEL_CAP,
             RING_CAP,
@@ -1054,5 +1067,66 @@ mod tests {
             !received_before_ring,
             "a subscriber received the event while the ring did not hold it yet"
         );
+    }
+
+    fn observer_loss(bus: &EventBus, consumer: &str) -> Option<u64> {
+        bus.loss_report()
+            .into_iter()
+            .find(|entry| entry.consumer == consumer && entry.tier == DeliveryTier::Observer)
+            .map(|entry| entry.loss.skipped)
+    }
+
+    #[tokio::test]
+    async fn each_lagging_observer_counts_only_the_events_it_skipped_itself() {
+        let bus = null_bus();
+        let mut lagging = bus.subscribe_observer("lagging");
+        let mut keeping_up = bus.subscribe_observer("keeping_up");
+        let overflow = 6;
+        for i in 0..CHANNEL_CAP / 2 {
+            bus.publish(core_event(&format!("early.{i}")));
+        }
+        while let Ok(Some(_)) = keeping_up.try_recv() {}
+        for i in 0..CHANNEL_CAP / 2 + overflow {
+            bus.publish(core_event(&format!("late.{i}")));
+        }
+
+        let lagging_saw = lagging.next().await;
+        let keeping_up_saw = keeping_up.next().await;
+
+        assert!(matches!(lagging_saw, Delivery::Skipped(n) if n == overflow as u64));
+        assert!(matches!(keeping_up_saw, Delivery::Event(_)));
+        assert_eq!(
+            (
+                observer_loss(&bus, "lagging"),
+                observer_loss(&bus, "keeping_up")
+            ),
+            (Some(overflow as u64), Some(0))
+        );
+    }
+
+    #[tokio::test]
+    async fn watch_loss_wakes_with_the_totals_of_a_critical_consumer_that_dropped() {
+        let config = Config {
+            critical_bulk_capacity: 1,
+            ..Config::default()
+        };
+        let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
+        let _critical = bus.subscribe_critical("probe");
+        let mut watch = bus.watch_loss();
+        for _ in 0..3 {
+            bus.publish(core_event("action.start"));
+        }
+
+        let report = tokio::time::timeout(Duration::from_secs(5), watch.changed())
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+
+        let dropped = report
+            .iter()
+            .find(|entry| entry.consumer == "probe")
+            .map(|entry| entry.loss.bulk_dropped);
+        assert_eq!(dropped, Some(2));
     }
 }

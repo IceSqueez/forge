@@ -67,14 +67,11 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::*;
-    use crate::NullEventLogRepo;
+    use crate::{Config, NullEventLogRepo};
 
-    const LAG_CHANNEL_CAP: usize = 16;
-    const LAG_RING_CAP: usize = 64;
-    const LAG_BURST: usize = LAG_CHANNEL_CAP * 2;
-    const WARMUP_LOGIN: &str = "before-the-gap";
-    const AFTER_GAP_LOGIN: &str = "after-the-gap";
-    const RECORD_TIMEOUT: Duration = Duration::from_millis(200);
+    const OBSERVER_CAPACITY: usize = 16;
+    const BURST: usize = OBSERVER_CAPACITY * 4;
+    const RECORD_TIMEOUT: Duration = Duration::from_millis(500);
 
     fn chat_message(login: &str) -> Event {
         Event::new(
@@ -85,7 +82,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_tracker_keeps_recording_after_its_subscription_lags() {
+    async fn the_tracker_records_every_message_of_a_burst_larger_than_the_observer_buffer() {
         let (recorded_tx, mut recorded) = mpsc::unbounded_channel();
         let mut repo = MockViewerRepo::new();
         repo.expect_record_message()
@@ -93,37 +90,29 @@ mod tests {
                 let _ = recorded_tx.send(username.to_owned());
                 Ok(())
             });
-
-        let bus = EventBus::with_caps(Arc::new(NullEventLogRepo), LAG_CHANNEL_CAP, LAG_RING_CAP);
+        let config = Config {
+            bus_observer_capacity: OBSERVER_CAPACITY,
+            ..Config::default()
+        };
+        let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
         spawn_viewer_tracker(Arc::clone(&bus), Arc::new(repo));
 
-        // The task subscribes on its first poll, and publishing never yields; the warm-up's
-        // arrival then proves it is subscribed and parked, so the burst that follows lands
-        // with nobody draining it.
-        tokio::task::yield_now().await;
-        bus.publish(chat_message(WARMUP_LOGIN));
-        assert_eq!(
-            tokio::time::timeout(RECORD_TIMEOUT, recorded.recv())
-                .await
-                .unwrap(),
-            Some(WARMUP_LOGIN.to_owned())
-        );
-
-        for i in 0..LAG_BURST {
-            bus.publish(Event::new(
-                EventSource::Core,
-                "core.filler",
-                serde_json::json!({ "i": i }),
-            ));
+        // Publishing never yields, so the whole burst lands before the tracker drains anything.
+        let logins: Vec<String> = (0..BURST).map(|i| format!("viewer-{i}")).collect();
+        for login in &logins {
+            bus.publish(chat_message(login));
         }
-        bus.publish(chat_message(AFTER_GAP_LOGIN));
 
+        let mut seen = Vec::with_capacity(BURST);
+        while seen.len() < BURST {
+            match tokio::time::timeout(RECORD_TIMEOUT, recorded.recv()).await {
+                Ok(Some(login)) => seen.push(login),
+                _ => break,
+            }
+        }
         assert_eq!(
-            tokio::time::timeout(RECORD_TIMEOUT, recorded.recv())
-                .await
-                .unwrap(),
-            Some(AFTER_GAP_LOGIN.to_owned()),
-            "one lag must not retire viewer tracking for the rest of the process"
+            seen, logins,
+            "the tracker is a lossless consumer; a burst must not cost it any viewer"
         );
     }
 }

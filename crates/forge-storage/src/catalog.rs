@@ -404,19 +404,39 @@ mod tests {
         );
     }
 
+    /// Yields until the detached write has run to its end, bounded so a lost wakeup fails instead of hanging.
+    async fn settle_detached_write(revision: &CatalogRevision, from: u64) -> u64 {
+        for _ in 0..SETTLE_YIELDS {
+            if revision.current() != from {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        revision.current()
+    }
+
+    const SETTLE_YIELDS: usize = 64;
+
     #[tokio::test]
-    async fn cancelled_in_flight_write_still_advances_the_revision() {
-        let (repo, _permits, revision) = gated();
+    async fn a_cancelled_caller_moves_the_revision_only_once_its_write_commits() {
+        let (repo, permits, revision) = gated();
         let queue = queue();
         {
             let mut save = pin!(repo.save(&queue));
             assert!(poll_once(save.as_mut()).await.is_pending());
         }
+        for _ in 0..SETTLE_YIELDS {
+            tokio::task::yield_now().await;
+        }
+        let before_commit = revision.current();
+
+        permits.add_permits(1);
+        let after_commit = settle_detached_write(&revision, before_commit).await;
 
         assert_eq!(
-            revision.current(),
-            1,
-            "a dropped write may still commit, so readers must be told to rebuild",
+            (before_commit, after_commit),
+            (0, 1),
+            "a reader rebuilding before the commit lands would cache the old catalog under the new revision",
         );
     }
 }

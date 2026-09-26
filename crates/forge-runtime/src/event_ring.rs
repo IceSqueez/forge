@@ -55,3 +55,78 @@ impl EventRing {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_events::EventSource;
+
+    use super::*;
+
+    const MAX_RETENTION: usize = 5;
+    const MAX_PUSHES: usize = 13;
+
+    fn event() -> Arc<Event> {
+        Arc::new(Event::new(
+            EventSource::Core,
+            "ring.probe",
+            serde_json::Value::Null,
+        ))
+    }
+
+    fn ids<'a>(events: impl Iterator<Item = &'a Arc<Event>>) -> Vec<EventId> {
+        events.map(|event| event.id).collect()
+    }
+
+    /// The linear scans the index replaced: newest match by id, then everything after it.
+    fn scanned(window: &[Arc<Event>], id: EventId) -> Option<(usize, Vec<EventId>)> {
+        let position = window.iter().rposition(|event| event.id == id)?;
+        Some((position, ids(window[position + 1..].iter())))
+    }
+
+    fn indexed(ring: &EventRing, id: EventId) -> Option<(usize, Vec<EventId>)> {
+        let position = ring.position(id)?;
+        Some((position, ids(ring.after(position))))
+    }
+
+    #[test]
+    fn indexed_lookup_matches_a_linear_scan_of_the_retained_window() {
+        for retention in 1..=MAX_RETENTION {
+            for pushes in 0..=MAX_PUSHES {
+                let pushed: Vec<Arc<Event>> = (0..pushes).map(|_| event()).collect();
+                let mut ring = EventRing::new(retention);
+                for event in &pushed {
+                    ring.push(Arc::clone(event));
+                }
+                let window = &pushed[pushes.saturating_sub(retention)..];
+
+                for probe in pushed.iter().map(|event| event.id).chain([EventId::new()]) {
+                    assert_eq!(
+                        (indexed(&ring, probe), ring.get(probe).map(|event| event.id)),
+                        (
+                            scanned(window, probe),
+                            scanned(window, probe).map(|_| probe)
+                        ),
+                        "retention {retention}, {pushes} pushes"
+                    );
+                }
+                assert_eq!(ids(ring.iter()), ids(window.iter()));
+            }
+        }
+    }
+
+    #[test]
+    fn evicting_an_older_copy_of_an_id_keeps_the_newer_copy_reachable() {
+        let repeated = event();
+        let mut ring = EventRing::new(3);
+        for event in [
+            Arc::clone(&repeated),
+            event(),
+            Arc::clone(&repeated),
+            event(),
+        ] {
+            ring.push(event);
+        }
+
+        assert_eq!(ring.position(repeated.id), Some(1));
+    }
+}

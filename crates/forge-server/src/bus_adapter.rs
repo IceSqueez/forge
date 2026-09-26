@@ -920,4 +920,72 @@ mod tests {
             "OBS event must not pass Twitch-source filter"
         );
     }
+
+    const OBSERVER_CAPACITY: usize = 8;
+    const SKIPPED: u64 = 5;
+
+    struct LaggedFanOut {
+        _bus: Arc<EventBus>,
+        subscribed: broadcast::Receiver<WsFrame>,
+        unsubscribed: broadcast::Receiver<WsFrame>,
+    }
+
+    /// Publishes past the fan-out's buffer before its task first runs, so it resumes with a lag of exactly `SKIPPED`.
+    async fn lagged_fan_out() -> LaggedFanOut {
+        let config = forge_runtime::Config {
+            bus_observer_capacity: OBSERVER_CAPACITY,
+            ..forge_runtime::Config::default()
+        };
+        let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
+        let adapter = BusAdapter::new(Arc::clone(&bus));
+        adapter.spawn();
+        let (_, subscribed) = adapter.register_client(wildcard_filter()).await;
+        let (_, unsubscribed) = adapter.register_client(no_filters()).await;
+        for _ in 0..OBSERVER_CAPACITY as u64 + SKIPPED {
+            bus.publish(Event::new(
+                EventSource::Twitch,
+                "chat.message",
+                serde_json::Value::Null,
+            ));
+        }
+        LaggedFanOut {
+            _bus: bus,
+            subscribed,
+            unsubscribed,
+        }
+    }
+
+    async fn first_frame(rx: &mut broadcast::Receiver<WsFrame>) -> WsFrame {
+        tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timeout waiting for a frame")
+            .expect("receiver error")
+    }
+
+    #[tokio::test]
+    async fn a_fan_out_lag_tells_a_subscribed_client_exactly_how_many_events_it_skipped() {
+        let mut fan_out = lagged_fan_out().await;
+
+        let WsFrame::Text(text) = first_frame(&mut fan_out.subscribed).await else {
+            panic!("expected a text frame");
+        };
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&text).unwrap(),
+            serde_json::json!({ "dropped": SKIPPED })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fan_out_lag_sends_nothing_to_a_client_with_no_event_subscriptions() {
+        let mut fan_out = lagged_fan_out().await;
+
+        // The notice goes to every client in one pass, so once one has it the pass is over.
+        first_frame(&mut fan_out.subscribed).await;
+
+        assert!(matches!(
+            fan_out.unsubscribed.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
 }

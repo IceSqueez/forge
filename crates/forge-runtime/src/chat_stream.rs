@@ -94,7 +94,7 @@ mod tests {
     use tokio_stream::StreamExt as _;
 
     use super::*;
-    use crate::{EventBus, NullEventLogRepo};
+    use crate::{Config, EventBus, NullEventLogRepo};
 
     fn null_bus() -> Arc<EventBus> {
         EventBus::new(Arc::new(NullEventLogRepo))
@@ -233,13 +233,15 @@ mod tests {
         assert_eq!(row.id, "id-0");
     }
 
-    const LAG_CHANNEL_CAP: usize = 16;
-    const LAG_RING_CAP: usize = 64;
-    const LAG_BURST: usize = LAG_CHANNEL_CAP * 2;
-    const AFTER_GAP_MSG_ID: &str = "after-the-gap";
+    const OBSERVER_CAPACITY: usize = 16;
+    const BURST: usize = OBSERVER_CAPACITY * 4;
 
     type UnitStream = std::pin::Pin<Box<dyn Stream<Item = ()> + Send>>;
-    type StreamLagCase = (&'static str, fn(Arc<EventBus>) -> UnitStream, fn() -> Event);
+    type StreamBurstCase = (
+        &'static str,
+        fn(Arc<EventBus>) -> UnitStream,
+        fn(usize) -> Event,
+    );
 
     fn moderation_event(source: EventSource) -> Event {
         let payload = ChatModerationPayload {
@@ -255,40 +257,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_bus_lag_skips_the_gap_without_ending_either_chat_stream() {
-        let cases: [StreamLagCase; 2] = [
+    async fn both_chat_streams_yield_every_event_of_a_burst_larger_than_the_observer_buffer() {
+        let cases: [StreamBurstCase; 2] = [
             (
                 "chat",
                 |bus| Box::pin(chat_stream(bus).map(|_| ())),
-                || chat_event(EventSource::Twitch, AFTER_GAP_MSG_ID),
+                |i| chat_event(EventSource::Twitch, &format!("burst-{i}")),
             ),
             (
                 "moderation",
                 |bus| Box::pin(crate::chat_moderation_stream(bus).map(|_| ())),
-                || moderation_event(EventSource::Twitch),
+                |_| moderation_event(EventSource::Twitch),
             ),
         ];
 
-        for (label, build, after_gap) in cases {
-            let bus =
-                EventBus::with_caps(Arc::new(NullEventLogRepo), LAG_CHANNEL_CAP, LAG_RING_CAP);
+        for (label, build, event) in cases {
+            let config = Config {
+                bus_observer_capacity: OBSERVER_CAPACITY,
+                ..Config::default()
+            };
+            let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
             let stream = build(Arc::clone(&bus));
             tokio::pin!(stream);
 
-            for i in 0..LAG_BURST {
-                bus.publish(Event::new(
-                    EventSource::Core,
-                    "core.filler",
-                    serde_json::json!({ "i": i }),
-                ));
+            for i in 0..BURST {
+                bus.publish(event(i));
             }
-            bus.publish(after_gap());
 
-            let item = timeout(Duration::from_millis(200), stream.next()).await;
+            let yielded = timeout(
+                Duration::from_millis(500),
+                stream.as_mut().take(BURST).collect::<Vec<()>>(),
+            )
+            .await
+            .map(|items| items.len());
             assert_eq!(
-                item.ok().flatten(),
-                Some(()),
-                "{label} stream must skip the gap and keep yielding"
+                yielded.ok(),
+                Some(BURST),
+                "{label} stream is a lossless consumer and must not lose a burst to lag"
             );
         }
     }

@@ -479,9 +479,10 @@ pub fn spawn_trigger_evaluator(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
 
+    use crate::test_support::log_capture::{capture, on_target};
     use crate::test_support::{Sandboxed, sandboxed_backend};
     use forge_events::{Event, EventSource};
     use forge_registry::{
@@ -498,9 +499,6 @@ mod tests {
         UserBadge, VariableSchema, VariantKind,
     };
     use serde_json::json;
-    use tracing::field::{Field, Visit};
-    use tracing::span;
-    use tracing::subscriber::Interest;
 
     use super::*;
     use crate::{
@@ -701,7 +699,7 @@ mod tests {
         }
 
         /// Builds the evaluator without spawning it, so a test can drive `run` to completion.
-        fn evaluator(&self, subscription: EventSubscription) -> TriggerEvaluator {
+        fn evaluator(&self, subscription: CriticalSubscription) -> TriggerEvaluator {
             TriggerEvaluator {
                 bus: Arc::clone(&self.bus),
                 registry: Arc::clone(&self.registry),
@@ -761,7 +759,7 @@ mod tests {
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let fixture = fixture(Arc::clone(&bus)).await;
         let mut sub = bus.subscribe();
-        let evaluator = fixture.evaluator(bus.subscribe());
+        let evaluator = fixture.evaluator(bus.subscribe_critical(TRIGGER_EVALUATOR));
 
         // A hold's synthesized release is published, and only then does shutdown cancel intake.
         // The run loop re-reads the flag at the top, so the event is already past the gate.
@@ -786,299 +784,10 @@ mod tests {
         );
     }
 
-    const LAG_CHANNEL_CAP: usize = 16;
-    const LAG_RING_CAP: usize = 64;
-    const LAG_BURST: usize = LAG_CHANNEL_CAP * 2;
-    const MATCHING_KIND: &str = "custom.my_event";
-    const UNMATCHED_KIND: &str = "custom.not_my_event";
-    const DISPATCH_KIND: &str = "action.start";
-    const FLOOD_MARKER: &str = "flooded-payload";
-    /// The broken shape ends `run` on the lag, so polling for that is what keeps the probe out of
-    /// the backlog `drain_backlog` would otherwise still deliver.
-    const SETTLE_WINDOW: Duration = Duration::from_millis(250);
-    const SETTLE_STEP: Duration = Duration::from_millis(5);
-    const WARN_WINDOW: Duration = Duration::from_millis(50);
-    const OBSERVE_TIMEOUT: Duration = Duration::from_millis(300);
-    const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-    const OBSERVE_ATTEMPTS: usize = 30;
-
-    fn lag_bus() -> Arc<EventBus> {
-        EventBus::with_caps(Arc::new(NullEventLogRepo), LAG_CHANNEL_CAP, LAG_RING_CAP)
-    }
-
-    fn overflow(bus: &EventBus) {
-        for _ in 0..LAG_BURST {
-            bus.publish(Event::new(
-                EventSource::Server,
-                UNMATCHED_KIND,
-                json!({ "marker": FLOOD_MARKER }),
-            ));
-        }
-    }
-
-    fn matching_event() -> Event {
-        Event::new(
-            EventSource::Server,
-            MATCHING_KIND,
-            json!({ "user": "alice" }),
-        )
-    }
-
-    async fn settle(run: &tokio::task::JoinHandle<()>) {
-        let deadline = tokio::time::Instant::now() + SETTLE_WINDOW;
-        while !run.is_finished() && tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(SETTLE_STEP).await;
-        }
-    }
-
-    async fn saw_dispatch_for(sub: &mut EventSubscription, cause: EventId) -> bool {
-        for _ in 0..OBSERVE_ATTEMPTS {
-            match tokio::time::timeout(OBSERVE_TIMEOUT, sub.recv()).await {
-                Ok(Ok(ev)) if ev.kind == DISPATCH_KIND && ev.caused_by == Some(cause) => {
-                    return true;
-                }
-                Ok(Ok(_)) => {}
-                _ => break,
-            }
-        }
-        false
-    }
-
-    #[tokio::test]
-    async fn a_lagged_subscription_keeps_dispatching_events_published_after_the_gap() {
-        let bus = lag_bus();
-        let fixture = fixture(Arc::clone(&bus)).await;
-        let evaluator = fixture.evaluator(bus.subscribe());
-        overflow(&bus);
-
-        let run = tokio::spawn(evaluator.run(CancelSignal::new()));
-        settle(&run).await;
-
-        let mut observer = bus.subscribe();
-        let probe = matching_event();
-        let probe_id = probe.id;
-        bus.publish(probe);
-
-        assert!(
-            saw_dispatch_for(&mut observer, probe_id).await,
-            "one lag must not retire the evaluator for the rest of the process"
-        );
-    }
-
-    #[tokio::test]
-    async fn the_lag_warning_reports_a_missed_count_and_no_event_content() {
-        let bus = lag_bus();
-        let fixture = fixture(Arc::clone(&bus)).await;
-        let evaluator = fixture.evaluator(bus.subscribe());
-        overflow(&bus);
-
-        let (lines, guard) = capture_on_this_thread(Level::WARN);
-        let ran = tokio::time::timeout(WARN_WINDOW, evaluator.run(CancelSignal::new())).await;
-        drop(guard);
-        assert!(
-            ran.is_err(),
-            "the loop is still waiting on the bus when the window closes"
-        );
-        let lines = lines.lock().unwrap().clone();
-
-        let warned = on_target(&lines, DECISION_TARGET)
-            .into_iter()
-            .find(|line| line.level == Level::WARN)
-            .expect("a lag must raise a WARN on the evaluator's own target");
-        assert!(
-            warned.field("missed").parse::<u64>().unwrap_or_default() > 0,
-            "the operator needs the size of the gap, not just its existence"
-        );
-        assert!(
-            !lines.iter().any(|line| line.mentions(FLOOD_MARKER)),
-            "the gap is reported by count; the payloads behind it stay out of the log"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_cancelled_run_dispatches_the_backlog_its_lag_retained() {
-        let bus = lag_bus();
-        let fixture = fixture(Arc::clone(&bus)).await;
-        let evaluator = fixture.evaluator(bus.subscribe());
-
-        overflow(&bus);
-        let queued = matching_event();
-        let queued_id = queued.id;
-        bus.publish(queued);
-
-        let mut observer = bus.subscribe();
-        let cancel = CancelSignal::new();
-        cancel.cancel();
-
-        let finished = tokio::time::timeout(DRAIN_TIMEOUT, evaluator.run(cancel)).await;
-        assert!(
-            finished.is_ok(),
-            "a lagged subscription must advance the cursor, not spin the drain forever"
-        );
-        assert!(
-            saw_dispatch_for(&mut observer, queued_id).await,
-            "what the lag left in the channel is still owed a dispatch"
-        );
-    }
-
     const COMMAND_KIND: &str = "test.chat.command";
     const PHRASE: &str = "!go";
     const LINE: &str = "!go secretword";
     const TAIL: &str = "secretword";
-
-    #[derive(Clone)]
-    struct CapturedLine {
-        target: String,
-        level: Level,
-        fields: BTreeMap<String, String>,
-    }
-
-    impl CapturedLine {
-        fn field(&self, name: &str) -> &str {
-            self.fields
-                .get(name)
-                .map(String::as_str)
-                .unwrap_or_default()
-        }
-
-        fn mentions(&self, needle: &str) -> bool {
-            self.fields.values().any(|value| value.contains(needle))
-        }
-    }
-
-    #[derive(Default)]
-    struct FieldCollector(BTreeMap<String, String>);
-
-    impl Visit for FieldCollector {
-        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-            self.0.insert(field.name().to_owned(), format!("{value:?}"));
-        }
-
-        fn record_str(&mut self, field: &Field, value: &str) {
-            self.0.insert(field.name().to_owned(), value.to_owned());
-        }
-    }
-
-    // Why: `register_callsite` answers `sometimes` on purpose: a cached `always` from another
-    // capture running in parallel would hand a TRACE line to a DEBUG-only assertion.
-    struct CaptureSubscriber {
-        lines: Arc<Mutex<Vec<CapturedLine>>>,
-        max: Level,
-    }
-
-    impl tracing::Subscriber for CaptureSubscriber {
-        fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
-            Interest::sometimes()
-        }
-
-        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-            *metadata.level() <= self.max
-        }
-
-        fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
-            span::Id::from_u64(1)
-        }
-
-        fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
-
-        fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
-
-        fn event(&self, event: &tracing::Event<'_>) {
-            let mut collector = FieldCollector::default();
-            event.record(&mut collector);
-            self.lines.lock().unwrap().push(CapturedLine {
-                target: event.metadata().target().to_owned(),
-                level: *event.metadata().level(),
-                fields: collector.0,
-            });
-        }
-
-        fn enter(&self, _: &span::Id) {}
-
-        fn exit(&self, _: &span::Id) {}
-    }
-
-    // Why: the callsite interest cache is process-global while a capture subscriber is
-    // thread-local. Ordinary tests in this binary reach the same production callsites with no
-    // subscriber installed, which registers those callsites as `Interest::never()` - and `never`
-    // short-circuits the event before `enabled()` is ever consulted, so a capture running in
-    // parallel silently records nothing. This floor is installed once as the process-wide global
-    // default and answers `sometimes` for every callsite, so the union can never collapse to
-    // `never` and every event reaches whatever thread-local subscriber `with_default` installed.
-    // It captures nothing itself.
-    struct InterestFloor;
-
-    impl tracing::Subscriber for InterestFloor {
-        fn register_callsite(&self, _: &'static tracing::Metadata<'static>) -> Interest {
-            Interest::sometimes()
-        }
-
-        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
-            false
-        }
-
-        fn new_span(&self, _: &span::Attributes<'_>) -> span::Id {
-            span::Id::from_u64(1)
-        }
-
-        fn record(&self, _: &span::Id, _: &span::Record<'_>) {}
-
-        fn record_follows_from(&self, _: &span::Id, _: &span::Id) {}
-
-        fn event(&self, _: &tracing::Event<'_>) {}
-
-        fn enter(&self, _: &span::Id) {}
-
-        fn exit(&self, _: &span::Id) {}
-    }
-
-    fn install_interest_floor() {
-        static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-        INSTALLED.get_or_init(|| {
-            // A binary that already set a global default keeps it; the rebuild below still
-            // clears any `never` cached before this point.
-            let _ = tracing::subscriber::set_global_default(InterestFloor);
-            tracing::callsite::rebuild_interest_cache();
-        });
-    }
-
-    // Runs `body` on this thread with everything up to `max` captured. The decision
-    // is driven synchronously precisely so the thread-local subscriber sees it.
-    fn capture(max: Level, body: impl FnOnce()) -> Vec<CapturedLine> {
-        let lines = Arc::new(Mutex::new(Vec::new()));
-        install_interest_floor();
-        tracing::subscriber::with_default(
-            CaptureSubscriber {
-                lines: Arc::clone(&lines),
-                max,
-            },
-            || {
-                tracing::callsite::rebuild_interest_cache();
-                body();
-            },
-        );
-        lines.lock().unwrap().clone()
-    }
-
-    fn capture_on_this_thread(
-        max: Level,
-    ) -> (
-        Arc<Mutex<Vec<CapturedLine>>>,
-        tracing::subscriber::DefaultGuard,
-    ) {
-        let lines = Arc::new(Mutex::new(Vec::new()));
-        install_interest_floor();
-        let guard = tracing::subscriber::set_default(CaptureSubscriber {
-            lines: Arc::clone(&lines),
-            max,
-        });
-        tracing::callsite::rebuild_interest_cache();
-        (lines, guard)
-    }
-
-    fn on_target<'a>(lines: &'a [CapturedLine], target: &str) -> Vec<&'a CapturedLine> {
-        lines.iter().filter(|line| line.target == target).collect()
-    }
 
     fn message_variable(name: &str) -> DeclaredVariable {
         DeclaredVariable {
@@ -1231,7 +940,7 @@ mod tests {
             registry: Arc::new(registry),
             catalog: Arc::clone(&fixture.catalog),
             scheduler: fixture.scheduler.clone(),
-            subscription: bus.subscribe(),
+            subscription: bus.subscribe_critical(TRIGGER_EVALUATOR),
             cooldowns: CooldownMap::new(Config::default().max_cooldown_entries),
             resolved: ResolvedBindings::default(),
         };

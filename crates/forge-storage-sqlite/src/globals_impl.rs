@@ -5,6 +5,7 @@ use forge_types::Variant;
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn epoch_ms_now() -> i64 {
     let now = OffsetDateTime::now_utc();
@@ -17,12 +18,12 @@ fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
 }
 
 pub struct SqliteGlobalsRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteGlobalsRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -145,7 +146,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
              WHERE name = ? AND archived_at IS NULL RETURNING value",
         )
         .bind(name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -160,14 +161,14 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     }
 
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError> {
-        upsert(&self.pool, name, &value, persisted).await
+        upsert(self.db.writer(), name, &value, persisted).await
     }
 
     async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
         let row: Option<(i64,)> =
             sqlx::query_as("SELECT persisted FROM globals WHERE name = ? AND archived_at IS NULL")
                 .bind(name)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -180,7 +181,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         let result = sqlx::query("UPDATE globals SET persisted = ? WHERE name = ?")
             .bind(persisted_int)
             .bind(name)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -192,7 +193,12 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
 
         let collision: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM globals WHERE name = ?")
             .bind(new_name)
@@ -225,7 +231,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     async fn delete(&self, name: &str) -> Result<bool, StorageError> {
         let result = sqlx::query("DELETE FROM globals WHERE name = ?")
             .bind(name)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -237,7 +243,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             "SELECT name, value, persisted, reads, writes, created_at, last_modified \
              FROM globals WHERE archived_at IS NULL",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -251,7 +257,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         )
         .bind(now_ms)
         .bind(name)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -263,7 +269,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             "UPDATE globals SET archived_at = NULL WHERE name = ? AND archived_at IS NOT NULL",
         )
         .bind(name)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -275,7 +281,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
             "SELECT name, value, persisted, reads, writes, created_at, last_modified \
              FROM globals WHERE archived_at IS NOT NULL",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -286,7 +292,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         let bytes: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(LENGTH(name) + LENGTH(value)), 0) FROM globals",
         )
-        .fetch_one(&self.pool)
+        .fetch_one(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -296,7 +302,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError> {
         let ms: Option<i64> =
             sqlx::query_scalar("SELECT MAX(last_modified) FROM globals WHERE persisted = 1")
-                .fetch_one(&self.pool)
+                .fetch_one(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -320,7 +326,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         .bind(amount)
         .bind(now_ms)
         .bind(name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -337,7 +343,8 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         max_len: Option<usize>,
     ) -> Result<usize, StorageError> {
         let mut tx = self
-            .pool
+            .db
+            .writer()
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -367,7 +374,8 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         remove_all: bool,
     ) -> Result<usize, StorageError> {
         let mut tx = self
-            .pool
+            .db
+            .writer()
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -401,7 +409,7 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         )
         .bind(epoch_ms_now())
         .bind(name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -421,7 +429,7 @@ impl SqliteGlobalsRepo {
             "SELECT type_tag FROM globals WHERE name = ? AND archived_at IS NULL",
         )
         .bind(name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await;
 
         match tag {

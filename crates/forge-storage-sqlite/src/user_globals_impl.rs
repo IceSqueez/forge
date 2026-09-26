@@ -5,6 +5,7 @@ use forge_types::Variant;
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn epoch_ms_now() -> i64 {
     let now = OffsetDateTime::now_utc();
@@ -17,12 +18,12 @@ fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, SqliteStorageError> {
 }
 
 pub struct SqliteUserGlobalsRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteUserGlobalsRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -76,7 +77,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         .bind(broadcaster_id)
         .bind(user_id)
         .bind(name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -97,7 +98,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         name: &str,
         value: Variant,
     ) -> Result<(), StorageError> {
-        upsert(&self.pool, broadcaster_id, user_id, name, &value).await
+        upsert(self.db.writer(), broadcaster_id, user_id, name, &value).await
     }
 
     async fn delete(
@@ -113,7 +114,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         .bind(broadcaster_id)
         .bind(user_id)
         .bind(name)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -132,7 +133,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         )
         .bind(broadcaster_id)
         .bind(user_id)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -149,7 +150,7 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
              WHERE broadcaster_id = ?",
         )
         .bind(broadcaster_id)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -164,7 +165,8 @@ impl UserGlobalsRepo for SqliteUserGlobalsRepo {
         amount: i64,
     ) -> Result<Variant, StorageError> {
         let mut tx = self
-            .pool
+            .db
+            .writer()
             .begin_with("BEGIN IMMEDIATE")
             .await
             .map_err(SqliteStorageError::Sqlx)?;

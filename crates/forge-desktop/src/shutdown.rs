@@ -8,12 +8,19 @@ use forge_storage::DataProvider;
 
 use crate::runtime_handles::RuntimeHandles;
 
-const SETTLE: Duration = Duration::from_millis(40);
-const SERVER_STOP_BUDGET: Duration = Duration::from_millis(60);
+const SETTLE: Duration = Duration::from_millis(30);
+const SERVER_STOP_BUDGET: Duration = Duration::from_millis(50);
 const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(20);
 const FLUSH_BUDGET: Duration = Duration::from_millis(60);
+const ABANDON_BUDGET: Duration = Duration::from_millis(10);
 const STORAGE_CLOSE_BUDGET: Duration = Duration::from_millis(20);
-const GRACEFUL_BUDGET: Duration = Duration::from_millis(180);
+/// Must stay under the UI shell's quit timeout (200 ms); it stops waiting on quit tasks past that.
+const GRACEFUL_BUDGET: Duration = SETTLE
+    .saturating_add(SERVER_STOP_BUDGET)
+    .saturating_add(SPEAK_STOP_BUDGET)
+    .saturating_add(FLUSH_BUDGET)
+    .saturating_add(ABANDON_BUDGET)
+    .saturating_add(STORAGE_CLOSE_BUDGET);
 
 pub struct ShutdownHandles {
     bus: Arc<EventBus>,
@@ -67,8 +74,22 @@ impl ShutdownHandles {
         }
 
         self.bus.shutdown();
-        let _ = tokio::time::timeout(FLUSH_BUDGET, self.bus.await_flush()).await;
-        tracing::info!("graceful shutdown: event log flushed");
+        if tokio::time::timeout(FLUSH_BUDGET, self.bus.await_flush())
+            .await
+            .is_ok()
+        {
+            tracing::info!("graceful shutdown: event log flushed");
+        } else {
+            match tokio::time::timeout(ABANDON_BUDGET, self.bus.abandon_flush()).await {
+                Ok(rows) => tracing::warn!(
+                    rows,
+                    "graceful shutdown: flush budget ran out; queued rows left unwritten"
+                ),
+                Err(_) => tracing::warn!(
+                    "graceful shutdown: flush budget ran out; unwritten rows could not be counted"
+                ),
+            }
+        }
 
         let _ = tokio::time::timeout(STORAGE_CLOSE_BUDGET, self.storage.shutdown()).await;
         tracing::info!("graceful shutdown: storage closed");

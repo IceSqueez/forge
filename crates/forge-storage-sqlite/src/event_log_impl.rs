@@ -1,10 +1,14 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_storage::{EventLogRepo, StorageError};
 use forge_types::EventId;
 use time::OffsetDateTime;
 
+use crate::batch::insert_rows;
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn to_epoch_secs(dt: OffsetDateTime) -> i64 {
     dt.unix_timestamp()
@@ -18,6 +22,35 @@ fn from_epoch_secs(secs: i64) -> Result<OffsetDateTime, SqliteStorageError> {
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
         .map_err(|e| SqliteStorageError::Decode(format!("invalid {label} '{s}': {e}")))
+}
+
+const EVENT_LOG_COLUMNS: usize = 7;
+
+struct EncodedEvent {
+    id: String,
+    source: String,
+    kind: String,
+    timestamp: i64,
+    payload: String,
+    caused_by: Option<String>,
+    replay: i64,
+}
+
+impl EncodedEvent {
+    fn encode(event: &Event) -> Result<Self, StorageError> {
+        Ok(Self {
+            id: event.id.to_string(),
+            source: serde_json::to_string(&event.source)
+                .map_err(StorageError::Serialization)?
+                .trim_matches('"')
+                .to_string(),
+            kind: event.kind.clone(),
+            timestamp: to_epoch_secs(event.timestamp),
+            payload: serde_json::to_string(&event.payload).map_err(StorageError::Serialization)?,
+            caused_by: event.caused_by.map(|cid| cid.to_string()),
+            replay: i64::from(event.replay),
+        })
+    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -56,43 +89,71 @@ fn decode_row(row: EventLogRow) -> Result<Event, SqliteStorageError> {
 }
 
 pub struct SqliteEventLogRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteEventLogRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
 #[async_trait]
 impl EventLogRepo for SqliteEventLogRepo {
     async fn insert(&self, event: &Event) -> Result<(), StorageError> {
-        let id = event.id.to_string();
-        let source = serde_json::to_string(&event.source)
-            .map_err(StorageError::Serialization)?
-            .trim_matches('"')
-            .to_string();
-        let timestamp = to_epoch_secs(event.timestamp);
-        let payload = serde_json::to_string(&event.payload).map_err(StorageError::Serialization)?;
-        let caused_by = event.caused_by.map(|cid| cid.to_string());
-        let replay = i64::from(event.replay);
-
+        let row = EncodedEvent::encode(event)?;
         sqlx::query(
             "INSERT INTO event_log (id, source, kind, timestamp, payload, caused_by, replay)
              VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(&id)
-        .bind(&source)
-        .bind(&event.kind)
-        .bind(timestamp)
-        .bind(&payload)
-        .bind(caused_by.as_deref())
-        .bind(replay)
-        .execute(&self.pool)
+        .bind(&row.id)
+        .bind(&row.source)
+        .bind(&row.kind)
+        .bind(row.timestamp)
+        .bind(&row.payload)
+        .bind(row.caused_by.as_deref())
+        .bind(row.replay)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
+        Ok(())
+    }
+
+    async fn insert_batch(&self, events: &[Arc<Event>]) -> Result<(), StorageError> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        let rows = events
+            .iter()
+            .map(|event| EncodedEvent::encode(event))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        insert_rows(
+            &mut tx,
+            "INSERT INTO event_log (id, source, kind, timestamp, payload, caused_by, replay) ",
+            EVENT_LOG_COLUMNS,
+            " ON CONFLICT(id) DO NOTHING",
+            &rows,
+            |values, row| {
+                values
+                    .push_bind(row.id.as_str())
+                    .push_bind(row.source.as_str())
+                    .push_bind(row.kind.as_str())
+                    .push_bind(row.timestamp)
+                    .push_bind(row.payload.as_str())
+                    .push_bind(row.caused_by.as_deref())
+                    .push_bind(row.replay);
+            },
+        )
+        .await?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
 
@@ -103,7 +164,7 @@ impl EventLogRepo for SqliteEventLogRepo {
              FROM event_log WHERE id = ?",
         )
         .bind(&id_str)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -119,7 +180,7 @@ impl EventLogRepo for SqliteEventLogRepo {
              LIMIT ?",
         )
         .bind(limit as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -145,7 +206,7 @@ impl EventLogRepo for SqliteEventLogRepo {
                 )
                 .bind(&id_str)
                 .bind(limit as i64)
-                .fetch_all(&self.pool)
+                .fetch_all(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?
             }
@@ -156,7 +217,7 @@ impl EventLogRepo for SqliteEventLogRepo {
                      LIMIT ?",
             )
             .bind(limit as i64)
-            .fetch_all(&self.pool)
+            .fetch_all(self.db.reader())
             .await
             .map_err(SqliteStorageError::Sqlx)?,
         };
@@ -170,7 +231,7 @@ impl EventLogRepo for SqliteEventLogRepo {
         let cutoff_secs = to_epoch_secs(cutoff);
         let result = sqlx::query("DELETE FROM event_log WHERE timestamp < ?")
             .bind(cutoff_secs)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 

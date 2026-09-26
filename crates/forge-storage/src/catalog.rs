@@ -6,7 +6,8 @@ use forge_types::{Action, ActionId, Queue, QueueId, TriggerInstance, TriggerInst
 use time::OffsetDateTime;
 
 use crate::{
-    ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, StorageError, TriggerInstanceRepo,
+    ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, StorageError,
+    TriggerInstanceRepo,
 };
 
 /// Advances once per catalog write after the backend returns; an unchanged value means no newer write completed.
@@ -113,6 +114,10 @@ impl ActionRepo for RevisingActionRepo {
         self.inner
             .record_execution(action_id, started_at, duration_ms, status)
             .await
+    }
+
+    async fn record_executions(&self, executions: &[ActionExecution]) -> Result<(), StorageError> {
+        self.inner.record_executions(executions).await
     }
 
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {

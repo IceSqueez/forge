@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 const BLOB_FILE_EXTENSION_SEPARATOR: char = '.';
 const INCOMING_FILE_PREFIX: &str = ".incoming-";
@@ -160,13 +161,16 @@ fn decode_referrer(row: MediaReferenceRow) -> Result<MediaReferrer, SqliteStorag
 }
 
 pub struct SqliteMediaRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
     root: PathBuf,
 }
 
 impl SqliteMediaRepo {
-    pub fn new(pool: sqlx::SqlitePool, root: PathBuf) -> Self {
-        Self { pool, root }
+    pub fn new(db: impl Into<SqlitePools>, root: PathBuf) -> Self {
+        Self {
+            db: db.into(),
+            root,
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -190,7 +194,7 @@ impl SqliteMediaRepo {
         .bind(byte_size as i64)
         .bind(label)
         .bind(to_epoch_ms(OffsetDateTime::now_utc()))
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -229,7 +233,7 @@ impl MediaRepo for SqliteMediaRepo {
             "SELECT id, format, byte_size, label, imported_at FROM media_blobs WHERE id = ?",
         )
         .bind(id.as_str())
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -243,7 +247,7 @@ impl MediaRepo for SqliteMediaRepo {
              FROM media_blobs
              ORDER BY imported_at DESC, label ASC",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -255,7 +259,7 @@ impl MediaRepo for SqliteMediaRepo {
     async fn total_bytes(&self) -> Result<u64, StorageError> {
         let (total,): (i64,) =
             sqlx::query_as("SELECT COALESCE(SUM(byte_size), 0) FROM media_blobs")
-                .fetch_one(&self.pool)
+                .fetch_one(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -305,7 +309,7 @@ impl MediaRepo for SqliteMediaRepo {
 
         let removed = sqlx::query("DELETE FROM media_blobs WHERE id = ?")
             .bind(id.as_str())
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -342,7 +346,7 @@ impl MediaRepo for SqliteMediaRepo {
         .bind(&referrer.id)
         .bind(&referrer.slot)
         .bind(id.as_str())
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -357,7 +361,7 @@ impl MediaRepo for SqliteMediaRepo {
         .bind(referrer.kind.as_str())
         .bind(&referrer.id)
         .bind(&referrer.slot)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -373,7 +377,7 @@ impl MediaRepo for SqliteMediaRepo {
             sqlx::query("DELETE FROM media_references WHERE referrer_kind = ? AND referrer_id = ?")
                 .bind(kind.as_str())
                 .bind(referrer_id)
-                .execute(&self.pool)
+                .execute(self.db.writer())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -388,7 +392,7 @@ impl MediaRepo for SqliteMediaRepo {
              ORDER BY referrer_kind ASC, referrer_id ASC, slot ASC",
         )
         .bind(id.as_str())
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -405,7 +409,7 @@ impl MediaRepo for SqliteMediaRepo {
         .bind(referrer.kind.as_str())
         .bind(&referrer.id)
         .bind(&referrer.slot)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 

@@ -14,8 +14,8 @@ const RECOVERY_HEADROOM_DIVISOR: usize = 2;
 pub const TRIGGER_EVALUATOR: &str = "trigger_evaluator";
 pub const EVENT_LOG: &str = "event_log";
 pub const CHAT_HISTORY: &str = "chat_history";
-pub const CHAT_MODERATION: &str = "chat_moderation";
 pub const VIEWER_TRACKER: &str = "viewer_tracker";
+pub const RUN_HISTORY: &str = "run_history";
 pub const EVENT_TRAIL: &str = "event_trail";
 pub const UNNAMED_OBSERVER: &str = "observer";
 

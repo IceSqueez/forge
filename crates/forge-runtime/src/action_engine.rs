@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{CancelSignal, ChainSignal, RunContext, SubActionRegistry, effective_config};
-use forge_storage::{ActionRepo, ExecutionStatus, HistoryRepo};
+use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
     SubActionOutcome, SubActionStep, SubActionTelemetry,
@@ -15,6 +15,7 @@ use tracing::{info, warn};
 use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
+use crate::run_history::RunHistoryWriter;
 use crate::{Config, EventBus};
 
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
@@ -127,8 +128,7 @@ impl ActionEngineHandle {
 struct ActionEngine {
     bus: Arc<EventBus>,
     catalog: Arc<Catalog>,
-    actions: Arc<dyn ActionRepo>,
-    history: Arc<dyn HistoryRepo>,
+    history: RunHistoryWriter,
     chain_engine: Arc<ChainEngine>,
     cancel_registry: Arc<ActionCancelRegistry>,
 }
@@ -154,11 +154,11 @@ impl ActionEngine {
             gate,
             config,
         ));
+        let history = RunHistoryWriter::spawn(&bus, history, actions);
         let engine = Arc::new(Self {
             bus: Arc::clone(&bus),
             catalog,
-            actions: Arc::clone(&actions),
-            history: Arc::clone(&history),
+            history: history.clone(),
             chain_engine,
             cancel_registry,
         });
@@ -260,9 +260,7 @@ impl ActionEngine {
                 "not started: the triggering event is more than {MAX_CAUSATION_DEPTH} action runs deep (event loop between actions?)"
             )),
         };
-        if let Err(e) = self.history.save(&ctx).await {
-            warn!("history_repo.save failed: {e}");
-        }
+        self.history.record(ctx, None);
     }
 
     async fn run_execution(&self, req: ExecutionRequest, cancel: &CancelSignal) {
@@ -378,8 +376,22 @@ impl ActionEngine {
             ExecutionOutcome::Cancelled => "cancelled",
         };
 
+        let execution = match &ctx.outcome {
+            ExecutionOutcome::Success => Some(ExecutionStatus::Success),
+            ExecutionOutcome::Failed(_) => Some(ExecutionStatus::Error),
+            ExecutionOutcome::Cancelled => None,
+        }
+        .map(|status| ActionExecution {
+            action_id: action.id,
+            started_at,
+            duration_ms: total_ms,
+            status,
+        });
+        let cancelled = matches!(ctx.outcome, ExecutionOutcome::Cancelled);
+        self.history.record(ctx, execution);
+
         // A cancelled run records to history but emits no completion event onto the bus.
-        if !matches!(ctx.outcome, ExecutionOutcome::Cancelled) {
+        if !cancelled {
             self.bus.publish(Event::caused_by(
                 EventSource::Core,
                 "action.done",
@@ -390,24 +402,6 @@ impl ActionEngine {
                 }),
                 start_event_id,
             ));
-        }
-
-        if let Err(e) = self.history.save(&ctx).await {
-            warn!("history_repo.save failed: {e}");
-        }
-
-        let telemetry_status = match &ctx.outcome {
-            ExecutionOutcome::Success => Some(ExecutionStatus::Success),
-            ExecutionOutcome::Failed(_) => Some(ExecutionStatus::Error),
-            ExecutionOutcome::Cancelled => None,
-        };
-        if let Some(status) = telemetry_status
-            && let Err(e) = self
-                .actions
-                .record_execution(action.id, started_at, total_ms, status)
-                .await
-        {
-            warn!("action_repo.record_execution failed: {e}");
         }
     }
 }
@@ -428,7 +422,7 @@ async fn run_quick_action_loop(
     mut rx: mpsc::Receiver<QuickActionRequest>,
     mut stop: watch::Receiver<bool>,
     bus: Arc<EventBus>,
-    history: Arc<dyn HistoryRepo>,
+    history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
 ) {
     loop {
@@ -440,7 +434,7 @@ async fn run_quick_action_loop(
                     tokio::spawn(run_quick_action(
                         req,
                         Arc::clone(&bus),
-                        Arc::clone(&history),
+                        history.clone(),
                         Arc::clone(&sub_action_registry),
                     ));
                 }
@@ -453,7 +447,7 @@ async fn run_quick_action_loop(
 async fn run_quick_action(
     req: QuickActionRequest,
     bus: Arc<EventBus>,
-    history: Arc<dyn HistoryRepo>,
+    history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
 ) {
     let publisher: Arc<dyn forge_events::EventPublisher> =
@@ -528,9 +522,7 @@ async fn run_quick_action(
         telemetry: vec![telemetry],
         outcome: run_outcome,
     };
-    if let Err(e) = history.save(&ctx).await {
-        warn!("history_repo.save failed: {e}");
-    }
+    history.record(ctx, None);
     let _ = req.outcome.send(reported);
 }
 

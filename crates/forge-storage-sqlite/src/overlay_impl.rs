@@ -6,6 +6,7 @@ use rand::rand_core::Rng;
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 #[derive(sqlx::FromRow)]
 struct OverlayRow {
@@ -91,12 +92,12 @@ fn generate_credential() -> OverlayCredential {
 }
 
 pub struct SqliteOverlayRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteOverlayRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 
     async fn mint_unique_id(&self, base: &str) -> Result<OverlayId, StorageError> {
@@ -107,7 +108,7 @@ impl SqliteOverlayRepo {
         loop {
             let existing: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM overlays WHERE id = ?")
                 .bind(&candidate)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -122,7 +123,7 @@ impl SqliteOverlayRepo {
 
     async fn next_position(&self) -> Result<i64, StorageError> {
         let (max,): (Option<i64>,) = sqlx::query_as("SELECT MAX(position) FROM overlays")
-            .fetch_one(&self.pool)
+            .fetch_one(self.db.reader())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -140,7 +141,7 @@ impl OverlayRepo for SqliteOverlayRepo {
              FROM overlays
              ORDER BY position ASC, display_name ASC",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -157,7 +158,7 @@ impl OverlayRepo for SqliteOverlayRepo {
              FROM overlays WHERE id = ?",
         )
         .bind(id.as_str())
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -176,7 +177,7 @@ impl OverlayRepo for SqliteOverlayRepo {
              FROM overlays WHERE credential = ?",
         )
         .bind(credential.as_str())
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -210,7 +211,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         .bind(credential.as_str())
         .bind(now_ms)
         .bind(now_ms)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -263,7 +264,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         .bind(definition.credential.as_str())
         .bind(now_ms)
         .bind(definition.id.as_str())
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -283,7 +284,7 @@ impl OverlayRepo for SqliteOverlayRepo {
             .bind(enabled_val)
             .bind(now_ms)
             .bind(id.as_str())
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -293,7 +294,7 @@ impl OverlayRepo for SqliteOverlayRepo {
     async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError> {
         let result = sqlx::query("DELETE FROM overlays WHERE id = ?")
             .bind(id.as_str())
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -307,7 +308,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         let row: Option<(Option<String>,)> =
             sqlx::query_as("SELECT retained_content FROM overlays WHERE id = ?")
                 .bind(id.as_str())
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -331,7 +332,7 @@ impl OverlayRepo for SqliteOverlayRepo {
         let result = sqlx::query("UPDATE overlays SET retained_content = ? WHERE id = ?")
             .bind(&json)
             .bind(id.as_str())
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 

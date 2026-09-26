@@ -1,5 +1,7 @@
 pub mod action_impl;
+mod batch;
 pub mod chat_history_impl;
+mod checkpoint_task;
 pub mod credentials_impl;
 pub mod crypto;
 pub mod error;
@@ -35,7 +37,7 @@ pub use history_impl::SqliteHistoryRepo;
 pub use media_impl::SqliteMediaRepo;
 pub use migrations::{MIGRATIONS, apply as apply_migrations};
 pub use overlay_impl::SqliteOverlayRepo;
-pub use pool::connect;
+pub use pool::{SqlitePools, connect, connect_pools};
 pub use provider::SqliteBackend;
 pub use queue_impl::SqliteQueueRepo;
 pub use script_impl::SqliteScriptRepo;

@@ -6,6 +6,7 @@ use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, Trig
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
@@ -53,12 +54,12 @@ fn decode_row(row: InstanceRow) -> Result<TriggerInstance, SqliteStorageError> {
 }
 
 pub struct SqliteTriggerInstanceRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteTriggerInstanceRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -72,7 +73,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
              WHERE archived_at IS NULL
              ORDER BY user_defined ASC, name ASC",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -87,7 +88,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
                     cooldown_secs, cooldown_global, permission_rung
              FROM trigger_instances WHERE user_defined = 1 AND archived_at IS NULL ORDER BY name",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -110,7 +111,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
              ORDER BY ati.position",
         )
         .bind(&action_id_str)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -131,7 +132,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
              WHERE ati.trigger_instance_id = ? AND a.archived_at IS NULL",
         )
         .bind(&id_str)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -156,7 +157,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         .bind(&action_id_str)
         .bind(&instance_id_str)
         .bind(position)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await;
 
         match result {
@@ -180,7 +181,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         )
         .bind(&action_id_str)
         .bind(&instance_id_str)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -195,7 +196,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
              FROM trigger_instances WHERE id = ? AND archived_at IS NULL",
         )
         .bind(&id_str)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -242,7 +243,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         .bind(cooldown_secs)
         .bind(cooldown_global)
         .bind(permission_rung)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -258,7 +259,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             "SELECT action_id FROM action_trigger_instances WHERE trigger_instance_id = ?",
         )
         .bind(&id_str_probe)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         let action_ids = linked_rows
@@ -274,7 +275,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
                 let row: Option<(String,)> =
                     sqlx::query_as("SELECT name FROM actions WHERE id = ?")
                         .bind(&aid_str)
-                        .fetch_optional(&self.pool)
+                        .fetch_optional(self.db.reader())
                         .await
                         .map_err(SqliteStorageError::Sqlx)?;
                 if let Some((name,)) = row {
@@ -290,7 +291,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         let id_str = id.to_string();
         let result = sqlx::query("DELETE FROM trigger_instances WHERE id = ?")
             .bind(&id_str)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -314,7 +315,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         .bind(&new_id_str)
         .bind(kind_id)
         .bind(name)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -326,7 +327,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             "SELECT id FROM trigger_instances WHERE kind_id = ? AND user_defined = 0",
         )
         .bind(kind_id)
-        .fetch_one(&self.pool)
+        .fetch_one(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -341,7 +342,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         sqlx::query("UPDATE trigger_instances SET enabled = ? WHERE id = ?")
             .bind(enabled_val)
             .bind(&id_str)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -356,7 +357,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
         )
         .bind(now_ms)
         .bind(&id_str)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -369,7 +370,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
             "UPDATE trigger_instances SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
         )
         .bind(&id_str)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -384,7 +385,7 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
              WHERE archived_at IS NOT NULL
              ORDER BY user_defined ASC, name ASC",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 

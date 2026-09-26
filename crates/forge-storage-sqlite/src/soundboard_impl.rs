@@ -6,6 +6,7 @@ use forge_types::{ClipId, OutputDevice};
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn parse_clip_id(s: &str) -> Result<ClipId, StorageError> {
     serde_json::from_str(&format!("\"{s}\"")).map_err(|e| {
@@ -20,12 +21,12 @@ fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
 }
 
 pub struct SqliteSoundboardClipsRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteSoundboardClipsRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -52,7 +53,7 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
                     category, loop_playback, duration_secs, builtin_id
              FROM soundboard_clips ORDER BY name COLLATE NOCASE",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -67,7 +68,7 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
              FROM soundboard_clips WHERE id = ?",
         )
         .bind(&id_str)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -115,7 +116,7 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
         .bind(clip.loop_playback)
         .bind(duration_secs)
         .bind(clip.builtin_id.as_deref())
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -126,7 +127,7 @@ impl SoundboardClipsRepo for SqliteSoundboardClipsRepo {
         let id_str = id.to_string();
         let result = sqlx::query("DELETE FROM soundboard_clips WHERE id = ?")
             .bind(&id_str)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected() > 0)

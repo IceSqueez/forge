@@ -4,21 +4,22 @@ use time::OffsetDateTime;
 
 use crate::crypto;
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 pub struct SqliteCredentialsRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
     key: [u8; 32],
 }
 
 impl SqliteCredentialsRepo {
-    pub fn new_with_key(pool: sqlx::SqlitePool, key: [u8; 32]) -> Self {
-        Self { pool, key }
+    pub fn new_with_key(db: impl Into<SqlitePools>, key: [u8; 32]) -> Self {
+        Self { db: db.into(), key }
     }
 
     pub(crate) async fn stored_count(&self) -> Result<u64, SqliteStorageError> {
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credentials WHERE id != ?")
             .bind(forge_storage::SERVER_BEARER_CREDENTIAL_ID)
-            .fetch_one(&self.pool)
+            .fetch_one(self.db.reader())
             .await?;
         Ok(u64::try_from(count).unwrap_or_default())
     }
@@ -53,7 +54,7 @@ impl CredentialsRepo for SqliteCredentialsRepo {
         .bind(&ciphertext)
         .bind(&nonce)
         .bind(now_ms)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -70,7 +71,7 @@ impl CredentialsRepo for SqliteCredentialsRepo {
         let row: Option<CredentialRow> =
             sqlx::query_as("SELECT encrypted, nonce FROM credentials WHERE id = ?")
                 .bind(id.as_str())
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -87,7 +88,7 @@ impl CredentialsRepo for SqliteCredentialsRepo {
     async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
         let result = sqlx::query("DELETE FROM credentials WHERE id = ?")
             .bind(id.as_str())
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -96,7 +97,7 @@ impl CredentialsRepo for SqliteCredentialsRepo {
 
     async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
         let rows: Vec<(String,)> = sqlx::query_as("SELECT id FROM credentials ORDER BY id")
-            .fetch_all(&self.pool)
+            .fetch_all(self.db.reader())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -113,7 +114,7 @@ impl CredentialsRepo for SqliteCredentialsRepo {
         let ms: Option<i64> =
             sqlx::query_scalar("SELECT last_refresh FROM credentials WHERE id = ?")
                 .bind(id.as_str())
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -129,7 +130,7 @@ impl CredentialsRepo for SqliteCredentialsRepo {
         sqlx::query("UPDATE credentials SET last_refresh = ? WHERE id = ?")
             .bind(now_ms)
             .bind(id.as_str())
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 

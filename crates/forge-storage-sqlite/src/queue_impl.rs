@@ -4,6 +4,7 @@ use forge_types::{Queue, QueueId};
 use serde_json;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn parse_queue_id(s: &str) -> Result<QueueId, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
@@ -29,12 +30,12 @@ fn decode_row(row: QueueRow) -> Result<Queue, SqliteStorageError> {
 }
 
 pub struct SqliteQueueRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteQueueRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -43,7 +44,7 @@ impl QueueRepo for SqliteQueueRepo {
     async fn list(&self) -> Result<Vec<Queue>, StorageError> {
         let rows: Vec<QueueRow> =
             sqlx::query_as("SELECT id, name, description, concurrency FROM queues ORDER BY name")
-                .fetch_all(&self.pool)
+                .fetch_all(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -57,7 +58,7 @@ impl QueueRepo for SqliteQueueRepo {
         let row: Option<QueueRow> =
             sqlx::query_as("SELECT id, name, description, concurrency FROM queues WHERE id = ?")
                 .bind(&id_str)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -69,7 +70,7 @@ impl QueueRepo for SqliteQueueRepo {
         let row: Option<QueueRow> =
             sqlx::query_as("SELECT id, name, description, concurrency FROM queues WHERE name = ?")
                 .bind(name)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -96,7 +97,7 @@ impl QueueRepo for SqliteQueueRepo {
         .bind(&queue.description)
         .bind(blocking)
         .bind(concurrency)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -107,7 +108,7 @@ impl QueueRepo for SqliteQueueRepo {
         let id_str = id.to_string();
         let result = sqlx::query("DELETE FROM queues WHERE id = ?")
             .bind(&id_str)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 

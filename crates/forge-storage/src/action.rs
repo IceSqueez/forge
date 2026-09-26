@@ -10,6 +10,14 @@ pub enum ExecutionStatus {
     Error,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActionExecution {
+    pub action_id: ActionId,
+    pub started_at: OffsetDateTime,
+    pub duration_ms: u64,
+    pub status: ExecutionStatus,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionTelemetry {
     pub last_fired_at: Option<OffsetDateTime>,
@@ -38,6 +46,20 @@ pub trait ActionRepo: Send + Sync {
         duration_ms: u64,
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
+    /// All-or-nothing. The default records one by one and is not atomic, so a persistent
+    /// backend overrides it.
+    async fn record_executions(&self, executions: &[ActionExecution]) -> Result<(), StorageError> {
+        for execution in executions {
+            self.record_execution(
+                execution.action_id,
+                execution.started_at,
+                execution.duration_ms,
+                execution.status,
+            )
+            .await?;
+        }
+        Ok(())
+    }
     /// Returns rows removed.
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 

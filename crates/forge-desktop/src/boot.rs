@@ -13,9 +13,8 @@ use forge_runtime::{
     OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle,
     QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer, SpeakDispatcher,
     register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_chat_moderation_persistence,
-    spawn_event_log_bridge, spawn_live_viewer_aggregator, spawn_trigger_evaluator,
-    spawn_viewer_tracker,
+    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
+    spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -178,7 +177,6 @@ pub async fn build_runtime(
         Arc::clone(&settings_repo),
     );
     spawn_viewer_tracker(Arc::clone(&bus), backend.viewer_repo());
-    spawn_chat_moderation_persistence(Arc::clone(&bus), backend.chat_history_repo());
 
     let speech_output = build_speech_output(&backend).await;
     let speech_sink = Arc::new(RoutedSink::new(

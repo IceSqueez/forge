@@ -6,7 +6,9 @@ use forge_types::unified_chat::{
 };
 use time::OffsetDateTime;
 
+use crate::batch::insert_rows;
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
     (dt.unix_timestamp_nanos() / 1_000_000) as i64
@@ -27,6 +29,51 @@ fn encode_source(source: ChatSource) -> Result<String, StorageError> {
         .map_err(StorageError::Serialization)?
         .trim_matches('"')
         .to_string())
+}
+
+const CHAT_HISTORY_COLUMNS: usize = 11;
+
+struct EncodedChatRow<'a> {
+    id: &'a str,
+    event_id: String,
+    source: String,
+    received_at: i64,
+    author: &'a str,
+    author_color: Option<String>,
+    body_segments: String,
+    badges: String,
+    is_event: i64,
+    event_detail: Option<String>,
+    moderation: String,
+}
+
+impl<'a> EncodedChatRow<'a> {
+    fn encode(row: &'a UnifiedChatRow) -> Result<Self, StorageError> {
+        Ok(Self {
+            id: &row.id,
+            event_id: row.event_id.to_string(),
+            source: encode_source(row.source)?,
+            received_at: to_epoch_ms(row.received_at),
+            author: &row.author,
+            author_color: row
+                .author_color
+                .map(|c| serde_json::to_string(&c))
+                .transpose()
+                .map_err(StorageError::Serialization)?,
+            body_segments: serde_json::to_string(&row.body_segments)
+                .map_err(StorageError::Serialization)?,
+            badges: serde_json::to_string(&row.badges).map_err(StorageError::Serialization)?,
+            is_event: i64::from(row.is_event),
+            event_detail: row
+                .event_detail
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(StorageError::Serialization)?,
+            moderation: serde_json::to_string(&row.moderation)
+                .map_err(StorageError::Serialization)?,
+        })
+    }
 }
 
 #[derive(sqlx::FromRow)]
@@ -87,59 +134,83 @@ fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError>
 }
 
 pub struct SqliteChatHistoryRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteChatHistoryRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
 #[async_trait]
 impl ChatHistoryRepo for SqliteChatHistoryRepo {
     async fn append(&self, row: &UnifiedChatRow) -> Result<(), StorageError> {
-        let event_id_str = row.event_id.to_string();
-        let source_str = encode_source(row.source)?;
-        let received_at_ms = to_epoch_ms(row.received_at);
-        let author_color_str = row
-            .author_color
-            .map(|c| serde_json::to_string(&c))
-            .transpose()
-            .map_err(StorageError::Serialization)?;
-        let body_segments_str =
-            serde_json::to_string(&row.body_segments).map_err(StorageError::Serialization)?;
-        let badges_str = serde_json::to_string(&row.badges).map_err(StorageError::Serialization)?;
-        let event_detail_str = row
-            .event_detail
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .map_err(StorageError::Serialization)?;
-        let moderation_str =
-            serde_json::to_string(&row.moderation).map_err(StorageError::Serialization)?;
-
+        let row = EncodedChatRow::encode(row)?;
         sqlx::query(
             "INSERT INTO chat_history
                 (id, event_id, source, received_at, author, author_color,
                  body_segments, badges, is_event, event_detail, moderation)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(&row.id)
-        .bind(&event_id_str)
-        .bind(&source_str)
-        .bind(received_at_ms)
-        .bind(&row.author)
-        .bind(author_color_str.as_deref())
-        .bind(&body_segments_str)
-        .bind(&badges_str)
-        .bind(i64::from(row.is_event))
-        .bind(event_detail_str.as_deref())
-        .bind(&moderation_str)
-        .execute(&self.pool)
+        .bind(row.id)
+        .bind(&row.event_id)
+        .bind(&row.source)
+        .bind(row.received_at)
+        .bind(row.author)
+        .bind(row.author_color.as_deref())
+        .bind(&row.body_segments)
+        .bind(&row.badges)
+        .bind(row.is_event)
+        .bind(row.event_detail.as_deref())
+        .bind(&row.moderation)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
+        Ok(())
+    }
+
+    async fn append_batch(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError> {
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let encoded = rows
+            .iter()
+            .map(EncodedChatRow::encode)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        insert_rows(
+            &mut tx,
+            "INSERT INTO chat_history
+                (id, event_id, source, received_at, author, author_color,
+                 body_segments, badges, is_event, event_detail, moderation) ",
+            CHAT_HISTORY_COLUMNS,
+            " ON CONFLICT(id) DO NOTHING",
+            &encoded,
+            |values, row| {
+                values
+                    .push_bind(row.id)
+                    .push_bind(row.event_id.as_str())
+                    .push_bind(row.source.as_str())
+                    .push_bind(row.received_at)
+                    .push_bind(row.author)
+                    .push_bind(row.author_color.as_deref())
+                    .push_bind(row.body_segments.as_str())
+                    .push_bind(row.badges.as_str())
+                    .push_bind(row.is_event)
+                    .push_bind(row.event_detail.as_deref())
+                    .push_bind(row.moderation.as_str());
+            },
+        )
+        .await?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
 
@@ -152,7 +223,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
              LIMIT ?",
         )
         .bind(limit as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -169,7 +240,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
              )",
         )
         .bind(max_rows as i64)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -183,7 +254,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
              WHERE id = ?",
         )
         .bind(platform_msg_id)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -206,7 +277,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
             )
             .bind(&source_str)
             .bind(author)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
         } else {
             sqlx::query(
@@ -216,7 +287,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
             )
             .bind(&source_str)
             .bind(author)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
         }
         .map_err(SqliteStorageError::Sqlx)?;
@@ -233,7 +304,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
              WHERE source = ?",
         )
         .bind(&source_str)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 

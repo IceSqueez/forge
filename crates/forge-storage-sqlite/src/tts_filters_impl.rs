@@ -5,14 +5,15 @@ use forge_storage::{
 };
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 pub struct SqliteTtsFiltersRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteTtsFiltersRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -220,7 +221,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
             "SELECT id, name, enabled, position, kind, params
              FROM tts_filter_rules ORDER BY position ASC",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -228,7 +229,12 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
     }
 
     async fn replace_rules(&self, rules: &[FilterRule]) -> Result<(), StorageError> {
-        let mut tx = self.pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
 
         sqlx::query("DELETE FROM tts_filter_rules")
             .execute(&mut *tx)
@@ -266,7 +272,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
                     output_read_display_name_first, output_emote_to_word
              FROM tts_pipeline_settings WHERE id = 1",
         )
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -280,7 +286,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
                     output_max_duration_secs, output_language_aware_voice
              FROM tts_pipeline_settings WHERE id = 1",
         )
-        .fetch_one(&self.pool)
+        .fetch_one(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -359,7 +365,7 @@ impl TtsFiltersRepo for SqliteTtsFiltersRepo {
         .bind(settings.output_sanitize_punctuation as i64)
         .bind(settings.output_max_duration_secs.map(|v| v as i64))
         .bind(settings.output_language_aware_voice.map(|v| v as i64))
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         Ok(())

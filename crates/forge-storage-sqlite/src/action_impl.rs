@@ -1,10 +1,21 @@
 use async_trait::async_trait;
-use forge_storage::{ActionRepo, ActionTelemetry, ExecutionStatus, StorageError};
+use forge_storage::{ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, StorageError};
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep};
 use serde_json;
 use time::OffsetDateTime;
 
+use crate::batch::insert_rows;
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
+
+const ACTION_EXECUTION_COLUMNS: usize = 4;
+
+fn status_label(status: ExecutionStatus) -> &'static str {
+    match status {
+        ExecutionStatus::Success => "ok",
+        ExecutionStatus::Error => "err",
+    }
+}
 
 fn parse_id<T: serde::de::DeserializeOwned>(s: &str, label: &str) -> Result<T, SqliteStorageError> {
     serde_json::from_str(&format!("\"{s}\""))
@@ -68,12 +79,12 @@ fn decode_row(row: ActionRow) -> Result<Action, SqliteStorageError> {
 }
 
 pub struct SqliteActionRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteActionRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -84,7 +95,7 @@ impl ActionRepo for SqliteActionRepo {
             "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
              FROM actions WHERE archived_at IS NULL ORDER BY name",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -100,7 +111,7 @@ impl ActionRepo for SqliteActionRepo {
              FROM actions WHERE id = ? AND archived_at IS NULL",
         )
         .bind(&id_str)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -144,7 +155,7 @@ impl ActionRepo for SqliteActionRepo {
         .bind(&description)
         .bind(&sub_actions_json)
         .bind(execution_mode)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -155,7 +166,7 @@ impl ActionRepo for SqliteActionRepo {
         let id_str = id.to_string();
         let result = sqlx::query("DELETE FROM actions WHERE id = ?")
             .bind(&id_str)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -172,7 +183,7 @@ impl ActionRepo for SqliteActionRepo {
              FROM actions WHERE group_name = ? AND archived_at IS NULL ORDER BY name",
         )
         .bind(group_val)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -188,24 +199,46 @@ impl ActionRepo for SqliteActionRepo {
         duration_ms: u64,
         status: ExecutionStatus,
     ) -> Result<(), StorageError> {
-        let id_str = action_id.to_string();
-        let started_at_secs = started_at.unix_timestamp();
-        let duration_i64 = duration_ms as i64;
-        let status_str = match status {
-            ExecutionStatus::Success => "ok",
-            ExecutionStatus::Error => "err",
-        };
         sqlx::query(
             "INSERT INTO action_executions (action_id, started_at, duration_ms, status)
              VALUES (?, ?, ?, ?)",
         )
-        .bind(id_str)
-        .bind(started_at_secs)
-        .bind(duration_i64)
-        .bind(status_str)
-        .execute(&self.pool)
+        .bind(action_id.to_string())
+        .bind(started_at.unix_timestamp())
+        .bind(duration_ms as i64)
+        .bind(status_label(status))
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    async fn record_executions(&self, executions: &[ActionExecution]) -> Result<(), StorageError> {
+        if executions.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        insert_rows(
+            &mut tx,
+            "INSERT INTO action_executions (action_id, started_at, duration_ms, status) ",
+            ACTION_EXECUTION_COLUMNS,
+            "",
+            executions,
+            |values, execution| {
+                values
+                    .push_bind(execution.action_id.to_string())
+                    .push_bind(execution.started_at.unix_timestamp())
+                    .push_bind(execution.duration_ms as i64)
+                    .push_bind(status_label(execution.status));
+            },
+        )
+        .await?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
 
@@ -213,7 +246,7 @@ impl ActionRepo for SqliteActionRepo {
         let cutoff_secs = cutoff.unix_timestamp();
         let result = sqlx::query("DELETE FROM action_executions WHERE started_at < ?")
             .bind(cutoff_secs)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected())
@@ -228,7 +261,12 @@ impl ActionRepo for SqliteActionRepo {
         let source_id_str = source_id.to_string();
         let new_id_str = new_id.to_string();
 
-        let mut tx = self.pool.begin().await.map_err(SqliteStorageError::Sqlx)?;
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
 
         let row: Option<ActionRow> = sqlx::query_as(
             "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
@@ -312,7 +350,7 @@ impl ActionRepo for SqliteActionRepo {
         .bind(&id_str)
         .bind(&id_str)
         .bind(start_of_7d)
-        .fetch_one(&self.pool)
+        .fetch_one(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -332,7 +370,7 @@ impl ActionRepo for SqliteActionRepo {
             sqlx::query("UPDATE actions SET enabled = ? WHERE id = ? AND archived_at IS NULL")
                 .bind(enabled_int)
                 .bind(id.to_string())
-                .execute(&self.pool)
+                .execute(self.db.writer())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -345,7 +383,7 @@ impl ActionRepo for SqliteActionRepo {
              WHERE id = ? AND archived_at IS NULL RETURNING enabled",
         )
         .bind(id.to_string())
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -359,7 +397,7 @@ impl ActionRepo for SqliteActionRepo {
             sqlx::query("UPDATE actions SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
                 .bind(now_ms)
                 .bind(&id_str)
-                .execute(&self.pool)
+                .execute(self.db.writer())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -372,7 +410,7 @@ impl ActionRepo for SqliteActionRepo {
             "UPDATE actions SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL",
         )
         .bind(&id_str)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -384,7 +422,7 @@ impl ActionRepo for SqliteActionRepo {
             "SELECT id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode
              FROM actions WHERE archived_at IS NOT NULL ORDER BY name",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 

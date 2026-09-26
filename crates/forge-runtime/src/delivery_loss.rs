@@ -17,11 +17,13 @@ pub struct LossCount {
     pub bulk_dropped: u64,
     /// Observer lag: the broadcast reports how many events were skipped, not which lane they rode.
     pub skipped: u64,
+    /// Received by a persisting consumer but never stored: the write failed or timed out.
+    pub unwritten: u64,
 }
 
 impl LossCount {
     pub fn total(&self) -> u64 {
-        self.priority_dropped + self.bulk_dropped + self.skipped
+        self.priority_dropped + self.bulk_dropped + self.skipped + self.unwritten
     }
 }
 
@@ -44,6 +46,7 @@ pub(crate) struct ConsumerLossCounters {
     priority: LaneLoss,
     bulk: LaneLoss,
     skipped: AtomicU64,
+    unwritten: AtomicU64,
     changed: Arc<watch::Sender<u64>>,
 }
 
@@ -89,6 +92,14 @@ impl ConsumerLossCounters {
         self.notify();
     }
 
+    pub(crate) fn unwritten(&self, lost: u64) {
+        if lost == 0 {
+            return;
+        }
+        self.unwritten.fetch_add(lost, Ordering::Relaxed);
+        self.notify();
+    }
+
     fn lane(&self, lane: DeliveryLane) -> &LaneLoss {
         match lane {
             DeliveryLane::Priority => &self.priority,
@@ -109,6 +120,7 @@ impl ConsumerLossCounters {
                 priority_dropped: self.priority.dropped.load(Ordering::Relaxed),
                 bulk_dropped: self.bulk.dropped.load(Ordering::Relaxed),
                 skipped: self.skipped.load(Ordering::Relaxed),
+                unwritten: self.unwritten.load(Ordering::Relaxed),
             },
         }
     }
@@ -142,6 +154,7 @@ impl LossLedger {
                 priority: LaneLoss::default(),
                 bulk: LaneLoss::default(),
                 skipped: AtomicU64::new(0),
+                unwritten: AtomicU64::new(0),
                 changed: Arc::clone(&self.changed),
             })
         }))

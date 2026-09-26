@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_types::EventId;
@@ -10,6 +12,15 @@ use crate::{SettingsRepo, StorageError};
 #[async_trait]
 pub trait EventLogRepo: Send + Sync {
     async fn insert(&self, event: &Event) -> Result<(), StorageError>;
+
+    /// All-or-nothing; an id already stored is kept as it is. The default writes row by row
+    /// and is not atomic, so a persistent backend overrides it.
+    async fn insert_batch(&self, events: &[Arc<Event>]) -> Result<(), StorageError> {
+        for event in events {
+            self.insert(event).await?;
+        }
+        Ok(())
+    }
     async fn get(&self, id: EventId) -> Result<Option<Event>, StorageError>;
 
     /// Returns up to `limit` events ordered newest-first.

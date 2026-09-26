@@ -16,6 +16,14 @@ pub struct ActionStats {
 #[async_trait]
 pub trait HistoryRepo: Send + Sync {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError>;
+    /// All-or-nothing. The default saves one by one and is not atomic, so a persistent backend
+    /// overrides it.
+    async fn save_batch(&self, contexts: &[ExecutionContext]) -> Result<(), StorageError> {
+        for ctx in contexts {
+            self.save(ctx).await?;
+        }
+        Ok(())
+    }
     async fn recent_for_action(
         &self,
         action_id: ActionId,

@@ -15,20 +15,22 @@ use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
+use crate::checkpoint_task::spawn_checkpoint_task;
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 use crate::retention_task::spawn_retention_task;
 use crate::{
     SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
     SqliteGlobalsRepo, SqliteHistoryRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
     SqliteScriptRepo, SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo,
     SqliteTtsFiltersRepo, SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo,
-    apply_migrations, connect,
+    apply_migrations, connect_pools,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
 
 async fn report_stranded_credentials(
-    pool: &sqlx::SqlitePool,
+    pool: &SqlitePools,
     credentials: &SqliteCredentialsRepo,
 ) -> Result<(), SqliteStorageError> {
     let stranded = credentials.stored_count().await?;
@@ -49,7 +51,7 @@ async fn report_stranded_credentials(
 }
 
 pub struct SqliteBackend {
-    pool: sqlx::SqlitePool,
+    pool: SqlitePools,
     globals: SqliteGlobalsRepo,
     user_globals: SqliteUserGlobalsRepo,
     settings: SqliteSettingsRepo,
@@ -108,12 +110,12 @@ impl SqliteBackend {
 
     /// Fails with [`SqliteStorageError::SchemaMismatch`] (not a generic migration error) if
     /// the applied version differs from [`EXPECTED_SCHEMA_VERSION`] in either direction.
-    async fn migrate_and_gate(url: &str) -> Result<sqlx::SqlitePool, SqliteStorageError> {
-        let pool = connect(url).await?;
-        apply_migrations(&pool).await?;
-        crate::registry_migration::migrate_registry_format(&pool).await?;
+    async fn migrate_and_gate(url: &str) -> Result<SqlitePools, SqliteStorageError> {
+        let pool = connect_pools(url).await?;
+        apply_migrations(pool.writer()).await?;
+        crate::registry_migration::migrate_registry_format(pool.writer()).await?;
 
-        let found = crate::migrations::applied_version(&pool).await?;
+        let found = crate::migrations::applied_version(pool.reader()).await?;
         if found != EXPECTED_SCHEMA_VERSION {
             pool.close().await;
             return Err(SqliteStorageError::SchemaMismatch {
@@ -130,7 +132,7 @@ impl SqliteBackend {
     }
 
     fn from_pool_and_credentials(
-        pool: sqlx::SqlitePool,
+        pool: SqlitePools,
         credentials: SqliteCredentialsRepo,
         prune_interval: Duration,
         media_root: std::path::PathBuf,
@@ -146,6 +148,9 @@ impl SqliteBackend {
         let settings_for_task =
             Arc::new(SqliteSettingsRepo::new(pool.clone())) as Arc<dyn SettingsRepo>;
 
+        if let Some(checkpointer) = pool.checkpointer() {
+            spawn_checkpoint_task(checkpointer.clone(), pool.writer().clone());
+        }
         spawn_retention_task(
             event_log_for_task,
             history_for_task,
@@ -215,7 +220,7 @@ impl SqliteBackend {
         .bind(id)
         .bind(kind_id)
         .bind(name)
-        .execute(&self.pool)
+        .execute(self.pool.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         Ok(())
@@ -526,7 +531,7 @@ impl DataProvider for SqliteBackend {
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {
-        Ok(crate::migrations::applied_version(&self.pool).await?)
+        Ok(crate::migrations::applied_version(self.pool.reader()).await?)
     }
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError> {
@@ -536,7 +541,7 @@ impl DataProvider for SqliteBackend {
 
         sqlx::query("VACUUM INTO ?")
             .bind(path_str)
-            .execute(&self.pool)
+            .execute(self.pool.writer())
             .await
             .map_err(|e| StorageError::Connection {
                 reason: e.to_string(),

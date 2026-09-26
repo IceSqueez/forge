@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn hash_body(body: &str) -> String {
     use std::fmt::Write as _;
@@ -67,12 +68,12 @@ const SELECT_COLS: &str = "SELECT id, name, body, contract_json, body_hash, enab
      FROM scripts";
 
 pub struct SqliteScriptRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteScriptRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -83,7 +84,7 @@ impl ScriptRepo for SqliteScriptRepo {
         let row: Option<ScriptRow> =
             sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} WHERE id = ?")))
                 .bind(&id_str)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -95,7 +96,7 @@ impl ScriptRepo for SqliteScriptRepo {
         let row: Option<ScriptRow> =
             sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} WHERE name = ?")))
                 .bind(name)
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -134,7 +135,7 @@ impl ScriptRepo for SqliteScriptRepo {
         .bind(now_ms)
         .bind(now_ms)
         .bind(now_ms)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -145,7 +146,7 @@ impl ScriptRepo for SqliteScriptRepo {
         let id_str = id.to_string();
         let result = sqlx::query("DELETE FROM scripts WHERE id = ?")
             .bind(&id_str)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
@@ -155,7 +156,7 @@ impl ScriptRepo for SqliteScriptRepo {
     async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
         let rows: Vec<ScriptRow> =
             sqlx::query_as(sqlx::AssertSqlSafe(format!("{SELECT_COLS} ORDER BY name")))
-                .fetch_all(&self.pool)
+                .fetch_all(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -168,7 +169,7 @@ impl ScriptRepo for SqliteScriptRepo {
         let rows: Vec<ScriptRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "{SELECT_COLS} WHERE enabled = 1 ORDER BY name"
         )))
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -199,7 +200,7 @@ impl ScriptRepo for SqliteScriptRepo {
         .bind(started_at_secs)
         .bind(duration_i64)
         .bind(status_str)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         Ok(())
@@ -234,7 +235,7 @@ impl ScriptRepo for SqliteScriptRepo {
         .bind(&id_str)
         .bind(start_of_today)
         .bind(&id_str)
-        .fetch_one(&self.pool)
+        .fetch_one(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -251,7 +252,7 @@ impl ScriptRepo for SqliteScriptRepo {
         let cutoff_secs = cutoff.unix_timestamp();
         let result = sqlx::query("DELETE FROM script_executions WHERE started_at < ?")
             .bind(cutoff_secs)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected())

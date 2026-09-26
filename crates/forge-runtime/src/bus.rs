@@ -5,19 +5,23 @@ use crate::delivery::{
 use crate::delivery_loss::{
     ConsumerLoss, ConsumerLossCounters, DeliveryTier, LossLedger, LossWatch,
 };
+use crate::event_log_writer::EventLogSink;
 use crate::event_ring::EventRing;
+use crate::persist_batch::{BatchPolicy, FlushTicket, run_batched};
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use forge_events::{DeliveryLane, Event, EventPublisher, EventsError};
 use forge_registry::TriggerRegistry;
 use forge_storage::{EventLogRepo, StorageError};
 use forge_types::EventId;
+use futures_util::FutureExt;
+use futures_util::future::Shared;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicU64, Ordering},
 };
 use time::OffsetDateTime;
-use tokio::sync::{Notify, broadcast, oneshot};
+use tokio::sync::{broadcast, oneshot, watch};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BusError {
@@ -66,9 +70,13 @@ pub struct EventBus {
     bulk_capacity: usize,
     total_published: AtomicU64,
     event_log: Arc<dyn EventLogRepo>,
-    flush_shutdown: Arc<Notify>,
-    /// Resolves once the flush task finishes its shutdown drain (or exits early); consumed by `await_flush`.
-    flush_complete: Mutex<Option<oneshot::Receiver<()>>>,
+    batch_policy: BatchPolicy,
+    run_history_capacity: usize,
+    flush_stop: watch::Sender<bool>,
+    flush_abandon: watch::Sender<bool>,
+    abandoned_rows: Arc<AtomicU64>,
+    /// One per persisting consumer; each resolves once that consumer has drained or given up.
+    flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
 }
 
 pub enum Delivery {
@@ -134,8 +142,12 @@ impl EventBus {
             bulk_capacity: config.critical_bulk_capacity,
             total_published: AtomicU64::new(0),
             event_log,
-            flush_shutdown: Arc::new(Notify::new()),
-            flush_complete: Mutex::new(None),
+            batch_policy: BatchPolicy::from_config(config),
+            run_history_capacity: config.run_history_capacity.max(1),
+            flush_stop: watch::channel(false).0,
+            flush_abandon: watch::channel(false).0,
+            abandoned_rows: Arc::new(AtomicU64::new(0)),
+            flushes: Mutex::new(Vec::new()),
         })
     }
 
@@ -302,58 +314,81 @@ impl EventBus {
     /// Subscribes before spawning the flush task, so events published immediately after never get missed.
     pub fn spawn_flush_task(bus: Arc<Self>) {
         let subscription = bus.subscribe_critical(EVENT_LOG);
-        let repo = Arc::clone(&bus.event_log);
-        let shutdown = Arc::clone(&bus.flush_shutdown);
-        let (done_tx, done_rx) = oneshot::channel();
-        *bus.flush_complete.lock().unwrap_or_else(|p| p.into_inner()) = Some(done_rx);
-        tokio::spawn(event_log_flush_task(subscription, repo, shutdown, done_tx));
+        let sink = EventLogSink::new(
+            Arc::clone(&bus.event_log),
+            bus.loss.counters(EVENT_LOG, DeliveryTier::Critical),
+        );
+        tokio::spawn(run_batched(
+            subscription,
+            sink,
+            bus.batch_policy,
+            bus.flush_ticket(),
+        ));
     }
 
-    /// Uses `notify_one` so the permit is stored even if the flush task hasn't polled yet.
-    pub fn shutdown(&self) {
-        self.flush_shutdown.notify_one();
+    pub(crate) fn batch_policy(&self) -> BatchPolicy {
+        self.batch_policy
     }
 
-    /// Awaits the flush task's shutdown drain; returns immediately if the task already exited or never spawned.
-    pub async fn await_flush(&self) {
-        let rx = self
-            .flush_complete
+    pub(crate) fn run_history_capacity(&self) -> usize {
+        self.run_history_capacity
+    }
+
+    pub(crate) fn loss_counters(
+        &self,
+        consumer: &'static str,
+        tier: DeliveryTier,
+    ) -> Arc<ConsumerLossCounters> {
+        self.loss.counters(consumer, tier)
+    }
+
+    /// A consumer registered here is waited for by `await_flush`.
+    pub(crate) fn flush_ticket(&self) -> FlushTicket {
+        let (done, finished) = oneshot::channel();
+        self.flushes
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .take();
-        if let Some(rx) = rx {
-            let _ = rx.await;
+            .push(finished.shared());
+        FlushTicket::new(self.flush_stop.subscribe(), done).abandonable(
+            self.flush_abandon.subscribe(),
+            Arc::clone(&self.abandoned_rows),
+        )
+    }
+
+    /// Latched: a persisting consumer that starts after this call drains and stops at once.
+    pub fn shutdown(&self) {
+        self.flush_stop.send_replace(true);
+        for entry in self.loss.report() {
+            if entry.loss.total() > 0 {
+                tracing::warn!(
+                    consumer = entry.consumer,
+                    tier = ?entry.tier,
+                    priority_dropped = entry.loss.priority_dropped,
+                    bulk_dropped = entry.loss.bulk_dropped,
+                    skipped = entry.loss.skipped,
+                    unwritten = entry.loss.unwritten,
+                    "event loss since start"
+                );
+            }
         }
     }
-}
 
-async fn event_log_flush_task(
-    mut subscription: CriticalSubscription,
-    repo: Arc<dyn EventLogRepo>,
-    shutdown: Arc<Notify>,
-    done: oneshot::Sender<()>,
-) {
-    loop {
-        tokio::select! {
-            biased;
-            _ = shutdown.notified() => {
-                while let Some(event) = subscription.try_recv() {
-                    if let Err(e) = repo.insert(&event).await {
-                        tracing::warn!(error = %e, "event_log drain insert failed");
-                    }
-                }
-                let _ = done.send(());
-                return;
-            }
-            received = subscription.recv() => {
-                let Some(event) = received else {
-                    return;
-                };
-                if let Err(e) = repo.insert(&event).await {
-                    tracing::warn!(error = %e, "event_log insert failed; event not persisted");
-                }
-            }
-        }
+    /// Awaits every persisting consumer's shutdown drain; one that already exited counts as drained.
+    pub async fn await_flush(&self) {
+        let pending: Vec<Shared<oneshot::Receiver<()>>> = self
+            .flushes
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        futures_util::future::join_all(pending).await;
+    }
+
+    /// Consumers still draining stop committing and count what they held as unwritten; resolves
+    /// once they all have. Returns the rows given up since start.
+    pub async fn abandon_flush(&self) -> u64 {
+        self.flush_abandon.send_replace(true);
+        self.await_flush().await;
+        self.abandoned_rows.load(Ordering::Relaxed)
     }
 }
 

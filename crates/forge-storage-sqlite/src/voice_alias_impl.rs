@@ -6,14 +6,15 @@ use forge_tts_core::{EngineId, VoiceId};
 use forge_voice::AliasState;
 
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 pub struct SqliteVoiceAliasRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteVoiceAliasRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -54,7 +55,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
                     pitch_semitones, rate_multiplier, state
              FROM voice_aliases ORDER BY viewer_name COLLATE NOCASE",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -88,7 +89,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         .bind(alias.pitch_semitones.map(f64::from))
         .bind(alias.rate_multiplier.map(f64::from))
         .bind(state_str)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         Ok(())
@@ -97,7 +98,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     async fn delete(&self, id: &AliasId) -> Result<(), StorageError> {
         sqlx::query("DELETE FROM voice_aliases WHERE id = ?")
             .bind(&id.0)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         Ok(())
@@ -110,7 +111,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
              FROM voice_aliases WHERE viewer_id = ? LIMIT 1",
         )
         .bind(viewer_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -120,7 +121,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
     async fn get_strategy(&self) -> Result<AssignmentStrategy, StorageError> {
         let row: Option<(Option<String>,)> =
             sqlx::query_as("SELECT value FROM settings WHERE key = 'voice:strategy'")
-                .fetch_optional(&self.pool)
+                .fetch_optional(self.db.reader())
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
 
@@ -137,7 +138,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         )
         .bind(&json)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         Ok(())
@@ -153,7 +154,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         let row: Option<IgnoreProfileRow> = sqlx::query_as(
             "SELECT excluded_voice_ids, excluded_locales FROM ignore_profile WHERE id = 1",
         )
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -188,7 +189,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         )
         .bind(&voice_ids_json)
         .bind(&locales_json)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         Ok(())

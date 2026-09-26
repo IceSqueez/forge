@@ -1,33 +1,42 @@
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_types::{ChatPayload, ChatSource, UnifiedChatRow};
-use futures_core::Stream;
-use futures_util::stream;
-
-use crate::bus::EventBus;
-use crate::delivery::CHAT_HISTORY;
+use forge_types::{
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, UnifiedChatRow,
+};
+use time::OffsetDateTime;
 
 const DEDUP_WINDOW: usize = 500;
 
-/// Lossless (critical tier); dedups per-source on a sliding window of 500 `platform_msg_id`s.
-pub fn chat_stream(bus: Arc<EventBus>) -> impl Stream<Item = UnifiedChatRow> + Send + 'static {
-    let subscription = bus.subscribe_critical(CHAT_HISTORY);
-    stream::unfold(
-        (subscription, HashMap::<ChatSource, VecDeque<String>>::new()),
-        |(mut subscription, mut dedup)| async move {
-            while let Some(event) = subscription.recv().await {
-                if let Some(row) = try_map_chat_event(&event, &mut dedup) {
-                    return Some((row, (subscription, dedup)));
-                }
-            }
-            None
-        },
-    )
+pub(crate) enum ChatRecord {
+    Row(UnifiedChatRow),
+    Moderation {
+        source: ChatSource,
+        action: ChatModerationAction,
+        at: OffsetDateTime,
+    },
 }
 
-pub(crate) fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource> {
+/// Dedups rows per source on a sliding window of 500 `platform_msg_id`s.
+#[derive(Default)]
+pub(crate) struct ChatRecordMapper {
+    dedup: HashMap<ChatSource, VecDeque<String>>,
+}
+
+impl ChatRecordMapper {
+    pub(crate) fn map(&mut self, event: &Event) -> Option<ChatRecord> {
+        if let Some(row) = try_map_chat_event(event, &mut self.dedup) {
+            return Some(ChatRecord::Row(row));
+        }
+        try_map_moderation_event(event).map(|(source, action)| ChatRecord::Moderation {
+            source,
+            action,
+            at: event.timestamp,
+        })
+    }
+}
+
+fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource> {
     match src {
         EventSource::Twitch => Some(ChatSource::Twitch),
         EventSource::YouTube => Some(ChatSource::YouTube),
@@ -44,6 +53,13 @@ pub(crate) fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource
         | EventSource::Server
         | EventSource::Audio => None,
     }
+}
+
+fn try_map_moderation_event(ev: &Event) -> Option<(ChatSource, ChatModerationAction)> {
+    let source = event_source_to_chat_source(ev.source)?;
+    let value = ev.payload.get(ChatModerationPayload::KEY)?;
+    let payload: ChatModerationPayload = serde_json::from_value(value.clone()).ok()?;
+    Some((source, payload.action))
 }
 
 fn try_map_chat_event(

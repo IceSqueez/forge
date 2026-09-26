@@ -10,6 +10,11 @@ pub struct Config {
     pub bus_observer_capacity: usize,
     pub critical_priority_capacity: usize,
     pub critical_bulk_capacity: usize,
+    pub persist_batch_max_rows: usize,
+    /// How long a persisting consumer keeps collecting after its first pending row before it
+    /// commits; zero commits whatever is queued at once.
+    pub persist_batch_linger_ms: u64,
+    pub run_history_capacity: usize,
 }
 
 impl Default for Config {
@@ -23,6 +28,9 @@ impl Default for Config {
             bus_observer_capacity: 65_536,
             critical_priority_capacity: 16_384,
             critical_bulk_capacity: 65_536,
+            persist_batch_max_rows: 2_048,
+            persist_batch_linger_ms: 0,
+            run_history_capacity: 65_536,
         }
     }
 }

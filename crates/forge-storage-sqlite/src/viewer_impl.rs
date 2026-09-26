@@ -1,8 +1,12 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
-use forge_storage::{StorageError, Viewer, ViewerPlatform, ViewerRepo};
+use forge_storage::{StorageError, Viewer, ViewerMessage, ViewerPlatform, ViewerRepo};
 use time::OffsetDateTime;
 
+use crate::batch::insert_rows;
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn to_epoch_ms(dt: OffsetDateTime) -> i64 {
     (dt.unix_timestamp_nanos() / 1_000_000) as i64
@@ -16,13 +20,22 @@ fn from_epoch_ms(ms: i64) -> Result<OffsetDateTime, StorageError> {
     })
 }
 
+const VIEWER_COLUMNS: usize = 7;
+
+struct ViewerTally<'a> {
+    platform: &'static str,
+    viewer_id: &'a str,
+    username: &'a str,
+    messages: i64,
+}
+
 pub struct SqliteViewerRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteViewerRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
@@ -64,7 +77,7 @@ impl ViewerRepo for SqliteViewerRepo {
              FROM viewers
              ORDER BY last_seen_at DESC",
         )
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -73,7 +86,7 @@ impl ViewerRepo for SqliteViewerRepo {
 
     async fn count(&self) -> Result<u64, StorageError> {
         let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM viewers")
-            .fetch_one(&self.pool)
+            .fetch_one(self.db.reader())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         Ok(u64::try_from(count).unwrap_or(0))
@@ -91,7 +104,7 @@ impl ViewerRepo for SqliteViewerRepo {
         )
         .bind(platform.as_str())
         .bind(viewer_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -119,9 +132,68 @@ impl ViewerRepo for SqliteViewerRepo {
         .bind(username)
         .bind(now_ms)
         .bind(now_ms)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
+        Ok(())
+    }
+
+    async fn record_messages(&self, messages: &[ViewerMessage]) -> Result<(), StorageError> {
+        if messages.is_empty() {
+            return Ok(());
+        }
+        let now_ms = to_epoch_ms(OffsetDateTime::now_utc());
+        let mut tallies: Vec<ViewerTally<'_>> = Vec::new();
+        let mut positions: HashMap<(&str, &str), usize> = HashMap::new();
+        for message in messages {
+            let key = (message.platform.as_str(), message.viewer_id.as_str());
+            match positions.get(&key) {
+                Some(&position) => {
+                    let tally = &mut tallies[position];
+                    tally.username = &message.username;
+                    tally.messages += 1;
+                }
+                None => {
+                    positions.insert(key, tallies.len());
+                    tallies.push(ViewerTally {
+                        platform: key.0,
+                        viewer_id: key.1,
+                        username: &message.username,
+                        messages: 1,
+                    });
+                }
+            }
+        }
+
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        insert_rows(
+            &mut tx,
+            "INSERT INTO viewers
+                (platform, viewer_id, username, first_seen_at, last_seen_at, message_count, custom_greeting) ",
+            VIEWER_COLUMNS,
+            " ON CONFLICT(platform, viewer_id) DO UPDATE SET
+                username      = excluded.username,
+                last_seen_at  = excluded.last_seen_at,
+                message_count = message_count + excluded.message_count",
+            &tallies,
+            |values, tally| {
+                values
+                    .push_bind(tally.platform)
+                    .push_bind(tally.viewer_id)
+                    .push_bind(tally.username)
+                    .push_bind(now_ms)
+                    .push_bind(now_ms)
+                    .push_bind(tally.messages)
+                    .push_bind(0_i64);
+            },
+        )
+        .await?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
 
@@ -139,7 +211,7 @@ impl ViewerRepo for SqliteViewerRepo {
         .bind(flag)
         .bind(platform.as_str())
         .bind(viewer_id)
-        .execute(&self.pool)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected() > 0)

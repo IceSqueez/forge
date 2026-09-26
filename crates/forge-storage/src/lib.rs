@@ -22,7 +22,7 @@ pub mod user_globals;
 pub mod viewer;
 pub mod voice_aliases;
 
-pub use action::{ActionRepo, ActionTelemetry, ExecutionStatus};
+pub use action::{ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus};
 pub use catalog::{
     CatalogRevision, RevisingActionRepo, RevisingQueueRepo, RevisingTriggerInstanceRepo,
 };
@@ -63,7 +63,7 @@ pub use tts_filters::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings, UrlMode,
 };
 pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
-pub use viewer::{Viewer, ViewerPlatform, ViewerRepo};
+pub use viewer::{Viewer, ViewerMessage, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};
 
 #[cfg(feature = "test-mocks")]

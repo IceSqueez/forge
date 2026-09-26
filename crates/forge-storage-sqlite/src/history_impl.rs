@@ -6,7 +6,9 @@ use forge_types::{ActionId, ExecutionContext, ExecutionMetadata};
 use serde_json;
 use time::OffsetDateTime;
 
+use crate::batch::insert_rows;
 use crate::error::SqliteStorageError;
+use crate::pool::SqlitePools;
 
 fn parse_action_id(s: &str) -> Result<ActionId, StorageError> {
     serde_json::from_str(&format!("\"{s}\"")).map_err(|e| {
@@ -32,53 +34,108 @@ fn decode_contexts(rows: Vec<(String,)>) -> Result<Vec<ExecutionContext>, Storag
         .collect()
 }
 
+const ACTION_HISTORY_COLUMNS: usize = 6;
+
+struct EncodedRun {
+    action_id: String,
+    event_id: Option<String>,
+    started_at_ms: i64,
+    duration_ms: i64,
+    outcome: String,
+    context: String,
+}
+
+impl EncodedRun {
+    fn encode(ctx: &ExecutionContext) -> Result<Self, StorageError> {
+        Ok(Self {
+            action_id: ctx.action_id.to_string(),
+            event_id: match &ctx.metadata {
+                ExecutionMetadata::Trigger { event_id, .. } => Some(event_id.to_string()),
+                ExecutionMetadata::QuickAction { .. } => None,
+            },
+            started_at_ms: to_epoch_ms(ctx.started_at),
+            duration_ms: ctx
+                .completed_at
+                .map(|finished| {
+                    let diff = finished - ctx.started_at;
+                    diff.whole_milliseconds().max(0) as i64
+                })
+                .unwrap_or(0),
+            outcome: serde_json::to_string(&ctx.outcome)
+                .map_err(StorageError::Serialization)?
+                .trim_matches('"')
+                .to_string(),
+            context: serde_json::to_string(ctx).map_err(StorageError::Serialization)?,
+        })
+    }
+}
+
 pub struct SqliteHistoryRepo {
-    pool: sqlx::SqlitePool,
+    db: SqlitePools,
 }
 
 impl SqliteHistoryRepo {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
-        Self { pool }
+    pub fn new(db: impl Into<SqlitePools>) -> Self {
+        Self { db: db.into() }
     }
 }
 
 #[async_trait]
 impl HistoryRepo for SqliteHistoryRepo {
     async fn save(&self, ctx: &ExecutionContext) -> Result<(), StorageError> {
-        let action_id_str = ctx.action_id.to_string();
-        let event_id_str: Option<String> = match &ctx.metadata {
-            ExecutionMetadata::Trigger { event_id, .. } => Some(event_id.to_string()),
-            ExecutionMetadata::QuickAction { .. } => None,
-        };
-        let started_at_ms = to_epoch_ms(ctx.started_at);
-        let duration_ms = ctx
-            .completed_at
-            .map(|finished| {
-                let diff = finished - ctx.started_at;
-                diff.whole_milliseconds().max(0) as i64
-            })
-            .unwrap_or(0);
-        let outcome_str = serde_json::to_string(&ctx.outcome)
-            .map_err(StorageError::Serialization)?
-            .trim_matches('"')
-            .to_string();
-        let context_json = serde_json::to_string(ctx).map_err(StorageError::Serialization)?;
-
+        let row = EncodedRun::encode(ctx)?;
         sqlx::query(
             "INSERT INTO action_history
                 (action_id, triggering_event_id, started_at, duration_ms, outcome, context)
              VALUES (?, ?, ?, ?, ?, ?)",
         )
-        .bind(&action_id_str)
-        .bind(event_id_str.as_deref())
-        .bind(started_at_ms)
-        .bind(duration_ms)
-        .bind(&outcome_str)
-        .bind(&context_json)
-        .execute(&self.pool)
+        .bind(&row.action_id)
+        .bind(row.event_id.as_deref())
+        .bind(row.started_at_ms)
+        .bind(row.duration_ms)
+        .bind(&row.outcome)
+        .bind(&row.context)
+        .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
+        Ok(())
+    }
+
+    async fn save_batch(&self, contexts: &[ExecutionContext]) -> Result<(), StorageError> {
+        if contexts.is_empty() {
+            return Ok(());
+        }
+        let rows = contexts
+            .iter()
+            .map(EncodedRun::encode)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        insert_rows(
+            &mut tx,
+            "INSERT INTO action_history
+                (action_id, triggering_event_id, started_at, duration_ms, outcome, context) ",
+            ACTION_HISTORY_COLUMNS,
+            "",
+            &rows,
+            |values, row| {
+                values
+                    .push_bind(row.action_id.as_str())
+                    .push_bind(row.event_id.as_deref())
+                    .push_bind(row.started_at_ms)
+                    .push_bind(row.duration_ms)
+                    .push_bind(row.outcome.as_str())
+                    .push_bind(row.context.as_str());
+            },
+        )
+        .await?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
         Ok(())
     }
 
@@ -96,7 +153,7 @@ impl HistoryRepo for SqliteHistoryRepo {
         )
         .bind(&action_id_str)
         .bind(limit as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -117,7 +174,7 @@ impl HistoryRepo for SqliteHistoryRepo {
         )
         .bind(builtin_id)
         .bind(limit as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -131,7 +188,7 @@ impl HistoryRepo for SqliteHistoryRepo {
              LIMIT ?",
         )
         .bind(limit as i64)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -160,7 +217,7 @@ impl HistoryRepo for SqliteHistoryRepo {
              GROUP BY action_id",
         )
         .bind(since_ms)
-        .fetch_all(&self.pool)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
@@ -190,7 +247,7 @@ impl HistoryRepo for SqliteHistoryRepo {
         let cutoff_ms = to_epoch_ms(cutoff);
         let result = sqlx::query("DELETE FROM action_history WHERE started_at < ?")
             .bind(cutoff_ms)
-            .execute(&self.pool)
+            .execute(self.db.writer())
             .await
             .map_err(SqliteStorageError::Sqlx)?;
         Ok(result.rows_affected())

@@ -282,9 +282,6 @@ mod tests {
         stream.read(&mut buf).await
     }
 
-    // Why: the clock is paused only for each jump. A clock left paused auto-advances whenever
-    // the runtime idles, and on macOS a loopback byte is not always readable at that instant, so
-    // the read deadline fired before a byte written inside it arrived.
     #[tokio::test]
     async fn a_trickling_request_head_is_cut_at_the_deadline_counted_from_accept() {
         let (mut client, mut guarded) = guarded_pair().await;

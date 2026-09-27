@@ -48,8 +48,6 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         None
     }
-    /// `Bulk` only for event kinds that arrive in floods; every kind this descriptor's filter
-    /// covers then rides the sheddable lane for every lossless consumer.
     fn delivery_lane(&self) -> DeliveryLane {
         DeliveryLane::Priority
     }

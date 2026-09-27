@@ -1085,11 +1085,6 @@ mod tests {
             .unwrap_or(0)
     }
 
-    // Why: several callers run on a paused clock, which auto-advances while a loopback HTTP
-    // exchange with the mock server is still in flight (on macOS a reply is not always readable
-    // at that instant). A budget counted in check steps then drained in virtual time before the
-    // reply landed, so the budget is wall-clock; the poller has no request deadline for the
-    // racing virtual time to trip.
     const POLLER_WALL_BUDGET: Duration = Duration::from_secs(10);
     const POLLER_CHECK_STEP: Duration = Duration::from_millis(50);
 

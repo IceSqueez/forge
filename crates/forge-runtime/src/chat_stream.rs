@@ -17,7 +17,6 @@ pub(crate) enum ChatRecord {
     },
 }
 
-/// Dedups rows per source on a sliding window of 500 `platform_msg_id`s.
 #[derive(Default)]
 pub(crate) struct ChatRecordMapper {
     dedup: HashMap<ChatSource, VecDeque<String>>,

@@ -8,8 +8,6 @@ use crate::StorageError;
 pub trait ChatHistoryRepo: Send + Sync {
     async fn append(&self, row: &UnifiedChatRow) -> Result<(), StorageError>;
 
-    /// All-or-nothing; a message id already stored is kept as it is. The default appends row
-    /// by row and is not atomic, so a persistent backend overrides it.
     async fn append_batch(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError> {
         for row in rows {
             self.append(row).await?;

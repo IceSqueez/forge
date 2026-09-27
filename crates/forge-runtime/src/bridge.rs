@@ -4,7 +4,6 @@ use futures_core::Stream;
 use futures_util::stream;
 use std::sync::Arc;
 
-/// Lagged items are skipped and counted in drop accounting; the lag count is logged at WARN.
 pub fn bus_subscription(bus: Arc<EventBus>) -> impl Stream<Item = Event> + Send + 'static {
     stream::unfold(bus.subscribe(), |mut subscription| async move {
         loop {

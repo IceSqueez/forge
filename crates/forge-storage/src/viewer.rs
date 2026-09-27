@@ -67,8 +67,6 @@ pub trait ViewerRepo: Send + Sync {
         viewer_id: &str,
         username: &str,
     ) -> Result<(), StorageError>;
-    /// Same effect as one `record_message` per entry, in order, applied all-or-nothing. The
-    /// default records one by one and is not atomic, so a persistent backend overrides it.
     async fn record_messages(&self, messages: &[ViewerMessage]) -> Result<(), StorageError> {
         for message in messages {
             self.record_message(

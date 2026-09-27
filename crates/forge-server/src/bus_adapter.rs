@@ -208,7 +208,6 @@ async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
     }
 }
 
-/// Every event-subscribed client may have lost some of the skipped events, so each is told the full count.
 async fn notify_skipped(registry: &RwLock<Vec<ConnectedClient>>, missed: u64) {
     let frame = WsFrame::Text(dropped_notification(missed));
     let reg = registry.read().await;
@@ -930,7 +929,6 @@ mod tests {
         unsubscribed: broadcast::Receiver<WsFrame>,
     }
 
-    /// Publishes past the fan-out's buffer before its task first runs, so it resumes with a lag of exactly `SKIPPED`.
     async fn lagged_fan_out() -> LaggedFanOut {
         let config = forge_runtime::Config {
             bus_observer_capacity: OBSERVER_CAPACITY,
@@ -980,7 +978,6 @@ mod tests {
     async fn a_fan_out_lag_sends_nothing_to_a_client_with_no_event_subscriptions() {
         let mut fan_out = lagged_fan_out().await;
 
-        // The notice goes to every client in one pass, so once one has it the pass is over.
         first_frame(&mut fan_out.subscribed).await;
 
         assert!(matches!(

@@ -15,9 +15,7 @@ pub enum DeliveryTier {
 pub struct LossCount {
     pub priority_dropped: u64,
     pub bulk_dropped: u64,
-    /// Observer lag: the broadcast reports how many events were skipped, not which lane they rode.
     pub skipped: u64,
-    /// Received by a persisting consumer but never stored: the write failed or timed out.
     pub unwritten: u64,
 }
 
@@ -126,7 +124,6 @@ impl ConsumerLossCounters {
     }
 }
 
-/// Keyed by consumer name and tier, so re-subscribing under the same name never adds an entry.
 pub(crate) struct LossLedger {
     consumers: Mutex<BTreeMap<(&'static str, DeliveryTier), Arc<ConsumerLossCounters>>>,
     changed: Arc<watch::Sender<u64>>,
@@ -177,7 +174,6 @@ impl LossLedger {
     }
 }
 
-/// Coalescing: a burst of drops wakes the watcher once with the latest totals.
 pub struct LossWatch {
     changed: watch::Receiver<u64>,
     ledger: Weak<LossLedger>,
@@ -191,7 +187,6 @@ impl LossWatch {
             .unwrap_or_default()
     }
 
-    /// `None` once the bus behind this watch is gone.
     pub async fn changed(&mut self) -> Option<Vec<ConsumerLoss>> {
         self.changed.changed().await.ok()?;
         self.changed.borrow_and_update();

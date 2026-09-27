@@ -12,7 +12,6 @@ use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
 
 const TEST_KEY: [u8; 32] = [0xab; 32];
-/// Long enough that a test finishes between the first sweep and the next scheduled one.
 const SLOW_CADENCE: Duration = Duration::from_secs(2);
 const FAST_CADENCE: Duration = Duration::from_millis(50);
 const CHUNK_ROWS: usize = 1_000;
@@ -87,7 +86,6 @@ impl Db {
             .is_some()
     }
 
-    /// Polls until `done` holds or `deadline` (measured from open) passes; returns whether it held.
     async fn rows_reach(&self, deadline: Duration, done: impl Fn(i64) -> bool) -> bool {
         while self.opened.elapsed() < deadline {
             if done(self.rows().await) {

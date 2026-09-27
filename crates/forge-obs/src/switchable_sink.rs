@@ -20,7 +20,6 @@ impl SwitchableObsSink {
         Arc::new(Self::default())
     }
 
-    /// The previously installed client stops driving the stream-output signal.
     pub fn install(&self, client: Arc<ObsClient>) {
         let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
         if let Some(previous) = guard.as_ref() {
@@ -32,7 +31,6 @@ impl SwitchableObsSink {
         *guard = Some(client);
     }
 
-    /// Follows whichever client is installed, across reinstalls; `false` while none is installed or connected.
     pub fn stream_output(&self) -> StreamOutputActive {
         subscribe(&self.stream_output)
     }

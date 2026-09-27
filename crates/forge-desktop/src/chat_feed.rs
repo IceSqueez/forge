@@ -147,7 +147,6 @@ impl AuthorIndex {
     }
 }
 
-/// `events` are observer-lag skips whose kinds are unknown, so how many of them were chat messages is not known.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct FeedGap {
     pub messages: u64,
@@ -181,7 +180,6 @@ pub struct ChatFeed {
     capacity: usize,
     start_seq: u64,
     authors: AuthorIndex,
-    /// Keyed by the sequence number of the first row that arrived after the gap.
     gaps: BTreeMap<u64, FeedGap>,
 }
 
@@ -271,7 +269,6 @@ impl ChatFeed {
         true
     }
 
-    /// Sums every gap recorded after row `after` (the previous shown row, if any) up to and including row `seq`.
     pub fn gap_before(&self, after: Option<u64>, seq: u64) -> FeedGap {
         let from = after.map_or(self.start_seq, |after| after.saturating_add(1));
         let mut total = FeedGap::default();

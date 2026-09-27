@@ -11,7 +11,6 @@ pub struct CatalogBinding {
     pub instance: TriggerInstance,
 }
 
-/// Enabled actions and their enabled trigger instances, in storage list order.
 pub struct CatalogSnapshot {
     revision: u64,
     actions: HashMap<ActionId, Arc<Action>>,
@@ -32,7 +31,6 @@ impl CatalogSnapshot {
         self.bindings.get(index)
     }
 
-    /// Ascending, so bindings come back in the same order as the storage listing.
     pub fn binding_indexes_for_kinds<'a>(
         &self,
         kind_ids: impl IntoIterator<Item = &'a str>,
@@ -115,7 +113,6 @@ impl Catalog {
         )
     }
 
-    /// Reflects every catalog write that returned before this call; rebuilds from storage first if one did.
     pub async fn current(&self) -> Result<Arc<CatalogSnapshot>, StorageError> {
         if let Some(fresh) = self.built_at(self.revision.current()) {
             return Ok(fresh);
@@ -159,8 +156,6 @@ mod tests {
 
     use super::*;
 
-    /// Action rows whose `list` copies the rows first and then, when gated, waits for a
-    /// permit, so a test can land a write between the storage read and the snapshot.
     struct StubActions {
         rows: StdMutex<Vec<Action>>,
         lists: AtomicUsize,

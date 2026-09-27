@@ -105,11 +105,6 @@ fn announced_states(rx: &mut mpsc::UnboundedReceiver<Event>) -> Vec<String> {
 
 // Why: the integration header reloads off `platform.connection.changed`, so a retry loop that
 // re-announced `reconnecting` on every attempt would redraw the whole screen once per backoff tick.
-/// Waits on the real clock for the mock server's next accept and jumps the clock by
-/// `BACKOFF_JUMP` after each `REAL_CLOCK_POLL` without one, so the reconnect backoff passes
-/// without a wall-clock wait while every dial still runs on real time.
-/// Why: a clock left paused auto-advances whenever the runtime idles, and on macOS a loopback
-/// accept is not always ready at that instant, so the retry budget could drain before it landed.
 async fn next_accept_jumping_backoffs(accepted: &mut mpsc::UnboundedReceiver<()>, attempt: usize) {
     let started = Instant::now();
     loop {
@@ -221,8 +216,6 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
     );
 }
 
-/// Wall-clock ceiling for every wait below; it only turns a regression that would hang forever
-/// into a failure.
 const WALL_BUDGET: Duration = Duration::from_secs(20);
 
 /// Virtual time added per step while a test drives the paused clock towards a deadline; far below
@@ -268,9 +261,6 @@ async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
-/// Why: each step first gives the loopback socket `REAL_CLOCK_POLL` of real time. A step that only
-/// yielded let virtual time race through a whole request deadline before a macOS loopback reply
-/// was readable; paced like this, a reply has to stall for a tenth of the deadline in real time.
 async fn advance_until(what: &str, mut done: impl FnMut() -> bool) {
     let started = Instant::now();
     while !done() {

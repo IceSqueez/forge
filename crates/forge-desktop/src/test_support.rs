@@ -400,7 +400,6 @@ impl ActionRepo for StubActions {
     }
 }
 
-/// A catalog over [`StubActions`], which lists no action, so no trigger link is ever read.
 pub(crate) fn stub_catalog() -> Arc<Catalog> {
     Catalog::new(
         Arc::new(StubActions),
@@ -724,7 +723,6 @@ pub(crate) async fn sandboxed_backend(
     }
 }
 
-/// A scheduler whose single queue holds every dispatch, so its pending depth only grows.
 pub(crate) fn held_queue_scheduler(
     rt: &tokio::runtime::Runtime,
     queue: forge_types::Queue,

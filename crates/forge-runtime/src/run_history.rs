@@ -15,7 +15,6 @@ pub(crate) struct RunRecord {
     pub(crate) execution: Option<ActionExecution>,
 }
 
-/// Never waits: a full queue drops the record into drop accounting instead of stalling the run.
 #[derive(Clone)]
 pub(crate) struct RunHistoryWriter {
     sender: mpsc::Sender<RunRecord>,

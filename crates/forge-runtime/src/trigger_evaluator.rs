@@ -50,7 +50,6 @@ pub struct TriggerEvaluator {
     resolved: ResolvedBindings,
 }
 
-/// Binding indexes per event source and kind, valid for one catalog revision only.
 #[derive(Default)]
 struct ResolvedBindings {
     revision: Option<u64>,
@@ -1347,8 +1346,6 @@ mod tests {
 
     const CATALOG_WAIT: Duration = Duration::from_secs(5);
 
-    /// A fence action and (optionally) a target action, both on one serial queue, so a
-    /// fence start proves every earlier dispatch has already started.
     struct CatalogRig {
         bus: Arc<EventBus>,
         dp: Arc<dyn DataProvider>,
@@ -1475,8 +1472,6 @@ mod tests {
     }
 
     impl CatalogRig {
-        /// Publishes the target event then the fence event; reports whether the target
-        /// action started before the fence did.
         async fn target_fires(&self) -> bool {
             let mut sub = self.bus.subscribe();
             self.bus

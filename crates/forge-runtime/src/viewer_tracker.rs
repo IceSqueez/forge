@@ -136,7 +136,6 @@ mod tests {
         let bus = EventBus::with_config(Arc::new(NullEventLogRepo), &config);
         spawn_viewer_tracker(Arc::clone(&bus), Arc::new(repo));
 
-        // Publishing never yields, so the whole burst lands before the tracker drains anything.
         let logins: Vec<String> = (0..BURST).map(|i| format!("viewer-{i}")).collect();
         for login in &logins {
             bus.publish(chat_message(login));

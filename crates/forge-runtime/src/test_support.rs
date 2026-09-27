@@ -88,8 +88,6 @@ pub(crate) mod log_capture {
         }
     }
 
-    // Why: `register_callsite` answers `sometimes` on purpose: a cached `always` from another
-    // capture running in parallel would hand a TRACE line to a DEBUG-only assertion.
     struct CaptureSubscriber {
         lines: Arc<Mutex<Vec<CapturedLine>>>,
         max: Level,
@@ -127,14 +125,6 @@ pub(crate) mod log_capture {
         fn exit(&self, _: &span::Id) {}
     }
 
-    // Why: the callsite interest cache is process-global while a capture subscriber is
-    // thread-local. Ordinary tests in this binary reach the same production callsites with no
-    // subscriber installed, which registers those callsites as `Interest::never()` - and `never`
-    // short-circuits the event before `enabled()` is ever consulted, so a capture running in
-    // parallel silently records nothing. This floor is installed once as the process-wide global
-    // default and answers `sometimes` for every callsite, so the union can never collapse to
-    // `never` and every event reaches whatever thread-local subscriber `with_default` installed.
-    // It captures nothing itself.
     struct InterestFloor;
 
     impl Subscriber for InterestFloor {
@@ -164,14 +154,11 @@ pub(crate) mod log_capture {
     fn install_interest_floor() {
         static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
         INSTALLED.get_or_init(|| {
-            // A binary that already set a global default keeps it; the rebuild below still
-            // clears any `never` cached before this point.
             let _ = tracing::subscriber::set_global_default(InterestFloor);
             tracing::callsite::rebuild_interest_cache();
         });
     }
 
-    /// Runs `body` on this thread with everything up to `max` captured; `body` must stay synchronous.
     pub(crate) fn capture(max: Level, body: impl FnOnce()) -> Vec<CapturedLine> {
         let lines = Arc::new(Mutex::new(Vec::new()));
         install_interest_floor();

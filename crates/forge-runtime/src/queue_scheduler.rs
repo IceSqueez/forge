@@ -318,7 +318,6 @@ impl PendingBuffer {
         self.publish(0);
     }
 
-    /// Called with the task lock held, so published depths follow the buffer's own order.
     fn publish(&self, pending: usize) {
         self.inner.depth.update(|depth| depth.pending = pending);
     }
@@ -372,7 +371,6 @@ impl InflightTracker {
         self.publish(inner.signals.len());
     }
 
-    /// Called with the tracker lock held, so published counts follow the tracker's own order.
     fn publish(&self, in_flight: usize) {
         self.depth.update(|depth| depth.in_flight = in_flight);
     }

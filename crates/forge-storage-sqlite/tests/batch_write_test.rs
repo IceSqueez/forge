@@ -18,7 +18,6 @@ use forge_types::{
 use sqlx::SqlitePool;
 use time::OffsetDateTime;
 
-/// One more than a single multi-row statement carries, so a batch spans two statements.
 const TWO_STATEMENTS: usize = 257;
 const POISON: &str = "poison";
 
@@ -35,7 +34,6 @@ async fn count(pool: &SqlitePool, table: &str) -> i64 {
         .unwrap()
 }
 
-/// Makes SQLite abort the statement that inserts the row whose `column` equals `value`.
 async fn poison(pool: &SqlitePool, table: &str, column: &str, value: &str) {
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE TRIGGER poison_{table} BEFORE INSERT ON {table}

@@ -2,7 +2,6 @@ use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
 
 use crate::error::SqliteStorageError;
 
-/// SQLite's compile-time ceiling on `?` parameters in one statement (3.32 and later).
 const MAX_BOUND_PARAMETERS: usize = 32_766;
 const MAX_ROWS_PER_STATEMENT: usize = 256;
 
@@ -10,7 +9,6 @@ pub(crate) fn rows_per_statement(columns: usize) -> usize {
     (MAX_BOUND_PARAMETERS / columns.max(1)).clamp(1, MAX_ROWS_PER_STATEMENT)
 }
 
-/// Runs one multi-row `INSERT` per chunk on `conn`; the caller owns the transaction.
 pub(crate) async fn insert_rows<T>(
     conn: &mut SqliteConnection,
     head: &str,

@@ -113,7 +113,6 @@ struct Persisted {
     run_triggers: Vec<EventId>,
 }
 
-/// Runs one action for a chat message and one for a follow, then drains every persisting consumer.
 async fn run_for_chat_and_follow(chat: &Event, follow: &Event) -> Persisted {
     let action = empty_action();
     let listed = vec![action.clone()];

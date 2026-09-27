@@ -1101,7 +1101,6 @@ mod tests {
         const SETTLE: Duration = Duration::from_secs(5);
         const PROMPT: Duration = Duration::from_secs(1);
         const EARLY_WINDOW: Duration = Duration::from_millis(50);
-        /// Poll intervals a peer that answers every request is kept through.
         const ANSWERED_POLLS: usize = 10;
 
         async fn connected_session(

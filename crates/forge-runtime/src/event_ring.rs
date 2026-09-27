@@ -35,7 +35,6 @@ impl EventRing {
         self.events.push_back(event);
     }
 
-    /// The newest retained event carrying `id`.
     pub(crate) fn get(&self, id: EventId) -> Option<&Arc<Event>> {
         self.position(id).and_then(|index| self.events.get(index))
     }
@@ -77,7 +76,6 @@ mod tests {
         events.map(|event| event.id).collect()
     }
 
-    /// The linear scans the index replaced: newest match by id, then everything after it.
     fn scanned(window: &[Arc<Event>], id: EventId) -> Option<(usize, Vec<EventId>)> {
         let position = window.iter().rposition(|event| event.id == id)?;
         Some((position, ids(window[position + 1..].iter())))

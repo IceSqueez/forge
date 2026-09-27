@@ -13,8 +13,6 @@ use crate::{SettingsRepo, StorageError};
 pub trait EventLogRepo: Send + Sync {
     async fn insert(&self, event: &Event) -> Result<(), StorageError>;
 
-    /// All-or-nothing; an id already stored is kept as it is. The default writes row by row
-    /// and is not atomic, so a persistent backend overrides it.
     async fn insert_batch(&self, events: &[Arc<Event>]) -> Result<(), StorageError> {
         for event in events {
             self.insert(event).await?;
@@ -42,7 +40,6 @@ pub const DEFAULT_EVENT_LOG_RETENTION_DAYS: u32 = 7;
 pub const MIN_EVENT_LOG_RETENTION_DAYS: u32 = 1;
 pub const MAX_EVENT_LOG_RETENTION_DAYS: u32 = 365;
 
-/// Clamped to `MIN_EVENT_LOG_RETENTION_DAYS..=MAX_EVENT_LOG_RETENTION_DAYS`; unset or unparsable reads as the default.
 pub async fn event_log_retention_days(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
     let raw = repo
         .get_string(reserved_keys::EVENT_LOG_RETENTION_DAYS)
@@ -53,7 +50,6 @@ pub async fn event_log_retention_days(repo: &dyn SettingsRepo) -> Result<u32, St
     ))
 }
 
-/// Stores the clamped value, so a caller never persists a window the pruner would not honour.
 pub async fn set_event_log_retention_days(
     repo: &dyn SettingsRepo,
     days: u32,

@@ -75,13 +75,11 @@ pub struct EventBus {
     flush_stop: watch::Sender<bool>,
     flush_abandon: watch::Sender<bool>,
     abandoned_rows: Arc<AtomicU64>,
-    /// One per persisting consumer; each resolves once that consumer has drained or given up.
     flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
 }
 
 pub enum Delivery {
     Event(Arc<Event>),
-    /// This observer fell behind by that many events; they are already counted in drop accounting.
     Skipped(u64),
     Closed,
 }
@@ -151,7 +149,6 @@ impl EventBus {
         })
     }
 
-    /// Never blocks: a full critical lane or a lagging observer loses events to drop accounting, not the publisher's time.
     pub fn publish(&self, event: Event) {
         let event = Arc::new(event);
         let lanes = self.lanes.load();
@@ -175,8 +172,6 @@ impl EventBus {
             .push(Arc::new(event));
     }
 
-    /// Replaces any earlier declaration; until the first one, platform events ride the priority lane
-    /// and only core run telemetry is bulk.
     pub fn declare_lanes(&self, registry: &TriggerRegistry) {
         self.lanes
             .store(Arc::new(LaneTable::from_registry(registry)));
@@ -190,7 +185,6 @@ impl EventBus {
         self.subscribe_observer(UNNAMED_OBSERVER)
     }
 
-    /// Lossy tier: lag is counted under `consumer` in drop accounting.
     pub fn subscribe_observer(&self, consumer: &'static str) -> EventSubscription {
         EventSubscription {
             receiver: self.sender.subscribe(),
@@ -198,7 +192,6 @@ impl EventBus {
         }
     }
 
-    /// Lossless tier: a queue of this consumer's own, fed on every publish from now on.
     pub fn subscribe_critical(&self, consumer: &'static str) -> CriticalSubscription {
         let (sink, subscription) = self.open_critical(consumer);
         self.critical.add(sink);
@@ -355,7 +348,6 @@ impl EventBus {
         self.loss.counters(consumer, tier)
     }
 
-    /// A consumer registered here is waited for by `await_flush`.
     pub(crate) fn flush_ticket(&self) -> FlushTicket {
         let (done, finished) = oneshot::channel();
         self.flushes
@@ -368,7 +360,6 @@ impl EventBus {
         )
     }
 
-    /// Latched: a persisting consumer that starts after this call drains and stops at once.
     pub fn shutdown(&self) {
         self.flush_stop.send_replace(true);
         for entry in self.loss.report() {
@@ -386,7 +377,6 @@ impl EventBus {
         }
     }
 
-    /// Awaits every persisting consumer's shutdown drain; one that already exited counts as drained.
     pub async fn await_flush(&self) {
         let pending: Vec<Shared<oneshot::Receiver<()>>> = self
             .flushes
@@ -396,8 +386,6 @@ impl EventBus {
         futures_util::future::join_all(pending).await;
     }
 
-    /// Consumers still draining stop committing and count what they held as unwritten; resolves
-    /// once they all have. Returns the rows given up since start.
     pub async fn abandon_flush(&self) -> u64 {
         self.flush_abandon.send_replace(true);
         self.await_flush().await;

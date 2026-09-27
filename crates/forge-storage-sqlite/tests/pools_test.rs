@@ -54,8 +54,6 @@ async fn a_read_completes_while_a_write_transaction_is_open_and_sees_only_commit
     assert_eq!(keys, vec!["committed".to_string()]);
 }
 
-/// Frames in the WAL (`mxFrame`) and frames already copied into the database file
-/// (`nBackfill`), read from the wal-index header documented at sqlite.org/walformat.html.
 fn wal_progress(db: &std::path::Path) -> (u32, u32) {
     use std::io::Read;
 

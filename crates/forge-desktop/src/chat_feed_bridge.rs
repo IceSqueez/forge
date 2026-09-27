@@ -33,8 +33,6 @@ impl FeedItem {
     }
 }
 
-/// Holds at most `capacity` events; overflow drops the oldest message into a gap in its place, and
-/// an annotation only once no message is left, so moderation still reaches rows already on screen.
 pub struct FeedInbox {
     items: VecDeque<FeedItem>,
     queued: usize,
@@ -150,7 +148,6 @@ impl FeedChannel {
     }
 }
 
-/// Subscribes at construction so nothing published before `start` is missed.
 pub struct ChatFeedBridge {
     channel: Arc<FeedChannel>,
 }

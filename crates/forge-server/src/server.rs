@@ -722,9 +722,7 @@ pub(crate) mod tests {
     /// A request head with no terminating empty line: hyper has read it, so the connection is
     /// busy rather than idle and graceful shutdown waits on it instead of closing it.
     const UNFINISHED_REQUEST_HEAD: &[u8] = b"GET /api/v1/info HTTP/1.1\r\nHost: localhost\r\n";
-    /// Real time given to the server to read bytes just written on a loopback socket.
     const LOOPBACK_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
-    /// Real time the retired listener is given to finish once its last connection is gone.
     const OLD_LISTENER_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
     const REAL_CLOCK_WINDOW: std::time::Duration = std::time::Duration::from_millis(10);
     const REAL_CLOCK_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
@@ -1232,8 +1230,6 @@ pub(crate) mod tests {
         handle.stop().await.expect("stop after restart");
     }
 
-    // Why: the loopback sockets run on the real clock and only the drain budget is jumped over,
-    // so the lingering connection is read by the server before the restart starts draining it.
     #[tokio::test]
     async fn a_listener_outliving_a_restart_cannot_report_the_new_one_stopped() {
         use tokio::io::AsyncWriteExt;
@@ -1644,18 +1640,12 @@ pub(crate) mod tests {
         socket
     }
 
-    // Why: a clock left paused auto-advances whenever the runtime idles, and on macOS a loopback
-    // reply is not always readable at that instant, so the frame budget elapsed before the reply
-    // landed. The clock is paused only for the jump itself; every socket round trip runs on real time.
     pub(crate) async fn elapse(by: std::time::Duration) {
         tokio::time::pause();
         tokio::time::advance(by).await;
         tokio::time::resume();
     }
 
-    /// Runs `work` on the real clock and jumps the clock by `CLOCK_STEP` after every
-    /// `REAL_CLOCK_WINDOW` it stays pending; `None` when it is still pending once `budget` has been
-    /// jumped and a last `REAL_CLOCK_GRACE` has passed.
     async fn run_stepping_the_clock<T>(
         work: impl std::future::Future<Output = T>,
         budget: std::time::Duration,

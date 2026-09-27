@@ -46,8 +46,6 @@ pub trait ActionRepo: Send + Sync {
         duration_ms: u64,
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
-    /// All-or-nothing. The default records one by one and is not atomic, so a persistent
-    /// backend overrides it.
     async fn record_executions(&self, executions: &[ActionExecution]) -> Result<(), StorageError> {
         for execution in executions {
             self.record_execution(

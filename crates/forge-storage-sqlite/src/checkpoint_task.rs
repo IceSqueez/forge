@@ -12,8 +12,6 @@ const RESTART_RETRY_GAP: Duration = Duration::from_millis(10);
 const ESCALATE_AFTER_FAILED_TICKS: u32 = 3;
 const ESCALATED_READER_WAIT: Duration = Duration::from_millis(500);
 
-/// PASSIVE copies frames off the writer connection but never resets a WAL that readers keep
-/// overlapping, so past `RESTART_AT_WAL_FRAMES` the writer itself runs a bounded RESTART between writes.
 pub(crate) fn spawn_checkpoint_task(checkpointer: SqlitePool, writer: SqlitePool) {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(CHECKPOINT_INTERVAL);
@@ -85,7 +83,6 @@ async fn restart_within_tick(writer: &SqlitePool, escalated: bool) -> Result<boo
     Ok(false)
 }
 
-/// `Ok(false)` when a reader held an older snapshot past `RESTART_READER_WAIT`.
 async fn restart_wal(writer: &SqlitePool) -> Result<bool, sqlx::Error> {
     restart_wal_waiting(writer, RESTART_READER_WAIT).await
 }
@@ -177,8 +174,6 @@ mod tests {
             .unwrap();
     }
 
-    /// `mxFrame` of the wal-index header (sqlite.org/walformat.html); it only ever falls when
-    /// the WAL is reset to its start.
     fn wal_frames(db: &Path) -> u32 {
         use std::io::Read;
 

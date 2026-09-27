@@ -10,7 +10,6 @@ use crate::{
     TriggerInstanceRepo,
 };
 
-/// Advances once per catalog write after the backend returns; an unchanged value means no newer write completed.
 #[derive(Debug, Clone)]
 pub struct CatalogRevision(Arc<watch::Sender<u64>>);
 
@@ -33,12 +32,10 @@ impl CatalogRevision {
         self.0.send_modify(|revision| *revision += 1);
     }
 
-    /// Only advances made after this call wake the returned subscriber.
     pub fn subscribe(&self) -> CatalogChanges {
         CatalogChanges(self.0.subscribe())
     }
 
-    /// The write runs detached from its caller, so a cancelled caller cannot hide a commit that lands later.
     async fn after<T, W>(&self, write: W) -> Result<T, StorageError>
     where
         T: Send + 'static,
@@ -63,14 +60,12 @@ impl CatalogRevision {
 pub struct CatalogChanges(watch::Receiver<u64>);
 
 impl CatalogChanges {
-    /// Coalesces advances since the last wake into the latest revision; `None` once every `CatalogRevision` handle is dropped.
     pub async fn changed(&mut self) -> Option<u64> {
         self.0.changed().await.ok()?;
         Some(*self.0.borrow_and_update())
     }
 }
 
-/// Advances when the detached write finishes, panics or is aborted, since the backend may have committed it.
 struct AdvanceOnDrop(CatalogRevision);
 
 impl Drop for AdvanceOnDrop {
@@ -362,7 +357,6 @@ mod tests {
 
     use super::*;
 
-    /// A queue repo whose `save` blocks until the test hands it a permit.
     struct GatedQueueRepo {
         permits: Arc<Semaphore>,
     }
@@ -431,7 +425,6 @@ mod tests {
         );
     }
 
-    /// Yields until the detached write has run to its end, bounded so a lost wakeup fails instead of hanging.
     async fn settle_detached_write(revision: &CatalogRevision, from: u64) -> u64 {
         for _ in 0..SETTLE_YIELDS {
             if revision.current() != from {

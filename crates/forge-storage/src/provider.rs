@@ -9,7 +9,6 @@ use crate::{
 };
 
 /// Schema version this build expects. The startup gate compares `schema_version()`
-/// against this constant; a mismatch stops boot with an upgrade-required failure.
 pub const EXPECTED_SCHEMA_VERSION: u32 = 46;
 
 #[async_trait]
@@ -29,7 +28,6 @@ pub trait DataProvider:
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo>;
     fn media_repo(&self) -> Arc<dyn MediaRepo>;
 
-    /// Shared by the action, trigger-instance and queue repos this provider hands out.
     fn catalog_revision(&self) -> CatalogRevision;
 
     async fn schema_version(&self) -> Result<u32, StorageError>;

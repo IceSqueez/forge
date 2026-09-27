@@ -15,13 +15,9 @@ use crate::persist_batch::{BATCH_WRITE_TIMEOUT, BatchSink, MappedEvents, run_bat
 
 const PERSIST_OP_TIMEOUT: Duration = Duration::from_secs(5);
 const PRUNE_EVERY_APPENDS: u64 = 256;
-/// A chat row can reach this writer after a moderation action published later than it (the
-/// action rides the priority lane); remembered actions are applied to such late rows.
 const MODERATION_MEMORY: usize = 256;
 const MODERATION_LOOKBACK: time::Duration = time::Duration::minutes(2);
 
-/// Chat rows and moderation marks share one writer, so a mark is never applied before the rows
-/// it covers are stored.
 pub fn spawn_chat_history_persistence(
     bus: Arc<EventBus>,
     repo: Arc<dyn ChatHistoryRepo>,
@@ -97,8 +93,6 @@ struct ChatHistorySink {
 impl BatchSink for ChatHistorySink {
     type Item = ChatRecord;
 
-    /// Records not yet taken stay in `batch`, so a flush cancelled mid-commit leaves every
-    /// unstored row either there or in `pending` for `abandon` to count.
     async fn flush(&mut self, batch: &mut Vec<ChatRecord>) {
         batch.reverse();
         while let Some(record) = batch.pop() {

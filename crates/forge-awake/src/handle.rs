@@ -9,7 +9,6 @@ use crate::{AwakeError, AwakeStatus};
 
 pub struct StayAwakeConfig {
     pub enabled: bool,
-    /// Shown to the user by the OS power tools next to the hold.
     pub reason: String,
 }
 
@@ -26,7 +25,6 @@ pub struct StayAwake {
 }
 
 impl StayAwake {
-    /// Must be called inside a tokio runtime; the holds live on a task it spawns.
     pub fn spawn(config: StayAwakeConfig, preference: Arc<dyn EnabledPreference>) -> Self {
         let (status_tx, status_rx) = watch::channel(AwakeStatus::initial(config.enabled));
         let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -52,7 +50,6 @@ impl StayAwake {
         }
     }
 
-    /// Persists the choice, then applies it to the running holds.
     pub async fn set_enabled(&self, enabled: bool) {
         self.preference.store(enabled).await;
         let _ = self.commands.send(Command::SetEnabled(enabled));
@@ -66,7 +63,6 @@ impl StayAwake {
         StatusWatch(self.status.clone())
     }
 
-    /// Releases every hold and stops the service without waiting; later calls do nothing.
     pub fn release(&self) {
         let _ = self.commands.send(Command::Release);
     }

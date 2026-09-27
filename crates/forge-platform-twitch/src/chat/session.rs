@@ -7931,9 +7931,6 @@ mod tests {
         connection_states_until(&mut events, ConnectionState::Disconnected).await;
     }
 
-    /// Waits on the real clock for the next `want` state and jumps the clock by `BACKOFF_JUMP`
-    /// after each `REAL_CLOCK_WINDOW` without one, so reconnect backoffs pass without a
-    /// wall-clock wait while every dial still runs on real time.
     async fn next_state_jumping_backoffs(events: &mut EventStream, want: ConnectionState) {
         const REAL_CLOCK_WINDOW: Duration = Duration::from_millis(10);
         const BACKOFF_JUMP: Duration = Duration::from_secs(1);
@@ -7959,9 +7956,6 @@ mod tests {
         }
     }
 
-    // Why: a paused clock auto-advances whenever the runtime idles, and on macOS a refused
-    // loopback dial is not always reported at that instant, so the state wait ran out first. The
-    // dials run on the real clock; the clock is paused only once the retries are in.
     #[tokio::test]
     async fn shutting_down_during_the_reconnect_backoff_skips_the_rest_of_the_wait() {
         // Why: from the third retry on, the backoff ceiling is seconds long, so a session that

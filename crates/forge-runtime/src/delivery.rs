@@ -8,8 +8,6 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use crate::delivery_loss::ConsumerLossCounters;
 use crate::event_ring::EventRing;
 
-/// A lane counts as recovered only once this share of it is free again, so a consumer hovering
-/// at the edge logs one episode instead of one per event.
 const RECOVERY_HEADROOM_DIVISOR: usize = 2;
 
 pub const TRIGGER_EVALUATOR: &str = "trigger_evaluator";
@@ -20,7 +18,6 @@ pub const RUN_HISTORY: &str = "run_history";
 pub const EVENT_TRAIL: &str = "event_trail";
 pub const UNNAMED_OBSERVER: &str = "observer";
 
-/// Per-execution telemetry the runtime emits several times for every triggered action.
 const CORE_BULK_KINDS: &[&str] = &[
     "action.start",
     "action.done",
@@ -77,8 +74,6 @@ impl LaneTable {
         }
     }
 
-    /// Run telemetry whose causation chain starts at a declared flood-lane platform event stays
-    /// out of durable storage; an ancestor already evicted from `ring` keeps the event durable.
     pub(crate) fn is_transient(&self, event: &Event, ring: &EventRing) -> bool {
         if !is_run_telemetry(event) {
             return false;
@@ -133,13 +128,11 @@ impl CriticalSink {
         )
     }
 
-    /// Transient events never reach this sink; see `LaneTable::is_transient`.
     pub(crate) fn durable_only(mut self) -> Self {
         self.durable_only = true;
         self
     }
 
-    /// `false` once the consumer is gone, so the bus can forget this sink.
     pub(crate) fn offer(&self, event: &Arc<Event>, lane: DeliveryLane) -> bool {
         let sender = match lane {
             DeliveryLane::Priority => &self.priority,
@@ -209,14 +202,12 @@ impl CriticalSinks {
     }
 }
 
-/// Lossless per-consumer delivery: priority events are handed out before any queued bulk event.
 pub struct CriticalSubscription {
     priority: mpsc::Receiver<Arc<Event>>,
     bulk: mpsc::Receiver<Arc<Event>>,
 }
 
 impl CriticalSubscription {
-    /// Cancel-safe; `None` once the bus is gone and both lanes are drained.
     pub async fn recv(&mut self) -> Option<Arc<Event>> {
         tokio::select! {
             biased;
@@ -226,7 +217,6 @@ impl CriticalSubscription {
         }
     }
 
-    /// `None` when both lanes are momentarily empty.
     pub fn try_recv(&mut self) -> Option<Arc<Event>> {
         self.priority
             .try_recv()
@@ -679,7 +669,6 @@ mod tests {
         ))
     }
 
-    /// Every event from the root down to the last one, the last being the event under test.
     fn lineage(root: Arc<Event>, kinds: &[&str]) -> Vec<Arc<Event>> {
         let mut chain = vec![root];
         for kind in kinds {
@@ -835,8 +824,6 @@ mod tests {
         }
     }
 
-    /// Publishes a chat message, a follow, a manual run and one run under each; returns the ids
-    /// in publish order.
     fn publish_mixed_traffic(bus: &crate::EventBus) -> Vec<EventId> {
         let chat = chat();
         let follow = follow();

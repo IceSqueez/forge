@@ -97,7 +97,6 @@ impl SqliteEventLogRepo {
         Self { db: db.into() }
     }
 
-    /// Oldest first, at most `max_rows` per call; fewer than `max_rows` deleted means none older remain.
     pub(crate) async fn prune_chunk_before(
         &self,
         cutoff: OffsetDateTime,

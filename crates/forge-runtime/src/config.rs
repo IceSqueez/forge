@@ -11,8 +11,6 @@ pub struct Config {
     pub critical_priority_capacity: usize,
     pub critical_bulk_capacity: usize,
     pub persist_batch_max_rows: usize,
-    /// How long a persisting consumer keeps collecting after its first pending row before it
-    /// commits; zero commits whatever is queued at once.
     pub persist_batch_linger_ms: u64,
     pub run_history_capacity: usize,
 }

@@ -8,7 +8,6 @@ use tokio::sync::watch;
 pub struct QueueDepth {
     pub pending: usize,
     pub in_flight: usize,
-    /// Reset to zero whenever the queue enters a different mode.
     pub overflowed: u64,
 }
 
@@ -21,7 +20,6 @@ struct Board {
     next_epoch: u64,
 }
 
-/// Yields the latest depth of every registered queue; bursts between reads coalesce into one.
 pub struct QueueDepthWatch {
     board: watch::Receiver<Board>,
 }
@@ -31,7 +29,6 @@ impl QueueDepthWatch {
         self.board.borrow().depths.clone()
     }
 
-    /// `None` once the scheduler behind this watch is gone.
     pub async fn changed(&mut self) -> Option<QueueDepths> {
         self.board.changed().await.ok()?;
         Some(self.board.borrow_and_update().depths.clone())
@@ -56,7 +53,6 @@ impl DepthBoard {
         }
     }
 
-    /// A re-registered id starts a fresh entry; late updates from the replaced slot are ignored.
     pub(crate) fn register(&self, id: QueueId) -> DepthCell {
         let mut epoch = 0;
         self.board.send_modify(|board| {

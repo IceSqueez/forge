@@ -13,8 +13,6 @@ const SHARED_POOL_CONNECTIONS: u32 = 4;
 const MIN_READER_CONNECTIONS: u32 = 2;
 const MAX_READER_CONNECTIONS: u32 = 8;
 
-/// Every write goes through the single writer connection, so writers queue in the pool instead
-/// of on SQLite's write lock; readers never wait behind a batch commit (WAL).
 #[derive(Clone, Debug)]
 pub struct SqlitePools {
     reader: SqlitePool,
@@ -31,7 +29,6 @@ impl SqlitePools {
         &self.writer
     }
 
-    /// Present only when the writer leaves WAL checkpoints to a connection of their own.
     pub(crate) fn checkpointer(&self) -> Option<&SqlitePool> {
         self.checkpointer.as_ref()
     }
@@ -45,7 +42,6 @@ impl SqlitePools {
     }
 }
 
-/// One pool serving both roles, for callers that manage a single pool themselves.
 impl From<SqlitePool> for SqlitePools {
     fn from(pool: SqlitePool) -> Self {
         Self {
@@ -67,7 +63,6 @@ fn options(url: &str) -> Result<SqliteConnectOptions, SqliteStorageError> {
         .create_if_missing(true))
 }
 
-/// A single pool that both reads and writes.
 pub async fn connect(url: &str) -> Result<SqlitePool, SqliteStorageError> {
     SqlitePoolOptions::new()
         .max_connections(SHARED_POOL_CONNECTIONS)

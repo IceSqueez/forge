@@ -10,7 +10,6 @@ use crate::chat_feed_bridge::UI_CHAT_FEED;
 pub const UI_EVENTS: &str = "ui_events";
 const UI_CHAT_DISPLAY: &str = "ui_chat_display";
 
-/// Counts only ever grow: they cover this process's lifetime and reset on restart.
 #[derive(Default)]
 pub struct EventLoss {
     consumers: Vec<ConsumerLoss>,
@@ -38,7 +37,6 @@ impl EventLoss {
         true
     }
 
-    /// Consumers that lost anything; priority-lane losses first, then by total, largest first.
     pub fn rows(&self) -> Vec<ConsumerLoss> {
         let display = (self.display_dropped > 0).then(|| ConsumerLoss {
             consumer: UI_CHAT_DISPLAY,

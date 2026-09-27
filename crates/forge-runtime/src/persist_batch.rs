@@ -10,7 +10,6 @@ use tokio::time::Instant;
 use crate::config::Config;
 use crate::delivery::CriticalSubscription;
 
-/// A commit that does not finish inside this bound is abandoned and its rows counted unwritten.
 pub(crate) const BATCH_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy)]
@@ -31,7 +30,6 @@ impl BatchPolicy {
 pub(crate) trait BatchIntake: Send {
     type Item: Send;
 
-    /// Cancel-safe; `None` once the producer side is gone and nothing is queued.
     fn recv(&mut self) -> impl Future<Output = Option<Self::Item>> + Send;
 
     fn try_recv(&mut self) -> Option<Self::Item>;
@@ -40,17 +38,13 @@ pub(crate) trait BatchIntake: Send {
 pub(crate) trait BatchSink: Send {
     type Item: Send;
 
-    /// Leaves `batch` empty.
     fn flush(&mut self, batch: &mut Vec<Self::Item>) -> impl Future<Output = ()> + Send;
 
-    /// Shutdown gave up on `rows` items this sink never received; returns them plus any it still
-    /// holds, all counted as never stored.
     fn abandon(&mut self, rows: u64) -> u64 {
         rows
     }
 }
 
-/// Held by one persisting consumer: tells it when to drain or give up, and reports back when done.
 pub(crate) struct FlushTicket {
     stop: watch::Receiver<bool>,
     abandon: watch::Receiver<bool>,
@@ -105,7 +99,6 @@ impl<T: Send> BatchIntake for mpsc::Receiver<T> {
     }
 }
 
-/// Keeps only the events `map` turns into a row; everything else is consumed and dropped.
 pub(crate) struct MappedEvents<F> {
     subscription: CriticalSubscription,
     map: F,
@@ -143,8 +136,6 @@ where
     }
 }
 
-/// Commits in batches of at most `policy.max_rows`: whatever is queued (plus what arrives within
-/// the linger) goes into the next commit, so a flood commits in full batches.
 pub(crate) async fn run_batched<I, S>(
     mut intake: I,
     mut sink: S,
@@ -196,7 +187,6 @@ pub(crate) async fn run_batched<I, S>(
     let _ = done.send(());
 }
 
-/// `false` once shutdown gives up on this consumer; an in-flight commit is then cancelled.
 async fn flush_unless_abandoned<S: BatchSink>(
     sink: &mut S,
     batch: &mut Vec<S::Item>,

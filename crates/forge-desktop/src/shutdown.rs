@@ -14,7 +14,6 @@ const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(20);
 const FLUSH_BUDGET: Duration = Duration::from_millis(60);
 const ABANDON_BUDGET: Duration = Duration::from_millis(10);
 const STORAGE_CLOSE_BUDGET: Duration = Duration::from_millis(20);
-/// Must stay under the UI shell's quit timeout (200 ms); it stops waiting on quit tasks past that.
 const GRACEFUL_BUDGET: Duration = SETTLE
     .saturating_add(SERVER_STOP_BUDGET)
     .saturating_add(SPEAK_STOP_BUDGET)

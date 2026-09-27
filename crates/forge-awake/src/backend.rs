@@ -3,12 +3,10 @@ use tokio::sync::mpsc;
 
 use crate::{Aspect, AwakeError};
 
-/// Each message means the OS may have dropped, or can now grant, the hold for that aspect.
 pub(crate) type DisruptionSender = mpsc::UnboundedSender<Aspect>;
 
 #[async_trait]
 pub(crate) trait AwakeBackend: Send {
-    /// Acquiring an aspect that is already held replaces the previous hold.
     async fn acquire(&mut self, aspect: Aspect) -> Result<(), AwakeError>;
     async fn release(&mut self, aspect: Aspect);
     fn is_held(&self, aspect: Aspect) -> bool;

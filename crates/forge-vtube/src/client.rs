@@ -485,11 +485,8 @@ pub(crate) mod tests {
 
     pub(crate) const POLL_STEP: Duration = Duration::from_millis(10);
 
-    /// Virtual time jumped per quiet `POLL_STEP` while a test waits for forge to redial.
     const BACKOFF_JUMP: Duration = Duration::from_secs(1);
 
-    /// Waits on the real clock, checking every `POLL_STEP`; false once `budget` of wall time
-    /// passes. The budget is wall time so a clock jump elsewhere in the test cannot spend it.
     pub(crate) async fn wait_until(budget: Duration, cond: impl Fn() -> bool) -> bool {
         let started = std::time::Instant::now();
         while started.elapsed() < budget {
@@ -501,10 +498,6 @@ pub(crate) mod tests {
         cond()
     }
 
-    /// Jumps the clock by `by` and lets it run on real time again.
-    /// Why: these tests run the loopback socket on the real clock and pause only for a jump. A
-    /// clock left paused auto-advances whenever the runtime idles, and on macOS a frame is not
-    /// always readable at that instant, so a supervisor deadline fired before the frame landed.
     pub(crate) async fn elapse(by: Duration) {
         tokio::time::pause();
         tokio::time::advance(by).await;
@@ -572,7 +565,6 @@ pub(crate) mod tests {
 
     impl PeerConn {
         /// Next frame from forge whose `messageType` is `message_type`; frames of other types
-        /// are kept for later calls. Panics when none arrives within `budget` of wall time.
         pub(crate) async fn expect(
             &mut self,
             message_type: &str,
@@ -703,8 +695,6 @@ pub(crate) mod tests {
             None
         }
 
-        /// Like `next_conn`, but jumps the clock by `BACKOFF_JUMP` after every quiet
-        /// `POLL_STEP`, so forge's reconnect backoff passes without a wall-clock wait.
         pub(crate) async fn next_redial(&mut self, budget: Duration) -> Option<PeerConn> {
             let started = std::time::Instant::now();
             while started.elapsed() < budget {
@@ -738,7 +728,6 @@ pub(crate) mod tests {
                         let _ = frames.send(serde_json::from_str(&text).unwrap_or_default());
                         // Why: forge's socket leaves Nagle on, so its next frame waits for our
                         // ACK; an unsolicited pong carries that ACK at once instead of after the
-                        // delayed-ACK timer.
                         if ws.send(Message::Pong(Vec::new().into())).await.is_err() {
                             return;
                         }

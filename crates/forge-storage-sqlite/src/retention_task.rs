@@ -113,8 +113,6 @@ async fn sweep(
     Ok(())
 }
 
-/// Chunks share the single writer with batched inserts and the WAL restart, so each one commits
-/// alone and the gap lets queued writes and checkpoints run before the next.
 async fn prune_event_log(
     event_log: &SqliteEventLogRepo,
     cutoff: OffsetDateTime,

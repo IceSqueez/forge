@@ -282,7 +282,7 @@ fn serve_on(listener: TcpListener, state: AppState) -> ServerHandle {
 
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
@@ -722,6 +722,13 @@ mod tests {
     /// A request head with no terminating empty line: hyper has read it, so the connection is
     /// busy rather than idle and graceful shutdown waits on it instead of closing it.
     const UNFINISHED_REQUEST_HEAD: &[u8] = b"GET /api/v1/info HTTP/1.1\r\nHost: localhost\r\n";
+    /// Real time given to the server to read bytes just written on a loopback socket.
+    const LOOPBACK_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
+    /// Real time the retired listener is given to finish once its last connection is gone.
+    const OLD_LISTENER_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
+    const REAL_CLOCK_WINDOW: std::time::Duration = std::time::Duration::from_millis(10);
+    const REAL_CLOCK_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+    const CLOCK_STEP: std::time::Duration = std::time::Duration::from_secs(1);
 
     #[tokio::test]
     async fn ws_handshake_without_an_origin_header_is_accepted() {
@@ -1225,9 +1232,9 @@ mod tests {
         handle.stop().await.expect("stop after restart");
     }
 
-    // Why: virtual time keeps the five-second drain budget out of the wall clock while the
-    // loopback sockets stay real - a loopback write is delivered before the clock can advance.
-    #[tokio::test(start_paused = true)]
+    // Why: the loopback sockets run on the real clock and only the drain budget is jumped over,
+    // so the lingering connection is read by the server before the restart starts draining it.
+    #[tokio::test]
     async fn a_listener_outliving_a_restart_cannot_report_the_new_one_stopped() {
         use tokio::io::AsyncWriteExt;
 
@@ -1250,10 +1257,13 @@ mod tests {
             .await
             .expect("write");
         lingering.flush().await.expect("flush");
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(LOOPBACK_SETTLE).await;
 
         let started = tokio::time::Instant::now();
-        handle.restart().await.expect("restart");
+        run_stepping_the_clock(handle.restart(), DRAIN_BUDGET * 2)
+            .await
+            .expect("the restart outlived twice the drain budget")
+            .expect("restart");
         assert!(
             started.elapsed() >= DRAIN_BUDGET,
             "the lingering connection must outlast the drain or this proves nothing"
@@ -1268,7 +1278,7 @@ mod tests {
         drop(lingering);
 
         assert!(
-            tokio::time::timeout(DRAIN_BUDGET, run_state.changed())
+            tokio::time::timeout(OLD_LISTENER_WINDOW, run_state.changed())
                 .await
                 .is_err(),
             "the previous listener finishing reported the live server stopped"
@@ -1637,10 +1647,29 @@ mod tests {
     // Why: a clock left paused auto-advances whenever the runtime idles, and on macOS a loopback
     // reply is not always readable at that instant, so the frame budget elapsed before the reply
     // landed. The clock is paused only for the jump itself; every socket round trip runs on real time.
-    async fn elapse(by: std::time::Duration) {
+    pub(crate) async fn elapse(by: std::time::Duration) {
         tokio::time::pause();
         tokio::time::advance(by).await;
         tokio::time::resume();
+    }
+
+    /// Runs `work` on the real clock and jumps the clock by `CLOCK_STEP` after every
+    /// `REAL_CLOCK_WINDOW` it stays pending; `None` when it is still pending once `budget` has been
+    /// jumped and a last `REAL_CLOCK_GRACE` has passed.
+    async fn run_stepping_the_clock<T>(
+        work: impl std::future::Future<Output = T>,
+        budget: std::time::Duration,
+    ) -> Option<T> {
+        tokio::pin!(work);
+        let mut jumped = std::time::Duration::ZERO;
+        while jumped < budget {
+            if let Ok(done) = tokio::time::timeout(REAL_CLOCK_WINDOW, &mut work).await {
+                return Some(done);
+            }
+            elapse(CLOCK_STEP).await;
+            jumped += CLOCK_STEP;
+        }
+        tokio::time::timeout(REAL_CLOCK_GRACE, &mut work).await.ok()
     }
 
     async fn assert_still_serving(socket: &mut ClientSocket, who: &str) {
@@ -1902,9 +1931,7 @@ mod tests {
         handle.abort();
     }
 
-    // Why: virtual time lets the fifteen-second read deadline pass without a wall-clock wait;
-    // loopback bytes are delivered before the paused clock may auto-advance.
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_connection_that_never_sends_a_request_is_closed_at_the_read_deadline() {
         use tokio::io::AsyncReadExt as _;
 
@@ -1913,9 +1940,9 @@ mod tests {
         let opened = tokio::time::Instant::now();
 
         let mut buf = [0_u8; 1];
-        let outcome = tokio::time::timeout(
-            crate::listener::REQUEST_READ_TIMEOUT * 2,
+        let outcome = run_stepping_the_clock(
             silent.read(&mut buf),
+            crate::listener::REQUEST_READ_TIMEOUT * 2,
         )
         .await
         .expect("a silent connection was held past twice the read deadline");

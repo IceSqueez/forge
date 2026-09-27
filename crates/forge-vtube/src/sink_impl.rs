@@ -400,12 +400,17 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use std::cell::Cell;
+    use std::sync::atomic::Ordering;
+
     use crate::client::tests::{
-        FakeVts, MockPublisher, PeerConn, freeze_clock, stored_token_creds, wait_paused,
+        FakeVts, MockPublisher, PeerConn, elapse, stored_token_creds, wait_until,
     };
     use crate::request::REQUEST_TIMEOUT;
 
     const SETTLE: Duration = Duration::from_secs(5);
+    const DEADLINE_MARGIN: Duration = Duration::from_secs(1);
+    const EARLY_WINDOW: Duration = Duration::from_millis(50);
     const REJECTION_ERROR_ID: i64 = 452;
     const ITEM_ERROR_ID: i64 = 751;
     const NO_MODEL_ERROR_ID: i64 = 50;
@@ -415,13 +420,13 @@ mod tests {
         let client = vts.connect(&MockPublisher::new(), &stored_token_creds());
         let conn = vts.logged_in_conn().await;
         assert!(
-            wait_paused(SETTLE, || client.connection_state().is_connected()).await,
+            wait_until(SETTLE, || client.connection_state().is_connected()).await,
             "the session never reached connected"
         );
         (client, conn)
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_request_vts_rejects_fails_with_the_error_id_vts_sent() {
         let mut vts = FakeVts::bind().await;
         let (client, mut conn) = connected_client(&mut vts).await;
@@ -441,23 +446,41 @@ mod tests {
         );
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_request_the_peer_never_answers_times_out_at_the_request_deadline() {
         let mut vts = FakeVts::bind().await;
         let (client, conn) = connected_client(&mut vts).await;
-        let _peer = conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
-        let sent_at = tokio::time::Instant::now();
+        let (_peer, ignored) =
+            conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
+        let settled = Cell::new(false);
 
-        let outcome = client.trigger_hotkey("hk-1").await;
+        let (outcome, ()) = tokio::join!(
+            async {
+                let outcome = client.trigger_hotkey("hk-1").await;
+                settled.set(true);
+                outcome
+            },
+            async {
+                assert!(
+                    wait_until(SETTLE, || ignored.load(Ordering::SeqCst) == 1).await,
+                    "the hotkey request never reached VTS"
+                );
+                elapse(REQUEST_TIMEOUT - DEADLINE_MARGIN).await;
+                assert!(
+                    !wait_until(EARLY_WINDOW, || settled.get()).await,
+                    "the request gave up before its deadline"
+                );
+                elapse(DEADLINE_MARGIN).await;
+            }
+        );
 
         assert!(
             matches!(outcome, Err(VTubeError::Timeout)),
             "got {outcome:?}"
         );
-        assert_eq!(sent_at.elapsed(), REQUEST_TIMEOUT);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn moving_an_item_fails_only_when_vts_reports_that_item_unmoved() {
         let mut vts = FakeVts::bind().await;
         let (client, mut conn) = connected_client(&mut vts).await;
@@ -504,7 +527,6 @@ mod tests {
         conn: &mut PeerConn,
         script: ExpressionScript,
     ) -> (Result<(), VTubeError>, Vec<(String, serde_json::Value)>) {
-        let _frozen = freeze_clock();
         let reset = client.reset_params();
         tokio::pin!(reset);
         let mut activations = Vec::new();
@@ -538,7 +560,7 @@ mod tests {
         (outcome, activations)
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn resetting_deactivates_exactly_the_expressions_vts_reports_active() {
         let cases: [(&str, serde_json::Value, &[&str]); 5] = [
             (
@@ -599,7 +621,7 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_rejected_state_query_fails_the_reset() {
         let mut vts = FakeVts::bind().await;
         let (client, mut conn) = connected_client(&mut vts).await;
@@ -644,7 +666,7 @@ mod tests {
         .await
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_rejected_deactivation_does_not_stop_the_remaining_ones() {
         let (_, activations) = reset_rejecting(&["smile.exp3.json"]).await;
 
@@ -660,7 +682,7 @@ mod tests {
         );
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn a_reset_with_rejected_deactivations_fails_naming_only_those_expressions() {
         let (outcome, _) = reset_rejecting(&["tears.exp3.json", "blush.exp3.json"]).await;
 

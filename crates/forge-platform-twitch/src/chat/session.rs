@@ -7931,7 +7931,38 @@ mod tests {
         connection_states_until(&mut events, ConnectionState::Disconnected).await;
     }
 
-    #[tokio::test(start_paused = true)]
+    /// Waits on the real clock for the next `want` state and jumps the clock by `BACKOFF_JUMP`
+    /// after each `REAL_CLOCK_WINDOW` without one, so reconnect backoffs pass without a
+    /// wall-clock wait while every dial still runs on real time.
+    async fn next_state_jumping_backoffs(events: &mut EventStream, want: ConnectionState) {
+        const REAL_CLOCK_WINDOW: Duration = Duration::from_millis(10);
+        const BACKOFF_JUMP: Duration = Duration::from_secs(1);
+        let started = std::time::Instant::now();
+        loop {
+            assert!(
+                started.elapsed() < FAKE_WAIT,
+                "the session never reported {want:?}"
+            );
+            let Ok(event) = tokio::time::timeout(REAL_CLOCK_WINDOW, events.recv()).await else {
+                tokio::time::pause();
+                tokio::time::advance(BACKOFF_JUMP).await;
+                tokio::time::resume();
+                continue;
+            };
+            let event = event.expect("the bus must stay open");
+            if event.kind == CONNECTION_STATE_CHANGED_KIND
+                && serde_json::from_value::<ConnectionState>(event.payload["state"].clone()).ok()
+                    == Some(want)
+            {
+                return;
+            }
+        }
+    }
+
+    // Why: a paused clock auto-advances whenever the runtime idles, and on macOS a refused
+    // loopback dial is not always reported at that instant, so the state wait ran out first. The
+    // dials run on the real clock; the clock is paused only once the retries are in.
+    #[tokio::test]
     async fn shutting_down_during_the_reconnect_backoff_skips_the_rest_of_the_wait() {
         // Why: from the third retry on, the backoff ceiling is seconds long, so a session that
         // only checks for shutdown after its sleep keeps the old socket slot for that long.
@@ -7941,9 +7972,10 @@ mod tests {
         let mut events = bus.subscribe();
         let handle = chat.start();
         for _ in 0..RETRIES_BEFORE_SHUTDOWN {
-            connection_states_until(&mut events, ConnectionState::Reconnecting).await;
+            next_state_jumping_backoffs(&mut events, ConnectionState::Reconnecting).await;
         }
 
+        tokio::time::pause();
         let asked = tokio::time::Instant::now();
         handle.shutdown().await;
 

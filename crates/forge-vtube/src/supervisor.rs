@@ -1087,17 +1087,22 @@ mod tests {
         use forge_platform_core::{BuiltinControl, BuiltinHealth, HealthValue};
         use serde_json::json;
 
-        use super::super::HANDSHAKE_REPLY_TIMEOUT;
+        use super::super::{
+            EXPRESSION_POLL_INTERVAL, EXPRESSION_POLL_TIMEOUT, HANDSHAKE_REPLY_TIMEOUT,
+            REQUEST_SWEEP_INTERVAL,
+        };
         use crate::client::VTubeClient;
         use crate::client::tests::{
-            FakeVts, MockCreds, MockPublisher, PeerConn, freeze_clock, stored_token_creds,
-            wait_paused,
+            FakeVts, MockCreds, MockPublisher, PeerConn, elapse, stored_token_creds, wait_until,
         };
+        use crate::request::REQUEST_TIMEOUT;
         use crate::sink::VTubeSink;
 
         const SETTLE: Duration = Duration::from_secs(5);
-        const LONG_WAIT: Duration = Duration::from_secs(60);
         const PROMPT: Duration = Duration::from_secs(1);
+        const EARLY_WINDOW: Duration = Duration::from_millis(50);
+        /// Poll intervals a peer that answers every request is kept through.
+        const ANSWERED_POLLS: usize = 10;
 
         async fn connected_session(
             vts: &mut FakeVts,
@@ -1106,7 +1111,7 @@ mod tests {
             let client = vts.connect(publisher, &stored_token_creds());
             let conn = vts.logged_in_conn().await;
             assert!(
-                wait_paused(SETTLE, || client.connection_state().is_connected()).await,
+                wait_until(SETTLE, || client.connection_state().is_connected()).await,
                 "the session never reached connected"
             );
             (client, conn)
@@ -1160,53 +1165,59 @@ mod tests {
             conn.tx.reply(&face, json!({ "found": true }));
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn a_request_left_unanswered_drops_the_session_as_unresponsive_and_redials() {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
             let (client, conn) = connected_session(&mut vts, &publisher).await;
-            let _peer = conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
+            let (_peer, ignored) =
+                conn.answer_all_except(|f| f["messageType"] == "HotkeyTriggerRequest");
 
-            let _ = client.trigger_hotkey("hk-1").await;
+            let (_outcome, ()) = tokio::join!(client.trigger_hotkey("hk-1"), async {
+                assert!(
+                    wait_until(SETTLE, || ignored.load(Ordering::SeqCst) == 1).await,
+                    "the hotkey request never reached VTS"
+                );
+                elapse(REQUEST_TIMEOUT + REQUEST_SWEEP_INTERVAL).await;
+            });
 
             assert!(
-                wait_paused(SETTLE, || publisher
+                wait_until(SETTLE, || publisher
                     .disconnected_with_reason("unresponsive"))
                 .await,
                 "a request past its deadline must drop the session as unresponsive"
             );
             assert!(
-                vts.next_conn(LONG_WAIT).await.is_some(),
+                vts.next_redial(SETTLE).await.is_some(),
                 "an unresponsive session must be redialed"
             );
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn a_peer_silent_after_the_upgrade_fails_the_handshake_at_the_reply_deadline() {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
-            let frozen = freeze_clock();
             let _client = vts.connect(&publisher, &stored_token_creds());
             let mut conn = vts.next_conn(SETTLE).await.unwrap();
             conn.expect("AuthenticationRequest", SETTLE).await;
-            let asked_at = tokio::time::Instant::now();
-            drop(frozen);
 
+            elapse(HANDSHAKE_REPLY_TIMEOUT - PROMPT).await;
             assert!(
-                wait_paused(LONG_WAIT, || publisher
+                !wait_until(EARLY_WINDOW, || publisher
                     .disconnected_with_reason("auth_failed"))
                 .await,
-                "a login nobody answers must end as auth_failed"
+                "the login was given up before the handshake deadline"
             );
+            elapse(PROMPT).await;
+
             assert!(
-                asked_at.elapsed() >= HANDSHAKE_REPLY_TIMEOUT,
-                "auth_failed arrived after {:?}, before the handshake deadline",
-                asked_at.elapsed()
+                wait_until(SETTLE, || publisher.disconnected_with_reason("auth_failed")).await,
+                "a login nobody answers must end as auth_failed"
             );
             drop(conn);
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn disconnecting_during_a_silent_handshake_returns_promptly() {
             for (phase, creds, request) in [
                 ("login", stored_token_creds(), "AuthenticationRequest"),
@@ -1231,29 +1242,36 @@ mod tests {
             }
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn two_unanswered_expression_polls_drop_the_session_even_while_events_flow() {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
             let (_client, conn) = connected_session(&mut vts, &publisher).await;
             let (peer, unanswered_polls) = conn.answer_all_except(is_expression_poll);
-            let events = tokio::spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    peer.event(
-                        "HotkeyTriggeredEvent",
-                        json!({ "hotkeyID": "hk-1", "hotkeyName": "Wave" }),
-                    );
-                }
-            });
 
-            let dropped = wait_paused(LONG_WAIT, || {
-                publisher.disconnected_with_reason("unresponsive")
-            })
-            .await;
-            events.abort();
+            for poll in 1..=2 {
+                assert!(
+                    wait_until(SETTLE, || unanswered_polls.load(Ordering::SeqCst) == poll).await,
+                    "expression poll {poll} never reached VTS"
+                );
+                let hotkey = format!("hk-{poll}");
+                peer.event(
+                    "HotkeyTriggeredEvent",
+                    json!({ "hotkeyID": hotkey, "hotkeyName": "Wave" }),
+                );
+                assert!(
+                    wait_until(SETTLE, || hotkey_event_seen(&publisher, &hotkey)).await,
+                    "the event sent while poll {poll} was pending never arrived"
+                );
+                elapse(EXPRESSION_POLL_TIMEOUT).await;
+            }
 
-            assert!(dropped, "a peer that stops answering polls must be dropped");
+            assert!(
+                wait_until(SETTLE, || publisher
+                    .disconnected_with_reason("unresponsive"))
+                .await,
+                "a peer that stops answering polls must be dropped"
+            );
             assert_eq!(
                 unanswered_polls.load(Ordering::SeqCst),
                 2,
@@ -1261,23 +1279,40 @@ mod tests {
             );
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn a_peer_that_answers_every_poll_stays_connected() {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
-            let (client, conn) = connected_session(&mut vts, &publisher).await;
-            let _peer = conn.answer_all_except(|_| false);
+            let (client, mut conn) = connected_session(&mut vts, &publisher).await;
 
-            let dropped = wait_paused(Duration::from_secs(30), || {
-                publisher.disconnected_event().is_some()
-            })
-            .await;
+            let mut polls = 0;
+            while polls <= ANSWERED_POLLS {
+                let next = tokio::time::timeout(SETTLE, conn.next_frame())
+                    .await
+                    .ok()
+                    .flatten();
+                assert!(
+                    next.is_some(),
+                    "forge dropped or stopped polling a peer that answers every request"
+                );
+                let frame = next.unwrap();
+                conn.tx.reply(&frame, json!({}));
+                if is_expression_poll(&frame) {
+                    polls += 1;
+                    if polls <= ANSWERED_POLLS {
+                        elapse(EXPRESSION_POLL_INTERVAL).await;
+                    }
+                }
+            }
 
-            assert!(!dropped, "a responsive peer was dropped");
+            assert!(
+                publisher.disconnected_event().is_none(),
+                "a responsive peer was dropped"
+            );
             assert!(client.connection_state().is_connected());
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn the_current_model_and_face_replies_seed_the_model_and_tracking_tiles() {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
@@ -1287,7 +1322,7 @@ mod tests {
             answer_seeds(&mut conn).await;
 
             assert!(
-                wait_paused(SETTLE, || matches!(
+                wait_until(SETTLE, || matches!(
                     metric(&client, "TRACKING"),
                     HealthValue::Status { active: true, .. }
                 ))
@@ -1311,14 +1346,14 @@ mod tests {
             );
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn a_session_end_clears_the_model_and_tracking_tiles() {
             let mut vts = FakeVts::bind().await;
             let publisher = MockPublisher::new();
             let (client, mut conn) = connected_session(&mut vts, &publisher).await;
             answer_seeds(&mut conn).await;
             assert!(
-                wait_paused(SETTLE, || matches!(
+                wait_until(SETTLE, || matches!(
                     metric(&client, "TRACKING"),
                     HealthValue::Status { active: true, .. }
                 ))
@@ -1329,7 +1364,7 @@ mod tests {
             conn.tx.close();
 
             assert!(
-                wait_paused(SETTLE, || publisher
+                wait_until(SETTLE, || publisher
                     .disconnected_with_reason("socket_closed"))
                 .await,
                 "precondition: the session must end"
@@ -1350,7 +1385,7 @@ mod tests {
             );
         }
 
-        #[tokio::test(start_paused = true)]
+        #[tokio::test]
         async fn face_triggers_fire_only_when_the_face_state_changes() {
             type FaceCase = (
                 &'static str,
@@ -1396,7 +1431,7 @@ mod tests {
                     json!({ "hotkeyID": "sentinel", "hotkeyName": "sentinel" }),
                 );
                 assert!(
-                    wait_paused(SETTLE, || hotkey_event_seen(&publisher, "sentinel")).await,
+                    wait_until(SETTLE, || hotkey_event_seen(&publisher, "sentinel")).await,
                     "{case}: the events were never processed"
                 );
 

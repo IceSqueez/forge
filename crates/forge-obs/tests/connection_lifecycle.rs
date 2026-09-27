@@ -25,7 +25,7 @@ const OBS_WEBSOCKET_PORT: u16 = 4455;
 /// Far below `obws`' own connect timeout, so waiting one out fails this instead of passing slowly.
 const PROMPT_DISCONNECT: Duration = Duration::from_secs(2);
 
-const RETRY_BUDGET: Duration = Duration::from_secs(600);
+const BACKOFF_JUMP: Duration = Duration::from_secs(1);
 
 /// How long the retired peer is given to push its close frame; the assertion holds either way.
 const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
@@ -105,9 +105,32 @@ fn announced_states(rx: &mut mpsc::UnboundedReceiver<Event>) -> Vec<String> {
 
 // Why: the integration header reloads off `platform.connection.changed`, so a retry loop that
 // re-announced `reconnecting` on every attempt would redraw the whole screen once per backoff tick.
+/// Waits on the real clock for the mock server's next accept and jumps the clock by
+/// `BACKOFF_JUMP` after each `REAL_CLOCK_POLL` without one, so the reconnect backoff passes
+/// without a wall-clock wait while every dial still runs on real time.
+/// Why: a clock left paused auto-advances whenever the runtime idles, and on macOS a loopback
+/// accept is not always ready at that instant, so the retry budget could drain before it landed.
+async fn next_accept_jumping_backoffs(accepted: &mut mpsc::UnboundedReceiver<()>, attempt: usize) {
+    let started = Instant::now();
+    loop {
+        assert!(
+            started.elapsed() < WALL_BUDGET,
+            "the supervisor stopped retrying before attempt {attempt}"
+        );
+        match tokio::time::timeout(REAL_CLOCK_POLL, accepted.recv()).await {
+            Ok(Some(())) => return,
+            Ok(None) => panic!("the mock server stopped before attempt {attempt}"),
+            Err(_) => {
+                tokio::time::pause();
+                tokio::time::advance(BACKOFF_JUMP).await;
+                tokio::time::resume();
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
-    tokio::time::pause();
     let (listener, port) = bind_loopback().await;
     let (accept_tx, mut accept_rx) = mpsc::unbounded_channel();
     let server = tokio::spawn(serve_refused_handshakes(listener, accept_tx));
@@ -122,10 +145,7 @@ async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
     .unwrap();
 
     for attempt in 1..=ATTEMPTS_BEFORE_VERDICT {
-        tokio::time::timeout(RETRY_BUDGET, accept_rx.recv())
-            .await
-            .unwrap_or_else(|_| panic!("the supervisor stopped retrying before attempt {attempt}"))
-            .unwrap_or_else(|| panic!("the mock server stopped before attempt {attempt}"));
+        next_accept_jumping_backoffs(&mut accept_rx, attempt).await;
     }
     client.disconnect().await.unwrap();
     server.abort();
@@ -201,13 +221,13 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
     );
 }
 
-/// Wall-clock ceiling for every wait below. The waits themselves never sleep; this only turns a
-/// regression that would hang forever into a failure.
+/// Wall-clock ceiling for every wait below; it only turns a regression that would hang forever
+/// into a failure.
 const WALL_BUDGET: Duration = Duration::from_secs(20);
 
 /// Virtual time added per step while a test drives the paused clock towards a deadline; far below
 /// every request deadline, so an answered request never races its own timeout.
-const VIRTUAL_STEP: Duration = Duration::from_millis(50);
+const VIRTUAL_STEP: Duration = Duration::from_millis(100);
 
 const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
 
@@ -248,12 +268,18 @@ async fn settle_until(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
+/// Why: each step first gives the loopback socket `REAL_CLOCK_POLL` of real time. A step that only
+/// yielded let virtual time race through a whole request deadline before a macOS loopback reply
+/// was readable; paced like this, a reply has to stall for a tenth of the deadline in real time.
 async fn advance_until(what: &str, mut done: impl FnMut() -> bool) {
     let started = Instant::now();
     while !done() {
         assert!(started.elapsed() < WALL_BUDGET, "never happened: {what}");
+        let _ = tokio::task::spawn_blocking(|| std::thread::sleep(REAL_CLOCK_POLL)).await;
+        if done() {
+            break;
+        }
         tokio::time::advance(VIRTUAL_STEP).await;
-        tokio::task::yield_now().await;
     }
 }
 

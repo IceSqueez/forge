@@ -1085,6 +1085,14 @@ mod tests {
             .unwrap_or(0)
     }
 
+    // Why: several callers run on a paused clock, which auto-advances while a loopback HTTP
+    // exchange with the mock server is still in flight (on macOS a reply is not always readable
+    // at that instant). A budget counted in check steps then drained in virtual time before the
+    // reply landed, so the budget is wall-clock; the poller has no request deadline for the
+    // racing virtual time to trip.
+    const POLLER_WALL_BUDGET: Duration = Duration::from_secs(10);
+    const POLLER_CHECK_STEP: Duration = Duration::from_millis(50);
+
     async fn drain_events_over_broadcast_cycles(
         poller: YoutubeChatPoller,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<Event>,
@@ -1095,14 +1103,16 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        let mut reached = false;
-        for _ in 0..5_000 {
+        let started = std::time::Instant::now();
+        let reached = loop {
             if broadcast_poll_count(server).await >= min_broadcast_polls {
-                reached = true;
-                break;
+                break true;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
+            if started.elapsed() >= POLLER_WALL_BUDGET {
+                break false;
+            }
+            tokio::time::sleep(POLLER_CHECK_STEP).await;
+        };
 
         cancel.cancel();
         join.await.unwrap().unwrap();
@@ -1928,14 +1938,16 @@ mod tests {
         let cancel_clone = cancel.clone();
         let join = tokio::spawn(async move { poller.run(cancel_clone).await });
 
-        let mut reached = false;
-        for _ in 0..5_000 {
+        let started = std::time::Instant::now();
+        let reached = loop {
             if live.get().as_deref() == Some(until_live_chat_id) {
-                reached = true;
-                break;
+                break true;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
+            if started.elapsed() >= POLLER_WALL_BUDGET {
+                break false;
+            }
+            tokio::time::sleep(POLLER_CHECK_STEP).await;
+        };
 
         cancel.cancel();
         join.await.unwrap().unwrap();

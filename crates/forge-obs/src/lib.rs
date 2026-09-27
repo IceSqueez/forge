@@ -15,6 +15,7 @@ pub mod sink;
 mod sink_impl;
 pub mod source;
 mod source_impl;
+mod stream_output;
 pub mod switchable_sink;
 pub mod triggers;
 
@@ -25,6 +26,7 @@ pub use probe::{ObsProbeResult, probe_connection};
 pub use runners::register_obs_sub_actions;
 pub use sink::ObsSink;
 pub use source::{ObsSource, SourceInfo};
+pub use stream_output::StreamOutputActive;
 pub use switchable_sink::SwitchableObsSink;
 pub use triggers::register_obs_triggers;
 

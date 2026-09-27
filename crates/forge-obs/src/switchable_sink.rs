@@ -5,22 +5,36 @@ use async_trait::async_trait;
 use crate::client::ObsClient;
 use crate::error::ObsError;
 use crate::sink::ObsSink;
+use crate::stream_output::{
+    StreamOutputActive, StreamOutputTarget, new_stream_output_target, subscribe,
+};
 use forge_types::Variant;
 
 pub struct SwitchableObsSink {
     inner: RwLock<Option<Arc<ObsClient>>>,
+    stream_output: StreamOutputTarget,
 }
 
 impl SwitchableObsSink {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self {
-            inner: RwLock::new(None),
-        })
+        Arc::new(Self::default())
     }
 
+    /// The previously installed client stops driving the stream-output signal.
     pub fn install(&self, client: Arc<ObsClient>) {
         let mut guard = self.inner.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(previous) = guard.as_ref() {
+            previous.stream_output.detach();
+        }
+        client
+            .stream_output
+            .route_to(Arc::clone(&self.stream_output));
         *guard = Some(client);
+    }
+
+    /// Follows whichever client is installed, across reinstalls; `false` while none is installed or connected.
+    pub fn stream_output(&self) -> StreamOutputActive {
+        subscribe(&self.stream_output)
     }
 
     // sync RwLock guard must not cross an .await; clone the Arc out first.
@@ -34,6 +48,7 @@ impl Default for SwitchableObsSink {
     fn default() -> Self {
         Self {
             inner: RwLock::new(None),
+            stream_output: new_stream_output_target(),
         }
     }
 }

@@ -8,6 +8,8 @@ mod backend_unsupported;
 #[cfg(target_os = "windows")]
 mod backend_windows;
 mod error;
+#[cfg(test)]
+mod fake_backend;
 mod handle;
 mod status;
 mod supervisor;

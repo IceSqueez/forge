@@ -1,9 +1,9 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use forge_types::{Action, ActionId, Queue, QueueId, TriggerInstance, TriggerInstanceId};
 use time::OffsetDateTime;
+use tokio::sync::watch;
 
 use crate::{
     ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, StorageError,
@@ -11,8 +11,14 @@ use crate::{
 };
 
 /// Advances once per catalog write after the backend returns; an unchanged value means no newer write completed.
-#[derive(Debug, Clone, Default)]
-pub struct CatalogRevision(Arc<AtomicU64>);
+#[derive(Debug, Clone)]
+pub struct CatalogRevision(Arc<watch::Sender<u64>>);
+
+impl Default for CatalogRevision {
+    fn default() -> Self {
+        Self(Arc::new(watch::Sender::new(0)))
+    }
+}
 
 impl CatalogRevision {
     pub fn new() -> Self {
@@ -20,11 +26,16 @@ impl CatalogRevision {
     }
 
     pub fn current(&self) -> u64 {
-        self.0.load(Ordering::Acquire)
+        *self.0.borrow()
     }
 
     pub fn advance(&self) {
-        self.0.fetch_add(1, Ordering::AcqRel);
+        self.0.send_modify(|revision| *revision += 1);
+    }
+
+    /// Only advances made after this call wake the returned subscriber.
+    pub fn subscribe(&self) -> CatalogChanges {
+        CatalogChanges(self.0.subscribe())
     }
 
     /// The write runs detached from its caller, so a cancelled caller cannot hide a commit that lands later.
@@ -45,6 +56,17 @@ impl CatalogRevision {
                 reason: "catalog write aborted by runtime shutdown".to_owned(),
             }),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct CatalogChanges(watch::Receiver<u64>);
+
+impl CatalogChanges {
+    /// Coalesces advances since the last wake into the latest revision; `None` once every `CatalogRevision` handle is dropped.
+    pub async fn changed(&mut self) -> Option<u64> {
+        self.0.changed().await.ok()?;
+        Some(*self.0.borrow_and_update())
     }
 }
 

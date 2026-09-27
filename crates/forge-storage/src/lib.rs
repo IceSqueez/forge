@@ -24,7 +24,8 @@ pub mod voice_aliases;
 
 pub use action::{ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus};
 pub use catalog::{
-    CatalogRevision, RevisingActionRepo, RevisingQueueRepo, RevisingTriggerInstanceRepo,
+    CatalogChanges, CatalogRevision, RevisingActionRepo, RevisingQueueRepo,
+    RevisingTriggerInstanceRepo,
 };
 pub use chat_history::ChatHistoryRepo;
 pub use credentials::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};

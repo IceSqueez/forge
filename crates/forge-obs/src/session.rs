@@ -8,7 +8,6 @@ use crate::error::{ObsError, map_request_error};
 
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Switching a scene collection or profile answers only once OBS has finished loading it.
 pub(crate) const CONFIG_SWITCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
@@ -38,8 +37,6 @@ impl LiveSession {
             .await
     }
 
-    /// A request that outlives `limit` flags this session as suspect, which makes the supervisor
-    /// drop it and redial.
     pub(crate) async fn request_within<T>(
         &self,
         limit: Duration,

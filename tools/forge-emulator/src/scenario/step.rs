@@ -17,39 +17,30 @@ pub struct Step {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum StepAction {
-    /// Waits until forge authenticates a control connection.
     ForgeReady {
         within_ms: u64,
     },
-    /// Waits until the fake Twitch holds a subscription of every listed type.
     TwitchSubscribed {
         types: Vec<String>,
         within_ms: u64,
     },
     Chat(ChatMessage),
     Crowd(Crowd),
-    /// Delivers one EventSub notification of `subscription_type` to every live session subscribed
-    /// to it; `event` is the payload Twitch would put under `payload.event`.
     TwitchEvent {
         subscription_type: String,
         event: Value,
     },
-    /// Injects `session_reconnect`, then waits until forge opens the successor session.
     SessionReconnect {
         within_ms: u64,
     },
-    /// Opens a browser source for the named fixture overlay and waits for forge to accept the
-    /// page credential its `config.json` carries.
     OverlayPage {
         overlay: String,
         within_ms: u64,
     },
-    /// A fixed wait; `reason` is mandatory because an event-driven wait is almost always better.
     Pause {
         ms: u64,
         reason: String,
     },
-    /// Runs a fixture action, resolved to its id by name.
     RunAction {
         action: String,
         #[serde(default)]
@@ -70,7 +61,6 @@ pub struct ChatMessage {
     pub text: String,
 }
 
-/// `display_name` falls back to `login`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChatViewer {

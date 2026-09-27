@@ -15,8 +15,6 @@ use tokio_tungstenite::tungstenite::{self, Message};
 use super::endpoint::PageEndpoint;
 use crate::EmulatorError;
 
-/// The wire values `crates/forge-overlay/assets/shared/runtime-v1.js` uses, so a page opened here
-/// is indistinguishable from a browser source to forge.
 const AUTH_REQUEST_ID: &str = "1";
 const AUTH_REQUEST: &str = "auth";
 const CREDENTIAL_FIELD: &str = "overlayCredential";
@@ -32,8 +30,6 @@ pub struct ReceivedFrame {
     pub raw: Value,
 }
 
-/// A browser source for one overlay: it fetches `config.json`, presents the credential that
-/// document carries, and from then on only records what forge sends it.
 pub struct OverlayPage {
     identity: String,
     shared: Arc<Shared>,
@@ -47,8 +43,6 @@ struct Shared {
 }
 
 impl OverlayPage {
-    /// Returns only once forge has accepted the credential, so a caller that opens a page and then
-    /// looks for content cannot race the handshake.
     pub async fn open(
         endpoint: &PageEndpoint,
         identity: &str,
@@ -92,7 +86,6 @@ impl OverlayPage {
         &self.identity
     }
 
-    /// The index the next recorded frame will take.
     pub fn len(&self) -> usize {
         self.lock().len()
     }
@@ -101,8 +94,6 @@ impl OverlayPage {
         self.len() == 0
     }
 
-    /// Hands over every frame recorded so far and forgets them, so a page left open under
-    /// sustained load does not keep its whole history. `len` restarts from zero afterwards.
     pub fn take_frames(&self) -> Vec<ReceivedFrame> {
         std::mem::take(&mut *self.lock())
     }
@@ -111,7 +102,6 @@ impl OverlayPage {
         f(&self.lock())
     }
 
-    /// Returns once `settled` holds or `deadline` passes, whichever is first.
     pub async fn wait_until(
         &self,
         deadline: Instant,
@@ -182,8 +172,6 @@ async fn fetch_credential(
         })
 }
 
-/// Strips the request URL before rendering: a page URL carries the overlay identity, and a
-/// rendered reqwest error is the one place a request target reaches a report.
 fn without_url(error: reqwest::Error) -> String {
     error.without_url().to_string()
 }
@@ -199,8 +187,6 @@ fn socket_request(endpoint: &PageEndpoint) -> Result<Request, EmulatorError> {
     Ok(request)
 }
 
-/// Frames arriving before the answer are kept: forge replays retained content from inside the
-/// credential check, and no delivery is allowed to go unrecorded.
 async fn await_acceptance<S>(
     stream: &mut S,
     shared: &Arc<Shared>,
@@ -264,7 +250,6 @@ where
     }
 }
 
-/// Stamped under the lock, so a read at any instant sees every frame stamped by then.
 fn record(shared: &Arc<Shared>, raw: Value) {
     {
         let mut frames = shared.frames.lock().unwrap_or_else(PoisonError::into_inner);

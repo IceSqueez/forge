@@ -13,7 +13,6 @@ use crate::tokens::{
     spacing,
 };
 
-/// Bit order is a persistence contract: a stored bitset must decode to the same platforms across restarts.
 pub fn platform_bit(platform: Platform) -> u8 {
     match platform {
         Platform::Twitch => 1 << 0,
@@ -121,7 +120,6 @@ const EMOJIS: &[&str] = &[
     "😑",
 ];
 
-/// The binary must call [`crate::bind_text_input_keys`] once at boot or the field's editing keys are dead.
 pub struct InputBar {
     field: Entity<TextInput>,
     targets: Vec<(Platform, bool)>,

@@ -104,7 +104,6 @@ impl TriggerKindDescriptor for AutomodMessageUpdatedDescriptor {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        // Twitch sends the decision status in Title Case ("Approved"); filter options are lowercase.
         event_status.to_lowercase() == filter
     }
 

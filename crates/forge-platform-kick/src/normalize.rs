@@ -38,7 +38,6 @@ fn identity_badges(identity: Option<&Value>) -> Vec<UserBadge> {
             Some("subscriber") => Some(UserBadge::Subscriber {
                 months: u64_field(badge, "count").unwrap_or(0) as u32,
             }),
-            // gifter status is not a subscription claim
             Some("sub_gifter") => None,
             Some(other) => {
                 debug!(badge_type = %other, "unrecognized kick identity badge type; dropping");
@@ -227,9 +226,7 @@ mod tests {
                 json!([{ "type": "subscriber", "text": "Subscriber" }]),
                 vec![UserBadge::Subscriber { months: 0 }],
             ),
-            // Gifting somebody else a subscription asserts nothing about the gifter's own role.
             (json!([{ "type": "sub_gifter", "count": 20 }]), vec![]),
-            // The wire is unofficial: a type this build does not know must not authorize.
             (json!([{ "type": "og" }, { "text": "Moderator" }]), vec![]),
             (
                 json!([{ "type": "sub_gifter" }, { "type": "moderator" }]),

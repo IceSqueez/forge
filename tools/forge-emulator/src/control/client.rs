@@ -41,7 +41,6 @@ pub struct ControlClient {
     writer: JoinHandle<()>,
 }
 
-/// Ends once the connection closes or its `ControlClient` is dropped.
 pub struct EventStream {
     observations: mpsc::UnboundedReceiver<Observation>,
 }
@@ -60,7 +59,6 @@ struct Ledger {
 
 struct PendingRequest {
     id: String,
-    /// `None` once the caller gave up; the entry stays queued so arrival order still lines up.
     reply: Option<oneshot::Sender<ResponseOutcome>>,
 }
 
@@ -140,7 +138,6 @@ impl ControlClient {
         }
     }
 
-    /// Yields the execution id forge publishes as the cause of the run's `action.start`.
     pub async fn do_action(
         &self,
         action: ActionId,
@@ -281,8 +278,6 @@ fn route_response(ledger: &Mutex<Ledger>, id: Option<String>, outcome: ResponseO
             .iter()
             .position(|entry| entry.id == id)
             .and_then(|index| ledger.pending.remove(index)),
-        // The server answers frames strictly in arrival order, so an answer it could not
-        // correlate belongs to the oldest request still queued.
         None => ledger.pending.pop_front(),
     };
     if let Some(reply) = entry.and_then(|entry| entry.reply) {

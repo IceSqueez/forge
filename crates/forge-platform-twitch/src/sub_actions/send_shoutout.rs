@@ -43,7 +43,6 @@ impl SendShoutoutRunner {
                 Ok(id) => id,
                 Err(e) => return SubActionOutcome::Failed(e.to_string()),
             };
-        // moderator_id == from_broadcaster_id == self satisfies Twitch's mod-privilege check.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/chat/shoutouts")
             .query("from_broadcaster_id", self_id.clone())
             .query("to_broadcaster_id", to_broadcaster_id)

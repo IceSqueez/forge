@@ -50,8 +50,6 @@ pub struct ObsClient {
     pub(crate) scene_item_id_cache: Arc<Mutex<HashMap<(String, String), i64>>>,
     endpoint: String,
     state: Arc<AtomicConnectionState>,
-    // async Mutex: reconnect swaps the Notify for a new supervisor cycle without racing
-    // the running supervisor's own clone of the Arc.
     shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -63,7 +61,6 @@ pub struct ObsClient {
     pub(crate) catalog_state: Arc<RwLock<ObsCatalog>>,
     reconnect_host: String,
     reconnect_port: u16,
-    // Never logged or surfaced.
     reconnect_password: Arc<Option<String>>,
     reconnect_publisher: Arc<dyn EventPublisher>,
     auto_reconnect: Arc<AtomicBool>,
@@ -147,8 +144,6 @@ impl ObsClient {
         self.state.load()
     }
 
-    /// Runs the scene/source reconciliation pass out of its polling cadence. Returns once the
-    /// request is queued, not once the catalog has caught up.
     pub fn request_catalog_resync(&self) {
         self.resync_nudge.notify_one();
     }
@@ -242,9 +237,6 @@ impl BuiltinStatus for ObsClient {
         vec![HeaderAction::Reconnect, HeaderAction::Settings]
     }
 
-    /// `obs-websocket` protocol version plus our own WS session uptime, computed fresh on every
-    /// render (unlike `endpoint()`/`version()`, which are fixed `&str` slots that cannot carry a
-    /// value that changes every tick without violating their `&self`-tied lifetime).
     fn name_badges(&self) -> Vec<HeroBadge> {
         let Some(ws_version) = self.obs_ws_version.get() else {
             return Vec::new();
@@ -267,7 +259,6 @@ impl BuiltinStatus for ObsClient {
 #[async_trait]
 impl BuiltinControl for ObsClient {
     async fn reconnect(&self) -> ControlOutcome {
-        // Locking `shutdown` serialises concurrent reconnect/disconnect calls.
         let mut slot = self.shutdown.lock().await;
         let old_notify = slot.clone();
         old_notify.notify_one();
@@ -361,7 +352,6 @@ struct SupervisorContext {
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(1);
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(60);
 
-/// Events queue here while the post-connect catalog snapshot runs, so it has to absorb a burst.
 const EVENT_BUFFER_CAPACITY: usize = 1024;
 
 async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: SupervisorContext) {
@@ -510,7 +500,6 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
         tracing::info!(host = %host, port, "connected to OBS");
         publisher.publish(crate::events::make_connection_connected());
 
-        // No periodic Stats event exists (OQ-OBS-1, INTEGRATIONS_NOTES.md); polled instead.
         let stats_handle = spawn_stats_poll(
             Arc::clone(&inner),
             Arc::clone(&health_state),
@@ -551,9 +540,6 @@ async fn run_supervisor(host: String, port: u16, password: Option<String>, ctx: 
                             &*publisher,
                         );
                         stream_output.refresh();
-                        // A scene collection swap replaces every scene and source wholesale;
-                        // incremental catalog updates cannot track that, so force an immediate
-                        // full resync instead of waiting for the next reconciliation tick.
                         if matches!(ev, obws::events::Event::CurrentSceneCollectionChanged { .. }) {
                             respawn_full_resync(
                                 &mut pending_resync,
@@ -836,7 +822,6 @@ fn handle_obs_event(
     }
 }
 
-/// A request OBS rejected falls back to a default; a lost or unanswered connection is returned.
 fn tolerate_rejection<T>(outcome: Result<T, ObsError>) -> Result<Option<T>, ObsError> {
     match outcome {
         Ok(value) => Ok(Some(value)),
@@ -845,11 +830,6 @@ fn tolerate_rejection<T>(outcome: Result<T, ObsError>) -> Result<Option<T>, ObsE
     }
 }
 
-/// Snapshots every known scene's sources, not just the active one, so `BuiltinContent::sections()`
-/// has non-active scene counts available immediately after a cold connect. Also (re)populates
-/// `item_cache` so live `SceneItemEnableStateChanged`/`SceneItemLockStateChanged` events can
-/// resolve a source name without ever having gone through a forge-initiated visibility toggle.
-/// Leaves the catalog untouched when the connection is lost midway.
 async fn snapshot_catalog(
     session: &LiveSession,
     catalog_state: &RwLock<ObsCatalog>,
@@ -1006,10 +986,6 @@ async fn snapshot_catalog(
     Ok(())
 }
 
-/// Cheap safety-net reconciliation for topology drift (missed scene/source create, remove, or
-/// rename events). Scoped per-scene, not per-source: it never re-fetches `enabled`/`locked`/dB,
-/// which stay live via `SceneItemEnableStateChanged`/`SceneItemLockStateChanged`/
-/// `InputVolumeChanged`, so cost scales with scene count rather than total source count.
 async fn reconcile_catalog_topology(
     session: &LiveSession,
     catalog_state: &RwLock<ObsCatalog>,
@@ -1112,8 +1088,6 @@ pub(crate) struct FetchedTopology {
     pub(crate) current_preview_scene: Option<String>,
 }
 
-/// Adopts a fetched current/preview scene only when the catalog value is unchanged since the
-/// pre-fetch capture; a live event landing during the fetch window wins over the fetch.
 pub(crate) fn merge_reconciled_topology(
     catalog: &mut ObsCatalog,
     fetched: FetchedTopology,
@@ -1155,8 +1129,6 @@ const STATS_POLL_REQUEST_TIMEOUT: Duration = STATS_POLL_INTERVAL;
 const UNANSWERED_STATS_POLLS_BEFORE_SUSPECT: u32 = 3;
 const CATALOG_RECONCILE_EVERY_NTH_TICK: u32 = 3;
 
-/// The returned handle MUST be `.abort()`-ed on every connection-loss/shutdown exit path;
-/// dropping a `JoinHandle` does not cancel the underlying task.
 fn spawn_stats_poll(
     inner: SessionSlot,
     health_state: Arc<RwLock<HealthSnapshot>>,
@@ -1272,8 +1244,6 @@ pub fn parse_endpoint(endpoint: &str) -> Result<(String, u16), ObsError> {
     }
 }
 
-/// Excludes every high-volume opt-in category (volume meters, input active/show state,
-/// scene-item transform) so the bus is never flooded by a continuous stream.
 fn required_event_subscriptions() -> obws::requests::EventSubscription {
     use obws::requests::EventSubscription as Sub;
     Sub::SCENES
@@ -1397,8 +1367,6 @@ mod tests {
         }
     }
 
-    // Why: an OBS restart mid-stream must heal itself, so reconnection stays on until the user
-    // turns it off from the connection settings; a fresh client must never start out gated off.
     #[test]
     fn auto_reconnect_starts_enabled_and_follows_the_user_toggle() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());
@@ -1549,9 +1517,6 @@ mod tests {
         }
     }
 
-    // Why: a source hidden from inside OBS reaches forge as a numeric item id only. Before the
-    // id cache was seeded from the catalog snapshot, only items forge had toggled itself could be
-    // resolved, so hiding a source in OBS left the panel row and the bus event missing.
     #[test]
     fn hiding_a_scene_item_inside_obs_updates_the_catalog_row_and_publishes_the_change() {
         let h = EventHarness::new().with_source("Gameplay", "Webcam", 42);
@@ -1621,8 +1586,6 @@ mod tests {
         );
     }
 
-    // Why: item ids are per collection; a cached id from the old collection addresses a
-    // different item (or none) in the new one with the same scene and source names.
     #[test]
     fn a_scene_collection_switch_inside_obs_forgets_every_cached_item_id() {
         for switch in [
@@ -1707,11 +1670,6 @@ mod tests {
         );
     }
 
-    // Why: an item created live enters the catalog with no kind, so it renders with the fallback
-    // glyph and no dB readout until the next reconciliation supplies one. The backfill must read
-    // the kind off a row that HAS one. Scanning for the first row that merely shares the name can
-    // land on the kindless row just inserted for this very event, and which of the two comes first
-    // is decided by HashMap iteration order. Repeated so that order cannot hide the miss.
     #[test]
     fn a_created_scene_item_inherits_the_kind_of_the_same_source_in_another_scene() {
         for _ in 0..64 {
@@ -1759,10 +1717,6 @@ mod tests {
         }
     }
 
-    // Why: reconciliation only re-lists scene items, so it must not clobber the flags that live
-    // events own. `visible`/`locked`/`audio_db` are never re-fetched and stay live-wins; `kind`
-    // comes off the listing and is fetch-wins, falling back to the live row so a source the
-    // listing reports kindless does not lose the kind it already had.
     #[test]
     fn reconciliation_keeps_the_live_flags_per_source_and_resolves_the_kind_fetch_first() {
         for (label, live, fetched_kind, expected) in [
@@ -1842,9 +1796,6 @@ mod tests {
         }
     }
 
-    // Why: the listing is the authority on which scenes and rows exist, so anything absent from it
-    // is gone from the catalog. A scene whose item listing failed therefore loses its rows until
-    // the next tick, which is the accepted cost of per-scene rather than per-source reconciliation.
     #[test]
     fn reconciliation_replaces_the_scene_source_and_input_rosters_with_the_fetched_ones() {
         let mut catalog = ObsCatalog {
@@ -1921,11 +1872,6 @@ mod tests {
         }
     }
 
-    // Why: the program/preview scene is the one catalog field a live event and the reconciliation
-    // fetch both write, and the fetch reads OBS before it takes the write guard. Arbitration is by
-    // comparison with the pre-fetch capture: an untouched field adopts the fetch (so an event
-    // missed before `client.events()` subscribed heals), a field a live event moved during the
-    // window keeps the live value (so the stale fetch cannot undo a real switch).
     #[test]
     fn a_reconciled_scene_field_heals_from_the_fetch_only_when_no_live_event_moved_it() {
         for (label, pre_fetch, live_at_merge, fetched, expected) in [

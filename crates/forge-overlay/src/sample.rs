@@ -51,7 +51,6 @@ pub fn sample_context(feeding: &[SampleTrigger]) -> SampleContext {
     }
 }
 
-/// Never carries the speech text: a page plays speech, it never draws it.
 pub fn sample_content(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,

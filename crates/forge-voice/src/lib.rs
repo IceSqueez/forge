@@ -23,11 +23,9 @@ impl Default for AliasId {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AliasState {
     Active,
-    /// Message is accepted but no audio is synthesized.
     Blocked,
 }
 
-/// `viewer_id` is the platform-specific user ID, not username; renames must not break it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoiceAlias {
     pub id: AliasId,
@@ -35,17 +33,13 @@ pub struct VoiceAlias {
     pub viewer_name: String,
     pub engine_id: EngineId,
     pub voice_id: VoiceId,
-    /// Semitone override relative to engine default. `None` = use engine default.
     pub pitch_semitones: Option<f32>,
-    /// Rate multiplier override. `None` = use engine default.
     pub rate_multiplier: Option<f32>,
     pub state: AliasState,
 }
 
-/// How a voice is chosen for viewers without a manual alias.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AssignmentStrategy {
-    /// `sha256(viewer_name) % eligible_voices.len()` - stable, deterministic per username.
     #[default]
     DeterministicByName,
     Random,
@@ -55,7 +49,6 @@ pub enum AssignmentStrategy {
     },
 }
 
-/// Excluded from random/deterministic picks; still usable via explicit manual aliases.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IgnoreProfile {
     pub excluded_voice_ids: Vec<VoiceId>,
@@ -69,7 +62,6 @@ impl IgnoreProfile {
     }
 }
 
-/// A voice with an unreadable or unrecognized locale never matches.
 pub fn voice_speaks_language(voice: &TtsVoice, language: LanguageCode) -> bool {
     LanguageCode::from_locale(&voice.locale) == Some(language)
 }
@@ -145,8 +137,6 @@ impl VoiceAliasResolver {
             .unwrap_or(self.defaults)
     }
 
-    /// Explicit alias by `viewer_id` wins first, honouring `Blocked` as Skip, then falls
-    /// back to the strategy over eligible catalog voices.
     pub fn resolve(
         &self,
         viewer_id: &str,
@@ -499,8 +489,6 @@ mod tests {
 
     #[test]
     fn voice_with_an_unreadable_locale_serves_no_language_at_all() {
-        // Why: an unreadable locale must narrow to "never eligible", never to "eligible for
-        // everything" - otherwise a cloud voice with an empty locale hijacks every language.
         for locale in ["", "und", "0409", "fil-PH"] {
             let voice = make_voice("mystery", locale);
             for code in ["uk", "en", "ru"] {

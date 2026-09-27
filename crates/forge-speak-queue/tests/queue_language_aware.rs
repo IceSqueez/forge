@@ -17,9 +17,6 @@ use common::{FakeFactory, make_deps, recording_sink, request};
 
 const ENGINE: &str = "poly";
 
-/// A confidently Ukrainian and a confidently English sentence. The same viewer resolves to a
-/// single voice under `DeterministicByName`, so two different answers can only come from the
-/// detected language narrowing the pool.
 const UKRAINIAN: &str = "добрий вечір, як ваші справи сьогодні";
 const ENGLISH: &str = "good evening everyone, how is the stream going tonight";
 
@@ -136,15 +133,8 @@ async fn speak_and_settle(
     }
 }
 
-/// Why: the detector is rebuilt off the utterance path - a `spawn_blocking` build that preloads
-/// language models plus a channel hop back into the actor - and the flag is only re-read when the
-/// actor next wakes, which is the probe itself. Utterances that win that race legitimately resolve
-/// against the full catalog and report no language, so the wait has to be a wall-clock budget
-/// rather than a fixed number of tries: the build takes as long as the runner takes.
 const DETECTOR_READY_BUDGET_MS: u64 = 15_000;
 
-/// Probe with fresh utterances until one carries a detection. Only the report is awaited - what
-/// the detection then resolves to stays an exact assertion at the call site.
 async fn narrowed_voice_for(
     handle: &SpeakQueueHandle,
     stream: &mut SpeakEventStream,
@@ -218,9 +208,6 @@ async fn toggling_the_preset_on_and_back_off_starts_and_stops_reporting_a_langua
     let (lang, _, _) = narrowed_voice_for(&handle, &mut stream, &events, UKRAINIAN).await;
     assert_eq!(lang, "uk", "flipping the preset on must build a detector");
 
-    // Why: the off direction takes no budget and must never get one. The actor drops the detector
-    // at the top of the same loop iteration that pops this request, and a rebuild still in flight
-    // is discarded against the flag - so a language reported here is a bug, not late teardown.
     pipeline.swap(config_with(false));
     speak_and_settle(&handle, &mut stream, request("nova", ENGLISH)).await;
     assert!(

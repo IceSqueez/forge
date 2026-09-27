@@ -262,8 +262,6 @@ impl BuiltinStatus for KickIntegrationBundle {
             .unwrap_or_else(|p| p.into_inner())
     }
 
-    /// The bundle is only ever constructed after credentials resolve (see build_kick), so
-    /// the slug is always populated by the time a hero name is rendered.
     fn hero_name(&self) -> Option<&str> {
         Some(&self.slug)
     }
@@ -942,8 +940,6 @@ mod tests {
             registry
         }
 
-        /// A quick action that names an unregistered runner, or presets a key the runner never
-        /// reads, silently does nothing when the user clicks it.
         #[test]
         fn every_quick_action_targets_a_registered_runner_that_reads_its_keys() {
             let registry = runner_registry();

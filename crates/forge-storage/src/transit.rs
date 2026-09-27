@@ -15,7 +15,6 @@ pub struct GlobalTransit {
     pub writes: u64,
 }
 
-/// `format_version` lets future importers route to the correct parser.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalsExport {
     pub format_version: u32,

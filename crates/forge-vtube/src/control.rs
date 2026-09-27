@@ -11,8 +11,6 @@ use crate::supervisor::SupervisorContext;
 #[async_trait]
 impl BuiltinControl for VTubeClient {
     async fn reconnect(&self) -> ControlOutcome {
-        // Slot held only long enough to swap the Notify; released before awaiting the old
-        // handle so the supervisor's own shutdown.notified() path can complete.
         let new_notify = Arc::new(Notify::new());
         {
             let mut slot = self.shutdown.lock().await;

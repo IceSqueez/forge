@@ -6,7 +6,6 @@ use time::OffsetDateTime;
 
 const LOG_PREFIX: &str = "forge.log";
 
-/// Oldest first - the rolling appender's date suffix makes name order chronological.
 pub fn files(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -26,13 +25,10 @@ pub fn files(dir: &Path) -> Result<Vec<PathBuf>, String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Corpus {
     pub text: String,
-    /// Log bytes the budget could not carry; the newest bytes are the ones kept.
     pub elided_bytes: u64,
     pub files_kept: usize,
 }
 
-/// Fills `budget` from the newest file backwards, so a corpus far larger than the budget is never
-/// held in memory whole.
 pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, String> {
     let mut remaining = budget;
     let mut elided_bytes = 0u64;
@@ -43,7 +39,6 @@ pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, String> {
             Ok(text) => text,
             Err(e) => format!("<unreadable: {e}>\n"),
         };
-        // The name alone attributes the lines; the directory above it is the OS account's.
         let name = path.file_name().unwrap_or(path.as_os_str());
         let header = format!("\n---- {} ----\n", name.to_string_lossy());
 
@@ -72,8 +67,6 @@ pub fn corpus(dir: &Path, budget: usize) -> Result<Corpus, String> {
     })
 }
 
-/// Keeps the tail whole-line and on a character boundary, so a truncated corpus never opens
-/// mid-record or mid-codepoint.
 pub fn line_start_at_or_after(text: &str, from: usize) -> usize {
     let mut idx = from.min(text.len());
     while idx < text.len() && !text.is_char_boundary(idx) {
@@ -89,7 +82,6 @@ pub fn clear(dir: &Path) -> Result<(), String> {
     let active = active_file_name();
     for path in files(dir)? {
         if path.file_name().and_then(|name| name.to_str()) == Some(active.as_str()) {
-            // Windows refuses to unlink the file the log appender still holds open.
             OpenOptions::new()
                 .write(true)
                 .truncate(true)
@@ -232,9 +224,6 @@ mod tests {
         );
     }
 
-    /// Why: R4 - no literal names in the bundle, and the export statement promises the reporter
-    /// that file paths are withheld. The log directory sits under the OS account's data dir, so
-    /// an absolute path in a section header publishes the account name to a public issue.
     #[test]
     fn corpus_names_each_file_without_disclosing_the_directory_holding_it() {
         let dir = ScratchDir::new("nova_the_broadcaster");
@@ -280,8 +269,6 @@ mod tests {
         );
     }
 
-    /// The header framing is produced by `corpus` itself; measuring it from an unbudgeted run
-    /// keeps the fixture from restating the production format.
     fn framing_len(dir: &ScratchDir, bodies: usize) -> usize {
         corpus(dir.path(), usize::MAX).expect("corpus").text.len() - bodies
     }
@@ -295,7 +282,6 @@ mod tests {
         dir.write("forge.log.2026-08-01", new.as_bytes());
         let framing = framing_len(&dir, old.len() + new.len());
 
-        // Room for both headers and the newest body, one byte short of the oldest body.
         let out = corpus(dir.path(), framing + new.len()).expect("corpus");
 
         assert!(
@@ -310,8 +296,6 @@ mod tests {
         assert_eq!(out.elided_bytes, old.len() as u64);
     }
 
-    /// Why: the corpus is cut by byte budget, and a Cyrillic or emoji log line straddles the cut.
-    /// Slicing at the raw offset would panic; the tail must resume at the next whole line.
     #[test]
     fn corpus_cuts_a_partial_file_on_a_line_start_past_a_multibyte_character() {
         let dir = ScratchDir::new("budget_multibyte");
@@ -319,7 +303,6 @@ mod tests {
         dir.write("forge.log.2026-08-01", body.as_bytes());
         let framing = framing_len(&dir, body.len());
 
-        // Leaves room for 12 of the 17 body bytes, so the cut lands inside `р`.
         let out = corpus(dir.path(), framing + 12).expect("corpus");
 
         assert!(out.text.ends_with("z\n"), "tail lost:\n{out:?}");

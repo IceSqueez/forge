@@ -519,9 +519,6 @@ mod tests {
         reject_deactivation_of: &'static [&'static str],
     }
 
-    /// Plays VTube Studio for one reset: every expression-state query gets `script.state`,
-    /// every other request succeeds. Returns the reset outcome and each activation request
-    /// as `(file, active)` in the order forge sent them.
     async fn reset_against(
         client: &VTubeClient,
         conn: &mut PeerConn,

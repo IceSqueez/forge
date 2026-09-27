@@ -22,8 +22,6 @@ pub(super) fn look_summary(descriptor: &dyn OverlayKindDescriptor) -> LookSummar
     }
 }
 
-/// Keeps every stored value the new look also declares - the base's audio and display settings
-/// and the shared style - and drops what only the old look understood.
 pub(super) fn carried_config(
     descriptor: &dyn OverlayKindDescriptor,
     config: &OverlayConfig,

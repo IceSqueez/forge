@@ -830,8 +830,6 @@ mod tests {
         }
     }
 
-    // Why: "ignored" leaves the screen spinning on "Connecting" forever, so every payload the
-    // supervisor can emit has to resolve to a phase the user can act on.
     #[test]
     fn each_connection_payload_resolves_to_a_phase_the_connect_screen_can_show() {
         for (payload, expected) in [
@@ -865,8 +863,6 @@ mod tests {
         }
     }
 
-    // Why: the form drains the shared bus, so an unrelated event must not push it out of the
-    // connecting phase.
     #[test]
     fn events_from_another_source_or_kind_are_ignored() {
         let foreign_source = Event::new(

@@ -74,9 +74,6 @@ fn scene_to_item(
     }
 }
 
-/// Classifies an OBS input kind id into the closest matching source glyph. Kind ids differ by
-/// OS/OBS version (e.g. `monitor_capture` on Linux/macOS vs `game_capture` on Windows), so this
-/// matches on stable substrings rather than an exhaustive enum.
 fn icon_for_kind(kind: Option<&str>) -> SectionIcon {
     let Some(kind) = kind else {
         return SectionIcon::new("device-desktop");
@@ -107,7 +104,6 @@ fn icon_for_kind(kind: Option<&str>) -> SectionIcon {
     }
 }
 
-/// Audio-capable kinds are the only ones a `GetInputVolume` request succeeds against.
 pub(crate) fn is_audio_kind(kind: Option<&str>) -> bool {
     kind.is_some_and(|k| k.contains("input_capture") || k.contains("output_capture"))
 }

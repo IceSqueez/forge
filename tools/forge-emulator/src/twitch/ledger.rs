@@ -16,12 +16,10 @@ pub struct RecordedRequest {
     pub method: String,
     pub path: String,
     pub query: Vec<(String, String)>,
-    /// `None` for an empty body; a body that is not JSON is kept as a JSON string.
     pub body: Option<Value>,
     pub credentials: CredentialCheck,
     pub status: u16,
     pub response: Value,
-    /// False when the fake has no model for this method and path, so its 404 is not Twitch's answer.
     pub modeled: bool,
 }
 
@@ -31,7 +29,6 @@ pub struct TappedRequest {
     pub request: RecordedRequest,
 }
 
-/// One row per session holding the subscription: a reconnect copies rows under the same id.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecordedSubscription {
     pub id: String,

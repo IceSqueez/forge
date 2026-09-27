@@ -15,7 +15,6 @@ pub enum FormField {
         key: &'static str,
         label: &'static str,
     },
-    /// Multi-line editor with syntax highlighting for the named language.
     Code {
         key: &'static str,
         label: &'static str,
@@ -27,7 +26,6 @@ pub enum FormField {
         min: i64,
         max: i64,
     },
-    /// Stores a whole number; `unit` suffixes the value in the label.
     Slider {
         key: &'static str,
         label: &'static str,
@@ -43,12 +41,10 @@ pub enum FormField {
         key: &'static str,
         label: &'static str,
     },
-    /// Free-text `%var%` field paired with a calendar+time picker; written as an RFC 3339 string.
     DateTime {
         key: &'static str,
         label: &'static str,
     },
-    /// Static enum-like choices. Use `DynamicSelect` for runtime-supplied option lists.
     Select {
         key: &'static str,
         label: &'static str,
@@ -59,14 +55,12 @@ pub enum FormField {
         label: &'static str,
         options_key: &'static str,
     },
-    /// Options are looked up in the runtime map under `<options_prefix>.<current value of `depends_on`>`.
     DependentSelect {
         key: &'static str,
         label: &'static str,
         options_prefix: &'static str,
         depends_on: &'static str,
     },
-    /// Static choices naming palette colors, presented as swatches rather than a dropdown.
     Swatch {
         key: &'static str,
         label: &'static str,
@@ -77,12 +71,10 @@ pub enum FormField {
         label: &'static str,
         inner: Box<FormField>,
     },
-    /// Names a config key holding one nested sub-chain; the renderer offers a drill-in affordance rather than a text input.
     SubChain {
         key: &'static str,
         label: &'static str,
     },
-    /// Names a config key holding an ordered list of labeled branches, each pairing a match value with a nested sub-chain.
     CaseList {
         key: &'static str,
         label: &'static str,
@@ -90,7 +82,6 @@ pub enum FormField {
 }
 
 impl FormField {
-    /// For `Optional` this is the enabling toggle; the value it guards is keyed by `inner`.
     pub fn key(&self) -> &'static str {
         match self {
             Self::Text { key, .. }

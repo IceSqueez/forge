@@ -300,7 +300,6 @@ async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
 
     let stop = stop_requested();
     tokio::pin!(stop);
-    // Why: dropping an unfinished launch drops its ForgeProcess, which kills forge's process group.
     let launched = tokio::select! {
         launched = launch_forge(&options) => launched?,
         () = &mut stop => return Ok(()),

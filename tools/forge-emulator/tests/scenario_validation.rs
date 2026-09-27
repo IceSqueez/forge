@@ -1,4 +1,3 @@
-//! Scenario semantic validation: every rejection class with its pinned location and message.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_emulator::scenario::Scenario;

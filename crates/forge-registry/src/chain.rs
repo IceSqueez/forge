@@ -9,25 +9,19 @@ use crate::error::RegistryError;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChainSignal {
     Completed,
-    /// Halts the whole action; absorbed only at the action-root.
     Stop(StopMark),
-    /// Unwinds to the nearest enclosing loop.
     Break,
-    /// Skips to the next iteration of the nearest enclosing loop.
     Continue,
     Error(String),
-    /// External cancellation observed at a step or iteration boundary.
     Aborted,
 }
 
-/// How the action-root records a run that a `stop` step halted.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StopMark {
     pub failed: bool,
     pub reason: Option<String>,
 }
 
-/// In-band flow control a leaf step raises for its enclosing sequential chain to act on once, the following turn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlSignal {
     Break,
@@ -35,7 +29,6 @@ pub enum ControlSignal {
     Stop(StopMark),
 }
 
-/// One-shot mailbox drained by the enclosing `drive_sequential` right after the step returns; a leaf built through `RunContext::leaf` writes into a cell nobody drains.
 #[derive(Clone, Default)]
 pub struct ControlCell(Arc<Mutex<Option<ControlSignal>>>);
 
@@ -65,7 +58,6 @@ pub struct ChildChainOutcome {
     pub telemetry: Vec<SubActionTelemetry>,
 }
 
-/// Side channel a composite runner's nested-step telemetry drains into for the enclosing chain to splice in right after the runner returns; a runner built through `RunContext::leaf` writes into a cell nobody drains.
 #[derive(Clone, Default)]
 pub struct TelemetrySink(Arc<Mutex<Vec<SubActionTelemetry>>>);
 
@@ -89,7 +81,6 @@ impl TelemetrySink {
     }
 }
 
-/// Deliberately lives off the serde `ExecutionContext` (not serializable); observed cooperatively between awaits.
 #[derive(Clone, Default)]
 pub struct CancelSignal(Arc<AtomicBool>);
 
@@ -109,7 +100,6 @@ impl CancelSignal {
 
 #[async_trait]
 pub trait ChainExecutor: Send + Sync {
-    /// A step failure surfaces as `ChainSignal::Error` in the returned outcome; `Err` is reserved for exceeding the nesting-depth bound.
     async fn run_child_chain(
         &self,
         steps: &[SubActionStep],

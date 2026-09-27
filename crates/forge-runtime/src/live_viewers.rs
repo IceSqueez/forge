@@ -10,7 +10,6 @@ use tokio_stream::wrappers::WatchStream;
 
 const COMMAND_CHANNEL_CAP: usize = 64;
 
-/// `Empty` means no platform currently reports; `Reporting(0)` means one or more report and sum to zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LiveViewerCount {
     Reporting(u64),
@@ -30,7 +29,6 @@ pub struct LiveViewerAggregatorHandle {
 }
 
 impl LiveViewerAggregatorHandle {
-    /// Each call occupies a distinct additive slot (no cross-platform dedup); it drops on `Absent` or stream end.
     pub fn register(&self, source: Box<dyn LiveViewerSource>) {
         let slot = self.next_slot.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
@@ -49,7 +47,6 @@ impl LiveViewerAggregatorHandle {
         });
     }
 
-    /// Latest-value-wins: a slow consumer resynchronizes to the newest figure and never blocks the aggregator.
     pub fn subscribe(&self) -> impl Stream<Item = LiveViewerCount> + Send + 'static {
         WatchStream::new(self.output.clone())
     }

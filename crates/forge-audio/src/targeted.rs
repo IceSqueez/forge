@@ -11,8 +11,6 @@ pub struct PlaybackTarget {
     pub correlation: PlaybackCorrelation,
 }
 
-/// Builds the legs of one playback aimed at a single destination; the global route's remote leg
-/// is never among them.
 pub trait TargetedSinkFactory: Send + Sync {
     fn sink_for(&self, target: &PlaybackTarget) -> Arc<dyn AudioSink>;
 }
@@ -23,7 +21,6 @@ pub struct RemoteLegFactory {
 }
 
 impl RemoteLegFactory {
-    /// `local` is the monitoring leg, present only when the global route plays locally.
     pub fn new(remote: Arc<dyn RemoteAudioDestination>, local: Option<Arc<dyn AudioSink>>) -> Self {
         Self { remote, local }
     }

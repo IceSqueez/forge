@@ -13,7 +13,6 @@ use crate::EmulatorError;
 const SEED_SUBCOMMAND: &str = "seed";
 const SEED_DEADLINE: Duration = Duration::from_secs(60);
 
-/// Returns only after the seeder process has exited, so nothing it opened still holds the database.
 pub async fn seed(
     emulator_program: &Path,
     data_dir: &Path,
@@ -24,8 +23,6 @@ pub async fn seed(
     let failed = |reason: String| EmulatorError::SeederProcess { reason };
     let input = serde_json::to_vec(fixture).map_err(|e| failed(e.to_string()))?;
 
-    // Why: forge resolves the credential key from its environment alone; a child process gets
-    // exactly forge's environment without this process mutating its own.
     let mut command = Command::new(emulator_program);
     command
         .arg(SEED_SUBCOMMAND)

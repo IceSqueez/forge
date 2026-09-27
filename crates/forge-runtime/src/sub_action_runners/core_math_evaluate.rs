@@ -17,7 +17,6 @@ impl Default for CoreMathEvaluateRunner {
 }
 
 impl CoreMathEvaluateRunner {
-    /// Tighter than a full script's budget, but generous enough for complex arithmetic.
     pub fn new() -> Self {
         Self {
             evaluator: MathEvaluator::with_config(EngineConfig {

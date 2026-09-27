@@ -34,8 +34,6 @@ pub(crate) fn base_defaults(disposition: DeliveryDisposition, display_secs: i64)
     defaults
 }
 
-/// `None` for a look whose content is applied on arrival rather than shown for a while; an
-/// override of zero milliseconds counts as no override.
 pub fn display_window(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,
@@ -61,7 +59,6 @@ pub struct SpeechProgram {
     pub voice_alias: Option<String>,
 }
 
-/// Always removes the speech text from `content`: the page plays the speech, it never shows it.
 pub fn take_speech(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,

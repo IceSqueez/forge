@@ -6,7 +6,6 @@ pub struct InFlightSteps {
 }
 
 impl InFlightSteps {
-    /// False while the same step kind is still running for that row.
     pub fn try_begin(&mut self, row: &str, kind: &str) -> bool {
         self.running.insert((row.to_owned(), kind.to_owned()))
     }

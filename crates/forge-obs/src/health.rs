@@ -37,7 +37,6 @@ pub(crate) fn make_health_channel() -> (broadcast::Sender<HealthDelta>, Arc<RwLo
     (tx, Arc::new(RwLock::new(HealthSnapshot::default())))
 }
 
-/// Formats a duration as `"<h>h <m>m"`, dropping the hour segment under one hour.
 pub(crate) fn format_duration_hm(d: Duration) -> String {
     let total_minutes = d.as_secs() / 60;
     let hours = total_minutes / 60;
@@ -252,8 +251,6 @@ mod tests {
         assert_eq!(secondary.as_deref(), Some("0.00%"));
     }
 
-    // Why: the poll/event appliers address these cards by hardcoded HealthDelta index (0..=3),
-    // so reordering the array silently retargets every live delta at the wrong card.
     #[test]
     fn metrics_expose_the_four_cards_the_health_delta_indices_address() {
         let client = ObsClient::new_for_test("localhost:4455".to_owned());

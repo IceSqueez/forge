@@ -27,7 +27,6 @@ pub struct EgressRequest {
     pub content_type: Option<String>,
     pub timeout: Duration,
     pub follow_redirects: bool,
-    /// When true, bypasses the SSRF denylist that otherwise blocks loopback/private/link-local targets.
     pub allow_local: bool,
 }
 
@@ -56,7 +55,6 @@ pub enum EgressError {
     Network(String),
 }
 
-/// Owns its own SSRF denylist and budget: `TokenBucketRateLimiter` buckets are keyed to platform quotas, not arbitrary user URLs.
 pub struct EgressClient {
     client: reqwest::Client,
     concurrency: Semaphore,
@@ -75,7 +73,6 @@ impl EgressClient {
         })
     }
 
-    /// Redirects are followed manually so every hop is re-validated against the SSRF classifier.
     pub async fn send(&self, req: EgressRequest) -> Result<EgressResponse, EgressError> {
         let _permit = self
             .concurrency

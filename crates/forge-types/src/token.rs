@@ -36,8 +36,6 @@ define_redacted_token!(RefreshToken);
 mod tests {
     use super::*;
 
-    /// Why: downstream crates assert on the exact `Name(<redacted>)` spelling; routing the macro
-    /// through the shared `Redacted` placeholder must leave it byte-identical.
     #[test]
     fn token_debug_renders_the_type_name_wrapping_the_bare_marker() {
         assert_eq!(

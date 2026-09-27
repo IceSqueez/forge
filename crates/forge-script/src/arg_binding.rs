@@ -6,7 +6,6 @@ use crate::convert::variant_to_dynamic;
 
 const BINDING_PREFIX: &str = "forge_arg_";
 
-/// An author-written expression whose `%name%` tokens are rewritten into rhai scope variables, so argument values never become rhai syntax.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundExpression {
     original: String,
@@ -16,7 +15,6 @@ pub struct BoundExpression {
 }
 
 impl BoundExpression {
-    /// Outside string literals a token binds its typed argument (numeric / boolean text reads as that literal); inside one it binds the argument text.
     pub fn bind(expr: &str, args: &ArgStack) -> Self {
         let mut prefix = BINDING_PREFIX.to_owned();
         while expr.contains(&prefix) {
@@ -57,7 +55,6 @@ impl BoundExpression {
         scope
     }
 
-    /// Names of `%name%` tokens outside string literals that matched no argument; they stay verbatim in the source.
     pub fn unresolved(&self) -> &[String] {
         &self.unresolved
     }

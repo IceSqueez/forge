@@ -14,7 +14,6 @@ pub async fn apply(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
         })
 }
 
-/// Must be called only after [`apply`]; returns `0` for a database with no migrations applied.
 pub async fn applied_version(pool: &sqlx::SqlitePool) -> Result<u32, SqliteStorageError> {
     let version: Option<i64> = sqlx::query_scalar("SELECT MAX(version) FROM _sqlx_migrations")
         .fetch_optional(pool)

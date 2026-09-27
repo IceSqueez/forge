@@ -122,7 +122,6 @@ impl ServerHandle {
             guard.state.clone()
         };
 
-        // Reloads persisted settings for the new bind; shared handles (auth, bus, adapters, repos, engine) are preserved.
         let settings = ServerSettings::load(state.settings.as_ref())
             .await
             .map_err(|e| ServerError::Storage(e.to_string()))?;
@@ -146,7 +145,6 @@ impl ServerHandle {
             .map(PathBuf::from)
             .unwrap_or_else(paths::overlays_dir);
 
-        // Validated before teardown, so a bad config leaves the current server untouched.
         server::validate_lan_bind(
             &bind_addr,
             settings.lan_bind_enabled,
@@ -248,7 +246,6 @@ impl ServerHandle {
         store.release_hold(capability.expose())
     }
 
-    /// Addressed at the connections identified as `identity`; never reaches any other client.
     pub async fn deliver_overlay_content(
         &self,
         identity: &OverlayId,
@@ -261,27 +258,21 @@ impl ServerHandle {
             .await
     }
 
-    /// Read-only: no push. A stopped server still holds its (empty) registry, so this is zero
-    /// rather than an error.
     pub async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
         adapter.overlay_receivers(identity).await
     }
 
-    /// Survives a restart: the listener lives on the bus adapter, which the new state carries over.
     pub async fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
         adapter.set_overlay_connect_listener(listener);
     }
 
-    /// `identity: None` reloads every overlay-class connection.
     pub async fn deliver_overlay_reload(&self, identity: Option<&OverlayId>) {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
         adapter.deliver_overlay_reload(identity).await;
     }
 
-    /// Addressed at the connections identified as `identity`: blanks then closes them, so a
-    /// disabled overlay stops showing and stops receiving without waiting on anything else.
     pub async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
         let adapter = Arc::clone(&self.inner.lock().await.state.bus_adapter);
         adapter.revoke_overlay(identity).await
@@ -393,7 +384,6 @@ mod tests {
         Arc::clone(&handle.inner.lock().await.state.bus_adapter)
     }
 
-    /// A stopped server keeps its registry, so the pane gets a count rather than a failure.
     #[tokio::test]
     async fn the_handle_counts_the_pages_its_registry_holds_for_the_overlay_asked() {
         let handle = stopped_handle().await;

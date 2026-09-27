@@ -141,7 +141,6 @@ fn cap_token(token: &str) -> String {
     }
 }
 
-/// Rewrites a gpui chord (`ctrl-shift-r`) into the `+`-separated form the keycap row splits on.
 pub fn chord_caps(chord: &str) -> String {
     let mut caps: Vec<String> = Vec::new();
     let mut rest = chord;

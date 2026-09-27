@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-/// `std::sync::Mutex`: the critical section is a single clone, never held across an `await`.
 #[derive(Debug, Clone, Default)]
 pub struct ActiveBroadcastIdHandle {
     inner: Arc<std::sync::Mutex<Option<String>>>,

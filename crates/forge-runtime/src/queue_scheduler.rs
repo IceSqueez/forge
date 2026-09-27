@@ -13,10 +13,8 @@ use tracing::{info, warn};
 use crate::queue_depth::{DepthBoard, DepthCell, QueueDepthWatch};
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
-/// Defensive ceiling on tasks buffered per queue; a frozen queue accumulates until it is hit.
 pub const MAX_PENDING_PER_QUEUE: usize = 500;
 
-/// Filled once `QueueScheduler::spawn` returns, avoiding a boot registration-order dependency.
 #[derive(Clone, Default)]
 pub struct SchedulerCell {
     inner: Arc<ArcSwapOption<QueueSchedulerHandle>>,
@@ -142,7 +140,6 @@ pub struct QueueRuntimeState {
     pub mode: QueueMode,
     pub pending: usize,
     pub in_flight: usize,
-    /// Reset to zero whenever the queue enters a different mode.
     pub overflowed: u64,
 }
 
@@ -178,7 +175,6 @@ struct QueueSlot {
     depth: DepthCell,
 }
 
-/// A lowered limit binds from the next dispatch; executions already running keep their slot.
 #[derive(Clone)]
 struct ConcurrencyGate {
     inner: Arc<GateInner>,
@@ -285,7 +281,6 @@ impl PendingBuffer {
         }
     }
 
-    /// Rejects the task once the buffer sits at `MAX_PENDING_PER_QUEUE`.
     fn push(&self, task: QueueTask) -> bool {
         {
             let mut tasks = self.lock();
@@ -299,7 +294,6 @@ impl PendingBuffer {
         true
     }
 
-    /// While frozen only a `bypass_pause` task is taken; the rest keep their arrival order.
     fn take_next(&self, frozen: bool) -> Option<QueueTask> {
         let mut tasks = self.lock();
         let taken = if frozen {
@@ -335,7 +329,6 @@ impl PendingBuffer {
     }
 }
 
-/// Tracks in-flight cancel signals so `Clear(keep_current = false)` never cancels a finished execution.
 #[derive(Clone)]
 struct InflightTracker {
     inner: Arc<Mutex<InflightInner>>,
@@ -413,7 +406,6 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
 
-    /// Discards pending executions; with `keep_current = false` also cancels the in-flight one.
     pub async fn clear(&self, queue_id: QueueId, keep_current: bool) -> Result<(), SchedulerError> {
         let (tx, rx) = oneshot::channel();
         self.sender
@@ -530,7 +522,6 @@ impl QueueScheduler {
         }
     }
 
-    /// Runs until the slot that owns the mode sender is dropped, which retires this runner.
     async fn run_bounded(
         pending: PendingBuffer,
         mut processing: watch::Receiver<QueueProcessing>,

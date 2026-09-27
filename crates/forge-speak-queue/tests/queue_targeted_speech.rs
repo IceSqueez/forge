@@ -257,7 +257,6 @@ impl TtsEngineFactory for GatedFactory {
     }
 }
 
-/// One request held mid-synthesis at the head; everything enqueued after it waits.
 async fn held_queue() -> (SpeakQueueHandle, SpeakEventStream, Arc<Notify>, RequestId) {
     let gate = Arc::new(Notify::new());
     let mut registry = TtsRegistry::new();
@@ -304,7 +303,6 @@ enum Terminal {
     Rejected,
 }
 
-/// Every terminal outcome seen per request until the queue has been quiet for a while.
 async fn terminals_until_quiet(stream: &mut SpeakEventStream) -> HashMap<RequestId, Vec<Terminal>> {
     let mut seen: HashMap<RequestId, Vec<Terminal>> = HashMap::new();
     let quiet = std::time::Duration::from_millis(QUIET_MS);

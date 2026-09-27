@@ -114,9 +114,6 @@ impl Drop for PerIpPermit {
     }
 }
 
-/// Until the connection is upgraded to a WebSocket, a read that has not completed within
-/// `REQUEST_READ_TIMEOUT` of accept or of the last response write fails with `TimedOut`, which
-/// bounds both a slow request head and an idle keep-alive.
 pub(crate) struct GuardedStream {
     stream: TcpStream,
     read_deadline: Pin<Box<Sleep>>,
@@ -220,7 +217,6 @@ pub(crate) struct PeerInfo {
 }
 
 impl PeerInfo {
-    /// Lifts the read deadline for good: a WebSocket may stay silent for as long as it likes.
     pub(crate) fn mark_upgraded(&self) {
         self.upgraded.store(true, Ordering::Release);
     }
@@ -382,11 +378,7 @@ mod tests {
         assert_eq!(accepted_peer, admitted.local_addr().expect("client addr"));
     }
 
-    // Why: 127.0.0.2 is still `is_loopback()`, so a real second peer address cannot be dialled
-    // in-process; the per-IP cap and its cross-address isolation are driven directly against
-    // `PerIpLimiter`, the same seam `GuardedListener::accept` calls for a non-loopback peer.
     fn non_loopback_ip(last_octet: u8) -> IpAddr {
-        // RFC 5737 TEST-NET-3, guaranteed non-routable and never loopback.
         IpAddr::V4(Ipv4Addr::new(203, 0, 113, last_octet))
     }
 

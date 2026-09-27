@@ -30,7 +30,6 @@ pub struct Tooltip {
     density: Density,
 }
 
-/// Defaults to `Density::Cozy`.
 pub fn tooltip(label: impl Into<SharedString>, palette: &ForgePalette) -> Tooltip {
     Tooltip {
         label: label.into(),
@@ -46,7 +45,6 @@ impl Tooltip {
         self
     }
 
-    /// Call inside a `.tooltip(...)` builder closure, where gpui hands you the `App`.
     pub fn build(self, cx: &mut App) -> AnyView {
         cx.new(|_| self).into()
     }
@@ -58,7 +56,6 @@ impl Render for Tooltip {
     }
 }
 
-/// Re-materialises a fresh [`Tooltip`] view on each hover, as gpui's tooltip contract requires.
 pub fn tooltip_builder(
     label: impl Into<SharedString>,
     palette: &ForgePalette,

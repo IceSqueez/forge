@@ -89,7 +89,6 @@ impl WsClient {
         self.authenticated.store(true, Ordering::SeqCst);
     }
 
-    /// `None` until the session presents a valid bearer.
     pub fn bearer_generation(&self) -> Option<u64> {
         self.authenticated
             .load(Ordering::SeqCst)

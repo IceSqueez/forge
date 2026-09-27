@@ -35,7 +35,6 @@ impl ScriptRegistry {
         }
     }
 
-    /// Call before wrapping the registry in an `Arc` and handing it to the action engine.
     pub fn set_speak_requester(&mut self, requester: Arc<dyn SpeakRequester>) {
         self.speak_requester = Some(requester);
     }
@@ -69,7 +68,6 @@ impl ScriptRegistry {
         Ok(())
     }
 
-    /// The write lock is released before `bus.publish` - never held across that async call.
     pub async fn reload(
         &self,
         record: ScriptRecord,

@@ -107,8 +107,6 @@ impl GoogleAuthFlow {
         }
     }
 
-    /// When `true`, the next `start()` appends `prompt=consent` to the auth URL,
-    /// forcing Google's consent screen and guaranteeing a fresh `refresh_token`.
     pub fn set_force_consent(&mut self, force: bool) {
         self.force_consent = force;
     }
@@ -139,7 +137,6 @@ impl GoogleAuthFlow {
         })
     }
 
-    /// PKCE + Google's `client_secret`; resolves the broadcaster's YouTube channel.
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,

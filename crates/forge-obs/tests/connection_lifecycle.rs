@@ -17,17 +17,14 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 
-/// RFC 5737 TEST-NET-1: a handshake sent here is never answered, so the connect stays in flight.
 const UNROUTABLE_HOST: &str = "192.0.2.1";
 
 const OBS_WEBSOCKET_PORT: u16 = 4455;
 
-/// Far below `obws`' own connect timeout, so waiting one out fails this instead of passing slowly.
 const PROMPT_DISCONNECT: Duration = Duration::from_secs(2);
 
 const BACKOFF_JUMP: Duration = Duration::from_secs(1);
 
-/// How long the retired peer is given to push its close frame; the assertion holds either way.
 const PEER_SPEAKS_WINDOW: Duration = Duration::from_secs(2);
 
 const HANDSHAKE_BUDGET: Duration = Duration::from_secs(30);
@@ -50,8 +47,6 @@ async fn bind_loopback() -> (TcpListener, u16) {
     (listener, port)
 }
 
-/// Accepts the TCP connection and drops it before any web-socket upgrade, which is how a port that
-/// is listening but is not obs-websocket refuses the supervisor on every retry.
 async fn serve_refused_handshakes(listener: TcpListener, accepted: mpsc::UnboundedSender<()>) {
     while let Ok((stream, _)) = listener.accept().await {
         drop(stream);
@@ -61,8 +56,6 @@ async fn serve_refused_handshakes(listener: TcpListener, accepted: mpsc::Unbound
     }
 }
 
-/// Completes the upgrade, announces it on `upgraded`, then stays silent until `gate` fires, so the
-/// test can retire an established session before the peer says anything at all.
 async fn serve_gated_close_frame(
     listener: TcpListener,
     upgraded: oneshot::Sender<()>,
@@ -103,8 +96,6 @@ fn announced_states(rx: &mut mpsc::UnboundedReceiver<Event>) -> Vec<String> {
     states
 }
 
-// Why: the integration header reloads off `platform.connection.changed`, so a retry loop that
-// re-announced `reconnecting` on every attempt would redraw the whole screen once per backoff tick.
 async fn next_accept_jumping_backoffs(accepted: &mut mpsc::UnboundedReceiver<()>, attempt: usize) {
     let started = Instant::now();
     loop {
@@ -152,8 +143,6 @@ async fn a_backoff_loop_announces_one_state_change_per_real_transition() {
     );
 }
 
-// Why: "Save & Reconnect" retires the live client before the new one connects, so a disconnect
-// raised while the old client is still dialling has to cancel the dial rather than queue behind it.
 #[tokio::test]
 async fn disconnecting_during_an_unreachable_connect_does_not_wait_out_the_connect_timeout() {
     let (tx, _rx) = mpsc::unbounded_channel();
@@ -218,8 +207,6 @@ async fn a_retired_client_stays_silent_when_its_server_speaks_afterwards() {
 
 const WALL_BUDGET: Duration = Duration::from_secs(20);
 
-/// Virtual time added per step while a test drives the paused clock towards a deadline; far below
-/// every request deadline, so an answered request never races its own timeout.
 const VIRTUAL_STEP: Duration = Duration::from_millis(100);
 
 const REAL_CLOCK_POLL: Duration = Duration::from_millis(10);
@@ -230,7 +217,6 @@ const SOURCE: &str = "Webcam";
 const SNAPSHOT_ITEM_ID: i64 = 7;
 const RELOOKED_ITEM_ID: i64 = 9;
 
-/// More than the supervisor's event buffer holds, so a burst this size overflows it.
 const EVENT_BURST: usize = 1100;
 
 const REQUEST_OP: u64 = 6;
@@ -238,10 +224,6 @@ const IDENTIFY_OP: u64 = 1;
 const OBS_SUCCESS: u16 = 100;
 const OBS_RESOURCE_NOT_FOUND: u16 = 600;
 
-/// Keeps the paused clock from auto-advancing: tokio does not auto-advance a current-thread
-/// runtime while a blocking task is alive, so virtual time only moves on `tokio::time::advance`.
-/// Why: with auto-advance on, every loopback round trip parks the runtime, and each park would
-/// jump the clock to the next request deadline before the answer is read.
 struct FrozenClock(#[allow(dead_code)] std::sync::mpsc::Sender<()>);
 
 fn freeze_clock() -> FrozenClock {
@@ -277,7 +259,6 @@ async fn advance_until(what: &str, mut done: impl FnMut() -> bool) {
 enum Handshake {
     Complete,
     CloseAfterIdentified,
-    /// Upgrades the socket and never says `Hello`, parking the next attempt mid-dial.
     Stall,
 }
 
@@ -285,7 +266,6 @@ enum Reply {
     Answer(Value),
     Reject,
     Silent,
-    /// Ends the TCP connection without a close frame, the way a crashed OBS does.
     DropSocket,
     AnswerThenClose(Value),
     EventsFirst(Vec<Value>, Box<Reply>),
@@ -383,8 +363,6 @@ fn version_data() -> Value {
     })
 }
 
-/// One scene holding one non-audio source; everything the catalog load does not need is
-/// rejected, which the load tolerates.
 fn standard_reply(request_type: &str) -> Reply {
     match request_type {
         "GetVersion" => Reply::Answer(version_data()),
@@ -621,8 +599,6 @@ fn scene_item_enable_state_changed(enabled: bool) -> Value {
     )
 }
 
-// Why: a chat-triggered step on a serial queue awaits this request; without a deadline a crashed
-// or stalled OBS freezes that queue until forge restarts.
 #[tokio::test]
 async fn a_request_obs_never_answers_times_out_and_sends_the_session_back_to_reconnecting() {
     let _clock = freeze_clock();
@@ -656,8 +632,6 @@ async fn a_request_obs_never_answers_times_out_and_sends_the_session_back_to_rec
     .await;
 }
 
-// Why: "Reconnect" / "Disconnect" is exactly what the user clicks when OBS hangs; it must not
-// queue behind a catalog load that is waiting on OBS.
 #[tokio::test]
 async fn disconnecting_while_the_catalog_load_waits_on_obs_returns_promptly() {
     let fake = spawn_fake_obs(
@@ -683,9 +657,6 @@ async fn disconnecting_while_the_catalog_load_waits_on_obs_returns_promptly() {
     );
 }
 
-/// Real time: under the frozen clock the stats poll's concurrent requests stall on the loopback
-/// socket (a harness artefact; the same poll runs normally on the real clock), so this one waits
-/// out the production poll cadence instead.
 async fn wait_on_the_real_clock(what: &str, mut done: impl FnMut() -> bool) {
     let started = Instant::now();
     while !done() {
@@ -694,8 +665,6 @@ async fn wait_on_the_real_clock(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
-// Why: the stats poll is the only heartbeat on a half-open LAN link (OBS PC loses power), where
-// no request ever fails on its own before the OS gives up on TCP.
 #[tokio::test]
 async fn a_silent_stats_heartbeat_sends_the_session_back_to_reconnecting() {
     let fake = spawn_fake_obs(
@@ -718,7 +687,6 @@ async fn a_silent_stats_heartbeat_sends_the_session_back_to_reconnecting() {
     assert_eq!(recorder.states()[..2], ["connected", "reconnecting"]);
 }
 
-// Why: one slow poll while OBS loads a scene must not tear a healthy session down mid-stream.
 #[tokio::test]
 async fn a_single_missed_stats_poll_keeps_the_session_connected() {
     const POLLS_AFTER_THE_MISS: usize = 2;
@@ -745,8 +713,6 @@ async fn a_single_missed_stats_poll_keeps_the_session_connected() {
     assert_eq!(recorder.states(), ["connected"]);
 }
 
-/// Connection 0 loads a catalog, then drops its socket on a scene switch; connection 1 drops its
-/// socket in the middle of the catalog load; the dial for connection 2 is where the test stops.
 async fn drive_a_drop_during_the_catalog_load() -> (Recorder, Arc<ObsClient>, FakeObs) {
     let fake = spawn_fake_obs(
         the_first_two_handshakes_complete,
@@ -828,8 +794,6 @@ async fn obs_closing_right_after_the_handshake_is_retried_without_announcing_con
     }
 }
 
-// Why: the post-connect catalog load is hundreds of round trips on a large collection; a source
-// the streamer hides in OBS meanwhile must not stay "visible" in forge until the next reconnect.
 #[tokio::test]
 async fn a_scene_item_toggled_during_the_catalog_load_lands_in_the_catalog_and_on_the_bus() {
     let _clock = freeze_clock();
@@ -926,8 +890,6 @@ async fn a_request_in_flight_when_obs_drops_the_socket_fails_as_disconnected() {
     );
 }
 
-/// Blocks the supervisor inside its first scene-change publish until released, so OBS events pile
-/// up in the client's buffer the way they do when the runtime is starved.
 struct StallingPublisher {
     recorder: Recorder,
     gate: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
@@ -947,8 +909,6 @@ impl EventPublisher for StallingPublisher {
     }
 }
 
-// Why: obws reports an overflowed event buffer the same way as a closed socket; tearing a healthy
-// session down for it would drop every event of the reconnect gap mid-stream.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_event_burst_that_overflows_the_buffer_resyncs_the_catalog_on_the_same_session() {
     let scene_changed = event_frame(
@@ -978,8 +938,6 @@ async fn an_event_burst_that_overflows_the_buffer_resyncs_the_catalog_on_the_sam
     connected(&client).await;
     assert_eq!(fake.log.count(0, "GetSceneItemEnabled"), 1, "precondition");
 
-    // The response trails the burst on the wire, so once it is back every burst event has been
-    // buffered while the supervisor was stalled.
     let probe = client.transitions().await;
     assert!(probe.is_err(), "precondition: the fake rejects the probe");
     drop(release);

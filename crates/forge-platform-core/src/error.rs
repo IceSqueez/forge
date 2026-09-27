@@ -19,7 +19,6 @@ pub enum PlatformError {
     #[error("loopback port {port} is already in use; another forge instance may be running")]
     LoopbackPortInUse { port: u16 },
 
-    /// Refresh token rejected by the platform; the UI must prompt re-authentication.
     #[error("re-authentication required for platform '{platform}'")]
     ReauthRequired { platform: String },
 
@@ -29,7 +28,6 @@ pub enum PlatformError {
     #[error("client-side rate limit exhausted; no budget remaining")]
     RateLimitExhausted,
 
-    /// Callers should switch to long-interval mode or suspend polling until reset.
     #[error("daily API quota exhausted; next reset at platform midnight")]
     QuotaExhausted,
 

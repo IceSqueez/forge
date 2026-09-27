@@ -6,7 +6,6 @@ use thiserror::Error;
 
 use crate::unified_chat::UserBadge;
 
-/// Declaration order is the ladder: the derived `Ord` is the authorization comparison, not an incidental one.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -27,7 +26,6 @@ pub enum PermissionRungError {
 }
 
 impl PermissionRung {
-    /// Highest rung wins; an empty badge list resolves to the floor, so badge-less events never authorize.
     pub fn from_badges(badges: &[UserBadge]) -> Self {
         badges
             .iter()
@@ -54,7 +52,6 @@ impl PermissionRung {
             UserBadge::Subscriber { .. } | UserBadge::Founder | UserBadge::Member { .. } => {
                 Some(Self::Subscriber)
             }
-            // Account-level and cosmetic badges assert no channel role and must never satisfy a rung.
             UserBadge::Bot
             | UserBadge::Partner
             | UserBadge::Premium
@@ -111,7 +108,6 @@ mod tests {
                 );
             }
         }
-        // The floor is the default: a missing or unreadable role signal must never authorize.
         assert_eq!(PermissionRung::default(), PermissionRung::Everyone);
     }
 
@@ -123,10 +119,7 @@ mod tests {
                 vec![UserBadge::Subscriber { months: 3 }],
                 PermissionRung::Subscriber,
             ),
-            // A legacy channel subscriber, so it satisfies the subscriber rung.
             (vec![UserBadge::Founder], PermissionRung::Subscriber),
-            // YouTube channel membership normalizes to Member, and that is what satisfies
-            // the subscriber rung there; the level string carries no ladder meaning.
             (
                 vec![UserBadge::Member {
                     level: "gold".to_owned(),
@@ -163,7 +156,6 @@ mod tests {
 
     #[test]
     fn account_level_and_cosmetic_badges_never_authorize() {
-        // Turbo, Prime and partner are account-wide, not channel-scoped: they assert no role.
         let non_roles = [
             UserBadge::Turbo,
             UserBadge::Premium,
@@ -192,9 +184,6 @@ mod tests {
 
     #[test]
     fn a_narrower_badge_vocabulary_never_resolves_higher() {
-        // Collapse never weakens: a rung a platform cannot express is simply absent from the
-        // badge list, so the resolution must be monotone under badge-set inclusion - fewer
-        // badges may only tighten the gate.
         let universe = [
             UserBadge::Broadcaster,
             UserBadge::Moderator,
@@ -233,8 +222,6 @@ mod tests {
     fn rung_round_trips_through_its_persisted_and_serde_forms() {
         for rung in LADDER {
             assert_eq!(rung.as_str().parse::<PermissionRung>().unwrap(), rung);
-            // The column form and the serde wire form must not drift apart - the same value is
-            // written to the trigger_instances column and to exported trigger JSON.
             assert_eq!(
                 serde_json::to_string(&rung).unwrap(),
                 format!("\"{}\"", rung.as_str())

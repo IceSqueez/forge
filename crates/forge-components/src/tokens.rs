@@ -11,7 +11,6 @@ pub enum Density {
 }
 
 impl Density {
-    /// Persisted identifier - must stay stable across releases.
     pub fn storage_key(self) -> &'static str {
         match self {
             Density::Compact => "compact",
@@ -70,7 +69,6 @@ pub enum Radius {
     Sm,
     Md,
     Lg,
-    /// Oversized sentinel that forces a fully rounded pill/circle.
     Pill,
 }
 

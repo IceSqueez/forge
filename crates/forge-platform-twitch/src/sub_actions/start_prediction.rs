@@ -40,7 +40,6 @@ impl StartPredictionRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        // Twitch rejects a flat string array; outcomes must be {"title": ...} objects.
         let outcomes: Vec<serde_json::Value> = cfg
             .outcomes
             .iter()
@@ -50,13 +49,11 @@ impl StartPredictionRunner {
         let mut body = serde_json::Map::new();
         body.insert("title".to_owned(), cfg.title.clone().into());
         body.insert("outcomes".to_owned(), outcomes.into());
-        // Twitch's body key is `prediction_window`, not `prediction_window_seconds`.
         body.insert(
             "prediction_window".to_owned(),
             cfg.prediction_window_seconds.into(),
         );
 
-        // Requires channel:manage:predictions scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/predictions")
             .query("broadcaster_id", user_id)
             .body(serde_json::Value::Object(body));
@@ -84,7 +81,6 @@ struct ResolvedConfig {
     prediction_window_seconds: i64,
 }
 
-/// Returns Err if count is outside [2, 10] or any outcome title exceeds 25 chars.
 fn parse_outcomes(raw: &str) -> Result<Vec<String>, String> {
     let outcomes: Vec<String> = raw
         .split(['\n', ','])

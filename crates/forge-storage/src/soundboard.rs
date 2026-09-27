@@ -38,7 +38,6 @@ pub trait SoundboardClipsRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<StoredClip>, StorageError>;
     async fn get(&self, id: ClipId) -> Result<Option<StoredClip>, StorageError>;
     async fn save(&self, clip: &StoredClip) -> Result<(), StorageError>;
-    /// Returns true if a row was removed.
     async fn delete(&self, id: ClipId) -> Result<bool, StorageError>;
 }
 

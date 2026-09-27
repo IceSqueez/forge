@@ -7,7 +7,6 @@ use super::page::OverlayPage;
 use crate::EmulatorError;
 use crate::fixture::SeedReport;
 
-/// Resolves the display names a scenario uses to the identity slugs forge minted.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OverlayIndex {
     by_display_name: HashMap<String, String>,
@@ -29,15 +28,12 @@ impl OverlayIndex {
     }
 }
 
-/// The browser sources a run has opened, keyed by the display name the scenario uses.
 pub struct OverlayPages {
     endpoint: PageEndpoint,
     index: OverlayIndex,
     open: Mutex<HashMap<String, Arc<OverlayPage>>>,
 }
 
-/// The frame count each open page had when a step began; a page opened by that step starts at 0,
-/// so content delivered during its handshake still counts as the step's own.
 #[derive(Debug, Clone, Default)]
 pub struct OverlayMarks(HashMap<String, usize>);
 
@@ -56,7 +52,6 @@ impl OverlayPages {
         })
     }
 
-    /// Opening the same overlay twice replaces the earlier page, which closes with its task.
     pub async fn open_page(
         &self,
         display_name: &str,
@@ -87,7 +82,6 @@ impl OverlayPages {
         )
     }
 
-    /// Drops every page, which aborts its reader and closes its socket.
     pub fn close(&self) {
         self.lock().clear();
     }

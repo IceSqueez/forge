@@ -132,7 +132,6 @@ async fn discover_input_devices() -> Result<Vec<PathBuf>, HotkeyError> {
     Ok(devices)
 }
 
-// A blocking-pool read on an idle device never returns and stalls tokio runtime shutdown.
 fn open_device_nonblocking(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .read(true)

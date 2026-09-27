@@ -97,7 +97,6 @@ impl TwitchChatHandle {
         *self.state_rx.borrow()
     }
 
-    /// Resolves after the session task has ended; a task outliving the grace period is aborted.
     pub async fn shutdown(mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());

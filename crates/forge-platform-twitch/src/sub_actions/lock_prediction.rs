@@ -56,7 +56,6 @@ pub(crate) fn validate_prediction_config(
     }
 }
 
-/// Status values are uppercase: "LOCKED", "RESOLVED", "CANCELED" (American single-L).
 pub(crate) async fn patch_prediction_status(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,

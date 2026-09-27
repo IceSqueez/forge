@@ -94,9 +94,6 @@ mod tests {
     use super::*;
     use crate::client::tests::{MockCreds, MockPublisher};
 
-    // Why: bundles persisted before the endpoint became configurable carry only token and
-    // api_version. Without the serde defaults every one of those bundles fails to parse, and
-    // the user is pushed back through the VTube Studio approval popup on upgrade.
     #[test]
     fn a_bundle_saved_without_an_endpoint_loads_against_the_vts_loopback_defaults() {
         let stored = r#"{"token":"tok-abc123","api_version":"1.0"}"#;
@@ -137,9 +134,6 @@ mod tests {
         assert!(s.contains("***"));
     }
 
-    // Why: the loader used to dial the compiled-in default endpoint no matter what was stored,
-    // so a user running VTube Studio on another port reconnected to the wrong socket on every
-    // restart. TEST-NET-3 keeps the spawned supervisor's dial off any real host.
     #[tokio::test]
     async fn load_and_connect_dials_the_stored_endpoint_not_the_compiled_in_default() {
         let repo = MockCreds::new();

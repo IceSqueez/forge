@@ -3,7 +3,6 @@ use forge_types::ArgStack;
 
 const SINGLE_BROADCASTER_NAMESPACE: &str = "local";
 
-/// Absent a `broadcaster_id` arg or global, every per-user variable shares the `"local"` namespace.
 pub(super) async fn resolve_broadcaster_id(
     arg_stack: &ArgStack,
     globals: &dyn GlobalsRepo,

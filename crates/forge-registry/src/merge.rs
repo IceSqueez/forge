@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use forge_types::Variant;
 
-/// Shallow merge: `overrides` values win outright; nested `Object`/`Array` values are replaced wholesale, not deep-merged.
 pub fn effective_config(
     default: &BTreeMap<String, Variant>,
     overrides: &BTreeMap<String, Variant>,

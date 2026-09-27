@@ -1,6 +1,5 @@
 use forge_types::{SubActionConfig, SubActionStep, Variant};
 
-/// Must stay strictly below the runtime's `max_nesting_depth` so the UI can never author a chain the runtime rejects.
 pub(super) const UI_MAX_NESTING_DEPTH: usize = 8;
 
 #[derive(Clone, PartialEq, Eq)]
@@ -129,7 +128,6 @@ pub(super) fn resolve_chain(root: &[SubActionStep], path: &[NavFrame]) -> Vec<Su
     current
 }
 
-/// Returns `false` (leaving `root` untouched) if any frame fails to resolve.
 pub(super) fn set_chain(
     root: &mut Vec<SubActionStep>,
     path: &[NavFrame],
@@ -165,7 +163,6 @@ pub(super) fn branch_step_count(
         .unwrap_or(0)
 }
 
-/// `None` when the case `match` is a multi-value array (kept read-only).
 pub(super) fn case_match_display(step: &SubActionStep, case_index: usize) -> Option<String> {
     let case = step
         .config

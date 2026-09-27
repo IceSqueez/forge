@@ -132,7 +132,6 @@ impl SubActionRunner for CoreTimeDiffRunner {
             config.str_nonempty("into_var").unwrap_or("time.diff_value"),
         );
 
-        // Nanosecond precision avoids float rounding when the caller asks for fractional units.
         let diff_ns = (to_dt - from_dt).whole_nanoseconds() as f64;
         let diff_value = match unit {
             "minutes" => diff_ns / 60_000_000_000.0,

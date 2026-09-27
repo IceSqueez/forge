@@ -32,8 +32,6 @@ const SETTLE_ROUNDS: usize = 200;
 const QUIET_STEP: Duration = Duration::from_secs(5);
 const QUIET_ROUNDS: usize = 4;
 
-/// Keeps the whole fixture inside the process: a sqlite-backed repo waits on a pool
-/// timeout, which the paused clock fires the instant the runtime looks idle.
 #[derive(Default)]
 struct MemoryActionRepo {
     actions: Mutex<HashMap<ActionId, Action>>,
@@ -112,8 +110,6 @@ impl HistoryRepo for NullHistoryRepo {
     }
 }
 
-/// Holds executions inside the engine until the test opens it, so a queue can be
-/// inspected with work genuinely in flight and without a wall-clock sleep.
 struct Gate {
     open: watch::Sender<bool>,
 }
@@ -294,8 +290,6 @@ fn done_of(action_id: ActionId) -> impl FnMut(&Event) -> bool {
     move |ev| ev.kind == "action.done" && action_id_of(ev).as_deref() == Some(target.as_str())
 }
 
-/// Re-reads the queue state until `want` holds; the query round-trips the single-threaded
-/// scheduler loop, which is the barrier, so no wall-clock sleep is involved.
 async fn settle(
     sched: &QueueSchedulerHandle,
     q_id: QueueId,
@@ -323,11 +317,6 @@ async fn state_of(sched: &QueueSchedulerHandle, q_id: QueueId) -> QueueRuntimeSt
         .expect("the queue stays registered")
 }
 
-/// Reads bus events until `stop` matches, returning everything seen including it.
-///
-/// Why: every party here is a task on the paused runtime, so an elapsed step means the
-/// system is quiescent and the awaited event is never coming - and it costs no wall time,
-/// so a stalled queue fails the test immediately instead of hanging.
 async fn events_until(
     sub: &mut EventSubscription,
     mut stop: impl FnMut(&Event) -> bool,
@@ -586,7 +575,6 @@ async fn the_dispatch_that_fills_the_last_free_slot_is_still_buffered() {
     q.sched.shutdown();
 }
 
-/// Starts three gated executions on a queue of four, so every one is still running.
 async fn three_running_on_a_queue_of_four(extra: &[ActionId]) -> (GatedQueue, [ActionId; 3]) {
     let running = [ActionId::new(), ActionId::new(), ActionId::new()];
     let actions: Vec<ActionId> = running.iter().chain(extra).copied().collect();
@@ -601,8 +589,6 @@ async fn three_running_on_a_queue_of_four(extra: &[ActionId]) -> (GatedQueue, [A
     (q, running)
 }
 
-/// Why: the paused clock only advances once every task is idle, so this returns when the
-/// runner and engine have done everything they are going to do without a new input.
 async fn quiesce() {
     tokio::time::sleep(QUIET_STEP).await;
 }

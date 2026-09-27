@@ -73,7 +73,6 @@ pub(crate) fn actual(
             Actual { summary, details }
         }
         (FailureCause::Present { observed }, Expectation::EventAbsent(absent)) => {
-            // The absence wait stops at the first match, so the count is a floor, not a total.
             let summary = format!(
                 "forge published at least {} matching {} within {}",
                 plural(*observed as u64, "event"),
@@ -441,7 +440,6 @@ fn subscription_details(ledger: &LedgerExcerpt, expected: &TwitchSubscription) -
     details
 }
 
-/// The raw frames, so the reader judges what the page had to render rather than a summary of it.
 fn overlay_details(evidence: &Evidence) -> Vec<String> {
     let Evidence::Overlay(overlay) = evidence else {
         return Vec::new();

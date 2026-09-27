@@ -5,8 +5,6 @@ use gpui::Context;
 use super::OverlaysView;
 use crate::async_bridge;
 
-/// No shipped look arms a timer of its own - each leaves hiding to the page runtime - so a behavior
-/// file that does has taken over when its show hides.
 const OWN_TIMERS: [&str; 2] = ["setTimeout", "setInterval"];
 
 pub(super) fn times_own_hide(behavior: &str) -> bool {
@@ -14,8 +12,6 @@ pub(super) fn times_own_hide(behavior: &str) -> bool {
 }
 
 impl OverlaysView {
-    /// Read when the selection or the record moves, never on a timer; only a user-owned behavior
-    /// file of a look that queues its shows can hold one.
     pub(super) fn probe_hide_timing(
         &mut self,
         definition: &OverlayDefinition,

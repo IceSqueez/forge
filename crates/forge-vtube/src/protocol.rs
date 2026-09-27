@@ -33,7 +33,6 @@ pub(crate) fn is_reply(message_type: &str) -> bool {
     message_type == API_ERROR_MESSAGE_TYPE || message_type.ends_with("Response")
 }
 
-/// Only an `APIError` reply has a top-level `errorID`; per-item failures are the caller's to check.
 pub(crate) fn check_response(data: &serde_json::Value) -> Result<(), VTubeError> {
     match data.get("errorID").and_then(serde_json::Value::as_i64) {
         Some(error_id) => Err(VTubeError::Rejected {

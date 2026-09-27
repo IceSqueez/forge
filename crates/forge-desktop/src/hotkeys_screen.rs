@@ -180,7 +180,6 @@ struct OpenModal {
 
 struct OpenAppModal {
     id: &'static str,
-    /// Owner whose chord the draft took: unbound only when the draft is saved, so cancelling leaves it alone.
     steal: Option<&'static str>,
     view: Entity<AppShortcutModal>,
     _sub: Subscription,
@@ -405,7 +404,6 @@ impl HotkeysScreenView {
         })
     }
 
-    /// The edge another half already occupies on that combo, which a new or moved half must not take.
     fn locked_edge_for(&self, combo: &str) -> Option<HotkeyEdge> {
         combo_holder(&self.bindings, combo, None)
             .and_then(|row| row.free_edge())
@@ -842,7 +840,6 @@ impl HotkeysScreenView {
         cx.notify();
     }
 
-    /// Acts on every half: a hold whose press is on and release is off would start and never stop.
     fn toggle_binding(&mut self, key: TriggerInstanceId, cx: &mut Context<Self>) {
         let Some(row) = self.bindings.iter_mut().find(|row| row.key == key) else {
             return;
@@ -1921,9 +1918,6 @@ mod tests {
 
     #[test]
     fn capture_claims_as_the_binding_a_capture_must_not_conflict_with() {
-        // Both edit flows carry the row they are editing so on_capture_combo can exclude it.
-        // Without it, recapturing a binding's own combo reports the binding as its own
-        // conflict, and confirming Replace deletes the row being edited.
         let id = TriggerInstanceId::new();
         let cases = [
             ("idle", Capture::Off, Claimant::NewTrigger),

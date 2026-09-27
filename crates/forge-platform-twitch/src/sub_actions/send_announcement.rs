@@ -14,7 +14,6 @@ use super::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.chat.send_announcement";
-/// Twitch counts characters, not bytes; multibyte messages must pass at 500 chars.
 const MAX_MESSAGE_CHARS: usize = 500;
 const COLORS: &[&str] = &["primary", "blue", "green", "orange", "purple"];
 const DEFAULT_COLOR: &str = "primary";

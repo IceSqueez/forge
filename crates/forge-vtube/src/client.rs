@@ -60,7 +60,6 @@ pub struct VTubeClient {
     pub(crate) vtube_id: BuiltinId,
     pub(crate) state: Arc<AtomicConnectionState>,
     pub(crate) auth_state: Arc<RwLock<AuthState>>,
-    // async Mutex: reconnect swaps the Notify without racing the supervisor's own clone.
     pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     pub(crate) supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
@@ -75,7 +74,6 @@ pub struct VTubeClient {
     catalog_metrics_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     version_task: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     pub(crate) auto_reconnect: Arc<AtomicBool>,
-    // Never logged or surfaced.
     pub(crate) reconnect_publisher: Arc<dyn EventPublisher>,
     pub(crate) reconnect_creds: Arc<dyn CredentialsRepo>,
 }
@@ -186,7 +184,6 @@ impl VTubeClient {
         let request_id = req.request_id.clone();
         let payload = serde_json::to_string(&req).map_err(VTubeError::Json)?;
         let (respond_to, rx) = tokio::sync::oneshot::channel();
-        // Lock is held only for the synchronous .send() - not across any .await.
         {
             let tx = self.req_tx.lock().await;
             tx.send(PendingRequest {
@@ -564,7 +561,6 @@ pub(crate) mod tests {
     }
 
     impl PeerConn {
-        /// Next frame from forge whose `messageType` is `message_type`; frames of other types
         pub(crate) async fn expect(
             &mut self,
             message_type: &str,
@@ -606,8 +602,6 @@ pub(crate) mod tests {
             );
         }
 
-        /// Hands the frame stream to a task that answers every request with an empty success
-        /// body, except the frames `is_silent` picks, which it counts and leaves unanswered.
         pub(crate) fn answer_all_except(
             mut self,
             is_silent: fn(&serde_json::Value) -> bool,
@@ -636,7 +630,6 @@ pub(crate) mod tests {
         }
     }
 
-    /// Scripted VTube Studio: every accepted connection is handed to the test as a `PeerConn`.
     pub(crate) struct FakeVts {
         pub(crate) endpoint: String,
         conns: mpsc::UnboundedReceiver<PeerConn>,
@@ -726,8 +719,6 @@ pub(crate) mod tests {
                 frame = futures_util::StreamExt::next(&mut ws) => match frame {
                     Some(Ok(Message::Text(text))) => {
                         let _ = frames.send(serde_json::from_str(&text).unwrap_or_default());
-                        // Why: forge's socket leaves Nagle on, so its next frame waits for our
-                        // ACK; an unsolicited pong carries that ACK at once instead of after the
                         if ws.send(Message::Pong(Vec::new().into())).await.is_err() {
                             return;
                         }
@@ -1088,8 +1079,6 @@ pub(crate) mod tests {
         }
     }
 
-    /// Reads the connection state at the instant each event is published, which is the only
-    /// vantage point that can tell "stored, then published" apart from "published, then stored".
     struct StateProbePublisher {
         client: Arc<OnceLock<Arc<VTubeClient>>>,
         tx: mpsc::UnboundedSender<(Event, Option<ConnectionState>)>,
@@ -1129,8 +1118,6 @@ pub(crate) mod tests {
         event.payload["reason"].as_str() == Some(reason)
     }
 
-    /// Holds an authenticated connection open until `gate` fires, so a test can finish its own
-    /// setup before the peer drops the socket under the supervisor.
     async fn serve_auth_then_gated_close(
         listener: tokio::net::TcpListener,
         gate: tokio::sync::oneshot::Receiver<()>,
@@ -1148,7 +1135,6 @@ pub(crate) mod tests {
         let _ = ws.close(None).await;
     }
 
-    /// Rejects the stored token, but only once `gate` fires.
     async fn serve_gated_token_rejection(
         listener: tokio::net::TcpListener,
         gate: tokio::sync::oneshot::Receiver<()>,
@@ -1184,9 +1170,6 @@ pub(crate) mod tests {
         while let Some(Ok(_)) = futures_util::StreamExt::next(&mut ws).await {}
     }
 
-    // Why: the VTube screen reloads off vtube.connection.changed and then reads the connection
-    // state back. Publishing before the state was stored let that read observe the state the
-    // connection was leaving, so the header kept claiming a live connection after it dropped.
     #[tokio::test]
     async fn the_connection_state_is_already_settled_when_a_socket_close_is_published() {
         for (auto_reconnect, expected) in [
@@ -1258,8 +1241,6 @@ pub(crate) mod tests {
         );
     }
 
-    // Why: a rejected token cannot be fixed by dialing again, so the terminal auth exits must
-    // ignore the retry flag entirely rather than fall into the backoff loop.
     #[tokio::test]
     async fn a_rejected_token_stops_the_supervisor_even_with_auto_reconnect_on() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1325,8 +1306,6 @@ pub(crate) mod tests {
         assert_eq!(state, Some(Some(ConnectionState::Disconnected)));
     }
 
-    // Why: the approval popup blocks inside VTube Studio with no feedback on our side. Without
-    // this phase the screen sits on "connecting" for the whole 30 s token wait.
     #[tokio::test]
     async fn the_client_announces_that_it_is_waiting_for_the_vts_approval_popup() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

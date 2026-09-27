@@ -16,7 +16,6 @@ const KNOB_RIGHT: Pixels = px(-5.5);
 
 type ChangeHandler = Box<dyn Fn(&f32, &mut Window, &mut App) + 'static>;
 
-/// A non-positive span (collapsed or inverted range) yields `0.0` rather than dividing by zero.
 pub(crate) fn fraction(value: f32, min: f32, max: f32) -> f32 {
     let span = max - min;
     if span <= 0.0 {
@@ -54,7 +53,6 @@ pub fn slider(value: f32, min: f32, max: f32, palette: &ForgePalette) -> Slider 
     }
 }
 
-/// Drag-payload preview gpui renders at the cursor; deliberately paints nothing - the moving thumb is the only feedback.
 struct DragGhost;
 
 impl Render for DragGhost {
@@ -63,7 +61,6 @@ impl Render for DragGhost {
     }
 }
 
-/// Drag payload carrying the originating slider's id: gpui fans a typed drag out to EVERY listener of that type, so each handler must ignore drags it did not start.
 struct SliderDrag {
     id: ElementId,
 }
@@ -76,7 +73,6 @@ impl Slider {
         self
     }
 
-    /// Makes the slider draggable; without it the slider is a static read-only bar. The handler gets each new (already-clamped) value as the drag moves.
     #[must_use]
     pub fn on_change(
         mut self,

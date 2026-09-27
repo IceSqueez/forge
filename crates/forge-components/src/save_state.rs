@@ -15,7 +15,6 @@ pub enum SaveState {
 }
 
 impl SaveState {
-    /// A live error takes display priority; a dirtying edit does not clear it.
     pub fn mark_dirty(&mut self) {
         if !matches!(self, SaveState::Error(_)) {
             *self = SaveState::Unsaved;

@@ -46,7 +46,6 @@ impl DiscordClient {
         snap.webhook_names.clone()
     }
 
-    /// Newest first, capped at the in-memory send history; empty after a restart.
     pub fn recent_posts(&self) -> Vec<WebhookPost> {
         let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
         snap.recent_posts
@@ -94,7 +93,6 @@ pub(crate) fn record_send(
     push_send_record(snap, webhook_name, message_id, had_embed, ok);
 }
 
-/// Records the post and health signal without registering `webhook_name` in the saved-webhook list.
 pub(crate) fn record_test_send(
     snap: &mut DiscordContentSnapshot,
     webhook_name: &str,

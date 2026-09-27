@@ -72,7 +72,6 @@ pub trait ChatPlatform: Send + Sync {
     fn connection_state(&self) -> ConnectionState;
     async fn connect(&self) -> Result<(), PlatformError>;
     async fn disconnect(&self) -> Result<(), PlatformError>;
-    /// Fails with `PlatformError::Unsupported` if `capabilities().can_send_chat` is false.
     async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError>;
     fn events(&self) -> EventStream;
 }

@@ -47,7 +47,6 @@ const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
 static DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
 static INPUT_DEVICE_CACHE: Mutex<Option<(Instant, Vec<DeviceInfo>)>> = Mutex::new(None);
 
-/// Backend-defined string under the hood; callers must not parse it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(pub String);
 
@@ -68,7 +67,6 @@ pub struct DeviceInfo {
     pub is_default: bool,
 }
 
-/// Cached for 5s: cpal enumeration is expensive on Linux (PipeWire round-trip).
 pub fn list_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     if let Ok(guard) = DEVICE_CACHE.lock()
         && let Some((stamp, ref devices)) = *guard
@@ -89,7 +87,6 @@ pub(crate) fn forget_output_devices() {
     }
 }
 
-/// Bypasses the 5s cache so a device picker refresh sees just-plugged hardware.
 pub fn refresh_output_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     let fresh = enumerate_uncached()?;
     if let Ok(mut guard) = DEVICE_CACHE.lock() {
@@ -168,7 +165,6 @@ pub fn pick_default_output_device(devices: &[DeviceInfo]) -> Option<DeviceId> {
         .map(|d| d.id.clone())
 }
 
-/// Cached for 5s: cpal enumeration is expensive on Linux (PipeWire round-trip).
 pub fn list_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     if let Ok(guard) = INPUT_DEVICE_CACHE.lock()
         && let Some((stamp, ref devices)) = *guard
@@ -183,7 +179,6 @@ pub fn list_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     Ok(fresh)
 }
 
-/// Bypasses the 5s cache so a device picker refresh sees just-plugged hardware.
 pub fn refresh_input_devices() -> Result<Vec<DeviceInfo>, AudioError> {
     let fresh = enumerate_input_uncached()?;
     if let Ok(mut guard) = INPUT_DEVICE_CACHE.lock() {

@@ -47,8 +47,6 @@ mod tests {
 
     #[test]
     fn an_absent_message_id_is_never_a_duplicate() {
-        // Why: `metadata.message_id` deserializes to the empty string when Twitch omits it, and
-        // deduping on that would drop every id-less notification after the first.
         let mut window = MessageIdWindow::default();
 
         assert!(!window.is_duplicate(""));

@@ -16,16 +16,12 @@ const REASON_POINTER: &str = "/reason";
 const ACTION_ID_POINTER: &str = "/action_id";
 const DROPPED_KEY: &str = "dropped";
 
-/// Latencies are kept per phase, measured from the moment the generator injected the event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Leg {
-    /// Twitch event published by forge.
     Ingest,
     Start,
     Done,
-    /// A connected page received the frame; the index names the page.
     Frame(usize),
-    /// forge's chat reply reached the fake Helix.
     Reply,
 }
 
@@ -49,11 +45,9 @@ impl ActionCounts {
     }
 }
 
-/// Everything the harness saw, correlated back to the injection that caused it.
 #[derive(Debug)]
 pub struct Tracker {
     actions: Vec<String>,
-    /// For each stimulus, the action indexes each of its events should start.
     runs: Vec<Vec<usize>>,
     injected: Vec<Injected>,
     injected_per_stimulus: Vec<u64>,
@@ -66,10 +60,8 @@ pub struct Tracker {
     pub uncorrelated: u64,
     pub observer_dropped: u64,
     pub frames: Vec<u64>,
-    /// Frames forge's server announced it dropped for each page because the page fell behind.
     pub page_dropped: Vec<u64>,
     pub replies: u64,
-    /// Every other observed kind, by kind.
     pub other_kinds: BTreeMap<String, u64>,
 }
 
@@ -97,7 +89,6 @@ impl Tracker {
         }
     }
 
-    /// Sequence numbers must arrive in order starting at 0; the generator is the only caller.
     pub fn injected(&mut self, seq: u64, stimulus: usize, phase: usize, at: Instant) {
         debug_assert_eq!(seq, self.injected.len() as u64);
         self.injected.push(Injected { at, phase });
@@ -227,8 +218,6 @@ impl Tracker {
         self.record(seq, Leg::Reply, arrived);
     }
 
-    /// Learns an action's id from outside the bus, so a skip that precedes its first start
-    /// still lands on the right action.
     pub fn learn_action_id(&mut self, id: String, name: &str) {
         if let Some(action) = self.action_index(name) {
             self.action_ids.insert(id, action);
@@ -269,8 +258,6 @@ impl Tracker {
         &self.counts[action]
     }
 
-    /// Events injected that should have started `action`, less the ones that did or were skipped:
-    /// work still queued, plus work forge dropped without a trace.
     pub fn unstarted(&self, action: usize) -> u64 {
         let expected = self.expected(action);
         let counts = &self.counts[action];
@@ -308,7 +295,6 @@ fn marker_in(value: &Value) -> Option<u64> {
     }
 }
 
-/// Nearest-rank percentile of an unsorted sample; `None` when it is empty.
 pub fn percentile(samples: &[u32], pct: f64) -> Option<u32> {
     if samples.is_empty() {
         return None;
@@ -331,7 +317,6 @@ mod tests {
     const CHAT_ACTION: usize = 0;
     const COMMAND_ACTION: usize = 1;
 
-    /// Stimulus 0 (chat) runs the chat action; stimulus 1 (command) runs both.
     fn tracker() -> Tracker {
         Tracker::new(
             vec!["Chat Message".to_owned(), "Hype Command".to_owned()],

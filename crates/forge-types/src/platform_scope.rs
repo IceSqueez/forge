@@ -10,7 +10,6 @@ use crate::PlatformId;
 pub enum PlatformScope {
     #[default]
     Any,
-    /// Never empty; construct via [`PlatformScope::only`], which enforces it (as does the `TryFrom<PlatformScopeRaw>` deserialize path).
     Only(BTreeSet<PlatformId>),
 }
 

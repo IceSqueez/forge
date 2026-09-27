@@ -21,7 +21,6 @@ pub struct Global {
     pub persisted: bool,
     pub reads: u64,
     pub writes: u64,
-    /// Pre-formatted human caption (e.g. "2 min ago"), not a raw timestamp.
     pub modified: SharedString,
 }
 

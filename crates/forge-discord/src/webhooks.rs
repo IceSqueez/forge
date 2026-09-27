@@ -6,7 +6,6 @@ use crate::error::DiscordError;
 
 const WEBHOOK_HOSTS: [&str; 2] = ["discord.com", "discordapp.com"];
 
-/// Never embeds the candidate URL in the returned error - the URL is the credential.
 pub fn validate_webhook_url(url: &str) -> Result<(), DiscordError> {
     let rejected = || DiscordError::Validation("not a discord webhook endpoint".to_owned());
 
@@ -33,7 +32,6 @@ fn credential_id(name: &str) -> CredentialId {
 }
 
 impl DiscordClient {
-    /// Re-syncs the cached name list from storage, so a webhook added elsewhere becomes sendable without a restart.
     pub async fn list_webhooks(&self) -> Result<Vec<String>, DiscordError> {
         let ids = self
             .creds
@@ -99,7 +97,6 @@ impl DiscordClient {
         Ok(self.load_webhook(name).await?.url)
     }
 
-    /// Posts straight to `url` instead of resolving `webhook_name` from storage, so an unsaved endpoint can be verified before it is persisted. Never registers `webhook_name` in the saved-webhook list.
     pub async fn post_test(
         &self,
         webhook_name: &str,

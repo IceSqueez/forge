@@ -7,7 +7,6 @@ use crate::ScriptError;
 use crate::arg_binding::BoundExpression;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
 
-/// Carries no `ForgeApi`; the globals/chat/http surface is structurally unreachable rather than merely unused.
 #[derive(Debug, Clone)]
 pub struct MathEvaluator {
     config: EngineConfig,
@@ -18,7 +17,6 @@ impl MathEvaluator {
         Self { config }
     }
 
-    /// NaN and infinite results are rejected rather than surviving into a `Variant`.
     pub fn eval(&self, expr: &str) -> Result<Variant, ScriptError> {
         self.run(expr, expr, rhai::Scope::new())
     }

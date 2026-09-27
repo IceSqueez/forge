@@ -62,15 +62,12 @@ const fn default_is_sent() -> bool {
 
 const UNKNOWN_DROP_CODE: &str = "unknown";
 
-/// `message` must be ≤500 chars (Twitch limit); returns `ChatSendError::MessageTooLong`
-/// otherwise, without consuming a rate-limit token.
 pub async fn send_chat(
     transport: &dyn HelixTransport,
     broadcaster_id: &str,
     sender_id: &str,
     message: &str,
 ) -> Result<SentMessageId, ChatSendError> {
-    // Twitch limit is by character count, not bytes; multibyte chars (e.g. Cyrillic) must pass.
     let chars = message.chars().count();
     if chars > MAX_MESSAGE_LEN {
         return Err(ChatSendError::MessageTooLong);
@@ -284,8 +281,6 @@ mod tests {
             .into_iter()
             .find(|line| line.message() == "sending chat message to helix")
             .cloned()
-            // A capture that received nothing at all is a harness failure, not a missing log
-            // line; reporting the total tells the two apart on sight.
             .unwrap_or_else(|| {
                 panic!(
                     "the send path emitted no DEBUG line; the capture saw {} events in total",
@@ -309,7 +304,6 @@ mod tests {
 
     #[test]
     fn chat_send_debug_line_counts_characters_not_bytes() {
-        // Cyrillic is 2 bytes per char: a byte count would report 20 for these 10 chars.
         let line = send_debug_line(&"я".repeat(10));
 
         assert_eq!(

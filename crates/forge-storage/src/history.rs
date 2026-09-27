@@ -32,18 +32,14 @@ pub trait HistoryRepo: Send + Sync {
         builtin_id: &str,
         limit: u32,
     ) -> Result<Vec<ExecutionContext>, StorageError>;
-    /// Newest-first across every action and builtin; the empty default exists so hand-written
-    /// doubles keep compiling, and every persistent backend must override it.
     async fn recent(&self, limit: u32) -> Result<Vec<ExecutionContext>, StorageError> {
         let _ = limit;
         Ok(Vec::new())
     }
-    /// Only includes actions with at least one trigger-run entry; quick action runs are excluded.
     async fn stats_summary(
         &self,
         since: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError>;
-    /// Returns rows removed.
     async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 
@@ -52,8 +48,6 @@ pub trait HistoryRepo: Send + Sync {
 mod tests {
     use super::*;
 
-    /// Implements only the required methods, exactly as a hand-written test double in another
-    /// crate would.
     struct MinimalRepo;
 
     #[async_trait]
@@ -86,9 +80,6 @@ mod tests {
         }
     }
 
-    /// Why: the default exists so a double that does not know about `recent` still compiles. It
-    /// must yield an empty history rather than an error, so a caller that only wants the newest
-    /// runs degrades to "nothing recorded" instead of failing the whole bundle.
     #[tokio::test]
     async fn recent_defaults_to_an_empty_history_for_a_repo_that_does_not_override_it() {
         let repo: &dyn HistoryRepo = &MinimalRepo;

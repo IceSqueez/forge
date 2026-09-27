@@ -43,8 +43,6 @@ pub trait TriggerKindDescriptor: Send + Sync {
     fn output_schema(&self) -> Option<VariableSchema> {
         self.variables().map(|variables| variables.schema())
     }
-    /// `Some` only where the event carries a genuine chatter role signal - the chat envelopes
-    /// attached to cheer, sub, gift and raid events do not qualify.
     fn chat_trigger_family(&self) -> Option<ChatTriggerFamily> {
         None
     }

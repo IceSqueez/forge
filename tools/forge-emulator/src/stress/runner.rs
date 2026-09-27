@@ -53,7 +53,6 @@ pub struct Phase {
     pub label: String,
     pub flood_per_sec: f64,
     pub secs: u64,
-    /// Steady stimuli run only in loaded phases; a recovery phase sends nothing.
     pub loaded: bool,
 }
 
@@ -66,12 +65,9 @@ pub struct PhaseResult {
     pub owed: u64,
     pub degraded: Option<String>,
     pub tables: BTreeMap<String, u64>,
-    /// Events forge's server dropped for the observer during the phase; when non-zero the
-    /// observer's counts for the phase undercount and only frames and replies are complete.
     pub observer_dropped: u64,
 }
 
-/// One row of `samples.jsonl`.
 #[derive(Debug, Clone, Serialize)]
 pub struct Sample {
     pub at_ms: u64,
@@ -89,9 +85,7 @@ pub struct Sample {
     pub page_dropped: Vec<u64>,
     pub replies: u64,
     pub other_kinds: BTreeMap<String, u64>,
-    /// Per action: started, done, skipped, unstarted, in flight.
     pub actions: BTreeMap<String, [u64; 5]>,
-    /// WARN and ERROR log lines since the previous sample, by target and message.
     pub warnings: BTreeMap<String, u64>,
 }
 
@@ -323,7 +317,6 @@ async fn drive(
     })
 }
 
-/// Every action some stimulus runs, in the order the profile first names them.
 fn measured_actions(profile: &StressProfile) -> Vec<String> {
     let mut actions: Vec<String> = Vec::new();
     for stimulus in &profile.stimuli {
@@ -507,7 +500,6 @@ impl Generator<'_> {
         })
     }
 
-    /// Lets the sampler pick up the log lines written in the phase's last moments.
     async fn settle(&self) {
         tokio::time::sleep(Duration::from_millis(
             self.profile.sample_ms + SETTLE_MARGIN_MS,
@@ -603,8 +595,6 @@ fn millis_since(origin: Instant, at: Instant) -> u64 {
     u64::try_from(at.saturating_duration_since(origin).as_millis()).unwrap_or(u64::MAX)
 }
 
-/// Row counts of every table, read through the sqlite3 CLI in read-only mode so forge's own
-/// connections are never contended for; empty when the CLI is missing.
 async fn table_rows(data_dir: &std::path::Path) -> BTreeMap<String, u64> {
     let database = data_dir.join("forge.db");
     let run = |sql: String| {
@@ -740,7 +730,6 @@ async fn sample_loop(mut state: SampleLoop) {
     }
 }
 
-/// `target: message` with the trailing `key=value` fields cut off, so repeats group together.
 pub fn warning_key(target: &str, line: &str) -> String {
     let message = line
         .split_once(&format!("{target}: "))

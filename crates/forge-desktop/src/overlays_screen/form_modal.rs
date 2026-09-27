@@ -31,7 +31,6 @@ pub struct OverlayTypeChoice {
 }
 
 pub struct OverlayFormLaunch {
-    /// `Some` renames an existing record; the overlay type and the identity slug are then fixed.
     pub target: Option<OverlayId>,
     pub display_name: String,
     pub kind_id: String,

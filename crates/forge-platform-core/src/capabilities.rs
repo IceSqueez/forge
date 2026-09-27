@@ -8,9 +8,7 @@ pub struct PlatformCapabilities {
     pub can_polls: bool,
     pub can_predictions: bool,
     pub can_channel_points: bool,
-    /// `true` if the platform connection uses unofficial / community-implementation endpoints.
     pub limited: bool,
-    /// Non-empty only when `limited` is true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limited_reason: Option<String>,
 }

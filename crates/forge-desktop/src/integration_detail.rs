@@ -686,8 +686,6 @@ impl IntegrationDetail {
         }
     }
 
-    /// The one path from this screen into the action engine; `settled` fires once the step has
-    /// ended, with the engine's failure or skip reason as the error.
     fn enqueue_builtin_step(
         &mut self,
         step: SubActionStep,
@@ -1469,8 +1467,6 @@ fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {
 mod tests {
     use super::*;
 
-    /// The kinds the Twitch EventSub session actually publishes for the entities the quick
-    /// actions gate on; stated independently of the watch list so dropping one is caught.
     const PUBLISHED_LIFECYCLE_KINDS: [&str; 8] = [
         "twitch.channel.poll.begin",
         "twitch.channel.poll.progress",
@@ -1529,8 +1525,6 @@ mod tests {
         }
     }
 
-    /// Every kind forge-obs publishes when a scene or source row's content changes; stated
-    /// independently of the watch list so dropping one is caught.
     const PUBLISHED_CATALOG_KINDS: [&str; 13] = [
         "obs.scene.changed",
         "obs.scene.preview_changed",

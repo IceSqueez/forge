@@ -106,7 +106,6 @@ impl SubActionRunner for CoreLogicSwitchCaseRunner {
     }
 }
 
-/// The first case matching by display form wins; unmatched falls through to the default chain at index -1.
 fn select_case(config: &SubActionConfig, value: &str) -> (i64, Vec<SubActionStep>) {
     let cases = config.get("cases").and_then(Variant::as_array);
     if let Some(cases) = cases {

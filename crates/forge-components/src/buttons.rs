@@ -159,19 +159,16 @@ impl Button {
         self
     }
 
-    /// Suppresses hover feedback and click handling even when [`Button::on_click`] is set.
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Disables the button and spins its leading glyph while the work behind the click runs; needs the id from [`Button::on_click`] to drive the animation.
     pub fn busy(mut self, busy: bool) -> Self {
         self.busy = busy;
         self
     }
 
-    /// Overrides resting and hover ink so an outline variant can carry a semantic tint.
     pub fn ink(mut self, color: Rgba) -> Self {
         self.colors.text = color;
         self.colors.hover_text = color;

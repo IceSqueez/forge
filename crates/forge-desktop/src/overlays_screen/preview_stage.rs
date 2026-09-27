@@ -144,8 +144,6 @@ impl OverlaysView {
         self.sync_preview();
     }
 
-    /// The composition and the sizing it resolves only move when the record, the selection or a
-    /// landed sample does, so both are rebuilt at those edges rather than on every drawn frame.
     pub(super) fn sync_preview(&mut self) {
         let next = self.selected_definition().and_then(|definition| {
             let composition = self.preview_composition(definition)?;
@@ -186,7 +184,6 @@ impl OverlaysView {
         cx.notify();
     }
 
-    /// A result whose epoch has been superseded belongs to a selection the user has already left.
     fn on_test_fired(
         &mut self,
         epoch: u64,
@@ -263,7 +260,6 @@ impl OverlaysView {
         Some(effective_overlay_config(descriptor, &definition.config))
     }
 
-    /// Idle renders the overlay's own wording; a landed test renders the content the page took.
     fn preview_composition(&self, definition: &OverlayDefinition) -> Option<PreviewComposition> {
         let descriptor = self.kinds.get(&definition.kind_id)?;
         let mut config = effective_overlay_config(descriptor, &definition.config);
@@ -289,7 +285,6 @@ impl OverlaysView {
         cx.notify();
     }
 
-    /// Measured during layout, so an unchanged area must not repaint or the stage never settles.
     fn set_stage_area(&mut self, area: Size<Pixels>, cx: &mut Context<Self>) {
         if self.stage.area == Some(area) {
             return;

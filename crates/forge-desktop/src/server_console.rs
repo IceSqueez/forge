@@ -36,7 +36,6 @@ const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_THROUGHPUT_SAMPLES: usize = 60;
 const MAX_VISIBLE_CHIPS: usize = 6;
-/// Matches the rolling window `forge-server` measures per-client event rate over, so the stat hint stays honest.
 const EVENT_RATE_WINDOW_SECONDS: i64 = 10;
 const RECENT_CLIENT_WINDOW_SECONDS: i64 = 600;
 const RECENT_CLIENT_WINDOW_MINUTES: i64 = RECENT_CLIENT_WINDOW_SECONDS / 60;
@@ -158,7 +157,6 @@ pub struct ServerConsoleView {
     overlay_root: String,
     overlay_entries: Vec<OwnedOverlayEntry>,
     selected_overlay_entry: Option<usize>,
-    /// Target client's stable `identification`, not its row index (which shifts under a live snapshot refresh).
     pending_disconnect: Confirm<String>,
 }
 

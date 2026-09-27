@@ -44,7 +44,6 @@ impl ConditionGate {
             .map_err(ConditionError::from)
     }
 
-    /// `%name%` tokens become rhai scope variables, so argument text can never alter the expression's syntax.
     pub async fn evaluate_with_args(
         &self,
         condition: &str,
@@ -109,7 +108,6 @@ enum Lit {
     Str(String),
 }
 
-/// Resolves only `literal OP literal` of matching primitive kind; every other shape defers to rhai.
 fn literal_compare(expr: &str) -> Option<bool> {
     let (op_start, op_end, op) = find_operator(expr)?;
     let lhs = parse_literal(&expr[..op_start])?;

@@ -330,8 +330,6 @@ mod tests {
         );
     }
 
-    // Why: the load already put the item in the scene. Surfacing the instance id even on a
-    // failed move is the only handle a chain has to unload what it just spawned.
     #[tokio::test]
     async fn a_failed_move_still_surfaces_the_id_of_the_item_it_left_in_the_scene() {
         let runner = ItemThrowRunner::new(Arc::new(MockSink::failing_item_move()));

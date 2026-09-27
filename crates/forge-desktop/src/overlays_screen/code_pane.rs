@@ -43,7 +43,6 @@ const FOOT_PAD_H: Pixels = px(14.0);
 const FOOT_FS: Pixels = px(10.5);
 const FOOT_GLYPH: Pixels = px(12.0);
 
-/// What the user asked for while the editor still held unsaved text.
 pub(super) enum LeaveIntent {
     File(&'static str),
     Overlay(OverlayId),
@@ -62,7 +61,6 @@ pub(super) struct CodeState {
     open: Option<OpenSource>,
     loading: bool,
     saving: bool,
-    /// Files the record claims as user-owned whose copy is gone from disk.
     missing: Vec<String>,
     pending_revert: Confirm<&'static str>,
     pending_leave: Confirm<LeaveIntent>,
@@ -104,7 +102,6 @@ fn first_file() -> &'static str {
     OVERRIDABLE_FILES.first().copied().unwrap_or_default()
 }
 
-/// The tab reads as the language the file carries, which is what the user is looking for.
 fn tab_label(file: &str) -> String {
     file.rsplit_once('.')
         .map(|(_, extension)| extension)
@@ -144,13 +141,10 @@ impl OverlaysView {
         }
     }
 
-    /// Replaces the whole set: a materialize pass reports on every file the record claims.
     pub(super) fn note_missing_overrides(&mut self, missing: Vec<String>) {
         self.code.missing = missing;
     }
 
-    /// Loads whatever the disk holds for the current selection whenever it stops matching the open
-    /// buffer; an unchanged pair is left alone so a reload never discards what the user is typing.
     pub(super) fn sync_source(&mut self, cx: &mut Context<Self>) {
         if self.mode() != EditorMode::Code {
             return;
@@ -229,8 +223,6 @@ impl OverlaysView {
         cx.notify();
     }
 
-    /// Saving is what claims the file: the record gains the override, the page keeps the text
-    /// verbatim, and only the connected pages are told to reload.
     fn save_source(&mut self, cx: &mut Context<Self>) {
         if self.code.saving || !self.code_dirty(cx) {
             return;
@@ -298,8 +290,6 @@ impl OverlaysView {
         cx.notify();
     }
 
-    /// Dropping the override hands the file back to the generator, so the shipped asset is written
-    /// afresh and the page reloads onto it.
     fn confirm_revert(&mut self, cx: &mut Context<Self>) {
         let Some(file) = self.code.pending_revert.take() else {
             return;
@@ -514,8 +504,6 @@ impl OverlaysView {
         )
     }
 
-    /// The framing is shown in both states: before the first save it says what saving costs, after
-    /// it says what the user already owns.
     fn render_escape_hint(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let file = self.code.file;
         let (glyph, tint, message) = if self.is_missing(file) {
@@ -632,8 +620,6 @@ impl OverlaysView {
             .into_any_element()
     }
 
-    /// Only fires while a file is claimed and the type moved on, so a build that never bumped a
-    /// schema shows nothing.
     pub(super) fn render_schema_notice(
         &self,
         definition: &OverlayDefinition,

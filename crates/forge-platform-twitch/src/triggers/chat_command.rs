@@ -203,9 +203,6 @@ mod tests {
 
     #[test]
     fn output_schema_declares_message_text_as_its_first_message_hinted_variable() {
-        // Why: the runtime's chat-command carve-out resolves the matched line by taking the FIRST
-        // Message-hinted variable in this schema. Nothing else pins that order, so a reordered or
-        // re-hinted schema would silently change which value commands parse their arguments from.
         let schema = ChatCommandDescriptor.output_schema().unwrap();
 
         let first_message_hinted = schema

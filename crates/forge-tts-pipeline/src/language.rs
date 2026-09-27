@@ -3,16 +3,12 @@ use std::str::FromStr;
 
 use lingua::{IsoCode639_1, LanguageDetectorBuilder};
 
-// lingua normalizes the confidence distribution to sum to 1.0, so 0.65 means the
-// winner leads the runner-up by at least ~2x in a two-candidate set.
 const MINIMUM_CONFIDENCE: f64 = 0.65;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LanguageCode([u8; 2]);
 
 impl LanguageCode {
-    /// Reads the primary subtag only, case-insensitively, and rejects anything that is
-    /// not two ASCII letters - an empty locale, `und`, or a raw numeric LCID yields `None`.
     pub fn from_locale(locale: &str) -> Option<Self> {
         let primary = locale.split(['-', '_']).next()?.as_bytes();
         let [first, second] = primary else {
@@ -56,9 +52,6 @@ pub struct LanguageDetector {
 }
 
 impl LanguageDetector {
-    /// `None` unless at least two distinct candidates are present in the compiled
-    /// language set; construction eagerly loads their models, so it belongs off the
-    /// per-utterance path.
     pub fn new(candidates: &[LanguageCode]) -> Option<Self> {
         let mut accepted = Vec::with_capacity(candidates.len());
         let mut iso_codes = Vec::with_capacity(candidates.len());
@@ -156,9 +149,6 @@ mod tests {
 
     #[test]
     fn from_locale_rejects_anything_without_a_two_letter_primary_subtag() {
-        // Why: `None` is the "does not match" signal for eligibility. An unreadable locale
-        // must never widen into "matches everything", so every shape the engine catalogs
-        // actually emit for an unknown language has to land here.
         for locale in [
             "", "und", "0409", "fil-PH", "eng", "e", "e1", "1e", "-", "_US", " en", "en ",
         ] {
@@ -222,8 +212,6 @@ mod tests {
 
     #[test]
     fn detect_returns_inconclusive_for_short_tokens_shared_between_candidates() {
-        // Why: these score 0.52-0.61 across the en/uk/ru set. Admitting them would pick a
-        // confidently wrong voice, which is the one failure this feature must not have.
         let detector = en_uk_ru();
         for text in ["ок", "да", "го", "круто", "не знаю"] {
             assert_eq!(

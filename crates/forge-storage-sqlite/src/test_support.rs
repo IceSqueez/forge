@@ -1,17 +1,11 @@
 #![allow(clippy::expect_used)]
 
-// Why: the plain `SqliteBackend` constructors hand the media repo the real user media
-// directory, so a test that reaches media would write into the maintainer's own data.
-// Every test backend in this crate is opened through here instead, with a media root
-// that lives and dies with the test.
-
 use std::ops::Deref;
 
 use tempfile::TempDir;
 
 use crate::SqliteBackend;
 
-/// Keeps a temporary media root alive for as long as the backend built on it.
 pub(crate) struct Sandboxed<T> {
     inner: T,
     _media_root: TempDir,

@@ -120,8 +120,6 @@ mod tests {
         BTreeMap::from([("scene".to_owned(), Variant::String(scene.to_owned()))])
     }
 
-    // Why: OBS re-runs the whole transition when the program scene is set to the scene already on
-    // program, so a repeat trigger visibly restarts stingers and media sources.
     #[tokio::test]
     async fn switching_to_the_scene_already_on_program_reports_success_without_setting_it() {
         let sink = RecordingSink::new();
@@ -156,8 +154,6 @@ mod tests {
         );
     }
 
-    // The guard must compare the resolved name; comparing the raw template would never match and
-    // every interpolated switch would replay the transition it is meant to skip.
     #[tokio::test]
     async fn the_no_op_guard_compares_the_interpolated_scene_name() {
         let sink = RecordingSink::new();
@@ -172,8 +168,6 @@ mod tests {
         assert_eq!(sink.calls(), vec!["get_current_scene".to_owned()]);
     }
 
-    // A sink that cannot report the program scene must not be read as "already there"; the switch
-    // has to be attempted and its own failure reported.
     #[tokio::test]
     async fn an_unreadable_program_scene_still_attempts_the_switch() {
         let sink = RecordingSink::failing();

@@ -105,7 +105,6 @@ impl SubActionRunner for CoreTimeParseRunner {
             Err(e) => return (timer.failed(format!("invalid format: {e}")), None),
         };
 
-        // Falls back to PrimitiveDateTime + assume UTC for formats without an offset component.
         let dt = OffsetDateTime::parse(&source, &desc)
             .or_else(|_| PrimitiveDateTime::parse(&source, &desc).map(|pdt| pdt.assume_utc()))
             .map_err(|_| format!("cannot parse '{source}' with format '{format_str}'"));

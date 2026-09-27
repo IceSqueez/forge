@@ -52,7 +52,6 @@ impl ShutdownHandles {
 
     async fn sequence(self) {
         if let Some(hotkey) = &self.hotkey {
-            // The evaluator drains its backlog on cancel, so a release published here still fires.
             hotkey.release_open_holds();
         }
 

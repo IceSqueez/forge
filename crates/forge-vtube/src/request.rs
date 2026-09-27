@@ -32,8 +32,6 @@ impl From<ReqTxSlot> for ReqTxHandle {
 }
 
 impl ReqTxHandle {
-    // Resolves through the slot on every call so a sender swapped mid-session by reconnect
-    // reaches the next send instead of a stale construction-time clone.
     pub(crate) async fn current(&self) -> mpsc::UnboundedSender<PendingRequest> {
         match self {
             ReqTxHandle::Fixed(tx) => tx.clone(),

@@ -5,7 +5,6 @@ use time::OffsetDateTime;
 use crate::EventId;
 use crate::redaction::{Redacted, RedactedText};
 
-/// Attached under `Event::payload["_chat"]`; the `_` prefix is reserved for forge-internal keys (ArgStack keys never start with `_`).
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ChatPayload {
     pub platform_msg_id: String,
@@ -35,10 +34,8 @@ impl fmt::Debug for ChatPayload {
 }
 
 impl ChatPayload {
-    /// Call sites must use this constant rather than the bare string to avoid silent drift.
     pub const KEY: &'static str = "_chat";
 
-    /// `None` unless `s` is exactly 6 hex digits, with or without a leading `#`.
     pub fn parse_color(s: &str) -> Option<[u8; 3]> {
         let hex = s.strip_prefix('#').unwrap_or(s);
         if hex.len() != 6 {
@@ -57,7 +54,6 @@ pub struct ChatModerationPayload {
 }
 
 impl ChatModerationPayload {
-    /// Call sites must use this constant rather than the bare string to avoid silent drift.
     pub const KEY: &'static str = "_chat_mod";
 }
 
@@ -148,7 +144,6 @@ impl fmt::Debug for UnifiedChatRow {
 }
 
 impl UnifiedChatRow {
-    /// Concatenates `Text` and `Mention` segments (as `@username`) for message rendering.
     pub fn display_text(&self) -> String {
         let mut out = String::new();
         for segment in &self.body_segments {
@@ -701,8 +696,6 @@ mod tests {
         );
     }
 
-    /// Why: these are opaque ids and platform-catalog values, not viewer prose - a later, broader
-    /// redaction sweep that swallowed them would leave a maintainer unable to correlate a report.
     #[test]
     fn chat_debug_keeps_ids_and_platform_catalog_values_verbatim() {
         let cases: Vec<(&str, String, Vec<&str>)> = vec![
@@ -742,8 +735,6 @@ mod tests {
         }
     }
 
-    /// Why: redaction is a `Debug`-only layer - `display_text` feeds the chat view, so narrowing it
-    /// would blank every message on screen.
     #[test]
     fn unified_chat_row_display_text_still_exposes_authored_text() {
         let row = row_with_planted_content();

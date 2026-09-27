@@ -20,8 +20,6 @@ fn spawn_standard() -> (forge_speak_queue::SpeakQueueHandle, SpeakEventStream) {
     forge_speak_queue::spawn(QueueConfig::default(), deps)
 }
 
-/// Dedupes: the actor emits `Started` twice per request - once at dispatch, once once
-/// synthesis resolves a voice.
 async fn first_started_ids(
     stream: &mut SpeakEventStream,
     count: usize,
@@ -52,8 +50,6 @@ async fn first_started_ids(
 async fn reordering_ahead_of_an_earlier_item_changes_playback_order() {
     let (handle, mut stream) = spawn_standard();
 
-    // Commands share one FIFO channel, so staging needs no synchronisation - only the
-    // pause, which keeps all three items pending instead of dispatching the first.
     handle.send(SpeakCommand::Pause).await.unwrap();
     let mut ids = Vec::new();
     for name in ["a", "b", "c"] {

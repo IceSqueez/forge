@@ -194,8 +194,6 @@ fn print_usage() {
 fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTail) {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-    // A rejected `RUST_LOG` counts as absent: the level the process actually runs at came from
-    // the default, so the persisted one still gets to drive.
     let (env_filter, env_overridden) = match EnvFilter::try_from_default_env() {
         Ok(filter) => (filter, true),
         Err(_) => (crate::log_level::default_filter(), false),
@@ -294,14 +292,11 @@ fn main() {
     };
     let rt_handle = rt.handle().clone();
 
-    // Keeps the main thread inside the runtime context, so the sqlx pool dropped during window-close teardown finds a Tokio context instead of panicking.
     let _rt_guard = rt.enter();
 
-    // Owned for the whole of run() to keep the runtime's tasks and time driver alive.
     gpui_platform::application()
         .with_assets(IconAssets)
         .run(move |cx: &mut App| {
-            // Must precede the window open, or real text falls back to gpui's built-in face.
             if let Err(err) = cx
                 .text_system()
                 .add_fonts(forge_components::embedded_fonts())
@@ -320,7 +315,6 @@ fn main() {
             ));
             cx.set_global(crate::toasts::Toasts::new());
 
-            // Boot and failure screens render before storage resolves the saved language.
             crate::i18n::install_os_default();
 
             bind_text_input_keys(cx);

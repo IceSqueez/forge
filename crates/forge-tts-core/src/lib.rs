@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 pub use forge_audio::PcmBuffer;
 
-/// BCP-47 locale string, e.g. `"uk-UA"`, `"en-US"`.
 pub type Locale = String;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -22,7 +21,6 @@ pub enum VoiceGender {
     Neutral,
 }
 
-/// `sample_rate_hint` is a preference; the actual PCM rate is `PcmBuffer::sample_rate`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsVoice {
     pub id: VoiceId,
@@ -34,14 +32,11 @@ pub struct TtsVoice {
     pub sample_rate_hint: u32,
 }
 
-/// Engines that do not support SSML MUST return `TtsError::SsmlUnsupported` when `ssml` is set.
 #[derive(Debug, Clone)]
 pub struct SynthesisRequest {
     pub text: String,
     pub voice_id: VoiceId,
-    /// Semitone shift, negative = lower. Valid range: [-12.0, 12.0].
     pub pitch_semitones: f32,
-    /// Speech rate multiplier. Valid range: [0.25, 4.0].
     pub rate_multiplier: f32,
     pub ssml: bool,
 }

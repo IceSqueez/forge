@@ -89,8 +89,6 @@ fn condition_user(_broadcaster_id: &str, user_id: &str) -> serde_json::Value {
     serde_json::json!({ "user_id": user_id })
 }
 
-/// `channel.raid` is subscribed twice under different condition keys (incoming vs sent);
-/// this disambiguates the two tracker rows since both otherwise share the same kind string.
 fn display_kind(topic: &TopicSpec) -> String {
     if std::ptr::fn_addr_eq(
         topic.condition_fn,
@@ -143,7 +141,6 @@ const TOPICS: &[TopicSpec] = &[
         version: "1",
         condition_fn: condition_raid,
     },
-    // channel.raid accepts from_broadcaster_user_id OR to_broadcaster_user_id, not both - a second subscription covers sent raids.
     TopicSpec {
         kind: "channel.raid",
         version: "1",
@@ -984,9 +981,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_conflict_records_the_other_session_as_owner_rather_than_a_bare_status() {
-        // Why: the conflicting subscription belongs to a session that is not ours, and Twitch
-        // disables a session's subscriptions when it ends - so it delivers nothing here and the
-        // health surface must not read Active.
         let server = MockServer::start().await;
         mount_catch_all_conflict(&server).await;
 
@@ -1006,8 +1000,6 @@ mod tests {
 
     #[test]
     fn the_pass_summary_counts_every_outcome_class_apart() {
-        // Why: the one line about the pass used to report `rejected=0` while every topic was
-        // refused, which read as a healthy connect in the log.
         let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::DEBUG, async {
             let server = MockServer::start().await;
             mount_success(&server, "channel.chat.message", "sub-chat").await;

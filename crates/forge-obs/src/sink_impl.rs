@@ -198,8 +198,6 @@ impl ObsSink for ObsClient {
             )
             .await?;
 
-        // An input's volume is global in OBS, so the same name can appear as a scene item
-        // in several scenes; write the confirmed level back into every scene's copy.
         if let Ok(mut catalog) = self.catalog_state.write() {
             for sources in catalog.sources.values_mut() {
                 for info in sources.iter_mut() {

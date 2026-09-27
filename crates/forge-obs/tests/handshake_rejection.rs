@@ -23,8 +23,6 @@ const AUTH_FAILED_KIND: &str = "obs.connection.auth_failed";
 
 const SUPERVISOR_BUDGET: Duration = Duration::from_secs(5);
 
-/// A loopback web-socket peer that completes the upgrade and then closes the connection with the
-/// given code, which is how obs-websocket rejects an `Identify` it does not accept.
 async fn serve_one_close_frame(listener: TcpListener, code: u16, reason: &'static str) {
     let Ok((stream, _)) = listener.accept().await else {
         return;
@@ -96,8 +94,6 @@ async fn a_connect_failure_reports_the_close_reason_the_server_sent() {
     );
 }
 
-// Why: this is the second path (after a refused connect) that renders an OBS failure verbatim in
-// the setup banner, and it now stringifies the whole error chain rather than one fixed sentence.
 #[tokio::test]
 async fn a_rejected_handshake_keeps_the_password_out_of_the_error_text() {
     let error = probe_against_closing_server(
@@ -116,8 +112,6 @@ async fn a_rejected_handshake_keeps_the_password_out_of_the_error_text() {
     );
 }
 
-// Why: a wrong password used to arrive as a generic connect failure, which left the supervisor's
-// authentication guard unreachable and retried the rejected password on the backoff loop forever.
 #[tokio::test]
 async fn a_rejected_password_makes_the_supervisor_report_an_authentication_failure() {
     let (listener, port) = bind_loopback().await;
@@ -162,8 +156,6 @@ async fn a_rejected_password_makes_the_supervisor_report_an_authentication_failu
     );
 }
 
-/// Reads the client's connection state at the instant each event is published, which is the only
-/// vantage point that can tell "stored, then published" apart from "published, then stored".
 struct StateProbePublisher {
     client: Arc<OnceLock<Arc<ObsClient>>>,
     tx: mpsc::UnboundedSender<(String, Option<ConnectionState>)>,
@@ -176,8 +168,6 @@ impl EventPublisher for StateProbePublisher {
     }
 }
 
-/// Holds the connection open until `gate` fires, so the test can finish its own setup before the
-/// server triggers the supervisor's failure path.
 async fn serve_one_gated_close_frame(
     listener: TcpListener,
     code: u16,
@@ -203,9 +193,6 @@ async fn serve_one_gated_close_frame(
     while let Some(Ok(_)) = socket.next().await {}
 }
 
-// Why: the open integration screen reloads off the `obs.connection.*` bus event and then reads the
-// connection state back. Publishing before the state is stored let that read observe the state the
-// connection was leaving, so the header kept claiming the connection was still coming up.
 #[tokio::test]
 async fn the_connection_state_is_already_settled_when_the_auth_failure_is_published() {
     let (listener, port) = bind_loopback().await;

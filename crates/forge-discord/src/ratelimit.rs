@@ -122,14 +122,12 @@ impl DiscordRateLimiter {
         if reset > now { Some(reset - now) } else { None }
     }
 
-    /// Returns `(remaining, total)` for the named webhook bucket.
     pub(crate) fn budget(&self, name: &str) -> (u64, u64) {
         self.buckets
             .get(name)
             .map_or((0, 0), |b| (b.remaining as u64, b.limit as u64))
     }
 
-    /// Returns seconds until reset for the named bucket, when it is exhausted.
     pub(crate) fn reset_hint_secs(&self, name: &str) -> Option<f64> {
         self.buckets.get(name)?.reset_hint_secs()
     }

@@ -48,7 +48,6 @@ pub(crate) struct ViewerDirectory {
 }
 
 impl ViewerDirectory {
-    /// On a username shared across platforms the first listed viewer wins.
     pub fn new(viewers: Vec<Viewer>) -> Self {
         let mut by_name = HashMap::with_capacity(viewers.len());
         for (ix, viewer) in viewers.iter().enumerate() {

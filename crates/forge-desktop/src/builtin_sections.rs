@@ -14,11 +14,7 @@ use gpui::{
 };
 use std::rc::Rc;
 
-/// Keeps the scopes and subscription panels within one calm viewport; their row lists scroll
-/// internally past this so Quick actions stay reachable below.
 const SCROLL_PANEL_MAX_H: f32 = 320.0;
-/// Estimated row height for deciding whether a list overflows its panel; short lists must not
-/// occlude, or they trap the page scroll under a panel that cannot scroll itself.
 const SCROLL_ROW_EST_H: f32 = 30.0;
 
 fn panel_overflows(count: usize) -> bool {
@@ -35,10 +31,8 @@ const ROW_MONO_NAME_FONT: Pixels = px(11.5);
 const ROW_TRAILING_GLYPH: Pixels = px(12.0);
 const ROW_TINTED_LABEL_FONT: Pixels = px(10.0);
 const ROW_PAD_X: Pixels = px(14.0);
-/// gpui's default line height, which rounds the resulting line box to whole pixels.
 const LINE_HEIGHT_RATIO: f32 = 1.618_034;
 
-/// Invoked by the header control a `ContentList` marks `refreshable`.
 pub type SectionRefresh = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 pub struct StepClick {
@@ -46,7 +40,6 @@ pub struct StepClick {
     pub step: SubActionStep,
 }
 
-/// Invoked by a row or trailing glyph that carries a step; the handler owns the double-fire guard.
 pub type SectionStepRun = Rc<dyn Fn(&StepClick, &mut Window, &mut App)>;
 
 pub struct SectionHooks {
@@ -72,8 +65,6 @@ struct TokenSite<'a> {
     index: usize,
 }
 
-/// The row's tallest element is its name line box; both name fonts round to the same box, and
-/// every glyph and badge in the row is shorter.
 fn content_list_row_h(list: &ContentList) -> f32 {
     f32::from(list.row_padding_y_px) * 2.0 + (f32::from(ROW_NAME_FONT) * LINE_HEIGHT_RATIO).round()
 }
@@ -1518,7 +1509,6 @@ mod tests {
         }
     }
 
-    /// Clicks every point of a grid over the window and returns what each click fired.
     fn click_everywhere(left: ContentList, right: ContentList, cx: &mut TestAppContext) -> Fired {
         let fired: Fired = Rc::default();
         let host_fired = Rc::clone(&fired);

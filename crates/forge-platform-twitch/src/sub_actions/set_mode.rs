@@ -52,7 +52,6 @@ impl SetModeRunner {
         let subscriber_mode = mode_toggle(config, "subscriber_mode");
         let unique_chat_mode = mode_toggle(config, "unique_chat_mode");
 
-        // Twitch applies only the provided keys; an all-unchanged config skips the call entirely.
         let mut body = serde_json::Map::new();
 
         if let Some(on) = toggle_to_bool(emote_only) {

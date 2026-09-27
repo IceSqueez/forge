@@ -2035,7 +2035,6 @@ struct SharedCombo {
     holder: String,
 }
 
-/// Read after the save's own reconcile has run, so a combo the OS refused shows up missing here; `None` without a hotkey engine.
 fn unregistered_combo(
     hotkey: Option<&str>,
     reconciler: Option<&HotkeyReconciler>,
@@ -2720,8 +2719,6 @@ mod tests {
         }
     }
 
-    // Why: a play that ends with no playback event must release the pad's claim, or the next
-    // failure of that clip (a hotkey or action play) is swallowed instead of toasted.
     #[test]
     fn only_a_play_the_player_settled_without_an_event_counts_as_outcome_free() {
         let audio = || SoundboardError::Audio(forge_audio::AudioError::NoDefaultDevice);

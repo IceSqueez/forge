@@ -28,7 +28,6 @@ pub struct PiperEngine {
 }
 
 impl PiperEngine {
-    /// Returns `TtsError::EngineUnavailable` if `piper_binary` does not exist on disk.
     pub fn new(
         piper_binary: PathBuf,
         voices_dir: PathBuf,
@@ -188,8 +187,6 @@ impl TtsEngine for PiperEngine {
         Ok(voices)
     }
 
-    /// `pitch_semitones` is ignored here; Piper has no native pitch flag, so pitch shift
-    /// is deferred to a `forge-audio` post-processing pass.
     async fn synthesize(&self, request: SynthesisRequest) -> Result<PcmBuffer, TtsError> {
         if request.ssml {
             return Err(TtsError::SsmlUnsupported {

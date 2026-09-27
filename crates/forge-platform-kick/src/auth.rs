@@ -78,7 +78,6 @@ impl KickAuthFlow {
             authorize_endpoint,
             token_endpoint,
             scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
-            // Must precede "redirect_uri" to prevent NextJS host-rewriting on id.kick.com.
             authorize_pre_redirect_params: vec![("redirect".to_owned(), "127.0.0.1".to_owned())],
             authorize_trailing_params: Vec::new(),
             preferred_port: Some(KICK_OAUTH_CALLBACK_PORT),
@@ -98,8 +97,6 @@ impl KickAuthFlow {
         })
     }
 
-    /// Resolves `user_id` + `username` from the authenticated-user endpoint after the code
-    /// exchange.
     pub async fn wait_for_authorization(
         &mut self,
         timeout: Duration,
@@ -179,8 +176,6 @@ async fn fetch_user_info(
         })
 }
 
-/// Each of id and secret resolves independently: runtime env → compile-time `option_env!` →
-/// absent. Both must resolve or the pair is `None`.
 pub fn client_credentials() -> Option<(String, String)> {
     let client_id = resolve_credential(
         std::env::var("FORGE_KICK_CLIENT_ID").ok().as_deref(),

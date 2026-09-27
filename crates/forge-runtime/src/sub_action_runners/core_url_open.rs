@@ -87,7 +87,6 @@ impl SubActionRunner for CoreUrlOpenRunner {
     }
 }
 
-/// Gates interpolated (possibly untrusted chat-sourced) URLs against `file://`, `javascript:`, `data:`, etc.
 fn is_browser_scheme(url: &str) -> bool {
     match url.trim().split_once(':') {
         Some((scheme, _)) => matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https"),
@@ -162,8 +161,6 @@ mod tests {
             let SubActionOutcome::Failed(msg) = outcome else {
                 panic!("expected reject for {url}, got {outcome:?}");
             };
-            // The rejected URL reaches the run history, so the reason may name the rule but
-            // never the target, its path or its query.
             assert!(
                 !msg.contains(url.trim()),
                 "the rejection echoed {url}: {msg}"

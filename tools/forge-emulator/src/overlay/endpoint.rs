@@ -6,8 +6,6 @@ const CONTROL_PATH: &str = "/ws/v1/";
 const OVERLAY_ROOT: &str = "/overlays";
 const CONFIG_DOCUMENT: &str = "config.json";
 
-/// The loopback authority a browser source would have been served from: the page's own origin,
-/// its `config.json` URL and the control socket it opens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageEndpoint {
     authority: String,

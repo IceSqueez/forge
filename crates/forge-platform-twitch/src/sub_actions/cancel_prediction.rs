@@ -71,7 +71,6 @@ impl SubActionRunner for CancelPredictionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        // "CANCELED" - American spelling, single L, as required by the Twitch API.
         execute_prediction_runner(
             &self.transport,
             &self.identity,

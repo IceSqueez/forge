@@ -27,7 +27,6 @@ fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, S
 
 const MONTHS_PER_YEAR: i64 = 12;
 
-/// Clamps to the target month's last valid day when the original day exceeds it (Jan 31 + 1mo -> Feb 28/29); `None` when the result leaves the representable range.
 fn add_calendar_months(dt: OffsetDateTime, months: i64) -> Option<OffsetDateTime> {
     let date = dt.date();
     let total = (i64::from(date.year()) * MONTHS_PER_YEAR + (date.month() as i64 - 1))
@@ -330,7 +329,6 @@ mod tests {
             (i64::MAX, "months"),
             (200_000, "months"),
             (i64::MAX / 12 + 1, "years"),
-            // Why: times 12 this wraps to exactly +8 months, so only a checked multiply rejects it.
             (1_537_228_672_809_129_302, "years"),
             (10_000, "years"),
         ] {

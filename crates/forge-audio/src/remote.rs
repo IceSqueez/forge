@@ -26,7 +26,6 @@ impl fmt::Display for RemoteDestinationId {
     }
 }
 
-/// Joins a clip to the show that asked for it on the page; opaque, and grants nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PlaybackCorrelation(String);
 

@@ -4,12 +4,10 @@ const SERVER_START_FAILURE: &str = "forge-desktop: server failed to start";
 const BIND_FAILURE: &str = "could not bind to";
 const ERROR_LEVEL: &str = "ERROR";
 
-/// forge keeps running with its server off, so this stderr line is the only trace of a lost port race.
 pub(crate) fn is_server_bind_failure(line: &str) -> bool {
     line.starts_with(SERVER_START_FAILURE) && line.contains(BIND_FAILURE)
 }
 
-/// Keys on the surface variable names forge itself defines, not on the message wording.
 pub(crate) fn is_endpoint_override_refusal(line: &str) -> bool {
     line.contains(ERROR_LEVEL)
         && EndpointSurface::ALL.iter().any(|surface| {

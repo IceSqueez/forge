@@ -1,12 +1,8 @@
 use forge_events::{Event, EventPublisher, EventStream};
 use tokio::sync::broadcast;
 
-/// Buffered slots before a lagging bridge starts dropping the oldest events.
 const CHANNEL_CAPACITY: usize = 256;
 
-/// The platform's own outbound event origin: the Pusher chat-receive loop and the
-/// connection-state watcher publish here, and [`subscribe`](Self::subscribe) hands the
-/// receiving half to the runtime. The platform never reaches into the runtime.
 pub(crate) struct PlatformEventChannel {
     sender: broadcast::Sender<Event>,
 }

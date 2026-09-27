@@ -2,7 +2,6 @@ use forge_events::EventSource;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
-/// `None` on either axis subscribes to every value of that axis.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct EventFilter {
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -236,7 +236,6 @@ impl AudioClipStore {
         ))
     }
 
-    /// Serves one fetch per admitted page; the bytes stay held until the last admitted fetch.
     pub(crate) fn take_clip(&self, capability: &str) -> Option<ClipPayload> {
         let now = Instant::now();
         let mut inner = self.lock();
@@ -261,8 +260,6 @@ impl AudioClipStore {
         Some(payload)
     }
 
-    /// The live page count at announcement bounds both the fetches and the verdicts one clip
-    /// accepts; it never drops below the fetches already served.
     pub(crate) fn admit_players(&self, capability: &str, players: usize) -> bool {
         let mut inner = self.lock();
         let Some(entry) = inner.entries.get_mut(capability) else {
@@ -274,8 +271,6 @@ impl AudioClipStore {
         true
     }
 
-    /// Played by any page settles the clip at once; it is refused only once every admitted
-    /// page has refused, and then carries the first reason given.
     pub(crate) fn record_verdict(&self, capability: &str, outcome: ClipOutcome) -> bool {
         let mut inner = self.lock();
         sweep_locked(&mut inner, Instant::now());
@@ -291,7 +286,6 @@ impl AudioClipStore {
         true
     }
 
-    /// A held clip's verdict window stops counting down, but it never outlives its lifetime.
     pub(crate) fn hold(&self, capability: &str) -> bool {
         let now = Instant::now();
         let mut inner = self.lock();

@@ -47,7 +47,6 @@ pub fn unique_suffix() -> String {
         .to_owned()
 }
 
-/// The DB enters as an `export` snapshot, never the live file; the snapshot and any partial archive are removed on every path.
 pub async fn run_backup(
     backend: Arc<dyn DataProvider>,
     data_dir: PathBuf,
@@ -85,7 +84,6 @@ pub async fn run_backup(
     result.map(|()| archive)
 }
 
-/// Allowlist, not a walk of `data_dir`: WAL/SHM, the instance lock, logs and earlier backups stay out.
 pub fn write_archive(data_dir: &Path, db_snapshot: &Path, dest: &Path) -> io::Result<()> {
     let file = create_private(dest)?;
     let encoder = GzEncoder::new(BufWriter::new(file), Compression::default());

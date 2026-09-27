@@ -174,7 +174,6 @@ fn apply_replace(
 
     let re = regex::Regex::new(&pattern).map_err(|e| format!("invalid pattern: {e}"))?;
 
-    // For literal replacements, escape $ so it is not interpreted as a capture group reference.
     let replacement = if is_regex {
         replace_with.to_owned()
     } else {

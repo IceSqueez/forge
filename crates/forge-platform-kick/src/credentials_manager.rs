@@ -59,7 +59,6 @@ impl KickCredentialsManager {
         Self::with_refresh_endpoint(repo, client_id, client_secret, refresh_endpoint)
     }
 
-    /// Returns `None` if no credentials row exists for this account.
     pub async fn load(&self) -> Result<Option<KickCredentials>, PlatformError> {
         let key = CredentialId::new(CREDENTIAL_KEY);
         let Some(json) = self.repo.load(&key).await.map_err(storage_err)? else {
@@ -81,7 +80,6 @@ impl KickCredentialsManager {
         self.persist(&creds).await
     }
 
-    /// Refreshes proactively when within 5 minutes of expiry.
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.load().await?.ok_or_else(reauth_err)?;
         if !near_expiry(&creds) {
@@ -101,8 +99,6 @@ impl KickCredentialsManager {
         Ok(self.load().await?.ok_or_else(reauth_err)?.user_id)
     }
 
-    /// Rechecks against the stored access token under the guard: a concurrent refresh may have
-    /// already rotated the pair while this call waited, in which case Kick is not called again.
     pub async fn refresh(
         &self,
         failed_access_token: &str,

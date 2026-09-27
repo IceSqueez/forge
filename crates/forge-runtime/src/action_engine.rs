@@ -80,7 +80,6 @@ impl ActionEngineHandle {
             .map_err(|_| DispatchError::ChannelClosed)
     }
 
-    /// Fires `on_complete` once the run terminates, regardless of outcome.
     pub(crate) async fn dispatch_tracked(
         &self,
         req: ExecutionRequest,
@@ -97,7 +96,6 @@ impl ActionEngineHandle {
             .map_err(|_| DispatchError::ChannelClosed)
     }
 
-    /// Dropping the returned handle leaves the step running without reporting its outcome.
     pub async fn execute_quick_action(
         &self,
         step: SubActionStep,
@@ -119,7 +117,6 @@ impl ActionEngineHandle {
         Ok(PendingQuickAction(pending))
     }
 
-    /// Stops intake and cancels every running execution; quick actions already running finish.
     pub fn shutdown(self) {
         self.stop.send_replace(true);
     }
@@ -357,7 +354,6 @@ impl ActionEngine {
             ChainSignal::Aborted => ExecutionOutcome::Cancelled,
         };
 
-        // A cancel landing after the chain's last boundary check still makes this a cancelled run.
         if cancel.is_cancelled() {
             ctx.outcome = ExecutionOutcome::Cancelled;
         }
@@ -390,7 +386,6 @@ impl ActionEngine {
         let cancelled = matches!(ctx.outcome, ExecutionOutcome::Cancelled);
         self.history.record(ctx, execution);
 
-        // A cancelled run records to history but emits no completion event onto the bus.
         if !cancelled {
             self.bus.publish(Event::caused_by(
                 EventSource::Core,
@@ -1328,7 +1323,6 @@ mod tests {
         last_trigger: EventId,
     }
 
-    // Plays the trigger evaluator: every loop event the action emits dispatches the same action again.
     async fn drive_self_loop(rig: &SelfLoopRig, root: EventId) -> LoopTrace {
         let mut sub = rig.bus.subscribe();
         let mut trace = LoopTrace {

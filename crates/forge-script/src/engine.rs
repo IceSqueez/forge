@@ -125,7 +125,6 @@ impl Engine {
             .map_err(|e| map_eval_error(body, &self.config, *e))
     }
 
-    /// Returns `None` when the script yields unit or a value outside the 7 `Variant` kinds.
     pub fn eval_script_with_scope_as_variant(
         &self,
         body: &str,

@@ -46,7 +46,6 @@ impl UpdateRewardRunner {
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        // Requires channel:manage:redemptions scope. Twitch applies only the supplied body keys.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channel_points/custom_rewards")
             .query("broadcaster_id", user_id)
             .query("id", reward_id.to_owned())
@@ -56,7 +55,6 @@ impl UpdateRewardRunner {
     }
 }
 
-// A present well-typed value means "include in body"; a Bool/absent gate value means "skip".
 fn read_opt_str(config: &SubActionConfig, key: &str) -> Option<String> {
     match config.get(key) {
         Some(Variant::String(s)) => Some(s.clone()),
@@ -112,7 +110,6 @@ fn build_body(
         body.insert("background_color".to_owned(), hex.into());
     }
 
-    // Twitch only honors the value when the matching is_*_enabled flag is true.
     if let Some(value) = read_opt_int(config, "max_per_stream") {
         if value > 0 {
             body.insert("is_max_per_stream_enabled".to_owned(), true.into());
@@ -387,7 +384,6 @@ impl SubActionRunner for UpdateRewardRunner {
             SubActionOutcome::Failed("reward_id is required".to_owned())
         } else {
             let body = build_body(config, ctx);
-            // An empty body would still cost a rate-limit token for a no-op PATCH.
             if body.is_empty() {
                 SubActionOutcome::Success
             } else {

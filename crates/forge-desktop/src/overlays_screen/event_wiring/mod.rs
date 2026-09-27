@@ -488,8 +488,6 @@ impl EventWiringView {
     }
 }
 
-/// A queue created by the wiring is not live until the scheduler is told about it, so the action
-/// it was created for would never run.
 async fn register_created_queue(
     scheduler: &QueueSchedulerHandle,
     records: &OverlayWiringRecords,

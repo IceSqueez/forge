@@ -3,12 +3,10 @@ use forge_types::{SubActionConfig, SubActionOutcome, SubActionStep, SubActionTel
 
 pub(super) const CASE_CHAIN_KEY: &str = "chain";
 
-/// A missing or malformed value yields an empty chain, so an unset branch is a no-op, not an error.
 pub(super) fn decode_chain(config: &SubActionConfig, key: &str) -> Vec<SubActionStep> {
     decode_steps(config.get(key))
 }
 
-/// Anything not an array, and any element lacking a `kind_id`, is dropped rather than failing the action.
 pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
     let Some(steps) = value.and_then(Variant::as_array) else {
         return Vec::new();
@@ -50,7 +48,6 @@ pub(super) fn decode_steps(value: Option<&Variant>) -> Vec<SubActionStep> {
         .collect()
 }
 
-/// `Break`/`Continue`/`Stop` re-arm the control cell; `Error` fails the step; others succeed.
 pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionOutcome {
     match signal {
         ChainSignal::Completed | ChainSignal::Aborted => SubActionOutcome::Success,
@@ -70,7 +67,6 @@ pub(super) fn propagate(signal: ChainSignal, ctx: &RunContext<'_>) -> SubActionO
     }
 }
 
-/// Prepends a `parent_index.arm` path segment and marks `index` as `NESTED` so top-level surfaces skip the row.
 pub(super) fn retag(
     children: Vec<SubActionTelemetry>,
     parent_index: usize,

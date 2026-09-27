@@ -187,8 +187,6 @@ struct Harness {
     _media: TempDir,
 }
 
-/// Wires action, queue and trigger-instance rows into an in-memory backend and starts the
-/// evaluator against a registry that owns nothing but the fake chat / non-chat descriptors.
 async fn harness(instances: &[(&TriggerInstance, ActionId)]) -> Harness {
     let media = tempfile::tempdir().unwrap();
     let backend = Arc::new(

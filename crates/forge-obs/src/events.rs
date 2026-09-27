@@ -501,9 +501,6 @@ pub(crate) fn apply_catalog_update(ev: &obws::events::Event, catalog: &mut ObsCa
     }
 }
 
-/// Only the `active` flag flips instantly here; duration/paused/dropped-frame figures are owned
-/// by the 2s status poll (`apply_stream_status_update` / `apply_record_status_update`) since OBS
-/// WebSocket v5 carries no duration field on these events.
 pub(crate) fn apply_health_update(
     ev: &obws::events::Event,
     snapshot: &mut HealthSnapshot,
@@ -558,8 +555,6 @@ fn frame_lag_detected(
     lagging
 }
 
-/// Only emits a delta when the rendered value actually changed. Dropped-frame figures come from
-/// the stream-status poll (`apply_stream_status_update`), not from `GetStats`.
 pub(crate) fn apply_stats_update(
     stats: &obws::responses::general::Stats,
     snapshot: &mut HealthSnapshot,
@@ -599,8 +594,6 @@ pub(crate) fn apply_stats_update(
     }]
 }
 
-/// Feeds the Stream stat card (active + duration) and the Dropped stat card from one
-/// `GetStreamStatus` poll.
 pub(crate) fn apply_stream_status_update(
     status: &obws::responses::streaming::StreamStatus,
     snapshot: &mut HealthSnapshot,
@@ -631,7 +624,6 @@ pub(crate) fn apply_stream_status_update(
     deltas
 }
 
-/// Feeds the Recording stat card (active + paused + duration) from one `GetRecordStatus` poll.
 pub(crate) fn apply_record_status_update(
     status: &obws::responses::recording::RecordStatus,
     snapshot: &mut HealthSnapshot,
@@ -743,7 +735,6 @@ mod tests {
         assert_eq!(ev.payload["error_message"], "authentication rejected");
     }
 
-    // The auth-failure message must never echo the OBS WebSocket password the user typed.
     #[test]
     fn make_connection_auth_failed_message_carries_nothing_password_like() {
         let ev = make_connection_auth_failed("authentication rejected");
@@ -1189,8 +1180,6 @@ mod tests {
         }
     }
 
-    // OBS replays the full scene-item roster on some transitions, so the same creation can be seen
-    // twice for one item; the panel must not grow a duplicate row.
     #[test]
     fn a_repeated_scene_item_creation_adds_the_source_only_once() {
         let mut catalog = ObsCatalog::default();
@@ -1224,7 +1213,6 @@ mod tests {
         assert_eq!(source_names(&catalog, "BRB"), vec!["Webcam"]);
     }
 
-    // The audio panel lists capture inputs only; a new browser or text source must not appear there.
     #[test]
     fn only_a_capture_input_joins_the_audio_input_roster_when_created() {
         for (kind, expected) in [
@@ -1341,9 +1329,6 @@ mod tests {
         assert_eq!(levels("Gameplay", "Webcam"), None);
     }
 
-    // Why: OBS has no preview scene outside studio mode and sends no scene-change event when the
-    // mode is turned off, so leaving it is the only signal that the field is now meaningless.
-    // Entering studio mode carries no scene either and must leave a known preview scene standing.
     #[test]
     fn only_leaving_studio_mode_clears_the_preview_scene() {
         for (enabled, expected) in [(false, None), (true, Some("BRB"))] {

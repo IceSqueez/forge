@@ -119,7 +119,6 @@ pub fn plan_adoption(source: ClipSource) -> AdoptionStep {
     }
 }
 
-/// Both arguments are paths already verified readable; a vanished file arrives as `None`.
 pub fn choose_source(managed: Option<PathBuf>, legacy: Option<PathBuf>) -> ClipSource {
     match (managed, legacy) {
         (Some(path), _) => ClipSource::Managed(path),
@@ -130,9 +129,7 @@ pub fn choose_source(managed: Option<PathBuf>, legacy: Option<PathBuf>) -> ClipS
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourcePlan {
-    /// The user named this file in this save, so a refusal must fail the save.
     ImportChosen,
-    /// Opportunistic adoption of an untouched row, so a refusal leaves the row playable.
     ImportAdopted,
     Keep,
 }
@@ -146,7 +143,6 @@ pub fn plan_source(previous: Option<&Path>, next: &Path, resolvable: bool) -> So
     }
 }
 
-/// Refusals the same bytes would produce again; every other failure may be transient.
 pub fn final_refusal(error: &StorageError) -> Option<ClipRefusal> {
     match error {
         StorageError::MediaUnsupported { label } => Some(ClipRefusal::Unsupported {
@@ -242,7 +238,6 @@ impl ClipLibrary {
         }
     }
 
-    /// Installed once at boot; an adoption already settled before the install stays silent.
     pub fn install_event_publisher(&self, publisher: Arc<dyn EventPublisher>) {
         self.publisher.store(Some(publisher));
     }
@@ -259,7 +254,6 @@ impl ClipLibrary {
         self.media.total_bytes().await.map_err(storage_failed)
     }
 
-    /// Imports the row's file before the row is written, so a refused import stores nothing.
     pub async fn save_clip(&self, clip: &StoredClip) -> Result<(), SoundboardError> {
         let previous = self.clips.get(clip.id).await.map_err(storage_failed)?;
         let resolvable = self.managed_path(clip.id).await.is_some();
@@ -293,7 +287,6 @@ impl ClipLibrary {
         Ok(())
     }
 
-    /// Drops the row's library reference; collecting an unreferenced blob is a separate sweep.
     pub async fn delete_clip(&self, id: ClipId) -> Result<bool, SoundboardError> {
         self.media
             .release_all(MediaReferrerKind::SoundboardClip, &id.to_string())

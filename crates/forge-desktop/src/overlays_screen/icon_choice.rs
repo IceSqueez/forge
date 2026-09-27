@@ -754,8 +754,6 @@ mod tests {
             NO_ICON_ID.to_owned(),
             IMPORT_ICON_ID.to_owned(),
             image_reference(BLOB_A),
-            // An import the library no longer holds: favorites are read before the library is,
-            // so an imported reference is kept on trust and simply draws no card.
             image_reference(GONE),
             NOT_A_GLYPH.to_owned(),
             String::new(),
@@ -788,9 +786,6 @@ mod tests {
         );
     }
 
-    /// Why: the card art is a shared design decision and the icon grid is the one screen that
-    /// departs from it, so a second departure is a design drift and not a local choice. The
-    /// needles are assembled at run time so this test does not read itself as a picker.
     #[test]
     fn the_icon_grid_is_the_only_picker_that_departs_from_the_shared_card_art() {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

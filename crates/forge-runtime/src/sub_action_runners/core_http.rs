@@ -233,7 +233,6 @@ impl SubActionRunner for CoreHttpRunner {
             (None, None)
         };
 
-        // Strip a caller-supplied Content-Type header once promoted to the dedicated field.
         if content_type.is_some() {
             headers.retain(|k, _| !k.eq_ignore_ascii_case("content-type"));
         }

@@ -92,7 +92,6 @@ fn classify_error(
     voice_id: &VoiceId,
 ) -> PollyError {
     match status {
-        // Polly returns FORBIDDEN (not UNAUTHORIZED) for invalid credentials.
         StatusCode::FORBIDDEN => PollyError::Unauthorized("invalid credentials".into()),
         StatusCode::BAD_REQUEST if body.to_ascii_lowercase().contains("voice") => {
             PollyError::VoiceNotFound(voice_id.0.clone())

@@ -1,9 +1,7 @@
 use std::fmt;
 
-/// The prefix every redacted rendering opens with; leak assertions and the bundle header match on this, not on `MARKER`.
 pub const STAMP: &str = "<redacted";
 
-/// The whole-value form, which withholds the size as well; length-bearing renderings only share `STAMP`.
 pub const MARKER: &str = "<redacted>";
 
 pub struct Redacted;
@@ -14,7 +12,6 @@ impl fmt::Debug for Redacted {
     }
 }
 
-/// Length is counted in characters, not bytes, so a multi-byte message does not read as inflated.
 pub struct RedactedText(usize);
 
 impl RedactedText {
@@ -33,8 +30,6 @@ impl fmt::Debug for RedactedText {
 mod tests {
     use super::*;
 
-    /// Why: `<redacted` is the stamp every leak assertion in the workspace greps for and the stamp
-    /// the log-bundle header names; both spellings are a cross-crate contract, not cosmetics.
     #[test]
     fn placeholder_debug_shapes_are_pinned() {
         assert_eq!(MARKER, "<redacted>");
@@ -45,9 +40,6 @@ mod tests {
         );
     }
 
-    /// Why: the bundle header promises a reader that anything opening with `STAMP` was withheld
-    /// on purpose. That promise only holds while every placeholder rendering starts with it, so a
-    /// new placeholder shape that drifts off the stamp must fail here rather than in a bug report.
     #[test]
     fn every_placeholder_rendering_opens_with_the_shared_stamp() {
         for rendering in [

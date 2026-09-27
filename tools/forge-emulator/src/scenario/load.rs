@@ -13,7 +13,6 @@ pub fn load_scenario(path: &Path) -> Result<Scenario, EmulatorError> {
     parse_scenario(path, &text)
 }
 
-/// `path` only labels errors; nothing is read from it.
 pub fn parse_scenario(path: &Path, text: &str) -> Result<Scenario, EmulatorError> {
     let text = text.strip_prefix(BYTE_ORDER_MARK).unwrap_or(text);
     let scenario: Scenario =

@@ -53,7 +53,6 @@ pub struct Breadcrumb {
     ancestor: Rgba,
 }
 
-/// The trail is ordered root-first, current-location last (ink is position-based on that order).
 pub fn breadcrumb(crumbs: Vec<BreadcrumbCrumb>, palette: &ForgePalette) -> Breadcrumb {
     Breadcrumb {
         crumbs,

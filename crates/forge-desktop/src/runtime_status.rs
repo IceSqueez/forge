@@ -15,7 +15,6 @@ impl RuntimeStatus {
         }
     }
 
-    /// Saturating: a non-monotonic clock reading must not underflow (Windows monotonic epoch starts near zero).
     pub fn refresh(&mut self, now: Instant) {
         self.uptime_secs = now.saturating_duration_since(self.started_at).as_secs();
     }

@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum PlatformId {
     Twitch,
-    // snake_case would yield "you_tube"; the wire protocol uses "youtube".
     #[serde(rename = "youtube")]
     YouTube,
     Kick,

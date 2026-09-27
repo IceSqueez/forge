@@ -656,8 +656,6 @@ pub(crate) mod tests {
         tokio_tungstenite::connect_async(request).await.map(|_| ())
     }
 
-    // Why: tungstenite takes the connect target from the URI and the `Host` line from the header
-    // map, so the socket stays on loopback while the request presents a LAN-style authority.
     async fn ws_handshake_presenting_host(
         addr: std::net::SocketAddr,
         origin: &str,
@@ -717,10 +715,7 @@ pub(crate) mod tests {
     const ORIGIN_NOT_ALLOWED: &str = "ORIGIN_NOT_ALLOWED";
     const LOOPBACK: &str = "127.0.0.1";
     const EPHEMERAL_PORT: u16 = 0;
-    /// Mirrors the drain budget `ServerHandle::stop` allows a listener before it gives up.
     const DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
-    /// A request head with no terminating empty line: hyper has read it, so the connection is
-    /// busy rather than idle and graceful shutdown waits on it instead of closing it.
     const UNFINISHED_REQUEST_HEAD: &[u8] = b"GET /api/v1/info HTTP/1.1\r\nHost: localhost\r\n";
     const LOOPBACK_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
     const OLD_LISTENER_WINDOW: std::time::Duration = std::time::Duration::from_millis(50);
@@ -1571,16 +1566,10 @@ pub(crate) mod tests {
     const BEARER_TOKEN: &str = "bearer-under-test";
     const FOREIGN_HOST: &str = "evil.example";
     const ADDED_ORIGIN_HOST: &str = "dash.test";
-    /// Mirrors the unauthenticated text-frame bound the socket loop enforces.
     const PRE_AUTH_LIMIT: usize = 16 * 1024;
-    /// Mirrors the protocol-level frame and message bound set on the upgrade.
     const PROTOCOL_LIMIT: usize = 256 * 1024;
     const PAST_PRE_AUTH_PAYLOAD: usize = 100 * 1024;
-    /// Each round trip gives a pending policy close another chance to win the socket loop's
-    /// select, so a session that should have stayed open is caught with near certainty.
     const ROUND_TRIPS: usize = 8;
-    /// Mirrors the grace period the socket loop allows before an unauthenticated session must
-    /// justify staying open.
     const PRE_AUTH_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
     const PRE_AUTH_MARGIN: std::time::Duration = std::time::Duration::from_secs(1);
 
@@ -1786,8 +1775,6 @@ pub(crate) mod tests {
         handle.abort();
     }
 
-    /// Sends the request head verbatim so the `Host` line is whatever the case names; `None`
-    /// sends an HTTP/1.0 request with no `Host` at all.
     async fn raw_request_naming(
         addr: std::net::SocketAddr,
         target: &str,
@@ -1894,8 +1881,6 @@ pub(crate) mod tests {
         handle.abort();
     }
 
-    // Why: the socket loop answers any binary frame with 1003, so seeing any other ending
-    // proves the oversized frame was refused by the protocol layer before it was buffered whole.
     #[tokio::test]
     async fn a_frame_past_the_protocol_limit_is_refused_before_the_socket_loop_sees_it() {
         let (handle, addr) = make_server(false, MemCreds::with_token(BEARER_TOKEN)).await;
@@ -1987,9 +1972,6 @@ pub(crate) mod tests {
         handle.abort();
     }
 
-    // Why: under reads-required, `stays_open` only checks `authenticated`, so a session that
-    // spoke without ever authenticating must still be closed once the window passes - having
-    // sent a message must not stand in for a bearer or overlay credential.
     #[tokio::test]
     async fn an_unauthenticated_socket_that_spoke_is_still_closed_at_the_window_when_reads_are_required()
      {

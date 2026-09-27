@@ -116,7 +116,6 @@ impl MediaFormat {
         Self::Svg,
     ];
 
-    /// Doubles as the persisted token and the on-disk file extension.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Wav => FORMAT_TOKEN_WAV,
@@ -159,7 +158,6 @@ impl MediaFormat {
             .find(|format| format.as_str() == token)
     }
 
-    /// A caller-supplied extension is a first guess only; [`sniff`] decides.
     pub fn from_extension(extension: &str) -> Option<Self> {
         let lowered = extension.to_ascii_lowercase();
         match lowered.as_str() {
@@ -260,7 +258,6 @@ pub fn sniff(bytes: &[u8]) -> Option<MediaFormat> {
     sniff_mp3(bytes)
 }
 
-/// Display text only; no part of it ever reaches a path component.
 pub fn sanitize_label(raw: &str) -> String {
     let mut label = String::with_capacity(raw.len());
     let mut pending_space = false;
@@ -301,7 +298,6 @@ pub struct AcceptedMedia {
     pub label: String,
 }
 
-/// The single admission gate: every backend routes incoming bytes through it.
 pub fn accept_media(label: &str, bytes: &[u8]) -> Result<AcceptedMedia, StorageError> {
     let sanitized = sanitize_label(label);
 
@@ -409,7 +405,6 @@ impl std::fmt::Display for MediaReferrerKind {
     }
 }
 
-/// A domain row plus the slot inside it, so one row can point at several blobs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MediaReferrer {
     pub kind: MediaReferrerKind,
@@ -430,11 +425,8 @@ impl MediaReferrer {
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait MediaRepo: Send + Sync {
-    /// Admits bytes under a content identity; storing identical content twice
-    /// yields the same blob and keeps the first label and import time.
     async fn store(&self, label: &str, bytes: Vec<u8>) -> Result<MediaBlob, StorageError>;
 
-    /// Reads `source` outside the caller's task, then admits it as [`Self::store`] does.
     async fn import_file(&self, source: &Path) -> Result<MediaBlob, StorageError>;
 
     async fn get(&self, id: &MediaBlobId) -> Result<Option<MediaBlob>, StorageError>;
@@ -443,21 +435,16 @@ pub trait MediaRepo: Send + Sync {
 
     async fn total_bytes(&self) -> Result<u64, StorageError>;
 
-    /// [`StorageError::NotFound`] also covers an indexed blob whose file is gone.
     async fn resolve(&self, id: &MediaBlobId) -> Result<PathBuf, StorageError>;
 
     async fn read(&self, id: &MediaBlobId) -> Result<Vec<u8>, StorageError>;
 
-    /// Refuses with [`StorageError::MediaReferenced`] while any referrer holds it.
     async fn delete(&self, id: &MediaBlobId) -> Result<bool, StorageError>;
 
-    /// Replaces whatever that referrer's slot held.
     async fn retain(&self, referrer: &MediaReferrer, id: &MediaBlobId) -> Result<(), StorageError>;
 
-    /// Returns true if the slot held anything.
     async fn release(&self, referrer: &MediaReferrer) -> Result<bool, StorageError>;
 
-    /// Drops every slot of one domain row; returns how many were held.
     async fn release_all(
         &self,
         kind: MediaReferrerKind,

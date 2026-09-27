@@ -10,10 +10,8 @@ use crate::control::{ControlClient, EventStream};
 use crate::fixture::{Fixture, ForgeDataDir, SeedReport, seed};
 
 pub struct LaunchOptions {
-    /// The forge-emulator executable, run as the seeder child.
     pub emulator: PathBuf,
     pub forge: ForgeCommand,
-    /// Each attempt seeds and runs under `<run_root>/attempt-<n>/{data,home}`, kept for inspection.
     pub run_root: PathBuf,
     pub fixture: Fixture,
     pub endpoint_overrides: Vec<(&'static str, String)>,
@@ -21,12 +19,10 @@ pub struct LaunchOptions {
     pub guard: GameGuard,
     pub live: LivePaths,
     pub ready_timeout: Duration,
-    /// Bounds relaunches after forge loses the race for its seeded server port.
     pub max_attempts: u32,
     pub shutdown_grace: Duration,
 }
 
-/// Holds the authenticated control connection that proved readiness.
 pub struct LaunchedForge {
     pub process: ForgeProcess,
     pub client: ControlClient,

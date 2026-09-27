@@ -27,7 +27,6 @@ impl CoreLogicLoopRunner {
     }
 }
 
-/// `Break`/`Stop`/`Abort` end the loop while keeping the body's mutations; `Fail` carries the child error.
 enum IterOutcome {
     Continue(ArgStack),
     Break(ArgStack),

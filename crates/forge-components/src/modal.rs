@@ -21,7 +21,6 @@ fn pad(s: Spacing) -> Pixels {
 
 type CloseHandler = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// Only the surface - wrap in [`crate::overlay()`] for the scrim, enter animation, and scrim/Escape dismissal.
 #[derive(IntoElement)]
 pub struct Modal {
     title: SharedString,
@@ -82,7 +81,6 @@ impl Modal {
         self
     }
 
-    /// Replaces the whole title/subtitle column with a caller-owned element; when set, `title` and `subtitle` are ignored.
     #[must_use]
     pub fn title_slot(mut self, slot: impl IntoElement) -> Self {
         self.title_slot = Some(slot.into_any_element());
@@ -101,7 +99,6 @@ impl Modal {
         self
     }
 
-    /// Drops the default body padding so the caller owns the body's own padding/scroll frame.
     #[must_use]
     pub fn flush_body(mut self) -> Self {
         self.pad_body = false;
@@ -242,7 +239,6 @@ impl RenderOnce for Modal {
         }
         let body = body.child(std::mem::replace(&mut self.body, div().into_any_element()));
 
-        // `overflow_hidden` clips the header/footer bands to the rounded card so the footer's `shell` fill does not square off the bottom corners.
         div()
             .flex()
             .flex_col()

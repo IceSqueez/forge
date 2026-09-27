@@ -50,7 +50,6 @@ impl ScriptHttpClient {
         Ok(Self { config, client })
     }
 
-    /// The rate-limit counter is only bumped once validation passes and the request is about to be sent.
     pub fn get(&self, url_str: &str, counter: &Arc<AtomicU32>) -> Result<HttpResponse, HttpError> {
         let url = reqwest::Url::parse(url_str).map_err(|e| HttpError::Network(e.to_string()))?;
         self.validate(&url, counter)?;

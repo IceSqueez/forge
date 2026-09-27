@@ -1,8 +1,5 @@
 use std::net::IpAddr;
 
-/// Single SSRF first-layer denylist shared by every egress surface (script HTTP sandbox,
-/// sub-action egress client): loopback, RFC-1918/3927/6598/4193 private ranges (incl. the
-/// `169.254.169.254` cloud-metadata endpoint), IPv6 link-local/multicast/unspecified, broadcast.
 pub fn is_private_or_special(addr: IpAddr) -> bool {
     match addr {
         IpAddr::V4(ip) => {

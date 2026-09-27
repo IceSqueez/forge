@@ -42,7 +42,6 @@ const STEP_GAP: Pixels = px(10.0);
 const STEP_NUMBER_SIZE: Pixels = px(11.0);
 const STEP_TEXT_SIZE: Pixels = px(11.5);
 const STEP_LINE_HEIGHT: Pixels = px(17.25);
-/// Fluent trims edge whitespace, so inter-fragment word spacing is a layout gap, not part of the string.
 const WORD_GAP: Pixels = px(4.0);
 const INTRO_LINE_HEIGHT: Pixels = px(17.8);
 

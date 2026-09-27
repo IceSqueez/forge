@@ -14,7 +14,6 @@ use crate::overlay_shows::ShowEnd;
 const DURATION_KEY: &str = "duration_secs";
 const WAIT_KEY: &str = "wait_for_show";
 
-/// Names the catalog a host resolves `overlay_id` in to get the target type's content fields.
 pub const CONTENT_SCHEMA_KEY: &str = "overlay.content_fields";
 
 pub struct OverlaySendRunner {
@@ -166,8 +165,6 @@ impl SubActionRunner for OverlaySendRunner {
     }
 }
 
-/// Everything the runner does not own is a content candidate; the target kind's content group
-/// decides which of them survive.
 fn supplied_content(config: &SubActionConfig) -> OverlayConfig {
     config
         .iter()
@@ -176,7 +173,6 @@ fn supplied_content(config: &SubActionConfig) -> OverlayConfig {
         .collect()
 }
 
-/// The optional field holds a bool while the override is off, so only a whole number counts.
 fn duration_override(config: &SubActionConfig) -> Option<u64> {
     let Some(Variant::Int(seconds)) = config.get(DURATION_KEY) else {
         return None;

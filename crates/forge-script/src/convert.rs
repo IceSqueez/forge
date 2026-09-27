@@ -22,7 +22,6 @@ pub(crate) fn variant_to_dynamic(v: Variant) -> rhai::Dynamic {
     }
 }
 
-/// Does not support rhai `Array`/`Map`; callers needing collection round-trips handle those branches explicitly.
 pub(crate) fn dynamic_to_variant(d: rhai::Dynamic) -> Result<Variant, String> {
     if d.is::<i64>() {
         return Ok(Variant::Int(d.cast::<i64>()));

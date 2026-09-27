@@ -19,7 +19,6 @@ pub enum Expectation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ObservedEvent {
-    /// Lets a `caused_by` expectation refer to the event this one matched.
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
@@ -68,7 +67,6 @@ pub struct AbsentEvent {
     pub window_ms: u64,
 }
 
-/// Holds when the event named `effect` carries the id of the event named `cause` as its direct cause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Causation {
@@ -86,7 +84,6 @@ pub struct TwitchSubscription {
     pub within_ms: u64,
 }
 
-/// Counts fake Twitch REST requests by exact path and, when given, method.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestCount {
@@ -99,10 +96,6 @@ pub struct RequestCount {
     pub max: Option<u32>,
 }
 
-/// Holds when the page open for `overlay` receives a content frame carrying every named key as
-/// exactly that plain JSON string. A frame whose content holds a tagged `{"type","value"}` object
-/// anywhere fails this expectation even when the named keys read correctly: a page renders what
-/// the wire gives it, and a tagged object renders as `[object Object]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OverlayContent {
@@ -111,7 +104,6 @@ pub struct OverlayContent {
     pub within_ms: u64,
 }
 
-/// Matches structured field values as rendered in the log; never the message prose.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LogLine {

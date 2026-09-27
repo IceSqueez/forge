@@ -37,20 +37,14 @@ pub trait TriggerInstanceRepo: Send + Sync {
     ) -> Result<TriggerInstanceId, StorageError>;
     async fn set_enabled(&self, id: TriggerInstanceId, enabled: bool) -> Result<(), StorageError>;
 
-    /// Soft delete (not [`Self::delete`]): hides `id` from `get`/`list_all`/
-    /// `list_user_defined`/`list_for_action` until [`Self::restore`]; the row and its
-    /// `action_trigger_instances` links survive untouched. Default impl has no generic
-    /// archived-state representation and returns [`StorageError::NotReady`].
     async fn archive(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Reverses [`Self::archive`]; see its default-impl caveat.
     async fn restore(&self, _id: TriggerInstanceId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Mirror of `list_all`, which excludes archived entries. Default impl reports none.
     async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
         Ok(Vec::new())
     }

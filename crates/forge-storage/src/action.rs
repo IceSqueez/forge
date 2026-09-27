@@ -32,7 +32,6 @@ pub trait ActionRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<Action>, StorageError>;
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError>;
     async fn save(&self, action: &Action) -> Result<(), StorageError>;
-    /// Returns true if a row was removed.
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError>;
     async fn list_by_group<'a>(
         &'a self,
@@ -58,12 +57,8 @@ pub trait ActionRepo: Send + Sync {
         }
         Ok(())
     }
-    /// Returns rows removed.
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 
-    /// Writes only the enabled flag; returns false if `id` is absent or archived. Default
-    /// impl re-saves the whole row and can overwrite a concurrent edit; a real backend
-    /// must override it.
     async fn set_enabled(&self, id: ActionId, enabled: bool) -> Result<bool, StorageError> {
         let Some(mut action) = self.get(id).await? else {
             return Ok(false);
@@ -73,8 +68,6 @@ pub trait ActionRepo: Send + Sync {
         Ok(true)
     }
 
-    /// Returns the new flag, or `None` if `id` is absent or archived. Same default-impl
-    /// caveat as [`Self::set_enabled`].
     async fn toggle_enabled(&self, id: ActionId) -> Result<Option<bool>, StorageError> {
         let Some(mut action) = self.get(id).await? else {
             return Ok(None);
@@ -84,10 +77,6 @@ pub trait ActionRepo: Send + Sync {
         Ok(Some(action.enabled))
     }
 
-    /// Errors with [`StorageError::NotFound`] if `source_id` does not exist. The default
-    /// impl copies only the `Action` row itself, not its trigger-instance links (this
-    /// trait has no visibility into `action_trigger_instances`); a real backend should
-    /// override this to re-point links in the same transaction.
     async fn duplicate(
         &self,
         source_id: ActionId,
@@ -105,20 +94,14 @@ pub trait ActionRepo: Send + Sync {
         self.save(&copy).await
     }
 
-    /// Soft delete (not [`Self::delete`]): hides `id` from `get`/`list`/`list_by_group`
-    /// until [`Self::restore`]; telemetry survives untouched. Default impl has no
-    /// generic archived-state representation and returns [`StorageError::NotReady`];
-    /// a real backend must override this.
     async fn archive(&self, _id: ActionId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Reverses [`Self::archive`]; see its default-impl caveat.
     async fn restore(&self, _id: ActionId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Mirror of `list`, which excludes archived entries. Default impl reports none.
     async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
         Ok(Vec::new())
     }

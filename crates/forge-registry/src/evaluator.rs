@@ -5,7 +5,6 @@ pub struct EventFilter {
     pub kind_prefix: Option<String>,
 }
 
-/// Matches only at a `.` segment boundary: `a.b` matches `a.b` and `a.b.c`, never `a.b_c`; a prefix ending in `.` matches any kind under it.
 pub fn kind_matches_prefix(kind: &str, prefix: &str) -> bool {
     match kind.strip_prefix(prefix) {
         Some(rest) => rest.is_empty() || prefix.ends_with('.') || rest.starts_with('.'),
@@ -73,8 +72,6 @@ mod tests {
 
     #[test]
     fn an_empty_prefix_matches_only_the_empty_kind() {
-        // Why: `None` is the match-all filter; `Some("")` is not a wildcard, so a descriptor
-        // declaring it silently never fires.
         assert!(kind_matches_prefix("", ""));
         assert!(!kind_matches_prefix("twitch.channel.unban", ""));
     }

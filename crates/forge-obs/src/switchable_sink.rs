@@ -35,7 +35,6 @@ impl SwitchableObsSink {
         subscribe(&self.stream_output)
     }
 
-    // sync RwLock guard must not cross an .await; clone the Arc out first.
     fn get(&self) -> Result<Arc<ObsClient>, ObsError> {
         let guard = self.inner.read().unwrap_or_else(|e| e.into_inner());
         guard.clone().ok_or(ObsError::Disconnected)

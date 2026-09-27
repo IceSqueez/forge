@@ -35,7 +35,6 @@ impl ConfirmTone {
     }
 }
 
-/// The card is only the surface - wrap it in a centred [`crate::overlay()`] for the scrim, animation and Escape/scrim dismissal.
 #[derive(IntoElement)]
 pub struct ConfirmModal {
     title: SharedString,
@@ -71,7 +70,6 @@ impl ConfirmModal {
         self
     }
 
-    /// Retained for call-site compatibility; the Esc hint is no longer rendered.
     #[must_use]
     pub fn esc_hint(self, _phrase: impl Into<SharedString>) -> Self {
         self
@@ -100,7 +98,6 @@ impl ConfirmModal {
     }
 }
 
-/// Bespoke because the button family has no arbitrary-hue filled constructor and the `Warning` tone needs a warning-hued fill.
 fn accent_confirm_button(
     id: ElementId,
     label: SharedString,

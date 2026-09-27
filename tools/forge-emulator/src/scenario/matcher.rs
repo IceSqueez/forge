@@ -11,9 +11,7 @@ use serde_json::Value;
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ValueMatcher {
     Equals(Value),
-    /// Matches only a string value holding this substring.
     Contains(String),
-    /// `true` when the pointer resolves, including to a JSON null.
     Present(bool),
 }
 
@@ -29,7 +27,6 @@ impl ValueMatcher {
     }
 }
 
-/// A JSON object whose repeated key is an error rather than a silent overwrite.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct UniqueMap<V>(pub BTreeMap<String, V>);
@@ -68,7 +65,6 @@ impl<'de, V: DeserializeOwned> Deserialize<'de> for UniqueMap<V> {
     }
 }
 
-/// Keys are JSON pointers into the event payload (`/user/login`); `""` names the whole payload.
 pub type PayloadMatchers = UniqueMap<ValueMatcher>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -89,7 +85,6 @@ impl EventPattern<'_> {
                 .all(|(pointer, matcher)| matcher.matches(event.payload.pointer(pointer)))
     }
 
-    /// The string an `equals` matcher pins at `pointer`, if any.
     pub fn pinned_string(&self, pointer: &str) -> Option<&str> {
         match self.payload.0.get(pointer) {
             Some(ValueMatcher::Equals(Value::String(text))) => Some(text),

@@ -37,8 +37,6 @@ pub(crate) enum ConfigField {
     Input {
         key: String,
         integer: bool,
-        /// Set for a declared key the kind gives no default: emptying it drops the key entirely
-        /// rather than writing a number the user never chose.
         optional: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
@@ -98,8 +96,6 @@ pub(crate) type ConfigCommitHandler<V> =
 
 type ChoiceOpener<V> = fn(&mut V, String, Point<Pixels>, &mut Window, &mut Context<V>);
 
-/// Whether the calling view hosts a value picker. Without one, the select-shaped fields fall back
-/// to free text rather than rendering a control whose click would go nowhere.
 pub(crate) enum ChoiceSupport<'a> {
     Text,
     Picker(&'a HashMap<String, Vec<(String, String)>>),
@@ -120,7 +116,6 @@ pub(crate) fn sparse_overrides(default: &FieldConfig, buffer: &FieldConfig) -> F
         .collect()
 }
 
-/// Everything a fold needs beyond the field itself, so the walk stays one call per spec.
 pub(crate) struct FoldContext<'a, V: 'static> {
     pub(crate) config: &'a FieldConfig,
     pub(crate) defaults: &'a FieldConfig,

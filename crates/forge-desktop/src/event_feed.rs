@@ -60,7 +60,6 @@ pub struct EventFeedView {
     log: Entity<EventLog>,
     active_filter: EventFilter,
     search: SearchState,
-    /// `None` falls back to the newest row, keeping the inspector populated.
     selected: Option<gpui::SharedString>,
     visible: Vec<EventItem>,
     downstream: HashMap<gpui::SharedString, u32>,
@@ -510,7 +509,6 @@ impl EventFeedView {
                 .child(item.summary.clone()),
         );
 
-        // gpui shares one `border_color` across all sides, so the selection rail is a separate leading strip rather than a left border.
         let rail_strip = div().flex_none().w(ROW_RAIL_W).bg(rail);
 
         let content = div()

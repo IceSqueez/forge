@@ -2,7 +2,6 @@ use serde_json::Value;
 
 const CLIPPED: &str = "...";
 
-/// An inline code span that stays one span whatever backticks the text holds.
 pub(crate) fn code(text: &str) -> String {
     if text.is_empty() {
         return "` `".to_owned();
@@ -16,19 +15,16 @@ pub(crate) fn code(text: &str) -> String {
     format!("{ticks}{pad}{text}{pad}{ticks}")
 }
 
-/// A fenced block whose fence is longer than any backtick run inside it.
 pub(crate) fn fence(language: &str, body: &str) -> String {
     let ticks = "`".repeat(longest_backtick_run(body).max(2) + 1);
     let body = body.strip_suffix('\n').unwrap_or(body);
     format!("{ticks}{language}\n{body}\n{ticks}\n")
 }
 
-/// Table cells cannot hold pipes or line breaks.
 pub(crate) fn cell(text: &str) -> String {
     text.replace('|', "\\|").replace(['\r', '\n'], " ")
 }
 
-/// At most `max_chars` characters, marking a cut with a trailing ellipsis.
 pub(crate) fn clip(text: &str, max_chars: usize) -> String {
     match text.char_indices().nth(max_chars) {
         Some((cut, _)) => format!("{}{CLIPPED}", &text[..cut]),
@@ -44,7 +40,6 @@ pub(crate) fn compact(value: &Value, max_chars: usize) -> String {
     clip(&value.to_string(), max_chars)
 }
 
-/// Whole seconds read as `2s`; anything else stays in milliseconds.
 pub(crate) fn span_ms(ms: u64) -> String {
     if ms > 0 && ms.is_multiple_of(1000) {
         format!("{}s", ms / 1000)

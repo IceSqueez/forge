@@ -29,7 +29,6 @@ impl fmt::Display for EndpointRefusal {
     }
 }
 
-/// Yields the parsed URL's own serialization, so the string later dialed is the one validated.
 pub(crate) fn validate_override(
     protocol: EndpointProtocol,
     raw: &OsStr,

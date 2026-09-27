@@ -279,8 +279,6 @@ impl SoundboardClipsRepo for FakeClips {
     }
 }
 
-/// Captures everything the library announces so a test can assert both WHICH events fired and
-/// that no extra one did.
 #[derive(Default)]
 struct RecordingPublisher {
     events: Mutex<Vec<Event>>,
@@ -293,7 +291,6 @@ impl EventPublisher for RecordingPublisher {
 }
 
 impl RecordingPublisher {
-    /// Payloads of the adoption announcements, in the order they were published.
     fn settled(&self) -> Vec<Value> {
         self.events
             .lock()

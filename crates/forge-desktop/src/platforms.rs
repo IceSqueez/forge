@@ -69,7 +69,6 @@ impl PlatformConnectivity {
             .unwrap_or(false)
     }
 
-    /// Returns whether the value actually changed.
     pub fn set_connected(&mut self, integ: Integration, connected: bool) -> bool {
         if let Some(entry) = self.connections.iter_mut().find(|(i, _)| *i == integ)
             && entry.1 != connected
@@ -314,7 +313,6 @@ fn feature_chip(label: impl Into<SharedString>, palette: &ForgePalette) -> impl 
         )
 }
 
-/// gpui 0.2.2 has no CSS-grid primitive; the two-column layout is emulated with flex row pairs, a trailing odd card balanced by an equal-flex spacer.
 fn platform_grid(cards: Vec<AnyElement>, density: Density) -> impl IntoElement {
     let gap = spacing(Spacing::Sm, density);
     let mut grid = div().w_full().flex().flex_col().gap(gap);

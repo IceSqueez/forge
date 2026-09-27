@@ -8,7 +8,6 @@ use super::log_record::LogRecord;
 const LOG_FILE_PREFIX: &str = "forge.log";
 const TAIL_WINDOW_BYTES: u64 = 64 * 1024;
 
-/// Follows forge's rotating log files, yielding only complete lines written after it started.
 #[derive(Debug, Clone)]
 pub(crate) struct LogTail {
     dir: PathBuf,
@@ -16,7 +15,6 @@ pub(crate) struct LogTail {
 }
 
 impl LogTail {
-    /// A line still being written when the tail starts is read in full once it ends.
     pub(crate) fn from_now(dir: &Path) -> Self {
         let consumed = log_files(dir)
             .unwrap_or_default()
@@ -59,7 +57,6 @@ impl LogTail {
     }
 }
 
-/// The last `count` complete lines of the newest log file.
 pub(crate) fn newest_lines(dir: &Path, count: usize) -> Vec<String> {
     let Some(newest) = log_files(dir)
         .ok()
@@ -81,7 +78,6 @@ pub(crate) fn newest_lines(dir: &Path, count: usize) -> Vec<String> {
     lines.split_off(skip)
 }
 
-/// Sorted by name, which the rotation's date suffix makes chronological.
 fn log_files(dir: &Path) -> io::Result<Vec<PathBuf>> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -116,7 +112,6 @@ fn complete_prefix_len(file: &Path) -> io::Result<u64> {
     })
 }
 
-/// A file that shrank below `offset` was replaced, so it is read from its start.
 fn read_complete_lines(file: &Path, offset: u64) -> io::Result<(Vec<String>, u64)> {
     let mut handle = match File::open(file) {
         Ok(handle) => handle,

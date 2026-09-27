@@ -27,7 +27,6 @@ fn enabled_by_default() -> bool {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct OverrideEntry {
-    /// Absent means the roster default; a stored-but-unbindable chord means explicitly unbound.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     chord: Option<String>,
     #[serde(default = "enabled_by_default")]
@@ -104,7 +103,6 @@ impl ShortcutOverrides {
             .is_some_and(|stored| stored.chord.is_some())
     }
 
-    /// Flat `id -> chord` overrides for the keymap: a disabled shortcut is stored as an unbindable chord so it never reaches `cx.bind_keys`.
     fn keymap_overrides(&self) -> HashMap<String, String> {
         SHORTCUTS
             .iter()
@@ -166,7 +164,6 @@ impl ShortcutOverrides {
         self.prune(id);
     }
 
-    /// Stores an unbindable chord, which `chord_of` reads back as "no chord" without losing the entry.
     pub fn unbind(&mut self, id: &str) {
         self.entry_mut(id).chord = Some(String::new());
     }

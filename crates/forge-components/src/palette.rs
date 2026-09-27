@@ -55,8 +55,6 @@ pub fn with_alpha(c: Rgba, alpha: f32) -> Rgba {
     Rgba { a: alpha, ..c }
 }
 
-/// `None` for a name outside the shipped accent vocabulary, so a caller can render it as unknown
-/// instead of silently painting it a color that means something else.
 pub fn accent_swatch(name: &str, palette: &ForgePalette) -> Option<Rgba> {
     match name {
         "mauve" => Some(palette.brand),
@@ -95,7 +93,6 @@ pub enum ThemeId {
 impl ThemeId {
     pub const ALL: [ThemeId; 3] = [ThemeId::ForgeDefault, ThemeId::TokyoNight, ThemeId::Latte];
 
-    /// Persisted identifier - must stay stable across releases.
     pub fn storage_key(self) -> &'static str {
         match self {
             ThemeId::ForgeDefault => "forge_default",

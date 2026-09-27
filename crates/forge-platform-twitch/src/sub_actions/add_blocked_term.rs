@@ -165,7 +165,6 @@ impl SubActionRunner for AddBlockedTermRunner {
     }
 }
 
-// broadcaster_id = moderator_id = self.
 async fn post_blocked_term(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,

@@ -20,7 +20,6 @@ impl ActionCancelRegistry {
         Self::default()
     }
 
-    /// Keyed per-execution, so deregistering one finished run never strands a concurrent run.
     pub fn register(&self, action_id: ActionId, signal: CancelSignal) -> u64 {
         let mut inner = self.lock();
         let exec_id = inner.next_exec_id;

@@ -64,7 +64,6 @@ pub mod reserved_keys {
 
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
 
-/// How each settings key may appear in the publicly-attachable diagnostic bundle.
 pub mod disclosure {
     use std::collections::{BTreeMap, HashMap};
 
@@ -72,7 +71,6 @@ pub mod disclosure {
 
     use super::reserved_keys;
 
-    /// A key with no entry in `class_of` is `Withheld`, so a key added tomorrow costs a diagnostic, never a leak.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum SettingDisclosure {
         Verbatim,
@@ -81,7 +79,6 @@ pub mod disclosure {
         Withheld,
     }
 
-    /// `Verbatim` is reserved for values that cannot name a person, a channel, a host or a path.
     pub fn class_of(key: &str) -> SettingDisclosure {
         use SettingDisclosure::{Kind, Presence, Verbatim, Withheld};
 
@@ -146,7 +143,6 @@ pub mod disclosure {
         }
     }
 
-    /// `None` keeps the key out of the bundle entirely.
     pub fn render(key: &str, value: &str) -> Option<String> {
         match class_of(key) {
             SettingDisclosure::Verbatim => Some(value.to_owned()),
@@ -158,7 +154,6 @@ pub mod disclosure {
         }
     }
 
-    /// Ordered by key so two bundles from the same install diff cleanly.
     pub fn render_all(stored: &HashMap<String, String>) -> BTreeMap<String, String> {
         stored
             .iter()
@@ -262,7 +257,6 @@ pub trait SettingsRepo: Send + Sync {
     async fn delete(&self, key: &str) -> Result<bool, StorageError>;
     async fn load_all(&self) -> Result<HashMap<String, String>, StorageError>;
 
-    /// Absent key returns `Language::En` (first-run default before migration seed reaches storage).
     async fn language(&self) -> Result<Language, StorageError> {
         match self.get_string(reserved_keys::LANGUAGE).await? {
             Some(s) => s
@@ -277,7 +271,6 @@ pub trait SettingsRepo: Send + Sync {
             .await
     }
 
-    /// Absent or corrupt key silently returns `Density::Cozy` (default).
     async fn density(&self) -> Result<Density, StorageError> {
         match self.get_string(reserved_keys::DENSITY).await? {
             Some(s) => Ok(s.parse().unwrap_or_default()),
@@ -302,7 +295,6 @@ pub trait SettingsRepo: Send + Sync {
         self.get_string(reserved_keys::FONT_BODY).await
     }
 
-    /// `None` clears the override (not a no-op) and falls back to the bundled default.
     async fn set_font_body(&self, name: Option<String>) -> Result<(), StorageError> {
         match name {
             Some(family) => self.set_string(reserved_keys::FONT_BODY, &family).await,
@@ -317,7 +309,6 @@ pub trait SettingsRepo: Send + Sync {
         self.get_string(reserved_keys::FONT_MONO).await
     }
 
-    /// `None` clears the override (not a no-op) and falls back to the bundled default.
     async fn set_font_mono(&self, name: Option<String>) -> Result<(), StorageError> {
         match name {
             Some(family) => self.set_string(reserved_keys::FONT_MONO, &family).await,
@@ -332,7 +323,6 @@ pub trait SettingsRepo: Send + Sync {
         self.get_string(reserved_keys::AUDIO_OUTPUT_DEVICE_ID).await
     }
 
-    /// `None` clears the preference (not a no-op) and falls back to the OS default device.
     async fn set_audio_output_device_id(
         &self,
         device_id: Option<String>,
@@ -376,7 +366,6 @@ pub async fn set_bool_setting(
         .await
 }
 
-/// Absent key, read error, or malformed JSON all yield `None`; callers apply their default.
 pub async fn get_json_setting<T: serde::de::DeserializeOwned>(
     repo: &dyn SettingsRepo,
     key: &str,
@@ -499,7 +488,6 @@ pub const VOICE_GATE_DEFAULT_HOLD_MS: u32 = 800;
 pub struct VoiceGateSettings {
     pub enabled: bool,
     pub input_device_id: Option<String>,
-    /// Linear peak amplitude in 0.0..=1.0, not decibels.
     pub threshold: f32,
     pub hold_ms: u32,
 }
@@ -557,7 +545,6 @@ pub async fn set_voice_gate_enabled(
     set_bool_setting(repo, reserved_keys::AUDIO_VOICE_GATE_ENABLED, enabled).await
 }
 
-/// `None` clears the preference (not a no-op) and falls back to the OS default device.
 pub async fn set_voice_gate_input_device_id(
     repo: &dyn SettingsRepo,
     device_id: Option<String>,
@@ -691,7 +678,6 @@ const DIAGNOSTIC_LOG_LEVELS: [LogLevel; 5] = [
     LogLevel::Error,
 ];
 
-/// Stable on-disk spelling: changing one orphans every value already persisted under it.
 pub fn log_level_as_str(level: &LogLevel) -> &'static str {
     match level {
         LogLevel::Trace => "trace",
@@ -709,7 +695,6 @@ fn decode_log_level(raw: &str) -> Option<LogLevel> {
         .find(|level| raw.eq_ignore_ascii_case(log_level_as_str(level)))
 }
 
-/// An unreadable stored spelling yields the default; a diagnostics setting never blocks boot.
 pub async fn diagnostic_log_level(repo: &dyn SettingsRepo) -> Result<LogLevel, StorageError> {
     let raw = repo
         .get_string(reserved_keys::DIAGNOSTICS_LOG_LEVEL)
@@ -731,8 +716,6 @@ pub async fn set_diagnostic_log_level(
     .await
 }
 
-/// Stored credentials encrypted under a key that no longer exists; they stay in place and
-/// each one fails to load until it is entered again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CredentialsKeyLoss {
     pub stranded: u64,
@@ -749,7 +732,6 @@ pub async fn record_credentials_key_loss(
     .await
 }
 
-/// Clears the record, so a loss is reported once; an unreadable record reads as absent.
 pub async fn take_credentials_key_loss(
     repo: &dyn SettingsRepo,
 ) -> Result<Option<CredentialsKeyLoss>, StorageError> {
@@ -879,9 +861,6 @@ mod tests {
         }
     }
 
-    // Why: the stored spelling is a persistence contract, not a formatting detail - respelling
-    // any of the five orphans every value already written under the old spelling, so each one
-    // is pinned here on purpose.
     #[tokio::test]
     async fn diagnostic_log_level_persists_each_level_under_its_canonical_lowercase_spelling() {
         let repo = MapRepo::default();
@@ -942,11 +921,8 @@ mod tests {
         }
     }
 
-    /// A value no disclosure rendering may ever pass through.
     const SECRET: &str = "nova_the_broadcaster";
 
-    /// Why: default-deny is the whole safety property of the vocabulary - a key added tomorrow,
-    /// or a key whose classification is deleted, must cost a missing diagnostic and not a leak.
     #[test]
     fn an_unclassified_key_is_withheld_and_renders_nothing() {
         for key in [
@@ -954,7 +930,6 @@ mod tests {
             "twitch.account_login",
             "some.key.invented.tomorrow",
             "theme.extra",
-            // One character short of the engine-params prefix, so the `starts_with` arm misses it.
             "tts.engine_params",
         ] {
             assert_eq!(
@@ -966,9 +941,6 @@ mod tests {
         }
     }
 
-    /// Why: R4 - no account, channel, host, path or imported-file value appears anywhere in the
-    /// bundle, and a remembered favorite can name an imported image. Moving any key on this list
-    /// into the verbatim arm publishes it, so the class is pinned per key.
     #[test]
     fn keys_that_can_name_a_host_a_path_a_device_or_an_import_are_never_verbatim() {
         for (key, expected) in [
@@ -1050,7 +1022,6 @@ mod tests {
             ("[]", "list(0)"),
             (r#"{"a":1,"b":2}"#, "map(2)"),
             ("{}", "map(0)"),
-            // Not a container: falls back to a stamped character count, not the text.
             (SECRET, "<redacted len=20>"),
             ("Привіт", "<redacted len=6>"),
             ("", "<redacted len=0>"),

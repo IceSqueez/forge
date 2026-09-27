@@ -7,7 +7,6 @@ use std::time::Duration;
 use crate::palette::ForgePalette;
 use crate::tokens::{FONT_XXS, Radius, body_family, mono_family, radius};
 
-// Deliberately off the `Spacing`/`Radius` scale: a status chip is fixed, density-neutral pill geometry.
 const BADGE_PAD_V: Pixels = px(1.0);
 const BADGE_PAD_H: Pixels = px(6.0);
 const BADGE_RADIUS: Pixels = px(8.0);
@@ -25,8 +24,6 @@ pub fn status_dot(color: Rgba, size: Pixels) -> impl IntoElement {
         .bg(color)
 }
 
-/// Phase comes from the app-wide synced clock, so every live dot pulses together; `id` must still
-/// be distinct per instance because gpui keys the element's animation state by it.
 pub fn pulse_dot(id: impl Into<ElementId>, color: Rgba, size: Pixels) -> impl IntoElement {
     div()
         .flex_none()

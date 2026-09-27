@@ -13,7 +13,6 @@ const FRAME_KEY: &str = "frame";
 const CONTENT_FRAME: &str = "content";
 const CONTENT_KEY: &str = "content";
 const DURATION_KEY: &str = "durationMs";
-/// The two keys `forge_types::Variant` serializes itself under.
 const TAG_KEY: &str = "type";
 const TAGGED_VALUE_KEY: &str = "value";
 const POINTER_SEPARATOR: char = '/';
@@ -39,7 +38,6 @@ pub(crate) async fn observe_overlay_content(
     verdict_for(&expected.overlay, frames, &expected.values.0)
 }
 
-/// Split from the wait so the whole judgement is a pure function of the frames observed.
 pub(crate) fn verdict_for(
     overlay: &str,
     frames: Vec<ReceivedContent>,
@@ -117,7 +115,6 @@ fn satisfies(content: &Value, expected: &BTreeMap<String, String>) -> bool {
     mismatched_keys(content, expected).is_empty()
 }
 
-/// Every expected key whose value is not exactly that plain JSON string.
 pub(crate) fn mismatched_keys(content: &Value, expected: &BTreeMap<String, String>) -> Vec<String> {
     expected
         .iter()
@@ -126,7 +123,6 @@ pub(crate) fn mismatched_keys(content: &Value, expected: &BTreeMap<String, Strin
         .collect()
 }
 
-/// JSON pointers to every node shaped like a tagged `Variant`, at any depth.
 pub(crate) fn tagged_pointers(content: &Value) -> Vec<String> {
     let mut found = Vec::new();
     walk(content, &mut String::new(), &mut found);
@@ -165,7 +161,6 @@ fn descend(pointer: &mut String, segment: &str, value: &Value, found: &mut Vec<S
     pointer.truncate(restore);
 }
 
-/// RFC 6901 escaping, so a content key holding a slash cannot forge a pointer.
 fn escaped(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }

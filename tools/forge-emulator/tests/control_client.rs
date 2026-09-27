@@ -24,10 +24,8 @@ static WILDCARD: [EventFilter; 1] = [EventFilter {
 }];
 
 const DEADLINE: Duration = Duration::from_secs(5);
-/// Long enough that the follow-up request is never the one that times out on a loaded machine.
 const ABANDON_TIMEOUT: Duration = Duration::from_millis(250);
 
-/// Scripted loopback peer: the test sees every client frame and decides every reply.
 struct FakeForge {
     endpoint: ControlEndpoint,
     requests: mpsc::UnboundedReceiver<Value>,
@@ -232,8 +230,6 @@ async fn subscribe_sends_filters_in_the_server_wire_shape() {
 
     outcome.expect("subscription accepted");
     assert_eq!(request["request"], "subscribe");
-    // Why: the server widens a source spelling it cannot parse into a wildcard, so drift here
-    // would silently over-subscribe instead of failing.
     assert_eq!(
         request["events"],
         json!([{ "source": "you_tube", "type": "youtube.chat.message" }, {}])

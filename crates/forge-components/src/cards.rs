@@ -338,7 +338,6 @@ impl EmptyState {
         self
     }
 
-    /// Swaps the static glyph for an animated `spinner`; `id` must be unique per live instance.
     #[must_use]
     pub fn loading(mut self, id: impl Into<ElementId>) -> Self {
         self.loading = Some(id.into());
@@ -406,7 +405,6 @@ const TRANSPARENT: Rgba = Rgba {
     a: 0.0,
 };
 
-// Idle paints transparent so selecting swaps only color, never geometry - the row never shifts as it selects.
 const ROW_BORDER: Pixels = px(2.0);
 
 const TITLE_META_GAP: Pixels = px(2.0);
@@ -425,7 +423,6 @@ pub(crate) struct RowCardColors {
     pub(crate) hover_border: Rgba,
     pub(crate) selected_bg: Rgba,
     pub(crate) accent: Rgba,
-    /// `None` draws a transparent border (flat list-row); `Some` makes it a bordered card.
     pub(crate) idle_border: Option<Rgba>,
     pub(crate) text: Rgba,
 }
@@ -539,14 +536,12 @@ impl RowCard {
         self
     }
 
-    /// Top-aligns leading / body / trailing instead of centering, for multi-line cards.
     #[must_use]
     pub fn align_top(mut self) -> Self {
         self.align_top = true;
         self
     }
 
-    /// Keeps the trailing element hidden (width still reserved) until pointer-hover; `group` must be unique per rendered row.
     #[must_use]
     pub fn trailing_reveal(mut self, group: impl Into<SharedString>) -> Self {
         self.reveal_trailing_group = Some(group.into());
@@ -791,7 +786,6 @@ impl PadTile {
         self
     }
 
-    /// Ignores `top_right`/`sublabel`/`progress` - renders icon + title centered in one row instead of the stacked icon-tile layout.
     #[must_use]
     pub fn bar(mut self, palette: &ForgePalette) -> Self {
         self.shape = PadTileShape::Bar;
@@ -963,7 +957,6 @@ pub fn toolbar_row(left: impl IntoElement, right: impl IntoElement) -> ToolbarRo
 }
 
 impl ToolbarRow {
-    /// Elevated fill + bottom rule - the bar reads as chrome docked above the body.
     #[must_use]
     pub fn attached(mut self, palette: &ForgePalette) -> Self {
         self.attached = Some((palette.elevated, palette.border_regular));

@@ -1,4 +1,3 @@
-//! Scenario files: syntax rejection with file positions, shipped examples, round-trip, and the check CLI.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};

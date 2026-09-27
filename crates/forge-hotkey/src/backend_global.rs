@@ -18,7 +18,6 @@ const FIRED_QUEUE: usize = 64;
 const EVENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
 
 thread_local! {
-    /// Only ever populated on the event-loop thread: `MainThreadLink` jobs are the sole accessors.
     static MANAGER: RefCell<Option<GlobalHotKeyManager>> = const { RefCell::new(None) };
 }
 
@@ -26,7 +25,6 @@ struct Registration {
     hotkey: HotKey,
     caller_id: HotkeyId,
     combo: HotkeyCombo,
-    /// Latched press state; both edges repeat while the combo is held, so only a change emits.
     held: bool,
 }
 

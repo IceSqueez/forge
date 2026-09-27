@@ -1,5 +1,3 @@
-//! Step execution against a pretend forge: a scripted control peer plus an EventSub client on the
-//! real fake Twitch. Nothing here starts the real forge binary.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};
@@ -60,8 +58,6 @@ fn push_frame(event: &Event) -> Value {
     })
 }
 
-/// Answers control requests the way forge's server does and publishes the events forge would;
-/// pushing `null` closes the connection.
 struct PretendForge {
     endpoint: ControlEndpoint,
     requests: mpsc::UnboundedReceiver<Value>,
@@ -229,7 +225,6 @@ fn chat_effects(notification: &Value, behaviour: Behaviour) -> Vec<Event> {
     effects
 }
 
-/// forge's own EventSub bridge rewrites a subscriber notification into this shape.
 fn subscriber_effect(notification: &Value) -> Event {
     Event::new(
         EventSource::Twitch,
@@ -392,7 +387,6 @@ fn twitch_scenario(steps: Value) -> Scenario {
     )
 }
 
-/// Skips the semantic validation `parse_scenario` runs, so a step's own runtime refusal shows.
 fn unvalidated_scenario(steps: Value) -> Scenario {
     serde_json::from_value(json!({
         "name": "runner test",

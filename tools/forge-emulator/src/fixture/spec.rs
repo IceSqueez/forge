@@ -4,10 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::EmulatorError;
 
-/// The step kind that addresses an overlay, and the config key naming its target.
 pub const OVERLAY_SEND_KIND: &str = "overlay.send";
 pub const OVERLAY_TARGET_KEY: &str = "overlay_id";
-/// The queue every forge database carries from its first migration.
 pub const DEFAULT_QUEUE_NAME: &str = "Default";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -21,12 +19,10 @@ pub struct Fixture {
     pub chat_commands: Vec<ChatCommand>,
     #[serde(default)]
     pub event_triggers: Vec<EventTrigger>,
-    /// Queues created beside the built-in `Default` one; an action names its queue by `name`.
     #[serde(default)]
     pub queues: Vec<QueueFixture>,
 }
 
-/// `concurrency` 1 makes a blocking queue: one execution at a time, the rest wait in line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct QueueFixture {
@@ -34,7 +30,6 @@ pub struct QueueFixture {
     pub concurrency: u32,
 }
 
-/// Defaults are fake values that are safe to publish in a scenario report.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct TwitchAccount {
@@ -55,7 +50,6 @@ impl Default for TwitchAccount {
     }
 }
 
-/// A Twitch chat-command trigger wired to its own action.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChatCommand {
@@ -63,13 +57,10 @@ pub struct ChatCommand {
     pub action_name: String,
     #[serde(default)]
     pub steps: Vec<SubActionStep>,
-    /// The fixture queue the action runs on; the built-in `Default` queue when omitted.
     #[serde(default)]
     pub queue: Option<String>,
 }
 
-/// A trigger instance of any kind wired to its own action; `trigger_kind` is a trigger descriptor
-/// id, not an event kind, and `config` fills that descriptor's own fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EventTrigger {
@@ -90,9 +81,6 @@ pub struct FixtureAction<'a> {
     pub queue: Option<&'a str>,
 }
 
-/// An overlay the fixture creates through forge's own repository, which mints its identity slug
-/// and its page credential. Scenarios and `overlay.send` steps name it by `display_name`; the
-/// seeder rewrites those names to the minted identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OverlayFixture {
@@ -118,7 +106,6 @@ impl Fixture {
         }
     }
 
-    /// Seeding order: chat commands first, then event triggers.
     pub fn actions(&self) -> Vec<FixtureAction<'_>> {
         let commands = self
             .chat_commands
@@ -174,7 +161,6 @@ impl Fixture {
             }
         }
         for command in &self.chat_commands {
-            // An empty phrase is stored without complaint but never matches a message.
             if command.phrase.is_empty() {
                 return Err(invalid(format!(
                     "chat command for action `{}` has an empty phrase",
@@ -234,7 +220,6 @@ impl Fixture {
     }
 }
 
-/// The overlay each `overlay.send` step addresses, skipping steps that name none.
 pub fn overlay_targets(steps: &[SubActionStep]) -> impl Iterator<Item = &str> {
     steps
         .iter()

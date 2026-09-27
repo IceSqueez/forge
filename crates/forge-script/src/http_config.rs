@@ -8,7 +8,6 @@ pub struct ScriptHttpConfig {
     pub max_response_bytes: u32,
 }
 
-/// Deny-all defaults: no domains allowed, local addresses blocked.
 impl Default for ScriptHttpConfig {
     fn default() -> Self {
         Self {
@@ -72,7 +71,6 @@ pub async fn load_script_http_config(repo: &dyn SettingsRepo) -> ScriptHttpConfi
     }
 }
 
-/// Tolerant read of the comma-separated allow-list rows written before the JSON format.
 async fn legacy_csv_domains(repo: &dyn SettingsRepo) -> Vec<String> {
     repo.get_string(reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS)
         .await

@@ -21,18 +21,14 @@ pub trait EventLogRepo: Send + Sync {
     }
     async fn get(&self, id: EventId) -> Result<Option<Event>, StorageError>;
 
-    /// Returns up to `limit` events ordered newest-first.
     async fn recent(&self, limit: usize) -> Result<Vec<Event>, StorageError>;
 
-    /// Like `recent`, but only events strictly newer than `since`'s timestamp; an
-    /// absent anchor event yields an empty result rather than falling back to `recent`.
     async fn recent_since(
         &self,
         limit: usize,
         since: Option<EventId>,
     ) -> Result<Vec<Event>, StorageError>;
 
-    /// Returns rows deleted.
     async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 

@@ -19,7 +19,6 @@ pub struct GlobalEntry {
     pub last_modified: OffsetDateTime,
 }
 
-/// `reads` and `writes` increment transactionally with every `get`/`set` call.
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait GlobalsRepo: Send + Sync {
@@ -27,8 +26,6 @@ pub trait GlobalsRepo: Send + Sync {
     async fn set(&self, name: &str, value: Variant, persisted: bool) -> Result<(), StorageError>;
     async fn delete(&self, name: &str) -> Result<bool, StorageError>;
 
-    /// Does not count as a read; lets in-place mutators preserve a global's persistence
-    /// without demoting it to session on every edit.
     async fn persisted(&self, name: &str) -> Result<Option<bool>, StorageError> {
         Ok(self
             .list()
@@ -38,9 +35,6 @@ pub trait GlobalsRepo: Send + Sync {
             .map(|e| e.persisted))
     }
 
-    /// Use for metadata-only edits instead of `set()`, which always bumps `writes`.
-    /// Default impl re-`set()`s the current value and so still bumps `writes` - a real
-    /// backend should override for true metadata-only semantics.
     async fn set_persisted(&self, name: &str, persisted: bool) -> Result<bool, StorageError> {
         let Some(entry) = self.list().await?.into_iter().find(|e| e.name == name) else {
             return Ok(false);
@@ -49,10 +43,6 @@ pub trait GlobalsRepo: Send + Sync {
         Ok(true)
     }
 
-    /// Rejects with [`StorageError::NameCollision`] if `new_name` is already taken, and
-    /// [`StorageError::NotFound`] if `old_name` is absent. Default impl is a non-atomic
-    /// list/set/delete composition that resets `reads`/`writes`/`created_at`; a real
-    /// backend should override with a transactional `UPDATE` of the name column.
     async fn rename(&self, old_name: &str, new_name: &str) -> Result<(), StorageError> {
         if old_name == new_name {
             return Ok(());
@@ -76,37 +66,24 @@ pub trait GlobalsRepo: Send + Sync {
 
     async fn list(&self) -> Result<Vec<GlobalEntry>, StorageError>;
 
-    /// Soft delete (not [`Self::delete`]): hides `name` from `get`/`list`/`persisted`/
-    /// `incr` until [`Self::restore`]; telemetry survives untouched. Default impl has
-    /// no generic archived-state representation and returns [`StorageError::NotReady`].
     async fn archive(&self, _name: &str) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Reverses [`Self::archive`]; see its default-impl caveat.
     async fn restore(&self, _name: &str) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }
 
-    /// Mirror of `list`, which excludes archived entries. Default impl reports none.
     async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
         Ok(Vec::new())
     }
 
-    /// Sums ALL globals (persisted and session-scoped alike), not a disk-durable-only figure.
     async fn storage_bytes(&self) -> Result<u64, StorageError>;
 
-    /// Session-only globals never advance this; it tracks `persisted = true` writes only.
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError>;
 
-    /// Errors with [`StorageError::NotFound`] if absent, or [`StorageError::TypeMismatch`]
-    /// if the stored type is not `Int`/`Float`.
     async fn incr(&self, name: &str, amount: i64) -> Result<Variant, StorageError>;
 
-    /// Returns the new length. An absent `name` becomes a session array; a set `max_len`
-    /// drops the oldest items. Errors with [`StorageError::TypeMismatch`] if the stored
-    /// value is not an array. Default impl is a non-atomic get/set composition; a real
-    /// backend must override it with one serialized write.
     async fn array_append(
         &self,
         name: &str,
@@ -125,9 +102,6 @@ pub trait GlobalsRepo: Send + Sync {
         Ok(len)
     }
 
-    /// Returns the new length. Errors with [`StorageError::NotFound`] if absent, or
-    /// [`StorageError::TypeMismatch`] if the stored value is not an array. Default impl
-    /// is a non-atomic get/set composition; a real backend must override it.
     async fn array_remove(
         &self,
         name: &str,
@@ -150,9 +124,6 @@ pub trait GlobalsRepo: Send + Sync {
         Ok(len)
     }
 
-    /// Returns the new value. Errors with [`StorageError::NotFound`] if absent, or
-    /// [`StorageError::TypeMismatch`] if the stored value is not a bool. Default impl is
-    /// a non-atomic get/set composition; a real backend must override it.
     async fn toggle(&self, name: &str) -> Result<bool, StorageError> {
         let flipped = match self.get(name).await? {
             None => {
@@ -168,8 +139,6 @@ pub trait GlobalsRepo: Send + Sync {
         Ok(flipped)
     }
 
-    /// Does not increment `reads` counters; this is an inspection operation, not a
-    /// runtime get.
     async fn export_all(&self) -> Result<Vec<GlobalTransit>, StorageError> {
         let mut entries = self.list().await?;
         entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));

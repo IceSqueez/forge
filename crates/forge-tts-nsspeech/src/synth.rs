@@ -23,7 +23,6 @@ pub(crate) fn spawn_worker() -> mpsc::Sender<NsSpeechRequest> {
     let (tx, rx) = mpsc::channel::<NsSpeechRequest>();
     std::thread::spawn(move || {
         // SAFETY: created and used only on this dedicated thread; AVFoundation delivers
-        // callbacks on its own internal thread, so no run loop is required here.
         let synth = unsafe { objc2_avf_audio::AVSpeechSynthesizer::new() };
         worker_loop(synth, rx);
     });
@@ -81,8 +80,6 @@ fn run_synthesis(
         block2::RcBlock::new(move |raw_buf: NonNull<AVAudioBuffer>| {
             objc2::rc::autoreleasepool(|_| {
                 // SAFETY: writeUtterance:toBufferCallback: always delivers AVAudioPCMBuffer;
-                // raw_buf is valid for this autoreleasepool scope, and shared_cb outlives the
-                // RcBlock that owns this closure.
                 let pcm: &AVAudioPCMBuffer =
                     unsafe { &*(raw_buf.as_ptr() as *const AVAudioPCMBuffer) };
 
@@ -104,7 +101,6 @@ fn run_synthesis(
                 state.channels = ch;
 
                 // SAFETY: non-null and valid for `frameLength` samples since frame_count > 0
-                // was checked above; only channel 0 is read (mono speech output).
                 let channel_ptrs = unsafe { pcm.floatChannelData() };
                 if channel_ptrs.is_null() {
                     state.done = true;
@@ -137,8 +133,6 @@ fn run_synthesis(
         unsafe { utterance.setPitchMultiplier(pitch_mult) };
 
         // SAFETY: the block pointer is valid for the RcBlock's lifetime, which outlives
-        // the condvar wait below; captured state crosses into Apple's callback thread only
-        // via Arc<Mutex<...>>, so no raw ObjC pointers cross the thread boundary.
         unsafe {
             synth.writeUtterance_toBufferCallback(&utterance, block2::RcBlock::as_ptr(&block));
         }
@@ -164,7 +158,6 @@ fn run_synthesis(
     ))
 }
 
-/// Multiplier 1.0 maps to `AVSpeechUtteranceDefaultSpeechRate` (0.5), not the scale's midpoint.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     const RATE_DEFAULT: f32 = 0.5;
@@ -173,7 +166,6 @@ pub(crate) fn rate_apple_from_multiplier(multiplier: f32) -> f32 {
     (RATE_DEFAULT + (multiplier - 1.0) * (RATE_MAX - RATE_DEFAULT)).clamp(RATE_MIN, RATE_MAX)
 }
 
-/// Semitone-to-frequency-ratio formula: `2^(semitones / 12)`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn pitch_mult_from_semitones(semitones: f32) -> f32 {
     2.0_f32.powf(semitones / 12.0).clamp(0.5, 2.0)

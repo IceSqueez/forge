@@ -60,7 +60,6 @@ impl SpeakState {
         self.last_drop.as_deref()
     }
 
-    /// Returns whether the cache changed, so the bridge repaints only on a real update.
     pub fn apply_event(&mut self, event: SpeakEvent) -> bool {
         match event {
             SpeakEvent::Enqueued {
@@ -170,8 +169,6 @@ impl SpeakState {
         }
     }
 
-    /// `order` is the authority on membership, sequence and priority; ids with no cached
-    /// item (bridge lag) are skipped because the list can only render data it holds.
     fn reseat_queue(&mut self, order: &[QueuedOrderEntry]) -> bool {
         let reseated: Vec<QueueItem> = order
             .iter()
@@ -196,12 +193,10 @@ impl SpeakState {
         changed
     }
 
-    /// Optimistic: the confirming `Paused`/`Resumed` event re-seats the actual state.
     pub fn set_manual_paused(&mut self, paused: bool) {
         self.manual_paused = paused;
     }
 
-    /// Optimistic: the confirming `Cleared` event re-seats the actual state.
     pub fn clear_all(&mut self) {
         self.now_speaking = None;
         self.queue.clear();
@@ -211,7 +206,6 @@ impl SpeakState {
         self.manual_paused
     }
 
-    /// Released by the voice gate itself when the microphone goes quiet - not user-clearable.
     pub fn gate_held(&self) -> bool {
         self.gate_held
     }

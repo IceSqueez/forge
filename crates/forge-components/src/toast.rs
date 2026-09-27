@@ -28,7 +28,6 @@ pub enum ToastKind {
 }
 
 impl ToastKind {
-    /// `Undo` is deliberately muted rather than an alarm hue.
     pub fn accent(self, palette: &ForgePalette) -> Rgba {
         match self {
             ToastKind::Info => palette.info,
@@ -110,7 +109,6 @@ pub struct ToastCard {
     accent: Rgba,
 }
 
-/// `id` must be distinct per live toast card, or the enter animation shares one clock across them (gpui keys animation state by `ElementId`).
 pub fn toast_card(
     id: impl Into<ElementId>,
     kind: ToastKind,
@@ -172,7 +170,6 @@ impl RenderOnce for ToastCard {
     fn render(mut self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let glyph = self.icon.unwrap_or_else(|| self.kind.default_icon());
 
-        // The card row keeps flex's default cross-axis stretch, so this height-less stripe fills the full card height.
         let stripe = div().flex_none().w(STRIPE_WIDTH).bg(self.accent);
 
         let mut content = div()

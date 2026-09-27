@@ -50,7 +50,6 @@ impl TwitchCredentialsManager {
         load(self.repo.as_ref()).await.map_err(storage_err)
     }
 
-    /// Renews proactively within the refresh buffer; a refresh-token-less credential near expiry routes to re-auth.
     pub async fn get_valid_access_token(&self) -> Result<OAuthToken, PlatformError> {
         let cred = self.load().await?.ok_or_else(reauth_err)?;
         if !near_expiry(&cred) {
@@ -71,8 +70,6 @@ impl TwitchCredentialsManager {
         Ok(renewed.access_token)
     }
 
-    /// Rechecks against the stored access token under the guard: a concurrent refresh may have
-    /// already rotated the pair while this call waited, in which case Twitch is not called again.
     pub async fn refresh(
         &self,
         failed_access_token: &OAuthToken,
@@ -87,7 +84,6 @@ impl TwitchCredentialsManager {
         self.perform_refresh(&refresh_token, existing).await
     }
 
-    /// Public-client refresh (no `client_secret`); keeps the prior refresh token only if the response omits a new one.
     async fn perform_refresh(
         &self,
         refresh_token: &OAuthToken,
@@ -96,7 +92,6 @@ impl TwitchCredentialsManager {
         let parsed = match self.refresher.refresh(refresh_token.expose()).await {
             Ok(parsed) => parsed,
             Err(e) => {
-                // Display of `Http` carries the endpoint's response body; report the shape only.
                 match &e {
                     PlatformError::ReauthRequired { .. } => {
                         warn!("twitch token refresh rejected; re-authorization required");
@@ -159,7 +154,6 @@ fn token_error_to_helix(e: PlatformError) -> crate::helix::HelixError {
     match e {
         PlatformError::ReauthRequired { .. } => crate::helix::HelixError::ReauthRequired,
         PlatformError::Io(io) => crate::helix::HelixError::Credentials(io.to_string()),
-        // Display of `Http` carries the token endpoint's response body, and this string reaches sub-action error text and run history.
         PlatformError::Http { status, .. } => crate::helix::HelixError::Credentials(format!(
             "twitch token refresh failed: HTTP {status}"
         )),
@@ -469,8 +463,6 @@ pub(crate) mod tests {
 
     const BODY_SENTINEL: &str = "REFRESH_BODY_SENTINEL_p3k";
 
-    /// Drives one failing refresh against a mock token endpoint whose body carries the sentinel,
-    /// capturing everything from TRACE up so no tier can hide a leak.
     fn failing_refresh(status: u16) -> (PlatformError, Vec<crate::log_capture::CapturedLine>) {
         crate::log_capture::capture_blocking(tracing::Level::TRACE, async move {
             let server = MockServer::start().await;
@@ -522,8 +514,6 @@ pub(crate) mod tests {
 
     #[test]
     fn token_refresh_failure_warns_with_the_shape_of_its_branch() {
-        // Why: the two branches must stay distinguishable to an operator - a reauth needs the
-        // sign-in banner, an upstream 5xx needs a retry - and neither may widen past the shape.
         let cases: Vec<(u16, WarnExpectation)> = vec![
             (400, |line| {
                 line.message().contains("re-authorization required")
@@ -549,8 +539,6 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn token_source_error_reports_the_refresh_shape_without_the_endpoint_body() {
-        // Why: this string is not only logged - it reaches sub-action failure text and run
-        // history, so `PlatformError`'s `HTTP {status}: {body}` Display must not be forwarded.
         use crate::helix::HelixTokenSource;
 
         let server = MockServer::start().await;
@@ -611,8 +599,6 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn concurrent_refreshes_of_one_stale_token_post_the_refresh_token_once() {
-        // Why: Twitch rotates the pair on every refresh, so a second POST of the same refresh
-        // token persists a pair Twitch has already revoked.
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/token"))

@@ -456,14 +456,10 @@ mod tests {
         let snapshot = channel_on(&server).get_channel("tok").await.unwrap();
         assert_eq!(snapshot.category_id, 0);
         assert_eq!(snapshot.category_name, "");
-        // Why: Kick omits "stream" entirely off-air. Defaulting to 0 (not an error) is what
-        // lets an offline channel resolve to ViewerReport::Absent instead of a failed poll.
         assert_eq!(snapshot.viewer_count, 0);
         assert!(!snapshot.is_live);
     }
 
-    /// The live flag lives inside "stream"; a top-level key of the same name is not part of
-    /// the channels schema and must never drive the snapshot.
     #[tokio::test]
     async fn live_flag_is_read_from_the_nested_stream_object_only() {
         let server = MockServer::start().await;

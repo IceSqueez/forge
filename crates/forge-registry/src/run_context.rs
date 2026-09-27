@@ -12,18 +12,13 @@ pub struct RunContext<'a> {
     pub index: usize,
     pub parent_event_id: EventId,
     pub publisher: &'a dyn EventPublisher,
-    /// Leaf runners are handed a null executor that runs no nested chain.
     pub executor: &'a dyn ChainExecutor,
-    /// Leaf runners get a fresh, never-tripped signal.
     pub cancel: CancelSignal,
-    /// Drained only by `drive_sequential`; a leaf-built cell is never drained.
     pub control: ControlCell,
-    /// Drained by the chain driver after each step; a leaf-built cell is never drained.
     pub telemetry: TelemetrySink,
 }
 
 impl<'a> RunContext<'a> {
-    /// Fills the re-entrant slots with a null executor and a fresh cancel signal; never call `executor`/`cancel` expecting real chain behavior from a leaf.
     pub fn leaf(
         arg_stack: &'a ArgStack,
         index: usize,

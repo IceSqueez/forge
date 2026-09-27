@@ -6,8 +6,6 @@ pub(crate) enum Stop {
     Kill,
 }
 
-/// Signals forge's whole process group (it leads its own), so helpers it spawned stop with it.
-/// Only call while `child` is unreaped: its pid, and so the group id, cannot be reused before then.
 #[cfg(unix)]
 pub(crate) fn signal(child: &mut Child, leader: u32, stop: Stop) {
     use rustix::process::{Pid, Signal, kill_process_group};

@@ -144,8 +144,6 @@ mod tests {
         }
     }
 
-    // Why: a quick action naming an unregistered runner, or presetting a key the runner never
-    // reads, silently does nothing when the user clicks it - no error, no log, no effect.
     #[test]
     fn every_quick_action_targets_a_registered_runner_that_reads_its_keys() {
         let reg = registry();
@@ -334,8 +332,6 @@ mod tests {
         (telemetry.outcome, sent, sink.was_called())
     }
 
-    // Why: the Actions editor stores every one of these fields as text, so a runner that only
-    // reads `Variant::Float` silently sends its default instead of what the streamer typed.
     #[tokio::test]
     async fn numeric_fields_typed_as_text_reach_vts_as_numbers() {
         for field in &NUMERIC_FIELDS {

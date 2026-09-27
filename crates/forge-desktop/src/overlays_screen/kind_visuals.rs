@@ -6,7 +6,6 @@ use gpui::Rgba;
 pub(super) struct KindVisuals {
     pub(super) icon: Icon,
     pub(super) accent: Rgba,
-    /// `None` marks a record whose overlay type this build does not carry.
     pub(super) label: Option<String>,
 }
 
@@ -136,9 +135,6 @@ mod tests {
         }
     }
 
-    /// The picker paints its dots from a name, the stage paints its composition from a
-    /// `PreviewAccent`; two independent tables that must agree or the chosen dot lies about the
-    /// color the overlay will actually render.
     #[test]
     fn the_picker_dot_and_the_rendered_stage_agree_on_the_color_of_every_offered_accent() {
         let registry = registry();

@@ -3,10 +3,6 @@ use forge_types::{ArgStack, Variant};
 use crate::config::effective_overlay_config;
 use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor};
 
-/// A supplied value wins unless it is an empty string; every other content key falls back to the
-/// overlay's own configured value, and both sides expand against the same stack. Keys the kind
-/// does not declare as content are dropped, and a key neither side holds is omitted rather than
-/// invented.
 pub fn delivered_content(
     descriptor: &dyn OverlayKindDescriptor,
     stored: &OverlayConfig,

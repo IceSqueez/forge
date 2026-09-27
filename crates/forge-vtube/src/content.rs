@@ -416,7 +416,6 @@ mod tests {
         }
     }
 
-    /// Serves `responses` in order, then signals so the test can assert without sleeping.
     fn serve(
         rx: mpsc::UnboundedReceiver<PendingRequest>,
         responses: Vec<serde_json::Value>,
@@ -465,8 +464,6 @@ mod tests {
         assert_eq!(s.current_model_id.as_deref(), Some("m1"));
     }
 
-    // Why: `numberOfLive2DParameters` is only meaningful while a model is loaded; a stale count
-    // left behind after an unload would be rendered under the "not loaded" model slot.
     #[tokio::test]
     async fn parameter_count_is_captured_only_while_a_model_is_loaded() {
         for (current_model, expected) in [
@@ -532,8 +529,6 @@ mod tests {
         assert_eq!(s.current_model_id.as_deref(), Some("m3"));
     }
 
-    // Why: `itemsInSceneCount` is the only field the ITEMS metric reads; a renamed key would
-    // pin the counter at zero with no error anywhere.
     #[tokio::test]
     async fn item_list_response_populates_the_scene_item_count() {
         let snap = Arc::new(RwLock::new(ContentSnapshot::default()));
@@ -576,8 +571,6 @@ mod tests {
         assert!(!s.expressions[2].active);
     }
 
-    // Why: VTS leaves `name` empty for expressions the user never titled; the raw `.exp3.json`
-    // file name is the only label left, and a blank chip is unclickable in the picker.
     #[test]
     fn expression_chips_use_the_display_name_and_fall_back_to_the_file_name() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -609,10 +602,6 @@ mod tests {
         assert_eq!(items, ["Blush".to_owned(), "wink.exp3.json".to_owned()]);
     }
 
-    // Why: the detail screen snapshots `metrics()` once and afterwards only patches the slot a
-    // delta addresses, so a count that never emits a delta stays frozen at its open-time value.
-    // The first sweep must also land at startup - a screen opened right after connect would
-    // otherwise show zero expressions and zero items for a full interval.
     #[tokio::test]
     async fn the_catalog_sweep_publishes_both_counts_as_soon_as_it_starts() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -663,9 +652,6 @@ mod tests {
         );
     }
 
-    // Why: the ModelLoadedEvent delta cannot carry the parameter count - when the event lands the
-    // content snapshot still holds the outgoing model's count - so it ships a bare name and this
-    // sweep is the only thing that restores the count afterwards.
     #[test]
     fn the_model_metric_regains_its_parameter_count_after_a_switch() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -697,8 +683,6 @@ mod tests {
         ));
     }
 
-    // Why: `update_from_event` already published the em-dash + "not loaded" pair for an unloaded
-    // model. A sweep that skipped the loaded-model guard would overwrite it with a blank name.
     #[test]
     fn the_sweep_leaves_an_unloaded_model_slot_alone() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -718,9 +702,6 @@ mod tests {
         );
     }
 
-    // Why: the fetch used to fire at construction time, racing a handshake that can block on the
-    // user physically approving the VTS popup. Its deadline lapsed and the cell stayed empty for
-    // the rest of the session.
     #[tokio::test]
     async fn the_version_fetch_waits_until_a_connection_announces_itself() {
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
@@ -752,8 +733,6 @@ mod tests {
         assert_eq!(version.get().map(String::as_str), Some("1.28.0"));
     }
 
-    // Why: a fetch whose connection died before answering has no other trigger. Without a retry
-    // on the next announcement the version badge stays empty until the app restarts.
     #[tokio::test]
     async fn a_later_connection_retries_a_version_fetch_that_was_never_answered() {
         let (req_tx, mut req_rx) = mpsc::unbounded_channel::<PendingRequest>();
@@ -800,15 +779,9 @@ mod tests {
         (label, primary, secondary)
     }
 
-    // Why: the heal dedups so it does not re-announce an unchanged model every 5 s. Keying that
-    // dedup on the parameter count alone silently loses the switch between two models that
-    // export the same number of Live2D parameters - ordinary for variants exported from one
-    // source model - and the MODEL slot keeps the bare name ModelLoadedEvent shipped.
     #[tokio::test(start_paused = true)]
     async fn a_model_switch_between_equal_parameter_counts_still_republishes_the_count() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
-        // Dialing keeps the sweep's two requests out of this test, so the 5 s interval is the
-        // only timer the paused clock has to step over. The model slot is maintained either way.
         if let Ok(mut s) = c.health_state.write() {
             s.dialing = true;
             s.model_loaded = true;
@@ -857,9 +830,6 @@ mod tests {
         );
     }
 
-    // Why: `req_rx` is drained only inside the supervisor's connected loop. A sweep that fires
-    // while the supervisor is dialing, authenticating or backing off queues requests nobody
-    // reads, and with auto-reconnect on that backlog grows for as long as VTS stays down.
     #[tokio::test]
     async fn the_catalog_sweep_enqueues_nothing_while_the_supervisor_is_dialing() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -881,8 +851,6 @@ mod tests {
             c.health_tx.clone(),
         );
 
-        // The model slot is published after the sweep in the same pass, so receiving its delta
-        // proves the first sweep is already behind us - nothing has to be slept on.
         assert_eq!(next_text_delta(&mut health_rx, &c).await.0, "MODEL");
         let queued = req_rx.try_recv();
         handle.abort();
@@ -900,10 +868,6 @@ mod tests {
             .expect("the request channel must stay open")
     }
 
-    // Why: `reconnect` swaps the sender inside the shared slot instead of respawning the
-    // background tasks. A task that resolved its sender once at spawn keeps sending into the
-    // channel the retired supervisor dropped, so from the first Reconnect onward the expression
-    // and item counts freeze and the model parameter count never refreshes again.
     #[tokio::test(start_paused = true)]
     async fn a_catalog_sweep_reaches_the_request_channel_a_reconnect_swapped_in() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -918,14 +882,10 @@ mod tests {
             c.health_tx.clone(),
         );
 
-        // Dropping each request unanswered closes its oneshot, which `send_internal` observes
-        // immediately - the first sweep finishes on the original channel with no deadline to
-        // step the paused clock over.
         for _ in 0..2 {
             drop(next_request(&mut retired_rx).await);
         }
 
-        // The swap `BuiltinControl::reconnect` performs after the old supervisor drops `req_rx`.
         *slot.lock().await = fresh_tx;
         tokio::time::advance(tokio::time::Duration::from_secs(6)).await;
 

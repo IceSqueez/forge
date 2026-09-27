@@ -36,7 +36,6 @@ impl Default for RequestId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
     Normal,
-    /// Head-of-normal-queue but behind other High entries.
     High,
 }
 
@@ -48,15 +47,10 @@ pub struct SpeakRequest {
     pub text: String,
     pub priority: Priority,
     pub alias_override: Option<AliasId>,
-    /// Ignored when `voice_override` is set.
     pub engine_override: Option<EngineId>,
-    /// Bypasses alias and strategy resolution entirely.
     pub voice_override: Option<VoiceId>,
-    /// None when not triggered by an event (UI-invoked preview/test speech).
     pub source_event_id: Option<forge_types::EventId>,
-    /// Gates `PipelineConfig::strip_reward_emotes`, independent of `strip_twitch_emotes`.
     pub is_reward: bool,
-    /// Plays only through the legs built for this target, never through the queue's own sink.
     pub target: Option<PlaybackTarget>,
 }
 
@@ -66,38 +60,26 @@ pub enum SpeakCommand {
     Skip,
     PlayNow(RequestId),
     RemoveQueued(RequestId),
-    /// Ends the request wherever it is - removed while queued, skipped once active - and is a
-    /// no-op after it has ended.
     Cancel(RequestId),
-    /// No-op if `request_id` or `before` (when set) is absent from the pending queues, or if
-    /// `before` equals `request_id`. Moves `request_id` to the tail of `normal_queue` when
-    /// `before` is `None`.
     Reorder {
         request_id: RequestId,
         before: Option<RequestId>,
     },
     Clear,
-    /// Unlike `Clear`, leaves the in-flight item playing to completion.
     ClearPending,
     Pause,
     Resume,
     Replay,
-    /// Upserts by `viewer_id`.
     SetAlias(VoiceAlias),
-    /// No-op if the viewer has no alias yet.
     SwitchAlias {
         viewer_id: String,
         engine_id: EngineId,
         voice_id: VoiceId,
     },
     SetStrategy(AssignmentStrategy),
-    /// Clamped to `0.0..=1.0`.
     SetVolume(f32),
     SetEngineParams(EngineId, SynthesisDefaults, f32),
-    /// No-op if the id is absent.
     RemoveAlias(AliasId),
-    /// Send after registering a new engine factory into the live `TtsRegistry` so
-    /// the catalog picks it up without an app restart.
     RefreshVoiceCatalog,
     SetEngineEnabled(EngineId, bool),
     VoiceGateActivated,
@@ -107,9 +89,6 @@ pub enum SpeakCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueuedOrderEntry {
     pub request_id: RequestId,
-    /// Reflects current queue membership, not the request's original `Priority` - a
-    /// reorder can move an item between `high_queue` and `normal_queue` without
-    /// touching the field it was enqueued with.
     pub is_high_priority: bool,
 }
 
@@ -130,7 +109,6 @@ pub enum SpeakEvent {
         engine_id: EngineId,
         viewer_name: String,
         text: String,
-        /// Zero until synthesis resolves an actual voice, same as `voice_id`/`engine_id`.
         duration_secs: u32,
     },
     Progress {
@@ -157,8 +135,6 @@ pub enum SpeakEvent {
     },
     QueueChanged {
         queue_len: usize,
-        /// All of `high_queue` in order, then all of `normal_queue` in order - the exact
-        /// future playback order.
         order: Vec<QueuedOrderEntry>,
     },
     Paused {
@@ -183,7 +159,6 @@ pub struct QueueConfig {
     pub max_queue_len: usize,
     pub per_user_limit: usize,
     pub master_volume: f32,
-    /// Covers preprocessing and synthesis, not playback; an overrun fails as `engine_timeout`.
     pub timeout_per_item: Duration,
 }
 
@@ -204,7 +179,6 @@ impl Default for QueueConfig {
 }
 
 pub struct QueueDeps {
-    // std::sync::RwLock here, not tokio - guard never crosses await.
     pub registry: Arc<std::sync::RwLock<TtsRegistry>>,
     pub resolver: Arc<std::sync::RwLock<VoiceAliasResolver>>,
     pub pipeline: PipelineConfigHandle,
@@ -234,7 +208,6 @@ impl SpeakQueueHandle {
         self.tx.send(cmd).await.map_err(|_| SpeakError::ActorGone)
     }
 
-    /// Reaches the next targeted request to start playing; until then a targeted request fails.
     pub fn install_targeted_legs(&self, factory: Arc<dyn TargetedSinkFactory>) {
         self.targeted_legs.store(Some(factory));
     }
@@ -289,7 +262,6 @@ impl SpeakQueueHandle {
         self.send(SpeakCommand::VoiceGateDeactivated).await
     }
 
-    /// Each call returns an independent receiver starting from the next published event.
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<SpeakEvent> {
         self.event_tx.subscribe()
     }

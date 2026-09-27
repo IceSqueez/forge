@@ -194,7 +194,6 @@ impl SettingsAudioRoutingView {
         cx.notify();
     }
 
-    /// Read at mount, when the destination changes and when a test tone settles; never on a timer.
     fn count_pages(&mut self, cx: &mut Context<Self>) {
         let ticket = self.pages_gen.next();
         let Some(id) = self.destination.clone() else {
@@ -831,8 +830,6 @@ mod tests {
         RouteFallback::DestinationNotFound,
     ];
 
-    /// A key that reached the pane untranslated renders as the key itself, which every message
-    /// in this card happens to prefix the same way.
     fn reads_as_a_raw_key(text: &str) -> bool {
         text.starts_with("settings_audio_")
     }
@@ -979,8 +976,6 @@ mod tests {
         }
     }
 
-    /// Ukrainian needs three wordings for the same sentence; a catalog that kept only the
-    /// catch-all reads wrong for every count but one.
     #[test]
     fn ukrainian_page_counts_are_declined_per_plural_category() {
         install_language(Language::Uk);

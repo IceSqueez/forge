@@ -330,7 +330,6 @@ impl GridPicker {
         self.emit_picked(id, cx);
     }
 
-    /// The caller must call this when the picker opens; gpui delivers key events only down the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.search.update(cx, |f, cx| f.focus(window, cx));
     }
@@ -1178,8 +1177,6 @@ mod tests {
         vcx.update(|_window, cx| picked.read(cx).seen.clone())
     }
 
-    // Why: the art knob was carved out of three fixed card constants, so the default has to
-    // reproduce the card the three untouched pickers drew before the knob existed, to the pixel.
     #[test]
     fn the_default_card_art_draws_the_card_the_pickers_had_before_it_was_a_knob() {
         let art = GridPickerArt::default();

@@ -65,8 +65,6 @@ impl PreviewCanvas {
     };
 }
 
-/// Sizes are pixels of the reference canvas; an unset side means the page lets the element size
-/// itself there, and an unset text size means the kind draws no page at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviewElement {
     pub width: Option<u32>,
@@ -74,7 +72,6 @@ pub struct PreviewElement {
     pub text_size: Option<u32>,
 }
 
-/// Text carries whatever the config holds; `%var%` tokens are expanded by the caller, not here.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewComposition {
     pub shape: PreviewShape,
@@ -84,8 +81,6 @@ pub struct PreviewComposition {
     pub canvas: PreviewCanvas,
     pub element: PreviewElement,
     pub lines: Vec<PreviewLine>,
-    /// Filled share of a progress track, unset for a shape without one and for values that are
-    /// not two numbers.
     pub fill: Option<f32>,
 }
 
@@ -178,8 +173,6 @@ fn bounded_px(config: &OverlayConfig, key: &str, min: i64, max: i64) -> Option<u
     u32::try_from(stored).ok()
 }
 
-/// A kind that names its own content keys reads them here; every other kind speaks the shared
-/// headline and subline vocabulary.
 fn lines_of(shape: PreviewShape, config: &OverlayConfig) -> Vec<PreviewLine> {
     match shape {
         PreviewShape::Blank => Vec::new(),

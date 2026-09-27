@@ -25,7 +25,6 @@ pub struct RunContext {
     pub duration_ms: u64,
 }
 
-/// Everything a report shows, already scrubbed of the run's secrets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReport {
     pub run: RunContext,
@@ -41,7 +40,6 @@ pub struct ReportFiles {
 }
 
 impl RunReport {
-    /// Every string, scenario and evidence alike, passes through the outcome's redactions.
     pub fn new(
         run: RunContext,
         scenario: &Scenario,
@@ -96,7 +94,6 @@ impl RunReport {
     }
 }
 
-/// Writes the Markdown and JSON reports into `dir`, replacing any from an earlier run there.
 pub fn write_report(report: &RunReport, dir: &Path) -> Result<ReportFiles, EmulatorError> {
     let files = ReportFiles {
         markdown: dir.join(MARKDOWN_FILE),

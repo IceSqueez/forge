@@ -39,7 +39,6 @@ pub struct ClipDraft {
     pub category: String,
     pub loop_playback: bool,
     pub hotkey: Option<String>,
-    /// The holder the user chose to replace; its binding is cleared only when the draft is saved.
     pub release: Option<ComboHolder>,
 }
 
@@ -79,7 +78,6 @@ pub struct ClipEditor {
     error: Option<SharedString>,
     edit_id: Option<ClipId>,
     key: Option<KeyField>,
-    /// Written back unchanged when there is no key field to edit it.
     kept_hotkey: Option<String>,
     rt_handle: tokio::runtime::Handle,
     _name_sub: Subscription,

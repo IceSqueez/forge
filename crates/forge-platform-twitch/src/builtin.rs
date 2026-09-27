@@ -37,7 +37,6 @@ use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
-/// Twitch's documented Helix budget: 800 requests per 60s window per client_id.
 pub const HELIX_BUDGET_CAPACITY: u32 = 800;
 pub const HELIX_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
@@ -58,7 +57,6 @@ impl ViewerPollState {
     }
 }
 
-/// Holds only a `watch` receiver, so it does not keep the bundle alive.
 struct TwitchViewerSource {
     reports: watch::Receiver<ViewerReport>,
 }
@@ -88,7 +86,6 @@ pub struct TwitchIntegrationBundle {
     bus: Arc<dyn EventPublisher>,
     creds: Arc<dyn CredentialsRepo>,
     credentials_manager: Arc<TwitchCredentialsManager>,
-    // Mutex lets &self-async control verbs take() the handle without racing a concurrent disconnect/reconnect.
     handle: Mutex<Option<TwitchChatHandle>>,
     viewer_state: std::sync::RwLock<ViewerPollState>,
     viewer_report_tx: watch::Sender<ViewerReport>,
@@ -153,8 +150,6 @@ impl TwitchIntegrationBundle {
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_poll(&bundle, transport);
         Self::spawn_identity_refresh(&bundle);
-        // The session may already have reached Connected before this receiver was cloned, in
-        // which case the state bridge never fires a transition to seed on.
         Self::spawn_lifecycle_seed(&bundle);
         bundle
     }
@@ -206,8 +201,6 @@ impl TwitchIntegrationBundle {
         });
     }
 
-    /// Fires an identity refresh only on the transition into `Connected`, not on every
-    /// broadcast while already connected.
     fn on_chat_state_changed(self: &Arc<Self>, state: ChatConnectionState) {
         if state == ChatConnectionState::Connected {
             let already_connected = self
@@ -237,8 +230,6 @@ impl TwitchIntegrationBundle {
         });
     }
 
-    /// Runs on every entry into `Connected`, so an EventSub reconnect that swallowed an end
-    /// notification converges instead of holding a stale phase.
     fn spawn_lifecycle_seed(bundle: &Arc<Self>) {
         let bundle = Arc::clone(bundle);
         tokio::spawn(async move {
@@ -249,8 +240,6 @@ impl TwitchIntegrationBundle {
         });
     }
 
-    /// Missing/unloadable credentials leave the previously cached tier and expiry in
-    /// place rather than resetting them to unlocked/unknown.
     pub(crate) async fn refresh_identity(&self) {
         let Ok(Some(stored)) = credentials::load(self.creds.as_ref()).await else {
             return;
@@ -269,7 +258,6 @@ impl TwitchIntegrationBundle {
         *self.tier.read().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// A failed poll is skipped silently and retried next tick; last known value stays on screen.
     fn spawn_viewer_poll(bundle: &Arc<Self>, transport: Arc<dyn HelixTransport>) {
         let bundle = Arc::clone(bundle);
         let broadcaster_id = bundle.config.broadcaster_id.clone();
@@ -460,7 +448,6 @@ impl TwitchIntegrationBundle {
     }
 }
 
-/// Empty `data` array means the broadcaster is not currently live.
 fn extract_viewer_count(body: &serde_json::Value) -> Option<u64> {
     body.get("data")?
         .as_array()?
@@ -623,8 +610,6 @@ impl BuiltinContent for TwitchIntegrationBundle {
     }
 }
 
-/// Only Affiliate and Partner broadcasters may run commercials, polls, or predictions;
-/// the other quick actions carry no tier restriction.
 const TIER_LOCKED_REASON: &str = "Requires Twitch Affiliate or Partner";
 
 fn blank() -> Variant {

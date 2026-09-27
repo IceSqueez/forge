@@ -105,7 +105,6 @@ pub(crate) fn update_on_send(
     deltas
 }
 
-/// No request was made (the webhook could not be resolved), so latency and rate-limit budget are left untouched.
 pub(crate) fn record_missing_webhook(snap: &mut DiscordHealthSnapshot) -> Vec<HealthDelta> {
     let mut deltas = Vec::new();
 
@@ -146,7 +145,6 @@ pub struct DiscordSendHealth {
 }
 
 impl DiscordClient {
-    /// Same four measurements `BuiltinHealth::metrics` renders, typed instead of pre-formatted.
     pub fn send_health(&self) -> DiscordSendHealth {
         let mut snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
         DiscordSendHealth {
@@ -163,7 +161,6 @@ impl DiscordClient {
 }
 
 fn age_out_errors(timestamps: &mut VecDeque<Instant>) -> usize {
-    // Windows can start the monotonic clock near zero; `now - 3600s` would underflow there.
     if let Some(cutoff) = Instant::now().checked_sub(Duration::from_secs(3600)) {
         while timestamps.front().is_some_and(|t| *t < cutoff) {
             timestamps.pop_front();

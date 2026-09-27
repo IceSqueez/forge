@@ -49,7 +49,6 @@ impl VoiceGateMonitor {
         let (state_tx, state_rx) = watch::channel(VoiceGateState::Inactive);
 
         let thread_shared = Arc::clone(&shared);
-        // cpal::Stream is !Send; it is built and dropped entirely inside this thread.
         std::thread::spawn(move || run(config, control_rx, state_tx, thread_shared));
 
         Self {

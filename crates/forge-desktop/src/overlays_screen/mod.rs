@@ -90,8 +90,6 @@ struct ServedEndpoint {
     routable_host: Option<String>,
 }
 
-/// What a regeneration pass leaves for the screen to say: a failure to report, and the claimed
-/// files whose copy is gone from disk.
 #[derive(Default)]
 struct Regenerated {
     failure: Option<String>,
@@ -99,7 +97,6 @@ struct Regenerated {
     media_issues: Vec<MediaIssue>,
 }
 
-/// `false` means the record is gone, so the caller reports a miss rather than recreating it.
 pub(super) async fn store_config(
     repo: &dyn OverlayRepo,
     id: &OverlayId,
@@ -273,7 +270,6 @@ impl OverlaysView {
         self.overlays.iter().filter(|item| item.enabled).count()
     }
 
-    /// `None` whenever the server is not serving, so the UI states that instead of showing a dead address.
     fn overlay_url(&self, id: &OverlayId) -> Option<String> {
         if !self.server_running {
             return None;
@@ -548,8 +544,6 @@ impl OverlaysView {
         cx.notify();
     }
 
-    /// Rebuilt only when the selection moves: a rebuild drops the live text inputs, so a reload
-    /// caused by the user's own save must leave the panel they are editing alone.
     fn sync_panel(&mut self, cx: &mut Context<Self>) {
         let target = self
             .selected_definition()
@@ -637,8 +631,6 @@ impl OverlaysView {
         self.save_config(id, config.clone(), cx);
     }
 
-    /// Re-reads the stored record so a background change to another field is not clobbered by the
-    /// panel's cached copy; only the config document is replaced.
     fn save_config(&mut self, id: OverlayId, config: OverlayConfig, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let service = self.service.clone();
@@ -807,8 +799,6 @@ impl OverlaysView {
         );
     }
 
-    /// Reads the stored record before writing so a background config change is not clobbered by a
-    /// stale cache. The directory keeps its identity; only the config document is rewritten.
     fn rename(&mut self, id: OverlayId, display_name: String, cx: &mut Context<Self>) {
         self.close_form(cx);
         let repo = Arc::clone(&self.repo);

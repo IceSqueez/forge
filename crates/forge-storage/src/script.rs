@@ -32,7 +32,6 @@ pub trait ScriptRepo: Send + Sync {
     async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<ScriptRecord>, StorageError>;
     async fn save(&self, record: ScriptRecord) -> Result<(), StorageError>;
-    /// Returns true if a row was removed.
     async fn delete(&self, id: ScriptId) -> Result<bool, StorageError>;
     async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError>;
     async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError>;
@@ -44,7 +43,6 @@ pub trait ScriptRepo: Send + Sync {
         status: ExecutionStatus,
     ) -> Result<(), StorageError>;
     async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError>;
-    /// Returns rows removed.
     async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 

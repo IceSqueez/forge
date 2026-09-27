@@ -109,7 +109,6 @@ impl EventSubscription {
         }
     }
 
-    /// `Ok(None)` signals the channel is momentarily empty; the caller stops draining.
     pub fn try_recv(&mut self) -> Result<Option<Event>, EventsError> {
         match self.receiver.try_recv() {
             Ok(event) => Ok(Some(Arc::unwrap_or_clone(event))),
@@ -164,7 +163,6 @@ impl EventBus {
         self.total_published.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Stores into the ring WITHOUT broadcasting, so record-then-replay evaluates the event once, not twice.
     pub fn record(&self, event: Event) {
         self.ring
             .lock()
@@ -220,7 +218,6 @@ impl EventBus {
         self.loss.watch()
     }
 
-    /// Returns `None` when `event_id` is not in the retained ring.
     pub fn lookup(&self, event_id: EventId) -> Option<Event> {
         self.ring
             .lock()
@@ -263,7 +260,6 @@ impl EventBus {
             .collect()
     }
 
-    /// Falls back to `EventLogRepo::recent_since` if evicted; the ring lock is never held across that await.
     pub async fn recent_since(&self, limit: usize, since: Option<EventId>) -> Vec<Event> {
         let since_id = match since {
             None => return self.recent(limit),
@@ -291,7 +287,6 @@ impl EventBus {
             .unwrap_or_default()
     }
 
-    /// Stamps a fresh `EventId` and `replay: true` but keeps the original `caused_by` for causation navigability.
     pub async fn replay_and_publish(&self, event_id: EventId) -> Result<(), BusError> {
         let original = match self.lookup(event_id) {
             Some(e) => e,
@@ -317,7 +312,6 @@ impl EventBus {
         Ok(())
     }
 
-    /// Subscribes before spawning the flush task, so events published immediately after never get missed.
     pub fn spawn_flush_task(bus: Arc<Self>) {
         let subscription = bus.subscribe_critical_durable(EVENT_LOG);
         let sink = EventLogSink::new(

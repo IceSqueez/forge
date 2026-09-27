@@ -1,4 +1,3 @@
-//! Thread-local tracing capture used by the log-hygiene tests.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
@@ -48,13 +47,6 @@ impl Visit for FieldCollector {
     }
 }
 
-// Why: the callsite interest cache is process-global while a capture subscriber is thread-local.
-// Ordinary tests in this binary reach the same production callsites with no subscriber installed,
-// which registers those callsites as `Interest::never()` - and `never` short-circuits the event
-// before `enabled()` is ever consulted, so a capture running in parallel silently records nothing.
-// This floor is installed once as the process-wide global default and answers `sometimes` for
-// every callsite, so the union can never collapse to `never` and every event reaches whatever
-// thread-local subscriber `with_default` has installed. It captures nothing itself.
 struct InterestFloor;
 
 impl tracing::Subscriber for InterestFloor {
@@ -84,15 +76,11 @@ impl tracing::Subscriber for InterestFloor {
 fn install_interest_floor() {
     static INSTALLED: OnceLock<()> = OnceLock::new();
     INSTALLED.get_or_init(|| {
-        // A binary that already set a global default keeps it; the rebuild below still clears
-        // any `never` cached before this point.
         let _ = tracing::subscriber::set_global_default(InterestFloor);
         tracing::callsite::rebuild_interest_cache();
     });
 }
 
-// Why: `register_callsite` answers `sometimes` on purpose - a cached `always` from another
-// capture running in parallel would hand a TRACE line to a DEBUG-only assertion.
 struct CaptureSubscriber {
     lines: Arc<Mutex<Vec<CapturedLine>>>,
     max: Level,
@@ -133,9 +121,6 @@ impl tracing::Subscriber for CaptureSubscriber {
     fn exit(&self, _: &span::Id) {}
 }
 
-/// Drives `future` to completion on a current-thread runtime owned by this call, with every
-/// line up to `max` captured. Runtime and subscriber share the calling thread precisely so the
-/// thread-local subscriber sees the work; callers must therefore be plain `#[test]` fns.
 pub(crate) fn capture_blocking<F: Future>(max: Level, future: F) -> (F::Output, Vec<CapturedLine>) {
     let lines = Arc::new(Mutex::new(Vec::new()));
     let subscriber = CaptureSubscriber {
@@ -155,7 +140,6 @@ pub(crate) fn capture_blocking<F: Future>(max: Level, future: F) -> (F::Output, 
     (output, captured)
 }
 
-/// Only forge's own callsites are under test; hyper/wiremock chatter is not this crate's contract.
 pub(crate) fn forge_lines(lines: &[CapturedLine]) -> Vec<&CapturedLine> {
     lines
         .iter()

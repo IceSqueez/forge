@@ -11,7 +11,6 @@ pub const IMAGE_REFERENCE_PREFIX: &str = "image:";
 
 pub const GENERATED_MEDIA_DIRECTORY: &str = "forge-media";
 
-/// The only keys a reference is ever read from, so wording that opens with a prefix stays wording.
 pub const MEDIA_KEYS: &[&str] = &[SOUND, ICON];
 
 const PAGE_PATH_SEPARATOR: char = '/';
@@ -297,7 +296,6 @@ impl OverlayMedia {
     }
 }
 
-/// `None` leaves the stored value on the page untouched, which is what keeps a hand-placed file working.
 pub fn emitted_media_value(
     key: &str,
     stored: &str,

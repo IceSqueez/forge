@@ -160,8 +160,6 @@ mod tests {
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
 
-    // Why: the timer wheel rounds a deadline up to its next tick, so the virtual clock
-    // can land a hair past the requested delay.
     const TIMER_GRANULARITY: Duration = Duration::from_millis(2);
 
     struct NullPublisher;

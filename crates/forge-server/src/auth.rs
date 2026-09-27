@@ -14,8 +14,6 @@ const TOKEN_BYTE_LEN: usize = 64;
 
 pub struct AuthState {
     bearer_token: Arc<RwLock<String>>,
-    /// Bumped only while `bearer_token`'s write lock is held, so a read under the read lock
-    /// always pairs a token with the generation that minted it.
     token_generation: AtomicU64,
     reads_required: AtomicBool,
     policy_changed: watch::Sender<()>,
@@ -58,8 +56,6 @@ impl AuthState {
         }
     }
 
-    /// The new token is handed out once and cannot be read back; every WebSocket session that
-    /// authenticated with the previous token loses its authentication and is closed.
     pub async fn regenerate(&self, creds: &dyn CredentialsRepo) -> Result<String, ServerError> {
         let new_token = generate_token();
         let id = CredentialId::new(forge_storage::SERVER_BEARER_CREDENTIAL_ID);
@@ -77,7 +73,6 @@ impl AuthState {
         self.verify_generation(candidate).await.is_some()
     }
 
-    /// The generation of the token `candidate` matched, for a session to record at auth time.
     pub(crate) async fn verify_generation(&self, candidate: &str) -> Option<u64> {
         let current = self.bearer_token.read().await;
         let generation = self.token_generation.load(Ordering::SeqCst);
@@ -92,8 +87,6 @@ impl AuthState {
         self.reads_required.load(Ordering::SeqCst)
     }
 
-    /// Applies to the next request on every live session; turning it on closes the WebSocket
-    /// sessions that hold neither a bearer nor an overlay credential.
     pub fn set_reads_required(&self, required: bool) {
         let previous = self.reads_required.swap(required, Ordering::SeqCst);
         if previous != required {
@@ -105,8 +98,6 @@ impl AuthState {
         self.policy_changed.subscribe()
     }
 
-    /// Whether a live WebSocket session may stay open under the current token and read policy.
-    /// `bearer_generation` is the generation recorded when the session presented the bearer.
     pub fn admits_session(&self, bearer_generation: Option<u64>, overlay_session: bool) -> bool {
         match bearer_generation {
             Some(generation) => generation == self.token_generation(),

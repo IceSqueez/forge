@@ -10,7 +10,6 @@ use tracing_subscriber::reload;
 static HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::new();
 static ENV_OVERRIDDEN: AtomicBool = AtomicBool::new(false);
 
-/// Decoder chatter, not level policy: capped at the quieter of `warn` and the selected level.
 const SYMPHONIA_TARGETS: &[&str] = &[
     "symphonia_core",
     "symphonia_common",
@@ -57,7 +56,6 @@ pub fn default_filter() -> EnvFilter {
     filter_for(&DEFAULT_DIAGNOSTIC_LOG_LEVEL)
 }
 
-/// Wraps the filter rather than a layer, so the layers below stay downcastable.
 pub fn reloadable(filter: EnvFilter, env_overridden: bool) -> reload::Layer<EnvFilter, Registry> {
     ENV_OVERRIDDEN.store(env_overridden, Ordering::Relaxed);
     let (layer, handle) = reload::Layer::new(filter);
@@ -69,8 +67,6 @@ pub fn env_overridden() -> bool {
     ENV_OVERRIDDEN.load(Ordering::Relaxed)
 }
 
-/// An environment filter accepted at boot owns the level for the whole run; every other
-/// source is refused while it holds. Returns whether the swap actually happened.
 pub fn apply(level: &LogLevel) -> bool {
     if env_overridden() {
         return false;
@@ -88,14 +84,6 @@ mod tests {
 
     use super::{SYMPHONIA_TARGETS, filter_for};
 
-    // Why: two failure modes in one comparison. The directives are joined by hand and handed to
-    // `EnvFilter::new`, which drops any directive it cannot parse without reporting it - a lost
-    // separator, a stray character or a word the parser rejects would leave the demotions, or
-    // the level itself, quietly absent and the process running at a level nobody chose. And the
-    // demotion word is capped at the quieter of `warn` and the selected level, so at the two
-    // quiet tiers it must follow the level down: an uncapped `=warn` would let decoder chatter
-    // outrank forge's own suppressed records, which is the noise the demotion exists to remove.
-    // Comparing the whole parsed set catches a dropped directive and an unintended extra alike.
     #[test]
     fn every_selectable_level_composes_into_that_level_plus_capped_decoder_demotions() {
         for (level, word, demotion) in [

@@ -31,7 +31,6 @@ impl OverlayKindRegistry {
         self.descriptors.values().map(|b| b.as_ref())
     }
 
-    /// Fails for a kind this build does not carry, so the caller can keep the record and mark it unavailable.
     pub fn effective_config(
         &self,
         kind_id: &str,

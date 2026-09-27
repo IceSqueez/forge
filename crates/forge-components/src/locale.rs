@@ -153,7 +153,6 @@ fn group_integer(n: u64, sep: &str) -> String {
     out
 }
 
-// Missing key returns the raw key string. Dotted keys map to Fluent underscore IDs.
 pub fn tr_lookup(key: &str, args: Option<&FluentArgs<'_>>) -> String {
     let fluent_id: std::borrow::Cow<'_, str> = if key.contains('.') {
         std::borrow::Cow::Owned(key.replace('.', "_"))

@@ -18,7 +18,6 @@ impl Toasts {
         }
     }
 
-    /// Oldest first.
     pub fn items(&self) -> &[ToastData] {
         &self.items
     }
@@ -68,7 +67,6 @@ pub fn copy_to_clipboard(text: impl Into<String>, cx: &mut App) {
 pub trait PushToast {
     fn push_toast(&mut self, kind: ToastKind, message: impl Into<SharedString>);
 
-    /// A zero `duration` pins the toast open until dismissed.
     fn push_toast_full(
         &mut self,
         kind: ToastKind,

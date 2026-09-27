@@ -60,7 +60,6 @@ impl SynthesisSample {
         }
     }
 
-    /// Yields the same values on every call, so a regenerated preview is byte-identical to the last.
     pub fn stable(contract: KindPlatformContract) -> Self {
         SynthesisSample {
             platform: platform_of(contract),

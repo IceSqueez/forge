@@ -31,7 +31,6 @@ impl fmt::Debug for SeededServer {
     }
 }
 
-/// forge reads the client id from its environment, never from storage: the launcher must pass it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeededTwitch {
     pub client_id: String,
@@ -39,8 +38,6 @@ pub struct SeededTwitch {
     pub login: String,
 }
 
-/// `id` is the slug forge minted from the display name; `credential` is what a page presents to
-/// the control socket to be addressed as this overlay.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SeededOverlay {
     pub id: String,

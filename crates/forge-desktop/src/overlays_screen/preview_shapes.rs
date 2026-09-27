@@ -18,11 +18,8 @@ const PLACEHOLDER: &str = "-";
 const CHANNEL_MAX: f32 = 255.0;
 const UNSCALED_TEXT: f32 = 1.0;
 
-/// The goal page washes its track with white at this alpha; the metrics carry lengths only.
 const TRACK_WASH_ALPHA: f32 = 0.14;
 
-/// Two factors the stage composes: `at` carries the metrics a stylesheet states in plain pixels,
-/// `text_at` the ones it multiplies by `--text-scale`.
 #[derive(Clone, Copy)]
 pub(super) struct Scale {
     canvas: f32,
@@ -510,7 +507,6 @@ fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<
         .map(|line| SharedString::from(line.text.clone()))
 }
 
-/// The pages paint their own surface regardless of the app theme, so the stage does too.
 fn surface(alpha: f32) -> Rgba {
     let [red, green, blue] = SURFACE_RGB;
     Rgba {

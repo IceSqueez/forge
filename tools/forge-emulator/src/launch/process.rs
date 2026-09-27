@@ -27,11 +27,9 @@ const KILL_REAP_DEADLINE: Duration = Duration::from_secs(5);
 pub struct ForgeExit {
     pub status: String,
     pub code: Option<i32>,
-    /// True when forge outlived the terminate grace period and had to be killed.
     pub forced: bool,
 }
 
-/// A running forge; dropping it without `shutdown` kills its process group.
 pub struct ForgeProcess {
     child: Option<Child>,
     pid: u32,
@@ -42,7 +40,6 @@ pub struct ForgeProcess {
 }
 
 impl ForgeProcess {
-    /// Refuses before spawning while a game may be running or when the fixture overlaps live paths.
     pub async fn spawn(
         spec: &LaunchSpec,
         guard: &GameGuard,
@@ -103,7 +100,6 @@ impl ForgeProcess {
         &self.output
     }
 
-    /// forge's daily rotating log files, the only output that carries tracing targets.
     pub fn log_dir(&self) -> PathBuf {
         self.data_dir.join("logs")
     }
@@ -112,12 +108,10 @@ impl ForgeProcess {
         &self.data_dir
     }
 
-    /// False once forge has exited, reaped or not.
     pub fn is_running(&mut self) -> bool {
         matches!(self.child.as_mut().map(Child::try_wait), Some(Ok(None)))
     }
 
-    /// forge is ready once a control connection on `port` authenticates with `token`.
     pub async fn wait_ready(
         &mut self,
         port: u16,
@@ -163,7 +157,6 @@ impl ForgeProcess {
         }
     }
 
-    /// Resolves once forge exits on its own; cancel-safe.
     pub async fn exited(&mut self) -> Result<ForgeExit, EmulatorError> {
         if let Some(exit) = &self.reaped {
             return Ok(exit.clone());
@@ -176,7 +169,6 @@ impl ForgeProcess {
         Ok(self.reap(status, false).await)
     }
 
-    /// Terminates the process group, kills it after `grace`, and always reaps forge.
     pub async fn shutdown(mut self, grace: Duration) -> Result<ForgeExit, EmulatorError> {
         if let Some(exit) = self.reaped.take() {
             return Ok(exit);
@@ -242,7 +234,6 @@ impl ForgeProcess {
         }
     }
 
-    /// Bounded, because a helper forge spawned may still hold the pipes open after forge is gone.
     async fn drain_output(&mut self) {
         for mut reader in std::mem::take(&mut self.readers) {
             if tokio::time::timeout(OUTPUT_DRAIN_DEADLINE, &mut reader)

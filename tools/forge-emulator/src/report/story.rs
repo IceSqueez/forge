@@ -7,7 +7,6 @@ use crate::twitch::ViewerBadge;
 const SHORT_TEXT_CHARS: usize = 40;
 const VALUE_CHARS: usize = 120;
 
-/// `As <actor> I <stimulus>`, without the closing period.
 pub(crate) fn story(action: &StepAction) -> String {
     match action {
         StepAction::ForgeReady { within_ms } => format!(
@@ -64,7 +63,6 @@ pub(crate) fn story(action: &StepAction) -> String {
     }
 }
 
-/// Fits after "after" in a title.
 pub(crate) fn step_short(action: &StepAction) -> String {
     match action {
         StepAction::ForgeReady { .. } => "startup".to_owned(),

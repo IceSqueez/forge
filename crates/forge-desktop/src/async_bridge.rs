@@ -68,7 +68,6 @@ pub enum BridgeFlow {
     Stop,
 }
 
-/// Drains `bus` batches into `apply` until the bus closes or `apply` returns `Stop`; a lagging receiver warns and keeps receiving (broadcast semantics).
 pub async fn drain_events<F>(bus: &EventBus, cx: &mut AsyncApp, apply: F)
 where
     F: FnMut(&[Event], &mut AsyncApp) -> BridgeFlow,
@@ -226,7 +225,6 @@ pub fn spawn_dialog<V, Fut, T>(
     run_async(handle, dialog, on_result, cx);
 }
 
-/// Runs `fut` on `handle`, then applies its output to the calling view; a dropped view or a dropped task silently no-ops (the view is held weakly).
 pub fn run_async<V, Fut, T>(
     handle: &Handle,
     fut: Fut,
@@ -249,7 +247,6 @@ pub fn run_async<V, Fut, T>(
     .detach();
 }
 
-/// Like `run_async` but from an `&mut App` with an explicit `view`; the strong `Entity` keeps the view alive until the future resolves.
 pub fn run_async_entity<V, Fut, T>(
     handle: &Handle,
     view: Entity<V>,
@@ -273,7 +270,6 @@ pub fn run_async_entity<V, Fut, T>(
     .detach();
 }
 
-/// Runs blocking `work` on `handle`'s blocking pool, then applies its output to the calling view (held weakly).
 pub fn run_blocking<V, Work, T>(
     handle: &Handle,
     work: Work,
@@ -309,7 +305,6 @@ impl Debounced {
         }
     }
 
-    /// Runs `fut` after `delay` of quiet, superseding any still-pending write so only the last value of a burst reaches disk (last-write-wins). The write is dispatched on `handle`, so it outlives a drop of the calling view mid-debounce; failures log (no view is guaranteed to survive to toast on).
     pub fn schedule<F, E>(&self, handle: &Handle, context: impl Into<SharedString>, fut: F)
     where
         F: Future<Output = Result<(), E>> + Send + 'static,
@@ -341,7 +336,6 @@ impl Generation {
         next
     }
 
-    /// True only for the most recently issued ticket; a stale async result (an older request that resolved after a newer one) compares false and must be discarded.
     pub fn is_current(&self, ticket: u64) -> bool {
         self.0.get() == ticket
     }

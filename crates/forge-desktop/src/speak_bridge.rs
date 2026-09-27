@@ -563,8 +563,6 @@ mod tests {
             show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
         };
 
-        // Why: without the cancel reaching the queue no removal ever arrives, so the test must
-        // fail rather than stall.
         let (outcome, removed) = tokio::time::timeout(Duration::from_secs(5), async {
             tokio::join!(
                 bridge.speak_for_show(speech, cancel.clone(), SpeechStartSignal::new()),
@@ -677,8 +675,6 @@ mod tests {
             )
             .await
             .unwrap();
-        // Why: with no voice the queue drops the speech right after taking it, so the reveal is
-        // due within milliseconds; the bound only turns a missing reveal into a failure.
         let revealed = tokio::time::timeout(Duration::from_secs(3), async {
             loop {
                 let arrived = pages.arrived.notified();

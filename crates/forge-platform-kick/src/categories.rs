@@ -155,7 +155,6 @@ mod tests {
         KickCategories::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
     }
 
-    // CategoryMatch is not Debug, so `unwrap_err` is unavailable on a search result.
     fn expect_err(result: Result<Vec<CategoryMatch>, PlatformError>) -> PlatformError {
         match result {
             Ok(matches) => panic!("expected an error, got {} matches", matches.len()),

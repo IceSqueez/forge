@@ -122,8 +122,6 @@ fn compare_identifier(a: &str, b: &str) -> Ordering {
     }
 }
 
-/// A prerelease never counts as newer than a release build, so a beta cut for the next version
-/// leaves a stable install alone.
 pub fn is_newer(current: &Version, latest: &Version) -> bool {
     if current.pre.is_empty() && !latest.pre.is_empty() {
         return false;

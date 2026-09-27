@@ -1,5 +1,3 @@
-//! The runner layer depends only on these traits; the backing OS crate types never cross this boundary.
-
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -31,7 +29,6 @@ pub trait NotifyPort: Send + Sync {
 
 pub trait ClipboardPort: Send + Sync {
     fn copy(&self, text: String) -> Result<(), OsPortError>;
-    /// An accessible-but-empty clipboard yields `Ok("")`; only a missing clipboard service errors.
     fn read(&self) -> Result<String, OsPortError>;
 }
 
@@ -87,7 +84,6 @@ impl ClipboardPort for SystemClipboardPort {
     }
 }
 
-// A fresh handle per call lets a headless session fail per-action, not abort boot registration.
 fn clipboard() -> Result<arboard::Clipboard, OsPortError> {
     arboard::Clipboard::new().map_err(|e| OsPortError::Unavailable(e.to_string()))
 }
@@ -97,7 +93,6 @@ pub struct SystemUrlOpenPort;
 
 impl UrlOpenPort for SystemUrlOpenPort {
     fn open(&self, url: String) -> Result<(), OsPortError> {
-        // Why: open 5.4's launcher error Display renders the spawned `Command`, whose arguments are the target URL and any query material in it.
         open::that_detached(url)
             .map_err(|e| OsPortError::Failed(format!("launcher failed: {}", e.kind())))
     }
@@ -108,9 +103,6 @@ impl UrlOpenPort for SystemUrlOpenPort {
 mod tests {
     use super::{OsPortError, SystemUrlOpenPort, UrlOpenPort};
 
-    // Why: an interior NUL makes every launcher candidate fail inside std's argument encoding,
-    // which happens before any process is forked - the only way to reach the error arm without
-    // handing a real URL to a real browser.
     #[test]
     fn url_open_failure_text_carries_only_the_error_kind() {
         let url = "https://leak-host.example/watch?access_token=QUERY-SECRET\0".to_owned();
@@ -125,8 +117,6 @@ mod tests {
             "leaked target host: {msg}"
         );
         assert!(!msg.contains("QUERY-SECRET"), "leaked query token: {msg}");
-        // The launcher io::Error's own Display renders the spawned command line, whose argument
-        // is the URL, so nothing but the kind may reach the text.
         assert_eq!(
             msg,
             format!("launcher failed: {}", std::io::ErrorKind::InvalidInput)

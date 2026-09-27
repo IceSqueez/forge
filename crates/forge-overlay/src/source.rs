@@ -7,8 +7,6 @@ use crate::materialize::{
     check_identity, display, optional_canonicalize, overlay_directory, reject_symlink, write_atomic,
 };
 
-/// `Ok(None)` while the root, the overlay directory or the file is absent, so a page that was
-/// never written is not reported as a read failure.
 pub fn read_overlay_source(
     root: &Path,
     id: &str,
@@ -44,7 +42,6 @@ pub fn read_overlay_source(
     }
 }
 
-/// Writes one user-owned page file; keeping the record's override list in step is the caller's job.
 pub fn write_overlay_source(
     root: &Path,
     id: &str,

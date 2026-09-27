@@ -580,8 +580,6 @@ mod tests {
 
     #[tokio::test]
     async fn set_master_volume_converts_db_to_linear_gain_with_clamping() {
-        // Why: the ceiling is unity (0 dB) - a stream's own recorded loudness,
-        // no boost above it (closes QA finding S6).
         let cases: Vec<(SubActionConfig, f32)> = vec![
             (config(&[("volume_db", Variant::Int(0))]), 1.0), // ceiling boundary
             (config(&[("volume_db", Variant::Int(6))]), 1.0), // one step past the ceiling clamps to unity
@@ -653,9 +651,6 @@ mod tests {
         );
     }
 
-    // Why: the prefix and the sibling's options_key are the map keys the UI fills at
-    // fetch time; nothing links the two sides at compile time, so a rename here
-    // silently empties the voice dropdown.
     #[test]
     fn alias_runners_pin_the_option_map_keys_the_voice_dropdown_is_fed_under() {
         let reg = audio_registry();

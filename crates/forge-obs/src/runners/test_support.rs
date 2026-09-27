@@ -157,9 +157,6 @@ impl ObsSink for MockSink {
     }
 }
 
-/// Records every sink call as `"method(arg, arg)"` so a runner test can assert both WHICH sink
-/// method fired and that exactly one fired. `failing()` makes every call return
-/// `ObsError::Disconnected` so the telemetry error path is reachable without a live OBS.
 pub(crate) struct RecordingSink {
     calls: Mutex<Vec<String>>,
     fail: bool,

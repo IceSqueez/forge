@@ -46,7 +46,6 @@ impl GameGuard {
     }
 }
 
-/// Runs `<program> <args...> clients -j` and fails closed on anything but a readable, game-free answer.
 #[derive(Debug, Clone)]
 pub struct HyprlandProbe {
     program: PathBuf,
@@ -97,8 +96,6 @@ impl HyprlandProbe {
     }
 }
 
-/// Same predicate as the no-gui-over-game hook (`fullscreen >= 2`, or a `steam_app_` / `gamescope`
-/// class), plus boolean `fullscreen: true`; any shape it cannot evaluate is a refusal.
 pub fn assess_hyprland_clients(json: &[u8]) -> Result<(), EmulatorError> {
     let unreadable = |reason: &str| EmulatorError::GameStateUnreadable {
         reason: reason.to_owned(),

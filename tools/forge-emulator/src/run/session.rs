@@ -24,7 +24,6 @@ use crate::overlay::{OverlayMarks, OverlayPages};
 use crate::scenario::{Expectation, Scenario, Step, StepAction};
 use crate::twitch::FakeTwitch;
 
-/// `journal` must follow `client`'s push stream, subscribed before the first step runs.
 pub struct Session<'a> {
     pub client: &'a ControlClient,
     pub journal: &'a Journal,
@@ -33,12 +32,10 @@ pub struct Session<'a> {
     pub pages: &'a OverlayPages,
     pub log_dir: PathBuf,
     pub clock: RunClock,
-    /// When the forge_ready step counts as satisfied.
     pub ready_at: Instant,
     pub ready: ActionDetail,
 }
 
-/// Runs steps in order and stops after the first failing step; `stop` interrupts the current step.
 pub async fn execute_steps(
     scenario: &Scenario,
     session: &Session<'_>,
@@ -151,7 +148,6 @@ async fn run_step(
 struct ExpectationContext<'s, 'a> {
     session: &'s Session<'a>,
     from: usize,
-    /// Frame counts taken before the step acted, so a page this step opened starts from nothing.
     marks: OverlayMarks,
     acted: Instant,
     log_tail: LogTail,

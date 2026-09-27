@@ -31,13 +31,11 @@ pub(crate) enum SubscriptionOutcome {
 pub(crate) struct Inner {
     pub(crate) ledger: Ledger,
     outboxes: HashMap<String, Outbox>,
-    /// Keyed by user id: a crowd of tens of thousands must not cost a scan per message.
     pub(crate) viewers: HashMap<String, Viewer>,
     request_tap: Option<mpsc::UnboundedSender<TappedRequest>>,
 }
 
 impl Inner {
-    /// The returned session is recorded live; only a known predecessor passes its subscriptions on.
     pub(crate) fn open_session(
         &mut self,
         reconnected_from: Option<String>,
@@ -61,7 +59,6 @@ impl Inner {
                 })
                 .collect();
             self.ledger.subscriptions.extend(inherited);
-            // Dropping the predecessor's outbox ends its connection task, which closes that socket.
             self.outboxes.remove(previous);
         }
         self.outboxes.insert(session.id.clone(), outbox);
@@ -144,8 +141,6 @@ impl Inner {
         }
     }
 
-    /// A tapped fake streams requests to the tap instead of keeping them, so a long load run
-    /// holds no request history.
     pub(crate) fn record_request(&mut self, request: RecordedRequest) {
         match &self.request_tap {
             Some(tap) => {
@@ -204,7 +199,6 @@ impl Shared {
         f(&self.lock())
     }
 
-    /// Wakes every `changes` receiver once `f` has run and the lock is released.
     pub(crate) fn mutate<R>(&self, f: impl FnOnce(&mut Inner) -> R) -> R {
         let result = f(&mut self.lock());
         self.changes.send_modify(|generation| *generation += 1);

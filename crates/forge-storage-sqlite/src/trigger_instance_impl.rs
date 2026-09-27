@@ -251,9 +251,6 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
     }
 
     async fn delete(&self, id: TriggerInstanceId) -> Result<bool, StorageError> {
-        // Deliberately unfiltered by archived_at: the FK is ON DELETE RESTRICT regardless
-        // of the linked action's archive state, so a link from an archived action must
-        // still block this hard delete.
         let id_str_probe = id.to_string();
         let linked_rows: Vec<(String,)> = sqlx::query_as(
             "SELECT action_id FROM action_trigger_instances WHERE trigger_instance_id = ?",
@@ -417,8 +414,6 @@ mod tests {
 
     #[test]
     fn a_foreign_permission_rung_string_fails_the_row_decode() {
-        // A rung this build does not know must surface as a typed decode error rather than
-        // silently collapsing to the floor and quietly opening a gated command.
         for foreign in ["regular", "owner", "", "Moderator"] {
             let err = decode_row(row(foreign)).expect_err("must not decode");
             assert!(

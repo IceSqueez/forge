@@ -4,8 +4,6 @@ const FORBIDDEN_REQUEST_CHARS: [char; 3] = ['\\', ':', '\0'];
 const PARENT_MARKER: &str = "..";
 const HIDDEN_PREFIX: char = '.';
 
-/// Never touches the filesystem: a backslash, drive or stream colon, hidden or parent segment
-/// is refused here, so a UNC share or an absolute path is never handed to `canonicalize`.
 pub(crate) fn request_relative_path(url_path: &str) -> Option<PathBuf> {
     if url_path.contains(FORBIDDEN_REQUEST_CHARS) || url_path.contains(PARENT_MARKER) {
         return None;

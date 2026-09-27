@@ -19,8 +19,6 @@ const LEVEL_OPTIONS: &[&str] = &[UNCHANGED, "0", "1", "2", "3", "4"];
 
 const OVERALL_KEY: &str = "overall_level";
 
-// The eight per-category filters Twitch accepts. When PUTting individual
-// levels, ALL eight must be present in the body - Twitch rejects a partial set.
 const CATEGORY_KEYS: &[&str] = &[
     "aggression",
     "bullying",
@@ -57,16 +55,13 @@ impl UpdateAutomodSettingsRunner {
             .map(|key| parse_level(config, key))
             .collect();
 
-        // All unchanged: skip the call, an empty PUT body would be rejected.
         if overall.is_none() && categories.iter().all(Option::is_none) {
             return SubActionOutcome::Success;
         }
 
-        // Twitch forbids mixing overall_level with per-category fields; overall wins.
         let body = if let Some(level) = overall {
             serde_json::json!({ OVERALL_KEY: level })
         } else {
-            // PUT requires all eight categories; GET current values to fill in unchanged ones.
             let current = match self.fetch_current(&user_id).await {
                 Ok(c) => c,
                 Err(e) => return SubActionOutcome::Failed(e.to_string()),
@@ -81,7 +76,6 @@ impl UpdateAutomodSettingsRunner {
             serde_json::Value::Object(map)
         };
 
-        // moderator_id == broadcaster_id == self.
         let request = HelixRequest::new(HelixMethod::Put, PATH)
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
@@ -98,8 +92,6 @@ impl UpdateAutomodSettingsRunner {
     }
 }
 
-/// Reads a tri-state level select: `None` for "unchanged" or absent, else the
-/// parsed 0..=4 value. Non-conforming strings also yield `None`.
 fn parse_level(config: &SubActionConfig, key: &str) -> Option<u8> {
     match config.get(key).and_then(Variant::as_str) {
         Some(s) if s != UNCHANGED => s.parse::<u8>().ok().filter(|n| *n <= 4),

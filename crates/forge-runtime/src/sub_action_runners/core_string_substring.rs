@@ -118,7 +118,6 @@ impl SubActionRunner for CoreStringSubstringRunner {
         let chars: Vec<char> = source.chars().collect();
         let char_count = chars.len();
 
-        // -1 means extend to end of string; any other negative value is rejected by validate_config.
         let end = if end_raw == -1 {
             char_count
         } else {

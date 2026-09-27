@@ -22,7 +22,6 @@ pub struct YoutubeModeration {
     access_token_source: TokenSource,
     live_chat_id: LiveChatIdHandle,
     quota: Arc<Mutex<QuotaState>>,
-    /// YouTube's API exposes no lookup for the ban resource id; unban needs it recorded here.
     ban_ids: Mutex<HashMap<String, String>>,
     api_base: String,
 }
@@ -184,7 +183,6 @@ impl YoutubeModeration {
         Err(self.map_failure(resp).await)
     }
 
-    /// Pages the moderator list for the active broadcast to find `channel_id`'s resource id.
     async fn resolve_moderator_id(&self, channel_id: &str) -> Result<String, PlatformError> {
         let live_chat_id = self
             .live_chat_id

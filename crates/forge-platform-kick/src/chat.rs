@@ -14,7 +14,6 @@ use crate::channel_info::ChannelInfoFetcher;
 use crate::error::KickError;
 use crate::normalize;
 
-/// Community-observed (PLATFORMS_NOTES.md); re-verify via DevTools if events stop arriving.
 pub const PUSHER_APP_KEY: &str = "32cbd69e4b950bf97679";
 
 const PUSHER_WS_BASE: &str = "wss://ws-us2.pusher.com/app";
@@ -55,7 +54,6 @@ impl KickChat {
         format!("{PUSHER_WS_BASE}/{PUSHER_APP_KEY}?{PUSHER_PROTOCOL_PARAMS}")
     }
 
-    /// The returned handle's `shutdown` signals graceful shutdown; dropping it does the same.
     pub async fn connect(self, event_tx: mpsc::Sender<Event>) -> Result<KickChatHandle, KickError> {
         let fetcher = ChannelInfoFetcher::new(self.slug.clone(), self.http.clone());
         let channel_info = fetcher.fetch().await?;
@@ -146,8 +144,6 @@ struct RunLoopContext {
     state_tx: watch::Sender<ConnectionState>,
 }
 
-// Why: `Http` Display carries the channel endpoint's response body, and the slug-bearing
-// variants render the channel name.
 fn channel_info_failure(err: &KickError) -> String {
     match err {
         KickError::Http { status, .. } => format!("HTTP {status}"),
@@ -180,8 +176,6 @@ async fn run_loop(
         warn!(error = %e, "subscribe send failed");
     }
 
-    // subscription_succeeded is a Pusher internal frame we silently ignore, so WS-open +
-    // subscribe-sent is treated as Connected; there is no better signal.
     let _ = state_tx.send(ConnectionState::Connected);
     info!(chatroom_id, "kick chat connected");
 
@@ -335,8 +329,6 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHea
     let event_name = frame.event.as_str();
 
     if event_name == "pusher:error" {
-        // Why: the raw frame is unbounded third-party text; a chat-channel rejection can echo
-        // the message that caused it.
         match pusher_error_code(&frame.data) {
             Some(code) => warn!(code, frame_len = raw.len(), "kick chat pusher error frame"),
             None => warn!(frame_len = raw.len(), "kick chat pusher error frame"),
@@ -372,7 +364,6 @@ async fn handle_ws_text(raw: &str, event_tx: &mpsc::Sender<Event>) -> WsFrameHea
     WsFrameHealth::Healthy
 }
 
-/// Pusher sends `data` either as an object or as a JSON-encoded string; both carry `code`.
 fn pusher_error_code(data: &serde_json::Value) -> Option<i64> {
     let decoded;
     let body = match data.as_str() {
@@ -523,8 +514,6 @@ mod tests {
         assert_eq!(event.source, EventSource::Kick);
     }
 
-    /// Only a healthy frame resets the reconnect backoff, so a rejected subscription must not
-    /// be mistaken for a working session.
     #[tokio::test]
     async fn only_a_pusher_error_frame_is_reported_unhealthy() {
         let cases = [
@@ -596,7 +585,6 @@ mod tests {
 
     #[test]
     fn chat_message_event_exposes_no_flat_badge_strings_beside_the_envelope() {
-        // Raw platform badge strings are not an authorization source; only the typed envelope is.
         let mut raw = chat_payload();
         raw["sender"]["identity"]["badges"] =
             serde_json::json!([{ "type": "moderator", "text": "Moderator" }]);
@@ -606,8 +594,6 @@ mod tests {
         assert!(event.payload["sender"].get("badges").is_none());
     }
 
-    /// Pusher has shipped `data` both ways and types `code` both ways; the log line must keep
-    /// showing the code across that drift rather than falling back to a raw-frame dump.
     #[test]
     fn pusher_error_code_survives_every_observed_data_and_code_shape() {
         let cases = [
@@ -659,8 +645,6 @@ mod tests {
         assert_eq!(line.field_names(), vec!["code", "frame_len", "message"]);
     }
 
-    /// A Pusher rejection echoes back the payload that caused it, so no byte of the frame may
-    /// reach a log field - with or without a parseable code.
     #[test]
     fn pusher_error_warning_never_echoes_the_frame_payload() {
         const SENTINEL: &str = "s3cret-chat-line";
@@ -737,7 +721,6 @@ mod tests {
 
     #[test]
     fn a_chat_message_frame_publishes_exactly_the_shared_fixture_payload() {
-        // Why: the desktop event-feed tests consume this fixture as the real published chat event.
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../tests/fixtures/published_chat_message.json"
         ))

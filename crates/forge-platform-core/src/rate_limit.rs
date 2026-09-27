@@ -10,7 +10,6 @@ pub enum RateLimitOutcome {
     Exhausted,
 }
 
-/// All fields `None` mean the implementation has no introspection to offer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RateLimitUsage {
     pub used: Option<u32>,
@@ -53,8 +52,6 @@ pub async fn acquire_or_wait(limiter: &dyn RateLimiter, weight: u32) -> Result<(
     }
 }
 
-/// `std::sync::Mutex`, not tokio: the critical section is fully synchronous, no
-/// `.await` between locking and dropping the guard.
 pub struct TokenBucketRateLimiter {
     capacity: u32,
     refill_per: Duration,
@@ -89,7 +86,6 @@ impl TokenBucketRateLimiter {
         }
     }
 
-    /// `saturating_duration_since` avoids the Windows monotonic-clock panic near process start.
     fn refill(&self, state: &mut BucketState, now: Instant) {
         let elapsed = now.saturating_duration_since(state.last_refill);
         state.last_refill = now;
@@ -145,7 +141,6 @@ impl RateLimiter for TokenBucketRateLimiter {
         }
     }
 
-    /// A hint, not a reservation: approximates the refill without mutating shared state.
     fn remaining(&self) -> u32 {
         let now = Instant::now();
         let state = self

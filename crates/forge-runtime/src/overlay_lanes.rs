@@ -4,8 +4,6 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use forge_storage::OverlayId;
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
-/// Holders of one identity run one at a time in arrival order; different identities never wait
-/// on each other. A lane lives only while someone holds or awaits it.
 #[derive(Default)]
 pub(crate) struct OverlayLanes {
     lanes: Mutex<HashMap<OverlayId, Weak<AsyncMutex<()>>>>,

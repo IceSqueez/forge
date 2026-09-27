@@ -36,7 +36,6 @@ pub(crate) async fn build_connected_clients(
     bus_adapter: &BusAdapter,
 ) -> Vec<serde_json::Value> {
     let preview_tabs = bus_adapter.preview_tabs().await;
-    // Snapshot under the read guard, then release it before any async bus-adapter lookups.
     let snapshots: Vec<_> = {
         let clients = server_info.connected_clients.read().await;
         clients

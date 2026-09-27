@@ -1,6 +1,3 @@
-//! The content target is the one place chat text may enter a log field. Its value is the audit
-//! anchor: a bundle taken without `forge::command=trace` provably carries no command line, and
-//! that claim only holds while exactly one call site names the target.
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};
@@ -29,7 +26,6 @@ fn the_command_line_target_is_named_exactly_once_across_the_workspace() {
         rust_sources(&entry.path().join("src"), &mut sources);
     }
 
-    // A walk that found nothing would make the assertions below vacuous.
     assert!(
         sources.len() > 100,
         "the source walk found only {} files under {}",
@@ -41,8 +37,6 @@ fn the_command_line_target_is_named_exactly_once_across_the_workspace() {
         .into_iter()
         .filter_map(|path| {
             let text = std::fs::read_to_string(&path).unwrap_or_default();
-            // Only production call sites are in scope; forge keeps its unit tests in a
-            // `#[cfg(test)]` module at the bottom of the file they cover.
             let count = text
                 .split("#[cfg(test)]")
                 .next()

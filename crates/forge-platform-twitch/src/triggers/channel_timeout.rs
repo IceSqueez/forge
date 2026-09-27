@@ -58,7 +58,6 @@ impl TriggerKindDescriptor for ChannelTimeoutDescriptor {
         }
     }
 
-    // channel.ban fires for both bans and timeouts; only fire for timeouts (is_permanent == false).
     fn matches_trigger(&self, _config: &TriggerConfig, event: &Event) -> bool {
         !event
             .payload

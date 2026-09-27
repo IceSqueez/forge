@@ -35,8 +35,6 @@ impl RecordingBackend {
         })
     }
 
-    /// Makes the next `register` of this combo fail as though the OS already held it, then
-    /// clears itself so a later retry of the same combo succeeds.
     pub fn fail_next_register(&self, combo: &HotkeyCombo) {
         self.fail_combos
             .lock()
@@ -85,8 +83,6 @@ impl HotkeyBackend for RecordingBackend {
     }
 }
 
-/// Builds a `HotkeyClient` on a fresh `RecordingBackend` with no D-Bus or `/dev/input` access,
-/// for dependent crates that need to drive registration ordering without OS state.
 pub fn test_client(
     config: HotkeyConfig,
     publisher: Arc<dyn EventPublisher>,

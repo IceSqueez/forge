@@ -17,8 +17,6 @@ pub fn register_hotkey_triggers(reg: &mut TriggerRegistry) -> Result<(), Registr
     Ok(())
 }
 
-/// Stored combos may be hand-typed in any case or modifier order; events always carry the
-/// canonical form, so the configured side is canonicalised before comparing.
 fn config_accepts_combo(config: &TriggerConfig, event: &Event) -> bool {
     let Some(Variant::String(configured)) = config.get(fields::COMBO) else {
         return true;

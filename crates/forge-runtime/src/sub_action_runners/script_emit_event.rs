@@ -84,7 +84,6 @@ impl SubActionRunner for ScriptEmitEventRunner {
             SubActionOutcome::Failed("event_name is required".to_owned())
         } else {
             let payload = config_payload(config);
-            // Source must match the event_filter in the script.event.custom trigger descriptor.
             self.publisher.publish(Event::caused_by(
                 EventSource::Server,
                 format!("custom.{event_name}"),

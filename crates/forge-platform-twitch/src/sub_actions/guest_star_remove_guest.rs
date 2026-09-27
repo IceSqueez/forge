@@ -44,7 +44,6 @@ impl GuestStarRemoveGuestRunner {
                 Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
             };
 
-        // Twitch requires guest_id AND slot_id together - both identity and seat must match.
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/slot")
             .query("broadcaster_id", ctx.self_id.clone())
             .query("moderator_id", ctx.self_id)

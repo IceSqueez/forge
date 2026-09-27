@@ -70,7 +70,6 @@ impl TriggerKindDescriptor for GuestStarSessionEndedDescriptor {
     fn build_arg_stack(&self, event: &Event) -> ArgStack {
         let session = event.payload.get(guest_star_fields::SESSION);
 
-        // guest_star.session_id is the chaining var for guest-star sub-actions (%guest_star.session_id%).
         let session_id = session
             .and_then(|s| s.get(guest_star_fields::SESSION_ID))
             .and_then(|v| v.as_str())

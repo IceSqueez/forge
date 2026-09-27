@@ -79,7 +79,6 @@ fn parse_url(url: &str) -> Result<(String, String, String), PollyError> {
         .ok_or_else(|| PollyError::SignatureError("URL has no host".into()))?
         .to_string();
 
-    // AWS SigV4 requires the host header to include non-default ports.
     let host_with_port = match parsed.port() {
         Some(p) => format!("{host}:{p}"),
         None => host,

@@ -179,7 +179,6 @@ mod tests {
         let SubActionOutcome::Failed(msg) = telemetry.outcome else {
             panic!("expected Failed, got {:?}", telemetry.outcome);
         };
-        // The field is interpolated, so an id that failed to parse is whatever text arrived.
         assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
     }
 

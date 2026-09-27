@@ -12,7 +12,6 @@ pub struct JournalEntry {
     pub observation: Observation,
 }
 
-/// Every observation the control connection delivered, in arrival order; nothing is ever removed.
 #[derive(Clone, Default)]
 pub struct Journal {
     shared: Arc<Shared>,
@@ -40,7 +39,6 @@ impl Journal {
         Self::default()
     }
 
-    /// Records everything `stream` yields until it ends, then marks the journal closed.
     pub fn follow(stream: EventStream) -> (Self, JoinHandle<()>) {
         let journal = Self::new();
         let feeder = journal.clone();
@@ -54,7 +52,6 @@ impl Journal {
         (journal, task)
     }
 
-    /// Stamped under the lock, so a read at any instant sees every entry stamped by then.
     pub fn record(&self, observation: Observation) {
         self.mutate(|inner| {
             inner.entries.push(JournalEntry {
@@ -70,7 +67,6 @@ impl Journal {
         });
     }
 
-    /// The index the next recorded observation will take.
     pub fn len(&self) -> usize {
         self.lock().entries.len()
     }
@@ -87,7 +83,6 @@ impl Journal {
         })
     }
 
-    /// Returns once `settled` holds, the journal closes, or `deadline` passes, whichever is first.
     pub async fn wait_until(
         &self,
         deadline: Instant,

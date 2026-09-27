@@ -8,7 +8,6 @@ pub struct ControlEndpoint {
 }
 
 impl ControlEndpoint {
-    /// Refuses every non-loopback host: the bearer secret travels over plain `ws://`.
     pub fn loopback(host: &str, port: u16) -> Result<Self, EmulatorError> {
         if port == 0 {
             return Err(EmulatorError::ZeroPort);

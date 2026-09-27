@@ -44,8 +44,6 @@ pub fn main_thread_channel() -> (MainThreadHost, MainThreadLink) {
 }
 
 impl MainThreadHost {
-    /// Must be polled by the executor of the thread that runs the platform event loop; ends once
-    /// every link is dropped.
     pub async fn run(mut self) {
         while let Some(job) = self.jobs.recv().await {
             if !job.is_cancelled() {

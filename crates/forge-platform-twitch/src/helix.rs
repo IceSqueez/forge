@@ -26,7 +26,6 @@ pub(crate) fn bounded_http_client() -> reqwest::Client {
         })
 }
 const BODY_SNIPPET_MAX_CHARS: usize = 200;
-/// Used when a 429 omits `Retry-After`; a conservative default back-off.
 const DEFAULT_RETRY_AFTER_SECS: u64 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +40,6 @@ pub enum HelixMethod {
 #[derive(Debug, Clone)]
 pub struct HelixRequest {
     pub method: HelixMethod,
-    /// Host-relative, starts with `/helix/`.
     pub path: String,
     pub query: Vec<(String, String)>,
     pub body: Option<serde_json::Value>,
@@ -68,7 +66,6 @@ impl HelixRequest {
     }
 }
 
-/// Display never contains a bearer token or a request URL.
 #[derive(Debug, Error)]
 pub enum HelixError {
     #[error("rate limited")]
@@ -85,17 +82,14 @@ pub enum HelixError {
 
 #[async_trait]
 pub trait HelixTokenSource: Send + Sync {
-    /// Called once per request, so a rotated token takes effect without rebuilding the transport.
     async fn access_token(&self) -> Result<OAuthToken, HelixError>;
 }
 
-/// A rejected refresh token surfaces as `ReauthRequired`.
 #[async_trait]
 pub trait HelixTokenRefresher: Send + Sync {
     async fn refresh(&self, failed_token: &OAuthToken) -> Result<OAuthToken, HelixError>;
 }
 
-/// Every non-2xx response publishes a `request.fail` bus event before the error is returned.
 #[async_trait]
 pub trait HelixTransport: Send + Sync {
     async fn execute(&self, request: HelixRequest) -> Result<serde_json::Value, HelixError>;
@@ -128,7 +122,6 @@ impl HelixHttpTransport {
         )
     }
 
-    /// A single refresh-then-retry per request before falling through to `ReauthRequired`.
     pub fn with_refresher(mut self, refresher: Arc<dyn HelixTokenRefresher>) -> Self {
         self.refresher = Some(refresher);
         self
@@ -168,7 +161,6 @@ impl HelixHttpTransport {
 }
 
 impl HelixHttpTransport {
-    /// Returns `Err(ReauthRequired)` on a 401 so the caller can decide whether a refresh-then-retry is available.
     async fn attempt(
         &self,
         request: &HelixRequest,
@@ -205,7 +197,6 @@ impl HelixHttpTransport {
                 return Err(HelixError::Transport("request timed out".to_owned()));
             }
             Ok(Err(e)) => {
-                // `without_url` first: the raw Display carries the request URL and its query.
                 let reason = e.without_url().to_string();
                 warn!(path = %request.path, error = %reason, "helix transport error");
                 return Err(HelixError::Transport(reason));
@@ -224,7 +215,6 @@ impl HelixHttpTransport {
                 return Err(HelixError::ReauthRequired);
             }
             if status_code == StatusCode::TOO_MANY_REQUESTS {
-                // Feeds the shared bucket so every transport sharing this limiter backs off.
                 let cooldown = retry_after.unwrap_or(DEFAULT_RETRY_AFTER_SECS);
                 warn!(path = %request.path, cooldown_secs = cooldown, "helix rate limited; backing off");
                 self.rate_limiter
@@ -255,7 +245,6 @@ impl HelixTransport for HelixHttpTransport {
         let token = self.tokens.access_token().await?;
         match self.attempt(&request, &token).await {
             Err(HelixError::ReauthRequired) => match &self.refresher {
-                // A second 401 after a successful refresh is terminal - a rejected token cannot loop.
                 Some(refresher) => {
                     debug!(path = %request.path, "helix rejected the token; refreshing once and retrying");
                     let fresh = refresher.refresh(&token).await?;

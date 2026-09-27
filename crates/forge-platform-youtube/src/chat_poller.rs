@@ -121,8 +121,6 @@ impl YoutubeChatPoller {
                 Ok(None) => {
                     self.live_chat_id.set(None);
                     self.active_broadcast_id.set(None);
-                    // Resetting here means a later go-live with a different title is a fresh
-                    // session, not an edit.
                     last_seen_title = None;
                     if is_live {
                         is_live = false;
@@ -287,7 +285,6 @@ impl YoutubeChatPoller {
         }
     }
 
-    /// Resolves `liveChatId`, the video id, and current title in one call - no extra quota.
     async fn fetch_live_chat_id(
         &self,
         token: &str,
@@ -2192,7 +2189,6 @@ mod tests {
         );
     }
 
-    /// Marks the request URL so a leak is identifiable regardless of the host and port.
     const URL_SENTINEL: &str = "yt-url-leak-probe";
 
     fn poller_at(api_base: String) -> YoutubeChatPoller {
@@ -2208,7 +2204,6 @@ mod tests {
         .with_api_base(api_base)
     }
 
-    // `ChatMessagesResponse` is not `Debug`, so the Ok arm cannot go through `unwrap_err`.
     fn network_reason<T>(result: Result<T, PlatformError>) -> String {
         match result {
             Err(PlatformError::Network { reason }) => reason,
@@ -2217,8 +2212,6 @@ mod tests {
         }
     }
 
-    /// Both fetches are hit: they build their URLs independently, so a missing `without_url()`
-    /// on either one is a separate leak.
     async fn network_reasons_from_both_fetches(poller: &YoutubeChatPoller) -> [String; 2] {
         [
             network_reason(poller.fetch_live_chat_id("tok").await),
@@ -2228,7 +2221,6 @@ mod tests {
 
     #[tokio::test]
     async fn refused_connection_reports_a_network_reason_stripped_of_the_request_url() {
-        // Port 1 is never bound, so the refusal is immediate and needs no ephemeral-port race.
         let host = "127.0.0.1:1";
         let poller = poller_at(format!("http://{host}/{URL_SENTINEL}"));
 
@@ -2272,7 +2264,6 @@ mod tests {
 
     #[test]
     fn a_text_message_publishes_exactly_the_shared_fixture_payload() {
-        // Why: the desktop event-feed tests consume this fixture as the real published chat event.
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../tests/fixtures/published_chat_message.json"
         ))

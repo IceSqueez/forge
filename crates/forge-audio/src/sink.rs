@@ -4,14 +4,10 @@ use crate::error::AudioError;
 use crate::handle::{ControlledPlayback, PlaybackHandle};
 use crate::pcm::PcmBuffer;
 
-/// Implementations must NOT block - `play` returns once playback is queued/started,
-/// not once it completes.
 #[async_trait]
 pub trait AudioSink: Send + Sync {
     async fn play(&self, buffer: PcmBuffer) -> Result<(), AudioError>;
 
-    /// Default degrades to a no-op handle; sinks that cannot cancel an in-flight clip
-    /// stay correct by letting it run to completion.
     async fn play_stoppable(&self, buffer: PcmBuffer) -> Result<PlaybackHandle, AudioError> {
         self.play(buffer).await?;
         Ok(PlaybackHandle::default())

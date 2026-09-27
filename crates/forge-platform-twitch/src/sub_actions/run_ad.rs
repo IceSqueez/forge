@@ -13,8 +13,6 @@ use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.channel.run_ad";
 
-// Twitch accepts exactly these six durations (seconds); any other value returns 400.
-// Stored as strings because FormField::Select round-trips its options as Variant::String.
 const ALLOWED_DURATIONS: &[&str] = &["30", "60", "90", "120", "150", "180"];
 const DEFAULT_DURATION: &str = "60";
 const DEFAULT_DURATION_SECS: i64 = 60;
@@ -37,7 +35,6 @@ impl RunAdRunner {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        // broadcaster_id goes in the JSON body, not as a query param.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channels/commercial")
             .body(serde_json::json!({ "broadcaster_id": user_id, "length": duration }));
         SubActionOutcome::from_result(&self.transport.execute(request).await)

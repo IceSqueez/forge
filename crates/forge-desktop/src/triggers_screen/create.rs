@@ -27,7 +27,6 @@ pub(super) enum CreateStage {
 
 pub(super) struct KindPickerForm {
     picker: Entity<GridPicker>,
-    /// Keyed by card id, valued by `kind_id`.
     picks: HashMap<SharedString, String>,
     _sub: Subscription,
 }

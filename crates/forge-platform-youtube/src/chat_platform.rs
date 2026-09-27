@@ -33,9 +33,7 @@ pub struct YoutubePlatform {
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     quota: Arc<tokio::sync::Mutex<QuotaState>>,
-    // YouTube polls rather than holding a socket; never held across an `.await`.
     state: Arc<Mutex<ConnectionState>>,
-    // Persists across poller runs, unlike `state`'s writers, so a receiver taken once stays live.
     state_tx: watch::Sender<ConnectionState>,
     cancel: Mutex<Option<CancellationToken>>,
 }
@@ -372,16 +370,12 @@ mod tests {
         );
     }
 
-    // Why: an unpaired lifecycle line is the failure mode operators hit - a `stopped` that never
-    // arrives leaves the log claiming the poller is still running long after it exited.
     #[test]
     fn a_connect_disconnect_cycle_logs_the_started_line_then_the_stopped_line() {
         let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::INFO, async {
             let p = platform();
             p.connect().await.unwrap();
             p.disconnect().await.unwrap();
-            // The poller task is spawned but unpolled until block_on yields; cancellation is
-            // already set, so it observes it on its first poll and returns without any await.
             tokio::task::yield_now().await;
         });
 

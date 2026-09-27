@@ -187,7 +187,6 @@ impl Harness {
         }
     }
 
-    /// Lets the presenter take the head show onto the page, so what remains is what waits.
     async fn until_on_screen(&self, id: &str, shown: usize) {
         for _ in 0..1_000 {
             if self.sink.arrivals(id).len() >= shown {

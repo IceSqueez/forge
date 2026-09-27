@@ -1,4 +1,3 @@
-//! Launch retries against `/bin/sh` stub children and the real seeder. Never starts the real forge.
 #![cfg(target_os = "linux")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

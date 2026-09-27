@@ -183,7 +183,6 @@ struct PollyForm {
 }
 
 pub struct CloudCredentialsView {
-    /// `None` only when the speak subsystem didn't build; persistence still happens without it.
     registry: Option<Arc<RwLock<TtsRegistry>>>,
     credentials: Arc<dyn CredentialsRepo>,
     rt_handle: tokio::runtime::Handle,

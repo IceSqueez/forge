@@ -10,7 +10,6 @@ use gpui::{
 
 use crate::palette::{ForgePalette, with_alpha};
 
-/// Focuses `handle` while an overlay is open and restores the previously focused element once it closes; call from the opener view's `render` ([`FocusHandle::is_focused`] gates against per-frame focus churn).
 pub fn drive_overlay_focus(
     open: bool,
     handle: &FocusHandle,
@@ -45,9 +44,7 @@ pub(crate) fn enter_animation() -> Animation {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OverlayPosition {
     Center,
-    /// Docked full-height to the left edge; the `Pixels` is the panel width and the slide-in distance.
     Left(Pixels),
-    /// Docked full-height to the right edge; the `Pixels` is the panel width and the slide-in distance.
     Right(Pixels),
 }
 
@@ -63,7 +60,6 @@ pub struct Overlay {
     busy: bool,
 }
 
-/// Defaults to centred with no dismissal wired; add position and dismissal via the builder methods.
 pub fn overlay(content: impl IntoElement, palette: &ForgePalette) -> Overlay {
     Overlay {
         content: content.into_any_element(),
@@ -82,7 +78,6 @@ impl Overlay {
         self
     }
 
-    /// Wires both scrim-click and Escape dismissal; `id` must be unique among the overlays alive in one frame.
     #[must_use]
     pub fn on_dismiss(
         mut self,
@@ -94,17 +89,12 @@ impl Overlay {
         self
     }
 
-    /// Suppresses Escape dismissal while the overlay is mid-write; scrim-click dismissal is unaffected.
     #[must_use]
     pub fn busy(mut self, busy: bool) -> Self {
         self.busy = busy;
         self
     }
 
-    /// Element state, so the handle outlives the per-frame [`Overlay`] value that installs it. The
-    /// claim is deferred a frame because [`FocusHandle::contains_focused`] reads the previously
-    /// rendered dispatch tree: checked during this render it would steal focus from an input the
-    /// opener just focused inside the overlay.
     fn escape_focus(&self, window: &mut Window, cx: &mut App) -> FocusHandle {
         let handle: Entity<FocusHandle> = window.use_keyed_state(
             ElementId::NamedChild(
@@ -284,7 +274,6 @@ pub struct AnchoredPopover {
     escape_focus: Option<FocusHandle>,
 }
 
-/// A free-floating panel anchored at a window-space position with a full-window backdrop that dismisses on outside click; unlike [`overlay`] it is not centred and carries no scrim tint.
 pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> AnchoredPopover {
     AnchoredPopover {
         placement: PopoverPlacement::Window(position),
@@ -294,7 +283,6 @@ pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> A
     }
 }
 
-/// Anchors to the trigger's natural layout position dropped down by `offset` (the trigger height), instead of an absolute window point.
 pub fn anchored_popover_below(offset: Pixels, content: impl IntoElement) -> AnchoredPopover {
     AnchoredPopover {
         placement: PopoverPlacement::BelowAnchor(offset),
@@ -311,7 +299,6 @@ impl AnchoredPopover {
         self
     }
 
-    /// The caller must focus `focus_handle` when the popover opens or Escape stays inert (gpui routes keys only down the focus path); outside-click dismissal is unaffected.
     #[must_use]
     pub fn dismiss_on_escape(mut self, focus_handle: &FocusHandle) -> Self {
         self.escape_focus = Some(focus_handle.clone());

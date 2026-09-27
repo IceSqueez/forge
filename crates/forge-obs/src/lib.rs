@@ -1,5 +1,3 @@
-//! Wraps `obws` behind owned traits; no `obws` type may cross the crate boundary.
-
 pub mod catalog;
 pub mod client;
 pub mod credentials;

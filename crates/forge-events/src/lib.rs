@@ -16,13 +16,11 @@ use time::OffsetDateTime;
 pub struct Event {
     pub id: EventId,
     pub source: EventSource,
-    /// Dotted hierarchical tag, e.g. `"chat.message"`, `"action.start"`.
     pub kind: String,
     #[serde(with = "time::serde::rfc3339")]
     pub timestamp: OffsetDateTime,
     pub payload: serde_json::Value,
     pub caused_by: Option<EventId>,
-    /// Persisted events written before this field existed deserialize as `false`.
     #[serde(default)]
     pub replay: bool,
 }

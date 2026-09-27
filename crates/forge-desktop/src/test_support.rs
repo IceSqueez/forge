@@ -355,8 +355,6 @@ impl OverlayRepo for StubOverlays {
     }
 }
 
-/// Why: gpui's test scheduler rejects any wake reaching it from a foreign thread, so
-/// the view's tokio work has to stay on the test thread and be pumped explicitly.
 pub(crate) struct StubActions;
 
 #[async_trait::async_trait]
@@ -678,10 +676,6 @@ pub(crate) fn tone() -> PcmBuffer {
     PcmBuffer::new(vec![0_i16; 16], 48_000, 1)
 }
 
-// Why: the plain `SqliteBackend` constructors hand the media repo the real user media
-// directory, so a test that reaches media would write into the maintainer's own data.
-// Test backends are opened through `sandboxed_backend` instead, with a media root that
-// lives and dies with the test.
 pub(crate) struct Sandboxed<T> {
     inner: T,
     _media_root: tempfile::TempDir,

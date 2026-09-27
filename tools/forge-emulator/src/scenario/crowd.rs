@@ -6,7 +6,6 @@ const FIRST_CROWD_USER_ID: u64 = 300_000_000;
 const LOGIN_PLACEHOLDER: &str = "{login}";
 const NUMBER_PLACEHOLDER: &str = "{n}";
 
-/// Chatter templates may use `{login}` and `{n}` (the viewer's 1-based number).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Crowd {
@@ -15,10 +14,8 @@ pub struct Crowd {
     pub chatter: Vec<String>,
     #[serde(default = "one")]
     pub chatter_per_viewer: u32,
-    /// How many of the viewers, spread evenly through the crowd, also send one command each.
     #[serde(default)]
     pub command_senders: u32,
-    /// Message texts sent by the command senders, assigned in turn.
     #[serde(default)]
     pub commands: Vec<String>,
     #[serde(default)]
@@ -32,7 +29,6 @@ pub struct CrowdMessage {
     pub line: CrowdLine,
 }
 
-/// Indexes into `Crowd::chatter` or `Crowd::commands`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CrowdLine {
     Chatter(usize),
@@ -61,7 +57,6 @@ impl Crowd {
         self.chatter_count() + u64::from(commands)
     }
 
-    /// Deterministic: the same crowd always yields the same messages in the same order.
     pub fn plan(&self) -> Vec<CrowdMessage> {
         let mut messages = Vec::new();
         let mut commands_sent = 0usize;

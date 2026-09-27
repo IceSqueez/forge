@@ -155,7 +155,6 @@ mod tests {
     use crate::ObsError;
     use crate::runners::test_support::{MockSink, RecordingSink, make_ctx};
 
-    /// Runners whose only config is an `on` flag that picks between two sink calls.
     const SET_ACTIVE_RUNNERS: &[(&str, &str, &str)] = &[
         ("obs.stream.set_active", "start_stream", "stop_stream"),
         ("obs.record.set_active", "start_record", "stop_record"),
@@ -171,14 +170,11 @@ mod tests {
         ),
     ];
 
-    /// Runners that name a scene item and forward one bool flag, as
-    /// `(runner id, flag key, sink call)`.
     const SCENE_ITEM_FLAG_RUNNERS: &[(&str, &str, &str)] = &[
         ("obs.sources.set_visible", "visible", "set_source_visible"),
         ("obs.sources.set_locked", "locked", "set_source_locked"),
     ];
 
-    /// Runners whose only config is one interpolated string forwarded to one sink call.
     const SINGLE_STRING_RUNNERS: &[(&str, &str, &str)] = &[
         ("obs.browser.refresh", "source", "refresh_browser_source"),
         ("obs.media.restart", "source", "restart_media_input"),
@@ -191,11 +187,6 @@ mod tests {
         ),
     ];
 
-    /// Every config field naming an OBS object that the runner cannot do without, as
-    /// `(runner id, field, sibling fields the same runner also requires)`. A blank value here
-    /// reaches OBS as a lookup for `""`, which the user sees as a step that silently does
-    /// nothing - so validation has to stop it at edit time.
-    ///
     type RequiredStringField = (
         &'static str,
         &'static str,
@@ -510,7 +501,6 @@ mod tests {
         }
     }
 
-    /// Validation lets a config through without the flag, so the runner has to settle on one.
     #[tokio::test]
     async fn scene_item_flag_runners_treat_an_absent_or_non_bool_flag_as_off() {
         for (id, flag_key, sink_call) in SCENE_ITEM_FLAG_RUNNERS {

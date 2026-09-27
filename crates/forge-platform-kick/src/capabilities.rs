@@ -1,6 +1,5 @@
 use forge_platform_core::PlatformCapabilities;
 
-/// This hybrid posture (official write API, unofficial chat-receive WS) is unique to Kick.
 pub const KICK_COMMUNITY_NOTE: &str = "Chat receive uses the unofficial Pusher WebSocket - Kick exposes no official chat:read \
      scope. Chat send uses the official OAuth API. Not affiliated with Kick.com.";
 

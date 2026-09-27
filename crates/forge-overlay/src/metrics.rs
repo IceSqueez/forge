@@ -45,7 +45,6 @@ pub struct FrameMetrics {
     pub border: f32,
     pub radius: f32,
     pub label_inset_inline: f32,
-    /// How far the corner label hangs past the frame edge; the stylesheet states it as a negative offset.
     pub label_overhang: f32,
     pub label_gap: f32,
     pub label_padding_block: f32,
@@ -162,9 +161,7 @@ pub const TICKER: TickerMetrics = TickerMetrics {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AxisBound {
     Exact,
-    /// The element grows past the value and centers its content inside whatever is left over.
     AtLeast,
-    /// The element shows as much of its content as the value holds and hides the rest.
     AtMost,
 }
 
@@ -181,8 +178,6 @@ pub struct ElementAxis {
     pub fallback: AxisFallback,
 }
 
-/// An axis left unset spans the canvas and is offered as no field; every size is a pixel of the
-/// reference canvas, and `base_text_size` is the divisor of the one ratio a kind scales by.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ElementSizing {
     pub width: Option<ElementAxis>,
@@ -273,8 +268,6 @@ impl ElementSizing {
     }
 }
 
-/// Every declaration must appear verbatim in the kind's stylesheet; that containment is what keeps
-/// a drawn preview and its page on the same numbers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StyleGuard {
     pub kind_id: &'static str,

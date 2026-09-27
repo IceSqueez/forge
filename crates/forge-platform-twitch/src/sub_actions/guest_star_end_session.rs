@@ -33,7 +33,6 @@ impl GuestStarEndSessionRunner {
             Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
         };
 
-        // Only the broadcaster can end their own session; moderator_id is NOT sent.
         let request = HelixRequest::new(HelixMethod::Delete, "/helix/guest_star/session")
             .query("broadcaster_id", user_id)
             .query("session_id", session_id.to_owned());

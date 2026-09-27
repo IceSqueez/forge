@@ -6,8 +6,6 @@ use crate::error::SqliteStorageError;
 
 const NONCE_LEN: usize = 12;
 
-// File-canonical, not OS keyring: Linux secret-service session collections get wiped on
-// logout, which would mint a new key and strand every previously-encrypted credential.
 pub fn load_or_create_key() -> Result<CredentialsKey, SqliteStorageError> {
     let path = if let Ok(p) = std::env::var("FORGE_CREDENTIAL_KEY_FILE") {
         std::path::PathBuf::from(p)

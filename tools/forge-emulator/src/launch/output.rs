@@ -16,14 +16,12 @@ pub enum OutputStream {
     Stderr,
 }
 
-/// ANSI colour sequences are already stripped from `text`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputLine {
     pub stream: OutputStream,
     pub text: String,
 }
 
-/// Keeps the newest lines only; `dropped` counts how many older ones were discarded.
 #[derive(Clone)]
 pub struct CapturedOutput {
     inner: Arc<Mutex<Captured>>,
@@ -79,7 +77,6 @@ impl CapturedOutput {
         tail
     }
 
-    /// Re-runs `probe` on every new line until it yields a value or `timeout` elapses.
     pub async fn wait_for<T>(
         &self,
         what: &str,

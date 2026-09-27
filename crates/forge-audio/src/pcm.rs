@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// Interleaved: `samples.len() == frames * channels`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PcmBuffer {
     pub samples: Vec<i16>,
@@ -42,7 +41,6 @@ impl PcmBuffer {
         }
     }
 
-    /// `secs == 0` is a no-op (caller's cap-disabled sentinel), not a truncation to silence.
     pub fn truncate_to_secs(&mut self, secs: u32) {
         if secs == 0 || self.sample_rate == 0 || self.channels == 0 {
             return;
@@ -95,7 +93,6 @@ mod tests {
 
     #[test]
     fn truncate_to_secs_cuts_at_the_cap_counting_every_interleaved_channel() {
-        // A 2 s buffer at 8 kHz: 16_000 samples mono, 32_000 interleaved stereo.
         for (channels, initial, cap, expected) in [
             (1u16, 16_000usize, 1u32, 8_000usize),
             (1, 16_000, 2, 16_000),
@@ -121,8 +118,6 @@ mod tests {
         }
     }
 
-    // Why: 0 is the settings layer's cap-disabled sentinel. Truncating to silence here would
-    // mute every spoken message the moment the user clears the duration field.
     #[test]
     fn truncate_to_secs_zero_leaves_the_buffer_intact() {
         let mut buf = ramp(16_000, 8_000, 1);

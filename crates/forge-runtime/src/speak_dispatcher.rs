@@ -10,7 +10,6 @@ pub enum SpeakDispatchError {
     Dispatch(String),
 }
 
-/// Owned strings keep forge-speak-queue / forge-tts-core types out of this crate's surface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoiceDescriptor {
     pub id: String,
@@ -21,8 +20,6 @@ pub struct VoiceDescriptor {
 
 const SHOW_SPEECH_UNAVAILABLE: &str = "speech for an overlay show is not available";
 
-/// Plays only through `overlay`, never through the global audio receiver; `show` joins the speech
-/// to the show on that overlay's page.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShowSpeech {
     pub text: String,
@@ -31,7 +28,6 @@ pub struct ShowSpeech {
     pub show: String,
 }
 
-/// Latches: once marked it stays started, and every clone sees it.
 #[derive(Debug, Clone)]
 pub struct SpeechStartSignal(Arc<watch::Sender<bool>>);
 
@@ -56,7 +52,6 @@ impl Default for SpeechStartSignal {
     }
 }
 
-/// Lives here to avoid a dependency cycle; every method except `speak` defaults to a no-op/empty.
 #[async_trait]
 pub trait SpeakDispatcher: Send + Sync {
     async fn speak(
@@ -92,7 +87,6 @@ pub trait SpeakDispatcher: Send + Sync {
         Ok(())
     }
 
-    /// Marks the request as reward-sourced so the pipeline's `strip_reward_emotes` gate applies.
     async fn speak_reward_sourced(
         &self,
         text: String,
@@ -126,8 +120,6 @@ pub trait SpeakDispatcher: Send + Sync {
         self.speak_with_engine(text, engine_id).await
     }
 
-    /// Resolves on the request's one terminal outcome; a cancel ends the speech wherever it is.
-    /// `started` is marked when the speech begins to play, which a speech that never plays skips.
     async fn speak_for_show(
         &self,
         speech: ShowSpeech,
@@ -140,7 +132,6 @@ pub trait SpeakDispatcher: Send + Sync {
         ))
     }
 
-    /// Stop the active item; the queue then advances to the next.
     async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
         Ok(())
     }
@@ -153,12 +144,10 @@ pub trait SpeakDispatcher: Send + Sync {
         Ok(())
     }
 
-    /// Skip the active item; the queue then advances to the next.
     async fn skip_current(&self) -> Result<(), SpeakDispatchError> {
         Ok(())
     }
 
-    /// Drop pending items but let the in-flight item finish (unlike a full clear).
     async fn clear_keep_current(&self) -> Result<(), SpeakDispatchError> {
         Ok(())
     }
@@ -186,7 +175,6 @@ pub trait SpeakDispatcher: Send + Sync {
         Ok(())
     }
 
-    /// Repoint an existing viewer's alias; no-op when the viewer has no alias.
     async fn alias_switch(
         &self,
         viewer_id: String,

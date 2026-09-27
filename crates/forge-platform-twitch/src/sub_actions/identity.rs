@@ -14,7 +14,6 @@ impl SelfIdentity {
         Self { creds }
     }
 
-    /// Loaded per call, so a re-auth under a different account takes effect without re-registering runners.
     pub async fn user_id(&self) -> Result<String, HelixError> {
         let cred = credentials::load(self.creds.as_ref())
             .await
@@ -24,7 +23,6 @@ impl SelfIdentity {
     }
 }
 
-/// Costs one Helix rate-limit token per call.
 pub async fn resolve_user_id(
     transport: &dyn HelixTransport,
     login: &str,
@@ -42,8 +40,6 @@ pub async fn resolve_user_id(
         })
 }
 
-/// Polls, Predictions, and Start Commercial gate on this tier; everything else is open to
-/// every broadcaster.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BroadcasterTier {
     #[default]
@@ -70,8 +66,6 @@ impl BroadcasterTier {
     }
 }
 
-/// Costs one Helix rate-limit token per call. Unrecognized or missing `broadcaster_type`
-/// resolves to `Standard` rather than failing.
 pub async fn resolve_broadcaster_tier(
     transport: &dyn HelixTransport,
     user_id: &str,

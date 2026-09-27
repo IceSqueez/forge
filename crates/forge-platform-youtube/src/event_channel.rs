@@ -1,7 +1,6 @@
 use forge_events::{Event, EventPublisher, EventStream};
 use tokio::sync::broadcast;
 
-/// Buffered slots before a lagging bridge starts dropping the oldest events.
 const CHANNEL_CAPACITY: usize = 256;
 
 pub(crate) struct PlatformEventChannel {

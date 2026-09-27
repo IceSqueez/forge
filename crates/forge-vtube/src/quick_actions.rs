@@ -84,7 +84,6 @@ impl QuickActions for VTubeClient {
         let connected = self.connection_state().is_connected();
 
         vec![
-            // Expressions
             quick_action(
                 "Set expression",
                 "mood-smile",
@@ -127,7 +126,6 @@ impl QuickActions for VTubeClient {
                 None,
                 Vec::new(),
             ),
-            // Hotkeys & animation
             quick_action(
                 "Trigger hotkey",
                 "keyboard",
@@ -152,7 +150,6 @@ impl QuickActions for VTubeClient {
                 Some(PickerKind::Hotkey),
                 Vec::new(),
             ),
-            // Items
             quick_action(
                 "Throw item",
                 "photo",
@@ -204,7 +201,6 @@ impl QuickActions for VTubeClient {
                 None,
                 Vec::new(),
             ),
-            // Model & scene
             quick_action(
                 "Load model",
                 "user-square",
@@ -289,8 +285,6 @@ mod tests {
             .unwrap_or_else(|| panic!("roster is missing the '{label}' row"))
     }
 
-    // Why: both rows drive the same runner, so the baked-in `active` preset is the only
-    // thing that makes "Toggle expression" deactivate instead of duplicating "Set expression".
     #[test]
     fn the_two_expression_rows_share_a_runner_but_preset_opposite_active_flags() {
         let set = row("Set expression");
@@ -310,8 +304,6 @@ mod tests {
         );
     }
 
-    // Why: an item FILE (something to spawn) and a loaded item INSTANCE (something already in
-    // the scene) are separate id spaces in VTS; pinning against a file name silently no-ops.
     #[test]
     fn item_rows_pick_files_for_spawning_and_instances_for_pinning() {
         for label in ["Throw item", "Load item"] {
@@ -327,7 +319,6 @@ mod tests {
         );
     }
 
-    // Why: `destructive` is what puts a confirmation in front of the click.
     #[test]
     fn only_the_irreversible_row_is_marked_destructive() {
         let destructive: BTreeSet<String> = roster()

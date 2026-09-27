@@ -1142,9 +1142,6 @@ mod tests {
         }
     }
 
-    // Why: merge_config only walks an action's own fields, so a picker-only action depends on
-    // the synthesized picker spec being folded back in - otherwise the modal runs the untouched
-    // template and the picked value is silently dropped.
     #[test]
     fn a_picker_only_action_merges_the_picked_value_into_the_step_config() {
         let action = picker_only_action(PickerKind::Scene);
@@ -1240,8 +1237,6 @@ mod tests {
         }
     }
 
-    // Why: entries used to be judged blank-or-not, so an optional integer field accepted
-    // any garbage and clamped it on submit instead of telling the user the value was wrong.
     #[test]
     fn int_entry_invalid_flags_unparsable_and_out_of_range_entries_even_when_optional() {
         for required in [true, false] {

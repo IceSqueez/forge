@@ -411,7 +411,6 @@ impl ChatView {
         self.visible = Rc::new(visible);
     }
 
-    /// Mirrors feed eviction and appends onto the list state so its scroll position and measured rows survive.
     fn sync_visible(&mut self, cx: &mut Context<Self>) {
         let feed = self.feed.read(cx);
         let start = feed.start_seq();

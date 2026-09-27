@@ -112,8 +112,6 @@ impl HotkeyCombo {
         &self.0
     }
 
-    /// True where the OS grab consumes the keystroke system-wide (macOS, Windows) and the combo is
-    /// a modifier-less key used for typing, so binding it stops that key from reaching other apps.
     pub fn swallows_typing(&self) -> bool {
         GRAB_CONSUMES_KEYSTROKE && !self.0.contains('+') && TYPING_KEYS.contains(&self.0.as_str())
     }
@@ -298,8 +296,6 @@ mod tests {
             ("Shift+1", false),
             ("Alt+Space", false),
         ] {
-            // Why: the Linux portal and evdev backends observe keys without consuming them, so a
-            // bare key never stops typing there; the Carbon and RegisterHotKey grabs do.
             let expected = typing_key && cfg!(any(target_os = "windows", target_os = "macos"));
             assert_eq!(
                 HotkeyCombo::parse(input).unwrap().swallows_typing(),

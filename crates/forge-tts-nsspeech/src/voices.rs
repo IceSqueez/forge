@@ -10,7 +10,6 @@ use crate::error::NsSpeechError;
 
 pub(crate) fn voice_catalog(engine_id: &EngineId) -> Result<Vec<TtsVoice>, NsSpeechError> {
     // SAFETY: speechVoices is documented safe to call from any thread; the returned NSArray
-    // is autoreleased, so we iterate inside this autoreleasepool before it drains.
     let voices: Vec<TtsVoice> = objc2::rc::autoreleasepool(|_| {
         let raw: objc2::rc::Retained<NSArray<AVSpeechSynthesisVoice>> =
             unsafe { AVSpeechSynthesisVoice::speechVoices() };
@@ -25,7 +24,6 @@ pub(crate) fn voice_catalog(engine_id: &EngineId) -> Result<Vec<TtsVoice>, NsSpe
 
 fn map_voice(voice: &AVSpeechSynthesisVoice, engine_id: &EngineId) -> TtsVoice {
     // SAFETY: not-atomic properties safe to read when the voice is not mutated concurrently;
-    // returned Retained<NSString> values are valid within this autoreleasepool.
     let name = unsafe { voice.name() }.to_string();
     let identifier = unsafe { voice.identifier() }.to_string();
     let locale = unsafe { voice.language() }.to_string();

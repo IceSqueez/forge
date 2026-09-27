@@ -1330,7 +1330,6 @@ async fn load_websocket_settings(repo: Arc<dyn SettingsRepo>) -> Result<WebSocke
     })
 }
 
-/// Blank lines are dropped; the `Err` carries the first line that failed so the pane can name it.
 fn parse_origins(raw: &str) -> Result<Vec<String>, String> {
     let mut accepted: Vec<String> = Vec::new();
     for line in raw.lines() {
@@ -1348,7 +1347,6 @@ fn parse_origins(raw: &str) -> Result<Vec<String>, String> {
     Ok(accepted)
 }
 
-/// Lowercases to match how the server keys its allowlist; rejects anything past the authority (a browser `Origin` header carries no path).
 fn normalize_origin(raw: &str) -> Option<String> {
     let lowered = raw.trim().to_ascii_lowercase();
     let authority = lowered
@@ -1504,8 +1502,6 @@ mod tests {
         });
     }
 
-    /// Why: dropping the last handle only queues the release; gpui runs release
-    /// callbacks on the next app update, so the pump has to include one.
     fn release(cx: &mut TestAppContext, view: Entity<SettingsWebSocketView>) {
         drop(view);
         cx.update(|_cx| {});

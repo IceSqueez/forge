@@ -35,7 +35,6 @@ use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechStartSignal};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
-/// Browser-facing document keys are camelCase, matching the push envelope's `timeStamp`.
 const OVERLAY_ID_KEY: &str = "overlayId";
 
 #[derive(Debug, thiserror::Error)]
@@ -59,14 +58,12 @@ pub enum OverlayServiceError {
     ShowQueueFull { id: OverlayId, capacity: usize },
 }
 
-/// Counts only connections whose receiver was still alive; a page that closed counts for nothing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OverlayReceivers {
     pub sources: usize,
     pub preview_tabs: usize,
 }
 
-/// Content a look applies on arrival is pushed at once; a transient show waits its turn.
 #[derive(Debug)]
 pub enum OverlayDispatch {
     Applied(OverlayDelivery),
@@ -90,7 +87,6 @@ impl OverlayReceivers {
     }
 }
 
-/// Addressed at one overlay identity and never at the bus, so nothing delivered here runs an action.
 #[async_trait]
 pub trait OverlayFrameSink: Send + Sync {
     async fn deliver_content(
@@ -102,20 +98,14 @@ pub trait OverlayFrameSink: Send + Sync {
 
     async fn deliver_reload(&self, identity: &OverlayId);
 
-    /// Called when an overlay is disabled: existing connections for `identity` go blank and
-    /// close, independent of anything retained-content bookkeeping does.
     async fn revoke(&self, identity: &OverlayId);
 
-    /// Read-only, sends nothing. The default answers zero for every identity; a sink backed by
-    /// a live registry overrides it to report real connections.
     async fn receivers(&self, identity: &OverlayId) -> OverlayReceivers {
         let _ = identity;
         OverlayReceivers::default()
     }
 }
 
-/// The server calls this when a page's credential validates, which is the only moment the
-/// runtime can know a browser source is back and needs what it was last showing.
 #[async_trait]
 pub trait OverlayConnectListener: Send + Sync {
     async fn overlay_connected(&self, identity: &OverlayId);
@@ -184,7 +174,6 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// Must be applied before any show is queued: it replaces the show queue.
     pub fn with_speech(self, speaker: Arc<dyn SpeakDispatcher>) -> Self {
         let shows = Arc::new(ShowSequencer::new(
             self.inner.frames.clone(),
@@ -241,7 +230,6 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// Read per call, so an overlay root changed in settings takes effect without a restart.
     pub async fn root(&self) -> PathBuf {
         match self
             .inner
@@ -258,8 +246,6 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// Rebuilds the whole root: an unknown overlay type keeps its record untouched, everything
-    /// else is regenerated so a deleted root and a stale generator both recover on boot.
     pub async fn materialize_all(&self) -> Result<MaterializePass, OverlayServiceError> {
         let root = self.root().await;
         blocking(move || ensure_shared_directory(&root)).await??;
@@ -289,7 +275,6 @@ impl OverlayServiceHandle {
         Ok(pass)
     }
 
-    /// Create, rename and config saves all land here; the directory name is the identity and never moves.
     pub async fn materialize(
         &self,
         id: &OverlayId,
@@ -307,7 +292,6 @@ impl OverlayServiceHandle {
         Ok(report)
     }
 
-    /// Accepts only a name from `OVERRIDABLE_FILES`; `Ok(None)` while that file is not on disk yet.
     pub async fn read_source(
         &self,
         id: &OverlayId,
@@ -319,8 +303,6 @@ impl OverlayServiceHandle {
         Ok(blocking(move || read_overlay_source(&root, &identity, &name)).await??)
     }
 
-    /// Accepts only a name from `OVERRIDABLE_FILES`; the record's override list is the caller's to
-    /// keep in step, and nothing reloads until the caller says so.
     pub async fn write_source(
         &self,
         id: &OverlayId,
@@ -340,15 +322,12 @@ impl OverlayServiceHandle {
         Ok(library.release(id).await?)
     }
 
-    /// `Ok(false)` when the directory was already gone.
     pub async fn remove_folder(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
         let root = self.root().await;
         let identity = id.as_str().to_owned();
         Ok(blocking(move || remove_overlay_directory(&root, &identity)).await??)
     }
 
-    /// Revokes the deleted identity's live connections, so a page still open under it never
-    /// receives frames meant for a later overlay that reuses the identity.
     pub async fn delete(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
         let removed = self.inner.repo.delete(id).await?;
         if removed {
@@ -360,8 +339,6 @@ impl OverlayServiceHandle {
         Ok(removed)
     }
 
-    /// Persists first, then revokes any live connections when the overlay was just disabled.
-    /// Retained content keeps recording either way - only delivery to a browser source stops.
     pub async fn set_enabled(
         &self,
         id: &OverlayId,
@@ -377,7 +354,6 @@ impl OverlayServiceHandle {
         Ok(changed)
     }
 
-    /// Addressed at the pages carrying this identity; every other connection is untouched.
     pub async fn reload_page(&self, id: &OverlayId) {
         if let Some(frames) = &self.inner.frames {
             frames.deliver_reload(id).await;
@@ -391,8 +367,6 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// Reaches any overlay whatever its look, and is never retained: a replayed announcement
-    /// would address a clip whose capability is already spent.
     pub async fn deliver_audio(
         &self,
         id: &OverlayId,
@@ -402,9 +376,6 @@ impl OverlayServiceHandle {
         Ok(self.send(&definition.id, &content, None).await)
     }
 
-    /// The send-to-overlay step's funnel: the supplied fields are laid over the overlay's own
-    /// content, both expanded against the run's arguments. A transient show joins its overlay's
-    /// queue and holds the page for its display window, capped at [`SHOW_CEILING`].
     pub async fn send_to(
         &self,
         id: &OverlayId,
@@ -474,7 +445,6 @@ impl OverlayServiceHandle {
         });
     }
 
-    /// Shows queued behind the one on screen; zero for an overlay that applies content on arrival.
     pub fn pending_shows(&self, id: &OverlayId) -> usize {
         self.inner.shows.depth(id)
     }
@@ -483,8 +453,6 @@ impl OverlayServiceHandle {
         self.inner.shows.watch_depth(id)
     }
 
-    /// Drops the shows still waiting and returns how many; the one on screen runs out its window,
-    /// and a step waiting on a dropped show ends as cleared.
     pub fn clear_shows(&self, id: &OverlayId) -> usize {
         self.inner.shows.drop_pending(id, ShowEnd::Cleared)
     }
@@ -496,8 +464,6 @@ impl OverlayServiceHandle {
         }
     }
 
-    /// Builds the sample content once and returns it, so the caller previews exactly what the
-    /// page received. Nothing is published: no action, script or queue observes a test.
     pub async fn test_fire(&self, id: &OverlayId) -> Result<TestFire, OverlayServiceError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
@@ -526,8 +492,6 @@ impl OverlayServiceHandle {
         Ok(TestFire { content, delivery })
     }
 
-    /// A row survives a look change, so it replays only while the overlay's current look keeps
-    /// its last content.
     async fn replay_retained(&self, id: &OverlayId) -> Result<(), OverlayServiceError> {
         let _lane = self.inner.lanes.enter(id).await;
         let Some(content) = self.inner.repo.get_retained_content(id).await? else {
@@ -621,7 +585,6 @@ impl OverlayServiceHandle {
         Ok(report)
     }
 
-    /// Drawn from the trigger that feeds this overlay when exactly one kind does; neutral otherwise.
     pub async fn sample(&self, id: &OverlayId) -> SampleContext {
         let Some(wiring) = &self.inner.wiring else {
             return SampleContext::neutral();
@@ -662,8 +625,6 @@ impl OverlayServiceHandle {
     }
 }
 
-/// The service is built after the server, which is built after the sub-action registry, so a
-/// runner registered at boot receives this and reads the handle once it exists.
 #[derive(Clone, Default)]
 pub struct OverlayServiceCell {
     inner: Arc<ArcSwapOption<OverlayServiceHandle>>,
@@ -729,7 +690,6 @@ fn instance_of(
     }
 }
 
-/// Overlay file work is sync std fs; it never runs on a runtime worker.
 async fn blocking<T, F>(work: F) -> Result<T, OverlayServiceError>
 where
     F: FnOnce() -> T + Send + 'static,
@@ -784,7 +744,6 @@ mod tests {
         }
     }
 
-    /// Carries only what the trait demands, so its count comes from the default body.
     struct SilentSink;
 
     #[async_trait]

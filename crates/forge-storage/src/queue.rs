@@ -10,7 +10,6 @@ pub trait QueueRepo: Send + Sync {
     async fn get(&self, id: QueueId) -> Result<Option<Queue>, StorageError>;
     async fn get_by_name(&self, name: &str) -> Result<Option<Queue>, StorageError>;
     async fn save(&self, queue: &Queue) -> Result<(), StorageError>;
-    /// Returns true if a row was removed.
     async fn delete(&self, id: QueueId) -> Result<bool, StorageError>;
 }
 

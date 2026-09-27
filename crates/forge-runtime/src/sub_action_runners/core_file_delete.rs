@@ -119,24 +119,15 @@ mod tests {
         );
     }
 
-    // Why: the failure text no longer quotes the path, so interpolation is observable only
-    // through WHICH arm the resolved path lands on. Each row is built so the un-interpolated
-    // template would land on a different arm than the interpolated one.
     #[tokio::test]
     async fn delete_failure_names_the_arm_the_path_landed_on_and_never_the_path() {
-        // (template, scope binding, expected arm, path material that must not appear)
         let rows = [
-            // A literal `%dir%` is a legal file name, so only a real substitution can turn this
-            // template into the parent traversal the sandbox refuses.
             (
                 "%dir%/file.txt",
                 Some(("dir", "..")),
                 "parent dir traversal forbidden",
                 "file.txt",
             ),
-            // `%unset_global%` has no scope entry. Left verbatim it is one legal component and
-            // the delete reaches the filesystem; a globals fallthrough would blank it, leaving
-            // the empty path the sandbox refuses instead.
             (
                 "%unset_global%",
                 None,

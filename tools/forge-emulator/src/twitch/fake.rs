@@ -21,7 +21,6 @@ const CHAT_MESSAGE_SUBSCRIPTION: &str = "channel.chat.message";
 const SOCKET_PATH: &str = "/ws";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
-/// Aborts its server tasks on drop; `shutdown` closes open sockets first.
 pub struct FakeTwitch {
     shared: Arc<Shared>,
     api_base_url: String,
@@ -74,7 +73,6 @@ impl FakeTwitch {
         self.shared.socket_url()
     }
 
-    /// Environment forge must be launched with so both Twitch surfaces reach this fake.
     pub fn endpoint_overrides(&self) -> [(&'static str, String); 2] {
         [
             (
@@ -88,7 +86,6 @@ impl FakeTwitch {
         ]
     }
 
-    /// From here on every Helix request goes to the returned receiver and not into the ledger.
     pub fn tap_requests(&self) -> tokio::sync::mpsc::UnboundedReceiver<TappedRequest> {
         self.shared.mutate(super::state::Inner::tap_requests)
     }
@@ -97,7 +94,6 @@ impl FakeTwitch {
         self.shared.read(|inner| inner.ledger.clone())
     }
 
-    /// Re-runs `probe` on every ledger change until it yields a value or `timeout` elapses.
     pub async fn wait_for<T>(
         &self,
         what: &str,
@@ -121,7 +117,6 @@ impl FakeTwitch {
         }
     }
 
-    /// Yields how many sessions the frame reached; conditions are not matched against `event`.
     pub async fn inject_notification(
         &self,
         subscription_type: &str,
@@ -139,7 +134,6 @@ impl FakeTwitch {
         Ok(reached)
     }
 
-    /// Forge surfaces the yielded id as the chat payload's platform message id.
     pub async fn inject_chat_message(
         &self,
         viewer: &Viewer,
@@ -153,7 +147,6 @@ impl FakeTwitch {
         Ok(message_id)
     }
 
-    /// Asks every live session to move to a fresh socket, which inherits its subscriptions.
     pub async fn inject_session_reconnect(&self) -> Result<usize, EmulatorError> {
         let socket_url = self.shared.socket_url();
         let deliveries = self

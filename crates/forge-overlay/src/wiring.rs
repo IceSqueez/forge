@@ -9,8 +9,6 @@ use crate::descriptor::{ConfigSection, DeliveryDisposition, OverlayConfig, Overl
 const PRINCIPAL_DISPLAY_NAME: CanonicalVariable =
     CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Name);
 
-/// `variables` is the kind's own `declarations()`, whose canonical-first order the derived
-/// wording reads as a preference order.
 pub struct EventWiringTrigger<'a> {
     pub kind_id: &'a str,
     pub label: &'a str,

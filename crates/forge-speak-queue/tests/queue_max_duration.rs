@@ -19,8 +19,6 @@ use common::{make_deps, recording_sink, request, voice};
 const SAMPLE_RATE: u32 = 22_050;
 const CLIP_SECS: u32 = 5;
 
-/// Synthesises a clip long enough that a cap below `CLIP_SECS` changes the reported duration -
-/// the shared fake engine's 8-sample buffer rounds to 0 s and hides any truncation.
 struct FixedLengthEngine {
     id: EngineId,
     voices: Vec<TtsVoice>,
@@ -98,8 +96,6 @@ fn spawn_with_cap(
     forge_speak_queue::spawn(QueueConfig::default(), deps)
 }
 
-/// The actor emits `Started` twice per request; only the second one - the one carrying a
-/// resolved voice - reports a synthesised duration.
 async fn resolved_duration_secs(stream: &mut SpeakEventStream, max_ms: u64) -> u32 {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_ms);
     loop {

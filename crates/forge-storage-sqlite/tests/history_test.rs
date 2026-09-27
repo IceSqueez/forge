@@ -373,8 +373,6 @@ async fn recent_for_builtin_returns_empty_for_unknown_builtin() {
     assert!(records.is_empty());
 }
 
-/// Distinct `started_at` values on purpose: the ordering has no tie-break, so equal timestamps
-/// would make the expected order arbitrary.
 async fn seed_mixed_runs(backend: &SqliteBackend) -> ActionId {
     let repo = backend.history_repo();
     let triggered = ActionId::new();

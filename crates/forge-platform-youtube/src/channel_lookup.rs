@@ -39,7 +39,6 @@ impl YoutubeChannelLookup {
         self
     }
 
-    /// `UC`-prefixed 24-char identifiers query by channel id; anything else queries by handle.
     pub async fn lookup(&self, identifier: &str) -> Result<Variant, PlatformError> {
         let is_channel_id = identifier.starts_with("UC") && identifier.len() == CHANNEL_ID_LEN;
         let filter_key = if is_channel_id { "id" } else { "forHandle" };

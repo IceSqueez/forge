@@ -364,8 +364,6 @@ mod tests {
         handle.abort();
     }
 
-    /// Sends the request target verbatim; `reqwest` resolves dot segments while parsing a URL,
-    /// so an encoded-traversal probe never reaches the handler through the typed client.
     async fn raw_get(addr: SocketAddr, target: &str, extra_headers: &str) -> (u16, String) {
         use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
@@ -397,7 +395,6 @@ mod tests {
 
     const ESCAPE_MARKER: &str = "ESCAPED-OVERLAY-ROOT";
 
-    /// Returns (root, outside-file-name) with the decoy written as a sibling of the overlay root.
     async fn root_with_outside_decoy(base: &std::path::Path) -> (std::path::PathBuf, &'static str) {
         let root = base.join("root");
         tokio::fs::create_dir(&root).await.expect("create root");
@@ -926,8 +923,6 @@ mod tests {
         handle.abort();
     }
 
-    /// The gate has to read the identity off the path the sandbox resolved, not off the URL the
-    /// caller typed, or any alias landing inside a disabled overlay serves it anyway.
     #[cfg(unix)]
     #[tokio::test]
     async fn serve_overlay_gates_on_the_identity_the_request_resolves_into_not_the_one_it_names() {
@@ -989,8 +984,6 @@ mod tests {
         handle.abort();
     }
 
-    // Why: on Unix a backslash or colon is an ordinary file-name byte, so a file carrying one
-    // is served unless the request-path guard refuses the shape before the sandbox looks.
     #[cfg(unix)]
     #[tokio::test]
     async fn serve_overlay_refuses_backslash_colon_and_unc_shaped_paths() {

@@ -9,7 +9,6 @@ const FORGE_APP_SEGMENT: &str = "com.icesqueez.forge";
 #[cfg(not(target_os = "macos"))]
 const FORGE_APP_SEGMENT: &str = "forge";
 
-/// Where an unconfigured forge would read and write, resolved from this process's own environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LivePaths {
     pub data_dir: PathBuf,
@@ -27,8 +26,6 @@ impl LivePaths {
         })
     }
 
-    /// A fixture data directory may not equal, contain, or sit inside the live one; a scratch
-    /// home may not equal or contain the real home.
     pub fn refuse_overlap(&self, data_dir: &Path, home: &Path) -> Result<(), EmulatorError> {
         let live_data = resolved(&self.data_dir);
         let fixture_data = resolved(data_dir);

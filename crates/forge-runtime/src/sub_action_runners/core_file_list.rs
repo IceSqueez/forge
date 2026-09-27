@@ -146,7 +146,6 @@ impl SubActionRunner for CoreFileListRunner {
     }
 }
 
-/// Iterative (not recursive) to avoid stack overflow on deep directory trees.
 async fn collect_entries(
     root: &Path,
     pattern: &str,
@@ -251,7 +250,6 @@ mod tests {
             msg.contains("directory not found"),
             "wrong arm for a missing directory: {msg}"
         );
-        // The path is interpolated, so it may carry viewer text into the run history.
         assert!(!msg.contains(SENTINEL), "echoed the path: {msg}");
         assert!(produced.is_none());
     }

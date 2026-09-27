@@ -242,8 +242,6 @@ mod tests {
 
     const DESTINATION: &str = "stage-audio";
 
-    /// Why: a clip that is never revoked or reported leaves `verdict` awaiting forever, so a
-    /// regression has to fail the run instead of stalling it.
     const HANG_GUARD: Duration = Duration::from_secs(5);
 
     struct FakePages {
@@ -575,8 +573,6 @@ mod tests {
         assert!(settled(&destination, &delivered.clip_id).await.is_err());
     }
 
-    /// Why: the speak queue drops a skipped clip's completion (parked in `verdict`) before its
-    /// Stop is pushed; the Stop must still find the clip.
     #[tokio::test]
     async fn a_stop_after_the_verdict_wait_was_dropped_still_reaches_the_page_and_revokes() {
         let (destination, pages) = listening().await;
@@ -656,8 +652,6 @@ mod tests {
         }
     }
 
-    /// Why: only `Refused` is a settled "it did not play"; `Unknown` means forge cannot say,
-    /// and the speak queue acts differently on each.
     #[test]
     fn every_clip_outcome_settles_into_the_verdict_class_the_queue_acts_on() {
         for (outcome, expected) in [

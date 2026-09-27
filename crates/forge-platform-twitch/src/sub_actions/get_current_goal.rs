@@ -32,7 +32,6 @@ impl GetCurrentGoalRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        // data[0] is the current active goal; Twitch allows at most one per type.
         let request =
             HelixRequest::new(HelixMethod::Get, "/helix/goals").query("broadcaster_id", user_id);
 
@@ -43,7 +42,6 @@ impl GetCurrentGoalRunner {
             .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
 
         let Some(first) = resp["data"].as_array().and_then(|arr| arr.first()) else {
-            // Empty data array means no active goal - not an error.
             return Ok(None);
         };
 
@@ -65,7 +63,6 @@ impl GetCurrentGoalRunner {
             SubActionOutcome::Failed("goal target_amount missing in response".to_owned())
         })?;
 
-        // Twitch does not return an is_achieved field; derive it from the amounts.
         let is_achieved = current_amount >= target_amount;
 
         Ok(Some(GoalData {
@@ -165,7 +162,6 @@ impl SubActionRunner for GetCurrentGoalRunner {
                     Some(output_stack),
                 )
             }
-            // goal.exists=false on empty data - absence of an active goal is not an error.
             Ok(None) => {
                 let output_stack = ctx
                     .arg_stack

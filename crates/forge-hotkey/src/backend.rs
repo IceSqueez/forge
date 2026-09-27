@@ -61,14 +61,10 @@ pub(crate) trait HotkeyBackend: Send + Sync {
     async fn unregister(&self, id: HotkeyId) -> Result<(), HotkeyError>;
     fn fired_rx(&self) -> Option<mpsc::Receiver<HotkeyFiredEvent>>;
 
-    /// True when the OS-level grab survives the client's disable/enable cycle untouched
-    /// (the portal session stays bound to avoid a re-prompt); the client only gates delivery.
     fn delivery_gate_only(&self) -> bool {
         false
     }
 
-    /// Signals a re-established backend session, after which any key-up the backend was
-    /// holding is lost; the client closes its open holds on each notice.
     fn restart_rx(&self) -> Option<mpsc::Receiver<()>> {
         None
     }

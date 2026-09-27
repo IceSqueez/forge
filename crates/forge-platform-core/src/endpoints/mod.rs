@@ -9,7 +9,6 @@ pub use validate::EndpointRefusal;
 
 use crate::error::PlatformError;
 
-/// `Default` carries no overrides: every surface resolves to its production endpoint.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PlatformEndpoints {
     overrides: BTreeMap<EndpointSurface, String>,
@@ -20,7 +19,6 @@ impl PlatformEndpoints {
         Self::resolve(std::env::var_os)
     }
 
-    /// Empty values count as unset. Warns once per call when any surface is overridden.
     pub fn resolve(
         lookup: impl Fn(&'static str) -> Option<OsString>,
     ) -> Result<Self, PlatformError> {
@@ -39,7 +37,6 @@ impl PlatformEndpoints {
         Ok(endpoints)
     }
 
-    /// No trailing slash, override or not; append paths beginning with `/`.
     pub fn base_url(&self, surface: EndpointSurface) -> &str {
         self.overrides
             .get(&surface)

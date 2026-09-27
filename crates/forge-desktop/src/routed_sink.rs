@@ -3,7 +3,6 @@ use std::sync::{Arc, PoisonError, RwLock};
 use async_trait::async_trait;
 use forge_audio::{AudioError, AudioSink, ControlledPlayback, PcmBuffer, PlaybackHandle};
 
-/// Reads the installed sink once per playback call, so an install reaches the next clip and leaves a running one untouched.
 pub struct RoutedSink {
     current: RwLock<Arc<dyn AudioSink>>,
 }
@@ -85,8 +84,6 @@ mod tests {
         }
     }
 
-    /// Why: replacing the held sink drops it under the write guard, which is the one
-    /// unwind point that can poison this lock.
     struct PanicsWhenDropped;
 
     #[async_trait]

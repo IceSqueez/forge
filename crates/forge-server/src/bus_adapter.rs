@@ -14,8 +14,6 @@ use time::format_description::well_known::Rfc3339;
 use tokio::sync::{RwLock, broadcast};
 
 pub(crate) const CLIENT_CHANNEL_CAP: usize = 1024;
-/// Below the general 1024 bound: append/transient overlay content gains nothing from a deep
-/// backlog, and a stalled page should rejoin near-live rather than crawl through history.
 pub(crate) const OVERLAY_CHANNEL_CAP: usize = 64;
 
 const BUS_CONSUMER: &str = "ws_server";
@@ -114,7 +112,6 @@ struct ConnectedClient {
 pub struct BusAdapter {
     bus: Arc<EventBus>,
     registry: Arc<RwLock<Vec<ConnectedClient>>>,
-    /// Lives on the adapter because the adapter is the one piece of state a restart carries over.
     overlay_connect: OnceLock<Arc<dyn OverlayConnectListener>>,
 }
 
@@ -179,8 +176,6 @@ fn serialize_content_frame(
     .ok()
 }
 
-/// Overlay-class connections never reach here: they carry no filters and receive nothing from
-/// the bus, only from directed delivery.
 async fn fan_out(registry: &RwLock<Vec<ConnectedClient>>, event: &Event) {
     let Ok(json) = serialize_push(event) else {
         return;
@@ -222,8 +217,6 @@ pub(crate) fn dropped_notification(n: u64) -> String {
     serde_json::json!({ "dropped": n }).to_string()
 }
 
-/// `identity: None` addresses every overlay-class connection; a non-overlay client never
-/// matches, since it carries no overlay connection at all.
 async fn send_to_overlay(
     registry: &RwLock<Vec<ConnectedClient>>,
     identity: Option<&OverlayId>,
@@ -279,7 +272,6 @@ impl BusAdapter {
         })
     }
 
-    /// Installed once at boot, after the runtime that answers it exists.
     pub fn set_overlay_connect_listener(&self, listener: Arc<dyn OverlayConnectListener>) {
         let _ = self.overlay_connect.set(listener);
     }
@@ -306,8 +298,6 @@ impl BusAdapter {
         });
     }
 
-    /// Addressed at the connections belonging to one overlay identity; a preview tab is counted
-    /// apart from a browser source but is delivered to exactly the same way.
     pub async fn deliver_overlay_content(
         &self,
         identity: &OverlayId,
@@ -320,12 +310,10 @@ impl BusAdapter {
         send_to_overlay(&self.registry, Some(identity), WsFrame::Text(json)).await
     }
 
-    /// Read-only: no frame is sent, so a client sitting on a full send buffer still counts.
     pub async fn overlay_receivers(&self, identity: &OverlayId) -> OverlayReceivers {
         count_overlay(&self.registry, identity).await
     }
 
-    /// `identity: None` reloads every overlay-class connection.
     pub async fn deliver_overlay_reload(&self, identity: Option<&OverlayId>) {
         send_to_overlay(
             &self.registry,
@@ -335,10 +323,6 @@ impl BusAdapter {
         .await;
     }
 
-    /// Addressed at every connection carrying `identity`: a clear frame goes out first so the
-    /// page blanks before its socket closes, then a close frame follows on the same per-client
-    /// channel, so the two always arrive in that order even though this issues two sends.
-    /// Returns how many connections still had a live receiver for the clear frame.
     pub async fn revoke_overlay(&self, identity: &OverlayId) -> usize {
         let reached = send_to_overlay(
             &self.registry,
@@ -367,9 +351,6 @@ impl BusAdapter {
         (handle, receiver)
     }
 
-    /// Derives the connection's identity from a validated credential, never from a client
-    /// claim, and shrinks its outbound queue to the overlay bound. `None` means the client id
-    /// was not found (already disconnected).
     pub async fn promote_to_overlay(
         &self,
         id: ClientId,
@@ -737,8 +718,6 @@ mod tests {
         );
     }
 
-    /// The count answers from the registry, not from a send, so a page whose outbound queue is
-    /// wedged is still reported as connected.
     #[tokio::test]
     async fn the_page_count_holds_where_a_delivery_would_report_nothing() {
         let adapter = BusAdapter::new(make_bus());
@@ -807,8 +786,6 @@ mod tests {
         }
     }
 
-    /// An overlay connection can still send `subscribe`, so clearing its filters at promotion is
-    /// not what keeps the bus away from it - the identity check in the fan-out is.
     #[tokio::test]
     async fn an_overlay_connection_that_subscribes_to_everything_still_receives_no_bus_events() {
         let bus = make_bus();
@@ -849,8 +826,6 @@ mod tests {
         );
     }
 
-    /// `replay` must be unconditionally present: a client reading `event.replay === undefined`
-    /// on a live frame cannot tell a re-emitted event from a fresh one.
     #[test]
     fn push_envelope_always_carries_replay_and_reports_re_emitted_events_as_replays() {
         let payload = serde_json::json!({ "text": "hi" });

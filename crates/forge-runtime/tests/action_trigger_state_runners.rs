@@ -423,7 +423,6 @@ async fn trigger_enable_and_disable_on_unknown_id_are_noop_success() {
     }
 }
 
-/// A runner ready to run plus a reader for the writes it must not have made.
 type ParseFailureCase = (
     Box<dyn SubActionRunner>,
     SubActionConfig,
@@ -452,9 +451,6 @@ fn trigger_case(
     )
 }
 
-// Why: an id that failed to parse is not an id, it is whatever text the trigger interpolated in -
-// most plausibly viewer content when the step wires `%message%` into the field - so the failure
-// text the run history shows may name the field but never the value.
 #[tokio::test]
 async fn unparseable_id_fails_with_shape_only_text_and_persists_nothing() {
     const SENTINEL: &str = "not-a-ulid-a-viewer-typed-this";

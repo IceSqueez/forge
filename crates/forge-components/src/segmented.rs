@@ -104,7 +104,6 @@ pub fn segmented(segments: Vec<Segment>, palette: &ForgePalette) -> SegmentedCon
 }
 
 impl SegmentedControl {
-    /// Drops the joined-pill container in favor of a bare wrapping row of chip-chrome segments.
     #[must_use]
     pub fn wrap(mut self, gap: Pixels) -> Self {
         self.joined = false;
@@ -112,8 +111,6 @@ impl SegmentedControl {
         self
     }
 
-    /// Marks the active segment with a raised surface instead of the brand fill, for a switch that
-    /// sits inside a toolbar rather than acting as the surface's primary control.
     #[must_use]
     pub fn subtle(mut self, palette: &ForgePalette) -> Self {
         self.active_bg = palette.surface_overlay;
@@ -121,7 +118,6 @@ impl SegmentedControl {
         self
     }
 
-    /// Tints the active segment's glyph; inactive glyphs stay faint.
     #[must_use]
     pub fn accent(mut self, accent: Rgba) -> Self {
         self.glyph_active = accent;

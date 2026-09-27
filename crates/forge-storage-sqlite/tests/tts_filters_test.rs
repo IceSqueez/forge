@@ -85,14 +85,10 @@ async fn fresh_db_settings_row_has_documented_defaults() {
     assert!(s.strip_twitch_emotes, "strip_twitch_emotes default");
     assert!(s.strip_reward_emotes, "strip_reward_emotes default");
     assert!(s.max_length.is_none(), "max_length default is unlimited");
-    // The singleton row is seeded by an early migration and only later gained the duration
-    // column, so this also pins that an upgraded row reads back as "no cap" rather than 0.
     assert!(
         s.output_max_duration_secs.is_none(),
         "output_max_duration_secs default is no cap"
     );
-    // Language-aware voice selection ships off, so an upgraded install must behave
-    // identically until the user opts in.
     assert!(
         s.output_language_aware_voice.is_none(),
         "output_language_aware_voice default is off"

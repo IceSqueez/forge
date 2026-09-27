@@ -27,11 +27,7 @@ pub struct DispatchContext {
     pub server_info: Arc<ServerInfo>,
     pub action_engine: Arc<ActionEngineHandle>,
     pub overlay_root: Arc<std::path::PathBuf>,
-    /// Populated once an overlay credential validates; the WS handler takes it to swap its
-    /// receiver onto the tighter overlay channel bound.
     pub overlay_channel_swap: Mutex<Option<broadcast::Receiver<WsFrame>>>,
-    /// Set when an overlay credential is refused; the WS handler closes the socket right after
-    /// sending the response so the page's own reconnect loop is what recovers it later.
     pub close_after_auth_failure: AtomicBool,
 }
 
@@ -75,8 +71,6 @@ async fn authenticate_bearer(token: String, ctx: &DispatchContext) -> WsResponse
     }
 }
 
-/// Never sets `client.authenticated`: the overlay credential grants directed delivery only, and
-/// every mutating and read-gated method stays refused exactly as for an unauthenticated client.
 async fn authenticate_overlay(
     credential: String,
     preview_connection: bool,

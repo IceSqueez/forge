@@ -1,4 +1,3 @@
-//! Scenario vocabulary behaviour: payload matching over real forge events and crowd expansion.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use forge_emulator::scenario::{

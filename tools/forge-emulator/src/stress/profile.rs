@@ -12,8 +12,6 @@ pub const MAX_RATE: u32 = 100_000;
 pub const MAX_HOLD_SECS: u64 = 3_600;
 const BYTE_ORDER_MARK: char = '\u{feff}';
 
-/// A throughput run: a seeded forge, a set of connected overlay pages, and a load that steps
-/// through `ramp.rates` until forge degrades, then recovers, bursts, and recovers again.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StressProfile {
@@ -22,14 +20,10 @@ pub struct StressProfile {
     pub fixture: Fixture,
     #[serde(default)]
     pub fakes: FakeTwitchSetup,
-    /// Persisted globals set over the control socket before any load, as a user would create
-    /// the counters their actions increment.
     #[serde(default)]
     pub globals: serde_json::Map<String, serde_json::Value>,
-    /// Fixture overlays that get a connected browser source for the whole run.
     #[serde(default)]
     pub pages: Vec<String>,
-    /// Distinct chatters the load cycles through.
     pub senders: u32,
     pub stimuli: Vec<Stimulus>,
     pub ramp: Ramp,
@@ -40,8 +34,6 @@ pub struct StressProfile {
     pub knee: KneeRule,
 }
 
-/// One kind of inbound event. A `weight` makes it a share of the stepped flood rate; a
-/// `per_minute` makes it a steady trickle that ignores the ramp, as alerts do on a real stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Stimulus {
@@ -50,10 +42,8 @@ pub struct Stimulus {
     pub weight: Option<u32>,
     #[serde(default)]
     pub per_minute: Option<u32>,
-    /// The command phrase for `command`; unused otherwise.
     #[serde(default)]
     pub text: Option<String>,
-    /// The fixture actions each such event is expected to start.
     pub runs: Vec<String>,
 }
 
@@ -80,7 +70,6 @@ impl StimulusKind {
         }
     }
 
-    /// The EventSub type that carries it.
     pub fn subscription_type(self) -> &'static str {
         match self {
             Self::Chat | Self::Command => "channel.chat.message",
@@ -95,12 +84,10 @@ impl StimulusKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ramp {
-    /// Flood rates in events per second, stepped in order.
     pub rates: Vec<u32>,
     pub hold_secs: u64,
 }
 
-/// Fired after the ramp at `multiplier` times the last step forge sustained.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Burst {
@@ -108,17 +95,12 @@ pub struct Burst {
     pub secs: u64,
 }
 
-/// A step is degraded when the generator fell short of the target rate, forge logged one of
-/// `fatal_warnings`, or - while the observer lost nothing, so its counts hold - the watched
-/// actions' unfinished work exceeds `max_backlog_secs` of the step's rate or any was skipped.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KneeRule {
-    /// The actions judged: the flood's own work, not a queue meant to hold a backlog.
     pub watch: Vec<String>,
     pub max_backlog_secs: f64,
     pub min_achieved_share: f64,
-    /// WARN/ERROR messages that mean work was lost; any of them logged during a step degrades it.
     #[serde(default)]
     pub fatal_warnings: Vec<String>,
 }
@@ -264,7 +246,6 @@ impl StressProfile {
         }
     }
 
-    /// The queue each fixture action runs on.
     pub fn queue_of(&self, action: &str) -> String {
         self.fixture
             .actions()

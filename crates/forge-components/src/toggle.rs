@@ -8,7 +8,6 @@ use crate::tokens::{Radius, radius};
 
 type ToggleClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-// THUMB_ON_OFFSET = TRACK_WIDTH - THUMB_SIZE - THUMB_INSET (32 - 14 - 2): when on, the thumb clears the track's right edge by THUMB_INSET, mirroring its left gap when off.
 const TRACK_WIDTH: Pixels = px(32.0);
 const TRACK_HEIGHT: Pixels = px(18.0);
 const THUMB_SIZE: Pixels = px(14.0);
@@ -53,7 +52,6 @@ pub fn toggle(on: bool, palette: &ForgePalette) -> Toggle {
 }
 
 impl Toggle {
-    /// Overrides the on-track accent; no effect while off.
     pub fn on_color(mut self, color: Rgba) -> Self {
         if self.on {
             self.colors.track = color;

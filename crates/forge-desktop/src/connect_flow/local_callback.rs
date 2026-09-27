@@ -253,8 +253,6 @@ impl ConnectFlow {
         }
     }
 
-    /// Cancels the pending loopback wait, which drops the future holding the callback
-    /// `TcpListener` and frees the port for an immediate re-authorization.
     pub(super) fn abandon_local_flow(&mut self) {
         self.local_cancel.cancel();
         self.youtube_flow = None;

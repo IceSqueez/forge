@@ -47,7 +47,6 @@ impl TriggerKindDescriptor for GuestStarGuestUpdatedDescriptor {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        // Empty state_filter fires on every state transition.
         vec![FormField::Text {
             key: "state_filter",
             label: "Guest state (empty = any)",

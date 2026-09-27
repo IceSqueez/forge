@@ -1033,9 +1033,6 @@ mod tests {
     fn authorized_sign_in_without_an_install_seed_fails_with_credentials_missing(
         cx: &mut gpui::TestAppContext,
     ) {
-        // Why: nobody drives this runtime, so a regression that proceeds without the seed queues
-        // its chat dial but never runs it; and a non-Twitch launch keeps `ConnectFlow::new` from
-        // opening a real device-code request.
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

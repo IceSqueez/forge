@@ -11,12 +11,10 @@ pub struct FakeTwitchConfig {
     pub access_token: String,
     pub broadcaster_user_id: String,
     pub broadcaster_login: String,
-    /// Idle time before the socket sends `session_keepalive`; forge drops a session silent for 15 s.
     pub keepalive_interval: Duration,
 }
 
 impl FakeTwitchConfig {
-    /// Expects exactly the credentials the fixture seeder stored for `account`.
     pub fn for_account(account: &TwitchAccount) -> Self {
         Self {
             client_id: account.client_id.clone(),

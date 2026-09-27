@@ -48,7 +48,6 @@ fn sta_worker_main(
     engine_id: EngineId,
 ) {
     // SAFETY: this dedicated STA thread creates, uses, and drops every SAPI COM pointer;
-    // only plain heap data (Vec<TtsVoice>, PcmBuffer) crosses the channel.
     if let Err(e) = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.ok() {
         let _ = init_tx.send(Err(SapiError::ComInit(e.code().0)));
         return;
@@ -100,7 +99,6 @@ fn enumerate_voice_tokens(
     engine_id: &EngineId,
 ) -> Result<Vec<(TtsVoice, ISpObjectToken)>, SapiError> {
     // SAFETY: this STA thread has already called CoInitializeEx; no COM pointer escapes
-    // this function beyond the return value, which stays on this thread.
     let category: ISpObjectTokenCategory =
         unsafe { CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_INPROC_SERVER) }
             .map_err(|e| SapiError::ComInit(e.code().0))?;
@@ -119,7 +117,6 @@ fn enumerate_voice_tokens(
         let mut token: Option<ISpObjectToken> = None;
         let mut fetched: u32 = 0;
         // SAFETY: writes at most 1 token pointer into `token`; both out-params are
-        // stack-allocated on this STA thread.
         let hr = unsafe { enum_tokens.Next(1, &mut token, Some(&mut fetched)) };
         if hr.is_err() || fetched == 0 {
             break;

@@ -14,8 +14,6 @@ async fn bind_loopback() -> (TcpListener, u16) {
     (listener, port)
 }
 
-/// A loopback peer that answers the first text frame with `reply` verbatim, forwarding what it
-/// received so a test can assert on the request the probe actually sent.
 async fn serve_one_reply(
     listener: TcpListener,
     reply: String,
@@ -39,8 +37,6 @@ async fn serve_one_reply(
     while let Some(Ok(_)) = socket.next().await {}
 }
 
-/// Completes the web-socket upgrade and then goes silent, which is how a non-VTS server on the
-/// probed port behaves: the handshake succeeds and no answer ever arrives.
 async fn serve_silence(listener: TcpListener) {
     let Ok((stream, _)) = listener.accept().await else {
         return;
@@ -61,7 +57,6 @@ async fn probe_against(
     outcome
 }
 
-/// `VTubeProbeResult` carries no `Debug`, so the usual `unwrap_err` is unavailable here.
 fn expect_error(outcome: Result<forge_vtube::VTubeProbeResult, VTubeError>) -> VTubeError {
     match outcome {
         Err(e) => e,
@@ -110,8 +105,6 @@ async fn the_probe_pings_with_an_api_state_request() {
     assert_eq!(sent["messageType"], "APIStateRequest");
 }
 
-// Why: the probe runs against a port the user typed, so the peer answering may be any web-socket
-// server. A thin response has to degrade into a reported version, never into a failed probe.
 #[tokio::test]
 async fn a_response_without_the_version_fields_degrades_instead_of_failing() {
     let result = probe_against(api_state_response(serde_json::json!({})))
@@ -159,14 +152,8 @@ async fn a_peer_that_answers_with_non_json_text_is_rejected_without_panicking() 
     );
 }
 
-// Why: a refused port is the everyday case of VTube Studio not running. Collapsing it into the
-// probe's timeout would hide the cause and stall the setup screen for the full five seconds.
 #[tokio::test]
 async fn a_refused_port_reports_the_connect_failure_rather_than_waiting_out_the_timeout() {
-    // Why: binding an ephemeral port and dropping it races the sibling tests in this binary -
-    // one of them can be handed the just-freed port before the probe dials it, and the probe
-    // then times out against a live peer instead of being refused. Port 1 is outside every
-    // platform's ephemeral range and needs root to bind, so the refusal is deterministic.
     let error = expect_error(probe_connection("127.0.0.1", 1).await);
 
     assert!(
@@ -175,8 +162,6 @@ async fn a_refused_port_reports_the_connect_failure_rather_than_waiting_out_the_
     );
 }
 
-// Why: a half-open peer never answers, and the probe is awaited by the setup screen. Without the
-// deadline that screen would hang for as long as the peer keeps the socket open.
 #[tokio::test]
 async fn a_peer_that_never_answers_ends_in_a_timeout_instead_of_hanging() {
     let (listener, port) = bind_loopback().await;

@@ -27,8 +27,6 @@ const HEADLINE_KEY: &str = "headline";
 const HELD: &str = "held";
 const WAIT_BOUND: Duration = Duration::from_secs(5);
 
-/// A frame whose value equals `held` stops inside the sink until `release` fires; a frame is
-/// recorded only once it has actually been delivered.
 struct GatedSink {
     held: String,
     entered: Notify,
@@ -184,8 +182,6 @@ fn harness(overlays: &[(&str, &str)]) -> Harness {
     }
 }
 
-/// Under paused time the clock only advances once every task is idle, so this returns after
-/// every spawned delivery has run as far as it can.
 async fn settle() {
     tokio::time::sleep(Duration::from_millis(1)).await;
 }

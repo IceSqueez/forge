@@ -595,7 +595,6 @@ impl ChatSession {
             .and_then(|c| c.get("bits"))
             .and_then(|v| v.as_i64())
         {
-            // channel.chat.message cheer object carries only {bits}; no anonymity signal.
             forge_payload[chat_fields::CHEER] =
                 serde_json::json!({ (chat_fields::CHEER_BITS): bits });
         }
@@ -604,7 +603,6 @@ impl ChatSession {
             .get("source_broadcaster_user_id")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        // Shared-chat echoes source_broadcaster_* on the host's own messages too; only surface from_channel when it differs.
         if !source_id.is_empty()
             && source_id != broadcaster_id
             && let (Some(login), Some(display_name)) = (
@@ -913,7 +911,6 @@ impl ChatSession {
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
 
-        // channel.raid carries both received and sent raids on one topic; self as to-broadcaster means received.
         let direction = if to_id == self.config.broadcaster_id {
             "received"
         } else {
@@ -1065,7 +1062,6 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        // channel.chat.message_delete carries no deleted text or moderator identity.
         debug!(target_user_id = %target_user_id, message_id = %message_id, "chat message deleted");
 
         let mut forge_payload = serde_json::json!({
@@ -1104,7 +1100,6 @@ impl ChatSession {
             .unwrap_or_default()
             .to_owned();
 
-        // channel.chat.clear carries no moderator identity.
         debug!(broadcaster_id = %broadcaster_id, "chat cleared");
 
         let mut forge_payload = serde_json::json!({
@@ -1417,7 +1412,6 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        // amount is an object {value, decimal_places, currency}; value is in minor units (e.g. cents).
         let amount_obj = event_data.get("amount");
         let amount_cents = amount_obj
             .and_then(|a| a.get("value"))
@@ -1508,7 +1502,6 @@ impl ChatSession {
         ));
     }
 
-    // channel.ban carries both permanent bans and timeouts; is_permanent distinguishes them.
     pub(super) fn publish_ban_event(&self, event_data: &serde_json::Value, _frame_msg_id: &str) {
         let user_id = event_data
             .get("user_id")
@@ -2908,7 +2901,6 @@ impl ChatSession {
             .and_then(|v| v.as_str())
             .unwrap_or_default()
             .to_owned();
-        // Forwarded so approve_message/deny_message sub-actions can reference it via %automod.message_id%.
         let message_id = event_data
             .get("message_id")
             .and_then(|v| v.as_str())
@@ -3802,7 +3794,6 @@ impl ChatSession {
     }
 }
 
-// current_amount/target_amount are objects {value, decimal_places, currency}; value is minor units (cents).
 fn build_charity_lifecycle_payload(event_data: &serde_json::Value) -> serde_json::Value {
     let campaign_id = event_data
         .get("id")
@@ -3936,7 +3927,6 @@ fn attach_chat_reply_payload(forge_payload: &mut serde_json::Value, reply: ChatR
     }
 }
 
-// Why: `UrlError` renders the connect URL, and a server-issued reconnect URL carries session-scoped query material.
 fn ws_error_reason(e: &tokio_tungstenite::tungstenite::Error) -> String {
     match e {
         tokio_tungstenite::tungstenite::Error::Url(_) => "websocket url rejected".to_owned(),
@@ -4202,8 +4192,6 @@ mod tests {
 
     #[test]
     fn websocket_url_error_is_reported_without_the_connect_url() {
-        // Why: a server-issued reconnect URL carries session-scoped query material, and
-        // `UrlError::UnableToConnect` renders the URL it was handed.
         const SESSION_URL: &str =
             "wss://eventsub.wss.twitch.tv/ws?reconnect_token=SESSION_SCOPED_SENTINEL_j7x";
         let err = tokio_tungstenite::tungstenite::Error::Url(
@@ -5924,9 +5912,6 @@ mod tests {
 
     #[tokio::test]
     async fn automod_hold_with_blocked_term_reason_nulls_the_category_and_level() {
-        // Why: a blocked-term hold carries no AutoMod classification at all, so echoing the
-        // zero-valued defaults would tell an action that the message scored category "" at
-        // level 0 rather than that no classification exists.
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
@@ -6025,8 +6010,6 @@ mod tests {
 
     #[tokio::test]
     async fn automod_hold_message_text_reads_object_form_and_ignores_plain_string() {
-        // Why: v2 wire delivers message as {text, fragments}. A bare-string
-        // message is the v1 shape and must not be honored as the text source.
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
@@ -6605,7 +6588,6 @@ mod tests {
 
     const TOKEN_BODY_SENTINEL: &str = "SESSION_TOKEN_BODY_SENTINEL_m2";
 
-    /// A credential inside the refresh buffer, so `session_welcome` drives a real refresh.
     struct NearExpiryCreds;
 
     #[async_trait::async_trait]
@@ -6666,8 +6648,6 @@ mod tests {
         }
     }
 
-    /// Drives `session_welcome` against a token endpoint that answers 503 with a sentinel body,
-    /// capturing from TRACE up so no tier can hide a leak.
     fn session_welcome_over_failing_token_endpoint()
     -> (FrameAction, Vec<crate::log_capture::CapturedLine>) {
         crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
@@ -6741,9 +6721,6 @@ mod tests {
     fn session_welcome_token_failure_warns_with_the_upstream_status() {
         let (_, lines) = session_welcome_over_failing_token_endpoint();
 
-        // Why: scoped to this module's target on purpose - `perform_refresh` logs its own
-        // `status = 503` WARN one frame down, and an unscoped search would pass on that line
-        // alone while the session arm still rendered the whole error.
         let session_warns: Vec<_> = crate::log_capture::forge_lines(&lines)
             .into_iter()
             .filter(|line| {
@@ -6852,8 +6829,6 @@ mod tests {
         Close,
     }
 
-    /// One accepted EventSub connection: it sends frames when the test says so and reports the
-    /// moment forge closed its end.
     struct Peer {
         commands: mpsc::UnboundedSender<PeerCommand>,
         closed: oneshot::Receiver<()>,
@@ -6871,7 +6846,6 @@ mod tests {
             let _ = self.commands.send(PeerCommand::Close);
         }
 
-        /// The pong to this ping leaves forge's socket only on its next read.
         async fn wait_until_forge_read_everything(&mut self) {
             self.commands
                 .send(PeerCommand::Ping)
@@ -6894,7 +6868,6 @@ mod tests {
         }
     }
 
-    /// A loopback EventSub endpoint that hands every accepted connection back to the test.
     struct FakeEventSub {
         url: String,
         peers: mpsc::UnboundedReceiver<Peer>,
@@ -6983,7 +6956,6 @@ mod tests {
         }
     }
 
-    /// An address nothing listens on, so a dial at it is refused rather than routed.
     fn unreachable_ws_url() -> String {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -7089,7 +7061,6 @@ mod tests {
             .to_owned()
     }
 
-    /// The kinds of every event published up to and including the chat message carrying `text`.
     async fn kinds_until_chat(events: &mut EventStream, text: &str) -> Vec<String> {
         let mut kinds = Vec::new();
         let arrived = tokio::time::timeout(FAKE_WAIT, async {
@@ -7244,8 +7215,6 @@ mod tests {
         predecessor: Peer,
     }
 
-    /// A session welcomed on the base socket with its first subscription pass finished: the chat
-    /// frame is the barrier that proves `handle_frame` returned before the test drives anything.
     async fn live_session() -> Live {
         let api = eventsub_api().await;
         let mut base = FakeEventSub::bind().await;
@@ -7270,7 +7239,6 @@ mod tests {
         }
     }
 
-    /// `live_session` plus a `session_reconnect`: the successor is dialled but has not welcomed.
     async fn overlapping_session() -> (Live, FakeEventSub, Peer) {
         let live = live_session().await;
         let mut successor_socket = FakeEventSub::bind().await;
@@ -7392,8 +7360,6 @@ mod tests {
 
     #[tokio::test]
     async fn the_session_after_a_reconnect_redials_the_base_url_and_resubscribes() {
-        // Why: the reconnect URL is one-shot. A run loop that kept it as the dial target spent
-        // every later retry on a URL Twitch had already retired.
         let (mut live, _successor_socket, successor) = overlapping_session().await;
         successor.send(welcome_frame("sess-2"));
         successor.send(chat_frame("after", "on the successor"));
@@ -7417,8 +7383,6 @@ mod tests {
 
     #[test]
     fn a_failed_successor_dial_never_logs_the_reconnect_url() {
-        // Why: the reconnect URL carries a session-scoped token and is handed straight to the
-        // dial, where `UrlError::UnableToConnect` renders whatever URL it was given.
         const RECONNECT_TOKEN: &str = "RECONNECT_TOKEN_SENTINEL_q4";
         let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
             let mut live = live_session().await;
@@ -7427,8 +7391,6 @@ mod tests {
                 "{dead}/?reconnect_token={RECONNECT_TOKEN}"
             )));
             live.predecessor.close();
-            // Why: losing the predecessor only ends the session once the successor dial has
-            // resolved, so the fresh dial is the barrier that the failure was already logged.
             live.base.accept().await;
         });
 
@@ -7496,8 +7458,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_session_that_subscribed_restarts_the_retry_count_for_the_next_drop() {
-        // Why: the backoff used to live on the run loop with no reset, so roughly eight drops
-        // over a process lifetime pinned every later retry at the one-minute cap.
         let mut live = live_session().await;
 
         live.predecessor.close();
@@ -7580,9 +7540,6 @@ mod tests {
         );
     }
 
-    // Why: `select!` picks at random among its ready arms, so a single buffered frame would
-    // reach the drain only half the time; eight make the drain the path under test while the
-    // assertion stays true whichever arm wins.
     const BUFFERED_OVERLAP_FRAMES: usize = 8;
 
     #[tokio::test]
@@ -7645,7 +7602,6 @@ mod tests {
         );
     }
 
-    /// Until released it reads each request and never answers; then it accepts every subscription.
     struct HeldHttpEndpoint {
         url: String,
         requests: mpsc::UnboundedReceiver<()>,
@@ -7720,7 +7676,6 @@ mod tests {
         }
     }
 
-    /// Buffers until one whole request (head plus its `content-length` body) is in; its length.
     async fn read_one_request(
         stream: &mut tokio::net::TcpStream,
         buffered: &mut Vec<u8>,
@@ -7751,7 +7706,6 @@ mod tests {
         }
     }
 
-    /// Keeps every event in order and never lags, for tests that publish more than the channel holds.
     #[derive(Default)]
     struct RecordingBus {
         events: std::sync::Mutex<Vec<Event>>,
@@ -7785,7 +7739,6 @@ mod tests {
                 .collect()
         }
 
-        /// Each `Connected` report as `"connected"` and each chat message as its text, in order.
         fn connected_and_chat_timeline(&self) -> Vec<String> {
             let connected = serde_json::json!(ConnectionState::Connected);
             self.events
@@ -7887,8 +7840,6 @@ mod tests {
         (handle, peer, events)
     }
 
-    // Why: comfortably inside the grace period after which `shutdown` aborts the task, so only a
-    // session that observed the request itself can finish within it.
     const STOPS_ON_ITS_OWN_WITHIN: Duration = crate::chat::SHUTDOWN_GRACE.checked_div(2).unwrap();
 
     #[tokio::test]
@@ -7958,8 +7909,6 @@ mod tests {
 
     #[tokio::test]
     async fn shutting_down_during_the_reconnect_backoff_skips_the_rest_of_the_wait() {
-        // Why: from the third retry on, the backoff ceiling is seconds long, so a session that
-        // only checks for shutdown after its sleep keeps the old socket slot for that long.
         const RETRIES_BEFORE_SHUTDOWN: usize = 3;
         let dead = unreachable_ws_url();
         let (chat, bus) = chat_over(&dead, &dead.replacen("ws://", "http://", 1));
@@ -8081,7 +8030,6 @@ mod tests {
         );
     }
 
-    /// Waits for the first `Reconnecting` report with no deadline of its own, for paused-time tests.
     async fn first_retry(state: &mut watch::Receiver<ChatConnectionState>) {
         while !matches!(
             *state.borrow_and_update(),
@@ -8103,8 +8051,6 @@ mod tests {
         welcomed.send(welcome_frame("sess-1"));
         helix.wait_for_a_request().await;
 
-        // Why: from here only timers move the session, so paused time runs the keepalive
-        // deadline and the subscribe requests' own timeouts in their real order without waiting.
         tokio::time::pause();
         let retried = tokio::time::timeout(
             KEEPALIVE_TIMEOUT + KEEPALIVE_TIMEOUT / 3,
@@ -8427,7 +8373,6 @@ mod tests {
             .await;
     }
 
-    /// The pass verdict and the number of refresh POSTs, starting from a stored unexpired token.
     async fn pass_after_topic_replies(
         reply: TopicReply,
         endpoint: TokenEndpoint,
@@ -8570,7 +8515,6 @@ mod tests {
 
     #[tokio::test]
     async fn a_chat_message_publishes_exactly_the_shared_fixture_payload() {
-        // Why: the desktop event-feed tests consume this fixture as the real published chat event.
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../tests/fixtures/published_chat_message.json"
         ))

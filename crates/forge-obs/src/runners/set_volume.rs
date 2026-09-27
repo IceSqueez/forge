@@ -149,8 +149,6 @@ mod tests {
         config
     }
 
-    /// The UI stores an interpolated `%arg%` as a string, so a decibel figure reaches the runner
-    /// either already numeric or still spelled out.
     #[test]
     fn validate_config_accepts_a_decibel_figure_in_any_numeric_shape() {
         for db in [

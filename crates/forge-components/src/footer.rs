@@ -9,10 +9,8 @@ use crate::status::status_dot;
 use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, mono_family, spacing};
 use crate::tooltip::tooltip_lines_builder;
 
-/// Overlays reserve this bottom clearance so they never paint under the bar.
 pub const FOOTER_HEIGHT: Pixels = px(24.0);
 
-// Deliberately off the `Spacing` scale: the footer is fixed, density-neutral chrome tuned by hand.
 const LEFT_GAP: Pixels = px(8.0);
 const VERSION_GAP: Pixels = px(5.0);
 const CONN_GAP: Pixels = px(6.0);

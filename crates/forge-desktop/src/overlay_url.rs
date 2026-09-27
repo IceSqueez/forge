@@ -47,7 +47,6 @@ pub fn overlay_origin(bind_address: &str, routable_host: Option<&str>) -> String
     format!("{URL_SCHEME}://{host}:{port}")
 }
 
-/// The trailing slash is what resolves the directory to its entry document; OBS receives this string verbatim.
 pub fn overlay_page_url(origin: &str, identity: &str) -> String {
     format!("{origin}/{OVERLAY_ROUTE}/{identity}/")
 }

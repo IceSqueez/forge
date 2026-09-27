@@ -33,8 +33,6 @@ use crate::triggers::stream_online::ChannelBroadcastStartedDescriptor;
 use crate::triggers::title_changed::ChannelBroadcastTitleChangedDescriptor;
 use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
 
-/// YouTube's Data API v3 default daily quota budget (project-level, shared
-/// across every endpoint the account calls). See `PLATFORMS_NOTES.md`.
 const QUOTA_DAILY_BUDGET: u64 = 10_000;
 
 pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
@@ -183,10 +181,6 @@ impl YoutubeIntegrationBundle {
         });
     }
 
-    /// Missing/unloadable credentials leave the previously cached name and expiry in place
-    /// rather than resetting them; `display_name` is set once, since the same bundle instance
-    /// never outlives a channel switch (a new OAuth connect recreates the bundle). Credentials
-    /// stored before handle tracking existed are backfilled here via `ensure_channel_handle`.
     pub(crate) async fn refresh_identity(&self) {
         let Ok(Some(stored)) = self.credentials_manager.load().await else {
             return;
@@ -216,7 +210,6 @@ impl YoutubeIntegrationBundle {
         &self.platform
     }
 
-    /// Non-blocking: a contended read falls back to "no data yet" rather than stalling.
     fn quota_metric(&self) -> HealthMetric {
         let value = match self.quota.try_lock() {
             Ok(guard) => HealthValue::Ratio {
@@ -244,8 +237,6 @@ fn chat_poller_health_value(state: ConnectionState) -> HealthValue {
     }
 }
 
-/// Super chat, membership, and moderation events fan out from the same polled feed as chat
-/// messages - YouTube has no separate event-subscription channel to report on.
 fn events_health_value(state: ConnectionState) -> HealthValue {
     HealthValue::Status {
         label: state.label().to_owned(),
@@ -267,8 +258,6 @@ fn viewers_health_value(report: ViewerReport) -> HealthValue {
     }
 }
 
-/// A handle displays as `@handle` (normalized to exactly one leading `@`); credentials stored
-/// before handle tracking existed fall back to the channel title.
 fn preferred_hero_name(channel_title: &str, channel_handle: Option<&str>) -> String {
     match channel_handle.map(str::trim).filter(|h| !h.is_empty()) {
         Some(handle) => format!("@{}", handle.trim_start_matches('@')),
@@ -1070,8 +1059,6 @@ mod tests {
         let metrics = BuiltinHealth::metrics(bundle.as_ref());
 
         let labels: Vec<&str> = metrics.iter().map(|m| m.label.as_str()).collect();
-        // Why: spawn_health_bridge/spawn_viewer_health_bridge push HealthDelta{index:0/1/2}
-        // for chat/events/viewers; these slots must stay aligned or a delta updates the wrong tile.
         assert_eq!(labels, ["Live Chat", "Events", "Viewers", "API Calls"]);
         assert!(matches!(metrics[0].value, HealthValue::Status { .. }));
         assert!(matches!(metrics[1].value, HealthValue::Status { .. }));

@@ -124,7 +124,6 @@ impl QuickActions for ObsClient {
             .unwrap_or_default();
 
         vec![
-            // Scenes
             quick_action(
                 "Switch scene",
                 "arrows-shuffle",
@@ -173,7 +172,6 @@ impl QuickActions for ObsClient {
                 None,
                 vec![toggle_field("on", "Enabled", true)],
             ),
-            // Sources & audio
             quick_action(
                 "Toggle source",
                 "eye",
@@ -270,7 +268,6 @@ impl QuickActions for ObsClient {
                 Some(PickerKind::Source),
                 Vec::new(),
             ),
-            // Stream & record
             quick_action(
                 "Start / stop stream",
                 "player-play",
@@ -319,7 +316,6 @@ impl QuickActions for ObsClient {
                 None,
                 vec![toggle_field("on", "Enabled", false)],
             ),
-            // Replay & capture
             quick_action(
                 "Toggle replay buffer",
                 "player-record",
@@ -372,7 +368,6 @@ impl QuickActions for ObsClient {
                 None,
                 vec![text_field("path", "Folder", "~/Recordings").required()],
             ),
-            // Profiles
             quick_action(
                 "Switch profile",
                 "user-cog",
@@ -433,8 +428,6 @@ mod tests {
         }
     }
 
-    /// Blank string slots are the ones the picker or a form field fills in before the step runs,
-    /// so validating the raw template would only re-assert that they are still blank.
     fn filled(config: &BTreeMap<String, Variant>) -> BTreeMap<String, Variant> {
         config
             .iter()
@@ -465,8 +458,6 @@ mod tests {
         }
     }
 
-    // Why: a config key the runner never reads is silently dropped by effective_config, so the
-    // button runs and reports success while doing nothing the user asked for.
     #[test]
     fn every_quick_action_config_and_field_key_is_one_its_runner_reads() {
         let reg = registry();
@@ -493,8 +484,6 @@ mod tests {
         }
     }
 
-    // Why: an action whose only blank config slot has neither a picker nor an editable field
-    // renders as a button the user can press but cannot fill in.
     #[test]
     fn every_action_with_a_blank_config_slot_offers_a_picker_or_a_field() {
         for action in &roster() {
@@ -542,8 +531,6 @@ mod tests {
         );
     }
 
-    // Why: group_badge falls through to a generic "dot" badge for an unknown group string, so a
-    // typo in a group name degrades the header silently instead of failing.
     #[test]
     fn every_group_resolves_to_its_own_badge_rather_than_the_fallback() {
         for action in &roster() {

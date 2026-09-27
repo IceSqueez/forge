@@ -69,7 +69,6 @@ impl TriggerVariable {
     }
 }
 
-/// A descriptor that declares nothing at all stays distinguishable from one declaring an empty list.
 pub fn declared_variables(descriptor: &dyn TriggerKindDescriptor) -> Option<Vec<TriggerVariable>> {
     if let Some(variables) = descriptor.variables() {
         return Some(variables.declarations());

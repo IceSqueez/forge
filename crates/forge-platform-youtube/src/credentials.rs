@@ -3,7 +3,6 @@ use time::{Date, OffsetDateTime};
 
 pub const CREDENTIAL_KEY: &str = "youtube:broadcaster";
 
-/// Storage key for quota telemetry in `SettingsRepo` (not `CredentialsRepo`).
 pub const QUOTA_KEY: &str = "youtube:quota";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

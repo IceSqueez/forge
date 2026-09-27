@@ -115,8 +115,6 @@ impl AppShell {
         }
     }
 
-    /// gpui leaves the window unfocused when the focused element stops rendering, which strands
-    /// every shell key binding until something takes focus again.
     fn restore_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let target = window
             .focus_lost_restore_target(cx)

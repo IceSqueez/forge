@@ -46,8 +46,6 @@ fn default_db_path() -> PathBuf {
     paths::data_dir().join("forge.db")
 }
 
-/// Blocks the calling thread (bounded by a timeout) so the window can open already themed.
-/// Uses a std channel, not `Handle::block_on`, because the caller sits inside `rt.enter()`.
 pub fn read_persisted_presentation(rt_handle: &tokio::runtime::Handle) -> (ThemeId, Density) {
     let (tx, rx) = std::sync::mpsc::channel();
     rt_handle.spawn(async move {
@@ -100,8 +98,6 @@ async fn load_fonts_from_storage() -> (Option<String>, Option<String>) {
     (body, mono)
 }
 
-/// Everything logged before this point is captured at the boot level; the view documents the
-/// environment variable as the way to raise a boot-time reproduction.
 async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
     if crate::log_level::env_overridden() {
         return;
@@ -118,7 +114,6 @@ async fn apply_persisted_log_level(repo: &dyn SettingsRepo) {
     }
 }
 
-/// Must run within the tokio runtime: the engine/scheduler/evaluator spawn tasks internally.
 pub async fn build_runtime(
     log_tail: LogTail,
     endpoints: PlatformEndpoints,

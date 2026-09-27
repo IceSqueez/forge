@@ -21,10 +21,8 @@ use crate::delivery::{CriticalSubscription, TRIGGER_EVALUATOR};
 use crate::event_log_bridge::identity_digest;
 use crate::{Config, EventBus, QueueSchedulerHandle, SchedulerRequest};
 
-/// Sibling of `forge::event`, so a reproduction can raise the evaluator's decisions alone.
 const DECISION_TARGET: &str = "forge::trigger";
 
-/// The one target carrying viewer-authored text; TRACE-only, so it is raised on its own or not at all.
 pub const COMMAND_LINE_TARGET: &str = "forge::command";
 
 const MAX_RESOLVED_EVENT_SHAPES: usize = 4096;
@@ -91,7 +89,6 @@ impl TriggerEvaluator {
         self.drain_backlog().await;
     }
 
-    /// Events published before the cancel still dispatch; only what arrives after it is dropped.
     async fn drain_backlog(&mut self) {
         while let Some(event) = self.subscription.try_recv() {
             self.handle(&event).await;
@@ -182,7 +179,6 @@ impl TriggerEvaluator {
         indexes
     }
 
-    /// Publishes the decision record, so callers must invoke it once per (event, instance) pair.
     fn decide(&mut self, instance: &TriggerInstance, event: &Event) -> Option<ArgStack> {
         let descriptor = match self.registry.get(&instance.kind_id) {
             Some(d) => d,
@@ -322,8 +318,6 @@ fn log_rejected(instance: &TriggerInstance, event: &Event, is_command: bool, rea
     );
 }
 
-/// The match verdict is the carve-out's gate: everything here is reached only once the evaluator
-/// has decided this message is an invocation of the broadcaster's own configured phrase.
 fn log_command_match(
     instance: &TriggerInstance,
     event: &Event,
@@ -367,8 +361,6 @@ fn log_command_match(
     }
 }
 
-/// The descriptor declares which of its arg-stack variables carries the message, so the evaluator
-/// reads the matched line without knowing any platform's payload shape.
 fn matched_line(descriptor: &dyn TriggerKindDescriptor, args: &ArgStack) -> String {
     descriptor
         .output_schema()
@@ -430,8 +422,6 @@ impl BlockReason {
 }
 
 fn resolve_rung(event: &Event) -> PermissionRung {
-    // The flat platform badge strings Twitch alone also puts on the event are not an authorization
-    // source: reading them would make the gate silently correct for one platform and blind on the rest.
     event
         .payload
         .get(ChatPayload::KEY)
@@ -626,7 +616,6 @@ mod tests {
         (Arc::new(sub_reg), Arc::new(trig_reg))
     }
 
-    /// One `custom.my_event` trigger instance wired to one logging action on one queue.
     struct EvaluatorFixture {
         bus: Arc<EventBus>,
         registry: Arc<TriggerRegistry>,
@@ -697,7 +686,6 @@ mod tests {
             )
         }
 
-        /// Builds the evaluator without spawning it, so a test can drive `run` to completion.
         fn evaluator(&self, subscription: CriticalSubscription) -> TriggerEvaluator {
             TriggerEvaluator {
                 bus: Arc::clone(&self.bus),
@@ -760,8 +748,6 @@ mod tests {
         let mut sub = bus.subscribe();
         let evaluator = fixture.evaluator(bus.subscribe_critical(TRIGGER_EVALUATOR));
 
-        // A hold's synthesized release is published, and only then does shutdown cancel intake.
-        // The run loop re-reads the flag at the top, so the event is already past the gate.
         bus.publish(Event::new(
             EventSource::Server,
             "custom.my_event",
@@ -921,8 +907,6 @@ mod tests {
         }
     }
 
-    // The fixture supplies the repos and scheduler `TriggerEvaluator` needs to exist; only the
-    // registry, the bus and the cooldown map take part in a decision.
     async fn decide_harness(descriptor: CommandDescriptor) -> (EvaluatorFixture, TriggerEvaluator) {
         let mut registry = TriggerRegistry::new();
         registry.register(Box::new(descriptor)).unwrap();
@@ -1114,8 +1098,6 @@ mod tests {
 
     #[test]
     fn matched_line_takes_the_first_message_hint_when_the_schema_declares_two() {
-        // Why: kick's command descriptor declares `content` (the whole line) and then `args`,
-        // both hinted Message. First-wins is what keeps the logged line whole.
         let descriptor = CommandDescriptor {
             schema: Some(VariableSchema {
                 variables: vec![message_variable("content"), message_variable("args")],
@@ -1187,15 +1169,12 @@ mod tests {
 
     #[test]
     fn argument_tail_cuts_a_multibyte_phrase_on_a_character_boundary() {
-        // A byte-count prefix would land inside the trailing Cyrillic character and panic.
         assert_eq!(argument_tail("!привіт світ", "!привіт"), "світ");
         assert_eq!(argument_tail("!привіт", "!привіт"), "");
     }
 
     #[test]
     fn viewer_digest_matches_the_bridge_digest_for_the_same_author() {
-        // Why: R1's correlation property. One salt per run keeps a viewer joinable across the
-        // bus bridge's trail and the evaluator's; a second salt would silently break it.
         let event = command_event(LINE, "alice", vec![]);
         assert_eq!(viewer_digest(&event), Some(identity_digest("alice")));
     }
@@ -1265,8 +1244,6 @@ mod tests {
         }
     }
 
-    // The prefixes the shipped platform descriptors declare, each paired with the sibling kinds
-    // a bare `starts_with` used to let through.
     const PREFIX_CASES: &[(&str, EventSource, &str, &[&str])] = &[
         (
             "twitch.chat.message",

@@ -93,7 +93,6 @@ impl SubActionRunner for CoreStringTitlecaseRunner {
     }
 }
 
-/// Word boundaries are Unicode whitespace only; hyphens and underscores are not boundaries.
 fn to_titlecase(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut capitalize_next = true;

@@ -16,7 +16,6 @@ use crate::EmulatorError;
 pub const MAX_READY_MS: u64 = 300_000;
 pub const MAX_WAIT_MS: u64 = 120_000;
 pub const MAX_PAUSE_MS: u64 = 5_000;
-/// forge drops an EventSub session that stays silent for 15 s.
 pub const MAX_KEEPALIVE_MS: u64 = 14_000;
 pub const MAX_CROWD_VIEWERS: u32 = 100_000;
 pub const MAX_CHATTER_PER_VIEWER: u32 = 20;
@@ -32,7 +31,6 @@ const PROSE_FIELD: &str = "message";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioProblem {
-    /// Path into the scenario document, e.g. `steps[2].expect[0].event.kind`.
     pub location: String,
     pub message: String,
 }
@@ -44,7 +42,6 @@ impl fmt::Display for ScenarioProblem {
 }
 
 impl Scenario {
-    /// Every statically detectable reason this scenario cannot run or cannot pass.
     pub fn problems(&self) -> Vec<ScenarioProblem> {
         let mut validator = Validator::new(self);
         validator.run();

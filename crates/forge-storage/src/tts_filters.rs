@@ -6,10 +6,8 @@ use crate::StorageError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BlocklistMode {
-    /// Replaces the matched word with `***`.
     #[default]
     Censor,
-    /// Drops the entire message, not just the matched word.
     Suppress,
 }
 
@@ -18,23 +16,17 @@ pub enum BlocklistMode {
 pub enum UrlMode {
     #[default]
     Speak,
-    /// Spoken label defaults to "link".
     Replace,
-    /// Drops the entire message, not just the URL.
     Suppress,
 }
 
-/// The `Regex` variant stores the SOURCE pattern only, never the compiled form; the
-/// TTS domain re-compiles at load time and rejects invalid patterns.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FilterRuleKind {
-    /// Case-insensitive literal substring -> replacement.
     Literal {
         pattern: String,
         replacement: String,
     },
-    /// `regex`-crate pattern syntax -> replacement.
     Regex {
         pattern: String,
         replacement: String,
@@ -45,13 +37,11 @@ pub enum FilterRuleKind {
     },
 }
 
-/// `position` is dense 0..n; gaps are a load-time repair in the TTS domain, not here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FilterRule {
     pub id: String,
     pub name: String,
     pub enabled: bool,
-    /// Zero-based ordering index; rules are applied in ascending position order.
     pub position: u32,
     pub kind: FilterRuleKind,
 }
@@ -139,10 +129,8 @@ impl Default for TtsPipelineSettings {
 #[cfg_attr(feature = "test-mocks", mockall::automock)]
 #[async_trait]
 pub trait TtsFiltersRepo: Send + Sync {
-    /// Returns all rules ordered by `position` ascending.
     async fn list_rules(&self) -> Result<Vec<FilterRule>, StorageError>;
 
-    /// Replaces the entire ordered rule set atomically.
     async fn replace_rules(&self, rules: &[FilterRule]) -> Result<(), StorageError>;
 
     async fn get_pipeline_settings(&self) -> Result<TtsPipelineSettings, StorageError>;

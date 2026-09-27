@@ -12,7 +12,6 @@ pub enum InlineEditEvent {
     Cancel,
 }
 
-/// Commits on Enter, blur, or a click outside; cancels on Escape. The caret is focused on the frame after it mounts so a double-click lands the cursor at once.
 pub struct InlineEdit {
     input: Entity<TextInput>,
     palette: ForgePalette,

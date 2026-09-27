@@ -92,8 +92,6 @@ impl PkceFlow {
         }
     }
 
-    /// `extra_trailing_params` lets a caller add call-time-only query params (e.g. Google's
-    /// optional `prompt=consent`) after the fixed PKCE fields.
     pub async fn start(
         &mut self,
         extra_trailing_params: &[(&str, &str)],
@@ -104,7 +102,6 @@ impl PkceFlow {
         Ok(PkceAuthorizeUrl { auth_url })
     }
 
-    /// Uses PKCE `code_verifier`; no `client_secret` unless the config supplies one.
     pub async fn exchange(
         &mut self,
         timeout: Duration,
@@ -143,8 +140,6 @@ impl PkceRefresher {
         }
     }
 
-    /// Maps to `PlatformError::ReauthRequired` per the configured `ReauthPolicy`, otherwise
-    /// `PlatformError::Http`.
     pub async fn refresh(&self, refresh_token: &str) -> Result<PkceTokenResponse, PlatformError> {
         let mut form: Vec<(&str, &str)> = vec![
             ("grant_type", "refresh_token"),

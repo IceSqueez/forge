@@ -1,8 +1,3 @@
-//! Length-only projection of a persisted run for the publicly-attachable diagnostic bundle.
-//! Unlike `variant_preview`, nothing here can carry a value's content: the bundle section is written
-//! straight to the file and never passes through the subscriber's scrubber. Failure reasons are sizes
-//! for the same reason - they quote third-party text, and the log corpus carries the readable form.
-
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -15,7 +10,6 @@ use crate::ids::{ActionId, EventId};
 use crate::redaction::STAMP;
 use crate::variant::Variant;
 
-/// Every arm that could hold authored text is a size instead, so no rendering of this type discloses a value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisclosedValue {
     Int(i64),
@@ -137,13 +131,11 @@ impl From<&SubActionOutcome> for DisclosedStepOutcome {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DisclosedStep {
-    /// `None` for a step lifted out of a branch or loop body, whose `kind` carries the parent path instead.
     pub index: Option<usize>,
     pub kind: String,
     pub started_at: OffsetDateTime,
     pub duration_ms: u64,
     pub outcome: DisclosedStepOutcome,
-    /// Sizes are of each argument's persisted rendering, which is not the length of the source value.
     pub args_in: BTreeMap<String, DisclosedValue>,
     pub produced: BTreeMap<String, DisclosedValue>,
 }
@@ -207,7 +199,6 @@ mod tests {
     use super::*;
     use time::Duration;
 
-    /// A string no rendering of a disclosed run may ever contain.
     const SENTINEL: &str = "nova_the_viewer";
 
     fn instant(offset_secs: i64) -> OffsetDateTime {
@@ -278,8 +269,6 @@ mod tests {
         }
     }
 
-    /// Why: a container is reduced to a count and never walked, so a string buried at any depth
-    /// has no path into a rendering. If `Array`/`Object` ever gained recursive arms this breaks.
     #[test]
     fn a_string_nested_inside_a_container_is_unreachable_from_any_rendering() {
         let deep = Variant::Array(vec![Variant::Object(map(&[(
@@ -441,8 +430,6 @@ mod tests {
         );
     }
 
-    /// Why: R5 - the bundle section is written straight to a file the reporter may attach to a
-    /// public issue, so no arm of the projection may carry a value, a reason or a label.
     #[test]
     fn run_disclosure_carries_no_value_content_from_any_field() {
         let run = DisclosedRun::from(&context_with_sentinels(ActionId::new(), EventId::new()));

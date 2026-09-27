@@ -37,7 +37,6 @@ pub fn linked_action_names(actions: &[Action], webhook_name: &str) -> Vec<String
         .collect()
 }
 
-/// Counts each action once even when several of its steps target different webhooks.
 pub fn distinct_linked_actions(rows: &[WebhookRow]) -> usize {
     rows.iter()
         .flat_map(|row| row.linked_actions.iter().map(String::as_str))

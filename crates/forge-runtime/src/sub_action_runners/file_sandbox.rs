@@ -1,6 +1,5 @@
 use std::path::{Component, PathBuf};
 
-/// Canonicalizes the deepest existing prefix to reject a symlink escape inside `assets/`.
 pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err("path is empty".to_owned());
@@ -44,7 +43,6 @@ pub(super) async fn resolve_sandboxed(rel: &str) -> Result<PathBuf, String> {
     Ok(canon_prefix.join(tail))
 }
 
-/// `*` matches any character sequence; all other characters are literal and matching is case-sensitive.
 pub(super) fn glob_matches(pattern: &str, name: &str) -> bool {
     if pattern.is_empty() || pattern == "*" {
         return true;

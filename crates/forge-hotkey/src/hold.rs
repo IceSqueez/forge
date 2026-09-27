@@ -16,11 +16,7 @@ pub(crate) struct Hold {
 
 pub(crate) type HoldMap = HashMap<HotkeyId, Hold>;
 
-/// Publishes the press and opens the hold, unless the registration is already held; the caller
-/// suppresses everything downstream (health included) when this reports `false`.
 pub(crate) fn open(client: &HotkeyClient, id: HotkeyId, combo: String, timestamp_us: u64) -> bool {
-    // The guard spans the publish so a concurrent close cannot drain the map between the press
-    // reaching the bus and the hold existing, which would orphan the press with no release.
     let mut holds = client.holds.lock().unwrap_or_else(|p| p.into_inner());
     if holds.contains_key(&id) {
         return false;

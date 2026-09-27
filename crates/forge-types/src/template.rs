@@ -5,7 +5,6 @@ pub fn is_variable_reference(name: &str) -> bool {
             .all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
-/// Names of every `%name%` token in `template`, in order; a `%` that does not open a valid token is literal text.
 pub fn variable_references(template: &str) -> impl Iterator<Item = &str> {
     TemplatePieces::new(template).filter_map(|piece| match piece {
         TemplatePiece::Reference { name, .. } => Some(name),

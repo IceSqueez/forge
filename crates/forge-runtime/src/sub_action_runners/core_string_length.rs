@@ -93,7 +93,6 @@ impl SubActionRunner for CoreStringLengthRunner {
             config.str_nonempty("into_var").unwrap_or("string.result"),
         );
 
-        // "bytes" mode returns UTF-8 byte count, which differs from char count for non-ASCII input.
         let length = if mode == "bytes" {
             source.len() as i64
         } else {

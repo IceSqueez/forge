@@ -14,8 +14,6 @@ pub(crate) struct HealthSnapshot {
     pub model_name: String,
     pub model_loaded: bool,
     pub tracking_active: bool,
-    /// True while the supervisor is dialing, authenticating or backing off; gates the catalog
-    /// sweep so it does not enqueue requests nobody will drain until this clears.
     pub dialing: bool,
 }
 
@@ -205,8 +203,6 @@ mod tests {
         }
     }
 
-    // Why: the delta index is a hardcoded slot number into the array `metrics()` builds. If the
-    // two ever drift, the UI writes the model name into whichever metric now sits at that slot.
     #[test]
     fn the_model_loaded_delta_addresses_the_metric_labelled_model() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
@@ -299,8 +295,6 @@ mod tests {
         }
     }
 
-    // Why: both counters live in the CONTENT snapshot, not the health snapshot; wiring them to
-    // the health snapshot's own fields would peg them at zero forever.
     #[test]
     fn metrics_report_expression_and_item_counts_from_the_content_snapshot() {
         let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");

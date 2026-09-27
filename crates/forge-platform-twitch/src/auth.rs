@@ -89,11 +89,9 @@ pub struct DeviceCodeInfo {
 #[derive(Clone)]
 pub struct TwitchAuthBundle {
     pub access_token: OAuthToken,
-    /// Absent routes the first expiry to re-auth instead of a silent renewal.
     pub refresh_token: Option<OAuthToken>,
     pub user_info: UserInfo,
     pub client_id: String,
-    /// `None` if the upstream token never expires.
     pub expires_at: Option<std::time::SystemTime>,
 }
 
@@ -204,8 +202,6 @@ impl TwitchAuthFlow {
         })
     }
 
-    /// Stops as soon as `cancel` fires; otherwise polls until Twitch grants a token,
-    /// rejects the code, or the device code's own `expires_in` deadline passes.
     pub async fn wait_for_authorization(
         &mut self,
         cancel: CancellationToken,
@@ -385,7 +381,6 @@ fn map_broadcaster_type(bt: Option<twitch_api::types::BroadcasterType>) -> Broad
     }
 }
 
-/// Priority: runtime env `FORGE_TWITCH_CLIENT_ID` -> compile-time `option_env!` -> `None`.
 pub fn client_id() -> Option<String> {
     let runtime = std::env::var("FORGE_TWITCH_CLIENT_ID").ok();
     resolve_client_id(runtime.as_deref(), option_env!("FORGE_TWITCH_CLIENT_ID"))
@@ -642,8 +637,6 @@ mod tests {
         let PlatformError::Auth { reason } = err else {
             panic!("expected Auth error");
         };
-        // Why: forge-desktop classifies this Display by the substring "cancelled";
-        // the reason wording is a cross-crate contract consumed by twitch_panel.
         assert!(reason.contains("cancelled"), "{reason}");
         assert!(
             token_server.received_requests().await.unwrap().is_empty(),
@@ -711,8 +704,6 @@ mod tests {
 
     #[test]
     fn twitch_auth_flow_is_device_code_grant() {
-        // Why: Twitch deliberately uses the Device Authorization Grant; the loopback/PKCE
-        // flow was removed. Pin that product decision against accidental reversion.
         let AuthFlow::DeviceCode { scopes, .. } = twitch_auth_flow() else {
             panic!("twitch must use the device-code auth flow");
         };

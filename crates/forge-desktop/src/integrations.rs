@@ -35,7 +35,6 @@ pub struct BuiltinObject {
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
 }
 
-/// Every non-OBS screen mount resolves through this map, so it must stay current across sign-in and sign-out.
 #[derive(Clone, Default)]
 pub struct BuiltinRegistry {
     entries: Arc<std::sync::RwLock<HashMap<BuiltinId, BuiltinObject>>>,
@@ -79,14 +78,11 @@ pub struct Integrations {
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Arc<forge_discord::DiscordClient>,
-    /// `None` when the platform MIDI backend failed to initialize.
     pub midi_client: Option<Arc<forge_midi::MidiClient>>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
 }
 
-/// Holds the same `SwitchableObsSink` the registered OBS runners resolve through, so a post-boot
-/// connect reaches them without a restart.
 #[derive(Clone)]
 pub struct ObsInstallSeed {
     sink: Arc<forge_obs::SwitchableObsSink>,
@@ -112,7 +108,6 @@ impl ObsInstallSeed {
         *guard = None;
     }
 
-    /// Returns once the retired client's supervisor has joined, so it can no longer publish.
     pub async fn disconnect_live(&self) {
         let previous = {
             let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
@@ -129,8 +124,6 @@ impl ObsInstallSeed {
     }
 }
 
-/// Holds the same `SwitchableVTubeSink` the registered VTube runners resolve through, so a
-/// post-boot connect reaches them without a restart.
 #[derive(Clone)]
 pub struct VTubeInstallSeed {
     sink: Arc<forge_vtube::SwitchableVTubeSink>,
@@ -195,8 +188,6 @@ pub struct KickInstallSeed {
     pub rewards: Arc<forge_platform_kick::KickRewards>,
 }
 
-/// Holds the same lifecycle cell and credentials manager the registered Twitch sub-actions use, so a
-/// post-boot sign-in shares them without a restart.
 #[derive(Clone)]
 pub struct TwitchInstallSeed {
     pub lifecycle: forge_platform_twitch::TwitchLifecycle,
@@ -204,7 +195,6 @@ pub struct TwitchInstallSeed {
     pub manager: Arc<forge_platform_twitch::TwitchCredentialsManager>,
 }
 
-/// Holds the same handles the registered YouTube sub-actions resolve through, so a post-boot sign-in reaches them without a restart.
 #[derive(Clone)]
 pub struct YoutubeInstallSeed {
     pub manager: Arc<forge_platform_youtube::YoutubeCredentialsManager>,
@@ -1658,7 +1648,6 @@ mod tests {
             );
 
             drop(view);
-            // Why: gpui releases a dropped entity on the next effect flush; its cancelled tasks' futures drop when the executor runs next.
             cx.update(|_| {});
             cx.run_until_parked();
 

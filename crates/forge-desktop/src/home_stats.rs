@@ -135,7 +135,6 @@ pub struct ObsHealth {
     pub dropped_ok: bool,
     pub fps: SharedString,
     pub cpu: SharedString,
-    /// Events-per-second history, oldest first.
     pub throughput: Vec<f32>,
 }
 

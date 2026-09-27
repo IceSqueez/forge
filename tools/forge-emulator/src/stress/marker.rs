@@ -1,12 +1,10 @@
 const OPEN: &str = "~q";
 const CLOSE: char = '~';
 
-/// Tags a payload with its sequence number so every effect it causes can be traced back to it.
 pub fn marker(seq: u64) -> String {
     format!("{OPEN}{seq}{CLOSE}")
 }
 
-/// The first well-formed marker anywhere in `text`.
 pub fn find_marker(text: &str) -> Option<u64> {
     let mut rest = text;
     while let Some(start) = rest.find(OPEN) {

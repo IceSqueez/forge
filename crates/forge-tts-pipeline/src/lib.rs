@@ -63,7 +63,6 @@ pub enum ReplacementRule {
         pattern: String,
         replacement: String,
     },
-    /// The `regex` crate guarantees linear-time matching with no backtracking - no ReDoS risk.
     Regex {
         compiled: regex::Regex,
         replacement: String,
@@ -134,7 +133,6 @@ pub enum PipelineError {
     },
 }
 
-/// Holds pre-compiled `Regex` objects, so construction is fallible.
 #[derive(Debug, Clone, Default)]
 pub struct PipelineConfig {
     pub emote_sources: EmoteSources,
@@ -487,13 +485,10 @@ const STAGES: [StageName; 4] = [
     StageName::Output,
 ];
 
-/// Never panics; `config` must be pre-validated via `PipelineConfig::new`.
 pub fn process(text: &str, config: &PipelineConfig, context: &PipelineContext) -> PipelineResult {
     run_stages(text, config, context, config.output.read_display_name_first)
 }
 
-/// The spoken text with the display-name prefix suppressed; `None` when the message is
-/// skipped. A viewer name in front of a 5-word message dominates a language sample.
 pub fn process_for_language(
     text: &str,
     config: &PipelineConfig,
@@ -804,8 +799,6 @@ mod tests {
         );
     }
 
-    /// Why: lowercasing changes the UTF-8 length of U+212A, U+0130 and U+023A, so any match
-    /// offset taken from a lowercased copy slices the original mid-character and panics.
     #[test]
     fn plain_replacement_keeps_char_boundaries_when_lowercase_changes_utf8_length() {
         for (case, text, pattern, expected) in [

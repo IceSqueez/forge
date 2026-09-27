@@ -182,7 +182,6 @@ impl LiveClip {
     }
 }
 
-/// A completion dropped before its verdict counts as a stop, and the stop still reaches the page.
 struct StopUnlessSettled {
     clip: LiveClip,
     settled: bool,
@@ -249,7 +248,6 @@ async fn forward_commands(clip: &LiveClip) {
     }
 }
 
-/// Resolves once the clip has spent `budget` un-paused, or at the wall-clock ceiling while held.
 async fn run_out(controls: &Controls, budget: Duration) {
     let ceiling = Instant::now() + WATCHDOG_CEILING;
     let mut remaining = budget;

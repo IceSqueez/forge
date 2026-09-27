@@ -30,7 +30,6 @@ impl fmt::Display for BuiltinId {
     }
 }
 
-/// Opaque icon token resolved to a tabler icon string by `forge-components::icon`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SectionIcon(pub(crate) String);
@@ -104,7 +103,6 @@ pub enum TrailingToken {
     ActionIcon {
         icon: SectionIcon,
         tint: TokenColor,
-        /// Enqueued through the action engine on glyph click, exactly as a quick action is.
         step: SubActionStep,
     },
 }
@@ -119,7 +117,6 @@ pub enum RowAction {
 #[serde(rename_all = "snake_case")]
 pub struct ContentListItem {
     pub icon: SectionIcon,
-    /// `None` tints the leading glyph by `active` state; `Some` overrides it.
     pub icon_tint: Option<TokenColor>,
     pub name: String,
     pub monospace_name: bool,
@@ -127,7 +124,6 @@ pub struct ContentListItem {
     pub active_label: Option<String>,
     pub trailing: Vec<TrailingToken>,
     pub enabled: bool,
-    /// Enqueued through the action engine on row click, exactly as a quick action is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_click: Option<SubActionStep>,
 }
@@ -140,15 +136,12 @@ fn default_row_padding_y_px() -> u8 {
 pub struct ContentList {
     pub title: String,
     pub icon: SectionIcon,
-    /// Sits directly after the title; `count_label` sits on the header's opposite edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inline_label: Option<String>,
     pub count_label: Option<String>,
-    /// `Some` pins the row area to that many rows and scrolls inside it; `None` grows to fit.
     pub visible_rows: Option<u16>,
     #[serde(default = "default_row_padding_y_px")]
     pub row_padding_y_px: u8,
-    /// Offers a header control that forces the owning integration to re-sync this roster now.
     #[serde(default)]
     pub refreshable: bool,
     pub items: Vec<ContentListItem>,
@@ -322,8 +315,6 @@ pub enum PickerKind {
     ItemInstance,
 }
 
-/// Maps to a fixed `ForgePalette` field so a quick action's icon renders in the same
-/// semantic hue across every theme.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuickActionAccent {
@@ -343,8 +334,6 @@ pub struct QuickActionChoiceOption {
     pub label: String,
 }
 
-/// Static options are self-contained in the descriptor; dynamic options name a
-/// `PickerKind` resolved asynchronously by the runtime->UI bridge when the modal opens.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuickActionChoiceSource {
@@ -357,19 +346,13 @@ pub enum QuickActionChoiceSource {
 pub enum QuickActionFieldKind {
     Text,
     Multiline,
-    /// One option per line, collected as `Variant::Array` rather than a single string.
     MultilineList,
     Toggle,
     Choice(QuickActionChoiceSource),
-    Int {
-        min: i64,
-        max: i64,
-    },
+    Int { min: i64, max: i64 },
 }
 
 impl QuickActionFieldKind {
-    /// Splits into one array element per line only for `MultilineList`; every other kind
-    /// marshals a collected `Text` value straight to `Variant::String`.
     pub fn marshal(&self, value: &QuickActionFieldValue) -> Variant {
         match (self, value) {
             (Self::MultilineList, QuickActionFieldValue::Text(text)) => Variant::Array(
@@ -403,8 +386,6 @@ pub struct QuickActionField {
     pub placeholder: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
-    /// Mirrors the target runner rejecting a blank value: the collection form blocks the run
-    /// instead of letting it fail.
     #[serde(default)]
     pub required: bool,
 }
@@ -418,8 +399,6 @@ impl QuickActionField {
     }
 }
 
-/// `Unknown` is fail-open: the action stays enabled and undecorated, so lost lifecycle
-/// bookkeeping never blocks a run the user needs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QuickActionLiveness {
@@ -434,15 +413,10 @@ pub struct QuickAction {
     pub label: String,
     pub icon: SectionIcon,
     pub enabled: bool,
-    /// Set when `enabled` is false because the broadcaster's tier/plan doesn't unlock this
-    /// action (e.g. "Requires Twitch Affiliate or Partner"), distinct from being merely
-    /// disconnected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locked_reason: Option<String>,
     #[serde(default)]
     pub liveness: QuickActionLiveness,
-    /// Category header the generic renderer groups this action under; `None` falls into a
-    /// single untitled section.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -455,8 +429,6 @@ pub struct QuickAction {
     pub accent: QuickActionAccent,
     pub subaction_template: SubActionStep,
     pub picker: Option<PickerKind>,
-    /// Empty means the generic renderer degrades the collection modal to a plain run
-    /// confirmation instead of a field form.
     #[serde(default)]
     pub fields: Vec<QuickActionField>,
 }
@@ -502,17 +474,12 @@ pub trait BuiltinStatus: Send + Sync {
     fn endpoint(&self) -> Option<&str>;
     fn capability_flags(&self) -> CapabilityFlags;
     fn header_actions(&self) -> Vec<HeaderAction>;
-    /// Absolute expiry of the active access token, when the integration authenticates with an
-    /// expiring OAuth token; `None` for integrations without one (the UI omits the countdown).
     fn token_expiry(&self) -> Option<SystemTime> {
         None
     }
-    /// Small pills rendered inline after the hero name (e.g. account id, broadcaster tier).
     fn name_badges(&self) -> Vec<HeroBadge> {
         Vec::new()
     }
-    /// Account login shown as the hero title for account-scoped integrations; `None` falls back
-    /// to `display_name`, which continues to label the breadcrumb either way.
     fn hero_name(&self) -> Option<&str> {
         None
     }
@@ -531,8 +498,6 @@ pub trait QuickActions: Send + Sync {
     fn actions(&self) -> Vec<QuickAction>;
 }
 
-/// Coarse on purpose: a bearer, refresh token, or full request URL must never reach the
-/// UI or any log sink, so the transport error is collapsed here instead of propagated.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ControlFailure {
     NotConnected,
@@ -555,15 +520,12 @@ impl fmt::Display for ControlFailure {
 
 impl std::error::Error for ControlFailure {}
 
-/// The steady connection state that follows is observed through `BuiltinStatus::connection()`
-/// and the health stream, not returned here.
 pub type ControlOutcome = Result<(), ControlFailure>;
 
 #[async_trait]
 pub trait BuiltinControl: Send + Sync {
     async fn reconnect(&self) -> ControlOutcome;
     async fn disconnect(&self) -> ControlOutcome;
-    /// The renewed token stays inside the implementation; only accept/reject crosses this boundary.
     async fn refresh_token(&self) -> ControlOutcome;
 }
 
@@ -964,8 +926,6 @@ mod tests {
 
     #[test]
     fn an_action_runs_unless_it_is_disabled_or_its_target_entity_is_known_absent() {
-        // Why: `Unknown` must stay runnable - lost lifecycle bookkeeping may never block a
-        // run the user needs, only positively-known absence may.
         let cases = [
             (true, QuickActionLiveness::Unknown, true),
             (true, QuickActionLiveness::Live, true),

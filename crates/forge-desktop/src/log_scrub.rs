@@ -77,7 +77,6 @@ static RULES: LazyLock<Option<Vec<(Regex, &'static str)>>> = LazyLock::new(|| {
     Some(rules)
 });
 
-/// Backstop only: matches credential, URL-query, home-path and email shapes; free-form prose has no signature it can see.
 pub fn scrub(input: &str) -> Cow<'_, str> {
     let Some(rules) = RULES.as_ref() else {
         return match input.ends_with('\n') {
@@ -310,9 +309,6 @@ mod tests {
 
     #[test]
     fn a_credential_name_before_a_separator_redacts_even_a_harmless_value() {
-        // Why: the backstop cannot tell a token from prose, and invariant #7 prefers
-        // losing a diagnostic word over shipping a token to a public issue tracker.
-        // Pinned so the over-scrub is never "fixed" into a leak.
         assert_eq!(scrub("token: expired"), "token: <redacted:token>");
     }
 
@@ -389,8 +385,6 @@ mod tests {
 
     #[test]
     fn a_secret_field_never_reaches_the_sink_whether_the_layer_colours_its_output_or_not() {
-        // Why: the console layer keeps ANSI on while the file layer turns it off, so the
-        // vocabulary has to survive the SGR codes tracing wraps around a field name.
         for ansi in [false, true] {
             let sink = Sink::default();
             let subscriber = tracing_subscriber::registry().with(

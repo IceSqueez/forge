@@ -32,7 +32,6 @@ pub fn data_dir() -> PathBuf {
     base_dirs().data_dir().join(app_segment())
 }
 
-/// Where overlay pages are materialized when the server setting is left blank.
 pub fn overlays_dir() -> PathBuf {
     data_dir().join("overlays")
 }

@@ -35,7 +35,6 @@ impl OutputDeviceHandle {
     }
 }
 
-/// Reads the handle once per playback call, so a swap reaches the next clip and leaves a running one untouched.
 pub struct DeviceSink {
     device: OutputDeviceHandle,
     factory: Arc<dyn AudioSinkFactory>,

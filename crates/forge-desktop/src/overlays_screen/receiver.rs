@@ -10,7 +10,6 @@ use crate::async_bridge;
 use crate::audio_routes::{AudioDomain, load_audio_routes, set_destination, set_route};
 
 impl OverlaysView {
-    /// Read once when the screen mounts; afterwards this screen is the only writer it can observe.
     pub(super) fn load_receiver(&mut self, cx: &mut Context<Self>) {
         let settings = Arc::clone(&self.settings_repo);
         async_bridge::run_async(
@@ -37,8 +36,6 @@ impl OverlaysView {
         cx.notify();
     }
 
-    /// Only one overlay receives forge audio, so turning it on here moves it off whichever overlay
-    /// held it; turning it off here leaves no receiver.
     pub(super) fn set_receiver(&mut self, id: OverlayId, on: bool, cx: &mut Context<Self>) {
         let next = if on {
             Some(id)
@@ -75,8 +72,6 @@ impl OverlaysView {
     }
 }
 
-/// A receiver only hears audio whose route plays an overlay, so choosing one moves every
-/// local-only domain onto the overlay; clearing it leaves the routes as they are.
 pub(super) async fn route_audio_to(
     settings: &dyn SettingsRepo,
     destination: Option<&OverlayId>,
@@ -104,8 +99,6 @@ pub(super) fn route_for_receiver(route: AudioRoute) -> AudioRoute {
     }
 }
 
-/// Clears the stored receiver when it is `id`, before the overlay goes away: overlay ids are
-/// minted from the name, so a stale id would hand the audio to a re-created namesake.
 pub(super) async fn release_receiver(
     settings: &dyn SettingsRepo,
     id: &OverlayId,

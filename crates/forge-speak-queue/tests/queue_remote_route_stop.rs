@@ -19,7 +19,6 @@ use common::{make_deps, request, standard_registry, wait_for};
 const DESTINATION: &str = "stage-audio";
 const EVENT_WAIT_MS: u64 = 2_000;
 const COMMAND_WAIT: Duration = Duration::from_secs(2);
-/// Why: two control-poll ticks; a duplicate Stop from the observer would land inside it.
 const SECOND_STOP_WINDOW: Duration = Duration::from_millis(100);
 
 struct SilentPage {

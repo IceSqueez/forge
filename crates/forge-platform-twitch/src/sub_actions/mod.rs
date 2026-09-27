@@ -356,7 +356,6 @@ pub(crate) mod test_support {
             Self::returning_sequence(vec![response])
         }
 
-        /// Consumed FIFO, one response per `execute` call; exhausted queue yields `Ok(Null)`.
         pub(crate) fn returning_sequence(
             responses: Vec<Result<serde_json::Value, HelixError>>,
         ) -> Self {
@@ -469,8 +468,6 @@ pub(crate) mod test_support {
         .unwrap()
     }
 
-    /// Every Twitch surface aimed at a loopback port nothing listens on, so a test that strays
-    /// onto the network fails fast instead of reaching the real services.
     pub(crate) fn unreachable_twitch_endpoints() -> PlatformEndpoints {
         let port = std::net::TcpListener::bind("127.0.0.1:0")
             .unwrap()

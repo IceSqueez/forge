@@ -301,8 +301,6 @@ impl IntegrationDetail {
     }
 }
 
-/// First-seen order of groups, with ungrouped (`None`) always last so it renders as the
-/// single untitled section.
 fn group_order<'a>(matches: &[(usize, &'a QuickAction)]) -> Vec<Option<&'a str>> {
     let mut order: Vec<Option<&str>> = Vec::new();
     for (_, action) in matches {

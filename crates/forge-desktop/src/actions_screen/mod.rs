@@ -208,7 +208,6 @@ pub struct ScreenActionsView {
     grid_picker: Option<GridPickerForm>,
     add_trigger: Option<AddTriggerStage>,
     nav_path: Vec<nav::NavFrame>,
-    /// Keyed by `(step_index, case_index)` within the current chain.
     case_fields: BTreeMap<(usize, usize), CaseField>,
     step_health: Vec<analyzer::StepHealth>,
     _search_sub: Subscription,

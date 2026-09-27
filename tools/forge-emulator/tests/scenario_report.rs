@@ -1,4 +1,3 @@
-//! Bug reports rendered from synthetic run outcomes. Nothing here starts forge.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeMap;
@@ -161,7 +160,6 @@ fn all_passed(scenario: &Scenario) -> Vec<StepOutcome> {
         .collect()
 }
 
-/// Every step passed except `expectation` of `step`, which failed with `cause` and `evidence`.
 fn one_failure(
     scenario: &Scenario,
     step: usize,
@@ -1166,7 +1164,6 @@ fn write_report_into_a_missing_directory_names_the_file_it_could_not_write() {
     );
 }
 
-/// The real seeder mints the bearer; the fixture carries the fake Twitch access token.
 #[tokio::test]
 async fn neither_seeded_token_appears_in_any_rendered_report() {
     let fixture = Fixture::chat_command_mvp();

@@ -7,7 +7,6 @@ use forge_tts_pipeline::{
 };
 use forge_types::Shared;
 
-/// Only produced by the save posture; the boot posture drops invalid rules instead.
 #[derive(Debug, thiserror::Error)]
 pub enum FilterMappingError {
     #[error("rule {index} ({name:?}) has invalid regex pattern `{pattern}`: {source}")]
@@ -161,7 +160,6 @@ fn storage_blocklist_mode_to_pipeline(mode: forge_storage::BlocklistMode) -> Blo
     }
 }
 
-/// Disabled rules and empty literal patterns map to `None`; a bad regex maps to `Err`.
 fn map_rule_strict(
     rule: &FilterRule,
     index: usize,
@@ -198,10 +196,7 @@ fn map_rule_strict(
                 replacement: replacement.clone(),
             }))
         }
-        FilterRuleKind::Blocklist { .. } => {
-            // Collected into word_blocklist separately by the caller, not returned here.
-            Ok(None)
-        }
+        FilterRuleKind::Blocklist { .. } => Ok(None),
     }
 }
 
@@ -211,7 +206,6 @@ struct MappedRules {
     blocklist_mode: BlocklistMode,
 }
 
-/// `strict = true` rejects on the first invalid regex; `strict = false` drops it and logs.
 fn map_rules(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
@@ -219,7 +213,6 @@ fn map_rules(
 ) -> Result<MappedRules, FilterMappingError> {
     let mut replacement_rules = Vec::new();
     let mut word_blocklist = Vec::new();
-    // Last blocklist rule's mode wins; if no blocklist rule exists, fall back to settings.
     let mut blocklist_mode = storage_blocklist_mode_to_pipeline(settings.blocklist_mode);
 
     for (index, rule) in rules.iter().enumerate() {
@@ -264,7 +257,6 @@ fn emote_sources_from_settings(settings: &TtsPipelineSettings) -> EmoteSources {
     }
 }
 
-/// Rejects on the first invalid regex; the live config is never replaced on `Err`.
 pub fn build_config_strict(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
@@ -286,18 +278,14 @@ pub fn build_config_strict(
     ))
 }
 
-/// Drops invalid regex rules and logs, so startup survives a hand-edited DB.
 pub fn build_config_lenient(
     rules: &[FilterRule],
     settings: &TtsPipelineSettings,
 ) -> PipelineConfig {
-    let mapped = map_rules(rules, settings, false).unwrap_or_else(|_| {
-        // Unreachable under strict=false unless the strict guard is bypassed by a bug.
-        MappedRules {
-            replacement_rules: vec![],
-            word_blocklist: vec![],
-            blocklist_mode: storage_blocklist_mode_to_pipeline(settings.blocklist_mode),
-        }
+    let mapped = map_rules(rules, settings, false).unwrap_or_else(|_| MappedRules {
+        replacement_rules: vec![],
+        word_blocklist: vec![],
+        blocklist_mode: storage_blocklist_mode_to_pipeline(settings.blocklist_mode),
     });
     let mut replacement_rules = mapped.replacement_rules;
     let mut skip_rules = skip_rules_from_settings_lenient(settings);

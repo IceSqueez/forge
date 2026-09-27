@@ -3,19 +3,16 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// One line of forge's file log, split into what a scenario may match on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogRecord {
     pub file: PathBuf,
     pub level: String,
     pub target: String,
-    /// Values as rendered, with the quoting of string values removed.
     pub fields: BTreeMap<String, String>,
     pub line: String,
 }
 
 impl LogRecord {
-    /// `None` for lines outside the file layer's `<time> <LEVEL> [spans: ]<target>: <message> <fields>` shape.
     pub fn parse(file: PathBuf, line: &str) -> Option<Self> {
         let mut words = line.split(' ').filter(|word| !word.is_empty());
         let _timestamp = words.next()?;
@@ -55,7 +52,6 @@ fn is_target(word: &str) -> bool {
         })
 }
 
-/// The first word ending in `:` with a module-path shape; span prefixes carry braces and never qualify.
 fn split_target(rest: &str) -> Option<(&str, &str)> {
     let mut offset = 0;
     for word in rest.split(' ') {
@@ -76,7 +72,6 @@ enum Token {
     Prose,
 }
 
-/// Fields follow the message, so only the unbroken run of `key=value` tokens at the end counts.
 fn trailing_fields(text: &str) -> BTreeMap<String, String> {
     let mut run: Vec<(String, String)> = Vec::new();
     let mut rest = text;
@@ -133,7 +128,6 @@ fn is_field_name(key: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
-/// Undoes Rust `Debug` string escaping up to the closing quote; yields the text and bytes consumed.
 fn unquote(text: &str) -> Option<(String, usize)> {
     let mut out = String::new();
     let mut chars = text.char_indices();

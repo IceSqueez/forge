@@ -72,7 +72,6 @@ impl fmt::Debug for SubActionTelemetry {
     }
 }
 
-/// Trims, peels one enclosing `%...%` pair, then trims again; charset-agnostic so dotted names (`time.formatted`) survive verbatim.
 pub fn strip_var_decoration(raw: &str) -> String {
     let trimmed = raw.trim();
     trimmed
@@ -92,7 +91,6 @@ pub fn normalize_var_name(raw: &str) -> Option<String> {
     }
 }
 
-/// Renders interpolated content verbatim, so it is never sound for the diagnostic bundle - that path takes `DisclosedRun`.
 pub fn variant_preview(value: &Variant) -> String {
     const MAX_CHARS: usize = 800;
     let rendered = match value {
@@ -116,10 +114,8 @@ pub fn variant_preview(value: &Variant) -> String {
 }
 
 impl SubActionTelemetry {
-    /// Sentinel `index` for a nested step lifted from a branch/loop/switch body; such a row's `kind` carries a parent-path locator instead of a bare kind id.
     pub const NESTED: usize = usize::MAX;
 
-    /// Surfaces keyed by top-level position skip nested rows; the full flat list keeps them so a branch failure stays diagnosable.
     pub fn is_nested(&self) -> bool {
         self.index == Self::NESTED
     }
@@ -139,7 +135,6 @@ pub enum ExecutionMetadata {
     },
 }
 
-/// Immutable after construction; built once from trigger event and globals snapshot.
 #[derive(Clone)]
 pub struct ArgStack(BTreeMap<String, Variant>);
 
@@ -161,7 +156,6 @@ impl ArgStack {
         self
     }
 
-    /// An exact flat key wins over traversal, so shipped dotted names (`time.formatted`) keep resolving; only then is the token walked as a path, numeric segments indexing arrays.
     pub fn resolve(&self, key: &str) -> Option<&Variant> {
         if let Some(exact) = self.0.get(key) {
             return Some(exact);
@@ -178,7 +172,6 @@ impl ArgStack {
         Some(current)
     }
 
-    /// Single-pass `%name%` substitution over `template`. Unknown tokens and any `%` that does not open a valid token remain verbatim.
     pub fn interpolate(&self, template: &str) -> String {
         let mut result = String::with_capacity(template.len());
         for piece in TemplatePieces::new(template) {
@@ -518,8 +511,6 @@ mod tests {
         assert_eq!(back, telemetry);
     }
 
-    /// Why: the redaction layer is `Debug`-only - `%var%` interpolation and the run-history preview
-    /// must keep rendering what actually ran, or every action silently sends blanked text.
     #[test]
     fn debug_redaction_does_not_reach_the_display_paths() {
         let stack = stack_with(&[("body", Variant::String("SENTINEL_BODY".to_string()))]);

@@ -26,7 +26,6 @@ impl CreatePollRunner {
     }
 }
 
-/// Returns Err if the option count falls outside `[MIN_OPTIONS, MAX_OPTIONS]`.
 fn parse_options(raw: &str) -> Result<Vec<String>, String> {
     let options: Vec<String> = raw
         .split(['\n', ','])

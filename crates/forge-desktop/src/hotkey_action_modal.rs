@@ -64,7 +64,6 @@ pub struct ActionModalLaunch {
     pub instance_id: Option<TriggerInstanceId>,
     pub combo: String,
     pub edge: HotkeyEdge,
-    /// Edge held by the row's other half; offering it would create a duplicate that hides one binding.
     pub locked_edge: Option<HotkeyEdge>,
     pub linked_action: Option<ActionId>,
 }

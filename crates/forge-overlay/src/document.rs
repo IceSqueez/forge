@@ -29,7 +29,6 @@ struct ConfigDocument<'a> {
     config: Map<String, Value>,
 }
 
-/// Emits the effective config as plain JSON, never the tagged [`forge_types::Variant`] form, because the page consumes it directly.
 pub fn config_document(
     instance: &OverlayInstance,
     descriptor: &dyn OverlayKindDescriptor,
@@ -86,8 +85,6 @@ struct SampleDocument<'a> {
     content: Map<String, Value>,
 }
 
-/// Carries no credential: this is the content a test delivery would send, and the page reads it
-/// only when it was opened as its own preview.
 pub fn sample_document(
     instance: &OverlayInstance,
     descriptor: &dyn OverlayKindDescriptor,

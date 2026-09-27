@@ -50,7 +50,6 @@ impl CpalSink {
         }
     }
 
-    /// Resolves once a device accepted the stream; `None` means the playback already ran to its end.
     async fn start_playback(
         &self,
         buffer: PcmBuffer,

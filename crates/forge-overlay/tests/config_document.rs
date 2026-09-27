@@ -168,9 +168,6 @@ fn an_icon_that_did_not_resolve_reaches_the_page_as_an_empty_file_rather_than_a_
     );
 }
 
-/// The page authenticates its own socket with this value, so the slot is deliberate; what must
-/// never happen is the credential appearing when the instance carries none, or leaking into the
-/// `config` map every kind renders field by field.
 #[test]
 fn the_page_credential_is_a_top_level_slot_present_only_when_the_instance_holds_one() {
     let bound: Value = serde_json::from_str(&raw_document(

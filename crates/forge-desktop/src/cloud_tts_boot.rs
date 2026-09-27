@@ -11,7 +11,6 @@ use forge_tts_cloud::openai::OpenAiEngineFactory;
 use forge_tts_cloud::polly::PollyEngineFactory;
 use forge_tts_core::{EngineId, TtsRegistry};
 
-/// Best-effort: engines with absent or unparseable credentials are skipped (logged), not errors.
 pub async fn register_cloud_engines(registry: &RwLock<TtsRegistry>, creds: &dyn CredentialsRepo) {
     try_register_azure(registry, creds).await;
     try_register_elevenlabs(registry, creds).await;

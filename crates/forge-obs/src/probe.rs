@@ -67,8 +67,6 @@ mod tests {
 
     const PROBE_PASSWORD: &str = "obs-probe-secret-1a2b3c";
 
-    /// Binds and immediately releases a loopback port so the probe hits a refused connection
-    /// without touching anything outside this process.
     async fn closed_loopback_port() -> u16 {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -93,8 +91,6 @@ mod tests {
         );
     }
 
-    // Why: the probe is the only path that takes a plaintext OBS password straight from a form
-    // field, and its failure text is rendered verbatim in the setup screen banner.
     #[tokio::test]
     async fn probe_failure_never_carries_the_password_into_its_error_text() {
         let port = closed_loopback_port().await;

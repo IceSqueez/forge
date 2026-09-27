@@ -232,8 +232,6 @@ mod tests {
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
-    // Why: this text is persisted to run history, not only to the log, so a leaked API error
-    // body outlives the session it was produced in.
     #[tokio::test]
     async fn fetch_error_maps_to_failed_without_leaking_token_url_or_response_body() {
         let server = MockServer::start().await;

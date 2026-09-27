@@ -754,7 +754,6 @@ fn announce_stopped(
     emit_connection_changed(publisher, endpoint, false, None, None);
 }
 
-/// Hand-only tracking changes arrive with an unchanged `faceFound` and must not re-fire the face kinds.
 fn is_repeated_face_state(
     env: &crate::events::RawEnvelope,
     last_face_found: &mut Option<bool>,

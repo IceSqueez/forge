@@ -75,7 +75,6 @@ impl SubActionRunner for ResolvePredictionRunner {
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         validate_prediction_config(KIND_ID, config)?;
-        // winning_outcome_id is only required for RESOLVED; other status runners omit this field.
         match config.get("winning_outcome_id") {
             Some(Variant::String(s)) if !s.is_empty() => Ok(()),
             _ => Err(RegistryError::InvalidConfig(format!(
@@ -89,7 +88,6 @@ impl SubActionRunner for ResolvePredictionRunner {
         config: &SubActionConfig,
         ctx: &RunContext<'_>,
     ) -> (SubActionTelemetry, Option<ArgStack>) {
-        // winning_outcome_id is only sent in the body for RESOLVED; lock and cancel pass None.
         execute_prediction_runner(
             &self.transport,
             &self.identity,

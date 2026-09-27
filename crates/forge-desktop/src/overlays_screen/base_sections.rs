@@ -246,8 +246,6 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    /// Fires the stored content through the same path an action step takes, with sample values
-    /// for the event variables, so the show queues, sounds and speaks as a real one would.
     fn fire_show(&mut self, cx: &mut Context<Self>) {
         if self.base.in_flight() {
             return;

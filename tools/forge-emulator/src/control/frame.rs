@@ -6,7 +6,6 @@ use super::event::decode_push;
 #[derive(Debug, Clone)]
 pub enum Observation {
     Event(Event),
-    /// The server's per-client buffer overflowed and this many events were never delivered.
     Dropped(u64),
     Undecodable {
         frame: String,

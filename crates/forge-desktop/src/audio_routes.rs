@@ -38,7 +38,6 @@ pub struct AudioRoutes {
     pub destination: Option<OverlayId>,
 }
 
-/// An unreadable or unknown stored value yields the local route; a routing setting never blocks boot.
 pub async fn load_audio_routes(repo: &dyn SettingsRepo) -> AudioRoutes {
     AudioRoutes {
         speech: stored_route(repo, AudioDomain::Speech).await,
@@ -55,7 +54,6 @@ pub async fn set_route(
     repo.set_string(domain.key(), route.as_str()).await
 }
 
-/// `None` removes the key, which is how "no audio overlay chosen" is stored.
 pub async fn set_destination(
     repo: &dyn SettingsRepo,
     destination: Option<&OverlayId>,
@@ -156,7 +154,6 @@ impl fmt::Display for RouteFallback {
     }
 }
 
-/// `route.plays_overlay()` holds exactly when `destination` is `Some`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoutePlan {
     pub route: AudioRoute,
@@ -212,8 +209,6 @@ pub struct RoutesInstall {
     pub clip_route: ClipRoute,
 }
 
-/// `overlay_sink` runs at most once, and only when a resolved destination is ready and either
-/// plan plays it; its `None` folds back to a local-only composition exactly like a missing sink.
 pub fn compose_routes(
     speech_plan: &RoutePlan,
     clips_plan: &RoutePlan,
@@ -232,8 +227,6 @@ pub fn compose_routes(
     }
 }
 
-/// Speech that belongs to a show reaches the stream only through that show's overlay; `local`
-/// joins it only while the global speech route plays locally.
 pub fn show_speech_legs(
     speech_plan: &RoutePlan,
     remote: Arc<dyn RemoteAudioDestination>,
@@ -706,9 +699,6 @@ mod tests {
         }
     }
 
-    // Why: `ClipRoute` keeps its overlay leg private, so the reference count on the sink the
-    // factory handed back is the only way here to see that the clip side was given that same
-    // sink rather than nothing; which legs it then feeds is a soundboard-side contract.
     #[test]
     fn the_clip_route_is_handed_the_same_overlay_sink_as_the_speech_side() {
         let overlay = Arc::new(RecordingSink::default()) as Arc<dyn AudioSink>;

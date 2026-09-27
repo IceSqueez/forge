@@ -10,7 +10,6 @@ use crate::fixture::ForgeDataDir;
 const TWITCH_CLIENT_ID_VARIABLE: &str = "FORGE_TWITCH_CLIENT_ID";
 pub const DEFAULT_LOG_DIRECTIVES: &str = "info,forge=debug";
 
-/// Passed through from the emulator's environment when present; nothing else is inherited.
 pub const INHERITED_VARIABLES: [&str; 20] = [
     "PATH",
     "WAYLAND_DISPLAY",
@@ -53,12 +52,9 @@ impl ForgeCommand {
 pub struct LaunchSpec {
     pub forge: ForgeCommand,
     pub data_dir: ForgeDataDir,
-    /// Becomes forge's HOME and XDG base, so no home-relative lookup reaches the user's files.
     pub home: PathBuf,
     pub twitch_client_id: Option<String>,
-    /// Names must be forge endpoint-override variables, as `FakeTwitch::endpoint_overrides` yields.
     pub endpoint_overrides: Vec<(&'static str, String)>,
-    /// `RUST_LOG` filter syntax.
     pub log_directives: String,
 }
 
@@ -84,7 +80,6 @@ impl LaunchSpec {
         Ok(())
     }
 
-    /// Clears the command's environment and rebuilds it from `inherited` through the allowlist.
     pub(crate) fn configure_environment<K, V>(
         &self,
         command: &mut Command,

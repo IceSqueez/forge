@@ -1,6 +1,3 @@
-//! An endpoint override redirects platform traffic that carries real tokens, so the loopback-only
-//! refusal table is a credential-exfiltration guard. Everything is driven through
-//! `PlatformEndpoints::resolve` with a lookup closure; the process environment is never touched.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -51,8 +48,6 @@ fn non_unicode_value() -> OsString {
 
 #[test]
 fn unconfigured_endpoints_reach_the_production_services_over_tls() {
-    // Why: consumer slices delete their local URL constants, leaving this roster the only record
-    // of where authenticated traffic goes; a drifted default sends tokens to the wrong host.
     let production = [
         (EndpointSurface::TwitchApi, "https://api.twitch.tv"),
         (
@@ -305,10 +300,6 @@ impl Visit for FieldCollector {
     }
 }
 
-// Why: the callsite interest cache is process-global while the capture subscriber is
-// thread-local. A parallel test reaching the WARN callsite with no subscriber registers it as
-// `Interest::never()`, which short-circuits the event before a capture's `enabled()` runs. This
-// global floor answers `sometimes` for every callsite so the cache never collapses to `never`.
 struct InterestFloor;
 
 impl tracing::Subscriber for InterestFloor {

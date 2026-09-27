@@ -25,8 +25,6 @@ impl AudioCommand {
     }
 }
 
-/// `clip_id` addresses later commands and is never echoed back by the page; the capability lives
-/// in `clip_path` and `report_path` and is the only thing that authorizes either request.
 pub struct AudioAnnouncement<'a> {
     pub clip_id: &'a str,
     pub clip_path: &'a str,
@@ -64,13 +62,11 @@ pub fn announcement_content(announcement: &AudioAnnouncement<'_>) -> OverlayConf
     ])
 }
 
-/// Tags an announcement or a show with the token that joins a show to its speech on the page.
 pub fn joined_to_show(mut content: OverlayConfig, show: &str) -> OverlayConfig {
     content.insert(config::SHOW.to_owned(), Variant::String(show.to_owned()));
     content
 }
 
-/// Ends the page's wait for the speech of `show`, which is then shown at once without it.
 pub fn silent_reveal_content(show: &str) -> OverlayConfig {
     OverlayConfig::from([
         (
@@ -81,7 +77,6 @@ pub fn silent_reveal_content(show: &str) -> OverlayConfig {
     ])
 }
 
-/// A `None` clip reaches every clip the page still holds.
 pub fn command_content(command: AudioCommand, clip_id: Option<&str>) -> OverlayConfig {
     OverlayConfig::from([
         (

@@ -14,7 +14,6 @@ use crate::overlay::OverlayPages;
 use crate::scenario::{Crowd, StepAction};
 use crate::twitch::FakeTwitch;
 
-/// Resolves a scenario's action names to the ids the seeder stored.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionIndex {
     by_name: HashMap<String, ActionId>,
@@ -54,7 +53,6 @@ pub(crate) struct Stimuli<'a> {
 }
 
 impl Stimuli<'_> {
-    /// `ForgeReady` is satisfied before any step runs, so it is never performed here.
     pub(crate) async fn perform(&self, action: &StepAction) -> Result<ActionDetail, ActionFailure> {
         match action {
             StepAction::ForgeReady { .. } => Err(plain(

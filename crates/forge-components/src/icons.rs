@@ -358,7 +358,6 @@ impl Icon {
     }
 }
 
-/// Register once on the `Application` via `with_assets`, or `svg()` can't resolve an [`Icon::path`].
 pub struct IconAssets;
 
 impl AssetSource for IconAssets {
@@ -379,7 +378,6 @@ impl AssetSource for IconAssets {
     }
 }
 
-/// `color` fully drives the tint regardless of the paint declared inside the SVG.
 pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
     svg()
         .flex_none()
@@ -388,7 +386,6 @@ pub fn icon(icon: Icon, size: Pixels, color: Rgba) -> impl IntoElement {
         .text_color(color)
 }
 
-/// Continuously rotates `glyph`. Each live instance needs a distinct `id`, or gpui shares one animation clock across them.
 pub fn spinner(
     id: impl Into<ElementId>,
     glyph: Icon,
@@ -448,8 +445,6 @@ mod tests {
         assert!(loaded.is_none());
     }
 
-    // Why: `IconAssets::load` resolves a path to the FIRST variant claiming it, so two variants
-    // sharing one file silently render the wrong glyph for the loser instead of failing to build.
     #[test]
     fn no_two_icon_variants_claim_the_same_asset_path() {
         let mut seen: std::collections::HashMap<&str, Icon> = std::collections::HashMap::new();

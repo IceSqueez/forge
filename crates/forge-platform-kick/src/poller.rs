@@ -106,8 +106,6 @@ fn redemption_payload(record: &RedemptionRecord) -> serde_json::Value {
     })
 }
 
-// Why: `Http` Display carries the API response body, and a poll that keeps failing repeats it
-// every interval.
 fn poll_failure(error: &PlatformError) -> String {
     match error {
         PlatformError::Http { status, .. } => format!("HTTP {status}"),
@@ -696,8 +694,6 @@ mod tests {
 
     const BODY_SENTINEL: &str = "kick_poll_body_sentinel";
 
-    /// A poll that keeps failing repeats its rendering every interval, so the body must go while
-    /// the operator-facing diagnostic stays.
     #[test]
     fn poll_failure_drops_the_response_body_and_keeps_the_diagnostic() {
         let cases: [(PlatformError, &str); 4] = [
@@ -741,8 +737,6 @@ mod tests {
         }
     }
 
-    /// Guards the call site rather than the renderer: a plain `%error` here would put the whole
-    /// body back on the wire even with `poll_failure` intact.
     #[test]
     fn a_failing_channel_poll_logs_no_byte_of_the_response_body() {
         let (result, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {

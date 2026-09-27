@@ -25,11 +25,9 @@ use crate::twitch::FakeTwitch;
 const EVIDENCE_TAIL_LINES: usize = 50;
 
 pub struct RunOptions {
-    /// The forge-emulator executable, run as the seeder child.
     pub emulator: PathBuf,
     pub forge: ForgeCommand,
     pub run_root: PathBuf,
-    /// forge's `RUST_LOG` filter; `log_line` expectations only see targets it enables.
     pub log_directives: String,
     pub guard: GameGuard,
     pub live: LivePaths,
@@ -37,7 +35,6 @@ pub struct RunOptions {
     pub shutdown_grace: Duration,
 }
 
-/// Always tears forge and the fakes down; launch and harness failures are errors, forge misbehaving is an outcome.
 pub async fn run_scenario(
     scenario: &Scenario,
     options: RunOptions,
@@ -84,7 +81,6 @@ pub async fn run_scenario(
         shutdown_grace: options.shutdown_grace,
     };
 
-    // Why: dropping an unfinished launch drops its ForgeProcess, which kills forge's process group.
     let launched = tokio::select! {
         launched = launch_forge(&launch) => launched,
         () = &mut stop => {
@@ -144,7 +140,6 @@ pub async fn run_scenario(
     };
     let steps = execute_steps(scenario, &session, &mut stop).await;
     drop(session);
-    // Why: the pages hold sockets on forge's server; they close before forge is asked to stop.
     pages.close();
 
     let exited_during_run = !process.is_running();
@@ -182,7 +177,6 @@ pub async fn run_scenario(
     })
 }
 
-/// Only the kinds some expectation names; source stays open so a wrong source shows as a near miss.
 pub fn subscription_filters(scenario: &Scenario) -> Vec<EventFilter> {
     let mut filters: Vec<EventFilter> = Vec::new();
     let kinds = scenario
@@ -206,7 +200,6 @@ pub fn subscription_filters(scenario: &Scenario) -> Vec<EventFilter> {
     filters
 }
 
-/// A forge that exited on its own fails the run even when every step passed.
 pub fn verdict(steps: &[StepOutcome], forge_exited_during_run: bool) -> ScenarioVerdict {
     if steps
         .iter()

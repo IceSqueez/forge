@@ -99,14 +99,12 @@ impl SubActionRunner for ServerBroadcastRunner {
             )
         } else {
             let payload = config_payload(config);
-            // Overlays subscribe on source == Server, kind "broadcast.*"; forge-server forwards it.
             self.publisher.publish(Event::caused_by(
                 EventSource::Server,
                 format!("broadcast.{event_name}"),
                 payload,
                 ctx.parent_event_id,
             ));
-            // Hard-wired to 0: an accurate count needs direct BusAdapter access this runner lacks.
             let new_stack = ctx
                 .arg_stack
                 .clone()

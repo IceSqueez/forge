@@ -41,8 +41,6 @@ pub(super) const NOTICE_PAD: Pixels = px(9.0);
 pub(super) const NOTICE_RADIUS: Pixels = px(6.0);
 pub(super) const NOTICE_LINE_H: Pixels = px(15.0);
 
-/// A slider fires while the pointer moves; a save per step would rewrite the page and reload the
-/// browser source dozens of times per drag.
 const SLIDE_SETTLE: Duration = Duration::from_millis(400);
 
 const RELEASE_PERSIST_CONTEXT: &str = "overlay property panel teardown";
@@ -272,8 +270,6 @@ impl OverlayPropertyPanel {
         &self.overlay_id
     }
 
-    /// Keys a retired build wrote are dropped instead of being carried forward, so a save is the
-    /// moment a record stops mentioning them.
     pub(super) fn pending_config(&self, cx: &App) -> OverlayConfig {
         let mut buffer = self.defaults.clone();
         for (key, value) in &self.stored {
@@ -286,8 +282,6 @@ impl OverlayPropertyPanel {
         sparse_overrides(&self.defaults, &buffer)
     }
 
-    /// Regenerating the files reloads every connected page, so a commit that changes nothing -
-    /// a blur on an untouched field, a swatch clicked twice - never reaches the record.
     pub(super) fn emit_save(&mut self, cx: &mut Context<Self>) {
         let sparse = self.pending_config(cx);
         if sparse == self.stored {
@@ -297,8 +291,6 @@ impl OverlayPropertyPanel {
         cx.emit(PropertyPanelEvent::Save(sparse));
     }
 
-    /// The panel can go away in the same tick as the click that unfocused a field, so the value a
-    /// blur would have committed is written straight through the repo instead of through the screen.
     fn persist_on_release(&mut self, cx: &mut App) {
         let sparse = self.pending_config(cx);
         if sparse == self.stored {
@@ -315,7 +307,6 @@ impl OverlayPropertyPanel {
         });
     }
 
-    /// A later move supersedes an earlier one, so only the value the pointer came to rest on saves.
     fn settle(&mut self, epoch: u64, cx: &mut Context<Self>) {
         if epoch != self.settle_epoch {
             return;
@@ -536,8 +527,6 @@ impl OverlayPropertyPanel {
             .unwrap_or_else(|| key.to_owned())
     }
 
-    /// A control the fold produced for a key the kind never declared still gets a home rather than
-    /// disappearing from the panel.
     fn section_of(&self, key: &str) -> PanelSection {
         self.sections
             .get(key)
@@ -657,8 +646,6 @@ impl OverlayPropertyPanel {
     }
 }
 
-/// Both editor modes read the record's own override list, so the panel never claims a file is
-/// generated while the other mode calls it the user's.
 pub(super) fn override_notice(files: &[String], palette: &ForgePalette) -> Option<AnyElement> {
     if files.is_empty() {
         return None;
@@ -700,8 +687,6 @@ fn index_fields(specs: &[SectionedField]) -> FieldIndex {
     index
 }
 
-/// A wrapped field shares the section of the field that wraps it, so a gate and the control it
-/// gates never drift into separate headings.
 fn index_field(spec: &FormField, section: ConfigSection, out: &mut FieldIndex) {
     match spec {
         FormField::Text { key, label, .. }
@@ -1064,8 +1049,6 @@ mod tests {
             cx.update(|cx| self.saves.read(cx).seen.clone())
         }
 
-        /// Why: gpui defers the release callback to the next app update, so dropping the handle
-        /// has to be followed by one before the tokio work it spawns exists to be pumped.
         fn release(&mut self, cx: &mut gpui::TestAppContext) {
             self.panel = None;
             cx.update(|_cx| {});

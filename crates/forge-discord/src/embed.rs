@@ -14,7 +14,6 @@ pub struct DiscordEmbedField {
 pub struct DiscordEmbed {
     pub title: Option<String>,
     pub description: Option<String>,
-    /// Color in `0x00RRGGBB` form. Values above `0x00FFFFFF` are rejected by `validate`.
     pub color: Option<u32>,
     pub fields: Vec<DiscordEmbedField>,
     pub thumbnail_url: Option<String>,

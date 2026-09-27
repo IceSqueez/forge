@@ -24,7 +24,6 @@ impl StepTimer {
         self.started_at
     }
 
-    /// Always leaves `args_in`/`produced` empty; only the chain driver fills them, or run-history @in/@out capture is corrupted.
     pub fn finish(self, outcome: SubActionOutcome) -> SubActionTelemetry {
         let duration_ms = (OffsetDateTime::now_utc() - self.started_at)
             .whole_milliseconds()

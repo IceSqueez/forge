@@ -431,8 +431,6 @@ impl SettingsRepo for MemSettings {
     }
 }
 
-/// Thread-local tracing capture; the runtime shares the capturing thread so spawned
-/// connection tasks reach the subscriber, which is why callers are plain `#[test]` fns.
 pub mod log_capture {
     use std::collections::BTreeMap;
     use std::future::Future;
@@ -478,12 +476,6 @@ pub mod log_capture {
         }
     }
 
-    // Why: the callsite interest cache is process-global while a capture subscriber is
-    // thread-local. Other tests in this binary reach the same callsites with no subscriber
-    // installed, which caches `Interest::never()` - and `never` short-circuits the event
-    // before `enabled()` is consulted, so a capture running in parallel records nothing.
-    // This floor is installed once as the process-wide global default and answers
-    // `sometimes` for every callsite. It captures nothing itself.
     struct InterestFloor;
 
     impl tracing::Subscriber for InterestFloor {
@@ -518,8 +510,6 @@ pub mod log_capture {
         });
     }
 
-    // Why: `register_callsite` answers `sometimes` on purpose - a cached `always` from
-    // another capture running in parallel would hand a TRACE line to a WARN-only assertion.
     struct CaptureSubscriber {
         lines: Arc<Mutex<Vec<CapturedLine>>>,
         max: Level,

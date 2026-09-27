@@ -135,7 +135,6 @@ impl SubActionRunner for CoreStringRegexMatchRunner {
                 None,
             ),
             Ok(re) => {
-                // captures[0] = full match, captures[1..] = numbered groups.
                 let (matched, captures) = match re.captures(&source) {
                     None => (false, vec![]),
                     Some(caps) => {

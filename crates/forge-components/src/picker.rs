@@ -66,9 +66,7 @@ pub enum PickerEvent {
 pub struct Picker {
     search: SearchState,
     items: Vec<PickerItem>,
-    /// Indices into `items` that match the current query, in original order.
     filtered: Vec<usize>,
-    /// Highlighted position within `filtered` (not an index into `items`).
     selected: usize,
     loading: bool,
     labels: PickerLabels,
@@ -125,7 +123,6 @@ impl Picker {
         cx.notify();
     }
 
-    /// The caller must call this when the picker opens; gpui delivers key events only down the focus path, so without it typing and Escape never reach the search field.
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         self.search.field().update(cx, |f, cx| f.focus(window, cx));
     }

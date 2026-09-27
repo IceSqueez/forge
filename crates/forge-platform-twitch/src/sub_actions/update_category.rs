@@ -72,7 +72,6 @@ impl SubActionRunner for UpdateCategoryRunner {
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([
             ("category_id".to_owned(), Variant::String(String::new())),
-            // Display-only label; runtime sends category_id, not this string.
             ("category_name".to_owned(), Variant::String(String::new())),
         ])
     }

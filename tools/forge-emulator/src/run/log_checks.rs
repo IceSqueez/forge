@@ -6,10 +6,8 @@ use super::log_tail::LogTail;
 use super::outcome::{EVIDENCE_LIMIT, Evidence, FailureCause, LogEvidence, Verdict};
 use crate::scenario::LogLine;
 
-/// The file log has no change notification, so it is re-read on this period until the deadline.
 const POLL_PERIOD: Duration = Duration::from_millis(25);
 
-/// Reads once more at the deadline, so a line flushed just before it still counts.
 pub(crate) async fn observe_log_line(
     mut tail: LogTail,
     deadline: Instant,

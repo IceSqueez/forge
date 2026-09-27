@@ -1,6 +1,3 @@
-//! Script-authored text must be attributable: the diagnostic bundle sections and counts the
-//! lines forge did not write by their target, so a script API native that emits on the crate's
-//! default target silently drops out of that section and out of the export preview's count.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use std::collections::BTreeMap;
@@ -35,8 +32,6 @@ impl Visit for FieldCollector {
     }
 }
 
-// `sink: None` is the process-global interest floor described at `install_interest_floor`;
-// `sink: Some(..)` is the thread-local recorder `capture` installs.
 struct Recorder {
     sink: Option<Arc<Mutex<Vec<CapturedLine>>>>,
 }
@@ -75,10 +70,6 @@ impl tracing::Subscriber for Recorder {
     fn exit(&self, _: &span::Id) {}
 }
 
-// Why: the callsite interest cache is process-global while a capture subscriber is thread-local.
-// A callsite first reached with no subscriber installed caches `Interest::never()`, which
-// short-circuits the event before `enabled()` is consulted and makes the capture record nothing.
-// This floor answers `sometimes` for every callsite so the union can never collapse to `never`.
 fn install_interest_floor() {
     static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     INSTALLED.get_or_init(|| {
@@ -128,8 +119,6 @@ async fn engine() -> (Engine, tempfile::TempDir) {
 async fn every_script_log_native_emits_on_the_script_target() {
     let (engine, _media_root) = engine().await;
 
-    // The natives are synchronous, so the eval runs on this thread and reaches the thread-local
-    // subscriber `capture` installs.
     let lines = capture(|| {
         for native in ["log", "warn", "error"] {
             let _evaluated = engine

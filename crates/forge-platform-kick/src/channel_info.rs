@@ -47,7 +47,6 @@ impl ChannelInfoFetcher {
         }
     }
 
-    /// Callers must retry with backoff on `KickError::ChannelInfoUnavailable`.
     pub async fn fetch(&self) -> Result<KickChannelInfo, KickError> {
         let url = format!("{}/{}", self.endpoint_base, self.slug);
         let response = self
@@ -98,8 +97,6 @@ impl ChannelInfoFetcher {
     }
 }
 
-// Why: this endpoint sits behind a challenge layer that answers errors with a full HTML page,
-// and the body reaches sub-action error text and run history.
 fn bounded_body(body: String) -> String {
     match body.char_indices().nth(ERROR_BODY_LIMIT) {
         Some((end, _)) => body[..end].to_owned(),
@@ -209,8 +206,6 @@ mod tests {
         assert_eq!(info.viewer_count, 0);
     }
 
-    /// The challenge layer answers with an HTML page, and the body travels into sub-action error
-    /// text and run history - so the cut must land on a char boundary rather than a byte offset.
     #[test]
     fn bounded_body_cuts_at_the_char_limit_without_splitting_a_char() {
         let cases = [
@@ -257,8 +252,6 @@ mod tests {
         assert_eq!(body.chars().count(), ERROR_BODY_LIMIT);
     }
 
-    /// Invariant #7: the request URL carries no secret here, but the same rendering is reused for
-    /// token-bearing calls - `without_url` is the guarantee under test.
     #[tokio::test]
     async fn transport_failure_reason_omits_the_request_url() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

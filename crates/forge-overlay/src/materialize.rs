@@ -9,7 +9,6 @@ use crate::instance::OverlayInstance;
 use crate::media::{GENERATED_MEDIA_DIRECTORY, MediaIssue, ResolvedMedia};
 use crate::registry::OverlayKindRegistry;
 
-/// Stamped into every config document so a stale record can be spotted and regenerated.
 pub const GENERATOR_VERSION: u32 = 3;
 
 const MAX_IDENTITY_LEN: usize = 64;
@@ -19,7 +18,6 @@ pub struct MaterializeReport {
     pub directory: PathBuf,
     pub written: Vec<String>,
     pub preserved: Vec<String>,
-    /// A subset of `preserved` whose user copy is gone from disk; nothing was written in its place.
     pub missing_overrides: Vec<String>,
     pub media_written: Vec<String>,
     pub media_removed: Vec<String>,
@@ -27,7 +25,6 @@ pub struct MaterializeReport {
     pub media_issues: Vec<MediaIssue>,
 }
 
-/// The runtime is rewritten on every pass; the reserved subtree is generator territory, not the user's.
 pub fn ensure_shared_directory(root: &Path) -> Result<PathBuf, OverlayError> {
     let root = ensure_root(root)?;
     let shared = root.join(RESERVED_DIRECTORY);
@@ -152,7 +149,6 @@ fn sweep_generated_media(
     }
 }
 
-/// `Ok(false)` when there was nothing to remove; a symlinked or escaping directory is refused, never followed.
 pub fn remove_overlay_directory(root: &Path, id: &str) -> Result<bool, OverlayError> {
     check_identity(id)?;
 

@@ -52,10 +52,6 @@ pub trait UserGlobalsRepo: Send + Sync {
         broadcaster_id: &str,
     ) -> Result<Vec<UserGlobalEntry>, StorageError>;
 
-    /// Returns the new value. An absent variable starts from zero (`Int(amount)`); an
-    /// `Int` saturates. Errors with [`StorageError::TypeMismatch`] if the stored value is
-    /// not numeric or a `Float` result is not finite. Default impl is a non-atomic get/set
-    /// composition; a real backend must override it with one serialized write.
     async fn incr(
         &self,
         broadcaster_id: &str,

@@ -30,7 +30,6 @@ pub(crate) fn build_allowed_origins(bind_addr: SocketAddr, extra: &[String]) -> 
     origins
 }
 
-/// An absent Origin header is accepted; only a present, non-matching Origin is rejected.
 pub(crate) fn is_origin_allowed(allowed: &HashSet<String>, origin_header: Option<&str>) -> bool {
     match origin_header {
         None => true,
@@ -47,8 +46,6 @@ pub(crate) fn accepts_origin(
         || origin_matches_address_literal_host(origin_header, host_header)
 }
 
-/// A rebinding page reaches us under a name it controls, so a name is trusted only when it is
-/// `localhost` or the host of an allowed origin; any address literal is accepted.
 pub(crate) fn accepts_host(allowed_origins: &HashSet<String>, host_header: &str) -> bool {
     let authority = host_header.trim().to_ascii_lowercase();
     if is_address_literal_authority(&authority) {

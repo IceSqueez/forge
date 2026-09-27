@@ -41,7 +41,6 @@ enum BootState {
     Booting,
     Ready {
         shell: Entity<AppShell>,
-        // Held (unread) to keep the runtime's tasks alive; the shell holds a second `Arc` clone through which screens reach the runtime.
         #[allow(dead_code)]
         handles: Arc<RuntimeHandles>,
     },
@@ -139,11 +138,8 @@ pub fn run_boot(
         };
         match outcome {
             Ok(mut handles) => {
-                // Not `Clone` - take the sole subscription out so the bridge below owns the only drain.
                 let speak_events = handles.speak_events.take();
                 let handles = Arc::new(handles);
-                // Subscribe BEFORE seeding: a platform that flips to Connected between
-                // the seed snapshot and the bridge starting would otherwise be lost.
                 let bridge_sub = handles.bus.subscribe_observer(UI_EVENTS);
                 let chat_feed_bridge = ChatFeedBridge::subscribe(&handles.bus, &handles.rt_handle);
                 let loss_watch = handles.bus.watch_loss();
@@ -171,7 +167,6 @@ pub fn run_boot(
                 let bus_for_updates = Arc::clone(&handles.bus);
                 let credentials_key_loss = handles.credentials_key_loss;
                 let applied = window.update(cx, |root, window, cx| {
-                    // Render-thread install: the fluent bundle is thread-local and must be set before the shell's first render resolves any translated string.
                     crate::i18n::install_language(handles.startup_language);
                     cx.set_global(crate::presentation::ActiveLanguage(
                         handles.startup_language,
@@ -297,7 +292,6 @@ async fn seed_chat_history(
     let Ok((limit, mut rows)) = rx.await else {
         return;
     };
-    // Repo yields newest-first; the feed is oldest-first.
     rows.reverse();
     let messages: Vec<ChatMessage> = rows.iter().map(ChatMessage::from_row).collect();
     chat_feed.update(cx, |feed, cx| {

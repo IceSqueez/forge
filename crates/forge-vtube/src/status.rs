@@ -47,7 +47,6 @@ impl BuiltinStatus for VTubeClient {
     }
 
     fn header_actions(&self) -> Vec<HeaderAction> {
-        // Reconnect is intentionally absent here; it stays reachable via auto-reconnect.
         vec![HeaderAction::Disconnect]
     }
 }

@@ -203,7 +203,6 @@ impl Render for StreamAppsView {
     }
 }
 
-/// gpui 0.2.2 has no CSS-grid primitive; a flex row-pair ports the design's two-column grid.
 fn app_grid(cards: Vec<AnyElement>, density: Density) -> impl IntoElement {
     let gap = spacing(Spacing::Sm, density);
     let mut grid = div().w_full().flex().flex_col().gap(gap);

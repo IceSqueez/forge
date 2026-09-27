@@ -17,7 +17,6 @@ use crate::hotkey_sync::HotkeyReconciler;
 pub const CLIP_COMBO_FIELD: &str = "hotkey";
 const PRESSED_COMBO_KEY: &str = "combo";
 
-/// Several clips on one combo is a collision already in the data; every one of them answers the press.
 pub type ClipBindings = BTreeMap<String, Vec<ClipId>>;
 
 pub fn clip_bindings_of(clips: &[StoredClip]) -> ClipBindings {
@@ -30,7 +29,6 @@ pub fn clip_bindings_of(clips: &[StoredClip]) -> ClipBindings {
     bindings
 }
 
-/// Canonical when the stored text parses, so a hand-typed `f5` matches a captured `F5`.
 pub fn stored_combo(clip: &StoredClip) -> Option<String> {
     let raw = clip.hotkey.as_deref().map(str::trim)?;
     if raw.is_empty() {
@@ -54,7 +52,6 @@ pub async fn clear_clip_combo(
     repo.save(&clip).await.map_err(|e| e.to_string())
 }
 
-/// A blank combo is stored as no binding; an unparseable one is refused on the binding field.
 pub fn canonical_clip(clip: &StoredClip) -> Result<StoredClip, StorageError> {
     let mut canonical = clip.clone();
     canonical.hotkey = match clip.hotkey.as_deref().map(str::trim) {
@@ -70,7 +67,6 @@ pub fn canonical_clip(clip: &StoredClip) -> Result<StoredClip, StorageError> {
     Ok(canonical)
 }
 
-/// Every clip write, whichever screen or service made it, ends in a reconcile run.
 pub struct HotkeySyncedClipsRepo {
     inner: Arc<dyn SoundboardClipsRepo>,
     reconciler: Option<Arc<HotkeyReconciler>>,
@@ -126,7 +122,6 @@ pub fn clips_bound_to(bindings: &ClipBindings, combo: &str) -> Vec<ClipId> {
     bindings.get(combo).cloned().unwrap_or_default()
 }
 
-/// Press edges only; the hotkey engine already drops auto-repeat and presses while it is off.
 pub fn spawn_clip_hotkey_dispatcher(
     mut events: EventSubscription,
     bindings: watch::Receiver<Arc<ClipBindings>>,

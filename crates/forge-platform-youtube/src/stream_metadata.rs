@@ -67,8 +67,6 @@ impl YoutubeStreamMetadata {
         self.update(Field::Privacy, value).await
     }
 
-    /// `videos.update` clears any `part` field omitted from the request body, so the
-    /// current `snippet`+`status` is fetched, the target field merged in, and written back.
     async fn update(&self, field: Field, value: &str) -> Result<(), PlatformError> {
         let broadcast_id =
             self.active_broadcast_id

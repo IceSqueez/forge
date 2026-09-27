@@ -64,8 +64,6 @@ impl CooldownMap {
     }
 
     fn evict_oldest(&mut self) {
-        // Dropping a still-live entry lets that chatter through one invocation early - the bound
-        // trades unbounded growth for the same benign under-throttle a restart already produces.
         let oldest = self
             .entries
             .iter()
@@ -111,8 +109,6 @@ mod tests {
 
     #[test]
     fn the_stamping_event_does_not_throttle_itself() {
-        // A trigger instance linked to two actions is evaluated twice for one event; the second
-        // evaluation must not read its own stamp as a throttle.
         let mut map = CooldownMap::new(16);
         let key = user_key(TriggerInstanceId::new(), "alice");
         let event = EventId::new();

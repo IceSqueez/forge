@@ -27,7 +27,6 @@ impl PadKey {
     }
 }
 
-/// An unavailable engine outranks a missing registration, which outranks a combo shared with another holder.
 pub fn pad_key(
     available: bool,
     live: &HashSet<String>,

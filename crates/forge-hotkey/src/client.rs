@@ -38,7 +38,6 @@ pub struct HotkeyClient {
     pub(crate) portal_available: Option<bool>,
     pub(crate) enabled: Arc<AtomicBool>,
     pub(crate) holds: Mutex<HoldMap>,
-    /// Zero disables the ceiling; any other value is the maximum hold in seconds.
     hold_ceiling_secs: AtomicU64,
     control_tx: mpsc::Sender<SupervisorCommand>,
 }
@@ -197,8 +196,6 @@ impl HotkeyClient {
             .store(secs.unwrap_or(0), Ordering::Relaxed);
     }
 
-    /// Closes every open hold with a synthesized release so a held combo cannot outlive the
-    /// process; call it on app shutdown before the runtime stops draining the bus.
     pub fn release_open_holds(&self) {
         hold::close_all_synthesized(self);
     }
@@ -1028,8 +1025,6 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_zero_second_hold_ceiling_means_disabled_rather_than_instant_expiry() {
-        // Why: Settings hands the ceiling through as a raw seconds value, and the atomic encodes
-        // "off" as 0. Reading 0 as a zero-length ceiling would close every hold on the next sweep.
         let client = HotkeyClient::new_for_test(Some(true));
 
         for (secs, expected) in [

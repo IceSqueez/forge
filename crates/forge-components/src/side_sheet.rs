@@ -19,7 +19,6 @@ const DIVIDER_H: Pixels = px(1.0);
 const RESIZE_VISUAL_W: Pixels = px(1.0);
 const RESIZE_HIT_W: Pixels = px(8.0);
 
-/// A constant group name is safe: side sheets are singular on screen (no hover-group collision).
 const RESIZE_GROUP: &str = "forge-side-sheet-resize";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -27,7 +26,6 @@ pub enum SheetPosition {
     Right,
 }
 
-/// The caller owns the live width as its own state; this carries only the seed and clamp bounds.
 #[derive(Clone, Copy, Debug)]
 pub struct SheetWidth {
     pub initial: f32,
@@ -70,7 +68,6 @@ struct ResizeConfig {
 
 struct SheetResizeDrag;
 
-/// Paints nothing: a resize drag has no cursor preview (deliberate, unlike drag-and-drop).
 struct DragGhost;
 
 impl Render for DragGhost {
@@ -79,7 +76,6 @@ impl Render for DragGhost {
     }
 }
 
-/// The panel surface only: open/close visibility, slide animation and scrim are the caller's.
 #[derive(IntoElement)]
 pub struct SideSheet {
     content: AnyElement,
@@ -130,14 +126,12 @@ impl SideSheet {
         self
     }
 
-    /// Only shows when a header title is set.
     #[must_use]
     pub fn subtitle(mut self, subtitle: impl Into<SharedString>) -> Self {
         self.subtitle = Some(subtitle.into());
         self
     }
 
-    /// Only shows when a header title is set.
     #[must_use]
     pub fn header_icon(mut self, glyph: Icon, tint: Rgba) -> Self {
         self.header_icon = Some((glyph, tint));
@@ -155,7 +149,6 @@ impl SideSheet {
         self
     }
 
-    /// The handler receives each new clamped width as the drag moves; the caller stores it and feeds it back through [`side_sheet`].
     #[must_use]
     pub fn on_resize(
         mut self,

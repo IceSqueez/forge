@@ -59,8 +59,6 @@ pub trait ViewerRepo: Send + Sync {
         platform: ViewerPlatform,
         viewer_id: &str,
     ) -> Result<Option<Viewer>, StorageError>;
-    /// Upsert called per chat message: if row exists, bump `message_count` + update
-    /// `last_seen_at` + refresh `username`; else create with `first_seen_at = now`.
     async fn record_message(
         &self,
         platform: ViewerPlatform,

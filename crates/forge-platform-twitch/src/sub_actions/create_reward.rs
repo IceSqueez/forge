@@ -39,7 +39,6 @@ impl CreateRewardRunner {
 
         let body = build_body(cfg);
 
-        // Requires channel:manage:redemptions scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/channel_points/custom_rewards")
             .query("broadcaster_id", user_id)
             .body(serde_json::Value::Object(body));
@@ -98,7 +97,6 @@ fn build_body(cfg: &ResolvedConfig) -> serde_json::Map<String, serde_json::Value
         );
     }
 
-    // Twitch requires both the flag and the value; 0 maps to enabled=false, value omitted.
     if cfg.max_per_stream > 0 {
         body.insert("is_max_per_stream_enabled".to_owned(), true.into());
         body.insert("max_per_stream".to_owned(), cfg.max_per_stream.into());

@@ -18,19 +18,10 @@ pub(crate) fn check_espeak_version() -> Result<(), EspeakError> {
     }
 }
 
-/// Maps a rate multiplier to words-per-minute for the `-s` flag.
-///
-/// eSpeak-NG default is 175 wpm. The result is clamped to the supported
-/// range [50, 450]. Returns 175 for a multiplier of 1.0, in which case the
-/// caller should omit the `-s` flag entirely.
 pub fn rate_wpm_from_multiplier(rate_multiplier: f32) -> u32 {
     (175.0_f32 * rate_multiplier).round().clamp(50.0, 450.0) as u32
 }
 
-/// Maps semitone shift to the 0-99 range used by eSpeak-NG's `-p` flag.
-///
-/// The neutral value is 50. Returns 50 for 0.0 semitones, in which case the
-/// caller should omit the `-p` flag entirely.
 pub fn pitch_from_semitones(pitch_semitones: f32) -> u32 {
     (50.0_f32 + pitch_semitones * (50.0 / 12.0_f32))
         .round()

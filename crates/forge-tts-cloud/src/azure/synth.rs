@@ -98,7 +98,6 @@ pub(super) async fn synthesize(
         .header("Ocp-Apim-Subscription-Key", api_key)
         .header("Content-Type", "application/ssml+xml")
         .header("X-Microsoft-OutputFormat", "raw-24khz-16bit-mono-pcm")
-        // Azure rejects requests without User-Agent header.
         .header("User-Agent", "forge-tts")
         .body(body)
         .send()

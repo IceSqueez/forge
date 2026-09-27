@@ -8,7 +8,6 @@ use crate::scenario::{
 
 const VALUE_CHARS: usize = 120;
 
-/// Event kinds whose pinned name reads better as the subject: kind, pointer, verb.
 const SUBJECT_POINTERS: [(&str, &str, &str); 3] = [
     ("action.start", "/action_name", "starts"),
     ("action.done", "/action_name", "finishes"),
@@ -105,7 +104,6 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
     }
 }
 
-/// Scenario-file JSON with absent optional fields spelled as null.
 pub(crate) fn matcher<T: serde::Serialize>(item: &T) -> String {
     serde_json::to_string(item).unwrap_or_default()
 }
@@ -134,7 +132,6 @@ pub(crate) fn source_name(source: EventSource) -> String {
     }
 }
 
-/// `kind`, plus the action or command it pins when there is one.
 pub(crate) fn event_label(kind: &str, payload: &PayloadMatchers) -> String {
     let pinned = SUBJECT_POINTERS
         .iter()

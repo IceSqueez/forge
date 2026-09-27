@@ -14,7 +14,6 @@ use crate::scenario::{AbsentEvent, Causation, EventPattern, ObservedCount, Obser
 
 const CHAIN_DEPTH: usize = 8;
 
-/// Observations at `from` or later that arrived no later than `deadline` belong to the window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Window {
     pub(crate) from: usize,
@@ -25,7 +24,6 @@ pub(crate) struct Window {
 pub(crate) struct Assessment {
     pub(crate) verdict: Verdict,
     pub(crate) evidence: Evidence,
-    /// The event a single-count expectation matched, for later causation checks.
     pub(crate) matched: Option<JournaledEvent>,
 }
 
@@ -263,7 +261,6 @@ impl Scan {
     }
 }
 
-/// Every gap after `from` counts, even past the deadline: a drop notice trails the events it lost.
 fn scan(
     view: &JournalView<'_>,
     window: Window,

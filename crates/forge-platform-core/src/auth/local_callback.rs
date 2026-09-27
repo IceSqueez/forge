@@ -74,8 +74,6 @@ impl LocalCallbackDriver {
         &self.code_verifier
     }
 
-    /// Verifies `state`; fails with `PlatformError::Auth` on mismatch, missing `code`, denial,
-    /// or expiry past `dur`.
     pub async fn await_callback(self, dur: Duration) -> Result<CallbackCode, PlatformError> {
         let (mut socket, _peer) =
             timeout(dur, self.listener.accept())
@@ -187,7 +185,6 @@ async fn write_response(
 
 fn random_url_safe(byte_count: usize) -> String {
     let mut bytes = vec![0u8; byte_count];
-    // try_fill_bytes returns Result<(), Infallible>; matched instead of unwrap()-ed.
     match rand::rng().try_fill_bytes(&mut bytes) {
         Ok(()) => {}
         Err(never) => match never {},
@@ -359,9 +356,6 @@ mod tests {
         assert!(d.redirect_uri().ends_with(CALLBACK_PATH));
     }
 
-    // Why: a platform whose redirect URI is registered upfront (Kick) needs the callback on a
-    // fixed port. Never bind that real port here - a running forge instance holds it; borrow an
-    // ephemeral one the OS just released instead.
     async fn released_ephemeral_port() -> u16 {
         let probe = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = probe.local_addr().unwrap().port();

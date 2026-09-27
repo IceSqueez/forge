@@ -7,10 +7,8 @@ use super::spec::Fixture;
 
 pub const REDACTED: &str = "<redacted>";
 
-/// The run's secret values, replaced wherever they occur inside any string.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Redactions {
-    /// Longest first, so a secret that contains another is replaced whole.
     secrets: Vec<String>,
 }
 
@@ -31,8 +29,6 @@ impl Redactions {
         Self { secrets }
     }
 
-    /// The fake Twitch access token and, once seeded, the server bearer token and every overlay
-    /// page credential.
     pub fn for_run(fixture: &Fixture, seed: Option<&SeedReport>) -> Self {
         let access_token = fixture
             .twitch
@@ -54,7 +50,6 @@ impl Redactions {
             })
     }
 
-    /// Scrubs every string and object key in place.
     pub fn scrub_value(&self, value: &mut Value) {
         if self.secrets.is_empty() {
             return;

@@ -8,7 +8,6 @@ pub(crate) struct WebhookCredential {
     pub(crate) url: String,
 }
 
-/// URL is redacted in the `Debug` output; never printed in logs.
 impl std::fmt::Debug for WebhookCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WebhookCredential")

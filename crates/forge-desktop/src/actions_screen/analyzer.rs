@@ -884,8 +884,6 @@ mod tests {
         }
     }
 
-    // Why: a loop body runs as a sequential child chain even under a concurrent action, so the
-    // loop honours its own break/continue; only the signal reaching the top-level step is lost.
     #[test]
     fn a_loop_break_or_continue_in_a_concurrent_action_is_not_flagged() {
         for kind_id in [BREAK_LOOP_KIND_ID, CONTINUE_LOOP_KIND_ID] {

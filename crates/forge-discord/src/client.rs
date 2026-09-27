@@ -95,7 +95,6 @@ impl DiscordClient {
         })
     }
 
-    /// Routes a failed lookup through the same failure-recording path a post-send HTTP error uses, so an action targeting a deleted webhook stays visible instead of failing silently.
     async fn load_webhook_checked(&self, name: &str) -> Result<WebhookCredential, DiscordError> {
         match self.load_webhook(name).await {
             Ok(cred) => Ok(cred),
@@ -360,7 +359,6 @@ impl DiscordClient {
         }
     }
 
-    /// `register_name` gates whether a successful send registers `webhook_name` in the saved-webhook list - false for an unsaved endpoint under test.
     pub(crate) async fn execute_post(
         &self,
         url: &str,

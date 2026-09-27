@@ -134,7 +134,6 @@ impl AuthorIndex {
         self.by_recency.insert(seq, message.username.clone());
     }
 
-    /// Only valid for the oldest retained row, so the author's newest row is never the one removed while others remain.
     fn forget_oldest(&mut self, message: &ChatMessage) {
         let Some(activity) = self.by_name.get_mut(&message.username) else {
             return;
@@ -174,7 +173,6 @@ impl FeedGap {
     }
 }
 
-/// Rows carry a monotonic sequence number that survives eviction: `start_seq()` is the oldest retained row.
 pub struct ChatFeed {
     messages: VecDeque<ChatMessage>,
     capacity: usize,
@@ -215,7 +213,6 @@ impl ChatFeed {
         self.messages.get(offset)
     }
 
-    /// Clamped to at least one row.
     pub fn set_capacity(&mut self, capacity: usize) {
         self.capacity = capacity.max(1);
         self.evict_overflow();
@@ -228,7 +225,6 @@ impl ChatFeed {
         self.evict_overflow();
     }
 
-    /// Live rows already present are re-sequenced after the history, so observers see them as evicted and re-appended.
     pub fn seed(&mut self, history: Vec<ChatMessage>) {
         let live = std::mem::take(&mut self.messages);
         let shift = (live.len() + history.len()) as u64;

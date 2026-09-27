@@ -13,7 +13,6 @@ pub const TWITCH_CREDENTIAL_ID: &str = "twitch:broadcaster";
 #[derive(Clone)]
 pub struct StoredCredential {
     pub access_token: OAuthToken,
-    /// Absent routes the first expiry to re-auth (no refresh possible).
     pub refresh_token: Option<OAuthToken>,
     pub user_id: String,
     pub login: String,

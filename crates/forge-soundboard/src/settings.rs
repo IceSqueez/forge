@@ -47,7 +47,6 @@ impl SoundboardSettingsHandle {
         *self.0.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(settings);
     }
 
-    /// Applies `change` to the current value under one write lock, so concurrent writers never undo each other.
     pub fn update(&self, change: impl FnOnce(&mut SoundboardSettings)) -> Arc<SoundboardSettings> {
         let mut guard = self.0.write().unwrap_or_else(PoisonError::into_inner);
         let mut next = (**guard).clone();

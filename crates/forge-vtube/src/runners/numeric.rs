@@ -2,7 +2,6 @@ use forge_registry::RunContext;
 use forge_registry::runner::SubActionConfig;
 use forge_types::Variant;
 
-/// Empty text and an absent key both read as `None`; text is `%var%`-interpolated before parsing.
 pub(crate) fn optional_number(
     config: &SubActionConfig,
     key: &str,
@@ -37,7 +36,6 @@ pub(crate) fn required_number(
     optional_number(config, key, ctx)?.ok_or_else(|| format!("'{key}' is required"))
 }
 
-/// Empty text and an absent key both read as `None`; text is `%var%`-interpolated before parsing.
 pub(crate) fn optional_integer(
     config: &SubActionConfig,
     key: &str,
@@ -61,7 +59,6 @@ pub(crate) fn optional_integer(
     }
 }
 
-/// A `%var%` template passes because its value is only known at run time.
 pub(crate) fn accepts_number(value: Option<&Variant>) -> bool {
     match value {
         Some(Variant::Float(_) | Variant::Int(_)) => true,

@@ -11,7 +11,6 @@ use crate::fixture::Redactions;
 use crate::launch::ForgeExit;
 use crate::twitch::{RecordedRequest, RecordedSession, RecordedSubscription};
 
-/// Evidence lists keep at most this many entries; counts stay exact.
 pub const EVIDENCE_LIMIT: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,7 +25,6 @@ impl RunClock {
         }
     }
 
-    /// Milliseconds since the run started; instants before the start read as 0.
     pub fn millis(&self, at: Instant) -> u64 {
         u64::try_from(at.saturating_duration_since(self.origin).as_millis()).unwrap_or(u64::MAX)
     }
@@ -45,7 +43,6 @@ pub struct ScenarioOutcome {
     pub name: String,
     pub verdict: ScenarioVerdict,
     pub steps: Vec<StepOutcome>,
-    /// `None` when the run was interrupted before forge was ready.
     pub forge: Option<ForgeEvidence>,
     #[serde(skip)]
     pub redactions: Redactions,
@@ -60,14 +57,12 @@ pub enum StepStatus {
     NotRun,
 }
 
-/// Times are milliseconds on the run clock.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepOutcome {
     pub index: usize,
     pub keyword: String,
     pub status: StepStatus,
     pub started_ms: Option<u64>,
-    /// When the stimulus was delivered or the wait satisfied; every deadline counts from here.
     pub acted_ms: Option<u64>,
     pub action: Option<ActionReport>,
     pub expectations: Vec<ExpectationOutcome>,
@@ -114,7 +109,6 @@ pub enum ActionDetail {
     },
     ActionRun {
         action_id: ActionId,
-        /// forge publishes `action.start` with this id as its cause.
         execution_id: String,
     },
     GlobalSet,
@@ -135,7 +129,6 @@ pub struct ExpectationOutcome {
 pub enum Verdict {
     Passed,
     Failed(FailureCause),
-    /// The step's action failed or the run was interrupted first.
     NotEvaluated,
 }
 
@@ -153,7 +146,6 @@ pub enum FailureCause {
     Present {
         observed: usize,
     },
-    /// The server dropped or garbled pushes inside the window, so the stream cannot prove the claim.
     StreamGap {
         dropped: u64,
         undecodable: usize,
@@ -176,15 +168,12 @@ pub enum FailureCause {
         max: Option<u32>,
     },
     NoFakeTwitch,
-    /// No step opened a page for the overlay the expectation names.
     NoOverlayPage {
         overlay: String,
     },
     NoOverlayContent {
         observed: usize,
     },
-    /// Content reached the page as tagged `Variant` JSON, which a browser renders as
-    /// `[object Object]`; the pointers name where.
     TaggedOverlayValue {
         pointers: Vec<String>,
     },
@@ -279,8 +268,6 @@ pub enum Evidence {
     Log(LogEvidence),
 }
 
-/// One content frame exactly as it came off the wire, so a report shows what the page had to
-/// render rather than a re-serialization of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReceivedContent {
     pub arrived_ms: u64,
@@ -291,11 +278,8 @@ pub struct ReceivedContent {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OverlayEvidence {
     pub overlay: String,
-    /// Content frames in the window; other frame shapes are not evidence for this claim.
     pub frames: Vec<ReceivedContent>,
-    /// Keys of the closest frame whose value differs from the expected literal.
     pub mismatched: Vec<String>,
-    /// Pointers into the closest frame's content that hold tagged Variant JSON.
     pub tagged: Vec<String>,
 }
 
@@ -308,7 +292,6 @@ pub struct JournaledEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NearMiss {
     pub event: JournaledEvent,
-    /// `source` or the JSON pointers whose matcher failed.
     pub mismatched: Vec<String>,
 }
 
@@ -327,10 +310,8 @@ pub struct Gap {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EventEvidence {
-    /// Matches inside the window; `samples` keeps the first few.
     pub matched: usize,
     pub samples: Vec<JournaledEvent>,
-    /// Matches that arrived after the deadline.
     pub late: Vec<JournaledEvent>,
     pub near_misses: Vec<NearMiss>,
     pub gaps: Vec<Gap>,
@@ -340,7 +321,6 @@ pub struct EventEvidence {
 pub struct CausationEvidence {
     pub effect: Option<JournaledEvent>,
     pub cause: Option<JournaledEvent>,
-    /// The effect's observed ancestors, nearest first.
     pub chain: Vec<JournaledEvent>,
 }
 
@@ -354,7 +334,6 @@ pub struct LedgerExcerpt {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LogEvidence {
     pub matched: Option<LogRecord>,
-    /// Lines on the expected target whose fields differ.
     pub near_misses: Vec<LogRecord>,
     pub files: Vec<PathBuf>,
 }
@@ -365,7 +344,6 @@ pub struct ForgeEvidence {
     pub data_dir: PathBuf,
     pub log_dir: PathBuf,
     pub pid: u32,
-    /// As forge's server reports it; `None` when it would not say.
     pub version: Option<String>,
     pub attempts: u32,
     pub exited_during_run: bool,

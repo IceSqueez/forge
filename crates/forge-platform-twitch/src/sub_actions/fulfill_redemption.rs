@@ -77,7 +77,6 @@ pub(crate) fn validate_redemption_config(
     }
 }
 
-/// broadcaster_id + reward_id + id are query params; status is the sole body field.
 pub(crate) async fn patch_redemption_status(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,

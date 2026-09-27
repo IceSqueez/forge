@@ -97,8 +97,6 @@ impl SqliteBackend {
     }
 
     #[doc(hidden)]
-    /// `media_root` is always caller-supplied; there is no fallback to the real user media
-    /// directory, which only [`SqliteBackend::open`] resolves.
     pub async fn open_for_test(
         url: &str,
         key: [u8; 32],
@@ -115,8 +113,6 @@ impl SqliteBackend {
         ))
     }
 
-    /// Fails with [`SqliteStorageError::SchemaMismatch`] (not a generic migration error) if
-    /// the applied version differs from [`EXPECTED_SCHEMA_VERSION`] in either direction.
     async fn migrate_and_gate(url: &str) -> Result<SqlitePools, SqliteStorageError> {
         let pool = connect_pools(url).await?;
         apply_migrations(pool.writer()).await?;

@@ -8,7 +8,6 @@ use crate::{
     StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-/// Schema version this build expects. The startup gate compares `schema_version()`
 pub const EXPECTED_SCHEMA_VERSION: u32 = 46;
 
 #[async_trait]
@@ -34,9 +33,6 @@ pub trait DataProvider:
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
 
-    /// Closes the underlying connection pool. Must be awaited before the host runtime
-    /// drops, otherwise sqlx's blocking workers hold the runtime's blocking pool open
-    /// and `Runtime::drop` hangs indefinitely.
     async fn shutdown(&self);
 }
 

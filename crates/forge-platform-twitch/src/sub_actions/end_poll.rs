@@ -37,7 +37,6 @@ impl EndPollRunner {
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        // Requires channel:manage:polls scope.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/polls")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({

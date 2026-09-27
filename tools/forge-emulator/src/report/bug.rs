@@ -9,21 +9,16 @@ use crate::scenario::{Expectation, Scenario, StepAction};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BugEntry {
-    /// `None` only for a forge exit that no failed step explains.
     pub step: Option<usize>,
-    /// `None` when the step's own action failed rather than one of its expectations.
     pub expectation: Option<usize>,
     pub title: String,
-    /// `As <actor> I <stimulus>`, without the closing period.
     pub story: String,
     pub expected: String,
-    /// The failed expectation or step action in scenario-file JSON, absent optional fields as null.
     pub matcher: Option<String>,
     pub actual: String,
     pub details: Vec<String>,
 }
 
-/// One entry per failed step action and per failed expectation, in run order.
 pub fn bug_entries(scenario: &Scenario, outcome: &ScenarioOutcome) -> Vec<BugEntry> {
     let mut bugs = Vec::new();
     for step_outcome in &outcome.steps {

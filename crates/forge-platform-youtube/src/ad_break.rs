@@ -9,7 +9,6 @@ use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::quota_state::{QuotaState, today_pacific};
 
 const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
-/// Undocumented for this endpoint; charged at the Data API's standard write-operation rate.
 const CUEPOINT_COST: u32 = 50;
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
@@ -44,7 +43,6 @@ impl YoutubeAdBreak {
         self
     }
 
-    /// The broadcast must be actively streaming for YouTube to accept the cuepoint.
     pub async fn insert_cuepoint(&self, duration_secs: u32) -> Result<(), PlatformError> {
         let broadcast_id =
             self.active_broadcast_id

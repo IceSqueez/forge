@@ -17,12 +17,10 @@ use crate::log_archive;
 
 pub const RUN_HISTORY_LIMIT: u32 = 25;
 
-/// Well inside a 25 MB issue attachment and still openable in an editor on a slow machine.
 const TOTAL_BUDGET: usize = 4 * 1024 * 1024;
 
 const SCRIPT_SECTION_BUDGET: usize = 512 * 1024;
 
-/// Headroom for the section framing written around the corpus after its budget is fixed.
 const FRAMING_RESERVE: usize = 4096;
 
 const RULE: &str =
@@ -56,8 +54,6 @@ pub struct Bundle {
     pub elided_bytes: u64,
 }
 
-/// Reads only `BuiltinStatus` and `BuiltinHealth`, and only their non-naming fields: an account,
-/// channel or endpoint value never reaches the returned facts.
 pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
     let now = std::time::SystemTime::now();
     let mut facts: Vec<IntegrationFacts> = builtins
@@ -89,8 +85,6 @@ pub fn integration_facts(builtins: &BuiltinRegistry) -> Vec<IntegrationFacts> {
     facts
 }
 
-/// Numbers and booleans survive; every string is dropped to its variant name, because a health
-/// metric's text carries whatever the integration chose to put there.
 fn health_shape(value: &HealthValue) -> String {
     match value {
         HealthValue::Status { active, .. } => format!("status(active={active})"),
@@ -131,9 +125,6 @@ pub fn assemble(input: &BundleInput) -> Result<Bundle, String> {
     })
 }
 
-/// The file layer writes `<timestamp> <LEVEL> <target>: <message>`, so the third field is the
-/// target; matching on position rather than on a substring keeps a message that quotes a target
-/// name from being counted as one.
 fn target_of(line: &str) -> Option<&str> {
     let mut fields = line.split_whitespace();
     fields.next()?;
@@ -407,7 +398,6 @@ mod tests {
     use super::*;
     use crate::integrations::BuiltinObject;
 
-    /// A value no field of the bundle may pass through.
     const SECRET: &str = "nova_the_broadcaster";
 
     fn line(level: &str, target: &str, message: &str) -> String {
@@ -422,7 +412,6 @@ mod tests {
                 Some(SCRIPT_LOG_TARGET),
             ),
             (
-                // A message that names a target must not be attributed to it.
                 line(" INFO", "forge_desktop", "saw forge::action: in the text"),
                 Some("forge_desktop"),
             ),
@@ -485,9 +474,6 @@ mod tests {
         assert_eq!(elided, "oldest\nmiddle\n".len() as u64);
     }
 
-    /// Why: the user-script section is cut at a byte budget, and a script logging Ukrainian or
-    /// emoji puts a multi-byte character across the cut. Slicing at the raw byte offset is a
-    /// panic, and the release profile aborts on panic - the export must survive this input.
     #[test]
     fn keep_newest_lines_does_not_cut_inside_a_multibyte_character() {
         let text = "a\nПривіт\nz\n".to_owned();
@@ -617,8 +603,6 @@ mod tests {
         }
     }
 
-    /// Why: R4 - the integrations section is state only. An endpoint, an account name or a health
-    /// metric's text must reach the bundle as a shape, never as itself.
     #[test]
     fn integration_facts_expose_an_endpoint_as_presence_and_never_its_value() {
         let registry = BuiltinRegistry::default();

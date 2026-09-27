@@ -11,7 +11,6 @@ const ESCAPE_KEY: &str = "escape";
 pub enum CapturedKey {
     Cancel,
     Combo(String),
-    /// A keystroke the combo grammar cannot express; capture keeps listening.
     Unusable,
 }
 
@@ -31,7 +30,6 @@ pub struct ComboCapture {
 }
 
 impl ComboCapture {
-    /// The handler returns whether it consumed the keystroke.
     pub fn start<V: 'static>(
         &mut self,
         cx: &mut Context<V>,

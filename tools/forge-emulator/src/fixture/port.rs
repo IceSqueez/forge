@@ -2,7 +2,6 @@ use std::net::{Ipv4Addr, TcpListener};
 
 use crate::EmulatorError;
 
-/// The port is released before returning, so another process can take it before forge binds.
 pub fn free_loopback_port() -> Result<u16, EmulatorError> {
     let probe = |e: std::io::Error| EmulatorError::PortProbe {
         reason: e.to_string(),

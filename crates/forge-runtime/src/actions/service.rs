@@ -112,7 +112,6 @@ impl ActionsService {
         self.actions.telemetry(id).await
     }
 
-    /// Excludes auto-provisioned default instances; only author-created ones are linkable.
     pub async fn list_linkable_triggers(
         &self,
         action_id: ActionId,
@@ -134,7 +133,6 @@ impl ActionsService {
         Ok(available)
     }
 
-    /// Appends after the action's existing links; position is the current linked count.
     pub async fn link_trigger_instance(
         &self,
         action_id: ActionId,
@@ -150,7 +148,6 @@ impl ActionsService {
             .await
     }
 
-    /// The instance itself survives; only the action-trigger link is removed.
     pub async fn unlink_trigger_instance(
         &self,
         action_id: ActionId,

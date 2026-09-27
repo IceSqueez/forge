@@ -41,7 +41,6 @@ struct PlayingClip {
 
 enum CurrentPlayback {
     Playing(PlayingClip),
-    /// Synthesized while the queue was paused; starts on Resume, never before.
     Held(ReadyClip),
 }
 
@@ -81,7 +80,6 @@ enum SynthOutcome {
         pcm: PcmBuffer,
         voice_id: VoiceId,
         engine_id: EngineId,
-        /// Set only when the guess narrowed the candidate voices.
         language: Option<DetectedLanguage>,
     },
     Skipped {
@@ -261,7 +259,6 @@ async fn run_synthesis(
     }
 }
 
-/// Dropping the timed-out synthesis drops its engine, which ends a subprocess engine's child.
 async fn run_synthesis_bounded(
     req: SpeakRequest,
     deps: SynthTaskDeps,
@@ -285,8 +282,6 @@ async fn run_synthesis_bounded(
     }
 }
 
-/// `None` unless the guess is confident AND some installed voice serves it - a guess that
-/// no voice can honour must leave resolution against the full catalog, not skip the message.
 async fn detect_language(
     deps: &SynthTaskDeps,
     pipeline_cfg: &forge_tts_pipeline::PipelineConfig,
@@ -378,7 +373,6 @@ fn resolve_with_overrides(
     if let Some(engine_id) = &req.engine_override {
         let mut scoped = scope_to_engine(candidates, engine_id);
         if scoped.is_empty() {
-            // An inferred language must never empty an explicitly requested engine.
             scoped = scope_to_engine(catalog, engine_id);
         }
         return resolver.resolve(&req.viewer_id, &req.viewer_name, &scoped);
@@ -865,8 +859,6 @@ async fn start_clip(
     }
 }
 
-/// A targeted request never falls back to the queue's own sink: without legs for its target it
-/// has no route at all.
 fn sink_for(
     request: &SpeakRequest,
     deps: &QueueDeps,
@@ -1424,7 +1416,6 @@ fn remove_queued(
     let _ = event_tx.send(queue_changed_event(high_queue, normal_queue));
 }
 
-/// Every dropped request still reaches its one terminal outcome, so a waiter never hangs on it.
 fn drop_pending(
     event_tx: &tokio::sync::broadcast::Sender<SpeakEvent>,
     high_queue: &mut VecDeque<SpeakRequest>,
@@ -2196,8 +2187,6 @@ mod tests {
 
     #[test]
     fn a_detected_language_narrows_resolution_to_voices_that_speak_it() {
-        // Both viewers land on the opposite language unnarrowed, so a narrowing that did
-        // nothing would fail here rather than pass by luck of the deterministic hash.
         let catalog = bilingual_catalog();
         for (viewer, code, suffix) in [("zoryana", "uk", "-uk"), ("nova", "en", "-en")] {
             let req = request(viewer, "message", Priority::Normal);
@@ -2278,8 +2267,6 @@ mod tests {
 
     #[test]
     fn an_engine_override_intersects_with_the_detected_language() {
-        // `mira` resolves to alpha-en across the whole alpha engine, so the uk answer here
-        // can only come from the language narrowing being applied on top of the engine one.
         let mut req = request("mira", "привіт", Priority::Normal);
         req.engine_override = Some(EngineId("alpha".into()));
         assert_eq!(

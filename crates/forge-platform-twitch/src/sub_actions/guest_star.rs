@@ -5,7 +5,6 @@ use forge_types::Variant;
 use super::identity::{SelfIdentity, resolve_user_id};
 use crate::helix::{HelixError, HelixTransport};
 
-/// The active session id is not knowable at config time; it arrives on a Guest Star EventSub event.
 pub(crate) const SESSION_ID_DEFAULT: &str = "%guest_star.session_id%";
 
 pub(crate) fn session_id_field() -> FormField {
@@ -64,7 +63,6 @@ pub(crate) fn validate_target_login(
     }
 }
 
-/// Returns the empty string when the key is absent.
 pub(crate) fn interpolate(
     config: &SubActionConfig,
     arg_stack: &forge_types::ArgStack,
@@ -74,7 +72,6 @@ pub(crate) fn interpolate(
     arg_stack.interpolate(template)
 }
 
-/// `broadcaster_id`/`moderator_id` are both self; `guest_id` is `target_login` resolved via `/helix/users`.
 pub(crate) struct GuestStarContext {
     pub self_id: String,
     pub guest_id: String,

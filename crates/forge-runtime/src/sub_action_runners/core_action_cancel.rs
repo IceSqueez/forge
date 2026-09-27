@@ -180,8 +180,6 @@ mod tests {
             msg.contains("invalid action_id"),
             "the failure must name the field it could not parse: {msg}"
         );
-        // An id that failed to parse is whatever text was interpolated in, so the run history
-        // may not be handed the value.
         assert!(!msg.contains(SENTINEL), "echoed the unparsed value: {msg}");
         assert!(
             !untouched.is_cancelled(),

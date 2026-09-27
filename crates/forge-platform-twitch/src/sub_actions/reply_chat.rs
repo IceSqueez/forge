@@ -14,7 +14,6 @@ use super::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.chat.reply";
-/// Twitch counts characters, not bytes; multibyte messages must pass at 500 chars.
 const MAX_MESSAGE_CHARS: usize = 500;
 const DEFAULT_PARENT_TEMPLATE: &str = "%chat.message_id%";
 

@@ -22,7 +22,6 @@ const NOTE_NAMES: [&str; 12] = [
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
-/// Middle C (MIDI note 60) is named C4.
 pub fn note_name(note: i64) -> String {
     let clamped = note.clamp(0, 127);
     let octave = clamped / 12 - 1;
@@ -113,7 +112,6 @@ impl MidiSignal {
         }
     }
 
-    /// Only complete signals can be saved: the selector-bearing kinds need a captured number.
     pub fn is_complete(&self) -> bool {
         selector_key(&self.kind_id).is_none() || self.selector.is_some()
     }
@@ -132,7 +130,6 @@ impl MidiSignal {
         config
     }
 
-    /// Calls `tr!`, which reads a thread-local bundle: render thread only.
     pub fn label(&self) -> String {
         let value = match self.selector {
             Some(n) if self.kind_id == NOTE_ON_KIND || self.kind_id == NOTE_OFF_KIND => {
@@ -151,7 +148,6 @@ impl MidiSignal {
         }
     }
 
-    /// Calls `tr!`, which reads a thread-local bundle: render thread only.
     pub fn channel_label(&self) -> String {
         let value = match self.channel {
             Some(channel) => channel.to_string(),

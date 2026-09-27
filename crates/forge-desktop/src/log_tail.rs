@@ -33,7 +33,6 @@ impl LogTail {
         LogTailLayer { tail: self.clone() }
     }
 
-    /// Oldest first; the caller gets an owned copy, never the lock.
     pub fn snapshot(&self) -> Vec<LogLine> {
         let lines = self.lines.lock().unwrap_or_else(PoisonError::into_inner);
         lines.iter().cloned().collect()

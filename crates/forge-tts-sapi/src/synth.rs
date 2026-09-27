@@ -48,7 +48,6 @@ pub(crate) fn capture_pcm(
         windows::core::GUID::from_u128(0xc31adbae_527f_4ff5_a230_f62bb61ff70c);
 
     // SAFETY: HGLOBAL(null) tells COM to allocate the memory itself; the stream is used
-    // and released on this STA thread.
     let com_stream: IStream = unsafe { CreateStreamOnHGlobal(HGLOBAL(std::ptr::null_mut()), true) }
         .map_err(|e| crate::error::SapiError::ComInit(e.code().0))?;
 

@@ -14,8 +14,6 @@ const CHIP_PAD_V: Pixels = px(8.0);
 const CHIP_PAD_H: Pixels = px(10.0);
 const CHIP_GAP: Pixels = px(8.0);
 
-/// `id` is a parameter because the stage head and the empty state can offer the flow at the same
-/// time, and two live elements may not share an id.
 pub(crate) fn entry_button(
     view: &Entity<EventWiringView>,
     id: &'static str,

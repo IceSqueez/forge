@@ -31,9 +31,6 @@ fn is_retryable(err: &TtsError) -> bool {
     matches!(err, TtsError::NetworkFailed(_) | TtsError::Io(_))
 }
 
-/// Retries only `NetworkFailed` and `Io`. `Timeout` is treated as a stalled
-/// connection and propagates immediately. `RateLimited` with a non-zero
-/// `Retry-After` advances the limiter floor and counts as one retry attempt.
 pub async fn retry_synthesize<F, Fut>(
     engine_id: EngineId,
     limiter: Arc<dyn RateLimiter>,

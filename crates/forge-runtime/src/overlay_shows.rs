@@ -12,14 +12,10 @@ use tokio::time::Instant;
 use crate::overlay_service::{OverlayDelivery, OverlayFrameSink, content_json};
 use crate::speak_dispatcher::{ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal};
 
-/// A memory guard on shows waiting behind the one on screen, not a pacing limit: a backlog below
-/// it is always shown in full, however late.
 pub const SHOW_QUEUE_CAPACITY: usize = 1000;
 
-/// No show holds its overlay longer than this, whatever duration it asked for.
 pub const SHOW_CEILING: Duration = Duration::from_secs(120);
 
-/// The page runtime's own wait before a silent reveal must stay longer than this.
 pub const SHOW_SPEECH_START_WAIT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +29,6 @@ pub enum ShowEnd {
 pub struct ShowTicket(oneshot::Receiver<ShowEnd>);
 
 impl ShowTicket {
-    /// Resolves once the show has left the screen or left the queue without being shown.
     pub async fn finished(self) -> ShowEnd {
         self.0.await.unwrap_or(ShowEnd::Withdrawn)
     }
@@ -50,8 +45,6 @@ pub(crate) struct QueueFull;
 
 type Depths = HashMap<OverlayId, usize>;
 
-/// Yields only when the watched overlay's count of waiting shows moves; other overlays' traffic
-/// is absorbed.
 pub struct ShowDepthWatch {
     depths: watch::Receiver<Depths>,
     id: OverlayId,
@@ -63,7 +56,6 @@ impl ShowDepthWatch {
         self.last
     }
 
-    /// `None` once the show queue behind this watch is gone.
     pub async fn changed(&mut self) -> Option<usize> {
         loop {
             self.depths.changed().await.ok()?;
@@ -97,8 +89,6 @@ struct Lane {
     running: bool,
 }
 
-/// One presenter task per overlay with shows queued; it exits when its queue drains, so idle
-/// overlays cost nothing. The map lock is never held across an await.
 pub(crate) struct ShowSequencer {
     frames: Option<Arc<dyn OverlayFrameSink>>,
     speaker: Option<Arc<dyn SpeakDispatcher>>,
@@ -129,7 +119,6 @@ impl ShowSequencer {
         }
     }
 
-    /// Called with the lanes lock held, so published depths follow the queue's own order.
     fn publish_depth(&self, id: &OverlayId, depth: usize) {
         self.depths.send_if_modified(|depths| {
             let previous = if depth == 0 {
@@ -171,8 +160,6 @@ impl ShowSequencer {
             .map_or(0, |lane| lane.pending.len())
     }
 
-    /// Drops every show still waiting for `id`, ending each with `end`; the one on screen runs
-    /// out its window.
     pub(crate) fn drop_pending(&self, id: &OverlayId, end: ShowEnd) -> usize {
         let dropped: Vec<Pending> = {
             let mut lanes = self.lanes.lock().unwrap_or_else(PoisonError::into_inner);
@@ -198,8 +185,6 @@ impl ShowSequencer {
         }
     }
 
-    /// The page reveals a show when its speech begins, so the window runs from that start; speech
-    /// not begun within [`SHOW_SPEECH_START_WAIT`] is withdrawn and the show is shown silently.
     async fn hold(&self, id: &OverlayId, show: Show) {
         let window = show.window.min(SHOW_CEILING);
         let (Some(speaker), Some(speech)) = (self.speaker.clone(), show.speech) else {

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// `"*"` or an absent field means wildcard for that axis.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct WireEventFilter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -9,7 +8,6 @@ pub struct WireEventFilter {
     pub kind: Option<String>,
 }
 
-/// Internally tagged via the `"request"` field; field names are camelCase to match JS overlay conventions.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "request", rename_all = "camelCase")]
 pub enum WsRequest {
@@ -73,7 +71,6 @@ pub enum WsRequest {
     },
 }
 
-/// Server-to-client response; `Ok` data fields are merged into the outer JSON object.
 #[derive(Debug)]
 pub enum WsResponse {
     Ok(serde_json::Value),
@@ -83,7 +80,6 @@ pub enum WsResponse {
     },
 }
 
-/// Wraps both requests (id + flattened `WsRequest`) and responses (id + `WsResponse`).
 #[derive(Debug)]
 pub struct WsEnvelope<T> {
     pub id: Option<String>,
@@ -105,7 +101,6 @@ impl<'de> Deserialize<'de> for WsEnvelope<WsRequest> {
     }
 }
 
-/// `Ok` data fields merge into the top-level object alongside `"id"`/`"status"`; `Error` nests under an `"error"` key.
 pub fn serialize_response_frame(envelope: &WsEnvelope<WsResponse>) -> serde_json::Value {
     let mut map = serde_json::Map::new();
     match &envelope.id {

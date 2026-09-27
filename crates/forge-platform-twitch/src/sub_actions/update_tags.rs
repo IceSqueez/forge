@@ -35,7 +35,6 @@ impl UpdateTagsRunner {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        // An empty tags array clears all custom tags.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/channels")
             .query("broadcaster_id", user_id)
             .body(serde_json::json!({ "tags": tags }));
@@ -43,7 +42,6 @@ impl UpdateTagsRunner {
     }
 }
 
-/// Returns `Err` if a tag exceeds 25 chars or there are over 10.
 fn parse_tags(raw: &str) -> Result<Vec<String>, String> {
     let tags: Vec<String> = raw
         .split(['\n', ','])

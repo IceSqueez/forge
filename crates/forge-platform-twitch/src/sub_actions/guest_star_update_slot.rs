@@ -60,12 +60,10 @@ impl GuestStarUpdateSlotRunner {
             body.insert("volume".to_owned(), vol.into());
         }
 
-        // An empty body would still cost a rate-limit token for a no-op PATCH.
         if body.is_empty() {
             return SubActionOutcome::Success;
         }
 
-        // Requires channel:manage:guest_star scope.
         let request = HelixRequest::new(HelixMethod::Patch, "/helix/guest_star/slot_settings")
             .query("broadcaster_id", user_id.clone())
             .query("moderator_id", user_id)
@@ -92,7 +90,6 @@ fn toggle_to_bool(value: Option<&str>) -> Option<bool> {
     }
 }
 
-// A present well-typed Int means "include"; a Bool gate value or absent key means "skip".
 fn read_opt_int(config: &SubActionConfig, key: &str) -> Option<i64> {
     match config.get(key) {
         Some(Variant::Int(n)) => Some(*n),

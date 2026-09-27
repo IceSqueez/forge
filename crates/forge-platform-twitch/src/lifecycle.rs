@@ -5,8 +5,6 @@ use forge_platform_core::QuickActionLiveness;
 
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
-/// Twitch's fixed raid countdown - the upper bound on how long a locally recorded pending
-/// raid can still be real.
 const RAID_COUNTDOWN: Duration = Duration::from_secs(90);
 
 const POLLS_PATH: &str = "/helix/polls";
@@ -38,8 +36,6 @@ struct ChannelEntities {
     raid_until: Option<Instant>,
 }
 
-/// Shared by the EventSub session that writes phases, the raid runners that record a local
-/// pending raid, and the bundle that reads both while building quick-action descriptors.
 #[derive(Clone, Default)]
 pub struct TwitchLifecycle {
     entities: Arc<RwLock<ChannelEntities>>,
@@ -99,16 +95,12 @@ impl TwitchLifecycle {
         entities.raid_until = None;
     }
 
-    /// The pending raid survives: it is a local countdown rather than a phase the notification
-    /// stream could have corrected while it was down.
     pub(crate) fn forget_phases(&self) {
         let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
         entities.poll = PollPhase::Unknown;
         entities.prediction = PredictionPhase::Unknown;
     }
 
-    /// A failed or unreadable response leaves the phase untouched, so a seeding outage stays
-    /// fail-open instead of claiming the entity is gone.
     pub(crate) async fn seed_from_helix(
         &self,
         transport: &dyn HelixTransport,
@@ -208,8 +200,6 @@ impl LifecycleSnapshot {
         }
     }
 
-    /// Never `Absent`: a raid can be started outside forge, so the absence of a local pending
-    /// raid is not knowledge that none is running.
     pub(crate) fn raid_in_flight(self) -> QuickActionLiveness {
         if self.raid_pending {
             QuickActionLiveness::Live
@@ -518,8 +508,6 @@ mod tests {
     fn snapshot_maps_phases_to_the_liveness_of_every_gated_action() {
         use QuickActionLiveness::{Absent, Live, Unknown};
 
-        // poll_in_flight, poll_slot_free, prediction_lockable, prediction_settleable,
-        // prediction_slot_free, raid_in_flight, raid_slot_free
         let cases = [
             (
                 PollPhase::Unknown,

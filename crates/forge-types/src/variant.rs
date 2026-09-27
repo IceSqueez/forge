@@ -50,7 +50,6 @@ impl std::str::FromStr for VariantType {
     }
 }
 
-/// Distinct from [`VariantType`]: carries abbreviated caps labels ("INT", "STR") for UI pills, not the lowercase serialization tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VariantKind {
@@ -100,7 +99,6 @@ impl VariantKind {
         }
     }
 
-    /// Case-sensitive: `"INT"` returns `None`; only exact lowercase names match.
     pub fn from_contract_name(name: &str) -> Option<Self> {
         match name {
             "int" => Some(Self::Int),
@@ -194,7 +192,6 @@ pub(crate) fn array_summary(items: &[Variant]) -> String {
     }
 }
 
-/// Scalars render verbatim; arrays/objects collapse to a compact non-empty summary (`int[3]` / `object{2}`).
 pub fn display_scalar(value: &Variant) -> String {
     match value {
         Variant::Array(items) => array_summary(items),
@@ -204,7 +201,6 @@ pub fn display_scalar(value: &Variant) -> String {
 }
 
 impl Variant {
-    /// Rejects NaN and infinite values.
     pub fn float(f: f64) -> Result<Self, VariantError> {
         if f.is_nan() {
             return Err(VariantError::InvalidFloat { reason: "NaN" });
@@ -295,12 +291,10 @@ impl Variant {
         }
     }
 
-    /// Depth ≤ 32, element count ≤ 10_000, null rejected, strings never auto-promoted.
     pub fn from_json(value: serde_json::Value) -> Result<Self, VariantError> {
         from_json_inner(value, 0, JsonForm::Tagged)
     }
 
-    /// Strict inverse of [`Variant::to_plain_json`]: a `{"type","value"}` object stays an object, null is an error, and RFC3339 strings stay [`Variant::String`] for the caller to parse.
     pub fn from_plain_json(value: serde_json::Value) -> Result<Self, VariantError> {
         from_json_inner(value, 0, JsonForm::Plain)
     }
@@ -787,8 +781,6 @@ mod tests {
         assert!(datetime.contains("1970-01-01"), "{datetime}");
     }
 
-    /// Why: redaction is a `Debug`-only layer - interpolation reads `Display`, so narrowing that
-    /// path would silently blank out every `%var%` substitution in a user's action.
     #[test]
     fn string_arm_is_a_length_in_debug_but_verbatim_in_display() {
         let value = Variant::String("SENTINEL_BODY".into());

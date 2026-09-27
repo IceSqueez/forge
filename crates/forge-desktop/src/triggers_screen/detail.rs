@@ -229,7 +229,6 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    /// An unparseable number contributes nothing, so the record keeps the value it already had.
     fn pending_instance(&self, cx: &App) -> Option<TriggerInstance> {
         let detail = self.detail.as_ref()?;
         let default = self
@@ -248,8 +247,6 @@ impl TriggersRegistryView {
         Some(instance)
     }
 
-    /// The sheet's own Save button also unfocuses the field the click left, so the write is skipped
-    /// once the sheet already holds what the form says.
     fn commit_config(&mut self, cx: &mut Context<Self>) {
         let Some(instance) = self.pending_instance(cx) else {
             return;
@@ -271,8 +268,6 @@ impl TriggersRegistryView {
         );
     }
 
-    /// The sheet can go away in the same tick as the click that unfocused a field, so the value a
-    /// blur would have committed is written straight through the repo with no reload to land on.
     pub(super) fn persist_detail_on_release(&mut self, cx: &mut App) {
         let Some(instance) = self.pending_instance(cx) else {
             return;
@@ -1168,8 +1163,6 @@ mod tests {
             self.view.as_ref().unwrap()
         }
 
-        /// Why: the reload bridge parks a strong handle on the view until its tokio half answers,
-        /// so both halves have to drain before a drop can reach the release callback.
         fn settle(&mut self, cx: &mut gpui::TestAppContext) {
             pump(&self.rt);
             cx.update(|_cx| {});

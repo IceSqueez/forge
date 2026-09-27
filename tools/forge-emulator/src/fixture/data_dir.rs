@@ -6,7 +6,6 @@ use crate::EmulatorError;
 pub const DATA_DIR_VARIABLE: &str = "FORGE_DATA_DIR";
 pub const KEY_FILE_VARIABLE: &str = "FORGE_CREDENTIAL_KEY_FILE";
 
-/// Absolute and empty when constructed; forge treats it as its whole data directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForgeDataDir {
     path: PathBuf,
@@ -26,7 +25,6 @@ impl ForgeDataDir {
         Ok(Self { path })
     }
 
-    /// Refuses a key-file override: it would move the credential key out of the directory.
     pub fn from_forge_environment(
         data_dir: Option<OsString>,
         key_file: Option<OsString>,
@@ -55,7 +53,6 @@ impl ForgeDataDir {
         &self.path
     }
 
-    /// Launch both the seeder and forge through this so both resolve `<dir>/credentials-key`.
     pub fn configure(&self, command: &mut tokio::process::Command) {
         command
             .env(DATA_DIR_VARIABLE, &self.path)

@@ -6,7 +6,6 @@ use crate::ScriptError;
 use crate::arg_binding::BoundExpression;
 use crate::engine::{EngineConfig, map_eval_error, register_sandbox_base};
 
-/// Carries no `ForgeApi`; the globals/chat/http surface is structurally unreachable rather than merely unused.
 #[derive(Debug, Clone)]
 pub struct ConditionEvaluator {
     config: EngineConfig,
@@ -17,7 +16,6 @@ impl ConditionEvaluator {
         Self { config }
     }
 
-    /// Any non-boolean result is a typed error, never truthiness-coerced.
     pub fn eval(&self, expr: &str) -> Result<bool, ScriptError> {
         self.run(expr, expr, rhai::Scope::new())
     }

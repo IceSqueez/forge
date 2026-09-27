@@ -35,7 +35,6 @@ impl YoutubeCredentialsManager {
         }
     }
 
-    /// Returns `None` if no credentials row exists for this account.
     pub async fn load(&self) -> Result<Option<YoutubeCredentials>, PlatformError> {
         let key = CredentialId::new(CREDENTIAL_KEY);
         let Some(json) = self.repo.load(&key).await.map_err(storage_err)? else {
@@ -70,7 +69,6 @@ impl YoutubeCredentialsManager {
         self.persist(&creds).await
     }
 
-    /// Refreshes proactively when within 5 minutes of expiry.
     pub async fn get_valid_access_token(&self) -> Result<String, PlatformError> {
         let creds = self.load().await?.ok_or_else(reauth_err)?;
         if !near_expiry(&creds) {
@@ -86,8 +84,6 @@ impl YoutubeCredentialsManager {
         Ok(refreshed.access_token)
     }
 
-    /// Rechecks against the stored access token under the guard, avoiding a redundant call to
-    /// Google when a concurrent refresh already rotated the pair while this call waited.
     pub async fn refresh(
         &self,
         failed_access_token: &str,
@@ -101,7 +97,6 @@ impl YoutubeCredentialsManager {
         self.perform_refresh(&refresh_token, existing).await
     }
 
-    /// When the Google response omits `refresh_token`, the previously stored token is preserved.
     async fn perform_refresh(
         &self,
         refresh_token: &str,
@@ -125,9 +120,6 @@ impl YoutubeCredentialsManager {
         Ok(updated)
     }
 
-    /// Backfills `channel_handle` on credentials stored before handle tracking existed, via a
-    /// `channels.list(mine=true)` call; a no-op (fails soft) if the handle is already known,
-    /// the call errors, or the response carries no handle for this channel.
     pub async fn ensure_channel_handle(&self) -> Result<YoutubeCredentials, PlatformError> {
         let creds = self.load().await?.ok_or_else(reauth_err)?;
         if creds.channel_handle.is_some() {

@@ -4,7 +4,6 @@ use time::OffsetDateTime;
 
 use crate::error::StorageError;
 
-/// Minted and replaced by forge itself, so losing it never costs the user a login.
 pub const SERVER_BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -34,7 +33,6 @@ pub trait CredentialsRepo: Send + Sync {
 
     async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError>;
 
-    /// Returns true if a credential was actually removed.
     async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError>;
 
     async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError>;

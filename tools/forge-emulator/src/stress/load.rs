@@ -19,7 +19,6 @@ const CHATTER: [&str; 6] = [
     "can we get a hype train going in here today",
 ];
 
-/// What the generator hands the fake Twitch for one sequence number.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Delivery {
     Chat {
@@ -32,7 +31,6 @@ pub enum Delivery {
     },
 }
 
-/// Deterministic: sequence `seq` always yields the same sender and payload.
 pub fn delivery(
     stimulus: &Stimulus,
     seq: u64,
@@ -63,7 +61,6 @@ pub fn delivery(
     }
 }
 
-/// Payload shapes as the EventSub reference documents them for each subscription type.
 fn notification_event(
     kind: StimulusKind,
     seq: u64,
@@ -108,8 +105,6 @@ fn notification_event(
     event
 }
 
-/// Splits a flood between weighted stimuli by largest accumulated credit, so every prefix of the
-/// sequence holds each stimulus close to its share and the order never depends on timing.
 #[derive(Debug, Clone)]
 pub struct FloodMix {
     weights: Vec<(usize, u64)>,
@@ -118,7 +113,6 @@ pub struct FloodMix {
 }
 
 impl FloodMix {
-    /// `stimuli` indexes are kept, so the pick names the profile's own stimulus.
     pub fn new(stimuli: &[Stimulus]) -> Self {
         let weights: Vec<(usize, u64)> = stimuli
             .iter()
@@ -151,7 +145,6 @@ impl FloodMix {
     }
 }
 
-/// How many events a constant `per_second` rate owes after `elapsed_ms`.
 pub fn due(per_second: f64, elapsed_ms: u64) -> u64 {
     if !(per_second.is_finite() && per_second > 0.0) {
         return 0;

@@ -118,7 +118,6 @@ pub(super) struct EditSubActionForm {
     target: SubFormTarget,
     chain_len: usize,
     fields: Vec<SubFormField>,
-    /// Fields past this index belong to the refinement and are discarded on every selector change.
     base_field_count: usize,
     launch_config: SubActionConfig,
     options: HashMap<String, Vec<(String, String)>>,
@@ -197,8 +196,6 @@ impl EditSubActionForm {
         cx.notify();
     }
 
-    /// Seeds only from the step itself: an empty refined value means "use what the target has
-    /// configured", so prefilling from the target would destroy that fallback.
     fn rebuild_refined(&mut self, cx: &mut Context<Self>) {
         let Some(refinement) = self.refinement else {
             return;
@@ -1070,7 +1067,6 @@ fn field_gate(field: &SubFormField) -> Option<&String> {
     }
 }
 
-/// `None` for a field that carries no value at all, and for an integer field holding non-digits.
 fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
     match field {
         SubFormField::Input {

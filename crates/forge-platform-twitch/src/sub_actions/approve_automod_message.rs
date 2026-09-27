@@ -56,7 +56,6 @@ pub(crate) fn validate_automod_config(
     }
 }
 
-/// `user_id` is the moderator's own id, not the sender's. `action` must be uppercase "ALLOW"/"DENY".
 pub(crate) async fn manage_automod_message(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,

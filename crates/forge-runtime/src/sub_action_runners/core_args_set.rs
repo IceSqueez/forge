@@ -5,7 +5,6 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
 
-/// Values written here survive only for the duration of the current action execution; they are not persisted.
 pub struct CoreArgsSetRunner;
 
 #[async_trait]

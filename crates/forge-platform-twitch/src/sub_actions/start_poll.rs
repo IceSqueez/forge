@@ -40,7 +40,6 @@ impl StartPollRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        // Twitch rejects a flat string array with HTTP 400; choices must be {"title": ...} objects.
         let choices: Vec<serde_json::Value> = cfg
             .choices
             .iter()
@@ -62,7 +61,6 @@ impl StartPollRunner {
             }
         }
 
-        // Requires channel:manage:polls scope.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/polls")
             .query("broadcaster_id", user_id)
             .body(serde_json::Value::Object(body));
@@ -90,7 +88,6 @@ struct ResolvedConfig {
     channel_points_per_vote: i64,
 }
 
-/// Returns Err if count is outside [2, 5] or any choice exceeds 25 chars.
 fn parse_choices(raw: &str) -> Result<Vec<String>, String> {
     let choices: Vec<String> = raw
         .split(['\n', ','])

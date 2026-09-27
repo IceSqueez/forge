@@ -30,8 +30,6 @@ pub struct AudioRouterParts {
     pub speak: Option<SpeakQueueHandle>,
 }
 
-/// Every install swaps what the next speech line, clip or show speech plays through; audio already
-/// playing keeps the route it started on.
 pub struct AudioRouter {
     parts: AudioRouterParts,
     remote: Option<Arc<dyn RemoteAudioDestination>>,
@@ -55,8 +53,6 @@ impl AudioRouter {
         Arc::clone(&self.parts.speech_sink) as Arc<dyn AudioSink>
     }
 
-    /// Reads the stored routing and installs it. `None` when a later call started before this
-    /// one finished reading, so only the newest stored routing is ever installed.
     pub async fn apply(&self) -> Option<AppliedRoutes> {
         let ticket = {
             let mut latest = self.latest.lock().unwrap_or_else(PoisonError::into_inner);
@@ -149,7 +145,6 @@ mod tests {
     const BLANK_RECEIVER: &str = "blank-receiver";
     const ALERT_RECEIVER: &str = "alert-receiver";
 
-    /// Why: a delivery that never reaches a page must fail the run instead of stalling it.
     const HANG_GUARD: Duration = Duration::from_secs(5);
 
     struct Gate {

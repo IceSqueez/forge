@@ -17,18 +17,13 @@ const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// A live poll never runs while no broadcast is active, so the ceiling is one unit per
-/// `POLL_INTERVAL`.
 const VIEWER_LIST_COST: u32 = 1;
 
-/// Bounds this poll's own request rate; the real ceiling is the shared daily quota in
-/// `QuotaState` - this only stops a pathological tick storm.
 const READ_BUDGET_CAPACITY: u32 = 60;
 const READ_BUDGET_WINDOW: Duration = Duration::from_secs(60);
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
-/// Holds only a `watch` receiver, so it never keeps the poll task alive.
 pub struct YoutubeViewerSource {
     reports: watch::Receiver<ViewerReport>,
 }
@@ -94,7 +89,6 @@ impl YoutubeViewerPoll {
         }
     }
 
-    /// `None` is a transient miss whose last known figure must be kept, not erased.
     async fn poll_once(&self) -> Option<ViewerReport> {
         let video_id = match self.active_broadcast_id.get() {
             Some(id) => id,
@@ -147,8 +141,6 @@ impl YoutubeViewerPoll {
     }
 }
 
-/// The count is serialized as a string; a non-live/hidden-count broadcast is Absent,
-/// never coerced to zero.
 fn extract_concurrent_viewers(body: &serde_json::Value) -> Option<u64> {
     body.get("items")?
         .as_array()?

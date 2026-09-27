@@ -62,7 +62,6 @@ fn negotiate_os_locale() -> Option<Language> {
     }
 }
 
-/// Second tuple element is `Some` only on first run (no persisted setting) - caller must persist it via `SettingsRepo::set_language` to pin the negotiated OS locale.
 pub async fn resolve_startup_language(
     settings: Arc<dyn SettingsRepo>,
 ) -> (Language, Option<Language>) {
@@ -85,12 +84,10 @@ pub async fn resolve_startup_language(
     }
 }
 
-/// Best-effort locale installed before storage is readable, so the boot splash and failure screens render translated; the storage-resolved language re-installs later.
 pub fn install_os_default() {
     install_language(negotiate_os_locale().unwrap_or(Language::En));
 }
 
-/// Must run on the render thread - the installed bundle is thread-local.
 pub fn install_language(lang: Language) {
     let bundle = build_bundle(lang);
     forge_components::install_bundle(bundle);

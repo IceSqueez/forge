@@ -51,7 +51,6 @@ pub struct SettingsDiagnosticsView {
     clear_pending: bool,
     clearing: bool,
     preparing_export: bool,
-    /// Assembled and held here so the preview describes the exact bytes the confirm then writes.
     pending_export: Option<Bundle>,
 }
 
@@ -178,8 +177,6 @@ impl SettingsDiagnosticsView {
         cx.reveal_path(&Self::log_dir());
     }
 
-    /// Assembles first and shows the statement second: the preview can then quote real counts
-    /// from the bytes that will be written, rather than describing a file that does not exist yet.
     fn prepare_export(&mut self, cx: &mut Context<Self>) {
         if self.preparing_export || self.pending_export.is_some() {
             return;
@@ -634,8 +631,6 @@ fn kib(bytes: u64) -> i64 {
     bytes.div_ceil(1024) as i64
 }
 
-/// The command target is TRACE-only and single-sited, so a non-zero count is proof the bundle
-/// carries full command lines even when the level has since been lowered.
 fn export_statement(bundle: &Bundle, level: &LogLevel) -> Vec<Statement> {
     let mut notes = vec![
         plain(tr!(
@@ -798,9 +793,6 @@ mod tests {
     use super::{Bundle, LogLevel, StatementTone, export_statement, level_label_key};
     use crate::log_level::SELECTABLE;
 
-    // Why: these keys reach `tr!` through a function call, so the literal scan in
-    // `tests/i18n_parity.rs` cannot see them - nothing else would catch a level label that
-    // renders as a raw key in the picker.
     #[test]
     fn every_level_label_key_is_defined_in_both_catalogs() {
         for locale in ["en", "uk"] {
@@ -835,8 +827,6 @@ mod tests {
         }
     }
 
-    /// No locale bundle is installed in a unit test, so `tr!` yields the key itself - which is
-    /// exactly the identity of the note being asserted.
     fn notes(bundle: &Bundle, level: &LogLevel) -> Vec<(String, bool)> {
         export_statement(bundle, level)
             .into_iter()
@@ -851,9 +841,6 @@ mod tests {
             .collect()
     }
 
-    /// Why: O4 - the command-line warning is the one thing the reporter must see before
-    /// publishing, and the bundle can carry command lines the level has since stopped producing.
-    /// Keying the warning off the live level instead of the count would silently drop it.
     #[test]
     fn the_command_line_warning_follows_the_bundle_contents_not_the_active_level() {
         for level in SELECTABLE {

@@ -45,7 +45,6 @@ impl YoutubeSendChat {
         self
     }
 
-    /// Takes the raw message resource id (not a live-chat id); no active broadcast required.
     pub async fn delete(&self, message_id: &str) -> Result<(), PlatformError> {
         {
             let today = today_pacific();
@@ -166,8 +165,6 @@ impl YoutubeSendChat {
         }
     }
 
-    /// YouTube documents `pollEvent` as an insertable `liveChatMessages.insert` type alongside
-    /// `textMessageEvent`; the vote tally and closing the poll are not exposed via the API.
     pub async fn create_poll(
         &self,
         question: &str,

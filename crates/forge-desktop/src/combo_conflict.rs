@@ -31,7 +31,6 @@ pub fn clip_keys(clips: &[StoredClip]) -> Vec<ClipKey> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Claimant {
-    /// A new half may join a combo whose row still has its other edge free.
     NewTrigger,
     Trigger(TriggerInstanceId),
     Clip(Option<ClipId>),
@@ -55,7 +54,6 @@ impl ComboHolder {
     }
 }
 
-/// Excludes the target by half membership, not by row key: a hold's release half is keyed by its press partner.
 pub fn combo_holder<'a>(
     rows: &'a [BindingRow],
     combo: &str,
@@ -199,7 +197,6 @@ mod tests {
         }
     }
 
-    /// A grouped hold row plus the instance ids of its press and release halves.
     fn hold_row(combo: &str) -> (BindingRow, TriggerInstanceId, TriggerInstanceId) {
         let press = TriggerInstanceId::new();
         let release = TriggerInstanceId::new();
@@ -239,9 +236,6 @@ mod tests {
 
     #[test]
     fn a_hold_is_one_holder_for_whichever_half_is_being_edited() {
-        // A hold's row is keyed by its PRESS half, so a key comparison would report the row as
-        // its own conflict while the user edits the RELEASE half - and confirming Replace
-        // deletes both halves of the row being edited.
         let (row, press, release) = hold_row("Ctrl+F1");
         let rows = vec![row];
 

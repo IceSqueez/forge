@@ -32,8 +32,6 @@ impl MockSink {
         }
     }
 
-    /// Serves every call but rejects `move_item`, reproducing a spawn that lands in the scene
-    /// and then fails to travel.
     pub(crate) fn failing_item_move() -> Self {
         Self {
             fail: false,
@@ -246,8 +244,6 @@ pub(crate) fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
     RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
 }
 
-/// Records every sink call with its numeric arguments in declaration order (integers widened
-/// to `f64`), so a test can check exactly what number a runner handed to VTube Studio.
 type RecordedCall = (&'static str, Vec<Option<f64>>);
 
 #[derive(Default)]

@@ -26,10 +26,7 @@ pub struct KickPlatform {
     credentials_manager: Arc<KickCredentialsManager>,
     http: reqwest::Client,
     sender: KickSendChat,
-    // Lets connection_state() and the async lifecycle verbs share one handle without
-    // `&mut self`; never held across an `.await`.
     handle: Mutex<Option<KickChatHandle>>,
-    // Persists across reconnects, unlike `handle`, so a receiver taken once stays live.
     state_tx: watch::Sender<ConnectionState>,
 }
 
@@ -269,8 +266,6 @@ mod tests {
         assert_eq!(p.connection_state(), ConnectionState::Disconnected);
     }
 
-    /// Runners are registered before credentials exist, so connect must fail with a typed
-    /// reauth prompt rather than assuming a boot-time identity.
     #[tokio::test]
     async fn connect_without_credentials_requires_reauth_and_stays_disconnected() {
         let p = platform(InMemRepo::empty(), Arc::new(GrantLimiter));

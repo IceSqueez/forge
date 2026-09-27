@@ -1,4 +1,3 @@
-//! Supervision against `/bin/sh` stub children. Nothing here ever starts the real forge binary.
 #![cfg(target_os = "linux")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -45,7 +44,6 @@ impl Stage {
         self.root.path().join(name)
     }
 
-    /// Run through `/bin/sh` so no test ever execs a file another test thread may still hold open.
     fn stub(&self, body: &str) -> ForgeCommand {
         let script = self.file("stub-forge.sh");
         std::fs::write(&script, body).unwrap();
@@ -135,7 +133,6 @@ async fn wait_for_line(process: &ForgeProcess, text: &str) {
         .unwrap();
 }
 
-/// Answers each connection's `auth` request, accepting only `TOKEN`, and reports every token seen.
 fn serve_auth(listener: TcpListener) -> mpsc::UnboundedReceiver<String> {
     let (seen_tx, seen) = mpsc::unbounded_channel();
     tokio::spawn(async move {

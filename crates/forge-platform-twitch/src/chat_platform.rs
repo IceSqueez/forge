@@ -31,7 +31,6 @@ pub struct TwitchPlatform {
     tracker: SubscriptionTracker,
     rate_limiter: Arc<dyn RateLimiter>,
     lifecycle: TwitchLifecycle,
-    // std::sync::Mutex, not tokio: never held across an `.await`.
     handle: Mutex<Option<TwitchChatHandle>>,
     transport: OnceCell<Arc<dyn HelixTransport>>,
 }
@@ -190,12 +189,10 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
         ChatSendError::NotConnected => PlatformError::Network {
             reason: "not connected".to_owned(),
         },
-        // 413 Payload Too Large: the 500-character cap is a client-side reject.
         ChatSendError::MessageTooLong => PlatformError::Http {
             status: 413,
             body: err.to_string(),
         },
-        // The inner string is already URL/token-stripped by HelixError.
         ChatSendError::Http(body) => PlatformError::Http {
             status: NON_HTTP_STATUS,
             body,

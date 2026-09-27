@@ -1393,8 +1393,6 @@ mod tests {
         }
     }
 
-    /// The valid token in the first row is deliberate: an implementation that reads `token` first
-    /// and ignores the extra field would let a page keep a session credential it never proved.
     #[tokio::test]
     async fn authenticate_refuses_a_frame_presenting_both_credential_forms_or_neither() {
         for (token, overlay_credential, label) in [

@@ -9,8 +9,6 @@ use crate::sink::AudioSink;
 
 const ROUTE_REASON_SEPARATOR: &str = "; ";
 
-/// Started via a single `join_all` to keep cross-sink start drift low; `stop` on the
-/// returned handle cancels every child clip that reported one.
 pub async fn fan_out_stoppable(
     buffer: PcmBuffer,
     sinks: &[Arc<dyn AudioSink>],

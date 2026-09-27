@@ -29,7 +29,6 @@ impl EnableRewardRunner {
     }
 }
 
-/// Requires channel:manage:redemptions scope; Twitch leaves other reward fields as-is.
 pub(crate) async fn patch_reward_bool(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,

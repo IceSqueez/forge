@@ -65,7 +65,6 @@ pub fn resample(
     Ok(out)
 }
 
-/// Mismatched channel counts pad with silence or truncate to the first `dst_channels`.
 pub fn remix(src: &[i16], src_channels: u16, dst_channels: u16) -> Vec<i16> {
     if src_channels == dst_channels {
         return src.to_vec();

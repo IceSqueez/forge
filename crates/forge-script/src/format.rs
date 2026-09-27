@@ -1,4 +1,3 @@
-/// Whitespace-only: no AST manipulation, indentation changes, or operator-spacing changes.
 pub fn format_script(source: &str) -> String {
     let mut output = String::with_capacity(source.len());
     let mut blank_run = 0usize;

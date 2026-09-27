@@ -15,7 +15,6 @@ pub enum InputMismatchError {
     },
 }
 
-/// Line indices are 0-based.
 pub fn inert_annotation_lines(source: &str) -> Vec<usize> {
     source
         .lines()
@@ -31,7 +30,6 @@ pub fn inert_annotation_lines(source: &str) -> Vec<usize> {
         .collect()
 }
 
-/// Err on missing input or type mismatch; empty contract always succeeds and returns an empty `Scope`.
 pub fn build_scope_for_contract(
     contract: &ScriptContract,
     arg_stack: &ArgStack,

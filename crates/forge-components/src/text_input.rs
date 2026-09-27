@@ -64,7 +64,6 @@ actions!(
     ]
 );
 
-/// The binary MUST call this once at boot, or navigation and editing keys are dead.
 pub fn bind_text_input_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, Some(KEY_CONTEXT)),
@@ -92,7 +91,6 @@ pub fn bind_text_input_keys(cx: &mut App) {
 pub enum InputEvent {
     Changed(SharedString),
     Submitted(SharedString),
-    /// Focus left the field and the text differs from the last commit; an untouched field stays silent.
     Blurred(SharedString),
     Cancelled,
 }
@@ -193,7 +191,6 @@ impl TextInput {
         self
     }
 
-    /// Masks display only - `content()` and events keep the real value; clipboard copy/cut is suppressed while masked.
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
         self
@@ -719,7 +716,6 @@ impl Element for TextElement {
             (content.clone(), style.color)
         };
 
-        // Caret and selection offsets index the real buffer; while masked the shaped line is bullets, so each real byte offset maps to its bullet-string counterpart.
         let display_index = |offset: usize| -> usize {
             if secure {
                 crate::text_edit::mask_offset(&content, offset)
@@ -1153,9 +1149,6 @@ mod tests {
         }
     }
 
-    /// Why: the blur listener is registered on first render, the focus path is rebuilt only at draw
-    /// time, and gpui drops the previous path from the event while the window is inactive - so the
-    /// field needs a drawn, activated test window rather than a bare app context.
     fn commits_while(
         cx: &mut gpui::TestAppContext,
         act: impl FnOnce(&Entity<TextInput>, &mut gpui::VisualTestContext),

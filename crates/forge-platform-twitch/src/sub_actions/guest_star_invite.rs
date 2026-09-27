@@ -39,7 +39,6 @@ impl GuestStarInviteRunner {
                 Err(e) => return SubActionOutcome::Failed(format!("{KIND_ID}: {e}")),
             };
 
-        // 204 No Content: no invite id to surface, so this runner pushes no output stack.
         let request = HelixRequest::new(HelixMethod::Post, "/helix/guest_star/invites")
             .query("broadcaster_id", ctx.self_id.clone())
             .query("moderator_id", ctx.self_id)

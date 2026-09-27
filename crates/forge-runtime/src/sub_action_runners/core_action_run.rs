@@ -60,14 +60,12 @@ impl CoreActionRunRunner {
                 SubActionOutcome::Failed("core.action.run: max nesting depth exceeded".to_owned())
             }
             Err(e) => SubActionOutcome::Failed(format!("core.action.run: {e}")),
-            // The called action is its own root: Stop/Break/Continue never cross back to the caller.
             Ok(child) => match child.signal {
                 ChainSignal::Completed
                 | ChainSignal::Stop(_)
                 | ChainSignal::Break
                 | ChainSignal::Continue => SubActionOutcome::Success,
                 ChainSignal::Error(msg) => SubActionOutcome::Failed(msg),
-                // The parent's action-root force-maps the whole execution to Cancelled separately.
                 ChainSignal::Aborted => {
                     SubActionOutcome::Failed("core.action.run: cancelled".to_owned())
                 }
@@ -84,7 +82,6 @@ fn pick_steps(target: &Action) -> Vec<SubActionStep> {
     target.sub_actions.clone()
 }
 
-/// Every step starts at once against the same arguments; the first failing step in chain order decides the signal.
 async fn run_concurrent(
     ctx: &RunContext<'_>,
     steps: &[SubActionStep],

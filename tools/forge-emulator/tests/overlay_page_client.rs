@@ -1,5 +1,3 @@
-//! The page client against a stub that speaks forge's overlay contract. Nothing here starts the
-//! real forge binary.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::net::{Ipv4Addr, SocketAddr};

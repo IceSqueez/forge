@@ -58,7 +58,6 @@ pub struct BindingHalf {
 }
 
 pub struct BindingRow {
-    /// Row identity for menus and capture targets: the press half when the row has one, else the release half.
     pub key: TriggerInstanceId,
     pub combo: String,
     pub registered: bool,
@@ -82,7 +81,6 @@ impl BindingRow {
         self.press.is_none() && self.release.is_some()
     }
 
-    /// Off unless every half the row carries is enabled, so a half-disabled hold reads as stopped.
     pub fn enabled(&self) -> bool {
         self.halves().all(|(_, half)| half.enabled)
     }
@@ -103,7 +101,6 @@ impl BindingRow {
             .and_then(|half| half.action.as_ref())
     }
 
-    /// The edge with no half bound yet; `None` once the combo carries both.
     pub fn free_edge(&self) -> Option<HotkeyEdge> {
         match (self.press.is_some(), self.release.is_some()) {
             (true, false) => Some(HotkeyEdge::Release),
@@ -125,7 +122,6 @@ pub fn registered_combos(client: &HotkeyClient) -> Vec<(HotkeyId, String)> {
         .collect()
 }
 
-/// Reads the count off the builtin health surface; `HotkeyClient` keeps no other public window onto it.
 pub fn conflict_count(client: &HotkeyClient) -> usize {
     client
         .metrics()
@@ -172,7 +168,6 @@ fn combo_of(instance: &TriggerInstance) -> Option<&String> {
     }
 }
 
-/// Canonical form when the stored text parses, so a hand-typed `f5` groups and matches with `F5`.
 fn canonical_combo_of(instance: &TriggerInstance) -> Option<String> {
     combo_of(instance).map(|combo| {
         HotkeyCombo::parse(combo)
@@ -276,7 +271,6 @@ async fn drop_instance(
         .map_err(|e| e.to_string())
 }
 
-/// Prunes both edges of the combo, so removing a binding never orphans its partner half.
 pub async fn cleanup_stale_combo_instances(
     backend: &Arc<dyn DataProvider>,
     combo_str: &str,
@@ -311,14 +305,12 @@ fn binding_instance(combo: String, edge: HotkeyEdge) -> TriggerInstance {
         enabled: true,
         user_defined: true,
         platform_scope: PlatformScope::default(),
-        // A cooldown on the release half would swallow the stop of a hold.
         cooldown_secs: 0,
         cooldown_global: true,
         permission_rung: PermissionRung::Everyone,
     }
 }
 
-/// One entry per combo across both edges: a hold's halves share a single OS registration.
 pub fn persisted_hotkey_combos(instances: &[TriggerInstance]) -> BTreeSet<String> {
     instances
         .iter()
@@ -367,7 +359,6 @@ pub async fn delete_binding(
     cleaned
 }
 
-/// Keeps the OS registration, which the surviving partner half still needs.
 pub async fn delete_binding_half(
     backend: Arc<dyn DataProvider>,
     instance_id: TriggerInstanceId,
@@ -375,7 +366,6 @@ pub async fn delete_binding_half(
     drop_instance(&backend, instance_id).await
 }
 
-/// Leaves the OS registration in place: the combo still fires, and the trigger evaluator is what skips a disabled instance.
 pub async fn set_binding_enabled(
     backend: Arc<dyn DataProvider>,
     instance_ids: Vec<TriggerInstanceId>,
@@ -390,7 +380,6 @@ pub async fn set_binding_enabled(
     Ok(())
 }
 
-/// Moves every half of the combo, so rebinding a hold keeps its press and release on one combo.
 pub async fn rebind_combo(
     reconciler: Arc<HotkeyReconciler>,
     backend: Arc<dyn DataProvider>,
@@ -431,7 +420,6 @@ async fn move_combo_instances(
     Ok(())
 }
 
-/// Callers must free the target edge first; two instances of one edge on a combo hide one another.
 pub async fn set_binding_edge(
     backend: Arc<dyn DataProvider>,
     instance_id: TriggerInstanceId,
@@ -453,7 +441,6 @@ pub async fn set_binding_edge(
     repo.save(&updated).await.map_err(|e| e.to_string())
 }
 
-/// `None` is the off state: no ceiling closes a hold the OS never reported releasing.
 pub async fn load_hold_ceiling(repo: &dyn SettingsRepo) -> Option<u64> {
     match repo.get_string(HOTKEY_HOLD_CEILING_KEY).await {
         Ok(Some(raw)) => match raw.trim().parse::<u64>() {
@@ -972,9 +959,6 @@ mod tests {
                 Some((stop, "Stop".to_owned())),
             ),
             (
-                // Why: the press half is the row's target even when it is unlinked, so a hold
-                // whose start was unbound from the Triggers screen reads as unassigned rather
-                // than silently advertising its stop action as the thing the combo runs.
                 "an unlinked press half is not backfilled from the release half",
                 test_row(Some(test_half(None)), Some(test_half(Some((stop, "Stop"))))),
                 None,
@@ -1190,8 +1174,6 @@ mod tests {
 
     #[test]
     fn binding_instance_leaves_both_edges_without_a_cooldown() {
-        // Why: a cooldown on the release half silently swallows the stop of a hold, so the
-        // combo starts and never stops. The bind path must never seed a non-zero default.
         for edge in [HotkeyEdge::Press, HotkeyEdge::Release] {
             assert_eq!(
                 binding_instance("Ctrl+F1".to_owned(), edge).cooldown_secs,

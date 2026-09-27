@@ -129,7 +129,6 @@ impl PageFrame {
         self
     }
 
-    /// The screen must place its search field first in this slot; the frame docks it leftmost in tier 3 so search lands in the same pixel on every screen.
     #[must_use]
     pub fn subheader_left(mut self, el: impl IntoElement) -> Self {
         self.subheader_left = Some(el.into_any_element());
@@ -176,7 +175,6 @@ impl RenderOnce for PageFrame {
             root = root.child(switcher);
         }
 
-        // Tier 3 exists only when a subheader slot is filled; a tier-2-only screen renders the breadcrumb band and nothing beneath it.
         if self.subheader_left.is_some() || self.subheader_right.is_some() {
             let left = self
                 .subheader_left

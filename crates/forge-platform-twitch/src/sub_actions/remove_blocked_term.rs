@@ -137,7 +137,6 @@ impl SubActionRunner for RemoveBlockedTermRunner {
     }
 }
 
-// broadcaster_id = moderator_id = self; `id` is the blocked-term UUID, not the text.
 async fn delete_blocked_term(
     transport: &Arc<dyn HelixTransport>,
     identity: &Arc<SelfIdentity>,

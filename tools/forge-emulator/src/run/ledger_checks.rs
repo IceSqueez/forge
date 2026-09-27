@@ -20,7 +20,6 @@ pub(crate) fn holds_live_subscription(
     })
 }
 
-/// The distinct subscription types a live session holds, in first-seen order.
 pub(crate) fn live_subscription_types(ledger: &Ledger) -> Vec<String> {
     let mut types: Vec<String> = Vec::new();
     for subscription in &ledger.subscriptions {
@@ -34,7 +33,6 @@ pub(crate) fn live_subscription_types(ledger: &Ledger) -> Vec<String> {
     types
 }
 
-/// Sessions, subscriptions, and the subscription-creation requests that produced them.
 pub(crate) fn subscription_excerpt(ledger: &Ledger) -> LedgerExcerpt {
     LedgerExcerpt {
         requests: capped(
@@ -72,7 +70,6 @@ pub(crate) async fn observe_subscription(
     )
 }
 
-/// Covers the whole run so far, not only the current step.
 pub(crate) fn assess_no_unexpected_requests(ledger: &Ledger) -> (Verdict, Evidence) {
     let unexpected: Vec<&RecordedRequest> = ledger.unexpected_requests().collect();
     let verdict = if unexpected.is_empty() {
@@ -89,7 +86,6 @@ pub(crate) fn assess_no_unexpected_requests(ledger: &Ledger) -> (Verdict, Eviden
     (verdict, Evidence::Ledger(excerpt))
 }
 
-/// Counts over the whole run so far.
 pub(crate) fn assess_request_count(
     ledger: &Ledger,
     expected: &RequestCount,

@@ -198,7 +198,6 @@ impl TtsView {
         } else {
             palette.text_muted
         };
-        // Always laid out to hold the row height; transparent on inactive tabs.
         let indicator = if active {
             palette.brand
         } else {

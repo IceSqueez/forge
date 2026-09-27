@@ -77,7 +77,6 @@ actions!(
     ]
 );
 
-/// The binary MUST call this once at boot or navigation, newline and editing keys are dead.
 pub fn bind_text_area_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, Some(KEY_CONTEXT)),
@@ -113,7 +112,6 @@ struct AreaLayout {
 }
 
 impl AreaLayout {
-    /// Content-space, pre-scroll: the caller adds the viewport origin and subtracts the scroll offset.
     fn point_for_offset(&self, offset: usize) -> Option<Point<Pixels>> {
         for i in (0..self.lines.len()).rev() {
             let start = self.para_byte_starts[i];
@@ -126,7 +124,6 @@ impl AreaLayout {
         None
     }
 
-    /// `p` is in content space, pre-scroll; clamps to the nearest paragraph and grapheme boundary.
     fn offset_for_point(&self, p: Point<Pixels>) -> usize {
         for i in (0..self.lines.len()).rev() {
             if p.y >= self.para_tops[i] {
@@ -149,7 +146,6 @@ pub enum SyntaxMode {
     Rhai,
 }
 
-/// Subscribe to [`InputEvent`] for edits - only `Changed` is emitted (a text area has no submit).
 pub struct TextArea {
     focus_handle: FocusHandle,
     content: SharedString,
@@ -161,7 +157,6 @@ pub struct TextArea {
     last_bounds: Option<Bounds<Pixels>>,
     scroll_offset: Pixels,
     is_selecting: bool,
-    /// Goal column held across a run of Up/Down moves; cleared by any horizontal move or edit.
     preferred_x: Option<Pixels>,
     palette: ForgePalette,
     density: Density,
@@ -174,7 +169,6 @@ pub struct TextArea {
     gutter: bool,
     gutter_marks: Vec<usize>,
     fill: bool,
-    /// When true, prepaint keeps the caret in view (after edits/moves); a wheel scroll clears it so the content can be scrolled away from the caret.
     follow_caret: bool,
     blink_visible: bool,
     focused_cached: bool,
@@ -442,7 +436,6 @@ impl TextArea {
         if self.read_only {
             return;
         }
-        // Newlines are preserved here, unlike the single-line input.
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             self.preferred_x = None;
             self.replace_text_in_range(None, &text, window, cx);
@@ -507,7 +500,6 @@ impl TextArea {
         (start, end)
     }
 
-    /// A no-op before the first paint (relies on the layout cached at the last paint).
     fn move_vertical(&mut self, down: bool, extend: bool, cx: &mut Context<Self>) {
         let computed = self.last_layout.as_ref().and_then(|layout| {
             let caret = layout.point_for_offset(self.cursor_offset())?;
@@ -724,7 +716,6 @@ impl EntityInputHandler for TextArea {
     }
 }
 
-/// Splits every run overlapping `[start, end)` at those boundaries, then runs `f` over the pieces inside the range, layering a selection/marked attribute on already-colored foreground runs.
 fn apply_range(runs: &mut Vec<TextRun>, start: usize, end: usize, f: impl Fn(&mut TextRun)) {
     let mut out: Vec<TextRun> = Vec::with_capacity(runs.len() + 2);
     let mut pos = 0usize;
@@ -813,7 +804,6 @@ fn json_literal_at(chars: &[(usize, char)], i: usize) -> Option<usize> {
     None
 }
 
-/// Returns byte-length runs (not byte-offset pairs) covering the whole buffer.
 pub fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let n = chars.len();
@@ -913,7 +903,6 @@ fn is_rhai_keyword(word: &str) -> bool {
     )
 }
 
-/// Returns byte-length runs (not byte-offset pairs) for a Rhai buffer.
 fn rhai_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let n = chars.len();
@@ -1189,7 +1178,6 @@ impl Element for AreaElement {
         };
         let gutter_w = if gutter { GUTTER_W } else { px(0.0) };
 
-        // Paint selection backgrounds first, then the glyphs, per paragraph.
         for (i, line) in layout.lines.iter().enumerate() {
             let origin = point(
                 bounds.left() + gutter_w,

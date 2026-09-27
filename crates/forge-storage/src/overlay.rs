@@ -76,8 +76,6 @@ pub trait OverlayRepo: Send + Sync {
         credential: &OverlayCredential,
     ) -> Result<Option<OverlayDefinition>, StorageError>;
 
-    /// Mints a stable identity slug from `display_name` (suffixed on collision) and a
-    /// fresh read-scoped credential; the returned identity never changes afterward.
     async fn create(
         &self,
         display_name: &str,
@@ -85,24 +83,17 @@ pub trait OverlayRepo: Send + Sync {
         config_schema_version: u32,
     ) -> Result<OverlayDefinition, StorageError>;
 
-    /// Updates every field except identity on an EXISTING row; an unknown id
-    /// yields [`StorageError::NotFound`] - rows are only ever created by
-    /// [`Self::create`], which mints the immutable identity.
     async fn save(&self, definition: &OverlayDefinition) -> Result<(), StorageError>;
 
-    /// Returns true if a row was found and flipped.
     async fn set_enabled(&self, id: &OverlayId, enabled: bool) -> Result<bool, StorageError>;
 
-    /// Returns true if a row was removed.
     async fn delete(&self, id: &OverlayId) -> Result<bool, StorageError>;
 
-    /// `None` means never delivered; distinct from a delivered-but-empty map.
     async fn get_retained_content(
         &self,
         id: &OverlayId,
     ) -> Result<Option<OverlayConfig>, StorageError>;
 
-    /// Persists whatever it is given; disposition-aware retention is the caller's call.
     async fn set_retained_content(
         &self,
         id: &OverlayId,

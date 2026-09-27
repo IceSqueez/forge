@@ -30,7 +30,6 @@ const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const BEARER_TOKEN_BYTES: usize = 32;
 
-/// Closes the storage pool and stops the retention pruner before returning, on failure too.
 pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, EmulatorError> {
     fixture.validate()?;
     let data_dir = ForgeDataDir::from_forge_environment(
@@ -144,8 +143,6 @@ fn builtin_overlay_kinds() -> Result<OverlayKindRegistry, EmulatorError> {
     Ok(kinds)
 }
 
-/// The repository mints the identity slug and the page credential; the fixture only supplies the
-/// name, the type and the stored config.
 async fn seed_overlay(
     provider: &dyn DataProvider,
     kinds: &OverlayKindRegistry,
@@ -179,8 +176,6 @@ async fn seed_overlay(
     })
 }
 
-/// Rewrites every `overlay.send` target from the fixture's display name to the identity the
-/// repository minted, which is the only name forge answers to.
 fn addressed_steps(steps: &[SubActionStep], overlays: &[SeededOverlay]) -> Vec<SubActionStep> {
     steps
         .iter()
@@ -214,7 +209,6 @@ async fn seed_twitch_account(
 ) -> Result<SeededTwitch, EmulatorError> {
     let credential = StoredCredential {
         access_token: OAuthToken::new(account.access_token.clone()),
-        // Why: with no refresh token, no code path can reach the real Twitch token endpoint.
         refresh_token: None,
         user_id: account.user_id.clone(),
         login: account.login.clone(),

@@ -4,7 +4,6 @@ use std::path::Path;
 
 const LOCK_FILE_NAME: &str = "forge.lock";
 
-/// Releases on process death of any kind, including a crash, because the OS drops the advisory lock with the file descriptor.
 pub struct InstanceLock {
     _file: File,
 }

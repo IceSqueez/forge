@@ -10,7 +10,6 @@ use tokio::sync::{Mutex, watch};
 use crate::clip_hotkeys::{ClipBindings, clip_bindings_of};
 use crate::hotkey_bindings::{COMBO_FIELD, HotkeyEdge, persisted_hotkey_combos};
 
-/// The only owner of OS hotkey registrations; runs are serialized so concurrent writes never interleave diffs.
 pub struct HotkeyReconciler {
     client: Arc<HotkeyClient>,
     triggers: Arc<dyn TriggerInstanceRepo>,
@@ -43,7 +42,6 @@ impl HotkeyReconciler {
         self.clip_bindings.subscribe()
     }
 
-    /// An unreadable source leaves every registration as it is rather than releasing what it would keep.
     pub async fn reconcile(&self) {
         let _serial = self.serial.lock().await;
         let instances = match self.triggers.list_all().await {
@@ -67,7 +65,6 @@ impl HotkeyReconciler {
         apply_wanted(&self.client, &wanted).await;
     }
 
-    /// Registers ahead of the write, so a combo the OS refuses fails the write instead of being stored unregistered.
     pub async fn claim(&self, combo: HotkeyCombo) -> Result<(), HotkeyError> {
         let _serial = self.serial.lock().await;
         if self
@@ -107,8 +104,6 @@ async fn apply_wanted(client: &HotkeyClient, wanted: &BTreeSet<String>) {
     }
 }
 
-/// Keeps the OS hotkey registrations in step with the stored hotkey triggers for screens that
-/// edit trigger instances generically; hotkey combos are canonicalised on the way in.
 pub struct HotkeySyncedTriggerRepo {
     inner: Arc<dyn TriggerInstanceRepo>,
     reconciler: Arc<HotkeyReconciler>,

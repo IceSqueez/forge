@@ -41,8 +41,6 @@ const QUIET_STEP: Duration = Duration::from_secs(5);
 const QUIET_ROUNDS: usize = 4;
 const SAVE_DEADLINE: Duration = Duration::from_secs(2);
 
-/// Keeps the whole fixture inside the process: a sqlite-backed repo waits on a pool
-/// timeout, which the paused clock fires the instant the runtime looks idle.
 #[derive(Default)]
 struct MemoryActionRepo {
     actions: Mutex<HashMap<ActionId, Action>>,
@@ -89,8 +87,6 @@ impl ActionRepo for MemoryActionRepo {
     }
 }
 
-/// Hands every saved run to the test in the order the engine saved it, each save held
-/// until the test's save gate is open.
 struct CapturingHistoryRepo {
     saved: mpsc::UnboundedSender<ExecutionContext>,
     gate: watch::Receiver<bool>,
@@ -130,7 +126,6 @@ impl HistoryRepo for CapturingHistoryRepo {
 }
 
 enum Behavior {
-    /// Blocks until the test opens the gate; deliberately blind to cancellation.
     Gate(watch::Receiver<bool>),
     Instant,
     Panic,
@@ -255,7 +250,6 @@ fn single(queue_id: QueueId, kind_id: &str) -> Action {
     action(queue_id, vec![step(kind_id, SubActionConfig::new())])
 }
 
-/// A 60 s wait followed by a step that must never run once the wait is cancelled.
 fn long_wait_then_instant(queue_id: QueueId) -> Action {
     let mut wait = SubActionConfig::new();
     wait.insert(WAIT_MS_KEY.to_owned(), Variant::Int(LONG_WAIT_MS));
@@ -378,11 +372,6 @@ fn nth_start(n: usize) -> impl FnMut(&Event) -> bool {
     }
 }
 
-/// Reads bus events until `stop` matches, returning everything seen including it.
-///
-/// Why: every party is a task on the paused runtime, so an elapsed step means the system is
-/// quiescent and the awaited event is never coming; a serialized engine fails here at once
-/// instead of hanging.
 async fn events_until(
     sub: &mut EventSubscription,
     mut stop: impl FnMut(&Event) -> bool,
@@ -421,8 +410,6 @@ fn drain(sub: &mut EventSubscription) -> Vec<Event> {
     seen
 }
 
-/// Why: the paused clock only advances once every task is idle, so this returns when the
-/// engine and scheduler have done everything they are going to do without a new input.
 async fn quiesce() {
     tokio::time::sleep(QUIET_STEP).await;
 }
@@ -474,7 +461,6 @@ async fn a_long_execution_in_one_queue_does_not_delay_an_action_in_another() {
     r.sched.shutdown();
 }
 
-/// Dispatches three blocked actions to a queue of two and waits for two of them to start.
 async fn two_of_three_started_on_a_queue_of_two() -> (Rig, EventSubscription, QueueId, [Action; 3])
 {
     let q = QueueId::new();

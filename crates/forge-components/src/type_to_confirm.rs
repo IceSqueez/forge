@@ -47,7 +47,6 @@ impl BulletItem {
     }
 }
 
-/// `Confirmed` is emitted only while the typed phrase matches the target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypeToConfirmEvent {
     Confirmed,
@@ -62,7 +61,6 @@ pub(crate) fn bullet_glyph(kind: BulletKind, palette: &ForgePalette) -> (Icon, R
     }
 }
 
-/// Exact, case-sensitive, untrimmed match - the confirm gate is live only when this holds.
 pub(crate) fn matches(typed: &str, target: &str) -> bool {
     typed == target
 }
@@ -79,7 +77,6 @@ fn sp(s: Spacing) -> Pixels {
     spacing(s, Density::Cozy)
 }
 
-/// The binary must call `bind_text_input_keys` once at boot for the input's editing keys.
 pub struct TypeToConfirm {
     input: Entity<TextInput>,
     target: SharedString,
@@ -195,7 +192,6 @@ impl TypeToConfirm {
         self
     }
 
-    /// Retained for call-site compatibility; the Esc hint is no longer rendered.
     #[must_use]
     pub fn esc_hint(self, _phrase: impl Into<SharedString>) -> Self {
         self

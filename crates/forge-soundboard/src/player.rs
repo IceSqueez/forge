@@ -21,7 +21,6 @@ use crate::sink_factory::AudioSinkFactory;
 
 const MAX_VOLUME: f32 = 1.0;
 
-/// Registry entry outlives clip playback by this much so a late `stop` still lands.
 const PLAYBACK_TAIL_MS: u64 = 200;
 
 const LOOP_POLL_MS: u64 = 50;
@@ -59,7 +58,6 @@ impl PlayControl {
         lock(&self.legs).stopped
     }
 
-    /// Returns `false` after stopping `handles` when a stop already landed on this play.
     fn install(&self, handles: Vec<PlaybackHandle>) -> bool {
         let refused = {
             let mut legs = lock(&self.legs);
@@ -211,12 +209,10 @@ impl SoundboardPlayer {
         }
     }
 
-    /// A later install reaches the next clip and leaves a playing one untouched.
     pub fn install_route(&self, route: ClipRoute) {
         self.clip_route.store(route);
     }
 
-    /// Without a store, a volume set by a sub-action lasts only until restart.
     pub fn install_settings_store(&self, store: Arc<dyn SettingsRepo>) {
         self.settings_store.store(Some(store));
     }
@@ -558,7 +554,6 @@ fn reported_failure(
     Err(error)
 }
 
-/// The leg is awaited on its own task: dropping an unsettled completion stops the clip.
 fn watch_main_leg(main: ControlledPlayback) -> oneshot::Receiver<AudioError> {
     let (failure_tx, failure_rx) = oneshot::channel();
     tokio::spawn(async move {
@@ -1152,8 +1147,6 @@ mod tests {
 
     #[tokio::test]
     async fn master_volume_clamps_gain_above_ceiling() {
-        // Why: the ceiling is unity (the clip's own recorded loudness) - no boost
-        // above it (closes QA finding S6).
         let samples = vec![100, -100, 4_000, -4_000];
         let baseline = capture_played_samples(&samples, 1.0, None).await;
         let out = capture_played_samples(&samples, 1.0, Some(10.0)).await;
@@ -1440,7 +1433,6 @@ mod tests {
         items.iter().map(|item| (*item).to_string()).collect()
     }
 
-    /// A named primary plus `also_headphones` is the only shape that fans out to two device legs.
     fn fan_out_settings() -> SoundboardSettingsHandle {
         SoundboardSettingsHandle::new(SoundboardSettings {
             output_device_id: Some(PRIMARY_DEVICE_ID.to_string()),
@@ -1975,8 +1967,6 @@ mod tests {
         let player = idle_player();
         player.install_settings_store(Arc::clone(&store) as Arc<dyn SettingsRepo>);
 
-        // A +6 dB step now overshoots the 0 dB ceiling; it must clamp to unity
-        // (1.0), and restart must not revert to a stale, unclamped value.
         SoundPlayer::set_master_volume(&player, 10.0).await.unwrap();
 
         let persisted = forge_storage::soundboard_master_volume(store.as_ref())

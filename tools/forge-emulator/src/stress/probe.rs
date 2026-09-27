@@ -2,12 +2,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-/// One reading of a Linux process from `/proc`; every field is `None` when unreadable.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 pub struct ProcessReading {
-    /// utime + stime of the whole process, in clock ticks.
     pub cpu_ticks: Option<u64>,
-    /// utime + stime of the thread whose id is the pid: the one gpui renders on.
     pub main_thread_ticks: Option<u64>,
     pub rss_kib: Option<u64>,
     pub anonymous_kib: Option<u64>,
@@ -55,8 +52,6 @@ fn read(path: &Path) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
-/// Fields 14 and 15 of `/proc/<pid>/stat`, counted after the parenthesised command name, which
-/// may itself hold spaces and parentheses.
 pub fn stat_cpu_ticks(stat: &str) -> Option<u64> {
     let after_name = &stat[stat.rfind(')')? + 1..];
     let mut fields = after_name.split_whitespace();
@@ -76,11 +71,8 @@ fn plain_field(text: &str, name: &str) -> Option<u64> {
     kib_field(text, name)
 }
 
-/// Clock ticks per second; Linux has reported 100 on every mainstream architecture for decades
-/// and `/proc` exposes no way to ask without libc.
 pub const CLOCK_TICKS_PER_SEC: f64 = 100.0;
 
-/// Percent of one core between two tick readings `elapsed_ms` apart.
 pub fn cpu_percent(before: Option<u64>, after: Option<u64>, elapsed_ms: u64) -> Option<f64> {
     let (before, after) = (before?, after?);
     if elapsed_ms == 0 || after < before {
@@ -90,7 +82,6 @@ pub fn cpu_percent(before: Option<u64>, after: Option<u64>, elapsed_ms: u64) -> 
     Some(seconds * 100_000.0 / elapsed_ms as f64)
 }
 
-/// The database file with its write-ahead log and shared-memory index.
 pub fn database_bytes(data_dir: &Path) -> Option<u64> {
     let base = data_dir.join("forge.db");
     let main = std::fs::metadata(&base).ok()?.len();
@@ -102,7 +93,6 @@ pub fn database_bytes(data_dir: &Path) -> Option<u64> {
     Some(main + side)
 }
 
-/// The machine's one-minute load average, to judge contention from other processes.
 pub fn load_average() -> Option<f64> {
     read(Path::new("/proc/loadavg"))?
         .split_whitespace()

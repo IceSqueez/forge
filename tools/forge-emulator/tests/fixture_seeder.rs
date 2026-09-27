@@ -29,7 +29,6 @@ async fn seed_fresh(fixture: &Fixture) -> (TempDir, SeedReport) {
     (dir, report)
 }
 
-/// Decodes the key file with forge's on-disk format, so a key written anywhere else fails here.
 async fn reopen(dir: &Path) -> SqliteBackend {
     let hex = std::fs::read_to_string(dir.join("credentials-key")).unwrap();
     let hex = hex.trim();

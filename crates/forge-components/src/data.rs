@@ -7,7 +7,6 @@ use gpui::{
 use crate::palette::ForgePalette;
 use crate::tokens::{BORDER_THIN, Density, FONT_XXS, Spacing, mono_family, spacing};
 
-/// `Flex(n)` claims a share of leftover row width proportional to `n` (`Flex(8)` beside `Flex(7)` splits 8:7), ignoring cell content's intrinsic width.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ColumnWidth {
     Fixed(Pixels),
@@ -83,7 +82,6 @@ impl DataRow {
     }
 }
 
-/// Stays hidden while reserving its column width until the pointer enters a row tagged with the matching `group`, then becomes visible.
 pub fn hover_reveal(content: impl IntoElement, group: impl Into<SharedString>) -> impl IntoElement {
     div()
         .invisible()
@@ -95,7 +93,6 @@ struct DataTableColors {
     header_bg: Rgba,
     header_ink: Rgba,
     separator: Rgba,
-    /// `None` reuses `separator`; set it when the rule under the column headers must read stronger than the rules between rows.
     header_rule: Option<Rgba>,
     hover: Rgba,
 }
@@ -174,13 +171,11 @@ impl DataTable {
         self
     }
 
-    /// Drops the rule below the final row so an enclosing frame border owns the bottom edge instead of doubling it.
     pub fn trailing_rule(mut self, on: bool) -> Self {
         self.trailing_rule = on;
         self
     }
 
-    /// Pins the header and scrolls the rows inside a `flex_1` viewport.
     pub fn scroll_body(mut self, id: impl Into<ElementId>) -> Self {
         self.scroll_id = Some(id.into());
         self
@@ -322,7 +317,6 @@ impl RenderOnce for DataTable {
     }
 }
 
-/// Rows MUST be single-line (nowrap + truncate): `uniform_list` measures one row and assumes the rest match; a wrapped row breaks scroll and clips text.
 pub struct VirtualTable<'a> {
     id: ElementId,
     columns: Vec<Column>,
@@ -332,7 +326,6 @@ pub struct VirtualTable<'a> {
     header_bg: Rgba,
     header_ink: Rgba,
     separator: Rgba,
-    /// `None` reuses `separator`; set it when the rule under the column headers must read stronger than the rules between rows.
     header_rule: Option<Rgba>,
     hover: Rgba,
     header_pad: Option<(Pixels, Pixels)>,
@@ -410,7 +403,6 @@ impl<'a> VirtualTable<'a> {
         self
     }
 
-    /// Drops the rule below the final row so an enclosing frame border owns the bottom edge instead of doubling it.
     #[must_use]
     pub fn trailing_rule(mut self, on: bool) -> Self {
         self.trailing_rule = on;

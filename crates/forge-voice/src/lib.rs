@@ -137,13 +137,25 @@ impl VoiceAliasResolver {
             .unwrap_or(self.defaults)
     }
 
+    fn alias_for(&self, viewer_id: &str, viewer_name: &str) -> Option<&VoiceAlias> {
+        let by_name = viewer_name.to_lowercase();
+        self.aliases
+            .iter()
+            .find(|a| a.viewer_id == viewer_id)
+            .or_else(|| {
+                self.aliases
+                    .iter()
+                    .find(|a| a.viewer_id.to_lowercase() == by_name)
+            })
+    }
+
     pub fn resolve(
         &self,
         viewer_id: &str,
         viewer_name: &str,
         voice_catalog: &[TtsVoice],
     ) -> ResolveResult {
-        if let Some(alias) = self.aliases.iter().find(|a| a.viewer_id == viewer_id) {
+        if let Some(alias) = self.alias_for(viewer_id, viewer_name) {
             return match alias.state {
                 AliasState::Blocked => ResolveResult::Skip {
                     reason: "blocked by alias",

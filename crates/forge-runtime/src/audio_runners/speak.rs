@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
-use crate::speak_dispatcher::SpeakDispatcher;
+use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
 
 pub struct SpeakRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -96,15 +96,18 @@ impl SubActionRunner for SpeakRunner {
         let voice_alias = config.str("voice_alias").map(|s| s.to_owned());
 
         let is_reward = ctx.arg_stack.get("reward.id").is_some();
+        let origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
         let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak
-                .speak_and_wait(text, voice_alias, is_reward, ctx.cancel.clone())
+                .speak_and_wait(text, voice_alias, is_reward, origin, ctx.cancel.clone())
                 .await
         } else if is_reward {
-            self.speak.speak_reward_sourced(text, voice_alias).await
+            self.speak
+                .speak_reward_sourced(text, voice_alias, origin)
+                .await
         } else {
-            self.speak.speak(text, voice_alias).await
+            self.speak.speak(text, voice_alias, origin).await
         };
 
         (

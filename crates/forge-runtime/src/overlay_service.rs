@@ -19,7 +19,7 @@ use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     reserved_keys,
 };
-use forge_types::ArgStack;
+use forge_types::{ArgStack, EventId};
 use serde_json::json;
 use ulid::Ulid;
 
@@ -31,7 +31,7 @@ use crate::overlay_shows::{
     QueueFull, SHOW_CEILING, SHOW_QUEUE_CAPACITY, Show, ShowDepthWatch, ShowEnd, ShowSequencer,
     ShowTicket,
 };
-use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechStartSignal};
+use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechOrigin, SpeechStartSignal};
 
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
@@ -382,6 +382,7 @@ impl OverlayServiceHandle {
         supplied: &OverlayConfig,
         args: &ArgStack,
         duration_ms: Option<u64>,
+        caused_by: Option<EventId>,
     ) -> Result<OverlayDispatch, OverlayServiceError> {
         let definition = self.load(id).await?;
         let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
@@ -398,6 +399,7 @@ impl OverlayServiceHandle {
                 voice_alias: program.voice_alias,
                 overlay: definition.id.as_str().to_owned(),
                 show: Ulid::generate().to_string(),
+                origin: SpeechOrigin::from_args(args, caused_by),
             });
         let Some(window) = display_window(descriptor, &definition.config, duration_ms) else {
             let disposition = descriptor.delivery_disposition();

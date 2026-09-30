@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use forge_audio::{PlaybackCorrelation, RemoteDestinationId};
 use forge_registry::CancelSignal;
 use forge_runtime::{
-    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal, VoiceDescriptor,
+    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
+    SpeechStartSignal, VoiceDescriptor,
 };
 use forge_script::SpeakRequester;
 use forge_speak_queue::{
@@ -18,6 +19,16 @@ use tokio::sync::broadcast::error::RecvError;
 
 const SPEAK_WAIT_HARD_CAP: Duration = Duration::from_secs(600);
 const SPEAK_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const SYSTEM_SPEAKER_ID: &str = "system";
+const SYSTEM_SPEAKER_NAME: &str = "Forge";
+
+fn queue_identity(viewer: Option<SpeakingViewer>) -> (String, String) {
+    match viewer {
+        Some(viewer) if viewer.platform.is_empty() => (viewer.id, viewer.name),
+        Some(viewer) => (format!("{}:{}", viewer.platform, viewer.id), viewer.name),
+        None => (SYSTEM_SPEAKER_ID.to_owned(), SYSTEM_SPEAKER_NAME.to_owned()),
+    }
+}
 
 pub struct SpeakBridge {
     handle: Arc<SpeakQueueHandle>,
@@ -37,18 +48,20 @@ impl SpeakBridge {
         voice_override: Option<VoiceId>,
         is_reward: bool,
         target: Option<PlaybackTarget>,
+        origin: SpeechOrigin,
     ) -> Result<RequestId, String> {
         let request_id = RequestId::new();
+        let (viewer_id, viewer_name) = queue_identity(origin.viewer);
         let request = SpeakRequest {
             request_id: request_id.clone(),
-            viewer_id: "system".to_owned(),
-            viewer_name: "Forge".to_owned(),
+            viewer_id,
+            viewer_name,
             text,
             priority: Priority::Normal,
             alias_override,
             engine_override,
             voice_override,
-            source_event_id: None,
+            source_event_id: origin.caused_by,
             is_reward,
             target,
         };
@@ -158,6 +171,7 @@ impl SpeakDispatcher for SpeakBridge {
         &self,
         text: String,
         voice_id_override: Option<String>,
+        origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
         self.enqueue(
             text,
@@ -166,6 +180,7 @@ impl SpeakDispatcher for SpeakBridge {
             None,
             false,
             None,
+            origin,
         )
         .await
         .map(|_| ())
@@ -176,44 +191,40 @@ impl SpeakDispatcher for SpeakBridge {
         &self,
         text: String,
         voice_id_override: Option<String>,
+        origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
-        self.enqueue(text, voice_id_override.map(AliasId), None, None, true, None)
-            .await
-            .map(|_| ())
-            .map_err(SpeakDispatchError::Dispatch)
-    }
-
-    async fn speak_with_alias(
-        &self,
-        text: String,
-        alias_id: String,
-    ) -> Result<(), SpeakDispatchError> {
-        self.enqueue(text, Some(AliasId(alias_id)), None, None, false, None)
-            .await
-            .map(|_| ())
-            .map_err(SpeakDispatchError::Dispatch)
+        self.enqueue(
+            text,
+            voice_id_override.map(AliasId),
+            None,
+            None,
+            true,
+            None,
+            origin,
+        )
+        .await
+        .map(|_| ())
+        .map_err(SpeakDispatchError::Dispatch)
     }
 
     async fn speak_with_engine(
         &self,
         text: String,
         engine_id: String,
+        origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
-        self.enqueue(text, None, Some(EngineId(engine_id)), None, false, None)
-            .await
-            .map(|_| ())
-            .map_err(SpeakDispatchError::Dispatch)
-    }
-
-    async fn speak_with_voice(
-        &self,
-        text: String,
-        voice_id: String,
-    ) -> Result<(), SpeakDispatchError> {
-        self.enqueue(text, None, None, Some(VoiceId(voice_id)), false, None)
-            .await
-            .map(|_| ())
-            .map_err(SpeakDispatchError::Dispatch)
+        self.enqueue(
+            text,
+            None,
+            Some(EngineId(engine_id)),
+            None,
+            false,
+            None,
+            origin,
+        )
+        .await
+        .map(|_| ())
+        .map_err(SpeakDispatchError::Dispatch)
     }
 
     async fn speak_and_wait(
@@ -221,6 +232,7 @@ impl SpeakDispatcher for SpeakBridge {
         text: String,
         voice_id_override: Option<String>,
         is_reward: bool,
+        origin: SpeechOrigin,
         cancel: CancelSignal,
     ) -> Result<(), SpeakDispatchError> {
         let mut events = self.handle.subscribe();
@@ -232,6 +244,7 @@ impl SpeakDispatcher for SpeakBridge {
                 None,
                 is_reward,
                 None,
+                origin,
             )
             .await
             .map_err(SpeakDispatchError::Dispatch)?;
@@ -242,11 +255,20 @@ impl SpeakDispatcher for SpeakBridge {
         &self,
         text: String,
         engine_id: String,
+        origin: SpeechOrigin,
         cancel: CancelSignal,
     ) -> Result<(), SpeakDispatchError> {
         let mut events = self.handle.subscribe();
         let request_id = self
-            .enqueue(text, None, Some(EngineId(engine_id)), None, false, None)
+            .enqueue(
+                text,
+                None,
+                Some(EngineId(engine_id)),
+                None,
+                false,
+                None,
+                origin,
+            )
             .await
             .map_err(SpeakDispatchError::Dispatch)?;
         wait_for_terminal(&mut events, &request_id, cancel).await
@@ -271,6 +293,7 @@ impl SpeakDispatcher for SpeakBridge {
                 None,
                 false,
                 Some(target),
+                speech.origin,
             )
             .await
             .map_err(SpeakDispatchError::Dispatch)?;
@@ -369,6 +392,7 @@ impl SpeakRequester for SpeakBridge {
                 None,
                 false,
                 None,
+                SpeechOrigin::default(),
             )
             .await
         {

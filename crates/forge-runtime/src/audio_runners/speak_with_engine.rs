@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
-use crate::speak_dispatcher::SpeakDispatcher;
+use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
 
 pub struct SpeakWithEngineRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -99,13 +99,14 @@ impl SubActionRunner for SpeakWithEngineRunner {
             .arg_stack
             .interpolate(config.str("engine_id").unwrap_or_default());
 
+        let origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
         let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak
-                .speak_with_engine_and_wait(text, engine_id, ctx.cancel.clone())
+                .speak_with_engine_and_wait(text, engine_id, origin, ctx.cancel.clone())
                 .await
         } else {
-            self.speak.speak_with_engine(text, engine_id).await
+            self.speak.speak_with_engine(text, engine_id, origin).await
         };
 
         (

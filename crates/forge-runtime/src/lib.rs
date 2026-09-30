@@ -73,7 +73,8 @@ pub use queue_scheduler::{
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
 pub use speak_dispatcher::{
-    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal, VoiceDescriptor,
+    ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
+    SpeechStartSignal, VoiceDescriptor,
 };
 pub use stream_live::{LiveSource, StreamLiveHandle, StreamLiveState, spawn_stream_live_signal};
 pub use sub_action_runners::{

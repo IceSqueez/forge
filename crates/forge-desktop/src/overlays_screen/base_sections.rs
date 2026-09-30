@@ -261,7 +261,7 @@ impl OverlayPropertyPanel {
             async move {
                 let args = service.sample(&id).await.args();
                 match service
-                    .send_to(&id, &OverlayConfig::new(), &args, None)
+                    .send_to(&id, &OverlayConfig::new(), &args, None, None)
                     .await
                 {
                     Ok(OverlayDispatch::Applied(delivery)) => Ok(Fired::Applied(delivery)),

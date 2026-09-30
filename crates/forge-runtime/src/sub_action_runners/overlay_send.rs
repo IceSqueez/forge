@@ -46,6 +46,7 @@ impl OverlaySendRunner {
                 &supplied_content(config),
                 ctx.arg_stack,
                 duration_override(config),
+                Some(ctx.parent_event_id),
             )
             .await
         {

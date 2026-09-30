@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use forge_registry::CancelSignal;
+use forge_types::{ActorRole, ActorSlot, ArgStack, CanonicalVariable, EventId, Variant};
 use tokio::sync::watch;
 
 #[derive(Debug, thiserror::Error)]
@@ -21,11 +22,56 @@ pub struct VoiceDescriptor {
 const SHOW_SPEECH_UNAVAILABLE: &str = "speech for an overlay show is not available";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpeakingViewer {
+    pub platform: String,
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SpeechOrigin {
+    pub viewer: Option<SpeakingViewer>,
+    pub caused_by: Option<EventId>,
+}
+
+impl SpeechOrigin {
+    pub fn from_args(args: &ArgStack, caused_by: Option<EventId>) -> Self {
+        Self {
+            viewer: principal_viewer(args),
+            caused_by,
+        }
+    }
+}
+
+fn principal_text(args: &ArgStack, slot: ActorSlot) -> Option<&str> {
+    match args.get(CanonicalVariable::actor(ActorRole::Principal, slot).name()) {
+        Some(Variant::String(value)) if !value.trim().is_empty() => Some(value.trim()),
+        _ => None,
+    }
+}
+
+fn principal_viewer(args: &ArgStack) -> Option<SpeakingViewer> {
+    let login = principal_text(args, ActorSlot::Login);
+    let id = principal_text(args, ActorSlot::Id).or(login)?;
+    let name = principal_text(args, ActorSlot::Name)
+        .or(login)
+        .unwrap_or(id);
+    Some(SpeakingViewer {
+        platform: principal_text(args, ActorSlot::Platform)
+            .unwrap_or_default()
+            .to_owned(),
+        id: id.to_owned(),
+        name: name.to_owned(),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShowSpeech {
     pub text: String,
     pub voice_alias: Option<String>,
     pub overlay: String,
     pub show: String,
+    pub origin: SpeechOrigin,
 }
 
 #[derive(Debug, Clone)]
@@ -58,32 +104,16 @@ pub trait SpeakDispatcher: Send + Sync {
         &self,
         text: String,
         voice_id_override: Option<String>,
+        origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError>;
-
-    async fn speak_with_alias(
-        &self,
-        text: String,
-        alias_id: String,
-    ) -> Result<(), SpeakDispatchError> {
-        let _ = (text, alias_id);
-        Ok(())
-    }
 
     async fn speak_with_engine(
         &self,
         text: String,
         engine_id: String,
+        origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
-        let _ = (text, engine_id);
-        Ok(())
-    }
-
-    async fn speak_with_voice(
-        &self,
-        text: String,
-        voice_id: String,
-    ) -> Result<(), SpeakDispatchError> {
-        let _ = (text, voice_id);
+        let _ = (text, engine_id, origin);
         Ok(())
     }
 
@@ -91,8 +121,9 @@ pub trait SpeakDispatcher: Send + Sync {
         &self,
         text: String,
         voice_id_override: Option<String>,
+        origin: SpeechOrigin,
     ) -> Result<(), SpeakDispatchError> {
-        self.speak(text, voice_id_override).await
+        self.speak(text, voice_id_override, origin).await
     }
 
     async fn speak_and_wait(
@@ -100,13 +131,15 @@ pub trait SpeakDispatcher: Send + Sync {
         text: String,
         voice_id_override: Option<String>,
         is_reward: bool,
+        origin: SpeechOrigin,
         cancel: CancelSignal,
     ) -> Result<(), SpeakDispatchError> {
         let _ = cancel;
         if is_reward {
-            self.speak_reward_sourced(text, voice_id_override).await
+            self.speak_reward_sourced(text, voice_id_override, origin)
+                .await
         } else {
-            self.speak(text, voice_id_override).await
+            self.speak(text, voice_id_override, origin).await
         }
     }
 
@@ -114,10 +147,11 @@ pub trait SpeakDispatcher: Send + Sync {
         &self,
         text: String,
         engine_id: String,
+        origin: SpeechOrigin,
         cancel: CancelSignal,
     ) -> Result<(), SpeakDispatchError> {
         let _ = cancel;
-        self.speak_with_engine(text, engine_id).await
+        self.speak_with_engine(text, engine_id, origin).await
     }
 
     async fn speak_for_show(

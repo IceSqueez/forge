@@ -1,29 +1,23 @@
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
-    KeyBinding, ParentElement, Pixels, Render, ScrollStrategy, SharedString,
-    StatefulInteractiveElement, Styled, Subscription, UniformListScrollHandle, Window, actions,
-    div, px, uniform_list,
+    AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, KeyBinding, KeyDownEvent, ParentElement, Pixels, Render, ScrollStrategy,
+    SharedString, Styled, Subscription, UniformListScrollHandle, Window, actions, div, px,
+    uniform_list,
 };
 
-use crate::buttons::secondary_button;
-use crate::icons::{Icon, icon};
-use crate::palette::{ForgePalette, with_alpha};
+use crate::dropdown::{
+    DROPDOWN_MAX_HEIGHT, DROPDOWN_PADDING, DROPDOWN_ROW_HEIGHT, dropdown_row, dropdown_surface,
+};
+use crate::icons::Icon;
+use crate::palette::ForgePalette;
 use crate::search_state::SearchState;
 use crate::text_input::{InputEvent, TextInput};
-use crate::tokens::{
-    BORDER_THIN, Density, FONT_MD, FONT_SM, Radius, Spacing, body_family, radius, spacing,
-};
+use crate::tokens::{Radius, body_family};
 
-const CARD_WIDTH: Pixels = px(480.0);
-const LIST_HEIGHT: Pixels = px(320.0);
-const LOADING_HEIGHT: Pixels = px(200.0);
-const EMPTY_HEIGHT: Pixels = px(120.0);
-const ICON_TILE: Pixels = px(28.0);
-const ICON_TILE_GLYPH: Pixels = px(14.0);
-const LABEL_LINE_GAP: Pixels = px(2.0);
-const ROW_GAP: Pixels = px(10.0);
-const ROW_HOVER_ALPHA: f32 = 0.08;
-const ROW_SELECTED_ALPHA: f32 = 0.14;
+const SEARCH_THRESHOLD: usize = 10;
+const MESSAGE_FONT: Pixels = px(12.5);
+const ENTER_KEY: &str = "enter";
+const ESCAPE_KEY: &str = "escape";
 
 pub const PICKER_CONTEXT: &str = "ForgePicker";
 
@@ -36,25 +30,19 @@ pub fn bind_picker_keys(cx: &mut App) {
     ]);
 }
 
-fn pad(s: Spacing) -> Pixels {
-    spacing(s, Density::Cozy)
-}
-
 #[derive(Debug, Clone)]
 pub struct PickerItem {
     pub id: SharedString,
     pub label: SharedString,
     pub sublabel: Option<SharedString>,
-    pub icon: Icon,
+    pub icon: Option<Icon>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PickerLabels {
-    pub title: SharedString,
     pub placeholder: SharedString,
     pub empty: SharedString,
     pub loading: SharedString,
-    pub cancel: SharedString,
 }
 
 #[derive(Debug, Clone)]
@@ -68,14 +56,22 @@ pub struct Picker {
     items: Vec<PickerItem>,
     filtered: Vec<usize>,
     selected: usize,
+    current: Option<SharedString>,
     loading: bool,
     labels: PickerLabels,
     palette: ForgePalette,
     list_scroll: UniformListScrollHandle,
+    focus_handle: FocusHandle,
     _search_sub: Subscription,
 }
 
 impl EventEmitter<PickerEvent> for Picker {}
+
+impl Focusable for Picker {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
 
 impl Picker {
     pub fn new(
@@ -93,14 +89,23 @@ impl Picker {
             items,
             filtered: Vec::new(),
             selected: 0,
+            current: None,
             loading: false,
             labels,
             palette,
             list_scroll: UniformListScrollHandle::new(),
+            focus_handle: cx.focus_handle(),
             _search_sub: search_sub,
         };
         this.recompute();
         this
+    }
+
+    #[must_use]
+    pub fn with_current(mut self, current: Option<SharedString>) -> Self {
+        self.current = current;
+        self.highlight_current();
+        self
     }
 
     pub fn set_items(&mut self, items: Vec<PickerItem>, cx: &mut Context<Self>) {
@@ -124,7 +129,15 @@ impl Picker {
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        self.search.field().update(cx, |f, cx| f.focus(window, cx));
+        if self.shows_search() {
+            self.search.field().update(cx, |f, cx| f.focus(window, cx));
+        } else {
+            window.focus(&self.focus_handle, cx);
+        }
+    }
+
+    fn shows_search(&self) -> bool {
+        self.items.len() > SEARCH_THRESHOLD
     }
 
     fn on_search_event(
@@ -155,12 +168,30 @@ impl Picker {
             .map(|(idx, _)| idx)
             .collect();
         self.selected = 0;
+        if query.is_empty() {
+            self.highlight_current();
+        }
+    }
+
+    fn highlight_current(&mut self) {
+        let Some(current) = self.current.as_ref() else {
+            return;
+        };
+        if let Some(pos) = self
+            .filtered
+            .iter()
+            .position(|&idx| self.items[idx].id == *current)
+        {
+            self.selected = pos;
+            self.list_scroll
+                .scroll_to_item(pos, ScrollStrategy::Nearest);
+        }
     }
 
     fn confirm_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(&idx) = self.filtered.get(self.selected) {
             let id = self.items[idx].id.clone();
-            self.emit_selected(id, cx);
+            cx.emit(PickerEvent::Selected(id));
         }
     }
 
@@ -192,77 +223,44 @@ impl Picker {
         cx.notify();
     }
 
-    fn emit_selected(&mut self, id: SharedString, cx: &mut Context<Self>) {
-        cx.emit(PickerEvent::Selected(id));
-    }
-
-    fn cancel(&mut self, _event: &ClickEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        cx.emit(PickerEvent::Cancelled);
+    fn on_key_down(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        match event.keystroke.key.as_str() {
+            ENTER_KEY => {
+                cx.stop_propagation();
+                self.confirm_selected(cx);
+            }
+            ESCAPE_KEY => {
+                cx.stop_propagation();
+                cx.emit(PickerEvent::Cancelled);
+            }
+            _ => {}
+        }
     }
 
     fn render_item(
         &self,
+        pos: usize,
         idx: usize,
         item: &PickerItem,
-        is_selected: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
         let id = item.id.clone();
-
-        let tile = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(ICON_TILE)
-            .rounded(radius(Radius::Sm))
-            .bg(p.surface_overlay)
-            .child(icon(item.icon, ICON_TILE_GLYPH, p.text_secondary));
-
-        let mut labels = div().flex().flex_col().min_w_0().gap(LABEL_LINE_GAP).child(
-            div()
-                .truncate()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(p.text_primary)
-                .child(item.label.clone()),
-        );
-        if let Some(sub) = item.sublabel.clone() {
-            labels = labels.child(
-                div()
-                    .truncate()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(p.text_muted)
-                    .child(sub),
-            );
-        }
-
-        let hover_bg = with_alpha(p.brand, ROW_HOVER_ALPHA);
-
-        let mut row = div()
-            .id(("forge-picker-row", idx))
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(ROW_GAP)
-            .py(pad(Spacing::Xs))
-            .px(pad(Spacing::Md))
-            .rounded(radius(Radius::Sm))
-            .text_color(p.text_primary)
-            .cursor_pointer()
-            .hover(move |style| style.bg(hover_bg))
-            .active(move |style| style.bg(hover_bg))
-            .on_click(cx.listener(move |this, _event, _window, cx| {
-                this.emit_selected(id.clone(), cx);
+        let is_current = self.current.as_ref() == Some(&item.id);
+        dropdown_row(("forge-picker-row", idx), item.label.clone(), &self.palette)
+            .icon(item.icon)
+            .suffix(item.sublabel.clone())
+            .current(is_current)
+            .highlighted(pos == self.selected)
+            .on_click(cx.listener(move |_this, _event, _window, cx| {
+                cx.emit(PickerEvent::Selected(id.clone()));
             }))
-            .child(tile)
-            .child(div().flex_1().min_w_0().overflow_hidden().child(labels));
-        if is_selected {
-            row = row.bg(with_alpha(p.brand, ROW_SELECTED_ALPHA));
-        }
-        row.into_any_element()
+            .into_any_element()
+    }
+
+    fn list_height(&self, count: usize) -> Pixels {
+        let natural = DROPDOWN_ROW_HEIGHT * count as f32;
+        let ceiling = DROPDOWN_MAX_HEIGHT - DROPDOWN_PADDING * 2.0;
+        if natural < ceiling { natural } else { ceiling }
     }
 }
 
@@ -275,20 +273,17 @@ pub(crate) fn item_matches(label: &str, sublabel: Option<&str>, query: &str) -> 
         || sublabel.is_some_and(|s| s.to_lowercase().contains(&needle))
 }
 
-fn centered_message(text: SharedString, height: Pixels, palette: ForgePalette) -> AnyElement {
+fn message_row(text: SharedString, palette: ForgePalette) -> AnyElement {
     div()
         .w_full()
-        .h(height)
+        .h(DROPDOWN_ROW_HEIGHT)
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            div()
-                .font_family(body_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_muted)
-                .child(text),
-        )
+        .font_family(body_family())
+        .text_size(MESSAGE_FONT)
+        .text_color(palette.text_faint)
+        .child(text)
         .into_any_element()
 }
 
@@ -296,32 +291,10 @@ impl Render for Picker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
 
-        let header = div()
-            .w_full()
-            .py(pad(Spacing::Md))
-            .px(pad(Spacing::Md))
-            .border(BORDER_THIN)
-            .border_color(p.border_regular)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_MD)
-                    .text_color(p.text_primary)
-                    .child(self.labels.title.clone()),
-            );
-
-        let search_band = div()
-            .w_full()
-            .py(pad(Spacing::Sm))
-            .px(pad(Spacing::Md))
-            .border(BORDER_THIN)
-            .border_color(p.border_regular)
-            .child(self.search.field().clone());
-
         let list_area = if self.loading {
-            centered_message(self.labels.loading.clone(), LOADING_HEIGHT, p)
+            message_row(self.labels.loading.clone(), p)
         } else if self.filtered.is_empty() {
-            centered_message(self.labels.empty.clone(), EMPTY_HEIGHT, p)
+            message_row(self.labels.empty.clone(), p)
         } else {
             let count = self.filtered.len();
             uniform_list(
@@ -334,46 +307,32 @@ impl Render for Picker {
                             continue;
                         };
                         let item = this.items[idx].clone();
-                        rows.push(this.render_item(idx, &item, pos == this.selected, cx));
+                        rows.push(this.render_item(pos, idx, &item, cx));
                     }
                     rows
                 }),
             )
             .track_scroll(&self.list_scroll)
-            .h(LIST_HEIGHT)
+            .w_full()
+            .h(self.list_height(count))
             .into_any_element()
         };
 
-        let footer = div()
-            .w_full()
-            .py(pad(Spacing::Sm))
-            .px(pad(Spacing::Md))
-            .border(BORDER_THIN)
-            .border_color(p.border_regular)
-            .flex()
-            .items_center()
-            .justify_end()
-            .child(
-                secondary_button(self.labels.cancel.clone(), &p)
-                    .on_click("forge-picker-cancel", cx.listener(Self::cancel)),
-            );
-
-        div()
+        let mut surface = dropdown_surface(&p)
             .key_context(PICKER_CONTEXT)
+            .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
-            .flex()
-            .flex_col()
-            .w(CARD_WIDTH)
-            .bg(p.elevated)
-            .rounded(radius(Radius::Lg))
-            .overflow_hidden()
-            .border(BORDER_THIN)
-            .border_color(p.border_regular)
-            .child(header)
-            .child(search_band)
-            .child(list_area)
-            .child(footer)
+            .on_key_down(cx.listener(Self::on_key_down));
+        if self.shows_search() {
+            surface = surface.child(
+                div()
+                    .w_full()
+                    .pb(DROPDOWN_PADDING)
+                    .child(self.search.field().clone()),
+            );
+        }
+        surface.child(list_area)
     }
 }
 

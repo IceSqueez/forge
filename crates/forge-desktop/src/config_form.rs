@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, HashMap};
 
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, Icon, InputEvent, Radius, Spacing, TextInput,
-    accent_swatch, body_family, icon, mono_family, radius, slider, spacing, toggle, tr,
+    BORDER_THIN, Density, ForgePalette, Icon, InputEvent, Picker, Radius, Spacing, TextInput,
+    accent_swatch, body_family, dropdown, icon, mono_family, radius, slider, spacing, toggle, tr,
 };
 use forge_registry::FormField;
 use forge_types::Variant;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
+    prelude::*, px,
 };
 
 const FILL_KEY_W: Pixels = px(110.0);
@@ -94,7 +94,15 @@ impl ConfigField {
 pub(crate) type ConfigCommitHandler<V> =
     fn(&mut V, Entity<TextInput>, &InputEvent, &mut Context<V>);
 
-type ChoiceOpener<V> = fn(&mut V, String, Point<Pixels>, &mut Window, &mut Context<V>);
+type ChoiceOpener<V> = fn(&mut V, String, &mut Window, &mut Context<V>);
+
+type ChoiceCloser<V> = fn(&mut V, &mut Context<V>);
+
+pub(crate) struct ChoiceDropdown<V: 'static> {
+    pub(crate) open: ChoiceOpener<V>,
+    pub(crate) close: ChoiceCloser<V>,
+    pub(crate) active: Option<(String, Entity<Picker>)>,
+}
 
 pub(crate) enum ChoiceSupport<'a> {
     Text,
@@ -105,7 +113,7 @@ pub(crate) struct ConfigFieldHandlers<V: 'static> {
     pub(crate) toggle: fn(&mut V, String, &mut Context<V>),
     pub(crate) slide: fn(&mut V, String, i64, &mut Context<V>),
     pub(crate) pick: fn(&mut V, String, String, &mut Context<V>),
-    pub(crate) open_choice: Option<ChoiceOpener<V>>,
+    pub(crate) choice: Option<ChoiceDropdown<V>>,
 }
 
 pub(crate) fn sparse_overrides(default: &FieldConfig, buffer: &FieldConfig) -> FieldConfig {
@@ -638,24 +646,40 @@ fn render_choice<V: 'static>(
         )
         .child(icon(Icon::ChevronDown, CHOICE_GLYPH, palette.text_faint));
 
-    if let Some(open_choice) = handlers.open_choice {
-        let open_key = key.to_owned();
-        let view = view.clone();
-        let hover_border = palette.brand;
-        trigger = trigger
-            .cursor_pointer()
-            .hover(move |s| s.border_color(hover_border))
-            .on_click(
-                move |event: &ClickEvent, window: &mut Window, cx: &mut App| {
-                    let position = event.position();
-                    view.update(cx, |this, cx| {
-                        open_choice(this, open_key.clone(), position, window, cx)
-                    });
-                },
-            );
-    }
+    let Some(choice) = handlers.choice.as_ref() else {
+        return trigger.into_any_element();
+    };
+    let open_choice = choice.open;
+    let open_key = key.to_owned();
+    let open_view = view.clone();
+    let hover_border = palette.brand;
+    trigger = trigger
+        .cursor_pointer()
+        .hover(move |s| s.border_color(hover_border))
+        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+            open_view.update(cx, |this, cx| {
+                open_choice(this, open_key.clone(), window, cx)
+            });
+        });
 
-    trigger.into_any_element()
+    let close_choice = choice.close;
+    let popover = choice
+        .active
+        .as_ref()
+        .filter(|(active_key, _)| active_key == key)
+        .map(|(_, picker)| {
+            let view = view.clone();
+            dropdown(picker.clone()).on_dismiss(move |_window, cx| {
+                view.update(cx, close_choice);
+            })
+        });
+
+    div()
+        .relative()
+        .w_full()
+        .child(trigger)
+        .children(popover)
+        .into_any_element()
 }
 
 pub(crate) fn render_config_row<V: 'static>(

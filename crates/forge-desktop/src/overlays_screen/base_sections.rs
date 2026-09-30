@@ -7,8 +7,8 @@ use forge_overlay::config::{DURATION, SOUND, SPEECH, SPEECH_VOICE};
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, SharedString, Subscription, Task,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Task, Window,
+    div, prelude::*, px,
 };
 
 use super::property_panel::{
@@ -16,7 +16,7 @@ use super::property_panel::{
     SECTION_TOP_GAP,
 };
 use crate::async_bridge;
-use crate::config_form::{ConfigField, ConfigFieldHandlers, render_config_control};
+use crate::config_form::{ChoiceDropdown, ConfigField, ConfigFieldHandlers, render_config_control};
 use crate::presentation::ActivePresentation;
 
 const LOOK_FIELD_KEY: &str = "look";
@@ -123,7 +123,6 @@ enum ShowFire {
 
 struct LookPicker {
     picker: Entity<Picker>,
-    position: Point<Pixels>,
     _sub: Subscription,
 }
 
@@ -307,13 +306,7 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    fn open_look(
-        &mut self,
-        _key: String,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_look(&mut self, _key: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.base.picker.take().is_some() {
             cx.notify();
             return;
@@ -326,25 +319,20 @@ impl OverlayPropertyPanel {
                 id: SharedString::from(look.kind_id.clone()),
                 label: SharedString::from(look.label.clone()),
                 sublabel: Some(SharedString::from(look.summary.clone())),
-                icon: look.icon,
+                icon: Some(look.icon),
             })
             .collect();
         let labels = PickerLabels {
-            title: tr!("overlays_look_picker_title").into(),
             placeholder: tr!("widget_picker_search_placeholder").into(),
             empty: tr!("overlays_panel_choice_empty").into(),
             loading: tr!("widget_picker_loading").into(),
-            cancel: tr!("common_cancel").into(),
         };
+        let current = Some(SharedString::from(self.base.look.kind_id.clone()));
         let palette = cx.palette();
-        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx));
+        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx).with_current(current));
         let sub = cx.subscribe(&picker, Self::on_look_picked);
         picker.update(cx, |picker, cx| picker.focus(window, cx));
-        self.base.picker = Some(LookPicker {
-            picker,
-            position,
-            _sub: sub,
-        });
+        self.base.picker = Some(LookPicker { picker, _sub: sub });
         cx.notify();
     }
 
@@ -373,18 +361,6 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    pub(super) fn look_popover(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let open = self.base.picker.as_ref()?;
-        let view = cx.entity();
-        Some(
-            forge_components::anchored_popover(open.position, open.picker.clone())
-                .on_dismiss(move |_window, cx| {
-                    view.update(cx, |this, cx| this.close_look(cx));
-                })
-                .into_any_element(),
-        )
-    }
-
     pub(super) fn render_look_section(
         &self,
         palette: &ForgePalette,
@@ -406,7 +382,15 @@ impl OverlayPropertyPanel {
             toggle: Self::ignore_toggle,
             slide: Self::ignore_slide,
             pick: Self::ignore_pick,
-            open_choice: Some(Self::open_look),
+            choice: Some(ChoiceDropdown {
+                open: Self::open_look,
+                close: Self::close_look,
+                active: self
+                    .base
+                    .picker
+                    .as_ref()
+                    .map(|open| (LOOK_FIELD_KEY.to_owned(), open.picker.clone())),
+            }),
         };
         let view = cx.entity();
         let control = render_config_control(&field, palette, "overlays-panel", &view, &handlers);

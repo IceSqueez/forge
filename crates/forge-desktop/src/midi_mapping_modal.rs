@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SearchState, TextInput,
-    anchored_popover_below, body_family, field_label, ghost_button_with_icon, icon, modal,
-    mono_family, overlay, primary_button, radius, secondary_button, tr, with_alpha,
+    body_family, dropdown, dropdown_list, dropdown_row, field_label, ghost_button_with_icon, icon,
+    modal, mono_family, overlay, primary_button, secondary_button, tr, with_alpha,
 };
 use forge_storage::ActionRepo;
 use forge_types::{ActionId, TriggerInstanceId};
@@ -39,13 +39,7 @@ const DISPLAY_PAD_H: Pixels = px(11.0);
 const CONTROL_FS: Pixels = px(12.5);
 const DISPLAY_GAP: Pixels = px(7.0);
 const LISTEN_GLYPH: Pixels = px(12.0);
-const TRIGGER_HEIGHT: Pixels = px(34.0);
 const RELEARN_HEIGHT: Pixels = px(32.0);
-const PANEL_PAD_V: Pixels = px(4.0);
-const PANEL_ROW_PAD_V: Pixels = px(5.0);
-const PANEL_ROW_PAD_H: Pixels = px(9.0);
-const PANEL_MAX_H: Pixels = px(220.0);
-
 const FILTER_MAX_W: Pixels = px(220.0);
 const FILTER_HEADER_GAP: Pixels = px(12.0);
 
@@ -511,32 +505,10 @@ impl MidiMappingModal {
         palette: &ForgePalette,
         on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
     ) -> AnyElement {
-        let mut row = div()
-            .id(id)
-            .w_full()
-            .flex()
-            .items_center()
-            .gap(ROW_GAP)
-            .py(PANEL_ROW_PAD_V)
-            .px(PANEL_ROW_PAD_H)
-            .rounded(ROW_RADIUS)
-            .cursor_pointer()
-            .hover(|s| s.bg(palette.surface_overlay))
+        dropdown_row(id, label, palette)
+            .current(selected)
             .on_click(on_click)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .font_family(body_family())
-                    .text_size(CONTROL_FS)
-                    .text_color(palette.text_primary)
-                    .child(label),
-            );
-        if selected {
-            row = row.child(icon(Icon::Check, ROW_CHECK, palette.brand));
-        }
-        row.into_any_element()
+            .into_any_element()
     }
 
     fn select_panel(
@@ -546,20 +518,7 @@ impl MidiMappingModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = cx.entity();
-        let panel = div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .py(PANEL_PAD_V)
-            .max_h(PANEL_MAX_H)
-            .overflow_hidden()
-            .bg(palette.elevated)
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_input)
-            .occlude()
-            .children(rows);
-        anchored_popover_below(TRIGGER_HEIGHT, panel)
+        dropdown(dropdown_list("midi-modal-select-list", palette).children(rows))
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_panel(cx));
             })

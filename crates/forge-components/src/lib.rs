@@ -9,6 +9,7 @@ pub mod confirm;
 pub mod confirm_state;
 pub mod data;
 pub mod date_time_picker;
+pub mod dropdown;
 pub mod error_row;
 pub mod fonts;
 pub mod footer;
@@ -66,6 +67,9 @@ pub use data::{
     hover_reveal, virtual_table,
 };
 pub use date_time_picker::{DateTimePicker, DateTimePickerEvent, DateTimePickerLabels};
+pub use dropdown::{
+    Dropdown, DropdownRow, dropdown, dropdown_list, dropdown_row, dropdown_surface,
+};
 pub use error_row::error_row;
 pub use fonts::embedded_fonts;
 pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, split_version_stage};
@@ -87,8 +91,7 @@ pub use menu::{
 };
 pub use modal::{Modal, modal};
 pub use overlay::{
-    AnchoredPopover, Overlay, OverlayPosition, anchored_popover, anchored_popover_below,
-    drive_overlay_focus, overlay,
+    AnchoredPopover, Overlay, OverlayPosition, anchored_popover, drive_overlay_focus, overlay,
 };
 pub use page_frame::{HeaderStat, PageFrame, header_stat, header_stats, header_status, page_frame};
 pub use palette::{

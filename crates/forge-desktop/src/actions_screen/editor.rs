@@ -1348,7 +1348,7 @@ impl ScreenActionsView {
             toggle: Self::toggle_trigger_config_field,
             slide: Self::slide_trigger_config_field,
             pick: Self::pick_trigger_config_field,
-            open_choice: None,
+            choice: None,
         }
     }
 

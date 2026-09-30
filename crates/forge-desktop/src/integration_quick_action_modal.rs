@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Picker,
     PickerEvent, PickerItem, PickerLabels, Radius, TextArea, TextInput, body_family,
-    destructive_button_with_icon, field_label, icon, modal, mono_family, overlay,
+    destructive_button_with_icon, dropdown, field_label, icon, modal, mono_family, overlay,
     primary_button_with_icon, radius, secondary_button, spinner, toggle, tr,
 };
 use forge_obs::{ObsClient, ObsSource};
@@ -67,6 +67,7 @@ struct ModalField {
 }
 
 struct OpenChoice {
+    index: usize,
     picker: Entity<Picker>,
     _sub: Subscription,
 }
@@ -367,10 +368,18 @@ impl QuickActionModal {
     }
 
     fn open_choice(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let (items, title) = match self.fields.get(index) {
+        if self
+            .open_choice
+            .as_ref()
+            .is_some_and(|open| open.index == index)
+        {
+            self.close_choice(cx);
+            return;
+        }
+        let (items, current) = match self.fields.get(index) {
             Some(field) => match &field.control {
                 FieldControl::Choice(choice) => match &choice.state {
-                    ChoiceState::Ready(items) => (items.clone(), choice_title(field)),
+                    ChoiceState::Ready(items) => (items.clone(), choice.selected.clone()),
                     _ => return,
                 },
                 _ => return,
@@ -379,18 +388,20 @@ impl QuickActionModal {
         };
         let palette = cx.palette();
         let labels = PickerLabels {
-            title: title.into(),
             placeholder: tr!("widget_picker_search_placeholder").into(),
             empty: tr!("widget_picker_no_results").into(),
             loading: tr!("widget_picker_loading").into(),
-            cancel: tr!("common_cancel").into(),
         };
-        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx));
+        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx).with_current(current));
         let sub = cx.subscribe(&picker, move |this, _picker, event: &PickerEvent, cx| {
             this.on_choice_picker(index, event, cx);
         });
         picker.update(cx, |f, cx| f.focus(window, cx));
-        self.open_choice = Some(OpenChoice { picker, _sub: sub });
+        self.open_choice = Some(OpenChoice {
+            index,
+            picker,
+            _sub: sub,
+        });
         cx.notify();
     }
 
@@ -618,7 +629,17 @@ impl QuickActionModal {
                     palette.text_muted
                 };
                 let border_active = palette.border_active;
-                div()
+                let popover = self
+                    .open_choice
+                    .as_ref()
+                    .filter(|open| open.index == index)
+                    .map(|open| {
+                        let view = cx.entity();
+                        dropdown(open.picker.clone()).on_dismiss(move |_window, cx| {
+                            view.update(cx, |this, cx| this.close_choice(cx));
+                        })
+                    });
+                let trigger = div()
                     .id(("qa-choice", index))
                     .w_full()
                     .flex()
@@ -645,7 +666,12 @@ impl QuickActionModal {
                             .text_color(text_color)
                             .child(selected),
                     )
-                    .child(icon(Icon::ChevronDown, FIELD_FONT, palette.text_faint))
+                    .child(icon(Icon::ChevronDown, FIELD_FONT, palette.text_faint));
+                div()
+                    .relative()
+                    .w_full()
+                    .child(trigger)
+                    .children(popover)
                     .into_any_element()
             }
         }
@@ -741,23 +767,12 @@ impl Render for QuickActionModal {
             })
             .into_any_element();
 
-        let choice_overlay = self.open_choice.as_ref().map(|open| {
-            let choice_view = cx.entity();
-            overlay(open.picker.clone(), &palette)
-                .position(OverlayPosition::Center)
-                .on_dismiss("qa-choice-scrim", move |_window, cx| {
-                    choice_view.update(cx, |this, cx| this.close_choice(cx));
-                })
-                .into_any_element()
-        });
-
         div()
             .absolute()
             .top_0()
             .left_0()
             .size_full()
             .child(modal_overlay)
-            .children(choice_overlay)
     }
 }
 
@@ -875,21 +890,12 @@ fn picker_title(pk: PickerKind) -> String {
     }
 }
 
-fn choice_title(field: &ModalField) -> String {
-    match &field.control {
-        FieldControl::Choice(ChoiceControl {
-            dynamic: Some(pk), ..
-        }) => picker_title(*pk),
-        _ => field.label.clone(),
-    }
-}
-
 fn static_item(opt: &QuickActionChoiceOption) -> PickerItem {
     PickerItem {
         id: opt.value.clone().into(),
         label: opt.label.clone().into(),
         sublabel: None,
-        icon: Icon::from_name("circle"),
+        icon: None,
     }
 }
 
@@ -1006,7 +1012,7 @@ async fn fetch_picker_items(
                     id: name.clone().into(),
                     label: name.into(),
                     sublabel: None,
-                    icon: Icon::from_name("layout"),
+                    icon: Some(Icon::from_name("layout")),
                 })
                 .collect();
             Ok(PickerFetch {
@@ -1036,7 +1042,7 @@ async fn fetch_picker_items(
                         }
                         .into(),
                     ),
-                    icon: Icon::from_name("device-desktop"),
+                    icon: Some(Icon::from_name("device-desktop")),
                 })
                 .collect();
             Ok(PickerFetch {
@@ -1054,7 +1060,7 @@ async fn fetch_picker_items(
                     id: name.clone().into(),
                     label: name.into(),
                     sublabel: None,
-                    icon: Icon::from_name("volume"),
+                    icon: Some(Icon::from_name("volume")),
                 })
                 .collect();
             Ok(no_context(items))
@@ -1067,7 +1073,7 @@ async fn fetch_picker_items(
                     id: name.clone().into(),
                     label: name.into(),
                     sublabel: None,
-                    icon: Icon::from_name("transition-right"),
+                    icon: Some(Icon::from_name("transition-right")),
                 })
                 .collect();
             Ok(no_context(items))
@@ -1080,7 +1086,7 @@ async fn fetch_picker_items(
                     id: name.clone().into(),
                     label: name.into(),
                     sublabel: None,
-                    icon: Icon::from_name("user-cog"),
+                    icon: Some(Icon::from_name("user-cog")),
                 })
                 .collect();
             Ok(no_context(items))
@@ -1096,7 +1102,7 @@ async fn fetch_picker_items(
                     id: name.clone().into(),
                     label: name.into(),
                     sublabel: None,
-                    icon: Icon::from_name("layout-2"),
+                    icon: Some(Icon::from_name("layout-2")),
                 })
                 .collect();
             Ok(no_context(items))

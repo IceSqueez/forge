@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, OverlayPosition, Picker, PickerEvent, PickerItem, PickerLabels, Radius,
-    Spacing, ThemeId, badge, body_family, card, field_hint, field_label, field_title,
-    ghost_button_with_icon, icon, mono_family, overlay, page_frame, primary_button_with_icon,
-    radius, set_body_family, set_mono_family, setting_row, spacing, toggle, tr, with_alpha,
+    ForgePalette, Icon, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing, ThemeId,
+    badge, body_family, card, dropdown, field_hint, field_label, field_title,
+    ghost_button_with_icon, icon, mono_family, page_frame, primary_button_with_icon, radius,
+    set_body_family, set_mono_family, setting_row, spacing, toggle, tr, with_alpha,
 };
 use forge_storage::{Language, SettingsRepo, get_bool_setting, reserved_keys};
 use gpui::{
@@ -324,7 +324,7 @@ impl SettingsView {
             id: FONT_DEFAULT_ID.into(),
             label: default_label.into(),
             sublabel: None,
-            icon: Icon::Refresh,
+            icon: None,
         }];
         items.extend(
             cx.text_system()
@@ -334,23 +334,22 @@ impl SettingsView {
                     id: name.clone().into(),
                     label: name.into(),
                     sublabel: None,
-                    icon: Icon::FileText,
+                    icon: None,
                 }),
         );
 
         let labels = PickerLabels {
-            title: match target {
-                FontTarget::Body => tr!("settings_appearance_font_picker_body"),
-                FontTarget::Mono => tr!("settings_appearance_font_picker_mono"),
-            }
-            .into(),
             placeholder: tr!("settings_appearance_font_search").into(),
             empty: tr!("widget_picker_no_results").into(),
             loading: tr!("widget_picker_loading").into(),
-            cancel: tr!("common_cancel").into(),
+        };
+        let current = match target {
+            FontTarget::Body => body_family(),
+            FontTarget::Mono => mono_family(),
         };
 
-        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx));
+        let picker =
+            cx.new(|cx| Picker::new(labels, items, palette, cx).with_current(Some(current)));
         let sub = cx.subscribe(&picker, Self::on_font_picker_event);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.font_picker = Some(FontPicker {
@@ -449,10 +448,21 @@ impl SettingsView {
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.open_font_picker(target, window, cx)
             }));
+        let popover = self
+            .font_picker
+            .as_ref()
+            .filter(|pending| pending.target == target)
+            .map(|pending| {
+                let view = cx.entity();
+                dropdown(pending.picker.clone()).on_dismiss(move |_window, cx| {
+                    view.update(cx, |this, cx| this.close_font_picker(cx));
+                })
+            });
+        let field = div().relative().w_full().child(value).children(popover);
         div()
             .flex_1()
             .min_w(px(0.0))
-            .child(field_label(palette, label, value))
+            .child(field_label(palette, label, field))
     }
 
     fn select_theme(&mut self, theme: ThemeId, cx: &mut Context<Self>) {
@@ -1146,16 +1156,6 @@ impl Render for SettingsView {
             .child(nav)
             .child(pane);
 
-        let font_overlay = self.font_picker.as_ref().map(|pending| {
-            let view = cx.entity();
-            overlay(pending.picker.clone(), &palette)
-                .position(OverlayPosition::Center)
-                .on_dismiss("settings-font-picker-scrim", move |_window, cx| {
-                    view.update(cx, |this, cx| this.close_font_picker(cx));
-                })
-                .into_any_element()
-        });
-
         let frame = page_frame(
             vec![
                 BreadcrumbCrumb::leaf(tr!("settings_page_title")),
@@ -1166,12 +1166,7 @@ impl Render for SettingsView {
         .header_right(status)
         .body(body);
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .child(frame)
-            .children(font_overlay)
+        div().size_full().flex().flex_col().child(frame)
     }
 }
 

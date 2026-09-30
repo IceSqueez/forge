@@ -3,13 +3,13 @@ use std::sync::Arc;
 use forge_audio::{AudioRoute, AudioSink};
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    anchored_popover_below, body_family, drive_overlay_focus, icon, mono_family, radius, segment,
-    segmented, setting_row, spacing, tr, with_alpha,
+    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, icon, mono_family,
+    radius, segment, segmented, setting_row, spacing, tr, with_alpha,
 };
 use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayId, OverlayRepo, SettingsRepo};
 use gpui::{
-    AnyElement, ClickEvent, Context, FocusHandle, Pixels, SharedString, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, FocusHandle, SharedString, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -20,10 +20,6 @@ use crate::audio_routes::{
 };
 use crate::presentation::ActivePresentation;
 use crate::settings_audio::test_tone;
-
-const PANEL_WIDTH: Pixels = px(360.0);
-
-const TRIGGER_HEIGHT: Pixels = px(34.0);
 
 const EVERY_ROUTE: [(AudioRoute, &str); 3] = [
     (AudioRoute::Local, "settings_audio_route_local"),
@@ -482,25 +478,15 @@ impl SettingsAudioRoutingView {
     }
 
     fn picker_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .w(PANEL_WIDTH)
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .bg(palette.elevated)
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_input)
-            .occlude();
-
-        panel = panel.child(self.picker_entry(
-            0,
-            tr!("settings_audio_routing_destination_none").into(),
-            self.destination.is_none(),
-            None,
-            palette,
-            cx,
-        ));
+        let mut panel =
+            dropdown_list("settings-audio-destination-list", palette).child(self.picker_entry(
+                0,
+                tr!("settings_audio_routing_destination_none").into(),
+                self.destination.is_none(),
+                None,
+                palette,
+                cx,
+            ));
         for (idx, choice) in self.choices.iter().enumerate() {
             let selected = self.destination.as_ref() == Some(&choice.id);
             panel = panel.child(self.picker_entry(
@@ -514,7 +500,7 @@ impl SettingsAudioRoutingView {
         }
 
         let view = cx.entity();
-        anchored_popover_below(TRIGGER_HEIGHT, panel)
+        dropdown(panel)
             .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_picker(cx));
@@ -531,33 +517,11 @@ impl SettingsAudioRoutingView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let mut item = div()
-            .id(("settings-audio-destination", idx))
-            .flex()
-            .items_center()
-            .w_full()
-            .gap(spacing(Spacing::Sm, Density::Cozy))
-            .px(spacing(Spacing::Sm, Density::Cozy))
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .rounded(radius(Radius::Sm))
-            .cursor_pointer()
-            .hover(|style| style.bg(palette.surface_overlay))
+        dropdown_row(("settings-audio-destination", idx), label, palette)
+            .current(selected)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.choose_destination(target.clone(), cx)
             }))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_primary)
-                    .child(label),
-            );
-        if selected {
-            item = item.child(icon(Icon::CircleCheck, FONT_SM, palette.brand));
-        }
-        item
     }
 
     fn in_effect_section(

@@ -6,8 +6,9 @@ use crate::presentation::ActivePresentation;
 use forge_components::{
     BORDER_THIN, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, FONT_SM, FONT_XS,
     FONT_XXS, InputEvent, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing,
-    anchored_popover, body_family, drive_overlay_focus, field_label, ghost_button_with_icon, modal,
-    mono_family, primary_button, radius, secondary_button, spacing, toggle,
+    anchored_popover, body_family, drive_overlay_focus, dropdown, field_label,
+    ghost_button_with_icon, modal, mono_family, primary_button, radius, secondary_button, spacing,
+    toggle,
 };
 use forge_registry::{
     CodeLanguage, FormField, FormRefinement, FormSchemaSource, SubActionCategory, refined_fields,
@@ -24,7 +25,6 @@ pub(super) enum SubFormTarget {
 pub(super) struct SelectPickerForm {
     key: String,
     picker: Entity<Picker>,
-    pos: Point<Pixels>,
     _sub: Subscription,
 }
 
@@ -301,13 +301,7 @@ impl EditSubActionForm {
         cx.notify();
     }
 
-    fn open_select_picker(
-        &mut self,
-        key: String,
-        pos: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_select_picker(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
         let already_open = self
             .select_picker
             .as_ref()
@@ -316,7 +310,9 @@ impl EditSubActionForm {
             self.close_select_picker(cx);
             return;
         }
-        let Some(SubFormField::Select { label, options, .. }) = self
+        let Some(SubFormField::Select {
+            options, selected, ..
+        }) = self
             .fields
             .iter()
             .find(|field| matches!(field, SubFormField::Select { key: k, .. } if *k == key))
@@ -325,20 +321,19 @@ impl EditSubActionForm {
         };
         let palette = cx.palette();
         let picker_labels = PickerLabels {
-            title: label.clone().into(),
             placeholder: tr!("widget_picker_search_placeholder").into(),
             empty: tr!("actions_sub_select_empty").into(),
             loading: tr!("widget_picker_loading").into(),
-            cancel: tr!("common_cancel").into(),
         };
         let items = select_picker_items(options);
-        let picker = cx.new(|cx| Picker::new(picker_labels, items, palette, cx));
+        let current = Some(SharedString::from(selected.clone()));
+        let picker =
+            cx.new(|cx| Picker::new(picker_labels, items, palette, cx).with_current(current));
         let sub = cx.subscribe(&picker, Self::on_select_picker_event);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.select_picker = Some(SelectPickerForm {
             key,
             picker,
-            pos,
             _sub: sub,
         });
         cx.notify();
@@ -560,8 +555,8 @@ impl EditSubActionForm {
             .bg(palette.shell)
             .cursor_pointer()
             .hover(move |s| s.border_color(hover_border))
-            .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                this.open_select_picker(key_open.clone(), ev.position(), window, cx)
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.open_select_picker(key_open.clone(), window, cx)
             }))
             .child(
                 div()
@@ -575,11 +570,9 @@ impl EditSubActionForm {
 
         let popover = open_picker.map(|form| {
             let view = cx.entity();
-            anchored_popover(form.pos, form.picker.clone())
-                .on_dismiss(move |_window, cx| {
-                    view.update(cx, |this, cx| this.close_select_picker(cx));
-                })
-                .into_any_element()
+            dropdown(form.picker.clone()).on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_select_picker(cx));
+            })
         });
 
         div()
@@ -593,8 +586,7 @@ impl EditSubActionForm {
                     .text_color(palette.text_muted)
                     .child(label.to_owned()),
             )
-            .child(trigger)
-            .children(popover)
+            .child(div().relative().w_full().child(trigger).children(popover))
             .into_any_element()
     }
 
@@ -1144,7 +1136,7 @@ fn select_picker_items(options: &[(String, String)]) -> Vec<PickerItem> {
             id: SharedString::from(value.clone()),
             label: SharedString::from(label.clone()),
             sublabel: None,
-            icon: Icon::Circle,
+            icon: None,
         })
         .collect()
 }

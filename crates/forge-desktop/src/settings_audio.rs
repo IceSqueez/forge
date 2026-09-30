@@ -6,23 +6,17 @@ use forge_audio::{
 };
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing,
-    anchored_popover_below, body_family, drive_overlay_focus, icon, radius, spacing, tr,
-    with_alpha,
+    body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row, icon, radius, spacing,
+    tr, with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo};
-use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FocusHandle, Pixels, Window, div, prelude::*, px,
-};
+use gpui::{AnyElement, ClickEvent, Context, Entity, FocusHandle, Window, div, prelude::*, px};
 
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio_routing::SettingsAudioRoutingView;
 use crate::settings_voice_gate::SettingsVoiceGateView;
-
-const PANEL_WIDTH: Pixels = px(360.0);
-
-const TRIGGER_HEIGHT: Pixels = px(34.0);
 
 const TEST_TONE_SAMPLE_RATE: u32 = 22_050;
 
@@ -394,50 +388,23 @@ impl SettingsAudioView {
     }
 
     fn picker_overlay(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .w(PANEL_WIDTH)
-            .py(spacing(Spacing::Xs, Density::Cozy))
-            .bg(palette.elevated)
-            .rounded(radius(Radius::Md))
-            .border(BORDER_THIN)
-            .border_color(palette.border_input)
-            .occlude();
-
+        let mut panel = dropdown_list("settings-audio-device-list", palette);
         for (idx, device) in self.devices.iter().enumerate() {
-            let selected = idx == self.selected_idx;
-            let mut item = div()
-                .id(("settings-audio-device", idx))
-                .flex()
-                .items_center()
-                .w_full()
-                .gap(spacing(Spacing::Sm, Density::Cozy))
-                .px(spacing(Spacing::Sm, Density::Cozy))
-                .py(spacing(Spacing::Xs, Density::Cozy))
-                .rounded(radius(Radius::Sm))
-                .cursor_pointer()
-                .hover(|style| style.bg(palette.surface_overlay))
+            panel = panel.child(
+                dropdown_row(
+                    ("settings-audio-device", idx),
+                    self.display_name(device),
+                    palette,
+                )
+                .current(idx == self.selected_idx)
                 .on_click(
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.select_device(idx, cx)),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .font_family(body_family())
-                        .text_size(FONT_SM)
-                        .text_color(palette.text_primary)
-                        .child(self.display_name(device)),
-                );
-            if selected {
-                item = item.child(icon(Icon::CircleCheck, FONT_SM, palette.brand));
-            }
-            panel = panel.child(item);
+                ),
+            );
         }
 
         let view = cx.entity();
-        anchored_popover_below(TRIGGER_HEIGHT, panel)
+        dropdown(panel)
             .dismiss_on_escape(&self.overlay_focus)
             .on_dismiss(move |_window, cx| {
                 view.update(cx, |this, cx| this.close_picker(cx));

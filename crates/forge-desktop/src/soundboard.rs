@@ -7,9 +7,9 @@ use forge_audio::{DeviceInfo, list_output_devices};
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, ChipGlyph, Confirm, ConfirmTone, Density, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, OverlayPosition, Radius, SearchState, Spacing, TextInput,
-    ToastKind, body_family, chip, confirm_modal, empty_state, fmt_bytes, fmt_clock, icon,
-    mono_family, overlay, pad_tile, page_frame, radius, secondary_button, slider, spacing,
-    status_dot, toggle, tooltip_builder, tr, with_alpha,
+    ToastKind, body_family, chip, confirm_modal, dropdown, dropdown_list, dropdown_row,
+    empty_state, fmt_bytes, fmt_clock, icon, mono_family, overlay, pad_tile, page_frame, radius,
+    secondary_button, slider, spacing, status_dot, toggle, tooltip_builder, tr, with_alpha,
 };
 use forge_events::{Event, EventSource};
 use forge_runtime::EventBus;
@@ -711,6 +711,11 @@ impl SoundboardView {
 
     fn toggle_device_menu(&mut self, cx: &mut Context<Self>) {
         self.device_menu_open = !self.device_menu_open;
+        cx.notify();
+    }
+
+    fn close_device_menu(&mut self, cx: &mut Context<Self>) {
+        self.device_menu_open = false;
         cx.notify();
     }
 
@@ -1679,26 +1684,16 @@ impl SoundboardView {
             )
             .child(icon(Icon::ChevronDown, HOTKEY_FS, palette.text_faint));
 
-        let mut col = div().w_full().flex().flex_col().gap(px(4.0)).child(trigger);
+        let mut field = div().relative().w_full().child(trigger);
         if self.device_menu_open {
-            let mut list = div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .gap(px(2.0))
-                .p(px(4.0))
-                .rounded(SELECT_RADIUS)
-                .border(BORDER_THIN)
-                .border_color(palette.border_regular)
-                .bg(palette.elevated)
-                .child(self.device_option(
-                    "sb-dev-default",
-                    tr!("soundboard_device_system_default"),
-                    self.settings.output_device_id.is_none(),
-                    None,
-                    palette,
-                    cx,
-                ));
+            let mut list = dropdown_list("sb-device-list", palette).child(self.device_option(
+                "sb-dev-default",
+                tr!("soundboard_device_system_default"),
+                self.settings.output_device_id.is_none(),
+                None,
+                palette,
+                cx,
+            ));
             for (idx, device) in self.devices.iter().enumerate() {
                 let selected =
                     self.settings.output_device_id.as_deref() == Some(device.id.0.as_str());
@@ -1712,9 +1707,12 @@ impl SoundboardView {
                     cx,
                 ));
             }
-            col = col.child(list);
+            let view = cx.entity();
+            field = field.child(dropdown(list).on_dismiss(move |_window, cx| {
+                view.update(cx, |this, cx| this.close_device_menu(cx));
+            }));
         }
-        col.into_any_element()
+        field.into_any_element()
     }
 
     fn device_option(
@@ -1726,32 +1724,11 @@ impl SoundboardView {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let ink = if selected {
-            palette.text_primary
-        } else {
-            palette.text_secondary
-        };
-        div()
-            .id(id.into())
-            .w_full()
-            .flex()
-            .items_center()
-            .py(px(6.0))
-            .px(px(8.0))
-            .rounded(radius(Radius::Sm))
-            .cursor_pointer()
-            .when(selected, |s| s.bg(palette.surface_overlay))
-            .hover(|s| s.bg(palette.surface_overlay))
+        dropdown_row(id, label, palette)
+            .current(selected)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.set_output_device(value.clone(), cx)
             }))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(ink)
-                    .child(label.into()),
-            )
             .into_any_element()
     }
 

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels, TextInput,
-    accent_swatch, anchored_popover, body_family, field_label, section_label, tr,
+    accent_swatch, body_family, field_label, section_label, tr,
 };
 use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY};
 use forge_overlay::{ConfigSection, MediaIssue, MediaSlot, SectionedField, media_slot};
@@ -13,8 +13,8 @@ use forge_runtime::OverlayServiceHandle;
 use forge_storage::{OverlayConfig, OverlayId, OverlayRepo};
 use forge_types::ClipId;
 use gpui::{
-    AnyElement, App, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString,
-    Subscription, Window, div, prelude::*, px,
+    AnyElement, App, Context, Entity, EventEmitter, Pixels, Rgba, SharedString, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use super::base_sections::{
@@ -25,8 +25,9 @@ use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, so
 use super::store_config;
 use crate::async_bridge;
 use crate::config_form::{
-    ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext, collect_field_values,
-    fold_config_field, render_config_control, resolve_dependent_choices, sparse_overrides,
+    ChoiceDropdown, ChoiceSupport, ConfigField, ConfigFieldHandlers, FoldContext,
+    collect_field_values, fold_config_field, render_config_control, resolve_dependent_choices,
+    sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
 
@@ -86,7 +87,6 @@ pub(super) struct PanelLaunch {
 struct ChoicePicker {
     key: String,
     picker: Entity<Picker>,
-    position: Point<Pixels>,
     _sub: Subscription,
 }
 
@@ -390,18 +390,14 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    fn open_choice(
-        &mut self,
-        key: String,
-        position: Point<Pixels>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_choice(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.picker.as_ref().is_some_and(|open| open.key == key) {
             self.close_choice(cx);
             return;
         }
-        let Some(ConfigField::Choice { options, .. }) = self
+        let Some(ConfigField::Choice {
+            options, selected, ..
+        }) = self
             .fields
             .iter()
             .find(|field| matches!(field, ConfigField::Choice { key: k, .. } if *k == key))
@@ -415,24 +411,22 @@ impl OverlayPropertyPanel {
                 id: SharedString::from(value.clone()),
                 label: SharedString::from(label.clone()),
                 sublabel: None,
-                icon: forge_components::Icon::Circle,
+                icon: None,
             })
             .collect();
         let labels = PickerLabels {
-            title: self.label_of(&key).into(),
             placeholder: tr!("widget_picker_search_placeholder").into(),
             empty: tr!("overlays_panel_choice_empty").into(),
             loading: tr!("widget_picker_loading").into(),
-            cancel: tr!("common_cancel").into(),
         };
+        let current = Some(SharedString::from(selected.clone()));
         let palette = cx.palette();
-        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx));
+        let picker = cx.new(|cx| Picker::new(labels, items, palette, cx).with_current(current));
         let sub = cx.subscribe(&picker, Self::on_picker_event);
         picker.update(cx, |picker, cx| picker.focus(window, cx));
         self.picker = Some(ChoicePicker {
             key,
             picker,
-            position,
             _sub: sub,
         });
         cx.notify();
@@ -547,12 +541,19 @@ impl OverlayPropertyPanel {
         field_notes(&self.media_issues, key, adopting, refusal)
     }
 
-    fn handlers() -> ConfigFieldHandlers<Self> {
+    fn handlers(&self) -> ConfigFieldHandlers<Self> {
         ConfigFieldHandlers {
             toggle: Self::toggle_field,
             slide: Self::slide_field,
             pick: Self::pick_swatch,
-            open_choice: Some(Self::open_choice),
+            choice: Some(ChoiceDropdown {
+                open: Self::open_choice,
+                close: Self::close_choice,
+                active: self
+                    .picker
+                    .as_ref()
+                    .map(|open| (open.key.clone(), open.picker.clone())),
+            }),
         }
     }
 
@@ -612,7 +613,7 @@ impl OverlayPropertyPanel {
         );
 
         let view = cx.entity();
-        let handlers = Self::handlers();
+        let handlers = self.handlers();
         for field in members {
             let control = match self.icon_control(field, palette, &view) {
                 Some(icon_control) => icon_control,
@@ -740,16 +741,6 @@ impl Render for OverlayPropertyPanel {
             .children(self.render_section(PanelSection::Display, &palette, cx))
             .child(self.render_receiver_section(&palette, cx));
 
-        let look_popover = self.look_popover(cx);
-        let popover = self.picker.as_ref().map(|open| {
-            let view = cx.entity();
-            anchored_popover(open.position, open.picker.clone())
-                .on_dismiss(move |_window, cx| {
-                    view.update(cx, |this, cx| this.close_choice(cx));
-                })
-                .into_any_element()
-        });
-
         div()
             .flex_none()
             .w(PANE_W)
@@ -762,8 +753,6 @@ impl Render for OverlayPropertyPanel {
             .border_l(BORDER_THIN)
             .border_color(palette.border_regular)
             .child(body)
-            .children(popover)
-            .children(look_popover)
     }
 }
 

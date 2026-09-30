@@ -206,7 +206,7 @@ impl TriggersRegistryView {
             toggle: Self::toggle_config_field,
             slide: Self::slide_config_field,
             pick: Self::pick_config_field,
-            open_choice: None,
+            choice: None,
         }
     }
 

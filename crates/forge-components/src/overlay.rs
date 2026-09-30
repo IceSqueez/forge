@@ -260,15 +260,9 @@ impl RenderOnce for Overlay {
     }
 }
 
-#[derive(Clone, Copy)]
-enum PopoverPlacement {
-    Window(Point<Pixels>),
-    BelowAnchor(Pixels),
-}
-
 #[derive(IntoElement)]
 pub struct AnchoredPopover {
-    placement: PopoverPlacement,
+    position: Point<Pixels>,
     content: AnyElement,
     on_dismiss: Option<DismissHandler>,
     escape_focus: Option<FocusHandle>,
@@ -276,16 +270,7 @@ pub struct AnchoredPopover {
 
 pub fn anchored_popover(position: Point<Pixels>, content: impl IntoElement) -> AnchoredPopover {
     AnchoredPopover {
-        placement: PopoverPlacement::Window(position),
-        content: content.into_any_element(),
-        on_dismiss: None,
-        escape_focus: None,
-    }
-}
-
-pub fn anchored_popover_below(offset: Pixels, content: impl IntoElement) -> AnchoredPopover {
-    AnchoredPopover {
-        placement: PopoverPlacement::BelowAnchor(offset),
+        position,
         content: content.into_any_element(),
         on_dismiss: None,
         escape_focus: None,
@@ -328,19 +313,12 @@ impl RenderOnce for AnchoredPopover {
             |el, delta| el.opacity(delta),
         );
 
-        let panel_layer = match self.placement {
-            PopoverPlacement::Window(position) => anchored()
-                .position_mode(AnchoredPositionMode::Window)
-                .position(position)
-                .anchor(Anchor::TopLeft)
-                .snap_to_window()
-                .child(content),
-            PopoverPlacement::BelowAnchor(offset) => anchored()
-                .anchor(Anchor::TopLeft)
-                .offset(point(px(0.0), offset))
-                .snap_to_window()
-                .child(content),
-        };
+        let panel_layer = anchored()
+            .position_mode(AnchoredPositionMode::Window)
+            .position(self.position)
+            .anchor(Anchor::TopLeft)
+            .snap_to_window()
+            .child(content);
 
         let mut root = div().child(backdrop_layer).child(panel_layer);
         if let (Some(handle), Some(dismiss)) = (self.escape_focus.as_ref(), self.on_dismiss.clone())

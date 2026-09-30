@@ -29,6 +29,9 @@ pub trait TriggerKindDescriptor: Send + Sync {
     }
     fn condition_display(&self, config: &TriggerConfig) -> String;
     fn event_filter(&self) -> EventFilter;
+    fn targeted_instance_field(&self) -> Option<&'static str> {
+        None
+    }
     fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool;
     fn variables(&self) -> Option<TriggerVariables> {
         None

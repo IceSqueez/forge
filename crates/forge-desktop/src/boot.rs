@@ -14,8 +14,8 @@ use forge_runtime::{
     QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer, SpeakDispatcher,
     register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
     spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_live_viewer_aggregator, spawn_stream_live_signal, spawn_trigger_evaluator,
-    spawn_viewer_tracker,
+    spawn_live_viewer_aggregator, spawn_stream_live_signal, spawn_timer_scheduler,
+    spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -324,7 +324,7 @@ pub async fn build_runtime(
     let trigger_evaluator = spawn_trigger_evaluator(
         Arc::clone(&bus),
         Arc::clone(&trigger_registry),
-        catalog,
+        Arc::clone(&catalog),
         scheduler.clone(),
         Config::default(),
     );
@@ -334,6 +334,7 @@ pub async fn build_runtime(
     }
     let stream_live =
         spawn_stream_live_signal(&live_viewers, integrations.obs_install_seed.stream_output());
+    spawn_timer_scheduler(Arc::clone(&bus), catalog, stream_live.clone());
 
     let server = build_server(&backend, &bus, &action_engine).await;
 

@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
-use forge_storage::{ActionRepo, CatalogRevision, DataProvider, StorageError, TriggerInstanceRepo};
+use forge_storage::{
+    ActionRepo, CatalogChanges, CatalogRevision, DataProvider, StorageError, TriggerInstanceRepo,
+};
 use forge_types::{Action, ActionId, TriggerInstance};
 use tokio::sync::Mutex;
 
@@ -132,6 +134,10 @@ impl Catalog {
         );
         self.built.store(Some(Arc::clone(&snapshot)));
         Ok(snapshot)
+    }
+
+    pub fn changes(&self) -> CatalogChanges {
+        self.revision.subscribe()
     }
 
     fn built_at(&self, revision: u64) -> Option<Arc<CatalogSnapshot>> {

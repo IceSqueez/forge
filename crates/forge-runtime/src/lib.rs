@@ -34,6 +34,7 @@ pub mod stream_live;
 pub mod sub_action_runners;
 #[cfg(test)]
 mod test_support;
+pub mod timer_scheduler;
 pub mod trigger_evaluator;
 pub mod triggers;
 pub mod viewer_tracker;
@@ -78,6 +79,7 @@ pub use sub_action_runners::{
     CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
     overlay_send_targets, register_core_sub_actions,
 };
+pub use timer_scheduler::spawn_timer_scheduler;
 pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
 pub use viewer_tracker::spawn_viewer_tracker;

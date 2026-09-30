@@ -205,7 +205,11 @@ impl TriggerEvaluator {
         let chat_family = descriptor.chat_trigger_family();
         let is_command = chat_family == Some(ChatTriggerFamily::Command);
 
-        if !scope_matches(instance, event) {
+        let addressed = match descriptor.targeted_instance_field() {
+            Some(field) => addresses_instance(event, field, instance),
+            None => scope_matches(instance, event),
+        };
+        if !addressed {
             log_rejected(instance, event, is_command, Rejection::Scope);
             return None;
         }
@@ -452,6 +456,14 @@ fn scope_matches(instance: &forge_types::TriggerInstance, event: &forge_events::
     instance
         .platform_scope
         .matches(event.source.to_platform_id())
+}
+
+fn addresses_instance(event: &Event, field: &str, instance: &TriggerInstance) -> bool {
+    event
+        .payload
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|addressed| addressed == instance.id.to_string())
 }
 
 pub fn spawn_trigger_evaluator(

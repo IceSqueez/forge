@@ -337,8 +337,292 @@ impl Render for Picker {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::item_matches;
+    use gpui::{AppContext, Modifiers, VisualTestContext, point};
+
+    use super::*;
+    use crate::palette::FORGE_DEFAULT;
+
+    struct Heard {
+        events: Vec<PickerEvent>,
+        _sub: Subscription,
+    }
+
+    fn items(count: usize) -> Vec<PickerItem> {
+        (0..count)
+            .map(|n| PickerItem {
+                id: SharedString::from(format!("id-{n}")),
+                label: SharedString::from(format!("Item {n}")),
+                sublabel: None,
+                icon: None,
+            })
+            .collect()
+    }
+
+    fn labels() -> PickerLabels {
+        PickerLabels {
+            placeholder: "search".into(),
+            empty: "empty".into(),
+            loading: "loading".into(),
+        }
+    }
+
+    fn open<'a>(
+        cx: &'a mut gpui::TestAppContext,
+        roster: Vec<PickerItem>,
+        current: Option<&str>,
+    ) -> (Entity<Picker>, Entity<Heard>, &'a mut VisualTestContext) {
+        cx.update(bind_picker_keys);
+        let current = current.map(|id| SharedString::from(id.to_owned()));
+        let (picker, vcx) = cx.add_window_view(|_window, cx| {
+            Picker::new(labels(), roster, FORGE_DEFAULT, cx).with_current(current)
+        });
+        let heard = vcx.update(|window, cx| {
+            picker.update(cx, |view, cx| view.focus(window, cx));
+            cx.new(|cx| Heard {
+                events: Vec::new(),
+                _sub: cx.subscribe(&picker, |this: &mut Heard, _view, event, _cx| {
+                    this.events.push(event.clone());
+                }),
+            })
+        });
+        vcx.run_until_parked();
+        (picker, heard, vcx)
+    }
+
+    fn highlighted(picker: &Entity<Picker>, vcx: &mut VisualTestContext) -> Option<String> {
+        vcx.update(|_window, cx| {
+            let view = picker.read(cx);
+            view.filtered
+                .get(view.selected)
+                .map(|&idx| view.items[idx].id.to_string())
+        })
+    }
+
+    fn visible_ids(picker: &Entity<Picker>, vcx: &mut VisualTestContext) -> Vec<String> {
+        vcx.update(|_window, cx| {
+            let view = picker.read(cx);
+            view.filtered
+                .iter()
+                .map(|&idx| view.items[idx].id.to_string())
+                .collect()
+        })
+    }
+
+    fn selections(heard: &Entity<Heard>, vcx: &mut VisualTestContext) -> Vec<String> {
+        vcx.update(|_window, cx| {
+            heard
+                .read(cx)
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    PickerEvent::Selected(id) => Some(id.to_string()),
+                    PickerEvent::Cancelled => None,
+                })
+                .collect()
+        })
+    }
+
+    fn cancellations(heard: &Entity<Heard>, vcx: &mut VisualTestContext) -> usize {
+        vcx.update(|_window, cx| {
+            heard
+                .read(cx)
+                .events
+                .iter()
+                .filter(|event| matches!(event, PickerEvent::Cancelled))
+                .count()
+        })
+    }
+
+    fn search_event(picker: &Entity<Picker>, vcx: &mut VisualTestContext, event: InputEvent) {
+        vcx.update(|_window, cx| {
+            picker.update(cx, |view, cx| {
+                let field = view.search.field().clone();
+                view.on_search_event(field, &event, cx);
+            });
+        });
+        vcx.run_until_parked();
+    }
+
+    fn type_query(picker: &Entity<Picker>, vcx: &mut VisualTestContext, text: &str) {
+        search_event(
+            picker,
+            vcx,
+            InputEvent::Changed(SharedString::from(text.to_owned())),
+        );
+    }
+
+    #[gpui::test]
+    fn arrow_down_walks_the_rows_and_wraps_from_the_last_to_the_first(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, _heard, vcx) = open(cx, items(3), None);
+
+        let mut walked = vec![highlighted(&picker, vcx)];
+        for _ in 0..3 {
+            vcx.simulate_keystrokes("down");
+            walked.push(highlighted(&picker, vcx));
+        }
+
+        assert_eq!(
+            walked,
+            ["id-0", "id-1", "id-2", "id-0"].map(|id| Some(id.to_owned())),
+        );
+    }
+
+    #[gpui::test]
+    fn arrow_up_on_the_first_row_wraps_to_the_last(cx: &mut gpui::TestAppContext) {
+        let (picker, _heard, vcx) = open(cx, items(3), None);
+
+        vcx.simulate_keystrokes("up");
+
+        assert_eq!(highlighted(&picker, vcx), Some("id-2".to_owned()));
+    }
+
+    #[gpui::test]
+    fn enter_selects_the_highlighted_row(cx: &mut gpui::TestAppContext) {
+        let (_picker, heard, vcx) = open(cx, items(3), None);
+
+        vcx.simulate_keystrokes("down enter");
+
+        assert_eq!(selections(&heard, vcx), vec!["id-1".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn escape_cancels_without_selecting_anything(cx: &mut gpui::TestAppContext) {
+        let (_picker, heard, vcx) = open(cx, items(3), Some("id-1"));
+
+        vcx.simulate_keystrokes("escape");
+
+        assert_eq!(
+            (cancellations(&heard, vcx), selections(&heard, vcx)),
+            (1, Vec::<String>::new()),
+        );
+    }
+
+    #[gpui::test]
+    fn clicking_a_row_selects_that_row(cx: &mut gpui::TestAppContext) {
+        let (_picker, heard, vcx) = open(cx, items(3), None);
+        let third_row_middle = DROPDOWN_PADDING + DROPDOWN_ROW_HEIGHT * 2.5;
+
+        vcx.simulate_click(point(px(40.0), third_row_middle), Modifiers::none());
+
+        assert_eq!(selections(&heard, vcx), vec!["id-2".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn the_search_field_appears_only_for_lists_longer_than_ten(cx: &mut gpui::TestAppContext) {
+        for (count, search_focused) in [(10, false), (11, true)] {
+            let (picker, _heard, vcx) = open(cx, items(count), None);
+
+            let focus = vcx.update(|window, cx| {
+                let view = picker.read(cx);
+                let field_focused = view
+                    .search
+                    .field()
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window);
+                (field_focused, view.focus_handle.is_focused(window))
+            });
+
+            assert_eq!(
+                focus,
+                (search_focused, !search_focused),
+                "{count} items: (search focused, list focused)",
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn the_current_item_opens_highlighted_and_scrolled_into_view(cx: &mut gpui::TestAppContext) {
+        let (picker, _heard, vcx) = open(cx, items(20), Some("id-15"));
+
+        let (top, viewport) = vcx.update(|_window, cx| {
+            let view = picker.read(cx);
+            let top = -view.list_scroll.0.borrow().base_handle.offset().y;
+            (top, view.list_height(view.filtered.len()))
+        });
+        let row_top = DROPDOWN_ROW_HEIGHT * 15.0;
+        let row_in_view = top <= row_top && row_top + DROPDOWN_ROW_HEIGHT <= top + viewport;
+
+        assert_eq!(
+            (highlighted(&picker, vcx), row_in_view),
+            (Some("id-15".to_owned()), true),
+            "scroll top {top:?}, viewport {viewport:?}",
+        );
+    }
+
+    #[gpui::test]
+    fn a_current_id_missing_from_the_list_leaves_the_first_row_highlighted(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, _heard, vcx) = open(cx, items(5), Some("gone"));
+
+        assert_eq!(highlighted(&picker, vcx), Some("id-0".to_owned()));
+    }
+
+    #[gpui::test]
+    fn a_query_narrows_the_rows_and_highlights_the_first_match(cx: &mut gpui::TestAppContext) {
+        let (picker, _heard, vcx) = open(cx, items(20), Some("id-3"));
+
+        type_query(&picker, vcx, "item 1");
+
+        assert_eq!(
+            (visible_ids(&picker, vcx).len(), highlighted(&picker, vcx)),
+            (11, Some("id-1".to_owned())),
+        );
+    }
+
+    #[gpui::test]
+    fn clearing_the_query_restores_every_row_and_rehighlights_the_current_item(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, _heard, vcx) = open(cx, items(20), Some("id-3"));
+        type_query(&picker, vcx, "item 1");
+
+        type_query(&picker, vcx, "");
+
+        assert_eq!(
+            (visible_ids(&picker, vcx).len(), highlighted(&picker, vcx)),
+            (20, Some("id-3".to_owned())),
+        );
+    }
+
+    #[gpui::test]
+    fn submitting_the_search_selects_the_top_match(cx: &mut gpui::TestAppContext) {
+        let (picker, heard, vcx) = open(cx, items(20), None);
+        type_query(&picker, vcx, "item 17");
+
+        search_event(&picker, vcx, InputEvent::Submitted(SharedString::default()));
+
+        assert_eq!(selections(&heard, vcx), vec!["id-17".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn cancelling_the_search_field_cancels_the_picker(cx: &mut gpui::TestAppContext) {
+        let (picker, heard, vcx) = open(cx, items(20), None);
+
+        search_event(&picker, vcx, InputEvent::Cancelled);
+
+        assert_eq!(cancellations(&heard, vcx), 1);
+    }
+
+    #[gpui::test]
+    fn arrows_and_enter_over_a_query_with_no_matches_do_nothing(cx: &mut gpui::TestAppContext) {
+        let (picker, heard, vcx) = open(cx, items(20), None);
+        type_query(&picker, vcx, "no such row");
+        vcx.update(|window, cx| window.focus(&picker.read(cx).focus_handle.clone(), cx));
+        vcx.run_until_parked();
+
+        vcx.simulate_keystrokes("down up enter");
+
+        assert_eq!(
+            (highlighted(&picker, vcx), selections(&heard, vcx)),
+            (None, Vec::<String>::new()),
+        );
+    }
 
     #[test]
     fn item_matches_follows_case_insensitive_substring_over_label_or_sublabel() {

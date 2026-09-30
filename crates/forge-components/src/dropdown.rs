@@ -284,3 +284,109 @@ impl RenderOnce for Dropdown {
         deferred(root).with_priority(DROPDOWN_PRIORITY)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use gpui::{Context, Entity, Modifiers, Render, VisualTestContext, point};
+
+    use super::*;
+    use crate::palette::FORGE_DEFAULT;
+
+    const TRIGGER_HEIGHT: Pixels = px(30.0);
+    const TRIGGER_WIDTH: Pixels = px(200.0);
+    const PANEL_HEIGHT: Pixels = px(60.0);
+
+    struct Host {
+        open: bool,
+        focus: FocusHandle,
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let this = cx.entity();
+            let trigger =
+                div()
+                    .relative()
+                    .w(TRIGGER_WIDTH)
+                    .h(TRIGGER_HEIGHT)
+                    .when(self.open, |trigger| {
+                        trigger.child(
+                            dropdown(dropdown_surface(&FORGE_DEFAULT).h(PANEL_HEIGHT))
+                                .on_dismiss(move |_window, cx| {
+                                    this.update(cx, |host, cx| {
+                                        host.open = false;
+                                        cx.notify();
+                                    });
+                                })
+                                .dismiss_on_escape(&self.focus),
+                        )
+                    });
+            div().size_full().child(trigger)
+        }
+    }
+
+    fn open_host(cx: &mut gpui::TestAppContext) -> (Entity<Host>, &mut VisualTestContext) {
+        let (host, vcx) = cx.add_window_view(|_window, cx| Host {
+            open: true,
+            focus: cx.focus_handle(),
+        });
+        vcx.update(|window, cx| window.focus(&host.read(cx).focus.clone(), cx));
+        vcx.run_until_parked();
+        (host, vcx)
+    }
+
+    fn is_open(host: &Entity<Host>, vcx: &mut VisualTestContext) -> bool {
+        vcx.update(|_window, cx| host.read(cx).open)
+    }
+
+    #[gpui::test]
+    fn a_click_outside_the_panel_dismisses_it(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = open_host(cx);
+
+        vcx.simulate_click(point(px(400.0), px(300.0)), Modifiers::none());
+
+        assert!(!is_open(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn a_click_inside_the_panel_under_the_trigger_keeps_it_open(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = open_host(cx);
+        let inside_panel = TRIGGER_HEIGHT + TRIGGER_GAP + PANEL_HEIGHT / 2.0;
+
+        vcx.simulate_click(point(TRIGGER_WIDTH / 2.0, inside_panel), Modifiers::none());
+
+        assert!(is_open(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn a_click_right_of_the_trigger_at_panel_height_dismisses_it(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = open_host(cx);
+        let panel_row = TRIGGER_HEIGHT + TRIGGER_GAP + PANEL_HEIGHT / 2.0;
+
+        vcx.simulate_click(
+            point(TRIGGER_WIDTH + px(20.0), panel_row),
+            Modifiers::none(),
+        );
+
+        assert!(!is_open(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn escape_dismisses_the_panel(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = open_host(cx);
+
+        vcx.simulate_keystrokes("escape");
+
+        assert!(!is_open(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn keys_other_than_escape_leave_the_panel_open(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = open_host(cx);
+
+        vcx.simulate_keystrokes("a enter down");
+
+        assert!(is_open(&host, vcx));
+    }
+}

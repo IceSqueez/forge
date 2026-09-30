@@ -89,3 +89,165 @@ pub(crate) fn set_caret_blinking<T: CaretHost>(
     });
     true
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use gpui::{
+        Entity, InteractiveElement, IntoElement, Render, VisualTestContext, WindowVisibility, div,
+    };
+
+    use super::*;
+
+    struct Host {
+        caret: CaretBlink,
+        focus: FocusHandle,
+    }
+
+    impl CaretHost for Host {
+        fn caret(&mut self) -> &mut CaretBlink {
+            &mut self.caret
+        }
+    }
+
+    impl Render for Host {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let focus = self.focus.clone();
+            self.caret.watch(&focus, window, cx);
+            div().track_focus(&focus)
+        }
+    }
+
+    fn mount(cx: &mut gpui::TestAppContext) -> (Entity<Host>, &mut VisualTestContext) {
+        let (host, vcx) = cx.add_window_view(|_window, cx| Host {
+            caret: CaretBlink::new(),
+            focus: cx.focus_handle(),
+        });
+        vcx.update(|window, _cx| window.activate_window());
+        vcx.run_until_parked();
+        (host, vcx)
+    }
+
+    fn focus(host: &Entity<Host>, vcx: &mut VisualTestContext) {
+        vcx.update(|window, cx| window.focus(&host.read(cx).focus.clone(), cx));
+        vcx.run_until_parked();
+    }
+
+    fn blur(vcx: &mut VisualTestContext) {
+        vcx.update(|window, cx| window.blur(cx));
+        vcx.run_until_parked();
+    }
+
+    fn set_visibility(vcx: &mut VisualTestContext, visibility: WindowVisibility) {
+        vcx.simulate_visibility_change(visibility);
+        vcx.run_until_parked();
+    }
+
+    fn ticking(host: &Entity<Host>, vcx: &mut VisualTestContext) -> bool {
+        vcx.update(|_window, cx| host.read(cx).caret.ticker.is_some())
+    }
+
+    fn lit(host: &Entity<Host>, vcx: &mut VisualTestContext) -> bool {
+        vcx.update(|_window, cx| host.read(cx).caret.is_lit())
+    }
+
+    fn one_blink(vcx: &mut VisualTestContext) {
+        vcx.executor().advance_clock(CARET_BLINK_INTERVAL);
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn an_unfocused_caret_keeps_no_timer_and_stays_lit(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = mount(cx);
+
+        one_blink(vcx);
+
+        assert_eq!((ticking(&host, vcx), lit(&host, vcx)), (false, true));
+    }
+
+    #[gpui::test]
+    fn focusing_starts_a_timer_that_toggles_the_caret_every_interval(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (host, vcx) = mount(cx);
+        focus(&host, vcx);
+
+        let mut seen = vec![lit(&host, vcx)];
+        for _ in 0..2 {
+            one_blink(vcx);
+            seen.push(lit(&host, vcx));
+        }
+
+        assert_eq!(seen, vec![true, false, true]);
+    }
+
+    #[gpui::test]
+    fn blurring_drops_the_timer_and_leaves_the_caret_lit(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = mount(cx);
+        focus(&host, vcx);
+        one_blink(vcx);
+
+        blur(vcx);
+        one_blink(vcx);
+
+        assert_eq!((ticking(&host, vcx), lit(&host, vcx)), (false, true));
+    }
+
+    #[gpui::test]
+    fn hiding_the_window_drops_the_timer_of_a_focused_caret(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = mount(cx);
+        focus(&host, vcx);
+
+        set_visibility(vcx, WindowVisibility::Hidden);
+
+        assert!(!ticking(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn showing_the_window_again_restarts_the_timer_of_a_focused_caret(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (host, vcx) = mount(cx);
+        focus(&host, vcx);
+        set_visibility(vcx, WindowVisibility::Hidden);
+
+        set_visibility(vcx, WindowVisibility::Visible);
+
+        assert!(ticking(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn showing_the_window_does_not_start_a_timer_for_an_unfocused_caret(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (host, vcx) = mount(cx);
+        set_visibility(vcx, WindowVisibility::Hidden);
+
+        set_visibility(vcx, WindowVisibility::Visible);
+
+        assert!(!ticking(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn focusing_while_the_window_is_hidden_starts_no_timer(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = mount(cx);
+        set_visibility(vcx, WindowVisibility::Hidden);
+
+        focus(&host, vcx);
+
+        assert!(!ticking(&host, vcx));
+    }
+
+    #[gpui::test]
+    fn asking_for_the_state_the_caret_already_has_reports_no_change(cx: &mut gpui::TestAppContext) {
+        let (host, vcx) = mount(cx);
+
+        let changes = vcx.update(|_window, cx| {
+            host.update(cx, |host, cx| {
+                [true, true, false, false].map(|blinking| set_caret_blinking(host, blinking, cx))
+            })
+        });
+
+        assert_eq!(changes, [true, false, true, false]);
+    }
+}

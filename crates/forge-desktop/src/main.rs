@@ -244,6 +244,33 @@ fn init_tracing() -> (Option<tracing_appender::non_blocking::WorkerGuard>, LogTa
     (guard, log_tail)
 }
 
+#[cfg(target_os = "linux")]
+fn prewarm_kit_fonts(cx: &mut App) {
+    use gpui::{Font, FontWeight, font};
+
+    let weights = [
+        FontWeight::NORMAL,
+        FontWeight::MEDIUM,
+        FontWeight::SEMIBOLD,
+        FontWeight::BOLD,
+    ];
+    let fonts: Vec<Font> = [
+        forge_components::body_family(),
+        forge_components::mono_family(),
+    ]
+    .into_iter()
+    .flat_map(|family| {
+        weights.map(|weight| Font {
+            weight,
+            ..font(family.clone())
+        })
+    })
+    .collect();
+    let text_system = cx.text_system().clone();
+    cx.background_spawn(async move { text_system.prewarm_fonts(&fonts) })
+        .detach();
+}
+
 fn main() {
     let initial_screen = match parse_startup_request(std::env::args().skip(1)) {
         Ok(StartupRequest::Open(screen)) => screen,
@@ -294,88 +321,93 @@ fn main() {
 
     let _rt_guard = rt.enter();
 
-    gpui_platform::application()
-        .with_assets(IconAssets)
-        .run(move |cx: &mut App| {
-            if let Err(err) = cx
-                .text_system()
-                .add_fonts(forge_components::embedded_fonts())
-            {
-                eprintln!("forge-desktop: failed to register embedded fonts: {err}");
-            }
+    let application = gpui_platform::application().with_assets(IconAssets);
+    let _app_nap_guard = application
+        .background_executor()
+        .prevent_app_nap("forge drives a live stream from the background");
 
-            let (theme, density) = crate::boot::read_persisted_presentation(&rt_handle);
-            cx.set_global(Presentation::new(theme, density));
+    application.run(move |cx: &mut App| {
+        if let Err(err) = cx
+            .text_system()
+            .add_fonts(forge_components::embedded_fonts())
+        {
+            eprintln!("forge-desktop: failed to register embedded fonts: {err}");
+        }
 
-            let (body_font, mono_font) = crate::boot::read_persisted_fonts(&rt_handle);
-            forge_components::set_body_family(body_font.map(Into::into));
-            forge_components::set_mono_family(mono_font.map(Into::into));
-            cx.set_global(crate::presentation::ActiveLanguage(
-                forge_storage::Language::default(),
-            ));
-            cx.set_global(crate::toasts::Toasts::new());
+        let (theme, density) = crate::boot::read_persisted_presentation(&rt_handle);
+        cx.set_global(Presentation::new(theme, density));
 
-            crate::i18n::install_os_default();
+        let (body_font, mono_font) = crate::boot::read_persisted_fonts(&rt_handle);
+        forge_components::set_body_family(body_font.map(Into::into));
+        forge_components::set_mono_family(mono_font.map(Into::into));
+        #[cfg(target_os = "linux")]
+        prewarm_kit_fonts(cx);
+        cx.set_global(crate::presentation::ActiveLanguage(
+            forge_storage::Language::default(),
+        ));
+        cx.set_global(crate::toasts::Toasts::new());
 
-            bind_text_input_keys(cx);
-            bind_text_area_keys(cx);
-            bind_picker_keys(cx);
-            bind_list_keys(cx);
-            register_shell_key_bindings(cx);
+        crate::i18n::install_os_default();
 
-            let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-                    None,
-                    size(px(1080.0), px(720.0)),
-                    cx,
-                ))),
-                titlebar: Some(TitlebarOptions {
-                    title: Some(SharedString::from("forge")),
-                    appears_transparent: true,
-                    traffic_light_position: Some(point(px(14.0), px(10.0))),
-                }),
-                app_id: Some("forge-desktop".to_owned()),
-                window_min_size: Some(size(
-                    SIDEBAR_MAX + NAV_WIDTH + PANE_MIN_WIDTH,
-                    TITLEBAR_HEIGHT + FOOTER_HEIGHT + SHELL_MIN_CONTENT_HEIGHT,
-                )),
-                ..Default::default()
-            };
+        bind_text_input_keys(cx);
+        bind_text_area_keys(cx);
+        bind_picker_keys(cx);
+        bind_list_keys(cx);
+        register_shell_key_bindings(cx);
 
-            let rt_handle_for_root = rt_handle.clone();
-            let log_tail_for_root = log_tail.clone();
-            let endpoints_for_root = endpoints.clone();
-            let initial_screen_for_root = initial_screen.clone();
-            let window = match cx.open_window(options, move |_window, cx| {
-                cx.new(|cx| {
-                    RootView::new(
-                        rt_handle_for_root.clone(),
-                        log_tail_for_root.clone(),
-                        endpoints_for_root.clone(),
-                        initial_screen_for_root.clone(),
-                        cx,
-                    )
-                })
-            }) {
-                Ok(window) => window,
-                Err(err) => {
-                    eprintln!("forge-desktop: failed to open window: {err}");
-                    return;
-                }
-            };
-            cx.activate(true);
-
-            window
-                .update(cx, |root, _window, _cx| root.set_window(window))
-                .ok();
-
-            run_boot(
-                rt_handle.clone(),
-                log_tail.clone(),
-                endpoints.clone(),
-                initial_screen.clone(),
-                window,
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                None,
+                size(px(1080.0), px(720.0)),
                 cx,
-            );
-        });
+            ))),
+            titlebar: Some(TitlebarOptions {
+                title: Some(SharedString::from("forge")),
+                appears_transparent: true,
+                traffic_light_position: Some(point(px(14.0), px(10.0))),
+            }),
+            app_id: Some("forge-desktop".to_owned()),
+            window_min_size: Some(size(
+                SIDEBAR_MAX + NAV_WIDTH + PANE_MIN_WIDTH,
+                TITLEBAR_HEIGHT + FOOTER_HEIGHT + SHELL_MIN_CONTENT_HEIGHT,
+            )),
+            ..Default::default()
+        };
+
+        let rt_handle_for_root = rt_handle.clone();
+        let log_tail_for_root = log_tail.clone();
+        let endpoints_for_root = endpoints.clone();
+        let initial_screen_for_root = initial_screen.clone();
+        let window = match cx.open_window(options, move |_window, cx| {
+            cx.new(|cx| {
+                RootView::new(
+                    rt_handle_for_root.clone(),
+                    log_tail_for_root.clone(),
+                    endpoints_for_root.clone(),
+                    initial_screen_for_root.clone(),
+                    cx,
+                )
+            })
+        }) {
+            Ok(window) => window,
+            Err(err) => {
+                eprintln!("forge-desktop: failed to open window: {err}");
+                return;
+            }
+        };
+        cx.activate(true);
+
+        window
+            .update(cx, |root, _window, _cx| root.set_window(window))
+            .ok();
+
+        run_boot(
+            rt_handle.clone(),
+            log_tail.clone(),
+            endpoints.clone(),
+            initial_screen.clone(),
+            window,
+            cx,
+        );
+    });
 }

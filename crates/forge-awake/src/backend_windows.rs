@@ -28,24 +28,31 @@ const SYSTEM_REQUESTS: [POWER_REQUEST_TYPE; 1] = [PowerRequestSystemRequired];
 struct PowerRequest {
     handle: HANDLE,
     kinds: &'static [POWER_REQUEST_TYPE],
+    _context: Box<REASON_CONTEXT>,
+    _reason: Box<[u16]>,
 }
 
-// SAFETY: a power request handle is a process-wide kernel object, valid from any thread.
+// SAFETY: the handle is a process-wide kernel object valid from any thread, and the boxed reason buffers are only read by the kernel.
 unsafe impl Send for PowerRequest {}
 
 impl PowerRequest {
     fn create(reason: &str, kinds: &'static [POWER_REQUEST_TYPE]) -> Result<Self, AwakeError> {
-        let mut wide: Vec<u16> = reason.encode_utf16().chain(std::iter::once(0)).collect();
-        let context = REASON_CONTEXT {
+        let mut reason: Box<[u16]> = reason.encode_utf16().chain(std::iter::once(0)).collect();
+        let context = Box::new(REASON_CONTEXT {
             Version: POWER_REQUEST_CONTEXT_VERSION,
             Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
             Reason: REASON_CONTEXT_0 {
-                SimpleReasonString: PWSTR(wide.as_mut_ptr()),
+                SimpleReasonString: PWSTR(reason.as_mut_ptr()),
             },
+        });
+        // SAFETY: `context` and the NUL-terminated `reason` it points into are heap-owned by the returned request and freed only after `Drop` closes the handle, so they stay valid for the handle's whole life whether or not the kernel copies them.
+        let handle = unsafe { PowerCreateRequest(context.as_ref()) }.map_err(refused)?;
+        let request = Self {
+            handle,
+            kinds,
+            _context: context,
+            _reason: reason,
         };
-        // SAFETY: `context` and the NUL-terminated `wide` buffer outlive the call; the kernel copies the string.
-        let handle = unsafe { PowerCreateRequest(&context) }.map_err(refused)?;
-        let request = Self { handle, kinds };
         for kind in kinds {
             // SAFETY: `request.handle` is a live power request owned by `request`.
             unsafe { PowerSetRequest(request.handle, *kind) }.map_err(refused)?;
@@ -60,7 +67,7 @@ impl Drop for PowerRequest {
             // SAFETY: `self.handle` is a live power request owned by `self`.
             let _ = unsafe { PowerClearRequest(self.handle, *kind) };
         }
-        // SAFETY: `self.handle` is owned by `self` and closed exactly once, here.
+        // SAFETY: `self.handle` is owned by `self` and closed exactly once, here, before the reason buffers it may reference are dropped with the fields.
         let _ = unsafe { CloseHandle(self.handle) };
     }
 }

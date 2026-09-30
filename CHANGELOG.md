@@ -1,10 +1,63 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.5.5] - 2026-09-30
+### ⚙️ Miscellaneous Tasks
+- *(deps)* Bump taiki-e/install-action from 2.87.15 to 2.87.20 (#75)
+- *(deps)* Bump thiserror from 2.0.20 to 2.0.21 (#76)
+- *(deps)* Bump rand from 0.10.2 to 0.10.3 (#77)
+- Remove comments added since the last release
+- Remove comments across the codebase, keep only SAFETY and CLI help
+- *(deps)* Bump taiki-e/install-action from 2.87.20 to 2.87.21 (#80)
+
+### ⚡ Performance
+- *(runtime)* Match triggers against an in-memory catalog, not storage
+- *(runtime)* Give lossless consumers their own priority and bulk lanes
+- *(storage)* Batch history writes on one writer, reads on a pool
+- *(ui)* Grow the layout stack, block App Nap and prewarm fonts
+- *(ui)* Blink carets only when focused and pause UI ticks while hidden
+
+### 🐛 Bug Fixes
+- *(awake)* Keep the Windows power request reason alive with the request
+
+### 📚 Documentation
+- *(contributing)* Match the current crates, toolchain and workflow
+- *(storage)* Describe the schema mismatch outcome as it happens
+- *(readme)* Retake screenshots in one theme
+
+### 🚀 Features
+- *(ui)* Show dropped events in the footer, on Home and in chat
+- *(queues)* Update queue depths live from the scheduler
+- *(storage)* Keep a configurable week of events, skip chat noise
+- *(awake)* Keep the system and display awake while forge runs
+- *(storage)* Let subscribers await catalog changes
+- *(obs)* Publish whether OBS is streaming as an owned signal
+- *(ui)* Open every select as a compact dropdown under its trigger
+- *(awake)* Show stay-awake in the footer and add its Settings toggle
+
+### 🛠️ Build
+- *(deps)* Stop Dependabot from bumping gpui and gpui_platform
+- *(deps)* Bump gpui and gpui_platform to zed v1.21.0
+
+### 🧪 Testing
+- *(emulator)* Add a throughput stress mode with ramp and latency tracing
+- *(runtime)* Cover catalog freshness and repair targets for it
+- *(server)* Run window tests on real time around a clock jump
+- *(runtime)* Cover delivery lanes, drop accounting and the event ring
+- *(storage)* Cover batched writes, bounded WAL and exit accounting
+- *(ui)* Cover chat gap rows and event loss accounting
+- *(queues)* Cover live queue depths and annotation-safe chat eviction
+- *(events)* Cover event retention and chat telemetry storage
+- Run paused-clock socket tests on real time around clock jumps
+- *(awake)* Cover the stay-awake supervisor, handle and opt-out
+- *(twitch)* Bound session waits on real time
+- *(ui)* Cover the dropdown, picker keys, caret blink and presence gate
+
 ## [0.5.4] - 2026-09-25
 ### ⚙️ Miscellaneous Tasks
 - *(toolchain)* Pin Rust 1.98.1 and clear the lints it adds
 - *(emulator)* Sync the lockfile with the server's dependencies
+- Release
 
 ### 🐛 Bug Fixes
 - *(soundboard)* Fail an empty output route instead of panicking
@@ -69,6 +122,7 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 - *(components)* Ship the Tabler license with the vendored icons
 - *(readme)* Lead with highlights and screenshots, fold the catalogue
+- *(release)* Release v0.5.4
 
 ### 🚀 Features
 - *(audio)* Play speech and clips on an audio overlay page

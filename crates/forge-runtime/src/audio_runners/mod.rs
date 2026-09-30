@@ -70,13 +70,16 @@ mod tests {
 
     use super::*;
     use crate::sound_player::{SoundPlayer, SoundPlayerError};
-    use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
+    use crate::speak_dispatcher::{
+        SpeakDispatchError, SpeakDispatcher, SpeakingViewer, SpeechOrigin,
+    };
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     enum DispatchCall {
         SpeakWithEngine {
             text: String,
             engine_id: String,
+            origin: SpeechOrigin,
         },
         StopCurrent,
         Pause,
@@ -136,6 +139,7 @@ mod tests {
             &self,
             _text: String,
             _voice_id_override: Option<String>,
+            _origin: SpeechOrigin,
         ) -> Result<(), SpeakDispatchError> {
             Ok(())
         }
@@ -144,8 +148,13 @@ mod tests {
             &self,
             text: String,
             engine_id: String,
+            origin: SpeechOrigin,
         ) -> Result<(), SpeakDispatchError> {
-            self.record(DispatchCall::SpeakWithEngine { text, engine_id })
+            self.record(DispatchCall::SpeakWithEngine {
+                text,
+                engine_id,
+                origin,
+            })
         }
 
         async fn stop_current(&self) -> Result<(), SpeakDispatchError> {
@@ -271,10 +280,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn speak_with_engine_marshals_interpolated_text_and_engine() {
+    async fn speak_with_engine_marshals_text_engine_and_the_chatting_viewer() {
         let disp = RecordingDispatcher::ok();
         let runner = SpeakWithEngineRunner::new(disp.clone());
-        let stack = ArgStack::new().set("user".to_owned(), Variant::String("Bob".to_owned()));
+        let stack = ArgStack::new()
+            .set("user".to_owned(), Variant::String("Bob".to_owned()))
+            .set("user_id".to_owned(), Variant::String("4411".to_owned()))
+            .set("user_name".to_owned(), Variant::String("Bob".to_owned()))
+            .set(
+                "user_platform".to_owned(),
+                Variant::String("kick".to_owned()),
+            );
         let ctx = make_ctx(&stack);
 
         let cfg = config(&[
@@ -290,6 +306,14 @@ mod tests {
             vec![DispatchCall::SpeakWithEngine {
                 text: "Hi Bob".to_owned(),
                 engine_id: "azure".to_owned(),
+                origin: SpeechOrigin {
+                    viewer: Some(SpeakingViewer {
+                        platform: "kick".to_owned(),
+                        id: "4411".to_owned(),
+                        name: "Bob".to_owned(),
+                    }),
+                    caused_by: Some(ctx.parent_event_id),
+                },
             }]
         );
     }

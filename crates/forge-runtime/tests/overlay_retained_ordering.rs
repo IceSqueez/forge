@@ -101,7 +101,7 @@ impl Harness {
         let content = content(value);
         tokio::spawn(async move {
             service
-                .send_to(&id, &content, &ArgStack::new(), None)
+                .send_to(&id, &content, &ArgStack::new(), None, None)
                 .await
                 .expect("a bound overlay accepts content");
         })
@@ -249,7 +249,7 @@ async fn a_push_held_on_one_overlay_does_not_hold_up_a_push_to_another() {
         WAIT_BOUND,
         harness
             .service
-            .send_to(&other, &content("free"), &ArgStack::new(), None),
+            .send_to(&other, &content("free"), &ArgStack::new(), None, None),
     )
     .await;
     harness.sink.release.notify_one();
@@ -272,7 +272,7 @@ async fn pushes_to_an_overlay_that_retains_nothing_are_not_serialised() {
         WAIT_BOUND,
         harness
             .service
-            .send_to(&alert, &content("free"), &ArgStack::new(), None),
+            .send_to(&alert, &content("free"), &ArgStack::new(), None, None),
     )
     .await;
     harness.sink.release.notify_one();

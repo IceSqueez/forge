@@ -528,4 +528,78 @@ mod tests {
             .collect();
         assert_eq!(codes, vec!["en", "uk", "ru"]);
     }
+
+    fn keyed_alias(key: &str, voice: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId::new(),
+            viewer_id: key.into(),
+            viewer_name: key.into(),
+            engine_id: EngineId("piper".into()),
+            voice_id: VoiceId(voice.into()),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state: AliasState::Active,
+        }
+    }
+
+    fn resolved_voice(aliases: Vec<VoiceAlias>, viewer_id: &str, viewer_name: &str) -> String {
+        let resolver = VoiceAliasResolver::new(
+            aliases,
+            AssignmentStrategy::Single {
+                voice_id: VoiceId("default-voice".into()),
+                engine_id: EngineId("piper".into()),
+            },
+            IgnoreProfile::default(),
+            SynthesisDefaults::default(),
+        );
+        match resolver.resolve(
+            viewer_id,
+            viewer_name,
+            &[make_voice("default-voice", "en-US")],
+        ) {
+            ResolveResult::Speak { voice_id, .. } => voice_id.0,
+            ResolveResult::Skip { reason } => panic!("expected Speak, skipped: {reason}"),
+        }
+    }
+
+    #[test]
+    fn an_alias_keyed_by_the_exact_viewer_id_wins_over_one_keyed_by_the_name() {
+        let voice = resolved_voice(
+            vec![
+                keyed_alias("aurora", "name-voice"),
+                keyed_alias("twitch:77", "id-voice"),
+            ],
+            "twitch:77",
+            "Aurora",
+        );
+
+        assert_eq!(voice, "id-voice");
+    }
+
+    #[test]
+    fn an_alias_keyed_by_the_display_name_matches_ignoring_case() {
+        for (key, name) in [
+            ("NovaFox", "novafox"),
+            ("novafox", "NOVAFOX"),
+            ("Зірка", "зІРКА"),
+        ] {
+            let voice = resolved_voice(vec![keyed_alias(key, "alias-voice")], "kick:9", name);
+
+            assert_eq!(voice, "alias-voice", "alias {key:?} vs viewer {name:?}");
+        }
+    }
+
+    #[test]
+    fn a_viewer_matching_no_alias_gets_the_strategy_voice() {
+        for (viewer_id, name) in [
+            ("twitch:2", "aurora2"),
+            ("twitch:2", "auror"),
+            ("twitch:2", ""),
+            ("system", "Forge"),
+        ] {
+            let voice = resolved_voice(vec![keyed_alias("aurora", "alias-voice")], viewer_id, name);
+
+            assert_eq!(voice, "default-voice", "{viewer_id:?} / {name:?}");
+        }
+    }
 }

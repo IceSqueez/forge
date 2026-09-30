@@ -219,3 +219,86 @@ pub trait SpeakDispatcher: Send + Sync {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stack(pairs: &[(&str, &str)]) -> ArgStack {
+        pairs.iter().fold(ArgStack::new(), |stack, (key, value)| {
+            stack.set((*key).to_owned(), Variant::String((*value).to_owned()))
+        })
+    }
+
+    fn viewer(platform: &str, id: &str, name: &str) -> Option<SpeakingViewer> {
+        Some(SpeakingViewer {
+            platform: platform.to_owned(),
+            id: id.to_owned(),
+            name: name.to_owned(),
+        })
+    }
+
+    #[test]
+    fn principal_viewer_fills_missing_slots_from_the_login() {
+        for (label, pairs, expected) in [
+            (
+                "all slots",
+                vec![
+                    ("user_id", "77"),
+                    ("user_name", "Aurora"),
+                    ("user_login", "aurora"),
+                    ("user_platform", "kick"),
+                ],
+                viewer("kick", "77", "Aurora"),
+            ),
+            (
+                "login only",
+                vec![("user_login", "aurora")],
+                viewer("", "aurora", "aurora"),
+            ),
+            (
+                "id and login, no name",
+                vec![("user_id", "77"), ("user_login", "aurora")],
+                viewer("", "77", "aurora"),
+            ),
+            ("id only", vec![("user_id", "77")], viewer("", "77", "77")),
+            (
+                "blank id and name fall back to the login",
+                vec![
+                    ("user_id", "  "),
+                    ("user_name", " "),
+                    ("user_login", "aurora"),
+                ],
+                viewer("", "aurora", "aurora"),
+            ),
+            (
+                "padded values are trimmed",
+                vec![("user_id", " 77 "), ("user_name", " Aurora ")],
+                viewer("", "77", "Aurora"),
+            ),
+            (
+                "Unicode display name",
+                vec![("user_id", "9"), ("user_name", "Зірка")],
+                viewer("", "9", "Зірка"),
+            ),
+        ] {
+            let origin = SpeechOrigin::from_args(&stack(&pairs), None);
+
+            assert_eq!(origin.viewer, expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn no_viewer_without_an_id_or_login() {
+        for pairs in [
+            vec![],
+            vec![("user_name", "Aurora"), ("user_platform", "kick")],
+            vec![("user_id", ""), ("user_login", "   ")],
+            vec![("user", "Aurora")],
+        ] {
+            let origin = SpeechOrigin::from_args(&stack(&pairs), None);
+
+            assert_eq!(origin.viewer, None, "{pairs:?}");
+        }
+    }
+}

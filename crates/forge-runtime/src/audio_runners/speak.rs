@@ -120,11 +120,13 @@ impl SubActionRunner for SpeakRunner {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::Mutex;
+
     use async_trait::async_trait;
     use forge_types::{EventId, SubActionOutcome};
 
     use super::*;
-    use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher};
+    use crate::speak_dispatcher::{SpeakDispatchError, SpeakDispatcher, SpeakingViewer};
     use forge_events::{Event, EventPublisher};
 
     struct NullPublisher;
@@ -133,15 +135,59 @@ mod tests {
         fn publish(&self, _event: Event) {}
     }
 
-    struct OkSpeaker;
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Path {
+        Speak,
+        Reward,
+    }
+
+    #[derive(Debug, Clone)]
+    struct Heard {
+        text: String,
+        path: Path,
+        origin: SpeechOrigin,
+    }
+
+    #[derive(Default)]
+    struct Capturing {
+        heard: Mutex<Vec<Heard>>,
+    }
+
+    impl Capturing {
+        fn only(&self) -> Heard {
+            let heard = self.heard.lock().unwrap();
+            assert_eq!(heard.len(), 1, "expected exactly one dispatch: {heard:?}");
+            heard[0].clone()
+        }
+    }
 
     #[async_trait]
-    impl SpeakDispatcher for OkSpeaker {
+    impl SpeakDispatcher for Capturing {
         async fn speak(
             &self,
-            _text: String,
+            text: String,
             _voice_id_override: Option<String>,
+            origin: SpeechOrigin,
         ) -> Result<(), SpeakDispatchError> {
+            self.heard.lock().unwrap().push(Heard {
+                text,
+                path: Path::Speak,
+                origin,
+            });
+            Ok(())
+        }
+
+        async fn speak_reward_sourced(
+            &self,
+            text: String,
+            _voice_id_override: Option<String>,
+            origin: SpeechOrigin,
+        ) -> Result<(), SpeakDispatchError> {
+            self.heard.lock().unwrap().push(Heard {
+                text,
+                path: Path::Reward,
+                origin,
+            });
             Ok(())
         }
     }
@@ -154,6 +200,7 @@ mod tests {
             &self,
             _text: String,
             _voice_id_override: Option<String>,
+            _origin: SpeechOrigin,
         ) -> Result<(), SpeakDispatchError> {
             Err(SpeakDispatchError::Dispatch("queue full".to_owned()))
         }
@@ -163,85 +210,139 @@ mod tests {
         RunContext::leaf(stack, 0, EventId::new(), &NullPublisher)
     }
 
-    fn config_with_text(text: &str) -> SubActionConfig {
+    fn config(text: &str, wait: bool) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("text".to_owned(), Variant::String(text.to_owned()));
+        cfg.insert("wait_for_completion".to_owned(), Variant::Bool(wait));
         cfg
     }
 
-    #[tokio::test]
-    async fn success_path() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (telemetry, updated) = runner.execute(&config_with_text("Hello chat!"), &ctx).await;
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
-        assert!(updated.is_none());
+    fn chat_stack() -> ArgStack {
+        ArgStack::new()
+            .set(
+                "user_id".to_owned(),
+                Variant::String("141981764".to_owned()),
+            )
+            .set(
+                "user_name".to_owned(),
+                Variant::String("NovaFox".to_owned()),
+            )
+            .set(
+                "user_login".to_owned(),
+                Variant::String("novafox".to_owned()),
+            )
+            .set(
+                "user_platform".to_owned(),
+                Variant::String("twitch".to_owned()),
+            )
+    }
+
+    fn nova() -> SpeakingViewer {
+        SpeakingViewer {
+            platform: "twitch".to_owned(),
+            id: "141981764".to_owned(),
+            name: "NovaFox".to_owned(),
+        }
     }
 
     #[tokio::test]
-    async fn failure_path() {
+    async fn a_chat_triggered_speak_carries_the_viewer_and_the_triggering_event() {
+        let speaker = Arc::new(Capturing::default());
+        let runner = SpeakRunner::new(speaker.clone());
+        let stack = chat_stack();
+        let ctx = make_ctx(&stack);
+
+        let (telemetry, _) = runner.execute(&config("hello", false), &ctx).await;
+
+        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+        assert_eq!(
+            speaker.only().origin,
+            SpeechOrigin {
+                viewer: Some(nova()),
+                caused_by: Some(ctx.parent_event_id),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn every_dispatch_path_forwards_the_viewer() {
+        for (wait, reward, path) in [
+            (true, false, Path::Speak),
+            (false, false, Path::Speak),
+            (true, true, Path::Reward),
+            (false, true, Path::Reward),
+        ] {
+            let speaker = Arc::new(Capturing::default());
+            let runner = SpeakRunner::new(speaker.clone());
+            let mut stack = chat_stack();
+            if reward {
+                stack = stack.set("reward.id".to_owned(), Variant::String("r-1".to_owned()));
+            }
+            let ctx = make_ctx(&stack);
+
+            runner.execute(&config("hello", wait), &ctx).await;
+
+            let heard = speaker.only();
+            assert_eq!(heard.path, path, "wait={wait} reward={reward}");
+            assert_eq!(
+                heard.origin.viewer,
+                Some(nova()),
+                "wait={wait} reward={reward} lost the viewer"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_speak_without_a_triggering_viewer_carries_no_viewer() {
+        let speaker = Arc::new(Capturing::default());
+        let runner = SpeakRunner::new(speaker.clone());
+        let stack = ArgStack::new()
+            .set(
+                "timer.name".to_owned(),
+                Variant::String("hydrate".to_owned()),
+            )
+            .set("user".to_owned(), Variant::String("NovaFox".to_owned()));
+        let ctx = make_ctx(&stack);
+
+        runner.execute(&config("drink water", false), &ctx).await;
+
+        assert_eq!(speaker.only().origin.viewer, None);
+    }
+
+    #[tokio::test]
+    async fn a_dispatch_error_fails_the_step() {
         let runner = SpeakRunner::new(Arc::new(FailSpeaker));
         let stack = ArgStack::new();
         let ctx = make_ctx(&stack);
-        let (telemetry, _) = runner.execute(&config_with_text("Hello!"), &ctx).await;
+
+        let (telemetry, _) = runner.execute(&config("Hello!", false), &ctx).await;
+
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
     }
 
     #[tokio::test]
-    async fn empty_text_is_forwarded() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
-        let cfg = runner.default_config();
-        let stack = ArgStack::new();
-        let ctx = make_ctx(&stack);
-        let (telemetry, _) = runner.execute(&cfg, &ctx).await;
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
-    }
-
-    #[tokio::test]
-    async fn arg_stack_interpolation_applied() {
-        use std::sync::{Arc, Mutex};
-
-        struct CapturingSpeaker {
-            captured: Arc<Mutex<String>>,
-        }
-
-        #[async_trait]
-        impl SpeakDispatcher for CapturingSpeaker {
-            async fn speak(
-                &self,
-                text: String,
-                _voice_id_override: Option<String>,
-            ) -> Result<(), SpeakDispatchError> {
-                *self.captured.lock().unwrap() = text;
-                Ok(())
-            }
-        }
-
-        let captured: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-        let runner = SpeakRunner::new(Arc::new(CapturingSpeaker {
-            captured: Arc::clone(&captured),
-        }));
-
+    async fn text_is_interpolated_from_the_arg_stack() {
+        let speaker = Arc::new(Capturing::default());
+        let runner = SpeakRunner::new(speaker.clone());
         let stack = ArgStack::new().set("user".to_owned(), Variant::String("Alice".to_owned()));
         let ctx = make_ctx(&stack);
 
         runner
-            .execute(&config_with_text("Welcome %user%!"), &ctx)
+            .execute(&config("Welcome %user%!", false), &ctx)
             .await;
 
-        assert_eq!(*captured.lock().unwrap(), "Welcome Alice!");
+        assert_eq!(speaker.only().text, "Welcome Alice!");
     }
 
     #[test]
     fn validate_config_rejects_missing_text() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
+        let runner = SpeakRunner::new(Arc::new(FailSpeaker));
         assert!(runner.validate_config(&SubActionConfig::new()).is_err());
     }
 
     #[test]
     fn validate_config_accepts_nonempty_text() {
-        let runner = SpeakRunner::new(Arc::new(OkSpeaker));
-        assert!(runner.validate_config(&config_with_text("hello")).is_ok());
+        let runner = SpeakRunner::new(Arc::new(FailSpeaker));
+        assert!(runner.validate_config(&config("hello", true)).is_ok());
     }
 }

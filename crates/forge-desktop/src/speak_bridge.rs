@@ -551,27 +551,318 @@ mod tests {
         fn publish(&self, _: forge_events::Event) {}
     }
 
+    struct Harness {
+        per_user_limit: usize,
+        aliases: Vec<forge_voice::VoiceAlias>,
+        pipeline: forge_tts_pipeline::PipelineConfig,
+        bus: Arc<dyn forge_events::EventPublisher>,
+    }
+
+    impl Default for Harness {
+        fn default() -> Self {
+            Self {
+                per_user_limit: forge_speak_queue::QueueConfig::default().per_user_limit,
+                aliases: Vec::new(),
+                pipeline: forge_tts_pipeline::PipelineConfig::default(),
+                bus: Arc::new(NullPublisher),
+            }
+        }
+    }
+
+    impl Harness {
+        fn spawn(self) -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
+            let resolver = forge_voice::VoiceAliasResolver::new(
+                self.aliases,
+                forge_voice::AssignmentStrategy::DeterministicByName,
+                forge_voice::IgnoreProfile::default(),
+                forge_voice::SynthesisDefaults::default(),
+            );
+            let deps = forge_speak_queue::QueueDeps {
+                registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
+                resolver: Arc::new(std::sync::RwLock::new(resolver)),
+                pipeline: forge_speak_queue::PipelineConfigHandle::new(self.pipeline),
+                audio_sink: Arc::new(forge_audio::NullSink),
+                event_bus: self.bus,
+                disabled_engines: std::collections::HashSet::new(),
+                engine_gains: std::collections::HashMap::new(),
+            };
+            let config = forge_speak_queue::QueueConfig {
+                per_user_limit: self.per_user_limit,
+                ..forge_speak_queue::QueueConfig::default()
+            };
+            let (handle, stream) = forge_speak_queue::spawn(config, deps);
+            (Arc::new(handle), stream)
+        }
+    }
+
     fn voiceless_queue() -> (Arc<SpeakQueueHandle>, forge_speak_queue::SpeakEventStream) {
-        let resolver = forge_voice::VoiceAliasResolver::new(
-            vec![],
-            forge_voice::AssignmentStrategy::DeterministicByName,
-            forge_voice::IgnoreProfile::default(),
-            forge_voice::SynthesisDefaults::default(),
-        );
-        let deps = forge_speak_queue::QueueDeps {
-            registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
-            resolver: Arc::new(std::sync::RwLock::new(resolver)),
-            pipeline: forge_speak_queue::PipelineConfigHandle::new(
-                forge_tts_pipeline::PipelineConfig::default(),
+        Harness::default().spawn()
+    }
+
+    fn viewer(platform: &str, id: &str, name: &str) -> SpeakingViewer {
+        SpeakingViewer {
+            platform: platform.to_owned(),
+            id: id.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+
+    fn from_viewer(viewer: SpeakingViewer) -> SpeechOrigin {
+        SpeechOrigin {
+            viewer: Some(viewer),
+            caused_by: None,
+        }
+    }
+
+    async fn next_matching<T>(
+        stream: &mut forge_speak_queue::SpeakEventStream,
+        mut pick: impl FnMut(SpeakEvent) -> Option<T>,
+    ) -> T {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Ok(event) = stream.recv().await
+                    && let Some(found) = pick(event)
+                {
+                    return found;
+                }
+            }
+        })
+        .await
+        .expect("the queue never emitted the expected event")
+    }
+
+    async fn admissions(
+        stream: &mut forge_speak_queue::SpeakEventStream,
+        count: usize,
+    ) -> Vec<bool> {
+        let mut admitted = Vec::new();
+        while admitted.len() < count {
+            admitted.push(
+                next_matching(stream, |event| match event {
+                    SpeakEvent::Enqueued { .. } => Some(true),
+                    SpeakEvent::Rejected { .. } => Some(false),
+                    _ => None,
+                })
+                .await,
+            );
+        }
+        admitted
+    }
+
+    async fn skip_reason(
+        bridge: &SpeakBridge,
+        stream: &mut forge_speak_queue::SpeakEventStream,
+        origin: SpeechOrigin,
+    ) -> String {
+        SpeakDispatcher::speak(bridge, "hello chat".to_owned(), None, origin)
+            .await
+            .unwrap();
+        next_matching(stream, |event| match event {
+            SpeakEvent::Skipped { reason, .. } => Some(reason),
+            _ => None,
+        })
+        .await
+    }
+
+    #[test]
+    fn the_queue_identity_is_platform_qualified_or_the_system_speaker() {
+        for (origin_viewer, expected) in [
+            (
+                Some(viewer("twitch", "141981764", "NovaFox")),
+                ("twitch:141981764", "NovaFox"),
             ),
-            audio_sink: Arc::new(forge_audio::NullSink),
-            event_bus: Arc::new(NullPublisher),
-            disabled_engines: std::collections::HashSet::new(),
-            engine_gains: std::collections::HashMap::new(),
+            (
+                Some(viewer("", "141981764", "NovaFox")),
+                ("141981764", "NovaFox"),
+            ),
+            (None, ("system", "Forge")),
+        ] {
+            let (id, name) = queue_identity(origin_viewer.clone());
+
+            assert_eq!((id.as_str(), name.as_str()), expected, "{origin_viewer:?}");
+        }
+    }
+
+    struct CapturingBus(std::sync::Mutex<Vec<forge_events::Event>>);
+
+    impl forge_events::EventPublisher for CapturingBus {
+        fn publish(&self, event: forge_events::Event) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_chat_speech_is_queued_as_caused_by_its_triggering_event() {
+        let bus = Arc::new(CapturingBus(std::sync::Mutex::new(Vec::new())));
+        let (handle, mut stream) = Harness {
+            bus: bus.clone(),
+            ..Harness::default()
+        }
+        .spawn();
+        handle.send(SpeakCommand::Pause).await.unwrap();
+        let bridge = SpeakBridge::new(handle);
+        let trigger = forge_types::EventId::new();
+
+        SpeakDispatcher::speak(
+            &bridge,
+            "hello chat".to_owned(),
+            None,
+            SpeechOrigin {
+                viewer: Some(viewer("twitch", "141981764", "NovaFox")),
+                caused_by: Some(trigger),
+            },
+        )
+        .await
+        .unwrap();
+        admissions(&mut stream, 1).await;
+
+        let enqueued: Vec<_> = bus
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == "speak.enqueued")
+            .map(|event| event.caused_by)
+            .collect();
+        assert_eq!(enqueued, vec![Some(trigger)]);
+    }
+
+    #[tokio::test]
+    async fn the_per_user_limit_counts_each_viewer_separately() {
+        let nova = || from_viewer(viewer("twitch", "1", "NovaFox"));
+        let aurora = || from_viewer(viewer("twitch", "2", "Aurora"));
+        let kick_one = || from_viewer(viewer("kick", "1", "NovaFox"));
+        for (label, origins, expected) in [
+            ("two viewers", vec![nova(), aurora()], vec![true, true]),
+            (
+                "one viewer bursting",
+                vec![nova(), nova()],
+                vec![true, false],
+            ),
+            (
+                "the same id on two platforms",
+                vec![nova(), kick_one()],
+                vec![true, true],
+            ),
+        ] {
+            let (handle, mut stream) = Harness {
+                per_user_limit: 1,
+                ..Harness::default()
+            }
+            .spawn();
+            handle.send(SpeakCommand::Pause).await.unwrap();
+            let bridge = SpeakBridge::new(handle);
+            let count = origins.len();
+
+            for origin in origins {
+                SpeakDispatcher::speak(&bridge, "hi".to_owned(), None, origin)
+                    .await
+                    .unwrap();
+            }
+
+            assert_eq!(admissions(&mut stream, count).await, expected, "{label}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bot_viewers_speech_is_dropped_by_the_bot_filter() {
+        let mut pipeline = forge_tts_pipeline::PipelineConfig::default();
+        pipeline.skip_rules.from_bot_accounts = true;
+        pipeline.skip_rules.bot_accounts = vec!["relaybot".to_owned()];
+        let (handle, mut stream) = Harness {
+            pipeline,
+            ..Harness::default()
+        }
+        .spawn();
+        let bridge = SpeakBridge::new(handle);
+
+        let reason = skip_reason(
+            &bridge,
+            &mut stream,
+            from_viewer(viewer("twitch", "5", "RelayBot")),
+        )
+        .await;
+
+        assert!(reason.contains("bot"), "skipped for {reason:?}");
+    }
+
+    #[tokio::test]
+    async fn a_blocked_viewers_speech_is_dropped() {
+        for key in ["twitch:66", "grumpy"] {
+            let (handle, mut stream) = Harness {
+                aliases: vec![forge_voice::VoiceAlias {
+                    id: forge_voice::AliasId::new(),
+                    viewer_id: key.to_owned(),
+                    viewer_name: key.to_owned(),
+                    engine_id: EngineId("piper".to_owned()),
+                    voice_id: VoiceId("amy".to_owned()),
+                    pitch_semitones: None,
+                    rate_multiplier: None,
+                    state: forge_voice::AliasState::Blocked,
+                }],
+                ..Harness::default()
+            }
+            .spawn();
+            let bridge = SpeakBridge::new(handle);
+
+            let reason = skip_reason(
+                &bridge,
+                &mut stream,
+                from_viewer(viewer("twitch", "66", "Grumpy")),
+            )
+            .await;
+
+            assert!(
+                reason.contains("blocked"),
+                "block keyed {key:?} skipped for {reason:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_donation_show_speaks_with_the_donors_alias() {
+        let (handle, mut stream) = Harness {
+            aliases: vec![forge_voice::VoiceAlias {
+                id: forge_voice::AliasId::new(),
+                viewer_id: "aurora".to_owned(),
+                viewer_name: "Aurora".to_owned(),
+                engine_id: EngineId("piper".to_owned()),
+                voice_id: VoiceId("donor-voice".to_owned()),
+                pitch_semitones: None,
+                rate_multiplier: None,
+                state: forge_voice::AliasState::Active,
+            }],
+            ..Harness::default()
+        }
+        .spawn();
+        handle.send(SpeakCommand::Pause).await.unwrap();
+        let bridge = SpeakBridge::new(handle);
+        let cancel = CancelSignal::new();
+        let speech = ShowSpeech {
+            text: "thanks for the five".to_owned(),
+            voice_alias: None,
+            overlay: "stage-alert".to_owned(),
+            show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
+            origin: from_viewer(viewer("youtube", "UC7x", "Aurora")),
         };
-        let (handle, stream) =
-            forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps);
-        (Arc::new(handle), stream)
+
+        let (_, preview) = tokio::join!(
+            bridge.speak_for_show(speech, cancel.clone(), SpeechStartSignal::new()),
+            async {
+                let preview = next_matching(&mut stream, |event| match event {
+                    SpeakEvent::Enqueued { voice_preview, .. } => Some(voice_preview),
+                    _ => None,
+                })
+                .await;
+                cancel.cancel();
+                preview
+            }
+        );
+
+        assert!(
+            preview.contains("donor-voice"),
+            "the show speech was voiced as {preview:?}"
+        );
     }
 
     #[tokio::test]
@@ -585,6 +876,7 @@ mod tests {
             voice_alias: None,
             overlay: "stage-alert".to_owned(),
             show: "01J9ZC4W6R7Q2N3M4K5P6S7T8V".to_owned(),
+            origin: SpeechOrigin::default(),
         };
 
         let (outcome, removed) = tokio::time::timeout(Duration::from_secs(5), async {
@@ -695,6 +987,7 @@ mod tests {
                 &OverlayId::new("stage-alert"),
                 &content,
                 &forge_types::ArgStack::new(),
+                None,
                 None,
             )
             .await

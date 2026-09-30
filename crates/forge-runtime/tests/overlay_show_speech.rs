@@ -4,20 +4,23 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use forge_events::{Event, EventPublisher};
 use forge_overlay::config::{SHOW, SPEECH, SPEECH_VOICE};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
-use forge_registry::CancelSignal;
+use forge_registry::{CancelSignal, RunContext, SubActionRunner};
+use forge_runtime::sub_action_runners::OverlaySendRunner;
 use forge_runtime::{
-    EventBus, NullEventLogRepo, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
-    OverlayServiceHandle, SHOW_CEILING, SHOW_SPEECH_START_WAIT, ShowEnd, ShowSpeech, ShowTicket,
-    SpeakDispatchError, SpeakDispatcher, SpeechStartSignal,
+    EventBus, NullEventLogRepo, OVERLAY_TARGET_KEY, OverlayDispatch, OverlayFrameSink,
+    OverlayReceivers, OverlayServiceCell, OverlayServiceHandle, SHOW_CEILING,
+    SHOW_SPEECH_START_WAIT, ShowEnd, ShowSpeech, ShowTicket, SpeakDispatchError, SpeakDispatcher,
+    SpeakingViewer, SpeechOrigin, SpeechStartSignal,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
     MockOverlayRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo,
     SettingsRepo,
 };
-use forge_types::{ArgStack, Variant};
+use forge_types::{ArgStack, EventId, SubActionConfig, SubActionOutcome, Variant};
 use time::OffsetDateTime;
 use tokio::time::Instant;
 
@@ -127,7 +130,12 @@ impl ScriptedSpeaker {
 
 #[async_trait]
 impl SpeakDispatcher for ScriptedSpeaker {
-    async fn speak(&self, _: String, _: Option<String>) -> Result<(), SpeakDispatchError> {
+    async fn speak(
+        &self,
+        _: String,
+        _: Option<String>,
+        _: SpeechOrigin,
+    ) -> Result<(), SpeakDispatchError> {
         panic!("show speech took the global speak path")
     }
 
@@ -251,6 +259,7 @@ impl Harness {
                 &OverlayId::new(STAGE),
                 &spoken_show(text),
                 &ArgStack::new(),
+                None,
                 None,
             )
             .await
@@ -430,6 +439,56 @@ async fn the_show_frame_carries_the_same_token_as_its_speech() {
         (Some(spoken.show.as_str()), STAGE, Some("amy")),
         "the show and its speech cannot be joined on the page, or the speech targets the wrong \
          overlay or voice"
+    );
+}
+
+struct NullPublisher;
+
+impl EventPublisher for NullPublisher {
+    fn publish(&self, _: Event) {}
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_overlay_step_attributes_its_show_speech_to_the_viewer_and_event_that_ran_it() {
+    let harness = harness(ALERT_KIND, plays_for(Duration::from_secs(1)));
+    let cell = OverlayServiceCell::new();
+    cell.set(harness.service.clone());
+    let runner = OverlaySendRunner::new(cell);
+    let step = SubActionConfig::from([
+        (
+            OVERLAY_TARGET_KEY.to_owned(),
+            Variant::String(STAGE.to_owned()),
+        ),
+        ("wait_for_show".to_owned(), Variant::Bool(false)),
+        (HEADLINE_KEY.to_owned(), Variant::String("tip".to_owned())),
+        (
+            SPEECH.to_owned(),
+            Variant::String("thanks %user_name%".to_owned()),
+        ),
+    ]);
+    let donor = ArgStack::new()
+        .set("user_id".to_owned(), Variant::String("UC7x".to_owned()))
+        .set("user_name".to_owned(), Variant::String("Aurora".to_owned()))
+        .set(
+            "user_platform".to_owned(),
+            Variant::String("youtube".to_owned()),
+        );
+    let ctx = RunContext::leaf(&donor, 0, EventId::new(), &NullPublisher);
+
+    let (telemetry, _) = runner.execute(&step, &ctx).await;
+    harness.until_spoken(1).await;
+
+    assert!(matches!(telemetry.outcome, SubActionOutcome::Success));
+    assert_eq!(
+        harness.speaker.spoken().remove(0).speech.origin,
+        SpeechOrigin {
+            viewer: Some(SpeakingViewer {
+                platform: "youtube".to_owned(),
+                id: "UC7x".to_owned(),
+                name: "Aurora".to_owned(),
+            }),
+            caused_by: Some(ctx.parent_event_id),
+        }
     );
 }
 

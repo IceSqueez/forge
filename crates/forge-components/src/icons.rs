@@ -190,6 +190,7 @@ tabler_icons! {
     ArrowBadgeRight => "arrow-badge-right.svg",
     Link => "link.svg",
     Bug => "bug.svg",
+    Coffee => "coffee.svg",
 }
 
 impl Icon {
@@ -232,6 +233,7 @@ impl Icon {
             "globe" => Icon::Globe,
             "activity" => Icon::Activity,
             "bug" => Icon::Bug,
+            "coffee" | "cup" => Icon::Coffee,
             "rss" => Icon::Rss,
             "variable" | "hash" => Icon::Variable,
             "chevron-down" => Icon::ChevronDown,

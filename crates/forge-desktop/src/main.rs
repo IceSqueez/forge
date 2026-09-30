@@ -4,6 +4,7 @@ mod app_shortcut_modal;
 mod async_bridge;
 mod audio_router;
 mod audio_routes;
+mod awake_state;
 mod boot;
 mod builtin_sections;
 mod chat;

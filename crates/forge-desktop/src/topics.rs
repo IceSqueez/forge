@@ -1,5 +1,6 @@
 use gpui::Entity;
 
+use crate::awake_state::AwakeState;
 use crate::chat_feed::ChatFeed;
 use crate::event_log::EventLog;
 use crate::event_loss::EventLoss;
@@ -18,6 +19,7 @@ pub struct Topics {
     pub speak: Entity<SpeakState>,
     pub queue_health: Entity<QueueHealth>,
     pub event_loss: Entity<EventLoss>,
+    pub awake: Entity<AwakeState>,
 }
 
 impl Topics {
@@ -31,6 +33,7 @@ impl Topics {
         speak: Entity<SpeakState>,
         queue_health: Entity<QueueHealth>,
         event_loss: Entity<EventLoss>,
+        awake: Entity<AwakeState>,
     ) -> Self {
         Self {
             chat_feed,
@@ -41,6 +44,7 @@ impl Topics {
             speak,
             queue_health,
             event_loss,
+            awake,
         }
     }
 }

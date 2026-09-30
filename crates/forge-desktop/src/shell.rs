@@ -86,6 +86,7 @@ impl AppShell {
             status,
             topics.platforms.clone(),
             topics.event_loss.clone(),
+            topics.awake.clone(),
             screen.clone(),
             cx,
         );
@@ -291,7 +292,8 @@ impl AppShell {
             Screen::Settings(preselect) => {
                 let handles = Arc::clone(handles);
                 let preselect = *preselect;
-                cx.new(|cx| SettingsView::new(handles, preselect, cx))
+                let awake = topics.awake.clone();
+                cx.new(|cx| SettingsView::new(handles, awake, preselect, cx))
                     .into()
             }
             Screen::Queues => {

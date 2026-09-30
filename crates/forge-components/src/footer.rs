@@ -44,7 +44,7 @@ pub fn app_footer(
     connected: u8,
     connected_label: impl Into<SharedString>,
     uptime_label: impl Into<SharedString>,
-    trailing: Option<AnyElement>,
+    trailing: Vec<AnyElement>,
     palette: &ForgePalette,
 ) -> impl IntoElement {
     let shell = palette.shell;
@@ -103,10 +103,8 @@ pub fn app_footer(
         .child(conn_row)
         .child(mono_cell("·", text_faint, FONT_XS))
         .child(uptime_row);
-    if let Some(trailing) = trailing {
-        right = right
-            .child(mono_cell("·", text_faint, FONT_XS))
-            .child(trailing);
+    for item in trailing {
+        right = right.child(mono_cell("·", text_faint, FONT_XS)).child(item);
     }
 
     div()
@@ -130,13 +128,33 @@ pub fn footer_alert(
     details: Vec<SharedString>,
     palette: &ForgePalette,
 ) -> impl IntoElement {
+    footer_indicator(
+        id,
+        Icon::AlertTriangle,
+        label,
+        color,
+        color,
+        details,
+        palette,
+    )
+}
+
+pub fn footer_indicator(
+    id: impl Into<ElementId>,
+    glyph: Icon,
+    label: impl Into<SharedString>,
+    icon_color: Rgba,
+    label_color: Rgba,
+    details: Vec<SharedString>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
     div()
         .id(id)
         .flex()
         .items_center()
         .gap(ALERT_GAP)
-        .child(icon(Icon::AlertTriangle, ALERT_ICON_SIZE, color))
-        .child(mono_cell(label, color, FONT_XS))
+        .child(icon(glyph, ALERT_ICON_SIZE, icon_color))
+        .child(mono_cell(label, label_color, FONT_XS))
         .tooltip(tooltip_lines_builder(details, palette))
 }
 

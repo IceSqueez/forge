@@ -9,11 +9,12 @@ use forge_components::{
 };
 use forge_storage::{Language, SettingsRepo, get_bool_setting, reserved_keys};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString,
+    Subscription, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, ErrorSink};
+use crate::awake_state::AwakeState;
 use crate::presentation::{ActiveLanguage, ActivePresentation, Presentation};
 use crate::runtime_handles::RuntimeHandles;
 use crate::settings_audio::SettingsAudioView;
@@ -33,6 +34,7 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
     (
         "settings_nav_group_preferences",
         &[
+            SettingsSection::General,
             SettingsSection::Appearance,
             SettingsSection::Language,
             SettingsSection::Shortcuts,
@@ -57,6 +59,7 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsSection {
+    General,
     Appearance,
     Language,
     Shortcuts,
@@ -73,6 +76,7 @@ pub enum SettingsSection {
 impl SettingsSection {
     fn label(self) -> String {
         match self {
+            SettingsSection::General => tr!("settings_nav_general"),
             SettingsSection::Appearance => tr!("settings_nav_appearance"),
             SettingsSection::Language => tr!("settings_nav_language_region"),
             SettingsSection::Shortcuts => tr!("settings_nav_shortcuts"),
@@ -89,6 +93,7 @@ impl SettingsSection {
 
     fn icon(self) -> Icon {
         match self {
+            SettingsSection::General => Icon::Settings,
             SettingsSection::Appearance => Icon::Photo,
             SettingsSection::Language => Icon::Globe,
             SettingsSection::Shortcuts => Icon::Keyboard,
@@ -105,6 +110,7 @@ impl SettingsSection {
 
     fn key(self) -> &'static str {
         match self {
+            SettingsSection::General => "general",
             SettingsSection::Appearance => "appearance",
             SettingsSection::Language => "language",
             SettingsSection::Shortcuts => "shortcuts",
@@ -178,6 +184,7 @@ fn theme_key(theme: ThemeId) -> &'static str {
 pub struct SettingsView {
     section: SettingsSection,
     handles: Arc<RuntimeHandles>,
+    awake: Entity<AwakeState>,
     language: Language,
     audio: Entity<SettingsAudioView>,
     scripting: Entity<SettingsScriptingView>,
@@ -206,9 +213,11 @@ const FONT_DEFAULT_ID: &str = "__forge_default_font__";
 impl SettingsView {
     pub fn new(
         handles: Arc<RuntimeHandles>,
+        awake: Entity<AwakeState>,
         preselect: Option<SettingsSection>,
         cx: &mut Context<Self>,
     ) -> Self {
+        cx.observe(&awake, |_, _, cx| cx.notify()).detach();
         let section = preselect.unwrap_or(SettingsSection::Appearance);
         let audio =
             cx.new(|cx| SettingsAudioView::new(&handles, section == SettingsSection::Audio, cx));
@@ -248,6 +257,7 @@ impl SettingsView {
         let mut view = Self {
             section,
             handles,
+            awake,
             language: cx.global::<ActiveLanguage>().0,
             audio,
             scripting,
@@ -293,6 +303,22 @@ impl SettingsView {
                 .await
             },
         );
+        cx.notify();
+    }
+
+    fn stay_awake_enabled(&self, cx: &App) -> bool {
+        self.awake
+            .read(cx)
+            .enabled()
+            .unwrap_or(crate::stay_awake::ENABLED_BY_DEFAULT)
+    }
+
+    fn toggle_stay_awake(&mut self, cx: &mut Context<Self>) {
+        let enabled = !self.stay_awake_enabled(cx);
+        let stay_awake = self.handles.stay_awake.clone();
+        self.handles.rt_handle.spawn(async move {
+            stay_awake.set_enabled(enabled).await;
+        });
         cx.notify();
     }
 
@@ -606,6 +632,7 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let content = match self.section {
+            SettingsSection::General => self.general_pane(palette, density, cx),
             SettingsSection::Appearance => self.appearance_pane(palette, density, cx),
             SettingsSection::Language => self.language_pane(palette, density, cx),
             SettingsSection::Shortcuts => self.shortcuts.clone().into_any_element(),
@@ -1084,6 +1111,36 @@ impl SettingsView {
             ))
             .child(card(identity, palette))
             .child(card(notify_row, palette))
+            .into_any_element()
+    }
+
+    fn general_pane(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let stay_awake_row = setting_row(
+            tr!("settings_stay_awake_label"),
+            Some(tr!("settings_stay_awake_hint").into()),
+            toggle(self.stay_awake_enabled(cx), palette).on_click(
+                "settings-general-stay-awake",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_stay_awake(cx)),
+            ),
+            palette,
+            density,
+        );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Md, density))
+            .child(pane_header(
+                Icon::Settings,
+                tr!("settings_nav_general"),
+                palette,
+            ))
+            .child(card(stay_awake_row, palette))
             .into_any_element()
     }
 

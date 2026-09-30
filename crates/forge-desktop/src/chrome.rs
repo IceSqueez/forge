@@ -1,5 +1,6 @@
 use gpui::{AppContext, Context, Entity};
 
+use crate::awake_state::AwakeState;
 use crate::event_loss::EventLoss;
 use crate::footer::Footer;
 use crate::platforms::PlatformConnectivity;
@@ -20,12 +21,13 @@ impl Chrome {
         status: Entity<RuntimeStatus>,
         connectivity: Entity<PlatformConnectivity>,
         event_loss: Entity<EventLoss>,
+        awake: Entity<AwakeState>,
         current: Screen,
         cx: &mut Context<AppShell>,
     ) -> Self {
         let titlebar = cx.new(TitleBar::new);
         let sidebar = cx.new(|cx| SidebarNav::new(current, connectivity.clone(), cx));
-        let footer = cx.new(|cx| Footer::new(status, connectivity, event_loss, cx));
+        let footer = cx.new(|cx| Footer::new(status, connectivity, event_loss, awake, cx));
         Self {
             titlebar,
             sidebar,

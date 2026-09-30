@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use forge_awake::StatusWatch;
 use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card,
     icon, mono_family, primary_button, radius, spacing, tr,
@@ -14,6 +15,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{BridgeFlow, drain_subscription};
+use crate::awake_state::AwakeState;
 use crate::boot::{BootFailure, build_runtime};
 use crate::chat_feed::{ChatFeed, ChatMessage, DEFAULT_DISPLAY_LIMIT};
 use crate::chat_feed_bridge::ChatFeedBridge;
@@ -121,6 +123,7 @@ pub fn run_boot(
     let speak = cx.new(|_| SpeakState::new());
     let queue_health = cx.new(|_| QueueHealth::new());
     let event_loss = cx.new(|_| EventLoss::new());
+    let awake = cx.new(|_| AwakeState::new());
 
     let (hotkey_host, hotkey_main_thread) = forge_hotkey::main_thread_channel();
     cx.spawn(async move |_| hotkey_host.run().await).detach();
@@ -147,6 +150,8 @@ pub fn run_boot(
                 let loss_watch = handles.bus.watch_loss();
                 let depth_watch = handles.scheduler.watch_depths();
                 let event_loss_for_bridge = event_loss.clone();
+                let awake_for_bridge = awake.clone();
+                let awake_watch = handles.stay_awake.watch();
                 let event_loss_for_chat = event_loss.clone();
                 let handles_for_shell = Arc::clone(&handles);
                 let status_for_clock = status.clone();
@@ -186,6 +191,7 @@ pub fn run_boot(
                         speak,
                         queue_health,
                         event_loss,
+                        awake,
                     );
                     let shell = cx.new(|cx| {
                         AppShell::new(
@@ -236,6 +242,7 @@ pub fn run_boot(
                         bridge_sub,
                     );
                     start_uptime_clock(cx, status_for_clock);
+                    start_awake_bridge(cx, awake_for_bridge, awake_watch);
                     start_live_viewers_bridge(cx, home_stats_for_viewers, live_viewers_handle);
                     apply_persisted_shortcuts(cx, backend_for_shortcuts, rt_handle_for_shortcuts);
                     crate::update_check::start_update_check(
@@ -421,6 +428,24 @@ fn start_queue_depth_bridge(
             match watch.changed().await {
                 Some(next) => depths = next,
                 None => break,
+            }
+        }
+    })
+    .detach();
+}
+
+fn start_awake_bridge(cx: &mut AsyncApp, awake: Entity<AwakeState>, mut watch: StatusWatch) {
+    cx.spawn(async move |cx| {
+        let mut status = watch.current();
+        loop {
+            awake.update(cx, |awake, cx| {
+                if awake.apply(status) {
+                    cx.notify();
+                }
+            });
+            match watch.changed().await {
+                Ok(next) => status = next,
+                Err(_) => break,
             }
         }
     })

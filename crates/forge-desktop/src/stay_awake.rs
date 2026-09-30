@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_awake::{EnabledPreference, StayAwake, StayAwakeConfig};
 use forge_storage::{SettingsRepo, get_bool_setting, reserved_keys, set_bool_setting};
 
-const ENABLED_BY_DEFAULT: bool = true;
+pub(crate) const ENABLED_BY_DEFAULT: bool = true;
 const HOLD_REASON: &str = "forge keeps the system and display awake while it runs";
 
 struct SettingsPreference(Arc<dyn SettingsRepo>);

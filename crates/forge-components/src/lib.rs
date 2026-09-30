@@ -73,7 +73,7 @@ pub use dropdown::{
 };
 pub use error_row::error_row;
 pub use fonts::embedded_fonts;
-pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, split_version_stage};
+pub use footer::{FOOTER_HEIGHT, app_footer, footer_alert, footer_indicator, split_version_stage};
 pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
     GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup,

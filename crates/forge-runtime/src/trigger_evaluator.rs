@@ -1571,4 +1571,87 @@ mod tests {
             );
         }
     }
+
+    fn timer_instance(scope: PlatformScope) -> TriggerInstance {
+        TriggerInstance {
+            kind_id: crate::triggers::TIMER_TICK_KIND.to_owned(),
+            ..command_instance(scope, PermissionRung::Everyone, 0)
+        }
+    }
+
+    fn tick_for(instance: &TriggerInstance) -> Event {
+        let config = crate::triggers::TimerTickDescriptor.default_config();
+        crate::triggers::TimerSchedule::from_config(&config).tick_event(instance.id, 0)
+    }
+
+    async fn timer_harness() -> (EvaluatorFixture, TriggerEvaluator) {
+        let mut registry = TriggerRegistry::new();
+        registry
+            .register(Box::new(crate::triggers::TimerTickDescriptor))
+            .unwrap();
+        registry
+            .register(Box::new(PrefixDescriptor {
+                id: "twitch.chat.message",
+                source: EventSource::Twitch,
+                prefix: "twitch.channel.chat.message",
+            }))
+            .unwrap();
+        decide_harness_with(registry).await
+    }
+
+    #[tokio::test]
+    async fn a_tick_fires_only_the_timer_instance_it_names() {
+        let (_fixture, mut evaluator) = timer_harness().await;
+        let named = timer_instance(PlatformScope::Any);
+        let other = timer_instance(PlatformScope::Any);
+        let tick = tick_for(&named);
+
+        assert_eq!(
+            (
+                evaluator.decide(&named, &tick).is_some(),
+                evaluator.decide(&other, &tick).is_some()
+            ),
+            (true, false)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_platform_scoped_timer_still_fires_on_its_own_tick() {
+        let (_fixture, mut evaluator) = timer_harness().await;
+        let kick_only = PlatformScope::only(BTreeSet::from([PlatformId::Kick])).unwrap();
+        let named = timer_instance(kick_only);
+
+        assert!(evaluator.decide(&named, &tick_for(&named)).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_timer_ignores_a_tick_without_a_usable_instance_id() {
+        let (_fixture, mut evaluator) = timer_harness().await;
+        let named = timer_instance(PlatformScope::Any);
+        for payload in [
+            json!({}),
+            json!({ "instance_id": 7 }),
+            json!({ "instance_id": "" }),
+        ] {
+            let tick = Event::new(
+                EventSource::Timer,
+                crate::triggers::TIMER_TICK_KIND,
+                payload.clone(),
+            );
+            assert!(evaluator.decide(&named, &tick).is_none(), "{payload}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_untargeted_trigger_ignores_an_instance_id_in_its_payload() {
+        let (_fixture, mut evaluator) = timer_harness().await;
+        let chat = prefix_instance("twitch.chat.message");
+        let event = Event::new(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            json!({ "instance_id": TriggerInstanceId::new() }),
+        );
+
+        assert!(evaluator.decide(&chat, &event).is_some());
+    }
 }

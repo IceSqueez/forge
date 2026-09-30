@@ -201,3 +201,80 @@ fn payload_int(event: &Event, field: &str) -> i64 {
         .unwrap_or(0)
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_registry::{SynthesisSample, declared_variables, synthesize_args};
+
+    use super::*;
+
+    fn config_with(key: &str, value: i64) -> TriggerConfig {
+        let mut config = TimerTickDescriptor.default_config();
+        config.insert(key.to_owned(), Variant::Int(value));
+        config
+    }
+
+    #[test]
+    fn interval_is_clamped_to_one_through_one_day_of_minutes() {
+        for (configured, effective) in [(0, 1), (1, 1), (30, 30), (1440, 1440), (1441, 1440)] {
+            let schedule =
+                TimerSchedule::from_config(&config_with(INTERVAL_MINUTES_KEY, configured));
+            assert_eq!(
+                schedule.interval(),
+                Duration::from_secs(effective * 60),
+                "configured {configured}"
+            );
+        }
+    }
+
+    #[test]
+    fn minimum_chat_messages_is_clamped_to_zero_through_one_thousand() {
+        for (configured, effective) in [(-1, 0), (0, 0), (1000, 1000), (1001, 1000)] {
+            let schedule =
+                TimerSchedule::from_config(&config_with(MIN_CHAT_MESSAGES_KEY, configured));
+            assert_eq!(
+                schedule.min_chat_messages, effective,
+                "configured {configured}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_interval_falls_back_to_thirty_minutes() {
+        let schedule = TimerSchedule::from_config(&TriggerConfig::new());
+        assert_eq!(schedule.interval(), Duration::from_secs(30 * 60));
+    }
+
+    #[test]
+    fn tick_event_exposes_interval_and_message_count_as_variables() {
+        let schedule = TimerSchedule::from_config(&config_with(INTERVAL_MINUTES_KEY, 15));
+        let event = schedule.tick_event(TriggerInstanceId::new(), 7);
+
+        let args = TimerTickDescriptor.variables().unwrap().arg_stack(&event);
+
+        assert_eq!(
+            (
+                args.get("timer.interval_minutes").cloned(),
+                args.get("timer.message_count").cloned()
+            ),
+            (Some(Variant::Int(15)), Some(Variant::Int(7)))
+        );
+    }
+
+    #[test]
+    fn test_run_synthesizes_both_timer_variables_within_their_bounds() {
+        let variables = declared_variables(&TimerTickDescriptor).unwrap();
+        let args = synthesize_args(
+            &variables,
+            &SynthesisSample::stable(TimerTickDescriptor.platform_contract()),
+        );
+
+        let interval = args.get("timer.interval_minutes").cloned();
+        let count = args.get("timer.message_count").cloned();
+        assert!(
+            matches!(interval, Some(Variant::Int(n)) if (MIN_INTERVAL_MINUTES..=MAX_INTERVAL_MINUTES).contains(&n))
+                && matches!(count, Some(Variant::Int(n)) if (0..=SYNTHESIZED_MESSAGE_COUNT_CEILING).contains(&n)),
+            "interval {interval:?}, count {count:?}"
+        );
+    }
+}

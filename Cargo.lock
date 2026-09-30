@@ -3062,6 +3062,7 @@ dependencies = [
 name = "forge-tts-pipeline"
 version = "0.5.5"
 dependencies = [
+ "forge-types",
  "lingua",
  "once_cell",
  "regex",

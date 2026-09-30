@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+use forge_events::{Event, EventSource};
 use forge_platform_core::PlatformError;
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
@@ -130,6 +131,15 @@ impl SubActionRunner for SendMessageRunner {
                 },
             }
         };
+
+        if matches!(outcome, SubActionOutcome::Success) {
+            ctx.publisher.publish(Event::caused_by(
+                EventSource::Kick,
+                "chat.send",
+                serde_json::json!({ "channel": "kick", "message": message }),
+                ctx.parent_event_id,
+            ));
+        }
 
         (
             SubActionTelemetry {

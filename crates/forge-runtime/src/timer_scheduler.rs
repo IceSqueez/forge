@@ -10,8 +10,9 @@ use tracing::warn;
 
 use crate::bus::{Delivery, EventBus, EventSubscription};
 use crate::catalog::{Catalog, CatalogSnapshot};
-use crate::chat_stream::{ChatRecord, ChatRecordMapper};
+use crate::chat_stream::{ChatRecord, ChatRecordMapper, event_source_to_chat_source};
 use crate::delivery::TIMER_SCHEDULER;
+use crate::own_chat_echoes::{CHAT_SENT_KIND, OwnChatEchoes};
 use crate::stream_live::StreamLiveHandle;
 use crate::triggers::{TIMER_TICK_KIND, TimerSchedule, TimerTickDescriptor};
 
@@ -19,6 +20,7 @@ struct ArmedTimer {
     schedule: TimerSchedule,
     scope: PlatformScope,
     next_fire: Instant,
+    counting_since: Instant,
     chat_messages: u32,
 }
 
@@ -28,12 +30,14 @@ impl ArmedTimer {
             schedule,
             scope,
             next_fire: now + schedule.interval(),
+            counting_since: now,
             chat_messages: 0,
         }
     }
 
     fn restart(&mut self, now: Instant) {
         self.next_fire = now + self.schedule.interval();
+        self.counting_since = now;
         self.chat_messages = 0;
     }
 
@@ -49,6 +53,7 @@ struct TimerScheduler {
     armed: HashMap<TriggerInstanceId, ArmedTimer>,
     live: bool,
     chat: ChatRecordMapper,
+    own_echoes: OwnChatEchoes,
 }
 
 pub fn spawn_timer_scheduler(
@@ -64,6 +69,7 @@ pub fn spawn_timer_scheduler(
         catalog,
         armed: HashMap::new(),
         chat: ChatRecordMapper::default(),
+        own_echoes: OwnChatEchoes::default(),
     };
     tokio::spawn(scheduler.run(changes, stream_live, chat));
 }
@@ -139,10 +145,18 @@ impl TimerScheduler {
         if self.armed.is_empty() {
             return;
         }
+        let now = Instant::now();
+        if event.kind == CHAT_SENT_KIND {
+            self.retract_own_message(event, now);
+            return;
+        }
         let Some(ChatRecord::Row(row)) = self.chat.map(event) else {
             return;
         };
-        if row.is_event || row.badges.contains(&UserBadge::Broadcaster) {
+        if row.is_event || row.badges.contains(&UserBadge::Broadcaster) || row.is_from_bot() {
+            return;
+        }
+        if self.own_echoes.is_own_echo(&row, now) {
             return;
         }
         let platform = event.source.to_platform_id();
@@ -150,6 +164,23 @@ impl TimerScheduler {
             .values_mut()
             .filter(|timer| timer.scope.matches(platform))
             .for_each(|timer| timer.chat_messages = timer.chat_messages.saturating_add(1));
+    }
+
+    fn retract_own_message(&mut self, event: &Event, now: Instant) {
+        let Some(source) = event_source_to_chat_source(event.source) else {
+            return;
+        };
+        let Some(message) = event.payload.get("message").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let Some(counted_at) = self.own_echoes.record_sent(source, message, now) else {
+            return;
+        };
+        let platform = event.source.to_platform_id();
+        self.armed
+            .values_mut()
+            .filter(|timer| timer.scope.matches(platform) && timer.counting_since <= counted_at)
+            .for_each(|timer| timer.chat_messages = timer.chat_messages.saturating_sub(1));
     }
 
     fn fire_due(&mut self) {

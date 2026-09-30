@@ -48,7 +48,8 @@ pub use trigger_config::TriggerConfig;
 pub use trigger_instance::TriggerInstance;
 pub use unified_chat::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-    ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
+    ChatSegment, ChatSource, KNOWN_BOT_ACCOUNTS, ModerationMarks, UnifiedChatRow, UserBadge,
+    is_bot_account,
 };
 pub use variant::{Variant, VariantError, VariantKind, VariantType, display_scalar};
 pub use vocabulary::{

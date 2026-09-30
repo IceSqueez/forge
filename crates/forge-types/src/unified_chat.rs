@@ -143,7 +143,29 @@ impl fmt::Debug for UnifiedChatRow {
     }
 }
 
+pub const KNOWN_BOT_ACCOUNTS: &[&str] = &[
+    "nightbot",
+    "streamelements",
+    "moobot",
+    "fossabot",
+    "streamlabs",
+    "wizebot",
+    "botisimo",
+];
+
+pub fn is_bot_account(name: &str, extra_bot_accounts: &[String]) -> bool {
+    let name = name.to_lowercase();
+    KNOWN_BOT_ACCOUNTS.contains(&name.as_str())
+        || extra_bot_accounts
+            .iter()
+            .any(|extra| extra.to_lowercase() == name)
+}
+
 impl UnifiedChatRow {
+    pub fn is_from_bot(&self) -> bool {
+        self.badges.contains(&UserBadge::Bot) || is_bot_account(&self.author, &[])
+    }
+
     pub fn display_text(&self) -> String {
         let mut out = String::new();
         for segment in &self.body_segments {

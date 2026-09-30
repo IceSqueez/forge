@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
+use forge_events::{Event, EventSource};
 use forge_registry::runner::SubActionConfig;
 use forge_registry::{
     FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
@@ -86,6 +87,15 @@ impl SubActionRunner for SendMessageRunner {
         } else {
             SubActionOutcome::from_result(&self.sender.send(&message).await)
         };
+
+        if matches!(outcome, SubActionOutcome::Success) {
+            ctx.publisher.publish(Event::caused_by(
+                EventSource::YouTube,
+                "chat.send",
+                serde_json::json!({ "channel": "youtube", "message": message }),
+                ctx.parent_event_id,
+            ));
+        }
 
         (
             SubActionTelemetry {

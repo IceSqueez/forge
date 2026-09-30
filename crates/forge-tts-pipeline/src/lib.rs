@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
+use forge_types::is_bot_account;
 use serde::{Deserialize, Serialize};
 
 mod language;
@@ -170,16 +171,6 @@ impl PipelineConfig {
     }
 }
 
-const BUILTIN_BOT_ACCOUNTS: &[&str] = &[
-    "nightbot",
-    "streamelements",
-    "moobot",
-    "fossabot",
-    "streamlabs",
-    "wizebot",
-    "botisimo",
-];
-
 fn is_emoji_char(c: char) -> bool {
     let cp = c as u32;
     matches!(
@@ -213,12 +204,6 @@ static COLON_EMOTE_RE: LazyLock<regex::Regex> =
 
 fn colon_tokens_to_words(text: &str) -> String {
     COLON_EMOTE_RE.replace_all(text, "$1").into_owned()
-}
-
-fn is_bot_account(viewer_name: &str, extra: &[String]) -> bool {
-    let lower = viewer_name.to_lowercase();
-    BUILTIN_BOT_ACCOUNTS.iter().any(|b| *b == lower)
-        || extra.iter().any(|b| b.to_lowercase() == lower)
 }
 
 fn is_repeat_of_recent(text: &str, recent: &[String]) -> bool {

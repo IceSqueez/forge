@@ -23,6 +23,7 @@ mod overlay_lanes;
 pub mod overlay_media;
 pub mod overlay_service;
 mod overlay_shows;
+mod own_chat_echoes;
 mod persist_batch;
 mod queue_depth;
 pub mod queue_scheduler;

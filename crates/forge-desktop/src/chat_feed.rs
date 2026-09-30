@@ -807,16 +807,21 @@ mod tests {
     }
 
     #[test]
-    fn is_bot_is_true_only_when_a_bot_badge_is_present() {
+    fn is_bot_flags_a_bot_badge_or_a_known_bot_account() {
         let cases = [
-            (vec![UserBadge::Bot], true),
-            (vec![UserBadge::Moderator], false),
-            (vec![UserBadge::Moderator, UserBadge::Bot], true),
-            (vec![], false),
+            ("user", vec![UserBadge::Bot], true),
+            ("Nightbot", vec![], true),
+            ("user", vec![UserBadge::Moderator], false),
         ];
-        for (badges, expected) in cases {
-            let message = ChatMessage::from_row(&row(None, vec![], badges.clone()));
-            assert_eq!(message.is_bot, expected, "is_bot mismatch for {badges:?}");
+        for (author, badges, expected) in cases {
+            let message = ChatMessage::from_row(&UnifiedChatRow {
+                author: author.to_string(),
+                ..row(None, vec![], badges.clone())
+            });
+            assert_eq!(
+                message.is_bot, expected,
+                "is_bot mismatch for {author:?} {badges:?}"
+            );
         }
     }
 

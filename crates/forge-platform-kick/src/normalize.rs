@@ -190,6 +190,7 @@ pub(crate) fn channel_hosted(raw: &Value) -> Value {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use serde_json::json;
 
@@ -215,13 +216,43 @@ mod tests {
         assert_eq!(out["sender"]["color"], json!("#00FF00"));
     }
 
+    fn fixture_message_with_badges(badges: Value) -> Value {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        let mut raw = fixture["raw"].clone();
+        raw["sender"]["identity"]["badges"] = badges;
+        raw
+    }
+
     #[test]
     fn chat_payload_maps_pusher_identity_badges_onto_the_shared_vocabulary() {
         for (raw_badges, expected) in [
             (json!([]), vec![]),
             (
+                json!([{ "type": "broadcaster", "text": "Broadcaster" }]),
+                vec![UserBadge::Broadcaster],
+            ),
+            (
                 json!([{ "type": "moderator", "text": "Moderator" }]),
                 vec![UserBadge::Moderator],
+            ),
+            (
+                json!([{ "type": "vip", "text": "VIP" }]),
+                vec![UserBadge::Vip],
+            ),
+            (
+                json!([{ "type": "founder", "text": "Founder" }]),
+                vec![UserBadge::Founder],
+            ),
+            (
+                json!([{ "type": "bot", "text": "Bot" }]),
+                vec![UserBadge::Bot],
+            ),
+            (
+                json!([{ "type": "verified", "text": "Verified channel" }]),
+                vec![UserBadge::Partner],
             ),
             (
                 json!([{ "type": "subscriber", "text": "Subscriber", "count": 7 }]),
@@ -231,18 +262,29 @@ mod tests {
                 json!([{ "type": "subscriber", "text": "Subscriber" }]),
                 vec![UserBadge::Subscriber { months: 0 }],
             ),
-            (json!([{ "type": "sub_gifter", "count": 20 }]), vec![]),
-            (json!([{ "type": "og" }, { "text": "Moderator" }]), vec![]),
             (
-                json!([{ "type": "sub_gifter" }, { "type": "moderator" }]),
-                vec![UserBadge::Moderator],
+                json!([
+                    { "type": "sub_gifter", "text": "Sub Gifter", "count": 20 },
+                    { "type": "og", "text": "OG" },
+                    { "type": "staff", "text": "Staff" },
+                    { "type": "sidekick", "text": "Sidekick" },
+                    { "type": "trainwreckstv", "text": "Trainwreckstv" },
+                    { "type": "a_future_badge", "text": "Future" },
+                    { "text": "Moderator" }
+                ]),
+                vec![],
+            ),
+            (
+                json!([
+                    { "type": "broadcaster", "text": "Broadcaster" },
+                    { "type": "sub_gifter", "text": "Sub Gifter", "count": 5 },
+                    { "type": "subscriber", "text": "Subscriber", "count": 3 }
+                ]),
+                vec![UserBadge::Broadcaster, UserBadge::Subscriber { months: 3 }],
             ),
         ] {
-            let payload = chat_message_chat_payload(&json!({
-                "id": "msg-1",
-                "content": "hi",
-                "sender": { "username": "viewer", "identity": { "badges": raw_badges } }
-            }));
+            let payload =
+                chat_message_chat_payload(&fixture_message_with_badges(raw_badges.clone()));
             assert_eq!(payload.badges, expected, "badges: {raw_badges}");
         }
     }

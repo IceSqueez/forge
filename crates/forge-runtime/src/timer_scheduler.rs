@@ -427,13 +427,28 @@ mod tests {
         }
 
         async fn chat(&mut self, source: EventSource, badges: Vec<UserBadge>, is_event: bool) {
+            self.post(source, "viewer", badges, is_event, "hello").await;
+        }
+
+        async fn said(&mut self, source: EventSource, author: &str, text: &str) {
+            self.post(source, author, vec![], false, text).await;
+        }
+
+        async fn post(
+            &mut self,
+            source: EventSource,
+            author: &str,
+            badges: Vec<UserBadge>,
+            is_event: bool,
+            text: &str,
+        ) {
             self.next_message += 1;
             let payload = ChatPayload {
                 platform_msg_id: format!("msg-{}", self.next_message),
-                author: "viewer".to_owned(),
+                author: author.to_owned(),
                 author_color: None,
                 segments: vec![ChatSegment::Text {
-                    text: "hello".to_owned(),
+                    text: text.to_owned(),
                 }],
                 badges,
                 is_event,
@@ -444,6 +459,15 @@ mod tests {
                 source,
                 "chat.message",
                 json!({ (ChatPayload::KEY): serde_json::to_value(&payload).unwrap() }),
+            ));
+            settle().await;
+        }
+
+        async fn forge_sent(&self, source: EventSource, message: &str) {
+            self.bus.publish(Event::new(
+                source,
+                CHAT_SENT_KIND,
+                json!({ "channel": "twitch", "message": message }),
             ));
             settle().await;
         }
@@ -616,13 +640,16 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn broadcaster_messages_and_chat_notices_do_not_count() {
-        for (label, badges, is_event) in [
-            ("broadcaster", vec![UserBadge::Broadcaster], false),
-            ("notice", vec![], true),
+    async fn broadcaster_bot_and_notice_messages_do_not_count() {
+        for (label, author, badges, is_event) in [
+            ("broadcaster", "viewer", vec![UserBadge::Broadcaster], false),
+            ("bot badge", "viewer", vec![UserBadge::Bot], false),
+            ("known bot account", "Nightbot", vec![], false),
+            ("notice", "viewer", vec![], true),
         ] {
             let mut rig = rig(vec![Timer::every(10).after_messages(1).instance()]).await;
-            rig.chat(EventSource::Twitch, badges, is_event).await;
+            rig.post(EventSource::Twitch, author, badges, is_event, "hello")
+                .await;
 
             assert_eq!(rig.tick_count_over(10 * MINUTE).await, 0, "{label}");
         }
@@ -701,5 +728,72 @@ mod tests {
             .await;
 
         assert_eq!(rig.tick_count_over(5 * MINUTE).await, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn forges_own_echo_does_not_count_whichever_arrives_first() {
+        for echo_first in [false, true] {
+            let mut rig = rig(vec![Timer::every(10).after_messages(1).instance()]).await;
+            if echo_first {
+                rig.said(EventSource::Twitch, "forge_helper", "Follow the channel!")
+                    .await;
+                rig.forge_sent(EventSource::Twitch, "Follow the channel!")
+                    .await;
+            } else {
+                rig.forge_sent(EventSource::Twitch, "Follow the channel!")
+                    .await;
+                rig.said(EventSource::Twitch, "forge_helper", "Follow the channel!")
+                    .await;
+            }
+
+            assert_eq!(
+                rig.tick_count_over(10 * MINUTE).await,
+                0,
+                "echo first: {echo_first}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_viewer_repeating_forges_message_still_counts() {
+        let mut rig = rig(vec![Timer::every(10).after_messages(1).instance()]).await;
+        rig.forge_sent(EventSource::Twitch, "Follow the channel!")
+            .await;
+        rig.said(EventSource::Twitch, "forge_helper", "Follow the channel!")
+            .await;
+        rig.said(EventSource::Twitch, "viewer", "Follow the channel!")
+            .await;
+
+        assert_eq!(rig.tick_count_over(10 * MINUTE).await, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_late_send_leaves_a_counter_restarted_after_its_echo_alone() {
+        let mut rig = rig(vec![Timer::every(10).after_messages(1).instance()]).await;
+        rig.elapse(9 * MINUTE + 30 * SECOND).await;
+        rig.said(EventSource::Twitch, "forge_helper", "Follow the channel!")
+            .await;
+        rig.elapse(30 * SECOND).await;
+        rig.viewer_messages(1).await;
+        rig.elapse(10 * SECOND).await;
+        rig.forge_sent(EventSource::Twitch, "Follow the channel!")
+            .await;
+
+        assert_eq!(rig.tick_count_over(10 * MINUTE - 10 * SECOND).await, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retracting_an_echo_leaves_timers_scoped_to_other_platforms_alone() {
+        let mut rig = rig(vec![twitch_only(
+            Timer::every(10).after_messages(1).instance(),
+        )])
+        .await;
+        rig.said(EventSource::Kick, "forge_helper", "Follow the channel!")
+            .await;
+        rig.viewer_messages(1).await;
+        rig.forge_sent(EventSource::Kick, "Follow the channel!")
+            .await;
+
+        assert_eq!(rig.tick_count_over(10 * MINUTE).await, 1);
     }
 }

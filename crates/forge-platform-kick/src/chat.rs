@@ -742,4 +742,26 @@ mod tests {
             serde_json::to_string_pretty(&actual).unwrap()
         );
     }
+
+    #[test]
+    fn the_kick_channel_owner_resolves_to_the_broadcaster_rung() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        let mut raw = fixture["raw"].clone();
+        raw["sender"]["identity"]["badges"] = serde_json::json!([
+            { "type": "broadcaster", "text": "Broadcaster" },
+            { "type": "subscriber", "text": "Subscriber", "count": 3 }
+        ]);
+
+        let ev = build_event("App\\Events\\ChatMessageEvent", raw).unwrap();
+        let chat: forge_types::ChatPayload =
+            serde_json::from_value(ev.payload[forge_types::ChatPayload::KEY].clone()).unwrap();
+
+        assert_eq!(
+            forge_types::PermissionRung::from_badges(&chat.badges),
+            forge_types::PermissionRung::Broadcaster
+        );
+    }
 }

@@ -788,4 +788,52 @@ mod tests {
         let src: ChatSource = from_str(r#""youtube""#).unwrap();
         assert_eq!(src, ChatSource::YouTube);
     }
+
+    #[test]
+    fn bot_account_matches_known_and_configured_names_regardless_of_case() {
+        let configured = vec!["MyHelper".to_string()];
+        for (name, expected) in [
+            ("Nightbot", true),
+            ("STREAMELEMENTS", true),
+            ("myhelper", true),
+            ("MYHELPER", true),
+            ("nightbot_fan", false),
+            ("night", false),
+            ("viewer", false),
+            ("", false),
+        ] {
+            assert_eq!(
+                is_bot_account(name, &configured),
+                expected,
+                "name: {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_bot_means_a_bot_badge_or_a_known_bot_name_never_the_broadcaster_or_a_viewer() {
+        for (author, badges, expected) in [
+            ("viewer", vec![UserBadge::Bot], true),
+            ("viewer", vec![UserBadge::Moderator, UserBadge::Bot], true),
+            ("Nightbot", vec![], true),
+            ("streamer", vec![UserBadge::Broadcaster], false),
+            (
+                "viewer",
+                vec![UserBadge::Moderator, UserBadge::Subscriber { months: 2 }],
+                false,
+            ),
+            ("coolbot", vec![], false),
+        ] {
+            let row = UnifiedChatRow {
+                author: author.to_string(),
+                badges: badges.clone(),
+                ..make_row(vec![])
+            };
+            assert_eq!(
+                row.is_from_bot(),
+                expected,
+                "author {author:?} badges {badges:?}"
+            );
+        }
+    }
 }

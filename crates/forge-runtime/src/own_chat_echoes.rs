@@ -109,3 +109,178 @@ fn row_fingerprint(row: &UnifiedChatRow) -> String {
     }
     fingerprint_of(&text)
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::{EventId, ModerationMarks};
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    const SECOND: Duration = Duration::from_secs(1);
+    const MILLI: Duration = Duration::from_millis(1);
+
+    fn row_on(source: ChatSource, segments: Vec<ChatSegment>) -> UnifiedChatRow {
+        UnifiedChatRow {
+            id: "row".to_owned(),
+            event_id: EventId::new(),
+            source,
+            received_at: OffsetDateTime::UNIX_EPOCH,
+            author: "forge_helper".to_owned(),
+            author_color: None,
+            body_segments: segments,
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
+    }
+
+    fn text(part: &str) -> ChatSegment {
+        ChatSegment::Text {
+            text: part.to_owned(),
+        }
+    }
+
+    fn twitch_row(body: &str) -> UnifiedChatRow {
+        row_on(ChatSource::Twitch, vec![text(body)])
+    }
+
+    #[test]
+    fn an_echo_after_its_send_is_recognised_exactly_once() {
+        let t0 = Instant::now();
+        let mut echoes = OwnChatEchoes::default();
+        echoes.record_sent(ChatSource::Twitch, "follow the channel", t0);
+
+        let echo = echoes.is_own_echo(&twitch_row("follow the channel"), t0 + SECOND);
+        let copy = echoes.is_own_echo(&twitch_row("follow the channel"), t0 + 2 * SECOND);
+
+        assert_eq!((echo, copy), (true, false));
+    }
+
+    #[test]
+    fn a_send_after_its_echo_reports_when_the_echo_was_counted() {
+        let t0 = Instant::now();
+        let mut echoes = OwnChatEchoes::default();
+        echoes.is_own_echo(&twitch_row("follow the channel"), t0);
+
+        let counted_at = echoes.record_sent(ChatSource::Twitch, "follow the channel", t0 + SECOND);
+
+        assert_eq!(counted_at, Some(t0));
+    }
+
+    #[test]
+    fn a_counted_row_is_retracted_by_one_send_only() {
+        let t0 = Instant::now();
+        let mut echoes = OwnChatEchoes::default();
+        echoes.is_own_echo(&twitch_row("gg"), t0);
+        echoes.record_sent(ChatSource::Twitch, "gg", t0);
+
+        assert_eq!(echoes.record_sent(ChatSource::Twitch, "gg", t0), None);
+    }
+
+    #[test]
+    fn matching_ignores_whitespace_and_reads_emotes_mentions_and_links_as_typed() {
+        let emote = ChatSegment::Emote {
+            id: "25".to_owned(),
+            name: "Kappa".to_owned(),
+        };
+        let mention = ChatSegment::Mention {
+            username: "alice".to_owned(),
+        };
+        let bare_link = ChatSegment::Link {
+            url: "https://forge.example".to_owned(),
+            display: String::new(),
+        };
+        let shown_link = ChatSegment::Link {
+            url: "https://forge.example".to_owned(),
+            display: "forge.example".to_owned(),
+        };
+        for (sent, segments, expected) in [
+            ("hello   world ", vec![text("hello world")], true),
+            ("hi Kappa", vec![text("hi "), emote], true),
+            ("thanks @alice", vec![text("thanks "), mention], true),
+            (
+                "see https://forge.example",
+                vec![text("see "), bare_link],
+                true,
+            ),
+            ("see forge.example", vec![text("see "), shown_link], true),
+            ("hello", vec![text("hello!")], false),
+        ] {
+            let t0 = Instant::now();
+            let mut echoes = OwnChatEchoes::default();
+            echoes.record_sent(ChatSource::Twitch, sent, t0);
+
+            assert_eq!(
+                echoes.is_own_echo(&row_on(ChatSource::Twitch, segments), t0),
+                expected,
+                "sent {sent:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_send_matches_only_rows_from_its_own_platform() {
+        let t0 = Instant::now();
+        let mut echoes = OwnChatEchoes::default();
+        echoes.record_sent(ChatSource::Kick, "gg", t0);
+
+        assert!(!echoes.is_own_echo(&twitch_row("gg"), t0));
+    }
+
+    #[test]
+    fn a_blank_send_never_hides_a_row() {
+        let t0 = Instant::now();
+        let mut echoes = OwnChatEchoes::default();
+        echoes.record_sent(ChatSource::Twitch, " \n ", t0);
+
+        assert!(!echoes.is_own_echo(&row_on(ChatSource::Twitch, vec![]), t0));
+    }
+
+    #[test]
+    fn an_unmatched_send_awaits_its_echo_for_sixty_seconds_then_expires() {
+        for (elapsed, expected) in [(60 * SECOND, true), (60 * SECOND + MILLI, false)] {
+            let t0 = Instant::now();
+            let mut echoes = OwnChatEchoes::default();
+            echoes.record_sent(ChatSource::Twitch, "gg", t0);
+
+            assert_eq!(
+                echoes.is_own_echo(&twitch_row("gg"), t0 + elapsed),
+                expected,
+                "after {elapsed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_counted_row_stays_retractable_for_sixty_seconds_then_expires() {
+        for (elapsed, expected) in [(60 * SECOND, true), (60 * SECOND + MILLI, false)] {
+            let t0 = Instant::now();
+            let mut echoes = OwnChatEchoes::default();
+            echoes.is_own_echo(&twitch_row("gg"), t0);
+
+            assert_eq!(
+                echoes
+                    .record_sent(ChatSource::Twitch, "gg", t0 + elapsed)
+                    .is_some(),
+                expected,
+                "after {elapsed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_latest_sixty_four_sends_per_platform_await_an_echo() {
+        let t0 = Instant::now();
+        let mut echoes = OwnChatEchoes::default();
+        for n in 0..=TRACKED_MESSAGES_PER_SOURCE {
+            echoes.record_sent(ChatSource::Twitch, &format!("reminder {n}"), t0);
+        }
+
+        let oldest = echoes.is_own_echo(&twitch_row("reminder 0"), t0);
+        let second_oldest = echoes.is_own_echo(&twitch_row("reminder 1"), t0);
+
+        assert_eq!((oldest, second_oldest), (false, true));
+    }
+}

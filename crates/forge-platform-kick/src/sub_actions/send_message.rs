@@ -172,6 +172,25 @@ mod tests {
         fn publish(&self, _: Event) {}
     }
 
+    #[derive(Default)]
+    struct RecordingPublisher(std::sync::Mutex<Vec<Event>>);
+    impl EventPublisher for RecordingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    impl RecordingPublisher {
+        fn published(&self) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| (e.source, e.kind.clone(), e.payload.clone(), e.caused_by))
+                .collect()
+        }
+    }
+
     struct GrantLimiter;
     #[async_trait]
     impl RateLimiter for GrantLimiter {
@@ -335,6 +354,82 @@ mod tests {
                 expect_ok,
                 "case: {label}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_delivered_message_publishes_chat_send_caused_by_the_run() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("u".to_owned(), Variant::String("alice".to_owned()));
+        let publisher = RecordingPublisher::default();
+        let parent = EventId::new();
+
+        runner
+            .execute(
+                &config("hi %u%"),
+                &RunContext::leaf(&stack, 0, parent, &publisher),
+            )
+            .await;
+
+        assert_eq!(
+            publisher.published(),
+            vec![(
+                EventSource::Kick,
+                "chat.send".to_owned(),
+                serde_json::json!({ "channel": "kick", "message": "hi alice" }),
+                Some(parent),
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_undelivered_message_publishes_no_chat_send() {
+        for (label, status, broadcaster_ids, template) in [
+            (
+                "kick rejects the send",
+                reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                broadcaster_id_source(42),
+                "hi",
+            ),
+            (
+                "broadcaster id unresolved",
+                reqwest::StatusCode::OK,
+                failing_broadcaster_id_source(),
+                "hi",
+            ),
+            (
+                "empty after interpolation",
+                reqwest::StatusCode::OK,
+                broadcaster_id_source(42),
+                "%u%",
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/chat"))
+                .respond_with(ResponseTemplate::new(status))
+                .mount(&server)
+                .await;
+            let client = KickSendChat::new(Arc::new(GrantLimiter))
+                .with_send_endpoint(format!("{}/chat", server.uri()));
+            let runner = SendMessageRunner::new(Arc::new(client), token_source(), broadcaster_ids);
+            let stack = ArgStack::new().set("u".to_owned(), Variant::String(String::new()));
+            let publisher = RecordingPublisher::default();
+
+            runner
+                .execute(
+                    &config(template),
+                    &RunContext::leaf(&stack, 0, EventId::new(), &publisher),
+                )
+                .await;
+
+            assert_eq!(publisher.published(), vec![], "{label}");
         }
     }
 }

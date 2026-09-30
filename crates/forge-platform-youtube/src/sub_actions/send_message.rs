@@ -136,6 +136,25 @@ mod tests {
         fn publish(&self, _: Event) {}
     }
 
+    #[derive(Default)]
+    struct RecordingPublisher(std::sync::Mutex<Vec<Event>>);
+    impl EventPublisher for RecordingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    impl RecordingPublisher {
+        fn published(&self) -> Vec<(EventSource, String, serde_json::Value, Option<EventId>)> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|e| (e.source, e.kind.clone(), e.payload.clone(), e.caused_by))
+                .collect()
+        }
+    }
+
     fn make_ctx(stack: &ArgStack) -> RunContext<'_> {
         RunContext::leaf(stack, 0, EventId::new(), &NoopPublisher)
     }
@@ -262,6 +281,72 @@ mod tests {
                 expect_ok,
                 "case: {label}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_delivered_message_publishes_chat_send_caused_by_the_run() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/liveChat/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"kind": "x"})))
+            .mount(&server)
+            .await;
+        let runner = runner_on(&server);
+        let stack = ArgStack::new().set("user".to_owned(), Variant::String("viewer42".to_owned()));
+        let publisher = RecordingPublisher::default();
+        let parent = EventId::new();
+
+        runner
+            .execute(
+                &config("Welcome %user%!"),
+                &RunContext::leaf(&stack, 0, parent, &publisher),
+            )
+            .await;
+
+        assert_eq!(
+            publisher.published(),
+            vec![(
+                EventSource::YouTube,
+                "chat.send".to_owned(),
+                json!({ "channel": "youtube", "message": "Welcome viewer42!" }),
+                Some(parent),
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_undelivered_message_publishes_no_chat_send() {
+        for (label, status, template) in [
+            (
+                "youtube rejects the send",
+                reqwest::StatusCode::FORBIDDEN,
+                "hello",
+            ),
+            (
+                "empty after interpolation",
+                reqwest::StatusCode::OK,
+                "%greeting%",
+            ),
+        ] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/liveChat/messages"))
+                .respond_with(ResponseTemplate::new(status).set_body_json(json!({"kind": "x"})))
+                .mount(&server)
+                .await;
+            let runner = runner_on(&server);
+            let stack = ArgStack::new().set("greeting".to_owned(), Variant::String(String::new()));
+            let publisher = RecordingPublisher::default();
+
+            runner
+                .execute(
+                    &config(template),
+                    &RunContext::leaf(&stack, 0, EventId::new(), &publisher),
+                )
+                .await;
+
+            assert_eq!(publisher.published(), vec![], "{label}");
         }
     }
 }

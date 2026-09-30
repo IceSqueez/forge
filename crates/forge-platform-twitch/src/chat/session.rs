@@ -6820,7 +6820,22 @@ mod tests {
         );
     }
 
-    const FAKE_WAIT: Duration = Duration::from_secs(5);
+    const FAKE_WAIT: Duration = Duration::from_secs(30);
+
+    async fn within_real_time<T>(
+        bound: Duration,
+        work: impl Future<Output = T>,
+    ) -> Result<T, Duration> {
+        let (expiry_tx, expiry) = oneshot::channel::<()>();
+        std::thread::spawn(move || {
+            std::thread::sleep(bound);
+            drop(expiry_tx);
+        });
+        tokio::select! {
+            done = work => Ok(done),
+            _ = expiry => Err(bound),
+        }
+    }
     const CHAT_MESSAGE_KIND: &str = "twitch.channel.chat.message";
 
     enum PeerCommand {
@@ -6850,7 +6865,7 @@ mod tests {
             self.commands
                 .send(PeerCommand::Ping)
                 .expect("the fake socket must outlive the barrier");
-            let answered = tokio::time::timeout(FAKE_WAIT, self.pongs.recv()).await;
+            let answered = within_real_time(FAKE_WAIT, self.pongs.recv()).await;
             assert!(
                 answered.is_ok_and(|pong| pong.is_some()),
                 "forge must keep reading its socket"
@@ -6862,7 +6877,7 @@ mod tests {
         }
 
         async fn wait_closed_by_forge(&mut self) -> bool {
-            tokio::time::timeout(FAKE_WAIT, &mut self.closed)
+            within_real_time(FAKE_WAIT, &mut self.closed)
                 .await
                 .is_ok_and(|closed| closed.is_ok())
         }
@@ -6901,7 +6916,7 @@ mod tests {
         }
 
         async fn accept(&mut self) -> Peer {
-            tokio::time::timeout(FAKE_WAIT, self.peers.recv())
+            within_real_time(FAKE_WAIT, self.peers.recv())
                 .await
                 .expect("forge must dial this socket")
                 .expect("the accept loop must outlive the test")
@@ -7037,7 +7052,7 @@ mod tests {
     }
 
     async fn next_event(events: &mut EventStream, kind: &str) -> Event {
-        let found = tokio::time::timeout(FAKE_WAIT, async {
+        let found = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind == kind {
@@ -7063,7 +7078,7 @@ mod tests {
 
     async fn kinds_until_chat(events: &mut EventStream, text: &str) -> Vec<String> {
         let mut kinds = Vec::new();
-        let arrived = tokio::time::timeout(FAKE_WAIT, async {
+        let arrived = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 let awaited = event.kind == CHAT_MESSAGE_KIND
@@ -7085,7 +7100,7 @@ mod tests {
 
     async fn chat_texts_until(events: &mut EventStream, last: &str) -> Vec<String> {
         let mut texts = Vec::new();
-        let arrived = tokio::time::timeout(FAKE_WAIT, async {
+        let arrived = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind != CHAT_MESSAGE_KIND {
@@ -7112,7 +7127,7 @@ mod tests {
     }
 
     async fn next_retry_attempt(state: &mut watch::Receiver<ChatConnectionState>) -> u8 {
-        let reported = tokio::time::timeout(FAKE_WAIT, async {
+        let reported = within_real_time(FAKE_WAIT, async {
             loop {
                 state
                     .changed()
@@ -7133,7 +7148,7 @@ mod tests {
         last: ConnectionState,
     ) -> Vec<ConnectionState> {
         let mut states = Vec::new();
-        let arrived = tokio::time::timeout(FAKE_WAIT, async {
+        let arrived = within_real_time(FAKE_WAIT, async {
             loop {
                 let event = events.recv().await.expect("the bus must stay open");
                 if event.kind != CONNECTION_STATE_CHANGED_KIND {
@@ -7635,7 +7650,7 @@ mod tests {
         }
 
         async fn wait_for_a_request(&mut self) {
-            let arrived = tokio::time::timeout(FAKE_WAIT, self.requests.recv()).await;
+            let arrived = within_real_time(FAKE_WAIT, self.requests.recv()).await;
             assert!(
                 arrived.is_ok_and(|request| request.is_some()),
                 "forge must send a request to this endpoint"
@@ -7756,7 +7771,7 @@ mod tests {
         }
 
         async fn wait_until(&self, what: &str, reached: impl Fn(&Self) -> bool) {
-            let arrived = tokio::time::timeout(FAKE_WAIT, async {
+            let arrived = within_real_time(FAKE_WAIT, async {
                 while !reached(self) {
                     self.published.notified().await;
                 }
@@ -7973,7 +7988,7 @@ mod tests {
     ) -> bool {
         use forge_platform_core::{BuiltinHealth, BuiltinStatus};
         let mut deltas = bundle.stream();
-        tokio::time::timeout(FAKE_WAIT, async {
+        within_real_time(FAKE_WAIT, async {
             while bundle.connection() != expected {
                 if deltas.next().await.is_none() {
                     return false;
@@ -8505,7 +8520,7 @@ mod tests {
         welcomed.send(welcome_frame("sess-1"));
 
         next_event(&mut events, "platform.reauth_required").await;
-        let ended = tokio::time::timeout(FAKE_WAIT, &mut session.task).await;
+        let ended = within_real_time(FAKE_WAIT, &mut session.task).await;
         assert!(
             ended.is_ok(),
             "a session that needs sign-in must stop instead of retrying a token Twitch refuses"

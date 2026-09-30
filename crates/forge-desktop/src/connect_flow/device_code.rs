@@ -309,7 +309,7 @@ impl ConnectFlow {
                     rate_limiter,
                     lifecycle,
                 );
-                live_viewers.register(bundle.viewer_source());
+                live_viewers.register(PlatformId::Twitch, bundle.viewer_source());
                 bundle
             },
             |this, bundle, cx| this.finish(ConnectedBundle::Twitch(bundle), cx),

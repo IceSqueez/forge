@@ -1072,7 +1072,7 @@ async fn assemble_youtube_install(
 
     let stack = crate::integrations::assemble_youtube_stack(seed, bus, creds.channel_id).await;
 
-    live_viewers.register(stack.viewer_source);
+    live_viewers.register(PlatformId::YouTube, stack.viewer_source);
     Ok(stack.bundle)
 }
 
@@ -1101,6 +1101,6 @@ async fn assemble_kick_install(
     )
     .await;
 
-    live_viewers.register(stack.viewer_source);
+    live_viewers.register(PlatformId::Kick, stack.viewer_source);
     Ok(stack.bundle)
 }

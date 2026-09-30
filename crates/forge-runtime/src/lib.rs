@@ -30,6 +30,7 @@ mod run_history;
 pub mod script_registry;
 pub mod sound_player;
 pub mod speak_dispatcher;
+pub mod stream_live;
 pub mod sub_action_runners;
 #[cfg(test)]
 mod test_support;
@@ -72,6 +73,7 @@ pub use sound_player::{SoundPlayer, SoundPlayerError};
 pub use speak_dispatcher::{
     ShowSpeech, SpeakDispatchError, SpeakDispatcher, SpeechStartSignal, VoiceDescriptor,
 };
+pub use stream_live::{LiveSource, StreamLiveHandle, StreamLiveState, spawn_stream_live_signal};
 pub use sub_action_runners::{
     CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
     overlay_send_targets, register_core_sub_actions,

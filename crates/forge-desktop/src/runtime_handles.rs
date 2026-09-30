@@ -4,7 +4,7 @@ use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, OverlayServiceHandle,
-    QueueSchedulerHandle, ScriptRegistry, TriggerEvaluatorHandle,
+    QueueSchedulerHandle, ScriptRegistry, StreamLiveHandle, TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
@@ -33,6 +33,7 @@ pub struct RuntimeHandles {
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
+    pub stream_live: StreamLiveHandle,
     pub builtins: BuiltinRegistry,
     pub twitch_install_seed: Option<TwitchInstallSeed>,
     pub kick_install_seed: Option<KickInstallSeed>,

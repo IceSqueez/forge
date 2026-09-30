@@ -14,7 +14,8 @@ use forge_runtime::{
     QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer, SpeakDispatcher,
     register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
     spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_live_viewer_aggregator, spawn_trigger_evaluator, spawn_viewer_tracker,
+    spawn_live_viewer_aggregator, spawn_stream_live_signal, spawn_trigger_evaluator,
+    spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -328,9 +329,11 @@ pub async fn build_runtime(
         Config::default(),
     );
     let live_viewers = spawn_live_viewer_aggregator();
-    for source in integrations.viewer_sources {
-        live_viewers.register(source);
+    for (platform, source) in integrations.viewer_sources {
+        live_viewers.register(platform, source);
     }
+    let stream_live =
+        spawn_stream_live_signal(&live_viewers, integrations.obs_install_seed.stream_output());
 
     let server = build_server(&backend, &bus, &action_engine).await;
 
@@ -411,6 +414,7 @@ pub async fn build_runtime(
         scheduler,
         trigger_evaluator,
         live_viewers,
+        stream_live,
         builtins: integrations.builtins,
         twitch_install_seed: integrations.twitch_install_seed,
         kick_install_seed: integrations.kick_install_seed,

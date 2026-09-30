@@ -11,7 +11,7 @@ use forge_platform_core::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
-use forge_types::EventId;
+use forge_types::{EventId, PlatformId};
 use tokio::sync::mpsc;
 
 use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, load_hold_ceiling};
@@ -71,7 +71,7 @@ impl BuiltinRegistry {
 
 pub struct Integrations {
     pub builtins: BuiltinRegistry,
-    pub viewer_sources: Vec<Box<dyn LiveViewerSource>>,
+    pub viewer_sources: Vec<(PlatformId, Box<dyn LiveViewerSource>)>,
     pub twitch_install_seed: Option<TwitchInstallSeed>,
     pub kick_install_seed: Option<KickInstallSeed>,
     pub youtube_install_seed: Option<YoutubeInstallSeed>,
@@ -95,6 +95,10 @@ impl ObsInstallSeed {
             sink,
             live: Arc::new(std::sync::RwLock::new(None)),
         }
+    }
+
+    pub fn stream_output(&self) -> forge_obs::StreamOutputActive {
+        self.sink.stream_output()
     }
 
     pub fn install(&self, client: Arc<forge_obs::ObsClient>) {
@@ -271,7 +275,7 @@ pub async fn build_integrations(
     register_platform_triggers(triggers);
 
     let mut builtins: HashMap<BuiltinId, BuiltinObject> = HashMap::new();
-    let mut viewer_sources: Vec<Box<dyn LiveViewerSource>> = Vec::new();
+    let mut viewer_sources: Vec<(PlatformId, Box<dyn LiveViewerSource>)> = Vec::new();
 
     let mut insert = |id: &str, object: Option<BuiltinObject>| {
         if let Some(object) = object {
@@ -279,7 +283,11 @@ pub async fn build_integrations(
         }
     };
 
-    let (twitch, twitch_install_seed) = build_twitch(sub_actions, backend, bus, endpoints).await;
+    let (twitch, twitch_viewers, twitch_install_seed) =
+        build_twitch(sub_actions, backend, bus, endpoints).await;
+    if let Some(source) = twitch_viewers {
+        viewer_sources.push((PlatformId::Twitch, source));
+    }
     insert("twitch", twitch);
     let obs_install_seed = build_obs(sub_actions, backend, bus).await;
     let vtube_install_seed = build_vtube(sub_actions, backend, bus).await;
@@ -294,13 +302,13 @@ pub async fn build_integrations(
     let (youtube, youtube_viewers, youtube_install_seed) =
         build_youtube(sub_actions, backend, bus).await;
     if let Some(source) = youtube_viewers {
-        viewer_sources.push(source);
+        viewer_sources.push((PlatformId::YouTube, source));
     }
     insert("youtube", youtube);
 
     let (kick, kick_viewers, kick_install_seed) = build_kick(sub_actions, backend, bus).await;
     if let Some(source) = kick_viewers {
-        viewer_sources.push(source);
+        viewer_sources.push((PlatformId::Kick, source));
     }
     insert("kick", kick);
 
@@ -488,9 +496,13 @@ async fn build_twitch(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
-) -> (Option<BuiltinObject>, Option<TwitchInstallSeed>) {
+) -> (
+    Option<BuiltinObject>,
+    Option<Box<dyn LiveViewerSource>>,
+    Option<TwitchInstallSeed>,
+) {
     let Some(client_id) = forge_platform_twitch::client_id() else {
-        return (None, None);
+        return (None, None, None);
     };
     let creds = creds_of(backend);
     let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
@@ -556,7 +568,7 @@ async fn build_twitch(
         .ok()
         .flatten()
     else {
-        return (None, Some(seed));
+        return (None, None, Some(seed));
     };
 
     let login = (!stored.login.is_empty()).then(|| stored.login.clone());
@@ -578,7 +590,12 @@ async fn build_twitch(
         lifecycle,
     );
 
-    (Some(twitch_builtin_object(bundle)), Some(seed))
+    let viewer_source = bundle.viewer_source();
+    (
+        Some(twitch_builtin_object(bundle)),
+        Some(viewer_source),
+        Some(seed),
+    )
 }
 
 async fn build_obs(

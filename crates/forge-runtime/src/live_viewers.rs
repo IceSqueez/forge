@@ -1,8 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use forge_platform_core::{LiveViewerSource, ViewerReport};
+use forge_types::PlatformId;
 use futures_core::Stream;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::StreamExt as _;
@@ -16,27 +17,40 @@ pub enum LiveViewerCount {
     Empty,
 }
 
+pub(crate) type LivePlatforms = BTreeSet<PlatformId>;
+
 enum AggregatorCommand {
-    Report { slot: u64, report: ViewerReport },
-    Drop { slot: u64 },
+    Report {
+        slot: u64,
+        platform: PlatformId,
+        report: ViewerReport,
+    },
+    Drop {
+        slot: u64,
+    },
 }
 
 #[derive(Clone)]
 pub struct LiveViewerAggregatorHandle {
     commands: mpsc::Sender<AggregatorCommand>,
     output: watch::Receiver<LiveViewerCount>,
+    live_platforms: watch::Receiver<LivePlatforms>,
     next_slot: Arc<AtomicU64>,
 }
 
 impl LiveViewerAggregatorHandle {
-    pub fn register(&self, source: Box<dyn LiveViewerSource>) {
+    pub fn register(&self, platform: PlatformId, source: Box<dyn LiveViewerSource>) {
         let slot = self.next_slot.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
         tokio::spawn(async move {
             let mut stream = source.viewer_reports();
             while let Some(report) = stream.next().await {
                 if commands
-                    .send(AggregatorCommand::Report { slot, report })
+                    .send(AggregatorCommand::Report {
+                        slot,
+                        platform,
+                        report,
+                    })
                     .await
                     .is_err()
                 {
@@ -50,15 +64,21 @@ impl LiveViewerAggregatorHandle {
     pub fn subscribe(&self) -> impl Stream<Item = LiveViewerCount> + Send + 'static {
         WatchStream::new(self.output.clone())
     }
+
+    pub(crate) fn live_platforms(&self) -> watch::Receiver<LivePlatforms> {
+        self.live_platforms.clone()
+    }
 }
 
 pub fn spawn_live_viewer_aggregator() -> LiveViewerAggregatorHandle {
     let (command_tx, command_rx) = mpsc::channel(COMMAND_CHANNEL_CAP);
     let (output_tx, output_rx) = watch::channel(LiveViewerCount::Empty);
-    tokio::spawn(aggregate(command_rx, output_tx));
+    let (platforms_tx, platforms_rx) = watch::channel(LivePlatforms::new());
+    tokio::spawn(aggregate(command_rx, output_tx, platforms_tx));
     LiveViewerAggregatorHandle {
         commands: command_tx,
         output: output_rx,
+        live_platforms: platforms_rx,
         next_slot: Arc::new(AtomicU64::new(0)),
     }
 }
@@ -66,19 +86,22 @@ pub fn spawn_live_viewer_aggregator() -> LiveViewerAggregatorHandle {
 async fn aggregate(
     mut commands: mpsc::Receiver<AggregatorCommand>,
     output: watch::Sender<LiveViewerCount>,
+    live_platforms: watch::Sender<LivePlatforms>,
 ) {
-    let mut reporting: BTreeMap<u64, u64> = BTreeMap::new();
+    let mut reporting: BTreeMap<u64, (PlatformId, u64)> = BTreeMap::new();
     while let Some(command) = commands.recv().await {
         match command {
             AggregatorCommand::Report {
                 slot,
+                platform,
                 report: ViewerReport::Live { count },
             } => {
-                reporting.insert(slot, count);
+                reporting.insert(slot, (platform, count));
             }
             AggregatorCommand::Report {
                 slot,
                 report: ViewerReport::Absent,
+                ..
             }
             | AggregatorCommand::Drop { slot } => {
                 reporting.remove(&slot);
@@ -87,13 +110,28 @@ async fn aggregate(
         let next = if reporting.is_empty() {
             LiveViewerCount::Empty
         } else {
-            LiveViewerCount::Reporting(reporting.values().copied().fold(0, u64::saturating_add))
+            LiveViewerCount::Reporting(
+                reporting
+                    .values()
+                    .map(|(_, count)| *count)
+                    .fold(0, u64::saturating_add),
+            )
         };
         output.send_if_modified(|current| {
             if *current == next {
                 false
             } else {
                 *current = next;
+                true
+            }
+        });
+        let next_platforms: LivePlatforms =
+            reporting.values().map(|(platform, _)| *platform).collect();
+        live_platforms.send_if_modified(|current| {
+            if *current == next_platforms {
+                false
+            } else {
+                *current = next_platforms;
                 true
             }
         });

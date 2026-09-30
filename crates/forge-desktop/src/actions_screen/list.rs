@@ -1183,3 +1183,284 @@ impl ScreenActionsView {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashMap;
+
+    use forge_components::ThemeId;
+    use forge_runtime::triggers::{TIMER_TICK_KIND, TimerTickDescriptor};
+    use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+    use forge_storage::MockTriggerInstanceRepo;
+    use forge_storage::action::MockActionRepo;
+    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::soundboard::MockSoundboardClipsRepo;
+    use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
+
+    use super::*;
+    use crate::presentation::Presentation;
+    use crate::test_support::{
+        Declares, StubEventLog, StubHistory, StubOverlays, StubTrigger, pump, runtime,
+        stub_catalog, test_backend, trigger_registry,
+    };
+
+    const CHAT_KIND: &str = "twitch.chat";
+
+    struct Seed {
+        name: &'static str,
+        group: &'static str,
+        trigger_kind: Option<&'static str>,
+    }
+
+    fn action(seed: &Seed) -> Action {
+        Action {
+            id: ActionId::new(),
+            name: seed.name.to_owned(),
+            group: Some(seed.group.to_owned()),
+            queue_id: QueueId::new(),
+            enabled: true,
+            concurrent: false,
+            bypass_pause: false,
+            execution_mode: Default::default(),
+            description: None,
+            sub_actions: Vec::new(),
+        }
+    }
+
+    fn instance(kind_id: &str) -> TriggerInstance {
+        TriggerInstance {
+            id: TriggerInstanceId::new(),
+            kind_id: kind_id.to_owned(),
+            name: kind_id.to_owned(),
+            overrides: Default::default(),
+            enabled: true,
+            user_defined: true,
+            platform_scope: PlatformScope::Any,
+            cooldown_secs: 0,
+            cooldown_global: true,
+            permission_rung: PermissionRung::Everyone,
+        }
+    }
+
+    fn registry() -> TriggerRegistry {
+        let mut registry = trigger_registry(vec![StubTrigger::new(
+            CHAT_KIND,
+            "Chat",
+            TriggerCategory::Chat,
+            Declares::Nothing,
+        )]);
+        registry.register(Box::new(TimerTickDescriptor)).unwrap();
+        registry
+    }
+
+    struct Fixture {
+        view: Entity<ScreenActionsView>,
+        actions: Vec<Action>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl Fixture {
+        fn new(cx: &mut gpui::TestAppContext, seeds: &[Seed]) -> Self {
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let actions: Vec<Action> = seeds.iter().map(action).collect();
+            let mut instances = Vec::new();
+            let mut users: HashMap<TriggerInstanceId, Vec<ActionId>> = HashMap::new();
+            for (seed, action) in seeds.iter().zip(&actions) {
+                if let Some(kind) = seed.trigger_kind {
+                    let instance = instance(kind);
+                    users.insert(instance.id, vec![action.id]);
+                    instances.push(instance);
+                }
+            }
+
+            let mut action_repo = MockActionRepo::new();
+            let listed = actions.clone();
+            action_repo
+                .expect_list()
+                .returning(move || Ok(listed.clone()));
+            let mut trigger_repo = MockTriggerInstanceRepo::new();
+            trigger_repo
+                .expect_list_all()
+                .returning(move || Ok(instances.clone()));
+            trigger_repo
+                .expect_actions_using()
+                .returning(move |id| Ok(users.get(&id).cloned().unwrap_or_default()));
+
+            let action_repo: Arc<dyn ActionRepo> = Arc::new(action_repo);
+            let queue_repo: Arc<dyn QueueRepo> = Arc::new(MockQueueRepo::new());
+            let trigger_repo: Arc<dyn TriggerInstanceRepo> = Arc::new(trigger_repo);
+            let clips: Arc<dyn SoundboardClipsRepo> = Arc::new(MockSoundboardClipsRepo::new());
+            let service = Arc::new(ActionsService::new(
+                Arc::clone(&action_repo),
+                Arc::clone(&queue_repo),
+                Arc::new(StubHistory),
+                Arc::clone(&trigger_repo),
+                Arc::clone(&clips),
+            ));
+            let (backend, _writes) = test_backend();
+            let (bus, scheduler) = rt.block_on(async {
+                let bus = EventBus::new(Arc::new(StubEventLog));
+                let engine = spawn_action_engine(
+                    Arc::clone(&bus),
+                    stub_catalog(),
+                    Arc::new(crate::test_support::StubActions),
+                    Arc::new(StubHistory),
+                    Arc::new(SubActionRegistry::new()),
+                    Arc::new(ActionCancelRegistry::new()),
+                );
+                let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
+                (bus, scheduler)
+            });
+            let handle = rt.handle().clone();
+            let view = cx.update(|cx| {
+                cx.new(|cx| {
+                    ScreenActionsView::new(
+                        action_repo,
+                        queue_repo,
+                        service,
+                        trigger_repo,
+                        Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+                        clips,
+                        Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                        Arc::new(StubOverlays),
+                        Arc::new(OverlayKindRegistry::new()),
+                        None,
+                        None,
+                        Arc::new(SubActionRegistry::new()),
+                        Arc::new(registry()),
+                        handle,
+                        bus,
+                        scheduler,
+                        None,
+                        cx,
+                    )
+                })
+            });
+            let fixture = Self { view, actions, rt };
+            fixture.settle(cx);
+            fixture
+        }
+
+        fn settle(&self, cx: &mut gpui::TestAppContext) {
+            for _ in 0..3 {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+        }
+
+        fn set_filter(&self, cx: &mut gpui::TestAppContext, filter: ActionsFilter) {
+            self.view.update(cx, |view, cx| view.set_filter(filter, cx));
+        }
+
+        fn visible(&self, cx: &mut gpui::TestAppContext, name: &str) -> bool {
+            self.view.read_with(cx, |view, _| {
+                let group = view
+                    .groups
+                    .iter()
+                    .find(|g| g.actions.iter().any(|a| a.name == name))
+                    .unwrap();
+                let action = group.actions.iter().find(|a| a.name == name).unwrap();
+                view.action_passes(group, action)
+            })
+        }
+
+        fn sync_detail(&self, cx: &mut gpui::TestAppContext, name: &str, kinds: &[&str]) {
+            let action = self
+                .actions
+                .iter()
+                .find(|a| a.name == name)
+                .unwrap()
+                .clone();
+            let detail = ActionDetail {
+                action,
+                trigger_instances: kinds.iter().map(|kind| instance(kind)).collect(),
+                sub_action_avg_ms: Vec::new(),
+                last_step_outcomes: Vec::new(),
+            };
+            self.view
+                .update(cx, |view, _| view.sync_timer_membership(&detail));
+        }
+    }
+
+    fn seeds() -> Vec<Seed> {
+        vec![
+            Seed {
+                name: "Hydrate",
+                group: "Chat Commands",
+                trigger_kind: Some(TIMER_TICK_KIND),
+            },
+            Seed {
+                name: "Lurk",
+                group: "Chat Commands",
+                trigger_kind: Some(CHAT_KIND),
+            },
+            Seed {
+                name: "Raid train",
+                group: "Timers",
+                trigger_kind: None,
+            },
+            Seed {
+                name: "Stretch",
+                group: "Misc",
+                trigger_kind: Some(TIMER_TICK_KIND),
+            },
+        ]
+    }
+
+    #[gpui::test]
+    fn timers_filter_shows_an_action_with_a_timer_trigger_outside_the_timers_group(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        fixture.set_filter(cx, ActionsFilter::Timers);
+        assert!(fixture.visible(cx, "Hydrate"));
+    }
+
+    #[gpui::test]
+    fn timers_filter_hides_an_action_without_a_timer_trigger(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, &seeds());
+        fixture.set_filter(cx, ActionsFilter::Timers);
+        assert!(!fixture.visible(cx, "Lurk"));
+    }
+
+    #[gpui::test]
+    fn timers_filter_shows_an_untriggered_action_in_the_timers_group(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        fixture.set_filter(cx, ActionsFilter::Timers);
+        assert!(fixture.visible(cx, "Raid train"));
+    }
+
+    #[gpui::test]
+    fn chat_filter_ignores_timer_triggers_outside_the_chat_group(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx, &seeds());
+        fixture.set_filter(cx, ActionsFilter::Chat);
+        assert!(!fixture.visible(cx, "Stretch"));
+    }
+
+    #[gpui::test]
+    fn removing_the_last_timer_trigger_drops_the_action_from_the_timers_filter(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        fixture.set_filter(cx, ActionsFilter::Timers);
+        fixture.sync_detail(cx, "Hydrate", &[CHAT_KIND]);
+        assert!(!fixture.visible(cx, "Hydrate"));
+    }
+
+    #[gpui::test]
+    fn adding_a_timer_trigger_puts_the_action_into_the_timers_filter(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        fixture.set_filter(cx, ActionsFilter::Timers);
+        fixture.sync_detail(cx, "Lurk", &[CHAT_KIND, TIMER_TICK_KIND]);
+        assert!(fixture.visible(cx, "Lurk"));
+    }
+}

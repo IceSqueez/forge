@@ -18,6 +18,7 @@ struct Seen {
 struct SourceLedger {
     sent_awaiting_echo: VecDeque<Seen>,
     counted_rows: VecDeque<Seen>,
+    uncounted_rows: VecDeque<Seen>,
 }
 
 #[derive(Default)]
@@ -37,6 +38,9 @@ impl OwnChatEchoes {
             return None;
         }
         let ledger = self.ledger(source, now);
+        if take_match(&mut ledger.uncounted_rows, &fingerprint).is_some() {
+            return None;
+        }
         if let Some(counted_at) = take_match(&mut ledger.counted_rows, &fingerprint) {
             return Some(counted_at);
         }
@@ -66,11 +70,30 @@ impl OwnChatEchoes {
         false
     }
 
+    pub(crate) fn note_uncounted_row(&mut self, row: &UnifiedChatRow, now: Instant) {
+        let fingerprint = row_fingerprint(row);
+        if fingerprint.is_empty() {
+            return;
+        }
+        let ledger = self.ledger(row.source, now);
+        if take_match(&mut ledger.sent_awaiting_echo, &fingerprint).is_some() {
+            return;
+        }
+        push_bounded(
+            &mut ledger.uncounted_rows,
+            Seen {
+                at: now,
+                fingerprint,
+            },
+        );
+    }
+
     fn ledger(&mut self, source: ChatSource, now: Instant) -> &mut SourceLedger {
         let ledger = self.ledgers.entry(source).or_default();
         let fresh = |seen: &Seen| now.saturating_duration_since(seen.at) <= ECHO_WINDOW;
         ledger.sent_awaiting_echo.retain(fresh);
         ledger.counted_rows.retain(fresh);
+        ledger.uncounted_rows.retain(fresh);
         ledger
     }
 }
@@ -90,7 +113,10 @@ fn push_bounded(seen: &mut VecDeque<Seen>, entry: Seen) {
 }
 
 fn fingerprint_of(text: &str) -> String {
-    text.chars().filter(|c| !c.is_whitespace()).collect()
+    text.chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn row_fingerprint(row: &UnifiedChatRow) -> String {

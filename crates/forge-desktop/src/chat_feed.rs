@@ -68,7 +68,7 @@ impl ChatMessage {
             author_color: row.author_color.map(rgb_channels),
             body: event_body(row),
             is_event: row.is_event,
-            is_bot: row.is_from_bot(),
+            is_bot: row.is_from_bot(&[]),
             moderated: moderation.deleted || moderation.timed_out || moderation.banned,
             reply: None,
         }

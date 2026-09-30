@@ -15,7 +15,7 @@ use forge_components::{
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::{Viewer, ViewerRepo, VoiceAliasRepo};
-use forge_types::{SubActionStep, Variant};
+use forge_types::{Shared, SubActionStep, Variant, is_bot_account};
 use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, FontWeight, ListAlignment, ListState,
@@ -224,6 +224,7 @@ pub struct ChatView {
     platform_filter: PlatformFilter,
     events_only: bool,
     hide_bots: bool,
+    bot_accounts: Shared<Vec<String>>,
     visible: Rc<VecDeque<u64>>,
     appended_through: u64,
     drawer_width: Pixels,
@@ -267,6 +268,7 @@ impl ChatView {
         action_engine: ActionEngineHandle,
         voice_alias_repo: Arc<dyn VoiceAliasRepo>,
         speak: Option<SpeakQueueHandle>,
+        bot_accounts: Shared<Vec<String>>,
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -318,6 +320,7 @@ impl ChatView {
             platform_filter: PlatformFilter::All,
             events_only: false,
             hide_bots: false,
+            bot_accounts,
             visible: Rc::new(VecDeque::new()),
             appended_through: last_seen_seq,
             drawer_width: DRAWER_WIDTH,
@@ -1003,7 +1006,8 @@ impl ChatView {
             PlatformFilter::Single(p) => msg.platform == p,
         };
         let events_ok = !self.events_only || msg.is_event;
-        let bots_ok = !self.hide_bots || !msg.is_bot;
+        let bots_ok = !self.hide_bots
+            || !(msg.is_bot || is_bot_account(&msg.username, &self.bot_accounts.load()));
         platform_ok && events_ok && bots_ok
     }
 
@@ -2194,6 +2198,7 @@ mod tests {
                 engine,
                 Arc::new(MockVoiceAliasRepo::new()),
                 None,
+                forge_types::Shared::default(),
                 FORGE_DEFAULT,
                 cx,
             )

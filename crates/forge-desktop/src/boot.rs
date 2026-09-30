@@ -334,7 +334,13 @@ pub async fn build_runtime(
     }
     let stream_live =
         spawn_stream_live_signal(&live_viewers, integrations.obs_install_seed.stream_output());
-    spawn_timer_scheduler(Arc::clone(&bus), catalog, stream_live.clone());
+    let bot_accounts = load_bot_accounts(&backend).await;
+    spawn_timer_scheduler(
+        Arc::clone(&bus),
+        catalog,
+        stream_live.clone(),
+        bot_accounts.clone(),
+    );
 
     let server = build_server(&backend, &bus, &action_engine).await;
 
@@ -432,6 +438,7 @@ pub async fn build_runtime(
         speak,
         speak_events,
         pipeline_config,
+        bot_accounts,
         tts_registry,
         speech_output,
         speech_sink: speech_sink as Arc<dyn AudioSink>,
@@ -440,6 +447,16 @@ pub async fn build_runtime(
         voice_gate,
         stay_awake,
     })
+}
+
+async fn load_bot_accounts(backend: &Arc<dyn DataProvider>) -> forge_types::Shared<Vec<String>> {
+    match backend.tts_filters_repo().get_pipeline_settings().await {
+        Ok(settings) => forge_types::Shared::new(settings.bot_accounts),
+        Err(e) => {
+            eprintln!("forge-desktop: failed to load configured bot accounts on boot: {e}");
+            forge_types::Shared::default()
+        }
+    }
 }
 
 async fn build_voice_gate(

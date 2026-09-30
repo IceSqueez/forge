@@ -162,8 +162,9 @@ pub fn is_bot_account(name: &str, extra_bot_accounts: &[String]) -> bool {
 }
 
 impl UnifiedChatRow {
-    pub fn is_from_bot(&self) -> bool {
-        self.badges.contains(&UserBadge::Bot) || is_bot_account(&self.author, &[])
+    pub fn is_from_bot(&self, configured_bot_accounts: &[String]) -> bool {
+        self.badges.contains(&UserBadge::Bot)
+            || is_bot_account(&self.author, configured_bot_accounts)
     }
 
     pub fn display_text(&self) -> String {
@@ -830,7 +831,7 @@ mod tests {
                 ..make_row(vec![])
             };
             assert_eq!(
-                row.is_from_bot(),
+                row.is_from_bot(&[]),
                 expected,
                 "author {author:?} badges {badges:?}"
             );

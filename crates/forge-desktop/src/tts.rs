@@ -7,6 +7,7 @@ use forge_components::{
 use forge_speak_queue::{PipelineConfigHandle, SpeakQueueHandle};
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use forge_tts_core::TtsRegistry;
+use forge_types::Shared;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
 };
@@ -82,6 +83,7 @@ impl TtsView {
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
         pipeline_config: Option<PipelineConfigHandle>,
+        bot_accounts: Shared<Vec<String>>,
         tts_registry: Option<Arc<RwLock<TtsRegistry>>>,
         preselect: Option<TtsSection>,
         cx: &mut Context<Self>,
@@ -113,6 +115,7 @@ impl TtsView {
             TtsFiltersView::new(
                 backend.tts_filters_repo(),
                 pipeline_config,
+                bot_accounts,
                 speak.clone(),
                 rt_handle.clone(),
                 cx,

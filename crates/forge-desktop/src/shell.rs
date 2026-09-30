@@ -166,6 +166,7 @@ impl AppShell {
                 let action_engine = handles.action_engine.clone();
                 let voice_alias_repo = handles.backend.voice_alias_repo();
                 let speak = handles.speak.clone();
+                let bot_accounts = handles.bot_accounts.clone();
                 cx.new(|cx| {
                     ChatView::new(
                         topics.chat_feed.clone(),
@@ -175,6 +176,7 @@ impl AppShell {
                         action_engine,
                         voice_alias_repo,
                         speak,
+                        bot_accounts,
                         palette,
                         cx,
                     )
@@ -334,6 +336,7 @@ impl AppShell {
                 let backend = Arc::clone(&handles.backend);
                 let rt_handle = handles.rt_handle.clone();
                 let pipeline_config = handles.pipeline_config.clone();
+                let bot_accounts = handles.bot_accounts.clone();
                 let tts_registry = handles.tts_registry.clone();
                 cx.new(|cx| {
                     TtsView::new(
@@ -342,6 +345,7 @@ impl AppShell {
                         backend,
                         rt_handle,
                         pipeline_config,
+                        bot_accounts,
                         tts_registry,
                         preselect,
                         cx,

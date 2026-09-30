@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_events::Event;
 use forge_registry::{TriggerKindDescriptor, effective_config};
 use forge_storage::CatalogChanges;
-use forge_types::{PlatformScope, TriggerInstanceId, UserBadge};
+use forge_types::{PlatformScope, Shared, TriggerInstanceId, UserBadge};
 use tokio::time::Instant;
 use tracing::warn;
 
@@ -54,12 +54,14 @@ struct TimerScheduler {
     live: bool,
     chat: ChatRecordMapper,
     own_echoes: OwnChatEchoes,
+    bot_accounts: Shared<Vec<String>>,
 }
 
 pub fn spawn_timer_scheduler(
     bus: Arc<EventBus>,
     catalog: Arc<Catalog>,
     stream_live: StreamLiveHandle,
+    bot_accounts: Shared<Vec<String>>,
 ) {
     let chat = bus.subscribe_observer(TIMER_SCHEDULER);
     let changes = catalog.changes();
@@ -70,6 +72,7 @@ pub fn spawn_timer_scheduler(
         armed: HashMap::new(),
         chat: ChatRecordMapper::default(),
         own_echoes: OwnChatEchoes::default(),
+        bot_accounts,
     };
     tokio::spawn(scheduler.run(changes, stream_live, chat));
 }
@@ -153,7 +156,13 @@ impl TimerScheduler {
         let Some(ChatRecord::Row(row)) = self.chat.map(event) else {
             return;
         };
-        if row.is_event || row.badges.contains(&UserBadge::Broadcaster) || row.is_from_bot() {
+        if row.is_event {
+            return;
+        }
+        if row.badges.contains(&UserBadge::Broadcaster)
+            || row.is_from_bot(&self.bot_accounts.load())
+        {
+            self.own_echoes.note_uncounted_row(&row, now);
             return;
         }
         if self.own_echoes.is_own_echo(&row, now) {
@@ -375,7 +384,7 @@ mod tests {
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let ticks = bus.subscribe();
-        spawn_timer_scheduler(Arc::clone(&bus), catalog, stream_live);
+        spawn_timer_scheduler(Arc::clone(&bus), catalog, stream_live, Shared::default());
         let rig = Rig {
             bus,
             ticks,

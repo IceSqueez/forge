@@ -14,6 +14,7 @@ use forge_storage::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings,
 };
 use forge_tts_pipeline::{PipelineResult, SkipReason, StageAction, StageName, StageOutcome};
+use forge_types::Shared;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
     Subscription, Window, div, prelude::*, px,
@@ -427,6 +428,7 @@ struct CachedPreview {
 pub struct TtsFiltersView {
     repo: Arc<dyn TtsFiltersRepo>,
     pipeline_config: Option<PipelineConfigHandle>,
+    bot_accounts: Shared<Vec<String>>,
     speak: Option<SpeakQueueHandle>,
     rt_handle: tokio::runtime::Handle,
     rules: Vec<FilterRule>,
@@ -444,6 +446,7 @@ impl TtsFiltersView {
     pub fn new(
         repo: Arc<dyn TtsFiltersRepo>,
         pipeline_config: Option<PipelineConfigHandle>,
+        bot_accounts: Shared<Vec<String>>,
         speak: Option<SpeakQueueHandle>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
@@ -468,6 +471,7 @@ impl TtsFiltersView {
         let mut view = Self {
             repo,
             pipeline_config,
+            bot_accounts,
             speak,
             rt_handle,
             rules: Vec::new(),
@@ -559,6 +563,7 @@ impl TtsFiltersView {
 
         let repo = Arc::clone(&self.repo);
         let pipeline_config = self.pipeline_config.clone();
+        let bot_accounts = self.bot_accounts.clone();
         let rules = self.rules.clone();
         let settings = self.settings.clone();
         async_bridge::run_async(
@@ -570,6 +575,7 @@ impl TtsFiltersView {
                 repo.set_pipeline_settings(&settings)
                     .await
                     .map_err(|e| e.to_string())?;
+                bot_accounts.store(settings.bot_accounts);
                 if let Some(handle) = pipeline_config {
                     handle.swap(config);
                 }

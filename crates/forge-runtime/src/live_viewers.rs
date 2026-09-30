@@ -142,36 +142,9 @@ async fn aggregate(
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
     use std::time::Duration;
 
-    use forge_platform_core::ViewerReportStream;
-    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-    use tokio_stream::wrappers::UnboundedReceiverStream;
-
-    struct ChannelSource {
-        rx: Mutex<Option<UnboundedReceiver<ViewerReport>>>,
-    }
-
-    fn channel_source() -> (Box<dyn LiveViewerSource>, UnboundedSender<ViewerReport>) {
-        let (tx, rx) = unbounded_channel();
-        let source = Box::new(ChannelSource {
-            rx: Mutex::new(Some(rx)),
-        });
-        (source, tx)
-    }
-
-    impl LiveViewerSource for ChannelSource {
-        fn viewer_reports(&self) -> ViewerReportStream {
-            let rx = self
-                .rx
-                .lock()
-                .expect("mutex poisoned")
-                .take()
-                .expect("viewer_reports called once");
-            Box::pin(UnboundedReceiverStream::new(rx))
-        }
-    }
+    use crate::test_support::channel_viewer_source as channel_source;
 
     async fn settle_to<S>(stream: &mut S, expected: LiveViewerCount)
     where
@@ -195,8 +168,8 @@ mod tests {
         let mut sub = Box::pin(handle.subscribe());
         let (src_a, tx_a) = channel_source();
         let (src_b, tx_b) = channel_source();
-        handle.register(src_a);
-        handle.register(src_b);
+        handle.register(PlatformId::Twitch, src_a);
+        handle.register(PlatformId::YouTube, src_b);
 
         tx_a.send(ViewerReport::Live { count: 3 }).unwrap();
         settle_to(&mut sub, LiveViewerCount::Reporting(3)).await;
@@ -210,8 +183,8 @@ mod tests {
         let mut sub = Box::pin(handle.subscribe());
         let (src_a, tx_a) = channel_source();
         let (src_b, tx_b) = channel_source();
-        handle.register(src_a);
-        handle.register(src_b);
+        handle.register(PlatformId::Twitch, src_a);
+        handle.register(PlatformId::YouTube, src_b);
 
         tx_a.send(ViewerReport::Live { count: 5 }).unwrap();
         settle_to(&mut sub, LiveViewerCount::Reporting(5)).await;
@@ -226,7 +199,7 @@ mod tests {
         let handle = spawn_live_viewer_aggregator();
         let mut sub = Box::pin(handle.subscribe());
         let (src, tx) = channel_source();
-        handle.register(src);
+        handle.register(PlatformId::Kick, src);
 
         tx.send(ViewerReport::Live { count: 5 }).unwrap();
         settle_to(&mut sub, LiveViewerCount::Reporting(5)).await;
@@ -240,8 +213,8 @@ mod tests {
         let mut sub = Box::pin(handle.subscribe());
         let (src_a, tx_a) = channel_source();
         let (src_b, tx_b) = channel_source();
-        handle.register(src_a);
-        handle.register(src_b);
+        handle.register(PlatformId::Twitch, src_a);
+        handle.register(PlatformId::YouTube, src_b);
 
         tx_a.send(ViewerReport::Live { count: 4 }).unwrap();
         settle_to(&mut sub, LiveViewerCount::Reporting(4)).await;
@@ -256,7 +229,7 @@ mod tests {
         let handle = spawn_live_viewer_aggregator();
         let mut sub = Box::pin(handle.subscribe());
         let (src, tx) = channel_source();
-        handle.register(src);
+        handle.register(PlatformId::Kick, src);
 
         tx.send(ViewerReport::Live { count: 0 }).unwrap();
         settle_to(&mut sub, LiveViewerCount::Reporting(0)).await;
@@ -267,7 +240,7 @@ mod tests {
         let handle = spawn_live_viewer_aggregator();
         let mut early = Box::pin(handle.subscribe());
         let (src, tx) = channel_source();
-        handle.register(src);
+        handle.register(PlatformId::Kick, src);
 
         tx.send(ViewerReport::Live { count: 9 }).unwrap();
         settle_to(&mut early, LiveViewerCount::Reporting(9)).await;

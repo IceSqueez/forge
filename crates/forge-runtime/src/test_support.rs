@@ -173,3 +173,34 @@ pub(crate) mod log_capture {
         lines.iter().filter(|line| line.target == target).collect()
     }
 }
+
+struct ChannelViewerSource {
+    reports: std::sync::Mutex<
+        Option<tokio::sync::mpsc::UnboundedReceiver<forge_platform_core::ViewerReport>>,
+    >,
+}
+
+impl forge_platform_core::LiveViewerSource for ChannelViewerSource {
+    fn viewer_reports(&self) -> forge_platform_core::ViewerReportStream {
+        let reports = self
+            .reports
+            .lock()
+            .expect("mutex poisoned")
+            .take()
+            .expect("viewer_reports called once");
+        Box::pin(tokio_stream::wrappers::UnboundedReceiverStream::new(
+            reports,
+        ))
+    }
+}
+
+pub(crate) fn channel_viewer_source() -> (
+    Box<dyn forge_platform_core::LiveViewerSource>,
+    tokio::sync::mpsc::UnboundedSender<forge_platform_core::ViewerReport>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let source = Box::new(ChannelViewerSource {
+        reports: std::sync::Mutex::new(Some(rx)),
+    });
+    (source, tx)
+}

@@ -78,7 +78,9 @@ impl ScreenActionsView {
     }
 
     fn action_passes(&self, group: &ActionGroup, action: &ActionSummary) -> bool {
-        Self::category_visible(self.filter, group.category) && self.search.matches(&action.name)
+        let in_filter = Self::category_visible(self.filter, group.category)
+            || (self.filter == ActionsFilter::Timers && self.timer_action_ids.contains(&action.id));
+        in_filter && self.search.matches(&action.name)
     }
 
     pub(super) fn on_search_event(

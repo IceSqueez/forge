@@ -726,14 +726,19 @@ impl TriggersRegistryView {
                 BADGE_FS,
             ));
         }
-        let cooldown = cooldown_suffix(instance.cooldown_secs, instance.cooldown_global);
+        let gate = if cooldown_applies(descriptor) {
+            cooldown_suffix(instance.cooldown_secs, instance.cooldown_global)
+        } else {
+            let summary = condition_display(descriptor, &instance.kind_id, &instance.overrides);
+            format!(" \u{b7} {summary}")
+        };
         kind = kind.child(
             div()
                 .flex_none()
                 .font_family(mono_family())
                 .text_size(KIND_FS)
                 .text_color(palette.bits)
-                .child(cooldown),
+                .child(gate),
         );
         if let Some(permission) = descriptor
             .and_then(|d| d.chat_trigger_family())

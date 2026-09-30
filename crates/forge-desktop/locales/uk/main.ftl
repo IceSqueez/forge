@@ -671,6 +671,17 @@ triggers_permission_rung_vip = vip+
 triggers_permission_rung_moderator = моди+
 triggers_permission_rung_broadcaster = ведучий
 triggers_permission_suffix = { " · доступ=" }{ $rung }
+triggers_timer_every = кожні { $minutes } хв
+triggers_timer_live_only = лише під час ефіру
+triggers_timer_min_messages = ≥{ $count } { $count ->
+    [one] повідомлення
+    [few] повідомлення
+    [many] повідомлень
+   *[other] повідомлення
+}
+triggers_timer_hint_interval = interval_minutes: як часто спрацьовує, у цілих хвилинах (1-1440). Перше спрацювання - через один інтервал після збереження або після початку ефіру.
+triggers_timer_hint_live = only_while_live: пропускати спрацювання, поки жодна платформа і жоден вихід трансляції OBS не повідомляє про ефір.
+triggers_timer_hint_messages = min_chat_messages: пропускати спрацювання, доки від останнього не надійде щонайменше стільки повідомлень глядачів. 0 = вимк. Боти й власні повідомлення forge не рахуються.
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_delete_btn = Видалити
 triggers_sheet_save_btn = Зберегти

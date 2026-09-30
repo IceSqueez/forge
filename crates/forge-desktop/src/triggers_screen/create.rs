@@ -1,4 +1,4 @@
-use super::{TriggersRegistryView, load_rows, platform_dot_color};
+use super::{TriggersRegistryView, load_rows, platform_dot_color, timer_field_hints};
 use crate::async_bridge;
 use crate::config_form::{
     ChoiceSupport, ConfigField, ConfigFieldHandlers, FILL_VAL_FS, FoldContext,
@@ -368,7 +368,8 @@ impl TriggersRegistryView {
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
-            .child(config_card);
+            .child(config_card)
+            .children(timer_field_hints(&form.kind_id, palette));
 
         let body = div()
             .flex()

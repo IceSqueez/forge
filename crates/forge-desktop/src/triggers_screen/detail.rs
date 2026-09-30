@@ -504,7 +504,10 @@ impl TriggersRegistryView {
             .flex()
             .flex_col()
             .child(self.render_config_section(detail, palette, cx))
-            .child(self.render_cooldown_section(detail, palette, cx))
+            .when(
+                cooldown_applies(self.registry.get(&detail.instance.kind_id)),
+                |body| body.child(self.render_cooldown_section(detail, palette, cx)),
+            )
             .children(self.render_permission_section(detail, palette, cx))
             .child(self.render_used_in_section(detail, palette, cx))
             .into_any_element()
@@ -603,6 +606,10 @@ impl TriggersRegistryView {
                 palette,
             ))
             .child(framed)
+            .children(
+                timer_field_hints(&detail.instance.kind_id, palette)
+                    .map(|hints| div().pt(spacing(Spacing::Xs, Density::Cozy)).child(hints)),
+            )
             .into_any_element()
     }
 

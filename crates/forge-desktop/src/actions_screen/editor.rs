@@ -379,9 +379,11 @@ fn build_recent_group(
         let kind_label = descriptor
             .map(|d| d.label().to_owned())
             .unwrap_or_else(|| instance.kind_id.clone());
-        let condition = descriptor
-            .map(|d| d.condition_display(&instance.overrides))
-            .unwrap_or_default();
+        let condition = crate::triggers_screen::condition_display(
+            descriptor,
+            &instance.kind_id,
+            &instance.overrides,
+        );
         let desc = if condition.is_empty() {
             kind_label
         } else {
@@ -1509,7 +1511,11 @@ impl ScreenActionsView {
             .flex_col()
             .gap(spacing(Spacing::Xs, Density::Cozy))
             .child(self.fill_section_label(tr!("triggers_create_section_config"), palette))
-            .child(config_card);
+            .child(config_card)
+            .children(crate::triggers_screen::timer_field_hints(
+                &form.kind_id,
+                palette,
+            ));
 
         let body = div()
             .flex()
@@ -2141,13 +2147,17 @@ impl ScreenActionsView {
         let kind_label = descriptor
             .map(|d| d.label().to_owned())
             .unwrap_or_else(|| instance.kind_id.clone());
-        let mut condition = descriptor
-            .map(|d| d.condition_display(&instance.overrides))
-            .unwrap_or_default();
-        condition.push_str(&crate::triggers_screen::cooldown_suffix(
-            instance.cooldown_secs,
-            instance.cooldown_global,
-        ));
+        let mut condition = crate::triggers_screen::condition_display(
+            descriptor,
+            &instance.kind_id,
+            &instance.overrides,
+        );
+        if crate::triggers_screen::cooldown_applies(descriptor) {
+            condition.push_str(&crate::triggers_screen::cooldown_suffix(
+                instance.cooldown_secs,
+                instance.cooldown_global,
+            ));
+        }
         if let Some(permission) = descriptor
             .and_then(TriggerKindDescriptor::chat_trigger_family)
             .and_then(|_| crate::triggers_screen::permission_suffix(instance.permission_rung))

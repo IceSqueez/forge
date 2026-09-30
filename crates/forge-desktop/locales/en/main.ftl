@@ -659,6 +659,15 @@ triggers_permission_rung_vip = vip+
 triggers_permission_rung_moderator = mods+
 triggers_permission_rung_broadcaster = broadcaster
 triggers_permission_suffix = { " · perm=" }{ $rung }
+triggers_timer_every = every { $minutes } min
+triggers_timer_live_only = only while live
+triggers_timer_min_messages = ≥{ $count } { $count ->
+    [one] message
+   *[other] messages
+}
+triggers_timer_hint_interval = interval_minutes: how often it fires, in whole minutes (1-1440). The first fire comes one interval after saving or after the stream goes live.
+triggers_timer_hint_live = only_while_live: skip fires while no platform and no OBS stream output reports live.
+triggers_timer_hint_messages = min_chat_messages: skip a fire until at least this many viewer messages arrived since the last one. 0 = off. Bot and forge's own messages do not count.
 triggers_sheet_section_used_in = USED IN
 triggers_sheet_delete_btn = Delete
 triggers_sheet_save_btn = Save

@@ -4,7 +4,7 @@ use forge_components::{
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
-use forge_types::{ActionId, PermissionRung, TriggerInstance, TriggerInstanceId};
+use forge_types::{ActionId, PermissionRung, TriggerConfig, TriggerInstance, TriggerInstanceId};
 use gpui::{
     App, Context, Entity, EventEmitter, FocusHandle, Pixels, Point, Rgba, SharedString,
     Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
@@ -24,9 +24,11 @@ use crate::toasts::PushToast;
 mod create;
 mod detail;
 mod list;
+mod timer;
 
 use create::CreateStage;
 pub(crate) use create::build_kind_groups;
+pub(crate) use timer::{condition_display, cooldown_applies, timer_field_hints};
 
 const STRIPE_W: Pixels = px(2.0);
 const ROW_PAD_L: Pixels = px(16.0);
@@ -143,6 +145,7 @@ struct TriggerInstanceRow {
     enabled: bool,
     used_in_count: usize,
     override_count: usize,
+    overrides: TriggerConfig,
     cooldown_secs: u32,
     cooldown_global: bool,
     permission_rung: PermissionRung,
@@ -496,6 +499,7 @@ async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstance
             enabled: instance.enabled,
             used_in_count,
             override_count: instance.overrides.len(),
+            overrides: instance.overrides,
             cooldown_secs: instance.cooldown_secs,
             cooldown_global: instance.cooldown_global,
             permission_rung: instance.permission_rung,

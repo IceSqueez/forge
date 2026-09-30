@@ -34,11 +34,16 @@ fn identity_badges(identity: Option<&Value>) -> Vec<UserBadge> {
     badges
         .iter()
         .filter_map(|badge| match str_field(badge, "type").as_deref() {
+            Some("broadcaster") => Some(UserBadge::Broadcaster),
             Some("moderator") => Some(UserBadge::Moderator),
+            Some("vip") => Some(UserBadge::Vip),
             Some("subscriber") => Some(UserBadge::Subscriber {
                 months: u64_field(badge, "count").unwrap_or(0) as u32,
             }),
-            Some("sub_gifter") => None,
+            Some("founder") => Some(UserBadge::Founder),
+            Some("bot") => Some(UserBadge::Bot),
+            Some("verified") => Some(UserBadge::Partner),
+            Some("sub_gifter" | "og" | "staff" | "sidekick" | "trainwreckstv") => None,
             Some(other) => {
                 debug!(badge_type = %other, "unrecognized kick identity badge type; dropping");
                 None

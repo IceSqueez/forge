@@ -9,6 +9,7 @@ use gpui::{
     point, prelude::*, px, relative, size,
 };
 
+use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
 use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::text_edit::{
     next_grapheme_boundary, offset_to_utf16, previous_grapheme_boundary, range_from_utf16,
@@ -20,32 +21,6 @@ use crate::tokens::{
 };
 
 const KEY_CONTEXT: &str = "ForgeTextArea";
-
-const CARET_BLINK_MS: u64 = 530;
-
-fn spawn_caret_blink(cx: &mut Context<TextArea>) {
-    cx.spawn(async move |this, cx| {
-        loop {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(CARET_BLINK_MS))
-                .await;
-            let alive = this
-                .update(cx, |this, cx| {
-                    if this.focused_cached {
-                        this.blink_visible = !this.blink_visible;
-                        cx.notify();
-                    } else {
-                        this.blink_visible = true;
-                    }
-                })
-                .is_ok();
-            if !alive {
-                break;
-            }
-        }
-    })
-    .detach();
-}
 
 const DEFAULT_AREA_HEIGHT: Pixels = px(130.0);
 
@@ -170,16 +145,20 @@ pub struct TextArea {
     gutter_marks: Vec<usize>,
     fill: bool,
     follow_caret: bool,
-    blink_visible: bool,
-    focused_cached: bool,
+    caret: CaretBlink,
     invalid: bool,
 }
 
 impl EventEmitter<InputEvent> for TextArea {}
 
+impl CaretHost for TextArea {
+    fn caret(&mut self) -> &mut CaretBlink {
+        &mut self.caret
+    }
+}
+
 impl TextArea {
     pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
-        spawn_caret_blink(cx);
         Self {
             focus_handle: cx.focus_handle(),
             content: SharedString::default(),
@@ -204,8 +183,7 @@ impl TextArea {
             gutter_marks: Vec::new(),
             fill: false,
             follow_caret: true,
-            blink_visible: true,
-            focused_cached: false,
+            caret: CaretBlink::new(),
             invalid: false,
         }
     }
@@ -534,7 +512,7 @@ impl TextArea {
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
         self.follow_caret = true;
-        self.blink_visible = true;
+        self.caret.wake();
         cx.notify();
     }
 
@@ -577,7 +555,7 @@ impl TextArea {
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
         self.follow_caret = true;
-        self.blink_visible = true;
+        self.caret.wake();
         cx.notify();
     }
 }
@@ -639,7 +617,7 @@ impl EntityInputHandler for TextArea {
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
         self.follow_caret = true;
-        self.blink_visible = true;
+        self.caret.wake();
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -676,7 +654,7 @@ impl EntityInputHandler for TextArea {
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
 
         self.follow_caret = true;
-        self.blink_visible = true;
+        self.caret.wake();
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -1247,7 +1225,7 @@ impl Element for AreaElement {
         }
 
         if focus_handle.is_focused(window)
-            && self.input.read(cx).blink_visible
+            && self.input.read(cx).caret.is_lit()
             && let Some(cursor) = prepaint.cursor.take()
         {
             window.paint_quad(cursor);
@@ -1269,8 +1247,10 @@ impl Focusable for TextArea {
 
 impl Render for TextArea {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let focused = self.focus_handle.is_focused(window);
-        self.focused_cached = focused;
+        let focus = self.focus_handle.clone();
+        self.caret.watch(&focus, window, cx);
+        let focused = focus.is_focused(window);
+        set_caret_blinking(self, focused && window.is_visible(), cx);
         let border_color = if self.read_only {
             self.palette.disabled
         } else if focused {

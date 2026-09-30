@@ -27,6 +27,7 @@ use crate::log_archive;
 use crate::log_tail::{LogLine, LogTail};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
+use crate::window_presence::PresenceGate;
 
 const TAIL_REFRESH: Duration = Duration::from_secs(2);
 const TAIL_MAX_HEIGHT: Pixels = px(320.0);
@@ -139,9 +140,11 @@ impl SettingsDiagnosticsView {
     }
 
     fn spawn_refresher(cx: &mut Context<Self>) {
+        let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(TAIL_REFRESH).await;
+                presence.until_visible().await;
                 let alive = this.update(cx, |this, cx| {
                     if this.active {
                         this.refresh(cx);

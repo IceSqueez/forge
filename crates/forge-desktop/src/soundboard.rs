@@ -40,6 +40,7 @@ use crate::combo_conflict::release_holder;
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
+use crate::window_presence::PresenceGate;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
@@ -334,9 +335,11 @@ impl SoundboardView {
             return;
         }
         self.ticking = true;
+        let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(TICK_INTERVAL).await;
+                presence.until_visible().await;
                 let keep_going = this.update(cx, |this, cx| {
                     if this.has_active_playback() {
                         cx.notify();

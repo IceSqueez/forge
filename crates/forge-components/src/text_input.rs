@@ -9,6 +9,7 @@ use gpui::{
     size,
 };
 
+use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
 use crate::icons::{Icon, icon};
 use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
 use crate::tokens::{
@@ -17,32 +18,6 @@ use crate::tokens::{
 };
 
 const KEY_CONTEXT: &str = "ForgeTextInput";
-
-const CARET_BLINK_MS: u64 = 530;
-
-fn spawn_caret_blink(cx: &mut Context<TextInput>) {
-    cx.spawn(async move |this, cx| {
-        loop {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(CARET_BLINK_MS))
-                .await;
-            let alive = this
-                .update(cx, |this, cx| {
-                    if this.focused_cached {
-                        this.blink_visible = !this.blink_visible;
-                        cx.notify();
-                    } else {
-                        this.blink_visible = true;
-                    }
-                })
-                .is_ok();
-            if !alive {
-                break;
-            }
-        }
-    })
-    .detach();
-}
 
 actions!(
     forge_text_input,
@@ -120,17 +95,21 @@ pub struct TextInput {
     mono: bool,
     compact: bool,
     invalid: bool,
-    blink_visible: bool,
-    focused_cached: bool,
+    caret: CaretBlink,
     committed: SharedString,
     blur_sub: Option<Subscription>,
 }
 
 impl EventEmitter<InputEvent> for TextInput {}
 
+impl CaretHost for TextInput {
+    fn caret(&mut self) -> &mut CaretBlink {
+        &mut self.caret
+    }
+}
+
 impl TextInput {
     pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
-        spawn_caret_blink(cx);
         Self {
             focus_handle: cx.focus_handle(),
             content: SharedString::default(),
@@ -156,8 +135,7 @@ impl TextInput {
             mono: false,
             compact: false,
             invalid: false,
-            blink_visible: true,
-            focused_cached: false,
+            caret: CaretBlink::new(),
             committed: SharedString::default(),
             blur_sub: None,
         }
@@ -407,7 +385,7 @@ impl TextInput {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
-        self.blink_visible = true;
+        self.caret.wake();
         cx.notify();
     }
 
@@ -451,7 +429,7 @@ impl TextInput {
             self.selection_reversed = !self.selection_reversed;
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
-        self.blink_visible = true;
+        self.caret.wake();
         cx.notify();
     }
 
@@ -555,7 +533,7 @@ impl EntityInputHandler for TextInput {
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.marked_range.take();
-        self.blink_visible = true;
+        self.caret.wake();
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -591,7 +569,7 @@ impl EntityInputHandler for TextInput {
             .map(|new_range| new_range.start + range.start..new_range.end + range.end)
             .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
 
-        self.blink_visible = true;
+        self.caret.wake();
         cx.emit(InputEvent::Changed(self.content.clone()));
         cx.notify();
     }
@@ -856,7 +834,7 @@ impl Element for TextElement {
         );
 
         if focus_handle.is_focused(window)
-            && self.input.read(cx).blink_visible
+            && self.input.read(cx).caret.is_lit()
             && let Some(cursor) = prepaint.cursor.take()
         {
             window.paint_quad(cursor);
@@ -882,8 +860,10 @@ impl Render for TextInput {
             let handle = self.focus_handle.clone();
             self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
         }
-        let focused = self.focus_handle.is_focused(window);
-        self.focused_cached = focused;
+        let focus = self.focus_handle.clone();
+        self.caret.watch(&focus, window, cx);
+        let focused = focus.is_focused(window);
+        set_caret_blinking(self, focused && window.is_visible(), cx);
         let (border_color, corner) = match self.static_chrome {
             Some((border, corner)) => (border, corner),
             None => {

@@ -110,6 +110,7 @@ mod voice_aliases;
 mod voice_gate;
 mod vtube_connect;
 mod vtube_connect_form;
+mod window_presence;
 
 use forge_components::{
     FOOTER_HEIGHT, IconAssets, bind_picker_keys, bind_text_area_keys, bind_text_input_keys,
@@ -378,7 +379,8 @@ fn main() {
         let log_tail_for_root = log_tail.clone();
         let endpoints_for_root = endpoints.clone();
         let initial_screen_for_root = initial_screen.clone();
-        let window = match cx.open_window(options, move |_window, cx| {
+        let window = match cx.open_window(options, move |window, cx| {
+            crate::window_presence::track_window_presence(window, cx);
             cx.new(|cx| {
                 RootView::new(
                     rt_handle_for_root.clone(),

@@ -46,6 +46,7 @@ use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
+use crate::window_presence::PresenceGate;
 
 struct ActiveConnect {
     view: Entity<ConnectFlow>,
@@ -447,9 +448,11 @@ impl IntegrationDetail {
     }
 
     fn spawn_detail_ticker(cx: &mut Context<Self>) -> Task<()> {
+        let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DETAIL_TICK).await;
+                presence.until_visible().await;
                 let alive = this.update(cx, |this, cx| {
                     this.sections = this.content.sections();
                     cx.notify();

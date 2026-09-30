@@ -2,6 +2,7 @@ pub mod avatar;
 pub mod breadcrumb;
 pub mod buttons;
 pub mod cards;
+pub(crate) mod caret_blink;
 pub mod chat_gap_row;
 pub mod chat_row;
 pub mod chip;

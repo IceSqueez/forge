@@ -32,6 +32,7 @@ use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::home_stats::HomeStats;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
+use crate::window_presence::PresenceGate;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -352,8 +353,10 @@ impl ChatView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) {
+        let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             loop {
+                presence.until_visible().await;
                 let repo = Arc::clone(&repo);
                 let (tx, rx) = tokio::sync::oneshot::channel();
                 rt_handle.spawn(async move {

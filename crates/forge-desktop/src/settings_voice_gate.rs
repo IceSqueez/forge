@@ -20,6 +20,7 @@ use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::settings_audio::DeviceRow;
 use crate::voice_gate::VoiceGateOwner;
+use crate::window_presence::PresenceGate;
 
 const METER_WIDTH: Pixels = px(72.0);
 const METER_HEIGHT: Pixels = px(6.0);
@@ -206,9 +207,11 @@ impl SettingsVoiceGateView {
             return;
         }
         self.ticking = true;
+        let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(LEVEL_TICK).await;
+                presence.until_visible().await;
                 let keep_going = this.update(cx, |this, cx| {
                     if this.active && this.owner.is_running() {
                         this.read_gate(cx);

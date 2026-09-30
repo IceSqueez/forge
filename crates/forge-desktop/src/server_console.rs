@@ -30,6 +30,7 @@ use crate::screen::Screen;
 use crate::server_restart::restart_ignoring_disabled;
 use crate::settings::SettingsSection;
 use crate::sidebar::NavRequested;
+use crate::window_presence::PresenceGate;
 
 const BEARER_CREDENTIAL_ID: &str = "server:bearer";
 
@@ -392,9 +393,11 @@ impl ServerConsoleView {
             return;
         };
         let rt_handle = self.rt_handle.clone();
+        let mut presence = PresenceGate::of(cx);
         cx.spawn(async move |this, cx| {
             let mut tick: u32 = 0;
             loop {
+                presence.until_visible().await;
                 tick = tick.wrapping_add(1);
                 let want_overlay = tick == 1 || tick.is_multiple_of(5);
                 let (tx, rx) = tokio::sync::oneshot::channel::<ServerPoll>();

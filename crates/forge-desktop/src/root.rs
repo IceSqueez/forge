@@ -32,10 +32,12 @@ use crate::shell::AppShell;
 use crate::speak_state::SpeakState;
 use crate::toasts::PushToast;
 use crate::topics::Topics;
+use crate::window_presence::PresenceGate;
 use forge_speak_queue::{SpeakError, SpeakEventStream};
 
 const LOSS_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
 const QUEUE_DEPTH_REPAINT_INTERVAL: Duration = Duration::from_millis(250);
+const UPTIME_TICK: Duration = Duration::from_secs(1);
 
 enum BootState {
     Booting,
@@ -426,9 +428,11 @@ fn start_queue_depth_bridge(
 }
 
 fn start_uptime_clock(cx: &mut AsyncApp, status: Entity<RuntimeStatus>) {
+    let mut presence = cx.update(|cx| PresenceGate::of(cx));
     cx.spawn(async move |cx| {
         loop {
-            cx.background_executor().timer(Duration::from_secs(1)).await;
+            cx.background_executor().timer(UPTIME_TICK).await;
+            presence.until_visible().await;
             status.update(cx, |status, cx| {
                 status.refresh(Instant::now());
                 cx.notify();

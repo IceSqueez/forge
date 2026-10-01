@@ -181,7 +181,10 @@ impl Picker {
             .items
             .iter()
             .enumerate()
-            .filter(|(_, item)| item_matches(&item.label, item.sublabel.as_deref(), query))
+            .filter(|(_, item)| {
+                item_matches(&item.label, item.sublabel.as_deref(), query)
+                    || item.id.as_ref() == query.trim()
+            })
             .map(|(idx, _)| idx)
             .collect();
         self.selected = 0;

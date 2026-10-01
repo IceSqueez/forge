@@ -2,10 +2,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Picker,
-    PickerEvent, PickerItem, PickerLabels, Radius, TextArea, TextInput, body_family,
-    destructive_button_with_icon, dropdown, field_label, icon, modal, mono_family, overlay,
-    primary_button_with_icon, radius, secondary_button, spinner, toggle, tr,
+    FONT_XS, ForgePalette, Icon, InputEvent, OverlayPosition, Picker, PickerEvent, PickerItem,
+    PickerLabels, TextArea, TextInput, body_family, destructive_button_with_icon, dropdown, modal,
+    overlay, primary_button_with_icon, secondary_button, spinner, tr,
 };
 use forge_obs::{ObsClient, ObsSource};
 use forge_platform_core::{
@@ -22,10 +21,10 @@ use tokio::runtime::Handle;
 use crate::async_bridge;
 use crate::integration_quick_actions::accent_color;
 use crate::presentation::ActivePresentation;
-
-const FIELD_FONT: gpui::Pixels = px(13.0);
-const ROW_PAD_X: gpui::Pixels = px(12.0);
-const ROW_PAD_Y: gpui::Pixels = px(8.0);
+use crate::quick_action_field_rows::{
+    FIELD_FONT, choice_trigger, failure_with_retry, field_column, field_frame, int_entry_invalid,
+    int_range_hint, parse_int_in_range, toggle_row,
+};
 
 pub enum QuickActionModalEvent {
     Run { step: SubActionStep, label: String },
@@ -491,22 +490,7 @@ impl QuickActionModal {
             FieldControl::Toggle(value) => self.render_toggle(index, *value, palette, cx),
             FieldControl::Choice(choice) => self.render_choice(index, choice, palette, cx),
         };
-        let mut column = div()
-            .w_full()
-            .flex()
-            .flex_col()
-            .gap(px(4.0))
-            .child(field_label(palette, field.label.to_uppercase(), control));
-        if let Some(hint) = &field.hint {
-            column = column.child(
-                div()
-                    .font_family(body_family())
-                    .text_size(px(11.0))
-                    .text_color(palette.text_faint)
-                    .child(hint.clone()),
-            );
-        }
-        column.into_any_element()
+        field_column(palette, &field.label, field.hint.as_deref(), None, control)
     }
 
     fn render_toggle(
@@ -516,34 +500,12 @@ impl QuickActionModal {
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (state_label, state_color) = if value {
-            (tr!("integration_qa_toggle_on"), palette.success)
-        } else {
-            (tr!("integration_qa_toggle_off"), palette.random)
-        };
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px(ROW_PAD_X)
-            .py(ROW_PAD_Y)
-            .rounded(radius(Radius::Sm))
-            .border(BORDER_THIN)
-            .border_color(palette.border_input)
-            .bg(palette.shell)
-            .child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FIELD_FONT)
-                    .text_color(state_color)
-                    .child(state_label),
-            )
-            .child(toggle(value, palette).on_color(palette.success).on_click(
-                ("qa-toggle", index),
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_field(index, cx)),
-            ))
-            .into_any_element()
+        toggle_row(
+            ("qa-toggle", index),
+            value,
+            palette,
+            cx.listener(move |this, _: &ClickEvent, _, cx| this.toggle_field(index, cx)),
+        )
     }
 
     fn render_choice(
@@ -554,17 +516,8 @@ impl QuickActionModal {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         match &choice.state {
-            ChoiceState::Loading => div()
-                .w_full()
-                .flex()
-                .items_center()
+            ChoiceState::Loading => field_frame(palette)
                 .gap(px(8.0))
-                .px(ROW_PAD_X)
-                .py(ROW_PAD_Y)
-                .rounded(radius(Radius::Sm))
-                .border(BORDER_THIN)
-                .border_color(palette.border_input)
-                .bg(palette.shell)
                 .child(spinner(
                     ("qa-choice-spin", index),
                     Icon::Refresh,
@@ -579,56 +532,14 @@ impl QuickActionModal {
                         .child(tr!("integration_qa_field_loading")),
                 )
                 .into_any_element(),
-            ChoiceState::Failed(reason) => div()
-                .w_full()
-                .flex()
-                .flex_col()
-                .gap(px(6.0))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.0))
-                        .child(icon(Icon::AlertCircle, FONT_XS, palette.random))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w(px(0.0))
-                                .font_family(body_family())
-                                .text_size(px(11.5))
-                                .text_color(palette.random)
-                                .child(reason.clone()),
-                        ),
-                )
-                .child(
-                    div()
-                        .id(("qa-retry", index))
-                        .flex()
-                        .items_center()
-                        .gap(px(5.0))
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                            this.retry_dynamic(index, cx)
-                        }))
-                        .child(icon(Icon::Refresh, FONT_XXS, palette.info))
-                        .child(
-                            div()
-                                .font_family(body_family())
-                                .text_size(px(11.5))
-                                .text_color(palette.info)
-                                .child(tr!("integration_qa_field_retry")),
-                        ),
-                )
-                .into_any_element(),
+            ChoiceState::Failed(reason) => failure_with_retry(
+                ("qa-retry", index),
+                reason,
+                palette,
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.retry_dynamic(index, cx)),
+            ),
             ChoiceState::Ready(items) => {
                 let selected = selected_label(items, &choice.selected);
-                let has_selection = choice.selected.is_some();
-                let text_color = if has_selection {
-                    palette.text_primary
-                } else {
-                    palette.text_muted
-                };
-                let border_active = palette.border_active;
                 let popover = self
                     .open_choice
                     .as_ref()
@@ -639,34 +550,15 @@ impl QuickActionModal {
                             view.update(cx, |this, cx| this.close_choice(cx));
                         })
                     });
-                let trigger = div()
-                    .id(("qa-choice", index))
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(8.0))
-                    .px(ROW_PAD_X)
-                    .py(ROW_PAD_Y)
-                    .rounded(radius(Radius::Sm))
-                    .border(BORDER_THIN)
-                    .border_color(palette.border_input)
-                    .bg(palette.shell)
-                    .cursor_pointer()
-                    .hover(move |s| s.border_color(border_active))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                let trigger = choice_trigger(
+                    ("qa-choice", index),
+                    selected,
+                    choice.selected.is_some(),
+                    palette,
+                    cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.open_choice(index, window, cx)
-                    }))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .font_family(body_family())
-                            .text_size(FIELD_FONT)
-                            .text_color(text_color)
-                            .child(selected),
-                    )
-                    .child(icon(Icon::ChevronDown, FIELD_FONT, palette.text_faint));
+                    }),
+                );
                 div()
                     .relative()
                     .w_full()
@@ -935,33 +827,6 @@ fn default_int(default: &Option<QuickActionFieldValue>) -> i64 {
     match default {
         Some(QuickActionFieldValue::Int(value)) => *value,
         _ => 0,
-    }
-}
-
-fn parse_int_in_range(raw: &str, min: i64, max: i64) -> Option<i64> {
-    raw.trim()
-        .parse::<i64>()
-        .ok()
-        .filter(|value| (min..=max).contains(value))
-}
-
-fn int_entry_invalid(raw: &str, min: i64, max: i64, required: bool) -> bool {
-    if raw.trim().is_empty() {
-        required
-    } else {
-        parse_int_in_range(raw, min, max).is_none()
-    }
-}
-
-fn int_range_hint(min: i64, max: i64) -> String {
-    if max == i64::MAX {
-        tr!("integration_qa_field_range_open", min = min.to_string())
-    } else {
-        tr!(
-            "integration_qa_field_range",
-            min = min.to_string(),
-            max = max.to_string()
-        )
     }
 }
 

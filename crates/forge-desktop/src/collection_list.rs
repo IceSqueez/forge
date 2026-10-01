@@ -1,0 +1,333 @@
+use std::collections::HashSet;
+
+use forge_components::{
+    FONT_XS, FONT_XXS, ForgePalette, Icon, badge, body_family, icon, icon_button, mono_family,
+    spinner, toggle, tr,
+};
+use forge_platform_core::{CollectionItem, CollectionItemAccess, CollectionItemId};
+use gpui::{
+    AnyElement, ClickEvent, Context, EventEmitter, SharedString, Window, div, prelude::*, px,
+};
+
+use crate::collection_text::localized_collection_text;
+use crate::presentation::ActivePresentation;
+use crate::quick_action_field_rows::{FIELD_FONT, failure_with_retry, field_frame};
+
+const LIST_GAP: gpui::Pixels = px(6.0);
+const ROW_GAP: gpui::Pixels = px(10.0);
+const CONTROL_GAP: gpui::Pixels = px(8.0);
+const TOGGLE_LABEL_GAP: gpui::Pixels = px(6.0);
+const TITLE_GAP: gpui::Pixels = px(2.0);
+const REASON_GAP: gpui::Pixels = px(5.0);
+const REASON_FONT: gpui::Pixels = px(11.0);
+const EMPTY_FONT: gpui::Pixels = px(12.5);
+
+pub enum CollectionListEvent {
+    Edit(CollectionItemId),
+    Delete(CollectionItemId),
+    Toggle {
+        item: CollectionItemId,
+        toggle: String,
+        on: bool,
+    },
+    Retry,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListLoad {
+    Loading,
+    Ready,
+    Failed(String),
+}
+
+struct ToggleColumn {
+    key: String,
+    label: String,
+}
+
+pub struct CollectionList {
+    toggles: Vec<ToggleColumn>,
+    items: Vec<CollectionItem>,
+    load: ListLoad,
+    busy: HashSet<CollectionItemId>,
+}
+
+impl EventEmitter<CollectionListEvent> for CollectionList {}
+
+impl CollectionList {
+    pub fn new(toggles: impl IntoIterator<Item = (String, String)>) -> Self {
+        Self {
+            toggles: toggles
+                .into_iter()
+                .map(|(key, label)| ToggleColumn {
+                    key,
+                    label: localized_collection_text(&label),
+                })
+                .collect(),
+            items: Vec::new(),
+            load: ListLoad::Loading,
+            busy: HashSet::new(),
+        }
+    }
+
+    pub fn load(&self) -> &ListLoad {
+        &self.load
+    }
+
+    pub fn count(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn item(&self, id: &CollectionItemId) -> Option<&CollectionItem> {
+        self.items.iter().find(|item| &item.id == id)
+    }
+
+    pub fn begin_loading(&mut self, cx: &mut Context<Self>) {
+        if self.load != ListLoad::Ready {
+            self.load = ListLoad::Loading;
+            cx.notify();
+        }
+    }
+
+    pub fn apply_listing(
+        &mut self,
+        listing: Result<Vec<CollectionItem>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        match listing {
+            Ok(items) => {
+                self.busy
+                    .retain(|id| items.iter().any(|item| &item.id == id));
+                self.items = items;
+                self.load = ListLoad::Ready;
+            }
+            Err(reason) => self.load = ListLoad::Failed(reason),
+        }
+        cx.notify();
+    }
+
+    pub fn upsert(&mut self, item: CollectionItem, cx: &mut Context<Self>) {
+        match self
+            .items
+            .iter_mut()
+            .find(|existing| existing.id == item.id)
+        {
+            Some(existing) => *existing = item,
+            None => self.items.push(item),
+        }
+        cx.notify();
+    }
+
+    pub fn remove(&mut self, id: &CollectionItemId, cx: &mut Context<Self>) {
+        self.items.retain(|item| &item.id != id);
+        self.busy.remove(id);
+        cx.notify();
+    }
+
+    pub fn set_busy(&mut self, id: &CollectionItemId, busy: bool, cx: &mut Context<Self>) {
+        if busy {
+            self.busy.insert(id.clone());
+        } else {
+            self.busy.remove(id);
+        }
+        cx.notify();
+    }
+
+    fn emit_toggle(&mut self, index: usize, toggle_index: usize, cx: &mut Context<Self>) {
+        let (Some(item), Some(column)) = (self.items.get(index), self.toggles.get(toggle_index))
+        else {
+            return;
+        };
+        if self.busy.contains(&item.id) || item.access != CollectionItemAccess::Manageable {
+            return;
+        }
+        let on = !item.toggles.get(&column.key).copied().unwrap_or(false);
+        cx.emit(CollectionListEvent::Toggle {
+            item: item.id.clone(),
+            toggle: column.key.clone(),
+            on,
+        });
+    }
+
+    fn emit_for(
+        &mut self,
+        index: usize,
+        event: fn(CollectionItemId) -> CollectionListEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(item) = self.items.get(index) else {
+            return;
+        };
+        if self.busy.contains(&item.id) || item.access != CollectionItemAccess::Manageable {
+            return;
+        }
+        cx.emit(event(item.id.clone()));
+    }
+
+    fn render_row(
+        &self,
+        index: usize,
+        item: &CollectionItem,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut titles = div()
+            .flex_1()
+            .min_w(px(0.0))
+            .flex()
+            .flex_col()
+            .gap(TITLE_GAP)
+            .child(
+                div()
+                    .truncate()
+                    .font_family(body_family())
+                    .text_size(FIELD_FONT)
+                    .text_color(palette.text_primary)
+                    .child(item.title.clone()),
+            );
+        let controls = match &item.access {
+            CollectionItemAccess::ReadOnly { reason } => {
+                titles = titles.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(REASON_GAP)
+                        .child(icon(Icon::Lock, FONT_XXS, palette.text_faint))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .font_family(body_family())
+                                .text_size(REASON_FONT)
+                                .text_color(palette.text_faint)
+                                .child(localized_collection_text(reason)),
+                        ),
+                );
+                badge(
+                    palette.surface_overlay,
+                    palette.text_muted,
+                    tr!("collection_read_only"),
+                    true,
+                    FONT_XXS,
+                )
+                .flex_none()
+                .into_any_element()
+            }
+            CollectionItemAccess::Manageable if self.busy.contains(&item.id) => spinner(
+                ("collection-row-spin", index),
+                Icon::Refresh,
+                FONT_XS,
+                palette.text_muted,
+            )
+            .into_any_element(),
+            CollectionItemAccess::Manageable => self.render_controls(index, item, palette, cx),
+        };
+        field_frame(palette)
+            .gap(ROW_GAP)
+            .child(titles)
+            .child(controls)
+            .into_any_element()
+    }
+
+    fn render_controls(
+        &self,
+        index: usize,
+        item: &CollectionItem,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut controls = div().flex_none().flex().items_center().gap(CONTROL_GAP);
+        for (toggle_index, column) in self.toggles.iter().enumerate() {
+            let on = item.toggles.get(&column.key).copied().unwrap_or(false);
+            let id: SharedString = format!("collection-toggle-{toggle_index}").into();
+            controls = controls.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(TOGGLE_LABEL_GAP)
+                    .child(
+                        div()
+                            .font_family(mono_family())
+                            .text_size(FONT_XXS)
+                            .text_color(palette.text_faint)
+                            .child(column.label.to_uppercase()),
+                    )
+                    .child(toggle(on, palette).on_color(palette.success).on_click(
+                        (id, index),
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.emit_toggle(index, toggle_index, cx)
+                        }),
+                    )),
+            );
+        }
+        controls
+            .child(icon_button(Icon::Pencil, palette).on_click(
+                ("collection-row-edit", index),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.emit_for(index, CollectionListEvent::Edit, cx)
+                }),
+            ))
+            .child(
+                icon_button(Icon::Trash, palette)
+                    .ink(palette.random)
+                    .on_click(
+                        ("collection-row-delete", index),
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.emit_for(index, CollectionListEvent::Delete, cx)
+                        }),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+impl Render for CollectionList {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let mut column = div().w_full().flex().flex_col().gap(LIST_GAP);
+        match &self.load {
+            ListLoad::Loading => {
+                column = column.child(
+                    field_frame(&palette)
+                        .gap(CONTROL_GAP)
+                        .child(spinner(
+                            "collection-list-spin",
+                            Icon::Refresh,
+                            FONT_XS,
+                            palette.text_muted,
+                        ))
+                        .child(
+                            div()
+                                .font_family(body_family())
+                                .text_size(FIELD_FONT)
+                                .text_color(palette.text_muted)
+                                .child(tr!("collection_loading")),
+                        ),
+                );
+            }
+            ListLoad::Failed(reason) => {
+                column = column.child(failure_with_retry(
+                    "collection-list-retry",
+                    reason,
+                    &palette,
+                    cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(CollectionListEvent::Retry)),
+                ));
+            }
+            ListLoad::Ready if self.items.is_empty() => {
+                column = column.child(
+                    div()
+                        .font_family(body_family())
+                        .text_size(EMPTY_FONT)
+                        .text_color(palette.text_muted)
+                        .child(tr!("collection_empty")),
+                );
+            }
+            ListLoad::Ready => {
+                for (index, item) in self.items.iter().enumerate() {
+                    column = column.child(self.render_row(index, item, &palette, cx));
+                }
+            }
+        }
+        column
+    }
+}

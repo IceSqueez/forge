@@ -31,9 +31,11 @@ use crate::async_bridge;
 use crate::builtin_sections::{
     SectionHooks, SectionRefresh, SectionStepRun, StepClick, content_sections, health_grid,
 };
+use crate::collection_manager::{CollectionManager, CollectionManagerEvent};
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch, ConnectedBundle};
 use crate::in_flight_steps::InFlightSteps;
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
+use crate::integration_quick_actions::accent_color;
 use crate::integrations::{
     BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed,
     VTubeInstallSeed, YoutubeInstallSeed, kick_builtin_object, twitch_builtin_object,
@@ -98,9 +100,11 @@ pub struct IntegrationDetail {
     viewer_samples: VecDeque<(Instant, u64)>,
     pending_disconnect: Confirm<()>,
     quick_action_modal: Option<Entity<QuickActionModal>>,
+    collection_manager: Option<Entity<CollectionManager>>,
     obs_settings_modal: Option<Entity<ObsSettingsModal>>,
     history_modal: Option<Entity<RunHistoryModal>>,
     _qa_modal_sub: Option<Subscription>,
+    _collection_manager_sub: Option<Subscription>,
     _obs_modal_sub: Option<Subscription>,
     _history_modal_sub: Option<Subscription>,
     _conn_obs: Subscription,
@@ -264,9 +268,11 @@ impl IntegrationDetail {
             viewer_samples: VecDeque::new(),
             pending_disconnect: Confirm::default(),
             quick_action_modal: None,
+            collection_manager: None,
             obs_settings_modal: None,
             history_modal: None,
             _qa_modal_sub: None,
+            _collection_manager_sub: None,
             _obs_modal_sub: None,
             _history_modal_sub: None,
             _conn_obs: conn_obs,
@@ -665,7 +671,12 @@ impl IntegrationDetail {
         let Some(action) = self.quick_actions.get(idx) else {
             return;
         };
-        if !action.is_runnable() || action.collection.is_some() {
+        if !action.is_runnable() {
+            return;
+        }
+        if let Some(collection) = action.collection.clone() {
+            let accent = accent_color(action.accent, &cx.palette());
+            self.open_collection_manager(&collection, accent, cx);
             return;
         }
         let action = action.clone();
@@ -757,6 +768,50 @@ impl IntegrationDetail {
         );
     }
 
+    fn open_collection_manager(
+        &mut self,
+        collection: &CollectionId,
+        accent: Rgba,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(capability) = self.collections.clone() else {
+            return;
+        };
+        let Some(metadata) = capability
+            .collections()
+            .into_iter()
+            .find(|metadata| &metadata.id == collection)
+        else {
+            return;
+        };
+        let rt_handle = self.rt_handle.clone();
+        let manager =
+            cx.new(|cx| CollectionManager::new(capability, metadata, accent, rt_handle, cx));
+        self._collection_manager_sub =
+            Some(cx.subscribe(&manager, Self::on_collection_manager_event));
+        self.collection_manager = Some(manager);
+        cx.notify();
+    }
+
+    fn on_collection_manager_event(
+        &mut self,
+        _manager: Entity<CollectionManager>,
+        event: &CollectionManagerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            CollectionManagerEvent::Closed => {
+                self.close_collection_manager();
+                cx.notify();
+            }
+        }
+    }
+
+    fn close_collection_manager(&mut self) {
+        self.collection_manager = None;
+        self._collection_manager_sub = None;
+    }
+
     fn close_quick_action_modal(&mut self, cx: &mut Context<Self>) {
         self.quick_action_modal = None;
         self._qa_modal_sub = None;
@@ -818,6 +873,7 @@ impl IntegrationDetail {
         self.control = object.control;
         self.collections = object.collections;
         self.connect = None;
+        self.close_collection_manager();
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
         self._health_bridge = Self::spawn_health_bridge(&self.health, cx);
@@ -838,6 +894,7 @@ impl IntegrationDetail {
                 .delete(&forge_storage::CredentialId::new(key))
                 .await;
         });
+        self.close_collection_manager();
         self.twitch_reauth_required = false;
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
@@ -1369,6 +1426,7 @@ impl Render for IntegrationDetail {
             .child(frame)
             .children(disconnect_overlay)
             .children(self.quick_action_modal.clone())
+            .children(self.collection_manager.clone())
             .children(self.obs_settings_modal.clone())
             .children(self.history_modal.clone())
     }

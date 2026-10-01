@@ -9,6 +9,7 @@ use super::enable_reward::{
     config_fields, default_config, execute_bool_runner, validate_reward_id,
 };
 use super::identity::SelfIdentity;
+use crate::custom_rewards::RewardBody;
 use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.channel_points.disable_reward";
@@ -74,8 +75,7 @@ impl SubActionRunner for DisableRewardRunner {
             &self.transport,
             &self.identity,
             KIND_ID,
-            "is_enabled",
-            false,
+            RewardBody::new().enabled(false),
             config,
             ctx,
         )

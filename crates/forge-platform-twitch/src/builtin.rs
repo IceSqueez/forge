@@ -10,12 +10,12 @@ use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 #[cfg(test)]
 use forge_platform_core::TokenBucketRateLimiter;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
-    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
-    HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction, QuickActionAccent,
-    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter, SectionIcon,
-    SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
+    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, CollectionId,
+    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
+    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction,
+    QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter,
+    SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
 use std::collections::BTreeMap;
 
@@ -32,6 +32,7 @@ use crate::helix::{
     HelixTransport,
 };
 use crate::lifecycle::{LifecycleSnapshot, TwitchLifecycle};
+use crate::reward_collection::REWARDS_COLLECTION;
 use crate::sub_actions::identity::{BroadcasterTier, resolve_broadcaster_tier};
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
@@ -214,6 +215,7 @@ impl TwitchIntegrationBundle {
             if !already_connected {
                 Self::spawn_identity_refresh(self);
                 Self::spawn_lifecycle_seed(self);
+                self.lifecycle.rewards_changed();
             }
         } else {
             self.lifecycle.forget_phases();
@@ -312,6 +314,18 @@ impl TwitchIntegrationBundle {
 
     pub(crate) fn credentials_manager(&self) -> &TwitchCredentialsManager {
         &self.credentials_manager
+    }
+
+    pub(crate) fn helix(&self) -> &dyn HelixTransport {
+        self.transport.as_ref()
+    }
+
+    pub(crate) fn broadcaster_id(&self) -> &str {
+        &self.config.broadcaster_id
+    }
+
+    pub(crate) fn lifecycle(&self) -> &TwitchLifecycle {
+        &self.lifecycle
     }
 
     pub(crate) fn handle_slot(&self) -> &Mutex<Option<TwitchChatHandle>> {
@@ -651,7 +665,7 @@ fn text_field(key: &str, label: &str, default: &str) -> QuickActionField {
     }
 }
 
-fn text_field_placeholder(
+pub(crate) fn text_field_placeholder(
     key: &str,
     label: &str,
     default: &str,
@@ -670,7 +684,7 @@ fn multiline_field(key: &str, label: &str, default: &str) -> QuickActionField {
     }
 }
 
-fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
+pub(crate) fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
         label: label.to_owned(),
@@ -682,7 +696,13 @@ fn toggle_field(key: &str, label: &str, default: bool) -> QuickActionField {
     }
 }
 
-fn int_field(key: &str, label: &str, default: i64, min: i64, max: i64) -> QuickActionField {
+pub(crate) fn int_field(
+    key: &str,
+    label: &str,
+    default: i64,
+    min: i64,
+    max: i64,
+) -> QuickActionField {
     QuickActionField {
         key: key.to_owned(),
         label: label.to_owned(),
@@ -762,6 +782,31 @@ fn quick_action(
         picker: None,
         fields,
         collection: None,
+    }
+}
+
+fn manage_collection_action(
+    label: &str,
+    icon: &str,
+    accent: QuickActionAccent,
+    enabled: bool,
+    group: &str,
+    collection: CollectionId,
+) -> QuickAction {
+    QuickAction {
+        collection: Some(collection),
+        ..quick_action(
+            label,
+            icon,
+            accent,
+            enabled,
+            None,
+            group,
+            false,
+            "",
+            BTreeMap::new(),
+            Vec::new(),
+        )
     }
 }
 
@@ -1271,29 +1316,13 @@ impl QuickActions for TwitchIntegrationBundle {
                 BTreeMap::new(),
                 Vec::new(),
             ),
-            quick_action(
-                "Enable / pause reward",
-                "toggle-right",
-                QuickActionAccent::Success,
+            manage_collection_action(
+                "Manage rewards",
+                "adjustments",
+                QuickActionAccent::AccentPinkLight,
                 connected,
-                None,
                 "Channel Points",
-                false,
-                "twitch.channel_points.enable_reward",
-                config([("reward_id", blank())]),
-                Vec::new(),
-            ),
-            quick_action(
-                "Update reward cost",
-                "edit",
-                QuickActionAccent::Info,
-                connected,
-                None,
-                "Channel Points",
-                false,
-                "twitch.channel_points.update_reward",
-                config([("reward_id", blank()), ("cost", Variant::Int(500))]),
-                vec![int_field("cost", "Cost (Channel Points)", 500, 1, i64::MAX)],
+                CollectionId::new(REWARDS_COLLECTION),
             ),
             quick_action(
                 "Fulfill redemption",

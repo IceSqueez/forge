@@ -219,8 +219,8 @@ pub fn twitch_builtin_object(
         health: bundle.clone(),
         content: bundle.clone(),
         quick: bundle.clone(),
-        control: Some(bundle as Arc<dyn BuiltinControl>),
-        collections: None,
+        control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
+        collections: Some(bundle as Arc<dyn BuiltinCollections>),
         obs_client: None,
     }
 }

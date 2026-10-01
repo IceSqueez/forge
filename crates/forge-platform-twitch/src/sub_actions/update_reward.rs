@@ -11,12 +11,12 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::custom_rewards::{
+    MAX_PROMPT_CHARS, MAX_TITLE_CHARS, RewardBody, is_valid_hex_color, update_request,
+};
+use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.channel_points.update_reward";
-const MAX_TITLE_CHARS: usize = 45;
-const MAX_PROMPT_CHARS: usize = 200;
-const HEX_COLOR_LEN: usize = 7;
 
 const UNCHANGED: &str = "unchanged";
 const ON: &str = "on";
@@ -36,20 +36,13 @@ impl UpdateRewardRunner {
         }
     }
 
-    async fn apply(
-        &self,
-        reward_id: &str,
-        body: serde_json::Map<String, serde_json::Value>,
-    ) -> SubActionOutcome {
+    async fn apply(&self, reward_id: &str, body: RewardBody) -> SubActionOutcome {
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        let request = HelixRequest::new(HelixMethod::Patch, "/helix/channel_points/custom_rewards")
-            .query("broadcaster_id", user_id)
-            .query("id", reward_id.to_owned())
-            .body(serde_json::Value::Object(body));
+        let request = update_request(user_id, reward_id, body);
 
         SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
@@ -81,77 +74,43 @@ fn mode_toggle<'a>(config: &'a SubActionConfig, key: &str) -> Option<&'a str> {
     config.str(key)
 }
 
-fn is_valid_hex_color(s: &str) -> bool {
-    if s.len() != HEX_COLOR_LEN {
-        return false;
-    }
-    let mut chars = s.chars();
-    chars.next() == Some('#') && chars.all(|c| c.is_ascii_hexdigit())
-}
-
-fn build_body(
-    config: &SubActionConfig,
-    ctx: &RunContext<'_>,
-) -> serde_json::Map<String, serde_json::Value> {
-    let mut body = serde_json::Map::new();
+fn build_body(config: &SubActionConfig, ctx: &RunContext<'_>) -> RewardBody {
+    let mut body = RewardBody::new();
 
     if let Some(raw) = read_opt_str(config, "title") {
-        body.insert("title".to_owned(), ctx.arg_stack.interpolate(&raw).into());
+        body = body.title(ctx.arg_stack.interpolate(&raw));
     }
     if let Some(cost) = read_opt_int(config, "cost") {
-        body.insert("cost".to_owned(), cost.into());
+        body = body.cost(cost);
     }
     if let Some(raw) = read_opt_str(config, "prompt") {
-        body.insert("prompt".to_owned(), ctx.arg_stack.interpolate(&raw).into());
+        body = body.prompt(ctx.arg_stack.interpolate(&raw));
     }
     if let Some(hex) = read_opt_str(config, "background_color_hex")
         && is_valid_hex_color(&hex)
     {
-        body.insert("background_color".to_owned(), hex.into());
+        body = body.background_color(hex);
     }
-
     if let Some(value) = read_opt_int(config, "max_per_stream") {
-        if value > 0 {
-            body.insert("is_max_per_stream_enabled".to_owned(), true.into());
-            body.insert("max_per_stream".to_owned(), value.into());
-        } else {
-            body.insert("is_max_per_stream_enabled".to_owned(), false.into());
-        }
+        body = body.max_per_stream(value);
     }
     if let Some(value) = read_opt_int(config, "max_per_user_per_stream") {
-        if value > 0 {
-            body.insert("is_max_per_user_per_stream_enabled".to_owned(), true.into());
-            body.insert("max_per_user_per_stream".to_owned(), value.into());
-        } else {
-            body.insert(
-                "is_max_per_user_per_stream_enabled".to_owned(),
-                false.into(),
-            );
-        }
+        body = body.max_per_user_per_stream(value);
     }
     if let Some(value) = read_opt_int(config, "global_cooldown_seconds") {
-        if value > 0 {
-            body.insert("is_global_cooldown_enabled".to_owned(), true.into());
-            body.insert("global_cooldown_seconds".to_owned(), value.into());
-        } else {
-            body.insert("is_global_cooldown_enabled".to_owned(), false.into());
-        }
+        body = body.global_cooldown_seconds(value);
     }
-
     if let Some(on) = toggle_to_bool(mode_toggle(config, "is_enabled")) {
-        body.insert("is_enabled".to_owned(), on.into());
+        body = body.enabled(on);
     }
     if let Some(on) = toggle_to_bool(mode_toggle(config, "requires_user_input")) {
-        body.insert("is_user_input_required".to_owned(), on.into());
+        body = body.user_input_required(on);
     }
     if let Some(on) = toggle_to_bool(mode_toggle(config, "should_redemptions_skip_request_queue")) {
-        body.insert(
-            "should_redemptions_skip_request_queue".to_owned(),
-            on.into(),
-        );
+        body = body.skip_request_queue(on);
     }
     if let Some(on) = toggle_to_bool(mode_toggle(config, "is_paused")) {
-        body.insert("is_paused".to_owned(), on.into());
+        body = body.paused(on);
     }
 
     body
@@ -410,7 +369,7 @@ impl SubActionRunner for UpdateRewardRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };

@@ -1,7 +1,7 @@
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use forge_platform_core::QuickActionLiveness;
+use forge_platform_core::{CollectionRevisionSignal, CollectionRevisions, QuickActionLiveness};
 
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
@@ -11,6 +11,12 @@ const POLLS_PATH: &str = "/helix/polls";
 const PREDICTIONS_PATH: &str = "/helix/predictions";
 const STATUS_ACTIVE: &str = "ACTIVE";
 const STATUS_LOCKED: &str = "LOCKED";
+
+const REWARD_COLLECTION_TOPICS: &[&str] = &[
+    "channel.channel_points_custom_reward.add",
+    "channel.channel_points_custom_reward.update",
+    "channel.channel_points_custom_reward.remove",
+];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum PollPhase {
@@ -39,6 +45,7 @@ struct ChannelEntities {
 #[derive(Clone, Default)]
 pub struct TwitchLifecycle {
     entities: Arc<RwLock<ChannelEntities>>,
+    rewards: Arc<CollectionRevisionSignal>,
 }
 
 impl TwitchLifecycle {
@@ -63,6 +70,10 @@ impl TwitchLifecycle {
         event: &serde_json::Value,
         self_broadcaster_id: &str,
     ) {
+        if REWARD_COLLECTION_TOPICS.contains(&subscription_type) {
+            self.rewards_changed();
+            return;
+        }
         let mut entities = self.entities.write().unwrap_or_else(|p| p.into_inner());
         match subscription_type {
             "channel.poll.begin" | "channel.poll.progress" => entities.poll = PollPhase::Active,
@@ -83,6 +94,14 @@ impl TwitchLifecycle {
             }
             _ => {}
         }
+    }
+
+    pub(crate) fn rewards_changed(&self) {
+        self.rewards.bump();
+    }
+
+    pub(crate) fn reward_revisions(&self) -> CollectionRevisions {
+        self.rewards.subscribe()
     }
 
     pub(crate) fn raid_started(&self) {

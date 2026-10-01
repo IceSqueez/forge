@@ -7,12 +7,14 @@ pub mod chat_platform;
 mod control;
 pub mod credentials;
 pub mod credentials_manager;
+mod custom_rewards;
 mod event_channel;
 pub mod helix;
 mod lifecycle;
 #[cfg(test)]
 mod log_capture;
 mod payload_fields;
+mod reward_collection;
 pub mod sub_actions;
 pub mod subscriptions;
 pub mod triggers;

@@ -11,7 +11,8 @@ use time::OffsetDateTime;
 
 use super::enable_reward::{config_fields, default_config, validate_reward_id};
 use super::identity::SelfIdentity;
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::custom_rewards::delete_request;
+use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.channel_points.delete_reward";
 
@@ -106,10 +107,7 @@ impl DeleteRewardRunner {
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
 
-        let request =
-            HelixRequest::new(HelixMethod::Delete, "/helix/channel_points/custom_rewards")
-                .query("broadcaster_id", user_id)
-                .query("id", reward_id.to_owned());
+        let request = delete_request(user_id, reward_id);
 
         SubActionOutcome::from_result(&self.transport.execute(request).await)
     }
@@ -123,7 +121,7 @@ mod tests {
     use forge_types::{ArgStack, SubActionOutcome, Variant};
 
     use super::*;
-    use crate::helix::HelixError;
+    use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };

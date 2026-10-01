@@ -11,12 +11,12 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::custom_rewards::{
+    MAX_PROMPT_CHARS, MAX_TITLE_CHARS, RewardBody, create_request, first_row, is_valid_hex_color,
+};
+use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.channel_points.create_reward";
-const MAX_TITLE_CHARS: usize = 45;
-const MAX_PROMPT_CHARS: usize = 200;
-const HEX_COLOR_LEN: usize = 7;
 
 pub struct CreateRewardRunner {
     transport: Arc<dyn HelixTransport>,
@@ -37,11 +37,7 @@ impl CreateRewardRunner {
             Err(e) => return Err(SubActionOutcome::Failed(e.to_string())),
         };
 
-        let body = build_body(cfg);
-
-        let request = HelixRequest::new(HelixMethod::Post, "/helix/channel_points/custom_rewards")
-            .query("broadcaster_id", user_id)
-            .body(serde_json::Value::Object(body));
+        let request = create_request(user_id, build_body(cfg));
 
         let resp = self
             .transport
@@ -49,9 +45,7 @@ impl CreateRewardRunner {
             .await
             .map_err(|e| SubActionOutcome::Failed(e.to_string()))?;
 
-        resp["data"]
-            .as_array()
-            .and_then(|arr| arr.first())
+        first_row(&resp)
             .and_then(|r| r["id"].as_str())
             .map(|s| s.to_owned())
             .ok_or_else(|| SubActionOutcome::Failed("empty response from create_reward".to_owned()))
@@ -71,71 +65,25 @@ struct ResolvedConfig {
     background_color_hex: String,
 }
 
-fn build_body(cfg: &ResolvedConfig) -> serde_json::Map<String, serde_json::Value> {
-    let mut body = serde_json::Map::new();
-
-    body.insert("title".to_owned(), cfg.title.clone().into());
-    body.insert("cost".to_owned(), cfg.cost.into());
-    body.insert("is_enabled".to_owned(), cfg.is_enabled.into());
-    body.insert(
-        "is_user_input_required".to_owned(),
-        cfg.is_user_input_required.into(),
-    );
-    body.insert(
-        "should_redemptions_skip_request_queue".to_owned(),
-        cfg.should_redemptions_skip_request_queue.into(),
-    );
+fn build_body(cfg: &ResolvedConfig) -> RewardBody {
+    let mut body = RewardBody::new()
+        .title(cfg.title.clone())
+        .cost(cfg.cost)
+        .enabled(cfg.is_enabled)
+        .user_input_required(cfg.is_user_input_required)
+        .skip_request_queue(cfg.should_redemptions_skip_request_queue);
 
     if cfg.is_user_input_required && !cfg.prompt.is_empty() {
-        body.insert("prompt".to_owned(), cfg.prompt.clone().into());
+        body = body.prompt(cfg.prompt.clone());
     }
 
     if !cfg.background_color_hex.is_empty() {
-        body.insert(
-            "background_color".to_owned(),
-            cfg.background_color_hex.clone().into(),
-        );
+        body = body.background_color(cfg.background_color_hex.clone());
     }
 
-    if cfg.max_per_stream > 0 {
-        body.insert("is_max_per_stream_enabled".to_owned(), true.into());
-        body.insert("max_per_stream".to_owned(), cfg.max_per_stream.into());
-    } else {
-        body.insert("is_max_per_stream_enabled".to_owned(), false.into());
-    }
-
-    if cfg.max_per_user_per_stream > 0 {
-        body.insert("is_max_per_user_per_stream_enabled".to_owned(), true.into());
-        body.insert(
-            "max_per_user_per_stream".to_owned(),
-            cfg.max_per_user_per_stream.into(),
-        );
-    } else {
-        body.insert(
-            "is_max_per_user_per_stream_enabled".to_owned(),
-            false.into(),
-        );
-    }
-
-    if cfg.global_cooldown_seconds > 0 {
-        body.insert("is_global_cooldown_enabled".to_owned(), true.into());
-        body.insert(
-            "global_cooldown_seconds".to_owned(),
-            cfg.global_cooldown_seconds.into(),
-        );
-    } else {
-        body.insert("is_global_cooldown_enabled".to_owned(), false.into());
-    }
-
-    body
-}
-
-fn is_valid_hex_color(s: &str) -> bool {
-    if s.len() != HEX_COLOR_LEN {
-        return false;
-    }
-    let mut chars = s.chars();
-    chars.next() == Some('#') && chars.all(|c| c.is_ascii_hexdigit())
+    body.max_per_stream(cfg.max_per_stream)
+        .max_per_user_per_stream(cfg.max_per_user_per_stream)
+        .global_cooldown_seconds(cfg.global_cooldown_seconds)
 }
 
 #[async_trait]
@@ -433,7 +381,7 @@ impl SubActionRunner for CreateRewardRunner {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::helix::HelixError;
+    use crate::helix::{HelixError, HelixMethod};
     use crate::sub_actions::test_support::{
         MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
     };

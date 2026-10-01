@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use forge_platform_core::{LiveViewerSource, ViewerReport};
 use forge_types::PlatformId;
 use futures_core::Stream;
+use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
+use tokio::task::AbortHandle;
 use tokio_stream::StreamExt as _;
 use tokio_stream::wrappers::WatchStream;
 
@@ -20,13 +22,18 @@ pub enum LiveViewerCount {
 pub(crate) type LivePlatforms = BTreeSet<PlatformId>;
 
 enum AggregatorCommand {
+    Attach {
+        generation: u64,
+        platform: PlatformId,
+    },
     Report {
-        slot: u64,
+        generation: u64,
         platform: PlatformId,
         report: ViewerReport,
     },
-    Drop {
-        slot: u64,
+    Detach {
+        generation: u64,
+        platform: PlatformId,
     },
 }
 
@@ -35,19 +42,31 @@ pub struct LiveViewerAggregatorHandle {
     commands: mpsc::Sender<AggregatorCommand>,
     output: watch::Receiver<LiveViewerCount>,
     live_platforms: watch::Receiver<LivePlatforms>,
-    next_slot: Arc<AtomicU64>,
+    next_generation: Arc<AtomicU64>,
+    forwarders: Arc<Mutex<BTreeMap<PlatformId, AbortHandle>>>,
+    runtime: Handle,
 }
 
 impl LiveViewerAggregatorHandle {
     pub fn register(&self, platform: PlatformId, source: Box<dyn LiveViewerSource>) {
-        let slot = self.next_slot.fetch_add(1, Ordering::Relaxed);
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let commands = self.commands.clone();
-        tokio::spawn(async move {
+        let forwarder = self.runtime.spawn(async move {
+            if commands
+                .send(AggregatorCommand::Attach {
+                    generation,
+                    platform,
+                })
+                .await
+                .is_err()
+            {
+                return;
+            }
             let mut stream = source.viewer_reports();
             while let Some(report) = stream.next().await {
                 if commands
                     .send(AggregatorCommand::Report {
-                        slot,
+                        generation,
                         platform,
                         report,
                     })
@@ -57,7 +76,34 @@ impl LiveViewerAggregatorHandle {
                     return;
                 }
             }
-            let _ = commands.send(AggregatorCommand::Drop { slot }).await;
+            let _ = commands
+                .send(AggregatorCommand::Detach {
+                    generation,
+                    platform,
+                })
+                .await;
+        });
+        let replaced = self
+            .lock_forwarders()
+            .insert(platform, forwarder.abort_handle());
+        if let Some(previous) = replaced {
+            previous.abort();
+        }
+    }
+
+    pub fn unregister(&self, platform: PlatformId) {
+        if let Some(previous) = self.lock_forwarders().remove(&platform) {
+            previous.abort();
+        }
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        let commands = self.commands.clone();
+        self.runtime.spawn(async move {
+            let _ = commands
+                .send(AggregatorCommand::Detach {
+                    generation,
+                    platform,
+                })
+                .await;
         });
     }
 
@@ -67,6 +113,10 @@ impl LiveViewerAggregatorHandle {
 
     pub(crate) fn live_platforms(&self) -> watch::Receiver<LivePlatforms> {
         self.live_platforms.clone()
+    }
+
+    fn lock_forwarders(&self) -> std::sync::MutexGuard<'_, BTreeMap<PlatformId, AbortHandle>> {
+        self.forwarders.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -79,7 +129,70 @@ pub fn spawn_live_viewer_aggregator() -> LiveViewerAggregatorHandle {
         commands: command_tx,
         output: output_rx,
         live_platforms: platforms_rx,
-        next_slot: Arc::new(AtomicU64::new(0)),
+        next_generation: Arc::new(AtomicU64::new(0)),
+        forwarders: Arc::new(Mutex::new(BTreeMap::new())),
+        runtime: Handle::current(),
+    }
+}
+
+#[derive(Default)]
+struct PlatformSlots {
+    generations: BTreeMap<PlatformId, u64>,
+    counts: BTreeMap<PlatformId, u64>,
+}
+
+impl PlatformSlots {
+    fn claim(&mut self, platform: PlatformId, generation: u64) -> bool {
+        match self.generations.get(&platform) {
+            Some(current) if generation < *current => false,
+            _ => {
+                self.generations.insert(platform, generation);
+                true
+            }
+        }
+    }
+
+    fn apply(&mut self, command: AggregatorCommand) {
+        match command {
+            AggregatorCommand::Report {
+                generation,
+                platform,
+                report: ViewerReport::Live { count },
+            } => {
+                if self.claim(platform, generation) {
+                    self.counts.insert(platform, count);
+                }
+            }
+            AggregatorCommand::Attach {
+                generation,
+                platform,
+            }
+            | AggregatorCommand::Detach {
+                generation,
+                platform,
+            }
+            | AggregatorCommand::Report {
+                generation,
+                platform,
+                report: ViewerReport::Absent,
+            } => {
+                if self.claim(platform, generation) {
+                    self.counts.remove(&platform);
+                }
+            }
+        }
+    }
+
+    fn total(&self) -> LiveViewerCount {
+        if self.counts.is_empty() {
+            LiveViewerCount::Empty
+        } else {
+            LiveViewerCount::Reporting(self.counts.values().copied().fold(0, u64::saturating_add))
+        }
+    }
+
+    fn live_platforms(&self) -> LivePlatforms {
+        self.counts.keys().copied().collect()
     }
 }
 
@@ -88,35 +201,10 @@ async fn aggregate(
     output: watch::Sender<LiveViewerCount>,
     live_platforms: watch::Sender<LivePlatforms>,
 ) {
-    let mut reporting: BTreeMap<u64, (PlatformId, u64)> = BTreeMap::new();
+    let mut slots = PlatformSlots::default();
     while let Some(command) = commands.recv().await {
-        match command {
-            AggregatorCommand::Report {
-                slot,
-                platform,
-                report: ViewerReport::Live { count },
-            } => {
-                reporting.insert(slot, (platform, count));
-            }
-            AggregatorCommand::Report {
-                slot,
-                report: ViewerReport::Absent,
-                ..
-            }
-            | AggregatorCommand::Drop { slot } => {
-                reporting.remove(&slot);
-            }
-        }
-        let next = if reporting.is_empty() {
-            LiveViewerCount::Empty
-        } else {
-            LiveViewerCount::Reporting(
-                reporting
-                    .values()
-                    .map(|(_, count)| *count)
-                    .fold(0, u64::saturating_add),
-            )
-        };
+        slots.apply(command);
+        let next = slots.total();
         output.send_if_modified(|current| {
             if *current == next {
                 false
@@ -125,8 +213,7 @@ async fn aggregate(
                 true
             }
         });
-        let next_platforms: LivePlatforms =
-            reporting.values().map(|(platform, _)| *platform).collect();
+        let next_platforms = slots.live_platforms();
         live_platforms.send_if_modified(|current| {
             if *current == next_platforms {
                 false

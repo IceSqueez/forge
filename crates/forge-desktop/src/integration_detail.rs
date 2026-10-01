@@ -821,6 +821,7 @@ impl IntegrationDetail {
 
     fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
         self.builtins.remove(self.status.id());
+        self.live_viewers.unregister(platform);
         let credentials = Arc::clone(&self.credentials);
         let control = self.control.take();
         let key = credential_key(platform);

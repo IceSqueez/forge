@@ -3,6 +3,7 @@ use super::sub_action_modal::{
 };
 use super::*;
 use crate::async_bridge;
+use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
     ChoiceSupport, ConfigField, ConfigFieldHandlers, FILL_VAL_FS, FoldContext,
     collect_field_values, fold_config_field, render_config_row, sparse_overrides,
@@ -1256,8 +1257,10 @@ impl ScreenActionsView {
             on_committed: Self::on_trigger_config_committed,
         };
         let mut fields: Vec<ConfigField> = Vec::new();
+        let mut labels: Vec<SharedString> = Vec::new();
         for spec in &specs {
             fold_config_field(spec, None, &fold, &mut fields, cx);
+            config_field_labels(spec, &mut labels);
         }
 
         let name_field = cx.new(|cx| {
@@ -1273,6 +1276,7 @@ impl ScreenActionsView {
             kind_label,
             name_field,
             fields,
+            labels,
             saving: false,
             _name_sub: name_sub,
         }));
@@ -1489,6 +1493,7 @@ impl ScreenActionsView {
             for (i, field) in form.fields.iter().enumerate() {
                 col = col.child(render_config_row(
                     field,
+                    row_label(&form.labels, i, field),
                     i == last,
                     palette,
                     "actions-trigger-field",

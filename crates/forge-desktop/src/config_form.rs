@@ -684,20 +684,14 @@ fn render_choice<V: 'static>(
 
 pub(crate) fn render_config_row<V: 'static>(
     field: &ConfigField,
+    label: SharedString,
     last: bool,
     palette: &ForgePalette,
     id_prefix: &str,
     view: &Entity<V>,
     handlers: &ConfigFieldHandlers<V>,
 ) -> AnyElement {
-    let label = div()
-        .w(FILL_KEY_W)
-        .flex_none()
-        .overflow_hidden()
-        .font_family(mono_family())
-        .text_size(FILL_KEY_FS)
-        .text_color(palette.text_muted)
-        .child(field.key().to_owned());
+    let label = config_label_cell(label, FILL_KEY_W, FILL_KEY_FS, palette.text_muted);
 
     div()
         .w_full()
@@ -715,6 +709,24 @@ pub(crate) fn render_config_row<V: 'static>(
             field, palette, id_prefix, view, handlers,
         )))
         .into_any_element()
+}
+
+pub(crate) fn config_label_cell(
+    label: SharedString,
+    width: Pixels,
+    size: Pixels,
+    color: gpui::Rgba,
+) -> gpui::Div {
+    div()
+        .w(width)
+        .min_w(width)
+        .max_w(width)
+        .flex_none()
+        .whitespace_normal()
+        .font_family(mono_family())
+        .text_size(size)
+        .text_color(color)
+        .child(label)
 }
 
 #[cfg(test)]

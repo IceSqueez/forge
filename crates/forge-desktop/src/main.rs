@@ -21,6 +21,7 @@ mod cloud_credentials;
 mod cloud_tts_boot;
 mod combo_capture;
 mod combo_conflict;
+mod config_field_label;
 mod config_form;
 mod connect_flow;
 mod data_backup;

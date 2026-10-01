@@ -665,9 +665,9 @@ triggers_timer_min_messages = ≥{ $count } { $count ->
     [one] message
    *[other] messages
 }
-triggers_timer_hint_interval = interval_minutes: how often it fires, in whole minutes (1-1440). The first fire comes one interval after saving or after the stream goes live.
-triggers_timer_hint_live = only_while_live: skip fires while no platform and no OBS stream output reports live.
-triggers_timer_hint_messages = min_chat_messages: skip a fire until at least this many viewer messages arrived since the last one. 0 = off. Bot and forge's own messages do not count.
+triggers_timer_hint_interval = Interval (minutes): how often it fires, in whole minutes (1-1440). The first fire comes one interval after saving or after the stream goes live.
+triggers_timer_hint_live = Only while live: skip fires while no platform and no OBS stream output reports live.
+triggers_timer_hint_messages = Min chat messages: skip a fire until at least this many viewer messages arrived since the last one. 0 = off. Bot and forge's own messages do not count.
 triggers_sheet_section_used_in = USED IN
 triggers_sheet_delete_btn = Delete
 triggers_sheet_save_btn = Save
@@ -2495,6 +2495,42 @@ overlays_icon_category_nature = Nature
 overlays_panel_override_notice = You own these files now, so they are never regenerated: { $files }. Design changes that need generated markup or styling no longer reach them.
 config_form_choice_placeholder = Not set
 config_form_auto_placeholder = auto
+config_field_label_ban_type = Ban type
+config_field_label_case_sensitive = Case sensitive
+config_field_label_channel = Channel
+config_field_label_channel_filter = Filter by channel
+config_field_label_command_phrase = Command phrase
+config_field_label_controller = Controller
+config_field_label_controller_filter = Filter by controller
+config_field_label_decision_status = Decision status
+config_field_label_device = Device
+config_field_label_device_filter = Filter by device
+config_field_label_direction = Direction
+config_field_label_direction_filter = Filter by direction
+config_field_label_event_name = Event name
+config_field_label_from_user = From user (login)
+config_field_label_guest_state = Guest state (empty = any)
+config_field_label_hotkey_combo = Hotkey combo
+config_field_label_interval_minutes = Interval (minutes)
+config_field_label_match_text = Match text
+config_field_label_max_bits = Max bits (-1 = no limit)
+config_field_label_min_bits = Min bits
+config_field_label_min_chat_messages = Min chat messages
+config_field_label_min_donation_cents = Min donation (cents)
+config_field_label_min_level = Min level (1-5)
+config_field_label_note = Note
+config_field_label_note_filter = Filter by note
+config_field_label_only_while_live = Only while live
+config_field_label_program = Program
+config_field_label_program_filter = Filter by program
+config_field_label_redemption_status = Redemption status
+config_field_label_reward_id = Reward ID (empty = any)
+config_field_label_reward_title = Reward title (if no ID)
+config_field_label_scene = Scene
+config_field_label_scene_filter = Filter by scene
+config_field_label_source_name = Source name
+config_field_label_source_filter = Filter by source
+config_field_label_use_regex = Use regex
 
 ## Overlays - event wiring
 

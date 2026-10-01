@@ -679,9 +679,9 @@ triggers_timer_min_messages = ≥{ $count } { $count ->
     [many] повідомлень
    *[other] повідомлення
 }
-triggers_timer_hint_interval = interval_minutes: як часто спрацьовує, у цілих хвилинах (1-1440). Перше спрацювання - через один інтервал після збереження або після початку ефіру.
-triggers_timer_hint_live = only_while_live: пропускати спрацювання, поки жодна платформа і жоден вихід трансляції OBS не повідомляє про ефір.
-triggers_timer_hint_messages = min_chat_messages: пропускати спрацювання, доки від останнього не надійде щонайменше стільки повідомлень глядачів. 0 = вимк. Боти й власні повідомлення forge не рахуються.
+triggers_timer_hint_interval = Інтервал (хвилини): як часто спрацьовує, у цілих хвилинах (1-1440). Перше спрацювання - через один інтервал після збереження або після початку ефіру.
+triggers_timer_hint_live = Лише в ефірі: пропускати спрацювання, поки жодна платформа і жоден вихід трансляції OBS не повідомляє про ефір.
+triggers_timer_hint_messages = Мін. повідомлень у чаті: пропускати спрацювання, доки від останнього не надійде щонайменше стільки повідомлень глядачів. 0 = вимк. Боти й власні повідомлення forge не рахуються.
 triggers_sheet_section_used_in = ВИКОРИСТОВУЄТЬСЯ В
 triggers_sheet_delete_btn = Видалити
 triggers_sheet_save_btn = Зберегти
@@ -2556,6 +2556,42 @@ overlays_icon_category_nature = Природа
 overlays_panel_override_notice = Ці файли тепер ваші, тож вони ніколи не перегенеровуються: { $files }. Зміни дизайну, яким потрібна згенерована розмітка чи стилі, більше до них не доходять.
 config_form_choice_placeholder = Не задано
 config_form_auto_placeholder = авто
+config_field_label_ban_type = Тип бану
+config_field_label_case_sensitive = З урахуванням регістру
+config_field_label_channel = Канал
+config_field_label_channel_filter = Фільтр за каналом
+config_field_label_command_phrase = Фраза команди
+config_field_label_controller = Контролер
+config_field_label_controller_filter = Фільтр за контролером
+config_field_label_decision_status = Статус рішення
+config_field_label_device = Пристрій
+config_field_label_device_filter = Фільтр за пристроєм
+config_field_label_direction = Напрямок
+config_field_label_direction_filter = Фільтр за напрямком
+config_field_label_event_name = Назва події
+config_field_label_from_user = Від кого (логін)
+config_field_label_guest_state = Стан гостя (порожнє = усі)
+config_field_label_hotkey_combo = Комбінація клавіш
+config_field_label_interval_minutes = Інтервал (хвилини)
+config_field_label_match_text = Текст для збігу
+config_field_label_max_bits = Макс. бітсів (-1 = без меж)
+config_field_label_min_bits = Мін. бітсів
+config_field_label_min_chat_messages = Мін. повідомлень у чаті
+config_field_label_min_donation_cents = Мін. донат (центи)
+config_field_label_min_level = Мін. рівень (1-5)
+config_field_label_note = Нота
+config_field_label_note_filter = Фільтр за нотою
+config_field_label_only_while_live = Лише в ефірі
+config_field_label_program = Програма
+config_field_label_program_filter = Фільтр за програмою
+config_field_label_redemption_status = Статус викупу
+config_field_label_reward_id = ID нагороди (порожнє = усі)
+config_field_label_reward_title = Назва нагороди (без ID)
+config_field_label_scene = Сцена
+config_field_label_scene_filter = Фільтр за сценою
+config_field_label_source_name = Назва джерела
+config_field_label_source_filter = Фільтр за джерелом
+config_field_label_use_regex = Регулярний вираз
 
 ## Оверлеї - привʼязка до події
 

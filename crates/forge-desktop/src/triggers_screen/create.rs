@@ -1,5 +1,6 @@
 use super::{TriggersRegistryView, load_rows, platform_dot_color, timer_field_hints};
 use crate::async_bridge;
+use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
     ChoiceSupport, ConfigField, ConfigFieldHandlers, FILL_VAL_FS, FoldContext,
     collect_field_values, fold_config_field, render_config_row, sparse_overrides,
@@ -36,6 +37,7 @@ pub(super) struct CreateFillForm {
     kind_label: String,
     name_field: Entity<TextInput>,
     fields: Vec<ConfigField>,
+    labels: Vec<SharedString>,
     saving: bool,
     _name_sub: Subscription,
 }
@@ -117,8 +119,10 @@ impl TriggersRegistryView {
             on_committed: Self::on_create_config_committed,
         };
         let mut fields: Vec<ConfigField> = Vec::new();
+        let mut labels: Vec<SharedString> = Vec::new();
         for spec in &specs {
             fold_config_field(spec, None, &fold, &mut fields, cx);
+            config_field_labels(spec, &mut labels);
         }
 
         let name_field = cx.new(|cx| {
@@ -133,6 +137,7 @@ impl TriggersRegistryView {
             kind_label,
             name_field,
             fields,
+            labels,
             saving: false,
             _name_sub: name_sub,
         }));
@@ -346,6 +351,7 @@ impl TriggersRegistryView {
             for (i, field) in form.fields.iter().enumerate() {
                 col = col.child(render_config_row(
                     field,
+                    row_label(&form.labels, i, field),
                     i == last,
                     palette,
                     "triggers-create-field",

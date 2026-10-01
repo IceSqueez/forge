@@ -154,6 +154,7 @@ struct TriggerInstanceRow {
 struct TriggerDetail {
     instance: TriggerInstance,
     fields: Vec<ConfigField>,
+    labels: Vec<SharedString>,
     used_in: Vec<(ActionId, String)>,
     cooldown_input: Entity<TextInput>,
     cooldown_per_user: bool,

@@ -1,8 +1,9 @@
 use super::*;
 use crate::async_bridge;
+use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
-    ChoiceSupport, ConfigFieldHandlers, FoldContext, collect_field_values, fold_config_field,
-    render_config_control, sparse_overrides,
+    ChoiceSupport, ConfigFieldHandlers, FoldContext, collect_field_values, config_label_cell,
+    fold_config_field, render_config_control, sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
 use forge_components::{
@@ -91,8 +92,10 @@ impl TriggersRegistryView {
             on_committed: Self::on_config_committed,
         };
         let mut fields: Vec<ConfigField> = Vec::new();
+        let mut labels: Vec<SharedString> = Vec::new();
         for spec in &specs {
             fold_config_field(spec, None, &fold, &mut fields, cx);
+            config_field_labels(spec, &mut labels);
         }
 
         let cooldown_per_user = !data.instance.cooldown_global;
@@ -104,6 +107,7 @@ impl TriggersRegistryView {
         self.detail = Some(TriggerDetail {
             instance: data.instance,
             fields,
+            labels,
             used_in: data.used_in,
             cooldown_input,
             cooldown_per_user,
@@ -583,7 +587,15 @@ impl TriggersRegistryView {
             let last = detail.fields.len().saturating_sub(1);
             let mut col = div().flex().flex_col();
             for (i, field) in detail.fields.iter().enumerate() {
-                col = col.child(self.render_config_row(field, &overridden, i == last, palette, cx));
+                let label = row_label(&detail.labels, i, field);
+                col = col.child(self.render_config_row(
+                    field,
+                    label,
+                    &overridden,
+                    i == last,
+                    palette,
+                    cx,
+                ));
             }
             col.into_any_element()
         };
@@ -616,6 +628,7 @@ impl TriggersRegistryView {
     fn render_config_row(
         &self,
         field: &ConfigField,
+        label: SharedString,
         overridden: &HashMap<&str, bool>,
         last: bool,
         palette: &ForgePalette,
@@ -629,14 +642,7 @@ impl TriggersRegistryView {
             palette.text_muted
         };
 
-        let label = div()
-            .w(CFG_KEY_W)
-            .flex_none()
-            .overflow_hidden()
-            .font_family(mono_family())
-            .text_size(CFG_KEY_FS)
-            .text_color(key_color)
-            .child(key.clone());
+        let label = config_label_cell(label, CFG_KEY_W, CFG_KEY_FS, key_color);
 
         let value = render_config_control(
             field,

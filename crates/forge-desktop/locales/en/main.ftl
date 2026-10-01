@@ -2604,8 +2604,9 @@ config_field_label_only_while_live = Only while live
 config_field_label_program = Program
 config_field_label_program_filter = Filter by program
 config_field_label_redemption_status = Redemption status
-config_field_label_reward_id = Reward ID (empty = any)
-config_field_label_reward_title = Reward title (if no ID)
+config_field_label_reward = Reward
+config_field_label_reward_id = Reward (empty = any)
+config_field_label_reward_title = Reward title (if no reward chosen)
 config_field_label_scene = Scene
 config_field_label_scene_filter = Filter by scene
 config_field_label_source_name = Source name

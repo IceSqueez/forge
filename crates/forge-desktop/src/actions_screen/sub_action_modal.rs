@@ -1,6 +1,7 @@
 use super::editor::{step_glyph, sub_category_color};
 use super::*;
 use crate::async_bridge;
+use crate::config_field_label::localized_label;
 use crate::config_form::dependent_options;
 use crate::presentation::ActivePresentation;
 use forge_components::{
@@ -1376,7 +1377,7 @@ fn push_form_field(
             let options = options_map.get(*options_key).cloned().unwrap_or_default();
             out.push(SubFormField::Select {
                 key: (*key).to_owned(),
-                label: (*label).to_owned(),
+                label: localized_label(label),
                 options_key: Some((*options_key).to_owned()),
                 options,
                 gate,

@@ -2,6 +2,7 @@ use crate::async_bridge;
 use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
 use crate::config_form::CollectionChoices;
 use crate::integrations::BuiltinRegistry;
+use crate::obs_catalog_options::ObsCatalogField;
 use crate::presentation::ActivePresentation;
 use crate::run_history_modal::RunHistoryModal;
 use crate::screen::Screen;
@@ -189,6 +190,7 @@ pub struct ScreenActionsView {
     builtins: BuiltinRegistry,
     collection_options: ChoiceOptions,
     sub_form_choice_fields: Vec<CollectionChoiceField>,
+    sub_form_obs_fields: Vec<ObsCatalogField>,
     _collection_watch: Vec<gpui::Task<()>>,
     concurrent_queue_ids: HashSet<String>,
     tree_width: Pixels,
@@ -273,6 +275,7 @@ impl ScreenActionsView {
             builtins: BuiltinRegistry::default(),
             collection_options: ChoiceOptions::new(),
             sub_form_choice_fields: Vec::new(),
+            sub_form_obs_fields: Vec::new(),
             _collection_watch: Vec::new(),
             concurrent_queue_ids: HashSet::new(),
             tree_width: LEFT_PANEL_W,

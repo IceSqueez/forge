@@ -42,7 +42,7 @@ fn descriptor_label(spec: &FormField) -> &'static str {
     }
 }
 
-fn localized_label(english: &'static str) -> String {
+pub(crate) fn localized_label(english: &'static str) -> String {
     match english {
         "Ban type" => tr!("config_field_label_ban_type"),
         "Case sensitive" => tr!("config_field_label_case_sensitive"),
@@ -73,6 +73,7 @@ fn localized_label(english: &'static str) -> String {
         "Program" => tr!("config_field_label_program"),
         "Program (leave empty for any)" => tr!("config_field_label_program_filter"),
         "Redemption status" => tr!("config_field_label_redemption_status"),
+        "Reward ID" => tr!("config_field_label_reward"),
         "Reward ID (leave blank to match any reward)" => tr!("config_field_label_reward_id"),
         "Reward title (used only when Reward ID is blank; leave blank to match any)" => {
             tr!("config_field_label_reward_title")

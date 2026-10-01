@@ -2670,8 +2670,9 @@ config_field_label_only_while_live = Лише в ефірі
 config_field_label_program = Програма
 config_field_label_program_filter = Фільтр за програмою
 config_field_label_redemption_status = Статус викупу
-config_field_label_reward_id = ID нагороди (порожнє = усі)
-config_field_label_reward_title = Назва нагороди (без ID)
+config_field_label_reward = Нагорода
+config_field_label_reward_id = Нагорода (порожнє = усі)
+config_field_label_reward_title = Назва нагороди (якщо нагороду не вибрано)
 config_field_label_scene = Сцена
 config_field_label_scene_filter = Фільтр за сценою
 config_field_label_source_name = Назва джерела

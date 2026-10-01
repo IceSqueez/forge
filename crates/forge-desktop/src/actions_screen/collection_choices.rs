@@ -8,6 +8,7 @@ use crate::collection_options::{
     watch_collection_revisions,
 };
 use crate::integrations::BuiltinRegistry;
+use crate::obs_catalog_options::{live_obs_client, load_obs_catalog_options, watch_obs_catalog};
 
 impl ScreenActionsView {
     #[must_use]
@@ -33,7 +34,29 @@ impl ScreenActionsView {
             Self::reload_collection_options,
             cx,
         );
+        if !self.sub_form_obs_fields.is_empty() {
+            self._collection_watch.push(watch_obs_catalog(
+                &self.bus,
+                Self::reload_obs_catalog_options,
+                cx,
+            ));
+        }
         self.reload_collection_options(cx);
+        self.reload_obs_catalog_options(cx);
+    }
+
+    fn reload_obs_catalog_options(&mut self, cx: &mut Context<Self>) {
+        if self.sub_form_obs_fields.is_empty() {
+            return;
+        }
+        let client = live_obs_client(&self.builtins);
+        let fields = self.sub_form_obs_fields.clone();
+        async_bridge::run_async(
+            &self.rt_handle,
+            load_obs_catalog_options(client, fields),
+            Self::apply_collection_options,
+            cx,
+        );
     }
 
     fn reload_collection_options(&mut self, cx: &mut Context<Self>) {

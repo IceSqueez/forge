@@ -1295,18 +1295,23 @@ fn handle_command(
             voice_id,
         } => {
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-            let unscoped_name = viewer_id
+            let scoped_key = viewer_id.to_lowercase();
+            let unscoped_key = scoped_key
                 .split_once(':')
-                .map_or(viewer_id.as_str(), |(_, name)| name);
+                .map_or(scoped_key.as_str(), |(_, name)| name);
             let target = guard
                 .aliases
                 .iter()
                 .position(|a| a.viewer_id == viewer_id)
                 .or_else(|| {
-                    guard
-                        .aliases
-                        .iter()
-                        .position(|a| a.viewer_id == unscoped_name)
+                    [scoped_key.as_str(), unscoped_key]
+                        .into_iter()
+                        .find_map(|key| {
+                            guard
+                                .aliases
+                                .iter()
+                                .position(|a| a.viewer_id.to_lowercase() == key)
+                        })
                 });
             if let Some(existing) = target.map(|index| &mut guard.aliases[index]) {
                 existing.engine_id = engine_id;

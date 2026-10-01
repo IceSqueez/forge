@@ -1129,15 +1129,6 @@ impl HotkeysScreenView {
             .into_any_element();
 
         let mut list = div().w_full().flex().flex_col().gap(LIST_GAP);
-        if self.bindings.is_empty() && self.capture != Capture::Add {
-            list = list.child(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("hotkeys_bindings_empty")),
-            );
-        }
         for (index, row) in self.bindings.iter().enumerate() {
             list = list.child(self.render_binding(index, row, palette, cx));
         }
@@ -1173,7 +1164,7 @@ impl HotkeysScreenView {
         let enabled = self.shortcuts.is_enabled(id);
         let chord = self.shortcuts.chord_of(entry);
         let dot_color = if chord.is_some() {
-            palette.brand
+            palette.warning
         } else {
             palette.text_faint
         };
@@ -1858,7 +1849,7 @@ impl Render for HotkeysScreenView {
                     .text_color(palette.text_muted)
                     .child(tr!(
                         "hotkeys_header_summary",
-                        count = self.enabled_count() as i64
+                        count = self.active_count() as i64
                     )),
             );
 

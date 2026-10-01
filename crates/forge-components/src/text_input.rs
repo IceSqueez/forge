@@ -94,6 +94,7 @@ pub struct TextInput {
     plain: bool,
     mono: bool,
     compact: bool,
+    fixed_box: Option<(Pixels, Pixels)>,
     invalid: bool,
     caret: CaretBlink,
     committed: SharedString,
@@ -134,6 +135,7 @@ impl TextInput {
             plain: false,
             mono: false,
             compact: false,
+            fixed_box: None,
             invalid: false,
             caret: CaretBlink::new(),
             committed: SharedString::default(),
@@ -166,6 +168,12 @@ impl TextInput {
     #[must_use]
     pub fn compact(mut self) -> Self {
         self.compact = true;
+        self
+    }
+
+    #[must_use]
+    pub fn fixed_box(mut self, height: Pixels, pad_x: Pixels) -> Self {
+        self.fixed_box = Some((height, pad_x));
         self
     }
 
@@ -927,9 +935,11 @@ impl Render for TextInput {
             } else {
                 spacing(Spacing::Xs, self.density)
             };
+            field = match self.fixed_box {
+                Some((height, pad_x)) => field.h(height).px(pad_x),
+                None => field.px(spacing(Spacing::Sm, self.density)).py(py),
+            };
             field = field
-                .px(spacing(Spacing::Sm, self.density))
-                .py(py)
                 .bg(surface)
                 .border(BORDER_THIN)
                 .border_color(border_color)

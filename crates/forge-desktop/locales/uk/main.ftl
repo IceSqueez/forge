@@ -2186,7 +2186,15 @@ common_duplicate = Дублювати
 ## MIDI - breadcrumb + header
 
 midi_breadcrumb_builtin = Вбудоване
-midi_header_summary = { $devices } пристроїв · { $mappings } зіставлень
+midi_header_summary = { $devices ->
+    [one] { $devices } пристрій
+    [few] { $devices } пристрої
+   *[other] { $devices } пристроїв
+    } · { $mappings ->
+    [one] { $mappings } зіставлення
+    [few] { $mappings } зіставлення
+   *[other] { $mappings } зіставлень
+    }
 
 ## MIDI - hero
 
@@ -2213,7 +2221,11 @@ midi_monitor_disabled = Вхід MIDI вимкнено - увімкни його
 ## MIDI - mappings
 
 midi_section_mappings = Зіставлення
-midi_bindings_count = { $count } прив'язок
+midi_bindings_count = { $count ->
+    [one] { $count } прив'язка
+    [few] { $count } прив'язки
+   *[other] { $count } прив'язок
+    }
 midi_value_any = будь-яке
 midi_unassigned = Не призначено - натисни, щоб обрати дію
 midi_mappings_empty = Зіставлень MIDI ще немає
@@ -2253,7 +2265,15 @@ midi_modal_save_changes = Зберегти зміни
 
 ## MIDI - footer
 
-midi_footer_left = { $devices } пристроїв підключено · { $mappings } активних зіставлень
+midi_footer_left = { $devices ->
+    [one] { $devices } пристрій підключено
+    [few] { $devices } пристрої підключено
+   *[other] { $devices } пристроїв підключено
+    } · { $mappings ->
+    [one] { $mappings } активне зіставлення
+    [few] { $mappings } активні зіставлення
+   *[other] { $mappings } активних зіставлень
+    }
 midi_engine_running = Рушій MIDI працює
 midi_engine_stopped = Рушій MIDI зупинено
 
@@ -2261,7 +2281,7 @@ midi_engine_stopped = Рушій MIDI зупинено
 
 hotkeys_breadcrumb_builtin = Вбудоване
 hotkeys_hero_title = Гарячі клавіші
-hotkeys_hero_blurb = Загальносистемні комбінації клавіш, які запускають дії, навіть коли forge працює у фоні.
+hotkeys_hero_blurb = Загальносистемні комбінації клавіш, які запускають дії, навіть коли Forge працює у фоні.
 hotkeys_hero_enabled = Увімкнено
 hotkeys_hero_disabled = Вимкнено
 hotkeys_header_summary = { $count } активних · глобально
@@ -2287,7 +2307,6 @@ hotkeys_stat_last_fired_none = ще нічого
 
 hotkeys_section_bindings = Прив'язки
 hotkeys_section_hint = подвійний клік по комбінації, щоб перепризначити
-hotkeys_bindings_empty = Гарячих клавіш ще немає.
 hotkeys_unassigned = Не призначено - обери дію
 hotkeys_scope_global = Глобальна
 hotkeys_scope_app = Застосунок

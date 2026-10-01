@@ -22,6 +22,7 @@ use gpui::{
 };
 
 use crate::async_bridge::{self, ErrorSink};
+use crate::builtin_sections::grow_cell;
 use crate::overlay_url::{
     extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
 };
@@ -55,6 +56,10 @@ const LINK_GLYPH: Pixels = px(11.0);
 const HEADER_GLYPH: Pixels = px(14.0);
 const FILE_GLYPH: Pixels = px(12.0);
 const SPARK_HEIGHT: Pixels = px(60.0);
+const SPARK_FILL_TOP_ALPHA: f32 = 0.4;
+const SPARK_STROKE_WIDTH: f32 = 1.0;
+const OVERLAY_PANEL_GROW: f32 = 1.0;
+const CLIENTS_PANEL_GROW: f32 = 1.5;
 const CLIENT_GROW: f32 = 1.4;
 const SUBS_GROW: f32 = 1.6;
 
@@ -698,6 +703,8 @@ impl ServerConsoleView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         div()
+            .w_full()
+            .min_w(px(0.0))
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
@@ -725,6 +732,7 @@ impl ServerConsoleView {
         };
 
         let field = mono_field(palette, density)
+            .flex_1()
             .child(
                 div()
                     .flex_1()
@@ -914,10 +922,12 @@ impl ServerConsoleView {
                     )),
             );
 
-        let chart = div()
-            .w_full()
-            .h(SPARK_HEIGHT)
-            .child(sparkline(&self.throughput_samples, palette.brand));
+        let chart = div().w_full().h(SPARK_HEIGHT).child(
+            sparkline(&self.throughput_samples, palette.brand)
+                .zero_baseline()
+                .fading_fill(SPARK_FILL_TOP_ALPHA)
+                .stroke_width(SPARK_STROKE_WIDTH),
+        );
 
         card(
             div()
@@ -970,7 +980,7 @@ impl ServerConsoleView {
             .items_center()
             .gap(spacing(Spacing::Xs, density))
             .child(
-                mono_field(palette, density).child(
+                mono_field(palette, density).flex_1().child(
                     div()
                         .flex_1()
                         .min_w(px(0.0))
@@ -1457,18 +1467,14 @@ impl Render for ServerConsoleView {
             .flex_row()
             .items_start()
             .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .child(self.overlay_panel(&palette, density, cx)),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .child(self.clients_panel(&palette, density, cx)),
-            );
+            .child(grow_cell(
+                self.overlay_panel(&palette, density, cx),
+                OVERLAY_PANEL_GROW,
+            ))
+            .child(grow_cell(
+                self.clients_panel(&palette, density, cx),
+                CLIENTS_PANEL_GROW,
+            ));
 
         let body = div()
             .w_full()
@@ -1480,7 +1486,8 @@ impl Render for ServerConsoleView {
             .child(self.credentials_card(&palette, density, cx))
             .child(self.stats_grid(&palette, density))
             .child(self.throughput_card(&palette, density))
-            .child(panels);
+            .child(panels)
+            .child(self.footer_bar(&palette, density));
 
         let scroll = div()
             .id("srv-scroll")
@@ -1515,8 +1522,7 @@ impl Render for ServerConsoleView {
                 .w_full()
                 .flex()
                 .flex_col()
-                .child(scroll)
-                .child(self.footer_bar(&palette, density)),
+                .child(scroll),
         );
 
         div()
@@ -1532,6 +1538,8 @@ impl Render for ServerConsoleView {
 fn mono_field(palette: &ForgePalette, density: Density) -> Div {
     div()
         .w_full()
+        .min_w(px(0.0))
+        .overflow_hidden()
         .flex()
         .items_center()
         .justify_between()

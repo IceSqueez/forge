@@ -33,13 +33,12 @@ const TYPE_FLEX: f32 = 1.0;
 const CHANNEL_FLEX: f32 = 0.7;
 
 const CONTROL_RADIUS: Pixels = px(7.0);
-const CONTROL_PAD_V: Pixels = px(7.0);
 const CONTROL_PAD_H: Pixels = px(9.0);
 const DISPLAY_PAD_H: Pixels = px(11.0);
 const CONTROL_FS: Pixels = px(12.5);
 const DISPLAY_GAP: Pixels = px(7.0);
 const LISTEN_GLYPH: Pixels = px(12.0);
-const RELEARN_HEIGHT: Pixels = px(32.0);
+const CONTROL_HEIGHT: Pixels = px(32.0);
 const FILTER_MAX_W: Pixels = px(220.0);
 const FILTER_HEADER_GAP: Pixels = px(12.0);
 
@@ -137,6 +136,7 @@ impl MidiMappingModal {
                 .with_palette(palette)
                 .mono()
                 .compact()
+                .fixed_box(CONTROL_HEIGHT, CONTROL_PAD_H)
                 .with_font_size(CONTROL_FS)
                 .static_chrome(palette.border_input, Radius::Sm);
             if !channel_text.is_empty() {
@@ -341,7 +341,7 @@ impl MidiMappingModal {
             .flex()
             .items_center()
             .gap(DISPLAY_GAP)
-            .py(CONTROL_PAD_V)
+            .h(CONTROL_HEIGHT)
             .px(DISPLAY_PAD_H)
             .rounded(CONTROL_RADIUS)
             .border(BORDER_THIN)
@@ -474,7 +474,7 @@ impl MidiMappingModal {
             .items_center()
             .justify_between()
             .gap(GRID_GAP)
-            .py(CONTROL_PAD_V)
+            .h(CONTROL_HEIGHT)
             .px(CONTROL_PAD_H)
             .rounded(CONTROL_RADIUS)
             .border(BORDER_THIN)
@@ -527,7 +527,7 @@ impl MidiMappingModal {
 
     fn render_signal(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let relearn = ghost_button_with_icon(Icon::Antenna, tr!("midi_modal_relearn"), palette)
-            .height(RELEARN_HEIGHT)
+            .height(CONTROL_HEIGHT)
             .disabled(!self.input_enabled)
             .on_click(
                 "midi-modal-relearn",

@@ -82,6 +82,7 @@ const SIG_RADIUS: Pixels = px(5.0);
 const SIG_PAD_V: Pixels = px(3.0);
 const SIG_PAD_H: Pixels = px(8.0);
 const SIG_MIN_W: Pixels = px(66.0);
+const SIG_LINE_H: Pixels = px(14.0);
 const CH_BADGE_FS: Pixels = px(9.0);
 const ARROW_GLYPH: Pixels = px(13.0);
 const ACCENT_DOT: Pixels = px(6.0);
@@ -175,6 +176,9 @@ async fn load_mappings(
             .actions_using(instance.id)
             .await
             .map_err(|e| e.to_string())?;
+        if !instance.user_defined && linked.is_empty() {
+            continue;
+        }
         let mut action = None;
         if let Some(first) = linked.first()
             && let Some(found) = actions.get(*first).await.map_err(|e| e.to_string())?
@@ -1179,6 +1183,7 @@ impl MidiScreenView {
                     .text_align(gpui::TextAlign::Center)
                     .font_family(mono_family())
                     .text_size(SIG_FS)
+                    .line_height(SIG_LINE_H)
                     .text_color(palette.text_primary)
                     .child(row.signal.label()),
             )
@@ -1451,8 +1456,13 @@ impl Render for MidiScreenView {
         let palette = cx.palette();
         let density = cx.density();
 
+        let header_ink = if self.enabled {
+            palette.success
+        } else {
+            palette.text_faint
+        };
         let header_right = header_status(
-            palette.success,
+            header_ink,
             tr!(
                 "midi_header_summary",
                 devices = self.live_ports.len() as i64,

@@ -2133,7 +2133,13 @@ common_duplicate = Duplicate
 ## MIDI - breadcrumb + header
 
 midi_breadcrumb_builtin = Builtin
-midi_header_summary = { $devices } devices · { $mappings } mappings
+midi_header_summary = { $devices ->
+    [one] { $devices } device
+   *[other] { $devices } devices
+    } · { $mappings ->
+    [one] { $mappings } mapping
+   *[other] { $mappings } mappings
+    }
 
 ## MIDI - hero
 
@@ -2160,7 +2166,10 @@ midi_monitor_disabled = MIDI input is off - enable it above to see traffic
 ## MIDI - mappings
 
 midi_section_mappings = Mappings
-midi_bindings_count = { $count } bindings
+midi_bindings_count = { $count ->
+    [one] { $count } binding
+   *[other] { $count } bindings
+    }
 midi_value_any = any
 midi_unassigned = Unassigned - click to pick an action
 midi_mappings_empty = No MIDI mappings yet
@@ -2200,7 +2209,13 @@ midi_modal_save_changes = Save changes
 
 ## MIDI - footer
 
-midi_footer_left = { $devices } devices connected · { $mappings } active mappings
+midi_footer_left = { $devices ->
+    [one] { $devices } device connected
+   *[other] { $devices } devices connected
+    } · { $mappings ->
+    [one] { $mappings } active mapping
+   *[other] { $mappings } active mappings
+    }
 midi_engine_running = MIDI engine running
 midi_engine_stopped = MIDI engine stopped
 
@@ -2208,7 +2223,7 @@ midi_engine_stopped = MIDI engine stopped
 
 hotkeys_breadcrumb_builtin = Builtin
 hotkeys_hero_title = Hotkeys
-hotkeys_hero_blurb = System-wide keyboard shortcuts that fire actions even when forge is in the background.
+hotkeys_hero_blurb = System-wide keyboard shortcuts that fire actions even when Forge is in the background.
 hotkeys_hero_enabled = Enabled
 hotkeys_hero_disabled = Disabled
 hotkeys_header_summary = { $count } active · global
@@ -2234,7 +2249,6 @@ hotkeys_stat_last_fired_none = nothing yet
 
 hotkeys_section_bindings = Bindings
 hotkeys_section_hint = double-click a combo to rebind
-hotkeys_bindings_empty = No hotkeys bound yet.
 hotkeys_unassigned = Unassigned - pick an action
 hotkeys_scope_global = Global
 hotkeys_scope_app = App

@@ -195,7 +195,7 @@ fn table_header(
         let label_el = div()
             .font_family(mono_family())
             .text_size(FONT_XXS)
-            .whitespace_nowrap()
+            .truncate()
             .text_color(header_ink)
             .child(c.label);
         let cell = column_cell(c.width, label_el);

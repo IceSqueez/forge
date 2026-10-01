@@ -1295,7 +1295,20 @@ fn handle_command(
             voice_id,
         } => {
             let mut guard = deps.resolver.write().unwrap_or_else(|e| e.into_inner());
-            if let Some(existing) = guard.aliases.iter_mut().find(|a| a.viewer_id == viewer_id) {
+            let unscoped_name = viewer_id
+                .split_once(':')
+                .map_or(viewer_id.as_str(), |(_, name)| name);
+            let target = guard
+                .aliases
+                .iter()
+                .position(|a| a.viewer_id == viewer_id)
+                .or_else(|| {
+                    guard
+                        .aliases
+                        .iter()
+                        .position(|a| a.viewer_id == unscoped_name)
+                });
+            if let Some(existing) = target.map(|index| &mut guard.aliases[index]) {
                 existing.engine_id = engine_id;
                 existing.voice_id = voice_id;
                 existing.state = AliasState::Active;

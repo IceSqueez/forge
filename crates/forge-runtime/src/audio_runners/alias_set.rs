@@ -7,7 +7,7 @@ use forge_registry::{
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
 
-use crate::speak_dispatcher::SpeakDispatcher;
+use crate::speak_dispatcher::{SpeakDispatcher, platform_scoped_alias_key};
 
 pub struct AliasSetRunner {
     speak: Arc<dyn SpeakDispatcher>,
@@ -102,9 +102,10 @@ impl SubActionRunner for AliasSetRunner {
             .arg_stack
             .interpolate(config.str("voice_id").unwrap_or_default());
 
+        let alias_key = platform_scoped_alias_key(ctx.arg_stack, &alias_name);
         let result = self
             .speak
-            .alias_set(alias_name.clone(), alias_name, engine_id, voice_id)
+            .alias_set(alias_key, alias_name, engine_id, voice_id)
             .await;
 
         (timer.finish(SubActionOutcome::from_result(&result)), None)

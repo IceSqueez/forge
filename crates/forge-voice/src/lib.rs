@@ -139,14 +139,22 @@ impl VoiceAliasResolver {
 
     fn alias_for(&self, viewer_id: &str, viewer_name: &str) -> Option<&VoiceAlias> {
         let by_name = viewer_name.to_lowercase();
+        let by_name = by_name.as_str();
+        let viewer_platform = viewer_id.split_once(':').map(|(platform, _)| platform);
+        let named_on = |platform: Option<&str>| {
+            self.aliases.iter().find(move |a| {
+                let (alias_platform, alias_key) = match a.viewer_id.split_once(':') {
+                    Some((platform, key)) => (Some(platform), key),
+                    None => (None, a.viewer_id.as_str()),
+                };
+                alias_platform == platform && alias_key.to_lowercase() == by_name
+            })
+        };
         self.aliases
             .iter()
             .find(|a| a.viewer_id == viewer_id)
-            .or_else(|| {
-                self.aliases
-                    .iter()
-                    .find(|a| a.viewer_id.to_lowercase() == by_name)
-            })
+            .or_else(|| viewer_platform.and_then(|platform| named_on(Some(platform))))
+            .or_else(|| named_on(None))
     }
 
     pub fn resolve(

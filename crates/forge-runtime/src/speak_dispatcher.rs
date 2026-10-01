@@ -43,6 +43,16 @@ impl SpeechOrigin {
     }
 }
 
+pub fn platform_scoped_alias_key(args: &ArgStack, alias_name: &str) -> String {
+    if alias_name.contains(':') {
+        return alias_name.to_owned();
+    }
+    match principal_text(args, ActorSlot::Platform) {
+        Some(platform) => format!("{platform}:{alias_name}"),
+        None => alias_name.to_owned(),
+    }
+}
+
 fn principal_text(args: &ArgStack, slot: ActorSlot) -> Option<&str> {
     match args.get(CanonicalVariable::actor(ActorRole::Principal, slot).name()) {
         Some(Variant::String(value)) if !value.trim().is_empty() => Some(value.trim()),

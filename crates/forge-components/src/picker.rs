@@ -752,6 +752,43 @@ mod tests {
         assert_eq!(selections(&heard, vcx), vec!["id-2".to_owned()]);
     }
 
+    fn rewards() -> Vec<PickerItem> {
+        [("7c1e2f90-aaaa", "Hydrate"), ("7c1e2f90-bbbb", "Stretch")]
+            .into_iter()
+            .map(|(id, label)| PickerItem {
+                id: SharedString::from(id),
+                label: SharedString::from(label),
+                sublabel: None,
+                icon: None,
+            })
+            .collect()
+    }
+
+    #[gpui::test]
+    fn enter_on_a_pasted_row_id_selects_that_row(cx: &mut gpui::TestAppContext) {
+        let (picker, heard, vcx) = open_typable(cx, rewards());
+
+        type_query(&picker, vcx, " 7c1e2f90-bbbb ");
+        search_event(&picker, vcx, InputEvent::Submitted(SharedString::default()));
+
+        assert_eq!(
+            (visible_ids(&picker, vcx), selections(&heard, vcx)),
+            (
+                vec!["7c1e2f90-bbbb".to_owned()],
+                vec!["7c1e2f90-bbbb".to_owned()],
+            ),
+        );
+    }
+
+    #[gpui::test]
+    fn a_partial_row_id_matches_no_row(cx: &mut gpui::TestAppContext) {
+        let (picker, _heard, vcx) = open_typable(cx, rewards());
+
+        type_query(&picker, vcx, "7c1e2f90");
+
+        assert_eq!(visible_ids(&picker, vcx), Vec::<String>::new());
+    }
+
     #[gpui::test]
     fn enter_on_whitespace_alone_over_an_empty_list_selects_nothing(cx: &mut gpui::TestAppContext) {
         let (_picker, heard, vcx) = open_typable(cx, Vec::new());

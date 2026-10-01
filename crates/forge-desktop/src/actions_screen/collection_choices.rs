@@ -111,3 +111,55 @@ impl ScreenActionsView {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_registry::{FormField, SubActionRegistry};
+
+    use crate::collection_options::collection_choice_fields;
+    use crate::obs_catalog_options::obs_catalog_fields;
+    use crate::vtube_catalog_options::vtube_catalog_fields;
+
+    fn integration_sub_actions() -> SubActionRegistry {
+        let mut reg = SubActionRegistry::new();
+        forge_obs::register_obs_sub_actions(&mut reg, forge_obs::SwitchableObsSink::new()).unwrap();
+        forge_vtube::register_vtube_sub_actions(&mut reg, forge_vtube::SwitchableVTubeSink::new())
+            .unwrap();
+        reg
+    }
+
+    fn dynamic_select_keys(field: &FormField, out: &mut Vec<(String, &'static str)>, id: &str) {
+        match field {
+            FormField::DynamicSelect { options_key, .. } => out.push((id.to_owned(), options_key)),
+            FormField::Optional { inner, .. } => dynamic_select_keys(inner, out, id),
+            _ => {}
+        }
+    }
+
+    fn served(field: &FormField) -> bool {
+        let specs = std::slice::from_ref(field);
+        !obs_catalog_fields(specs).is_empty()
+            || !vtube_catalog_fields(specs).is_empty()
+            || !collection_choice_fields(specs).is_empty()
+    }
+
+    #[test]
+    fn every_obs_and_vtube_sub_action_picker_has_an_options_provider() {
+        let reg = integration_sub_actions();
+        let mut declared = Vec::new();
+        let mut unserved = Vec::new();
+        for runner in reg.all() {
+            for field in runner.config_fields() {
+                let before = declared.len();
+                dynamic_select_keys(&field, &mut declared, runner.id());
+                if declared.len() > before && !served(&field) {
+                    unserved.extend(declared[before..].iter().cloned());
+                }
+            }
+        }
+
+        assert!(!declared.is_empty());
+        assert_eq!(unserved, Vec::<(String, &str)>::new());
+    }
+}

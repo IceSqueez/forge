@@ -913,4 +913,137 @@ mod tests {
             redirected.payload
         );
     }
+
+    async fn signalled(changes: &mut crate::catalog::VTubeCatalogChanges) -> bool {
+        tokio::time::timeout(tokio::time::Duration::from_secs(1), changes.changed())
+            .await
+            .unwrap_or(false)
+    }
+
+    fn model(id: &str, name: &str) -> ModelItem {
+        ModelItem {
+            id: id.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+
+    fn hotkey(id: &str, name: &str) -> HotkeyItem {
+        HotkeyItem {
+            id: id.to_owned(),
+            name: name.to_owned(),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_model_and_hotkey_refresh_signals_a_catalog_change_only_when_a_list_differs() {
+        let avatar = serde_json::json!({ "modelID": "m1", "modelName": "Avatar" });
+        let wave = serde_json::json!({ "hotkeyID": "h1", "name": "Wave" });
+        for (case, models, hotkeys, expected) in [
+            (
+                "same lists",
+                vec![avatar.clone()],
+                vec![wave.clone()],
+                false,
+            ),
+            (
+                "hotkey renamed",
+                vec![avatar.clone()],
+                vec![serde_json::json!({ "hotkeyID": "h1", "name": "Wave hello" })],
+                true,
+            ),
+            (
+                "model added",
+                vec![
+                    avatar.clone(),
+                    serde_json::json!({ "modelID": "m2", "modelName": "Other" }),
+                ],
+                vec![wave.clone()],
+                true,
+            ),
+        ] {
+            let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+            {
+                let mut s = c.content_state.write().unwrap();
+                s.models = vec![model("m1", "Avatar")];
+                s.hotkeys = vec![hotkey("h1", "Wave")];
+            }
+            let mut changes = c.catalog_changes();
+            let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+            let done = serve(
+                req_rx,
+                vec![
+                    serde_json::json!({ "availableModels": models }),
+                    serde_json::json!({ "modelLoaded": true, "modelID": "m1" }),
+                    serde_json::json!({ "availableHotkeys": hotkeys }),
+                ],
+            );
+
+            refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
+            await_served(done).await;
+
+            assert_eq!(signalled(&mut changes).await, expected, "{case}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_expression_refresh_signals_a_catalog_change_only_when_the_list_differs() {
+        let blush =
+            serde_json::json!({ "file": "blush.exp3.json", "name": "Blush", "active": false });
+        for (case, expressions, expected) in [
+            ("same list", vec![blush.clone()], false),
+            (
+                "expression added",
+                vec![
+                    blush.clone(),
+                    serde_json::json!({ "file": "wink.exp3.json", "name": "Wink", "active": false }),
+                ],
+                true,
+            ),
+        ] {
+            let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+            c.content_state.write().unwrap().expressions = vec![ExpressionItem {
+                name: "Blush".to_owned(),
+                file: "blush.exp3.json".to_owned(),
+                active: false,
+            }];
+            let mut changes = c.catalog_changes();
+            let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+            let done = serve(
+                req_rx,
+                vec![serde_json::json!({ "expressions": expressions })],
+            );
+
+            refresh_expressions(&c.content_state, &req_tx).await;
+            await_served(done).await;
+
+            assert_eq!(signalled(&mut changes).await, expected, "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn refreshed_hotkeys_are_offered_by_their_hotkey_id() {
+        let c = VTubeClient::new_for_test("ws://127.0.0.1:8001/");
+        let (req_tx, req_rx) = mpsc::unbounded_channel::<PendingRequest>();
+        let done = serve(
+            req_rx,
+            vec![
+                serde_json::json!({ "availableModels": [] }),
+                serde_json::json!({ "modelLoaded": false }),
+                serde_json::json!({
+                    "availableHotkeys": [{ "hotkeyID": "6f2a-wave", "name": "Wave" }]
+                }),
+            ],
+        );
+
+        refresh_models_and_hotkeys(&c.content_state, &req_tx).await;
+        await_served(done).await;
+
+        assert_eq!(
+            c.catalog().hotkeys,
+            vec![crate::catalog::VTubeChoice {
+                value: "6f2a-wave".to_owned(),
+                label: "Wave".to_owned(),
+            }]
+        );
+    }
 }

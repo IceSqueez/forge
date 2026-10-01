@@ -142,3 +142,155 @@ pub(crate) fn watch_vtube_catalog<V: 'static>(
     }
     tasks
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use gpui::{AppContext, TestAppContext};
+
+    use super::*;
+    use crate::test_support::StubEventLog;
+
+    fn select(options_key: &'static str) -> FormField {
+        FormField::DynamicSelect {
+            key: "target",
+            label: "Target",
+            options_key,
+        }
+    }
+
+    fn choice(value: &str, label: &str) -> VTubeChoice {
+        VTubeChoice {
+            value: value.to_owned(),
+            label: label.to_owned(),
+        }
+    }
+
+    #[test]
+    fn vtube_selects_are_picked_up_once_each_even_when_wrapped_optional() {
+        let specs = vec![
+            select("vtube.hotkey_ids"),
+            FormField::Optional {
+                key: "model",
+                label: "Model",
+                inner: Box::new(select("vtube.model_ids")),
+            },
+            select("vtube.hotkey_ids"),
+            select("obs.scene_names"),
+        ];
+
+        let lists: Vec<VTubeCatalogList> = vtube_catalog_fields(&specs)
+            .into_iter()
+            .map(|field| field.list)
+            .collect();
+
+        assert_eq!(
+            lists,
+            vec![VTubeCatalogList::Hotkeys, VTubeCatalogList::Models]
+        );
+    }
+
+    #[test]
+    fn each_field_offers_its_own_catalog_list_as_value_and_label() {
+        let catalog = VTubeCatalog {
+            models: vec![choice("m-1", "Avatar")],
+            hotkeys: vec![choice("h-1", "Wave")],
+            expressions: vec![choice("blush.exp3.json", "Blush")],
+        };
+        let fields = vtube_catalog_fields(&[
+            select("vtube.model_ids"),
+            select("vtube.hotkey_ids"),
+            select("vtube.expression_files"),
+        ]);
+
+        let options = vtube_catalog_choices(&catalog, &fields);
+
+        assert_eq!(
+            (
+                &options["vtube.model_ids"],
+                &options["vtube.hotkey_ids"],
+                &options["vtube.expression_files"],
+            ),
+            (
+                &vec![("m-1".to_owned(), "Avatar".to_owned())],
+                &vec![("h-1".to_owned(), "Wave".to_owned())],
+                &vec![("blush.exp3.json".to_owned(), "Blush".to_owned())],
+            )
+        );
+    }
+
+    #[test]
+    fn without_a_vtube_client_every_field_offers_an_empty_list() {
+        let fields = vtube_catalog_fields(&[select("vtube.model_ids"), select("vtube.hotkey_ids")]);
+
+        let options = current_vtube_catalog_options(None, &fields);
+
+        assert_eq!(
+            (
+                options.get("vtube.model_ids"),
+                options.get("vtube.hotkey_ids")
+            ),
+            (Some(&Vec::new()), Some(&Vec::new()))
+        );
+    }
+
+    #[test]
+    fn only_the_vtube_connection_event_changes_the_catalog() {
+        for (source, kind, expected) in [
+            (EventSource::VTube, "vtube.connection.changed", true),
+            (EventSource::VTube, "vtube.model.loaded", false),
+            (EventSource::VTube, "vtube.hotkey.triggered", false),
+            (EventSource::Obs, "vtube.connection.changed", false),
+        ] {
+            let event = Event::new(source, kind, serde_json::json!({}));
+
+            assert_eq!(
+                changes_vtube_connection(&event),
+                expected,
+                "{source:?} {kind}"
+            );
+        }
+    }
+
+    struct Watcher {
+        reloads: usize,
+        _watch: Vec<Task<()>>,
+    }
+
+    fn count_reload(watcher: &mut Watcher, _: &mut Context<Watcher>) {
+        watcher.reloads += 1;
+    }
+
+    #[gpui::test]
+    fn a_form_opened_before_the_client_exists_reloads_only_on_connection_changes(
+        cx: &mut TestAppContext,
+    ) {
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let watcher = cx.update(|cx| {
+            cx.new(|cx| Watcher {
+                reloads: 0,
+                _watch: watch_vtube_catalog(&bus, None, count_reload, cx),
+            })
+        });
+        cx.run_until_parked();
+
+        bus.publish(Event::new(
+            EventSource::VTube,
+            "vtube.model.loaded",
+            serde_json::json!({}),
+        ));
+        cx.run_until_parked();
+        let after_model_switch = cx.update(|cx| watcher.read(cx).reloads);
+        bus.publish(Event::new(
+            EventSource::VTube,
+            VTUBE_CONNECTION_KIND,
+            serde_json::json!({}),
+        ));
+        cx.run_until_parked();
+
+        assert_eq!(
+            (after_model_switch, cx.update(|cx| watcher.read(cx).reloads)),
+            (0, 1)
+        );
+    }
+}

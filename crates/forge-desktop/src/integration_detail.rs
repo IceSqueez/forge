@@ -1664,4 +1664,134 @@ mod tests {
             );
         }
     }
+
+    struct DeclaredActions(Vec<QuickAction>);
+
+    impl QuickActions for DeclaredActions {
+        fn actions(&self) -> Vec<QuickAction> {
+            self.0.clone()
+        }
+    }
+
+    struct DeclaredCollections(Vec<&'static str>);
+
+    #[async_trait::async_trait]
+    impl BuiltinCollections for DeclaredCollections {
+        fn collections(&self) -> Vec<forge_platform_core::CollectionMetadata> {
+            self.0
+                .iter()
+                .map(|id| forge_platform_core::CollectionMetadata {
+                    id: CollectionId::new(*id),
+                    label: (*id).to_owned(),
+                    icon: SectionIcon::new("diamond"),
+                    capacity: None,
+                    fields: Vec::new(),
+                    toggles: Vec::new(),
+                })
+                .collect()
+        }
+
+        fn revisions(&self) -> forge_platform_core::CollectionRevisions {
+            forge_platform_core::CollectionRevisionSignal::new().subscribe()
+        }
+
+        async fn list(
+            &self,
+            _: &CollectionId,
+        ) -> forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>>
+        {
+            Err(forge_platform_core::CollectionFailure::Transport)
+        }
+
+        async fn create(
+            &self,
+            _: &CollectionId,
+            _: &std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue>,
+        ) -> forge_platform_core::CollectionOutcome<forge_platform_core::CollectionItem> {
+            Err(forge_platform_core::CollectionFailure::Transport)
+        }
+
+        async fn update(
+            &self,
+            _: &CollectionId,
+            _: &forge_platform_core::CollectionItemId,
+            _: &std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue>,
+        ) -> forge_platform_core::CollectionOutcome<forge_platform_core::CollectionItem> {
+            Err(forge_platform_core::CollectionFailure::Transport)
+        }
+
+        async fn delete(
+            &self,
+            _: &CollectionId,
+            _: &forge_platform_core::CollectionItemId,
+        ) -> forge_platform_core::CollectionOutcome<()> {
+            Err(forge_platform_core::CollectionFailure::Transport)
+        }
+
+        async fn set_toggle(
+            &self,
+            _: &CollectionId,
+            _: &forge_platform_core::CollectionItemId,
+            _: &str,
+            _: bool,
+        ) -> forge_platform_core::CollectionOutcome<forge_platform_core::CollectionItem> {
+            Err(forge_platform_core::CollectionFailure::Transport)
+        }
+    }
+
+    fn action(label: &str, collection: Option<&str>) -> QuickAction {
+        QuickAction {
+            label: label.to_owned(),
+            icon: SectionIcon::new("play"),
+            enabled: true,
+            locked_reason: None,
+            liveness: forge_platform_core::QuickActionLiveness::Unknown,
+            group: None,
+            group_icon: None,
+            group_accent: None,
+            destructive: false,
+            accent: forge_platform_core::QuickActionAccent::Brand,
+            subaction_template: forge_types::SubActionStep {
+                kind_id: String::new(),
+                config: std::collections::BTreeMap::new(),
+                enabled: true,
+                continue_on_error: false,
+                condition: None,
+                label: None,
+            },
+            picker: None,
+            fields: Vec::new(),
+            collection: collection.map(CollectionId::new),
+        }
+    }
+
+    fn reachable_labels(collections: Option<&DeclaredCollections>) -> Vec<String> {
+        let quick = DeclaredActions(vec![
+            action("Fulfill redemption", None),
+            action("Manage rewards", Some("rewards")),
+            action("Manage scenes", Some("scenes")),
+        ]);
+        reachable_quick_actions(&quick, collections.map(|c| c as &dyn BuiltinCollections))
+            .into_iter()
+            .map(|action| action.label)
+            .collect()
+    }
+
+    #[test]
+    fn collection_actions_survive_only_when_the_integration_declares_their_collection() {
+        let declared = DeclaredCollections(vec!["rewards"]);
+
+        assert_eq!(
+            reachable_labels(Some(&declared)),
+            vec!["Fulfill redemption".to_owned(), "Manage rewards".to_owned()]
+        );
+    }
+
+    #[test]
+    fn an_integration_without_collections_keeps_only_its_step_actions() {
+        assert_eq!(
+            reachable_labels(None),
+            vec!["Fulfill redemption".to_owned()]
+        );
+    }
 }

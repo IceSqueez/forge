@@ -196,3 +196,55 @@ pub trait BuiltinCollections: Send + Sync {
         on: bool,
     ) -> CollectionOutcome<CollectionItem>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn poll_once(revisions: &mut CollectionRevisions) -> Option<RevisionWait> {
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        let changed = std::pin::pin!(revisions.changed());
+        match changed.poll(&mut context) {
+            std::task::Poll::Ready(wait) => Some(wait),
+            std::task::Poll::Pending => None,
+        }
+    }
+
+    #[test]
+    fn a_subscriber_waits_until_the_signal_is_bumped() {
+        let signal = CollectionRevisionSignal::new();
+        let mut revisions = signal.subscribe();
+        let before = poll_once(&mut revisions);
+
+        signal.bump();
+
+        assert_eq!(
+            (before, poll_once(&mut revisions)),
+            (None, Some(RevisionWait::Changed))
+        );
+    }
+
+    #[test]
+    fn bumps_landing_between_waits_coalesce_into_one_change() {
+        let signal = CollectionRevisionSignal::new();
+        let mut revisions = signal.subscribe();
+
+        signal.bump();
+        signal.bump();
+
+        assert_eq!(
+            (poll_once(&mut revisions), poll_once(&mut revisions)),
+            (Some(RevisionWait::Changed), None)
+        );
+    }
+
+    #[test]
+    fn dropping_the_signal_ends_the_wait() {
+        let signal = CollectionRevisionSignal::new();
+        let mut revisions = signal.subscribe();
+
+        drop(signal);
+
+        assert_eq!(poll_once(&mut revisions), Some(RevisionWait::SignalDropped));
+    }
+}

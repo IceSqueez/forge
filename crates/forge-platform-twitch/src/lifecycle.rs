@@ -576,4 +576,46 @@ mod tests {
             );
         }
     }
+
+    fn revision_moved(revisions: &mut CollectionRevisions) -> bool {
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        let changed = std::pin::pin!(revisions.changed());
+        matches!(
+            changed.poll(&mut context),
+            std::task::Poll::Ready(forge_platform_core::RevisionWait::Changed)
+        )
+    }
+
+    #[test]
+    fn every_reward_lifecycle_topic_bumps_the_reward_revision() {
+        for topic in [
+            "channel.channel_points_custom_reward.add",
+            "channel.channel_points_custom_reward.update",
+            "channel.channel_points_custom_reward.remove",
+        ] {
+            let lifecycle = TwitchLifecycle::new();
+            let mut revisions = lifecycle.reward_revisions();
+
+            lifecycle.apply_notification(topic, &Value::Null, SELF_ID);
+
+            assert!(revision_moved(&mut revisions), "{topic}");
+        }
+    }
+
+    #[test]
+    fn redemptions_and_other_topics_leave_the_reward_revision_alone() {
+        for topic in [
+            "channel.channel_points_custom_reward_redemption.add",
+            "channel.channel_points_custom_reward_redemption.update",
+            "channel.poll.begin",
+            "channel.chat.message",
+        ] {
+            let lifecycle = TwitchLifecycle::new();
+            let mut revisions = lifecycle.reward_revisions();
+
+            lifecycle.apply_notification(topic, &Value::Null, SELF_ID);
+
+            assert!(!revision_moved(&mut revisions), "{topic}");
+        }
+    }
 }

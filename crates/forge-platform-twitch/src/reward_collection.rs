@@ -572,3 +572,811 @@ impl BuiltinCollections for TwitchIntegrationBundle {
         .await
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_registry::SubActionRunner;
+    use forge_types::{ArgStack, Variant};
+    use serde_json::{Value, json};
+    use tokio::sync::watch;
+
+    use super::*;
+    use crate::chat::ChatConnectionState;
+    use crate::helix::{HelixMethod, HelixTransport};
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, make_ctx,
+    };
+    use crate::sub_actions::{
+        DeleteRewardRunner, DisableRewardRunner, EnableRewardRunner, PauseRewardRunner,
+        ResumeRewardRunner, SelfIdentity,
+    };
+    use crate::subscriptions::SubscriptionTracker;
+
+    const LEAKY_URL: &str = "https://api.twitch.tv/helix/channel_points/custom_rewards";
+
+    fn bundle_with(
+        responses: Vec<Result<Value, HelixError>>,
+        tier: BroadcasterTier,
+        broadcaster_id: &str,
+    ) -> (Arc<MockTransport>, Arc<TwitchIntegrationBundle>) {
+        let transport = Arc::new(MockTransport::returning_sequence(responses));
+        let (_tx, rx) = watch::channel(ChatConnectionState::Connected);
+        let bundle = TwitchIntegrationBundle::for_test_with_transport(
+            Some("streamer".to_owned()),
+            rx,
+            SubscriptionTracker::default(),
+            Arc::new(MockCreds::with_identity()),
+            tier,
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            broadcaster_id,
+        );
+        (transport, bundle)
+    }
+
+    fn bundle_answering(
+        responses: Vec<Result<Value, HelixError>>,
+    ) -> (Arc<MockTransport>, Arc<TwitchIntegrationBundle>) {
+        bundle_with(responses, BroadcasterTier::Affiliate, SELF_USER_ID)
+    }
+
+    fn rewards() -> CollectionId {
+        CollectionId::new(REWARDS_COLLECTION)
+    }
+
+    fn reward_row(id: &str, title: &str) -> Value {
+        json!({
+            "id": id,
+            "title": title,
+            "cost": 250,
+            "prompt": "say hi",
+            "is_enabled": true,
+            "is_paused": false,
+            "is_user_input_required": true,
+            "background_color": "#9147FF",
+            "max_per_stream_setting": { "is_enabled": true, "max_per_stream": 3 },
+            "max_per_user_per_stream_setting": { "is_enabled": false, "max_per_user_per_stream": 9 },
+            "global_cooldown_setting": { "is_enabled": true, "global_cooldown_seconds": 60 },
+        })
+    }
+
+    fn rows_of(rows: Vec<Value>) -> Result<Value, HelixError> {
+        Ok(json!({ "data": rows }))
+    }
+
+    fn http(status: StatusCode, message: &str) -> Result<Value, HelixError> {
+        Err(HelixError::Http {
+            status: status.as_u16(),
+            body: json!({ "error": "x", "status": status.as_u16(), "message": message })
+                .to_string(),
+        })
+    }
+
+    fn draft() -> BTreeMap<String, QuickActionFieldValue> {
+        BTreeMap::from([
+            (
+                TITLE_KEY.to_owned(),
+                QuickActionFieldValue::Text("  Hydrate!  ".to_owned()),
+            ),
+            (COST_KEY.to_owned(), QuickActionFieldValue::Int(500)),
+            (
+                PROMPT_KEY.to_owned(),
+                QuickActionFieldValue::Text(String::new()),
+            ),
+            (
+                IS_USER_INPUT_REQUIRED_KEY.to_owned(),
+                QuickActionFieldValue::Toggle(true),
+            ),
+            (
+                BACKGROUND_COLOR_KEY.to_owned(),
+                QuickActionFieldValue::Text("#00FFaa".to_owned()),
+            ),
+            (MAX_PER_STREAM_KEY.to_owned(), QuickActionFieldValue::Int(5)),
+            (
+                MAX_PER_USER_PER_STREAM_KEY.to_owned(),
+                QuickActionFieldValue::Int(0),
+            ),
+            (
+                GLOBAL_COOLDOWN_SECONDS_KEY.to_owned(),
+                QuickActionFieldValue::Int(30),
+            ),
+        ])
+    }
+
+    fn with(key: &str, value: QuickActionFieldValue) -> BTreeMap<String, QuickActionFieldValue> {
+        let mut values = draft();
+        values.insert(key.to_owned(), value);
+        values
+    }
+
+    fn text(s: &str) -> QuickActionFieldValue {
+        QuickActionFieldValue::Text(s.to_owned())
+    }
+
+    fn query(request: &HelixRequest) -> Vec<(String, String)> {
+        request.query.clone()
+    }
+
+    fn pair(key: &str, value: &str) -> (String, String) {
+        (key.to_owned(), value.to_owned())
+    }
+
+    #[tokio::test]
+    async fn list_marks_rewards_outside_the_manageable_set_read_only_with_a_reason() {
+        let (_, bundle) = bundle_answering(vec![
+            rows_of(vec![
+                reward_row("owned", "Hydrate"),
+                reward_row("dash", "Stretch"),
+            ]),
+            rows_of(vec![reward_row("owned", "Hydrate")]),
+        ]);
+
+        let items = bundle.list(&rewards()).await.unwrap();
+
+        let access: Vec<(&str, &CollectionItemAccess)> = items
+            .iter()
+            .map(|item| (item.id.as_str(), &item.access))
+            .collect();
+        assert_eq!(
+            access,
+            vec![
+                ("owned", &CollectionItemAccess::Manageable),
+                (
+                    "dash",
+                    &CollectionItemAccess::ReadOnly {
+                        reason: NOT_OWNED_REASON.to_owned()
+                    }
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_asks_for_every_reward_then_only_the_manageable_ones() {
+        let (transport, bundle) = bundle_answering(vec![rows_of(vec![]), rows_of(vec![])]);
+
+        bundle.list(&rewards()).await.unwrap();
+
+        let all = transport.request(0);
+        let manageable = transport.request(1);
+        assert_eq!(
+            (all.method, all.path.as_str(), query(&all)),
+            (
+                HelixMethod::Get,
+                "/helix/channel_points/custom_rewards",
+                vec![pair("broadcaster_id", SELF_USER_ID)]
+            )
+        );
+        assert_eq!(
+            query(&manageable),
+            vec![
+                pair("broadcaster_id", SELF_USER_ID),
+                pair("only_manageable_rewards", "true"),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_fails_when_the_manageable_lookup_fails() {
+        let (_, bundle) = bundle_answering(vec![
+            rows_of(vec![reward_row("owned", "Hydrate")]),
+            http(StatusCode::INTERNAL_SERVER_ERROR, "boom"),
+        ]);
+
+        let outcome = bundle.list(&rewards()).await;
+
+        assert_eq!(outcome, Err(CollectionFailure::Transport));
+    }
+
+    #[tokio::test]
+    async fn list_skips_rows_without_an_id() {
+        let (_, bundle) = bundle_answering(vec![
+            rows_of(vec![
+                json!({ "title": "ghost" }),
+                reward_row("a", "Hydrate"),
+            ]),
+            rows_of(vec![]),
+        ]);
+
+        let items = bundle.list(&rewards()).await.unwrap();
+
+        let ids: Vec<&str> = items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(ids, vec!["a"]);
+    }
+
+    #[tokio::test]
+    async fn listed_limits_read_zero_when_their_setting_is_disabled() {
+        let (_, bundle) = bundle_answering(vec![
+            rows_of(vec![reward_row("a", "Hydrate")]),
+            rows_of(vec![]),
+        ]);
+
+        let items = bundle.list(&rewards()).await.unwrap();
+
+        let values = &items[0].values;
+        assert_eq!(
+            (
+                values.get(MAX_PER_STREAM_KEY),
+                values.get(MAX_PER_USER_PER_STREAM_KEY),
+                values.get(GLOBAL_COOLDOWN_SECONDS_KEY),
+            ),
+            (
+                Some(&QuickActionFieldValue::Int(3)),
+                Some(&QuickActionFieldValue::Int(0)),
+                Some(&QuickActionFieldValue::Int(60)),
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn listed_toggles_carry_the_enabled_and_paused_flags() {
+        let mut row = reward_row("a", "Hydrate");
+        row["is_enabled"] = json!(false);
+        row["is_paused"] = json!(true);
+        let (_, bundle) = bundle_answering(vec![rows_of(vec![row]), rows_of(vec![])]);
+
+        let items = bundle.list(&rewards()).await.unwrap();
+
+        assert_eq!(
+            items[0].toggles,
+            BTreeMap::from([
+                (ENABLED_TOGGLE.to_owned(), false),
+                (PAUSED_TOGGLE.to_owned(), true),
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn create_posts_the_trimmed_draft_and_returns_a_manageable_item() {
+        let (transport, bundle) =
+            bundle_answering(vec![rows_of(vec![reward_row("new", "Hydrate!")])]);
+
+        let item = bundle.create(&rewards(), &draft()).await.unwrap();
+
+        let request = transport.request(0);
+        assert_eq!(
+            (
+                request.method,
+                request.path.as_str(),
+                query(&request),
+                request.body
+            ),
+            (
+                HelixMethod::Post,
+                "/helix/channel_points/custom_rewards",
+                vec![pair("broadcaster_id", SELF_USER_ID)],
+                Some(json!({
+                    "title": "Hydrate!",
+                    "cost": 500,
+                    "is_user_input_required": true,
+                    "background_color": "#00FFaa",
+                    "is_max_per_stream_enabled": true,
+                    "max_per_stream": 5,
+                    "is_max_per_user_per_stream_enabled": false,
+                    "is_global_cooldown_enabled": true,
+                    "global_cooldown_seconds": 30,
+                })),
+            )
+        );
+        assert_eq!(
+            (item.id.as_str(), item.access),
+            ("new", CollectionItemAccess::Manageable)
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_prompt_is_omitted_on_create_but_sent_on_update_to_clear_it() {
+        let (create_transport, bundle) =
+            bundle_answering(vec![rows_of(vec![reward_row("a", "Hydrate")])]);
+        bundle.create(&rewards(), &draft()).await.unwrap();
+        let (update_transport, bundle) =
+            bundle_answering(vec![rows_of(vec![reward_row("a", "Hydrate")])]);
+        bundle
+            .update(&rewards(), &CollectionItemId::new("a"), &draft())
+            .await
+            .unwrap();
+
+        let prompt_of =
+            |transport: &MockTransport| transport.request(0).body.unwrap().get(PROMPT_KEY).cloned();
+        assert_eq!(
+            (prompt_of(&create_transport), prompt_of(&update_transport)),
+            (None, Some(json!("")))
+        );
+    }
+
+    #[tokio::test]
+    async fn update_patches_the_reward_named_by_its_id() {
+        let (transport, bundle) = bundle_answering(vec![rows_of(vec![reward_row("rw1", "x")])]);
+
+        bundle
+            .update(&rewards(), &CollectionItemId::new("rw1"), &draft())
+            .await
+            .unwrap();
+
+        let request = transport.request(0);
+        assert_eq!(
+            (request.method, query(&request)),
+            (
+                HelixMethod::Patch,
+                vec![pair("broadcaster_id", SELF_USER_ID), pair("id", "rw1")]
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_issues_a_bodyless_delete_for_the_reward() {
+        let (transport, bundle) = bundle_answering(vec![Ok(Value::Null)]);
+
+        bundle
+            .delete(&rewards(), &CollectionItemId::new("rw1"))
+            .await
+            .unwrap();
+
+        let request = transport.request(0);
+        assert_eq!(
+            (request.method, query(&request), request.body),
+            (
+                HelixMethod::Delete,
+                vec![pair("broadcaster_id", SELF_USER_ID), pair("id", "rw1")],
+                None
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn set_toggle_patches_only_the_flag_it_names() {
+        for (toggle, on, expected) in [
+            (ENABLED_TOGGLE, true, json!({ "is_enabled": true })),
+            (ENABLED_TOGGLE, false, json!({ "is_enabled": false })),
+            (PAUSED_TOGGLE, true, json!({ "is_paused": true })),
+            (PAUSED_TOGGLE, false, json!({ "is_paused": false })),
+        ] {
+            let (transport, bundle) = bundle_answering(vec![rows_of(vec![reward_row("rw1", "x")])]);
+
+            bundle
+                .set_toggle(&rewards(), &CollectionItemId::new("rw1"), toggle, on)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                transport.request(0).body,
+                Some(expected),
+                "{toggle} -> {on}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_write_answered_without_a_reward_row_reports_transport() {
+        let (_, bundle) = bundle_answering(vec![Ok(json!({ "data": [] }))]);
+
+        let outcome = bundle.create(&rewards(), &draft()).await;
+
+        assert_eq!(outcome, Err(CollectionFailure::Transport));
+    }
+
+    #[tokio::test]
+    async fn unknown_collection_and_unknown_toggle_are_refused_without_a_request() {
+        let (transport, bundle) = bundle_answering(vec![]);
+        let item = CollectionItemId::new("rw1");
+
+        let unknown_collection = bundle.list(&CollectionId::new("scenes")).await;
+        let unknown_toggle = bundle.set_toggle(&rewards(), &item, "in_stock", true).await;
+
+        assert!(matches!(
+            unknown_collection,
+            Err(CollectionFailure::InvalidInput { field: None, .. })
+        ));
+        assert!(matches!(
+            unknown_toggle,
+            Err(CollectionFailure::InvalidInput { field: Some(ref key), .. }) if key == "in_stock"
+        ));
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_bundle_without_a_broadcaster_reports_not_connected_without_a_request() {
+        let (transport, bundle) = bundle_with(vec![], BroadcasterTier::Affiliate, "");
+
+        let outcome = bundle.list(&rewards()).await;
+
+        assert_eq!(
+            (outcome, transport.call_count()),
+            (Err(CollectionFailure::NotConnected), 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_drafts_are_rejected_on_the_offending_field_before_any_request() {
+        let cases = [
+            (with(TITLE_KEY, text("   ")), TITLE_KEY),
+            (with(TITLE_KEY, text(&"a".repeat(46))), TITLE_KEY),
+            (with(TITLE_KEY, text(&"ї".repeat(46))), TITLE_KEY),
+            (with(COST_KEY, QuickActionFieldValue::Int(0)), COST_KEY),
+            (with(COST_KEY, QuickActionFieldValue::Int(-1)), COST_KEY),
+            (with(PROMPT_KEY, text(&"p".repeat(201))), PROMPT_KEY),
+            (
+                with(BACKGROUND_COLOR_KEY, text("9147FF")),
+                BACKGROUND_COLOR_KEY,
+            ),
+            (
+                with(BACKGROUND_COLOR_KEY, text("#9147F")),
+                BACKGROUND_COLOR_KEY,
+            ),
+            (
+                with(BACKGROUND_COLOR_KEY, text("#GG47FF")),
+                BACKGROUND_COLOR_KEY,
+            ),
+            (
+                with(MAX_PER_STREAM_KEY, QuickActionFieldValue::Int(-1)),
+                MAX_PER_STREAM_KEY,
+            ),
+            (
+                with(MAX_PER_USER_PER_STREAM_KEY, QuickActionFieldValue::Int(-1)),
+                MAX_PER_USER_PER_STREAM_KEY,
+            ),
+            (
+                with(GLOBAL_COOLDOWN_SECONDS_KEY, QuickActionFieldValue::Int(-1)),
+                GLOBAL_COOLDOWN_SECONDS_KEY,
+            ),
+        ];
+        for (values, expected_field) in cases {
+            let (transport, bundle) = bundle_answering(vec![]);
+
+            let outcome = bundle.create(&rewards(), &values).await;
+
+            assert!(
+                matches!(
+                    &outcome,
+                    Err(CollectionFailure::InvalidInput { field: Some(field), .. })
+                        if field == expected_field
+                ),
+                "{expected_field}: {outcome:?}"
+            );
+            assert_eq!(transport.call_count(), 0, "{expected_field}");
+        }
+    }
+
+    #[tokio::test]
+    async fn drafts_on_the_limit_boundaries_are_sent() {
+        let cases = [
+            with(TITLE_KEY, text(&"a".repeat(45))),
+            with(TITLE_KEY, text(&"ї".repeat(45))),
+            with(COST_KEY, QuickActionFieldValue::Int(1)),
+            with(PROMPT_KEY, text(&"p".repeat(200))),
+            with(BACKGROUND_COLOR_KEY, text("")),
+            with(MAX_PER_STREAM_KEY, QuickActionFieldValue::Int(0)),
+            with(GLOBAL_COOLDOWN_SECONDS_KEY, QuickActionFieldValue::Int(0)),
+        ];
+        for values in cases {
+            let (transport, bundle) = bundle_answering(vec![rows_of(vec![reward_row("a", "x")])]);
+
+            let outcome = bundle.create(&rewards(), &values).await;
+
+            assert!(outcome.is_ok(), "{values:?}: {outcome:?}");
+            assert_eq!(transport.call_count(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_missing_cost_falls_back_to_the_default_instead_of_failing() {
+        let mut values = draft();
+        values.remove(COST_KEY);
+        let (transport, bundle) = bundle_answering(vec![rows_of(vec![reward_row("a", "x")])]);
+
+        bundle.create(&rewards(), &values).await.unwrap();
+
+        assert_eq!(
+            transport.request(0).body.unwrap()[COST_KEY],
+            json!(DEFAULT_REWARD_COST)
+        );
+    }
+
+    #[tokio::test]
+    async fn bad_request_bodies_map_to_field_level_invalid_input() {
+        let cases: [(&str, CollectionFailure); 7] = [
+            (
+                "CREATE_CUSTOM_REWARD_DUPLICATE_REWARD",
+                invalid(
+                    TITLE_KEY,
+                    "A reward with this title already exists".to_owned(),
+                ),
+            ),
+            (
+                "The title failed AutoMod checks",
+                CollectionFailure::InvalidInput {
+                    field: None,
+                    message: "Twitch AutoMod rejected the reward text".to_owned(),
+                },
+            ),
+            (
+                "CREATE_CUSTOM_REWARD_TOO_MANY_REWARDS",
+                CollectionFailure::CapacityReached,
+            ),
+            (
+                "The parameter max_per_user_per_stream is invalid",
+                invalid(
+                    MAX_PER_USER_PER_STREAM_KEY,
+                    "Twitch rejected the per-viewer limit".to_owned(),
+                ),
+            ),
+            (
+                "background_color is malformed",
+                invalid(
+                    BACKGROUND_COLOR_KEY,
+                    "Twitch rejected the background color".to_owned(),
+                ),
+            ),
+            (
+                "Something unexpected",
+                CollectionFailure::InvalidInput {
+                    field: None,
+                    message: "Twitch rejected the reward settings".to_owned(),
+                },
+            ),
+            (
+                "",
+                CollectionFailure::InvalidInput {
+                    field: None,
+                    message: "Twitch rejected the reward settings".to_owned(),
+                },
+            ),
+        ];
+        for (message, expected) in cases {
+            let (_, bundle) = bundle_answering(vec![http(StatusCode::BAD_REQUEST, message)]);
+
+            let outcome = bundle.create(&rewards(), &draft()).await;
+
+            assert_eq!(outcome, Err(expected), "{message:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_non_json_bad_request_body_still_maps_to_a_generic_invalid_input() {
+        let (_, bundle) = bundle_answering(vec![Err(HelixError::Http {
+            status: StatusCode::BAD_REQUEST.as_u16(),
+            body: "<html>duplicate</html>".to_owned(),
+        })]);
+
+        let outcome = bundle.create(&rewards(), &draft()).await;
+
+        assert!(matches!(
+            outcome,
+            Err(CollectionFailure::InvalidInput { field: None, .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn forbidden_maps_to_not_owned_or_not_eligible_by_call_and_tier() {
+        let item = CollectionItemId::new("rw1");
+        for (tier, message, expected_create, expected_modify) in [
+            (
+                BroadcasterTier::Affiliate,
+                "",
+                CollectionFailure::NotEligible,
+                CollectionFailure::NotOwned,
+            ),
+            (
+                BroadcasterTier::Partner,
+                "",
+                CollectionFailure::NotEligible,
+                CollectionFailure::NotOwned,
+            ),
+            (
+                BroadcasterTier::Standard,
+                "",
+                CollectionFailure::NotEligible,
+                CollectionFailure::NotEligible,
+            ),
+            (
+                BroadcasterTier::Affiliate,
+                "maximum number of rewards reached",
+                CollectionFailure::CapacityReached,
+                CollectionFailure::NotOwned,
+            ),
+        ] {
+            let (_, bundle) = bundle_with(
+                vec![
+                    http(StatusCode::FORBIDDEN, message),
+                    http(StatusCode::FORBIDDEN, message),
+                    http(StatusCode::FORBIDDEN, message),
+                    http(StatusCode::FORBIDDEN, message),
+                ],
+                tier,
+                SELF_USER_ID,
+            );
+
+            let create = bundle.create(&rewards(), &draft()).await;
+            let update = bundle.update(&rewards(), &item, &draft()).await;
+            let delete = bundle.delete(&rewards(), &item).await;
+            let toggle = bundle
+                .set_toggle(&rewards(), &item, ENABLED_TOGGLE, false)
+                .await;
+
+            assert_eq!(create, Err(expected_create), "{tier:?} create");
+            assert_eq!(
+                (update.map(|_| ()), delete, toggle.map(|_| ())),
+                (
+                    Err(expected_modify.clone()),
+                    Err(expected_modify.clone()),
+                    Err(expected_modify)
+                ),
+                "{tier:?} modify"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn forbidden_list_reports_the_channel_not_eligible() {
+        let (_, bundle) = bundle_answering(vec![http(StatusCode::FORBIDDEN, "")]);
+
+        let outcome = bundle.list(&rewards()).await;
+
+        assert_eq!(outcome, Err(CollectionFailure::NotEligible));
+    }
+
+    #[tokio::test]
+    async fn not_found_on_a_modify_reports_the_reward_gone_and_bumps_the_revision() {
+        let (_, bundle) = bundle_answering(vec![http(StatusCode::NOT_FOUND, "")]);
+        let mut revisions = bundle.revisions();
+
+        let outcome = bundle
+            .set_toggle(
+                &rewards(),
+                &CollectionItemId::new("rw1"),
+                PAUSED_TOGGLE,
+                true,
+            )
+            .await;
+
+        assert_eq!(outcome, Err(reward_gone()));
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::ZERO, revisions.changed()).await,
+            Ok(forge_platform_core::RevisionWait::Changed)
+        );
+    }
+
+    #[tokio::test]
+    async fn not_found_on_create_or_list_reports_transport() {
+        let (_, bundle) = bundle_answering(vec![
+            http(StatusCode::NOT_FOUND, ""),
+            http(StatusCode::NOT_FOUND, ""),
+        ]);
+
+        let create = bundle.create(&rewards(), &draft()).await;
+        let list = bundle.list(&rewards()).await;
+
+        assert_eq!(
+            (create, list),
+            (
+                Err(CollectionFailure::Transport),
+                Err(CollectionFailure::Transport)
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn transport_level_errors_map_to_their_coarse_failures() {
+        for (error, expected) in [
+            (HelixError::RateLimited, CollectionFailure::RateLimited),
+            (HelixError::ReauthRequired, CollectionFailure::Unauthorized),
+            (
+                HelixError::Credentials("no token".to_owned()),
+                CollectionFailure::NotConnected,
+            ),
+            (
+                HelixError::Transport("timed out".to_owned()),
+                CollectionFailure::Transport,
+            ),
+            (
+                HelixError::Http {
+                    status: StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    body: String::new(),
+                },
+                CollectionFailure::Transport,
+            ),
+        ] {
+            let (_, bundle) = bundle_answering(vec![Err(error)]);
+
+            let outcome = bundle.list(&rewards()).await;
+
+            assert_eq!(outcome, Err(expected));
+        }
+    }
+
+    #[tokio::test]
+    async fn no_failure_message_carries_the_token_the_url_or_the_raw_body() {
+        let leaky = format!("{LEAKY_URL}?token={TOKEN_SENTINEL}");
+        let errors = [
+            HelixError::Transport(leaky.clone()),
+            HelixError::Credentials(leaky.clone()),
+            HelixError::Http {
+                status: StatusCode::BAD_REQUEST.as_u16(),
+                body: json!({ "message": format!("duplicate {leaky}") }).to_string(),
+            },
+            HelixError::Http {
+                status: StatusCode::BAD_REQUEST.as_u16(),
+                body: json!({ "message": format!("title {leaky}") }).to_string(),
+            },
+            HelixError::Http {
+                status: StatusCode::BAD_REQUEST.as_u16(),
+                body: json!({ "message": leaky.clone() }).to_string(),
+            },
+            HelixError::Http {
+                status: StatusCode::FORBIDDEN.as_u16(),
+                body: leaky.clone(),
+            },
+            HelixError::Http {
+                status: StatusCode::BAD_GATEWAY.as_u16(),
+                body: leaky.clone(),
+            },
+        ];
+        for error in errors {
+            let (_, bundle) = bundle_answering(vec![Err(error)]);
+
+            let shown = bundle
+                .create(&rewards(), &draft())
+                .await
+                .unwrap_err()
+                .to_string();
+
+            assert!(
+                !shown.contains(TOKEN_SENTINEL) && !shown.contains("api.twitch.tv"),
+                "leaked: {shown}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn manager_writes_build_the_same_requests_as_the_reward_sub_actions() {
+        let item = CollectionItemId::new("rw1");
+        let config = BTreeMap::from([("reward_id".to_owned(), Variant::String("rw1".to_owned()))]);
+        let stack = ArgStack::new();
+        type RunnerFactory =
+            fn(Arc<dyn HelixTransport>, Arc<SelfIdentity>) -> Box<dyn SubActionRunner>;
+        type WriteCase = (&'static str, Option<(&'static str, bool)>, RunnerFactory);
+        let cases: [WriteCase; 5] = [
+            ("enable", Some((ENABLED_TOGGLE, true)), |t, i| {
+                Box::new(EnableRewardRunner::new(t, i))
+            }),
+            ("disable", Some((ENABLED_TOGGLE, false)), |t, i| {
+                Box::new(DisableRewardRunner::new(t, i))
+            }),
+            ("pause", Some((PAUSED_TOGGLE, true)), |t, i| {
+                Box::new(PauseRewardRunner::new(t, i))
+            }),
+            ("resume", Some((PAUSED_TOGGLE, false)), |t, i| {
+                Box::new(ResumeRewardRunner::new(t, i))
+            }),
+            ("delete", None, |t, i| {
+                Box::new(DeleteRewardRunner::new(t, i))
+            }),
+        ];
+        for (name, toggle, runner) in cases {
+            let runner_transport = Arc::new(MockTransport::returning(Ok(Value::Null)));
+            let runner = runner(
+                Arc::clone(&runner_transport) as Arc<dyn HelixTransport>,
+                Arc::new(SelfIdentity::new(Arc::new(MockCreds::with_identity()))),
+            );
+            runner.execute(&config, &make_ctx(&stack)).await;
+            let (manager_transport, bundle) =
+                bundle_answering(vec![rows_of(vec![reward_row("rw1", "x")])]);
+            match toggle {
+                Some((key, on)) => {
+                    bundle.set_toggle(&rewards(), &item, key, on).await.unwrap();
+                }
+                None => bundle.delete(&rewards(), &item).await.unwrap(),
+            }
+
+            let shape =
+                |request: HelixRequest| (request.method, request.path, request.query, request.body);
+            assert_eq!(
+                shape(manager_transport.request(0)),
+                shape(runner_transport.request(0)),
+                "{name}"
+            );
+        }
+    }
+}

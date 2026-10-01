@@ -331,3 +331,233 @@ impl Render for CollectionList {
         column
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_platform_core::CollectionItemAccess;
+    use gpui::{Entity, Subscription, TestAppContext};
+
+    use super::*;
+
+    const ENABLED: &str = "enabled";
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Seen {
+        Edit(String),
+        Delete(String),
+        Toggle(String, String, bool),
+        Retry,
+    }
+
+    struct Recorder {
+        seen: Vec<Seen>,
+        _sub: Subscription,
+    }
+
+    fn item(id: &str, enabled: bool, access: CollectionItemAccess) -> CollectionItem {
+        CollectionItem {
+            id: CollectionItemId::new(id),
+            title: id.to_owned(),
+            values: BTreeMap::new(),
+            toggles: BTreeMap::from([(ENABLED.to_owned(), enabled)]),
+            access,
+        }
+    }
+
+    fn manageable(id: &str) -> CollectionItem {
+        item(id, true, CollectionItemAccess::Manageable)
+    }
+
+    fn read_only(id: &str) -> CollectionItem {
+        item(
+            id,
+            true,
+            CollectionItemAccess::ReadOnly {
+                reason: "elsewhere".to_owned(),
+            },
+        )
+    }
+
+    fn mount(cx: &mut TestAppContext) -> (Entity<CollectionList>, Entity<Recorder>) {
+        let list = cx.update(|cx| {
+            cx.new(|_| CollectionList::new([(ENABLED.to_owned(), "Enabled".to_owned())]))
+        });
+        let recorder = cx.update(|cx| {
+            cx.new(|cx| Recorder {
+                seen: Vec::new(),
+                _sub: cx.subscribe(&list, |this: &mut Recorder, _, event, _| {
+                    this.seen.push(match event {
+                        CollectionListEvent::Edit(id) => Seen::Edit(id.to_string()),
+                        CollectionListEvent::Delete(id) => Seen::Delete(id.to_string()),
+                        CollectionListEvent::Toggle { item, toggle, on } => {
+                            Seen::Toggle(item.to_string(), toggle.clone(), *on)
+                        }
+                        CollectionListEvent::Retry => Seen::Retry,
+                    });
+                }),
+            })
+        });
+        (list, recorder)
+    }
+
+    fn listed(cx: &mut TestAppContext, items: Vec<CollectionItem>) -> Entity<CollectionList> {
+        let (list, _) = mount(cx);
+        cx.update(|cx| list.update(cx, |list, cx| list.apply_listing(Ok(items), cx)));
+        list
+    }
+
+    fn poke_every_control(cx: &mut TestAppContext, list: &Entity<CollectionList>) {
+        cx.update(|cx| {
+            list.update(cx, |list, cx| {
+                list.emit_toggle(0, 0, cx);
+                list.emit_for(0, CollectionListEvent::Edit, cx);
+                list.emit_for(0, CollectionListEvent::Delete, cx);
+            })
+        });
+        cx.run_until_parked();
+    }
+
+    fn seen(cx: &mut TestAppContext, recorder: &Entity<Recorder>) -> Vec<Seen> {
+        cx.update(|cx| recorder.update(cx, |recorder, _| std::mem::take(&mut recorder.seen)))
+    }
+
+    #[gpui::test]
+    fn a_reload_over_a_ready_listing_keeps_the_rows_on_screen(cx: &mut TestAppContext) {
+        let list = listed(cx, vec![manageable("a")]);
+
+        cx.update(|cx| list.update(cx, |list, cx| list.begin_loading(cx)));
+
+        assert_eq!(
+            cx.update(|cx| list.read(cx).load().clone()),
+            ListLoad::Ready
+        );
+    }
+
+    #[gpui::test]
+    fn a_reload_over_a_failed_listing_shows_loading_again(cx: &mut TestAppContext) {
+        let (list, _) = mount(cx);
+        cx.update(|cx| {
+            list.update(cx, |list, cx| {
+                list.apply_listing(Err("offline".to_owned()), cx);
+                list.begin_loading(cx);
+            })
+        });
+
+        assert_eq!(
+            cx.update(|cx| list.read(cx).load().clone()),
+            ListLoad::Loading
+        );
+    }
+
+    #[gpui::test]
+    fn a_manageable_row_emits_edit_delete_and_the_flipped_toggle(cx: &mut TestAppContext) {
+        let (list, recorder) = mount(cx);
+        cx.update(|cx| {
+            list.update(cx, |list, cx| {
+                list.apply_listing(Ok(vec![manageable("a")]), cx)
+            })
+        });
+
+        poke_every_control(cx, &list);
+
+        assert_eq!(
+            seen(cx, &recorder),
+            vec![
+                Seen::Toggle("a".to_owned(), ENABLED.to_owned(), false),
+                Seen::Edit("a".to_owned()),
+                Seen::Delete("a".to_owned()),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn read_only_and_busy_rows_emit_nothing(cx: &mut TestAppContext) {
+        for busy in [false, true] {
+            let (list, recorder) = mount(cx);
+            let row = if busy {
+                manageable("a")
+            } else {
+                read_only("a")
+            };
+            cx.update(|cx| {
+                list.update(cx, |list, cx| {
+                    list.apply_listing(Ok(vec![row]), cx);
+                    if busy {
+                        list.set_busy(&CollectionItemId::new("a"), true, cx);
+                    }
+                })
+            });
+
+            poke_every_control(cx, &list);
+
+            assert_eq!(seen(cx, &recorder), Vec::new(), "busy={busy}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_fresh_listing_drops_busy_markers_only_for_rows_that_vanished(cx: &mut TestAppContext) {
+        let (list, recorder) = mount(cx);
+        cx.update(|cx| {
+            list.update(cx, |list, cx| {
+                list.apply_listing(Ok(vec![manageable("a"), manageable("b")]), cx);
+                list.set_busy(&CollectionItemId::new("a"), true, cx);
+                list.set_busy(&CollectionItemId::new("b"), true, cx);
+                list.apply_listing(Ok(vec![manageable("a")]), cx);
+                list.upsert(manageable("b"), cx);
+                list.emit_for(0, CollectionListEvent::Edit, cx);
+                list.emit_for(1, CollectionListEvent::Edit, cx);
+            })
+        });
+        cx.run_until_parked();
+
+        assert_eq!(seen(cx, &recorder), vec![Seen::Edit("b".to_owned())]);
+    }
+
+    #[gpui::test]
+    fn upsert_replaces_a_known_row_in_place_and_appends_a_new_one(cx: &mut TestAppContext) {
+        let list = listed(cx, vec![manageable("a"), manageable("b")]);
+        let mut renamed = manageable("a");
+        renamed.title = "Hydrate".to_owned();
+
+        cx.update(|cx| {
+            list.update(cx, |list, cx| {
+                list.upsert(renamed, cx);
+                list.upsert(manageable("c"), cx);
+            })
+        });
+
+        let titles: Vec<String> = cx.update(|cx| {
+            ["a", "b", "c"]
+                .iter()
+                .filter_map(|id| list.read(cx).item(&CollectionItemId::new(*id)))
+                .map(|item| item.title.clone())
+                .collect()
+        });
+        assert_eq!(
+            (titles, cx.update(|cx| list.read(cx).count())),
+            (
+                vec!["Hydrate".to_owned(), "b".to_owned(), "c".to_owned()],
+                3
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn removing_a_row_clears_its_busy_marker(cx: &mut TestAppContext) {
+        let (list, recorder) = mount(cx);
+        cx.update(|cx| {
+            list.update(cx, |list, cx| {
+                list.apply_listing(Ok(vec![manageable("a")]), cx);
+                list.set_busy(&CollectionItemId::new("a"), true, cx);
+                list.remove(&CollectionItemId::new("a"), cx);
+                list.upsert(manageable("a"), cx);
+                list.emit_for(0, CollectionListEvent::Delete, cx);
+            })
+        });
+        cx.run_until_parked();
+
+        assert_eq!(seen(cx, &recorder), vec![Seen::Delete("a".to_owned())]);
+    }
+}

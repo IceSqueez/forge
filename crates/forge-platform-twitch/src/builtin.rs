@@ -346,6 +346,29 @@ impl TwitchIntegrationBundle {
         creds: Arc<dyn CredentialsRepo>,
         tier: BroadcasterTier,
     ) -> Arc<Self> {
+        Self::for_test_with_transport(
+            login,
+            state_rx,
+            tracker,
+            creds,
+            tier,
+            Arc::new(crate::sub_actions::test_support::MockTransport::returning(
+                Ok(serde_json::Value::Null),
+            )),
+            "1",
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test_with_transport(
+        login: Option<String>,
+        state_rx: watch::Receiver<ChatConnectionState>,
+        tracker: SubscriptionTracker,
+        creds: Arc<dyn CredentialsRepo>,
+        tier: BroadcasterTier,
+        transport: Arc<dyn HelixTransport>,
+        broadcaster_id: &str,
+    ) -> Arc<Self> {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
@@ -361,8 +384,8 @@ impl TwitchIntegrationBundle {
             tracker,
             config: ChatSessionConfig {
                 client_id: "test-client".to_owned(),
-                broadcaster_id: "1".to_owned(),
-                user_id: "1".to_owned(),
+                broadcaster_id: broadcaster_id.to_owned(),
+                user_id: broadcaster_id.to_owned(),
                 endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
             },
             bus: Arc::new(crate::event_channel::PlatformEventChannel::new()),
@@ -371,9 +394,7 @@ impl TwitchIntegrationBundle {
             handle: Mutex::new(None),
             viewer_state: std::sync::RwLock::new(ViewerPollState::default()),
             viewer_report_tx,
-            transport: Arc::new(crate::sub_actions::test_support::MockTransport::returning(
-                Ok(serde_json::Value::Null),
-            )),
+            transport,
             rate_limiter: Arc::new(TokenBucketRateLimiter::new(
                 HELIX_BUDGET_CAPACITY,
                 HELIX_BUDGET_WINDOW,
@@ -1556,12 +1577,60 @@ mod tests {
         assert_eq!(*total, u64::from(HELIX_BUDGET_CAPACITY));
     }
 
+    fn reward_revision_moved(revisions: &mut forge_platform_core::CollectionRevisions) -> bool {
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        let changed = std::pin::pin!(revisions.changed());
+        matches!(
+            changed.poll(&mut context),
+            std::task::Poll::Ready(forge_platform_core::RevisionWait::Changed)
+        )
+    }
+
     #[tokio::test]
-    async fn health_stream_is_subscribable() {
-        let b = make_bundle(ChatConnectionState::Connected);
-        let health: &dyn BuiltinHealth = b.as_ref();
-        let items: Vec<_> = health.stream().take(0).collect().await;
-        assert!(items.is_empty());
+    async fn every_fresh_connection_bumps_the_reward_revision() {
+        let b = make_bundle(ChatConnectionState::Disconnected);
+        let mut revisions = b.lifecycle().reward_revisions();
+        let mut moved = Vec::new();
+
+        for state in [
+            ChatConnectionState::Connected,
+            ChatConnectionState::Reconnecting { attempt: 1 },
+            ChatConnectionState::Connected,
+        ] {
+            b.on_chat_state_changed(state);
+            moved.push(reward_revision_moved(&mut revisions));
+        }
+
+        assert_eq!(moved, vec![true, false, true]);
+    }
+
+    #[tokio::test]
+    async fn a_repeated_connected_state_does_not_bump_the_reward_revision() {
+        let b = make_bundle(ChatConnectionState::Disconnected);
+        b.on_chat_state_changed(ChatConnectionState::Connected);
+        let mut revisions = b.lifecycle().reward_revisions();
+
+        b.on_chat_state_changed(ChatConnectionState::Connected);
+
+        assert!(!reward_revision_moved(&mut revisions));
+    }
+
+    #[test]
+    fn the_rewards_manager_action_targets_a_collection_the_bundle_declares() {
+        let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);
+        let declared: Vec<CollectionId> =
+            forge_platform_core::BuiltinCollections::collections(b.as_ref())
+                .into_iter()
+                .map(|metadata| metadata.id)
+                .collect();
+
+        let targets: Vec<CollectionId> = b
+            .actions()
+            .into_iter()
+            .filter_map(|action| action.collection)
+            .collect();
+
+        assert_eq!(targets, declared);
     }
 
     #[test]

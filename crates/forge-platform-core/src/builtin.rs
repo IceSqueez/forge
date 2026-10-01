@@ -834,7 +834,7 @@ mod tests {
                 hint: None,
                 required: false,
             }],
-            collection: None,
+            collection: Some(crate::collections::CollectionId::new("rewards")),
         };
         let json = serde_json::to_string(&action).unwrap();
         let back: QuickAction = serde_json::from_str(&json).unwrap();
@@ -863,6 +863,7 @@ mod tests {
         assert!(action.group.is_none());
         assert!(!action.destructive);
         assert_eq!(action.accent, QuickActionAccent::Brand);
+        assert!(action.collection.is_none());
     }
 
     #[test]

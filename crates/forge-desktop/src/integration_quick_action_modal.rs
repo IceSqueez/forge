@@ -1145,6 +1145,7 @@ mod tests {
             },
             picker: Some(picker),
             fields: Vec::new(),
+            collection: None,
         }
     }
 

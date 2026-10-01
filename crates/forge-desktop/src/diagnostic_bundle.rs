@@ -538,6 +538,7 @@ mod tests {
                 content: probe.clone(),
                 quick: probe,
                 control: None,
+                collections: None,
                 obs_client: None,
             }
         }

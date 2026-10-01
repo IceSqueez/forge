@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
-    BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId, BuiltinStatus, ChatPlatform,
-    LiveViewerSource, PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome,
-    RateLimiter, SectionIcon, TokenBucketRateLimiter,
+    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId, BuiltinStatus,
+    ChatPlatform, LiveViewerSource, PlatformEndpoints, PlatformError, QuickActions,
+    RateLimitOutcome, RateLimiter, SectionIcon, TokenBucketRateLimiter,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
@@ -32,6 +32,7 @@ pub struct BuiltinObject {
     pub content: Arc<dyn BuiltinContent>,
     pub quick: Arc<dyn QuickActions>,
     pub control: Option<Arc<dyn BuiltinControl>>,
+    pub collections: Option<Arc<dyn BuiltinCollections>>,
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
 }
 
@@ -167,6 +168,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         content: client.clone(),
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
+        collections: None,
         obs_client: None,
     }
 }
@@ -179,6 +181,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         content: client.clone(),
         quick: client.clone(),
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
+        collections: None,
         obs_client: Some(client),
     }
 }
@@ -217,6 +220,7 @@ pub fn twitch_builtin_object(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(bundle as Arc<dyn BuiltinControl>),
+        collections: None,
         obs_client: None,
     }
 }
@@ -231,6 +235,7 @@ pub fn youtube_builtin_object(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(bundle as Arc<dyn BuiltinControl>),
+        collections: None,
         obs_client: None,
     }
 }
@@ -245,6 +250,7 @@ pub fn kick_builtin_object(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(bundle as Arc<dyn BuiltinControl>),
+        collections: None,
         obs_client: None,
     }
 }
@@ -689,6 +695,7 @@ fn build_discord(
         content: client.clone(),
         quick: client.clone(),
         control: None,
+        collections: None,
         obs_client: None,
     };
     (Some(object), client)
@@ -727,6 +734,7 @@ async fn build_midi(
         content: client.clone(),
         quick: client.clone(),
         control: Some(client.clone()),
+        collections: None,
         obs_client: None,
     };
     (Some(object), Some(client))
@@ -767,6 +775,7 @@ async fn build_hotkey(
         content: client.clone(),
         quick: client.clone(),
         control: Some(client.clone()),
+        collections: None,
         obs_client: None,
     };
     (Some(object), Some(client), Some(reconciler))
@@ -1623,6 +1632,7 @@ mod tests {
                 content: probe.clone(),
                 quick: probe,
                 control: None,
+                collections: None,
                 obs_client: None,
             };
             let bus = EventBus::new(Arc::new(StubEventLog));

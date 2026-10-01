@@ -417,6 +417,7 @@ fn quick_action(
         },
         picker: None,
         fields,
+        collection: None,
     }
 }
 

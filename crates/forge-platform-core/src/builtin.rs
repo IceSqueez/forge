@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use forge_types::{SubActionStep, Variant};
 
 use crate::ConnectionState;
+use crate::collections::CollectionId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -431,6 +432,8 @@ pub struct QuickAction {
     pub picker: Option<PickerKind>,
     #[serde(default)]
     pub fields: Vec<QuickActionField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection: Option<CollectionId>,
 }
 
 impl QuickAction {
@@ -831,6 +834,7 @@ mod tests {
                 hint: None,
                 required: false,
             }],
+            collection: None,
         };
         let json = serde_json::to_string(&action).unwrap();
         let back: QuickAction = serde_json::from_str(&json).unwrap();
@@ -921,6 +925,7 @@ mod tests {
             subaction_template: template,
             picker: None,
             fields,
+            collection: None,
         }
     }
 

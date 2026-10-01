@@ -5,6 +5,7 @@ pub mod backoff;
 pub mod builtin;
 pub mod capabilities;
 pub mod chat;
+pub mod collections;
 pub mod endpoints;
 pub mod error;
 pub mod live_viewers;
@@ -28,6 +29,11 @@ pub use capabilities::PlatformCapabilities;
 pub use chat::{
     AtomicConnectionState, CONNECTION_STATE_CHANGED_KIND, ChatPlatform, ConnectionState,
     connection_state_changed_event,
+};
+pub use collections::{
+    BuiltinCollections, CollectionFailure, CollectionField, CollectionId, CollectionItem,
+    CollectionItemAccess, CollectionItemId, CollectionMetadata, CollectionOutcome,
+    CollectionRevisionSignal, CollectionRevisions, CollectionToggle, RevisionWait,
 };
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};

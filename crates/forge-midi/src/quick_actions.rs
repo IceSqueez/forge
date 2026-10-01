@@ -51,6 +51,7 @@ impl QuickActions for MidiClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
             QuickAction {
                 label: "Send Note Off".to_owned(),
@@ -82,6 +83,7 @@ impl QuickActions for MidiClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
             QuickAction {
                 label: "Send CC".to_owned(),
@@ -110,6 +112,7 @@ impl QuickActions for MidiClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
             QuickAction {
                 label: "Send Raw".to_owned(),
@@ -143,6 +146,7 @@ impl QuickActions for MidiClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
         ]
     }

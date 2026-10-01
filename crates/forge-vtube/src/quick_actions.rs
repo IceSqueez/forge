@@ -76,6 +76,7 @@ fn quick_action(
         },
         picker,
         fields,
+        collection: None,
     }
 }
 

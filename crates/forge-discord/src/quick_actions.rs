@@ -44,6 +44,7 @@ impl QuickActions for DiscordClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
             QuickAction {
                 label: "Post Embed".to_owned(),
@@ -76,6 +77,7 @@ impl QuickActions for DiscordClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
             QuickAction {
                 label: "Edit Message".to_owned(),
@@ -105,6 +107,7 @@ impl QuickActions for DiscordClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
             QuickAction {
                 label: "Test Webhook".to_owned(),
@@ -133,6 +136,7 @@ impl QuickActions for DiscordClient {
                 },
                 picker: None,
                 fields: Vec::new(),
+                collection: None,
             },
         ]
     }

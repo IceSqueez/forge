@@ -7,9 +7,10 @@ use forge_components::{
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_obs::ObsClient;
 use forge_platform_core::{
-    BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
-    ControlFailure, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthValue, HeroBadge,
-    HeroBadgeTone, QuickAction, QuickActions, SectionIcon,
+    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
+    CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection, HeaderAction,
+    HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActions,
+    SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
@@ -59,6 +60,7 @@ pub struct IntegrationDetail {
     content: Arc<dyn BuiltinContent>,
     quick: Arc<dyn QuickActions>,
     control: Option<Arc<dyn BuiltinControl>>,
+    collections: Option<Arc<dyn BuiltinCollections>>,
     rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     obs_source: Option<Arc<ObsClient>>,
@@ -175,6 +177,7 @@ impl IntegrationDetail {
             content,
             quick,
             control,
+            collections,
             obs_client: obs_source,
         } = object;
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
@@ -198,7 +201,7 @@ impl IntegrationDetail {
         let header_actions = status.header_actions();
         let health_metrics = health.metrics();
         let sections = content.sections();
-        let quick_actions = quick.actions();
+        let quick_actions = reachable_quick_actions(&*quick, collections.as_deref());
 
         let health_bridge = Self::spawn_health_bridge(&health, cx);
         let mut bridges = Vec::new();
@@ -223,6 +226,7 @@ impl IntegrationDetail {
             content,
             quick,
             control,
+            collections,
             rt_handle,
             action_engine,
             obs_source,
@@ -329,7 +333,7 @@ impl IntegrationDetail {
         self.header_actions = self.status.header_actions();
         self.health_metrics = self.health.metrics();
         self.sections = self.content.sections();
-        self.quick_actions = self.quick.actions();
+        self.quick_actions = reachable_quick_actions(&*self.quick, self.collections.as_deref());
         cx.notify();
     }
 
@@ -661,7 +665,7 @@ impl IntegrationDetail {
         let Some(action) = self.quick_actions.get(idx) else {
             return;
         };
-        if !action.is_runnable() {
+        if !action.is_runnable() || action.collection.is_some() {
             return;
         }
         let action = action.clone();
@@ -812,6 +816,7 @@ impl IntegrationDetail {
         self.content = object.content;
         self.quick = object.quick;
         self.control = object.control;
+        self.collections = object.collections;
         self.connect = None;
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
@@ -1458,6 +1463,31 @@ fn credential_key(platform: PlatformId) -> &'static str {
         PlatformId::YouTube => forge_platform_youtube::CREDENTIAL_KEY,
         PlatformId::Kick => forge_platform_kick::CREDENTIAL_KEY,
     }
+}
+
+fn reachable_quick_actions(
+    quick: &dyn QuickActions,
+    collections: Option<&dyn BuiltinCollections>,
+) -> Vec<QuickAction> {
+    let declared: Vec<CollectionId> = collections
+        .map(|capability| {
+            capability
+                .collections()
+                .into_iter()
+                .map(|metadata| metadata.id)
+                .collect()
+        })
+        .unwrap_or_default();
+    quick
+        .actions()
+        .into_iter()
+        .filter(|action| {
+            action
+                .collection
+                .as_ref()
+                .is_none_or(|target| declared.contains(target))
+        })
+        .collect()
 }
 
 fn connect_platform_for(id: &str, has_control: bool) -> Option<PlatformId> {

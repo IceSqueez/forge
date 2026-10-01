@@ -121,6 +121,7 @@ pub fn unavailable_builtin(id: &BuiltinId) -> BuiltinObject {
         content: Arc::new(UnavailableContent),
         quick: Arc::new(UnavailableQuickActions),
         control: None,
+        collections: None,
         obs_client: None,
     }
 }

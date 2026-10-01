@@ -295,7 +295,7 @@ mod tests {
 
     struct Watcher {
         reloads: usize,
-        _watch: Vec<Task<()>>,
+        _watch: Task<()>,
     }
 
     fn count_reload(watcher: &mut Watcher, _: &mut Context<Watcher>) {
@@ -310,7 +310,7 @@ mod tests {
         let watcher = cx.update(|cx| {
             cx.new(|cx| Watcher {
                 reloads: 0,
-                _watch: watch_vtube_catalog(&bus, None, count_reload, cx),
+                _watch: watch_vtube_catalog(&bus, BuiltinRegistry::default(), count_reload, cx),
             })
         });
         cx.run_until_parked();

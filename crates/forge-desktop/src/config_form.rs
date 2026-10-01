@@ -1328,7 +1328,9 @@ mod tests {
     ) {
         for (options_key, expect_choice) in [
             ("collections.twitch.rewards", true),
-            ("obs.scene_names", false),
+            ("obs.scene_names", true),
+            ("vtube.model_ids", true),
+            ("custom.names", false),
         ] {
             let (_host, fields) = build(
                 cx,

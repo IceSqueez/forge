@@ -1088,6 +1088,8 @@ tts_aliases_role_blocked = БЛОК
 
 tts_aliases_form_title_assign = Призначити голос
 tts_aliases_form_title_edit = Редагувати голосовий аліас
+tts_aliases_form_platform_label = ПЛАТФОРМА
+tts_aliases_platform_any = Будь-яка
 tts_aliases_form_viewer_label = ГЛЯДАЧ
 tts_aliases_form_viewer_placeholder = Імʼя глядача
 tts_aliases_form_engine_label = ДВИГУН

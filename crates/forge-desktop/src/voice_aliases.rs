@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, OverlayPosition, SearchState, Spacing, TextInput, avatar_tile,
-    badge, body_family, card, column, confirm_modal, data_table, empty_state, field_label,
-    hash_accent, icon, modal, mono_family, overlay, primary_button, primary_button_with_icon,
-    secondary_button, segment, segmented, spacing, toggle, toolbar_row, tr, virtual_table,
-    with_alpha,
+    ForgePalette, Icon, InputEvent, OverlayPosition, PlatformKind, Radius, SearchState, Spacing,
+    TextInput, avatar_tile, badge, body_family, card, column, confirm_modal, data_table,
+    empty_state, field_label, hash_accent, icon, modal, mono_family, overlay, platform_color,
+    primary_button, primary_button_with_icon, radius, secondary_button, segment, segmented,
+    spacing, status_dot, toggle, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
@@ -34,6 +34,9 @@ const ROW_PAD_H: Pixels = px(12.0);
 const VOICE_FS: Pixels = px(11.5);
 const META_FS: Pixels = px(11.0);
 const PAGE_PAD_H: Pixels = px(18.0);
+const PLATFORM_DOT: Pixels = px(6.0);
+const PLATFORM_BADGE_PAD_V: Pixels = px(1.0);
+const PLATFORM_BADGE_PAD_H: Pixels = px(6.0);
 
 const VIEWER_GROW: f32 = 1.4;
 const VOICE_GROW: f32 = 1.6;
@@ -71,10 +74,74 @@ impl StrategyChoice {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlatformScope {
+    Any,
+    Twitch,
+    YouTube,
+    Kick,
+}
+
+impl PlatformScope {
+    const ALL: [PlatformScope; 4] = [
+        PlatformScope::Any,
+        PlatformScope::Twitch,
+        PlatformScope::YouTube,
+        PlatformScope::Kick,
+    ];
+
+    fn token(self) -> Option<&'static str> {
+        match self {
+            PlatformScope::Any => None,
+            PlatformScope::Twitch => Some("twitch"),
+            PlatformScope::YouTube => Some("youtube"),
+            PlatformScope::Kick => Some("kick"),
+        }
+    }
+
+    fn from_token(token: &str) -> Option<PlatformScope> {
+        PlatformScope::ALL
+            .into_iter()
+            .find(|scope| scope.token() == Some(token))
+    }
+
+    fn label(self) -> String {
+        match self {
+            PlatformScope::Any => tr!("tts_aliases_platform_any"),
+            PlatformScope::Twitch => "Twitch".to_owned(),
+            PlatformScope::YouTube => "YouTube".to_owned(),
+            PlatformScope::Kick => "Kick".to_owned(),
+        }
+    }
+
+    fn kind(self) -> Option<PlatformKind> {
+        match self {
+            PlatformScope::Any => None,
+            PlatformScope::Twitch => Some(PlatformKind::Twitch),
+            PlatformScope::YouTube => Some(PlatformKind::YouTube),
+            PlatformScope::Kick => Some(PlatformKind::Kick),
+        }
+    }
+}
+
+fn split_alias_key(key: &str) -> (PlatformScope, &str) {
+    key.split_once(':')
+        .and_then(|(token, name)| PlatformScope::from_token(token).map(|scope| (scope, name)))
+        .unwrap_or((PlatformScope::Any, key))
+}
+
+fn alias_key(scope: PlatformScope, name: &str) -> String {
+    match scope.token() {
+        Some(token) => format!("{token}:{name}"),
+        None => name.to_owned(),
+    }
+}
+
 struct AliasRow {
     id: AliasId,
     viewer_id: String,
     viewer_name: String,
+    platform: PlatformScope,
     engine_id: String,
     engine_label: String,
     voice_id: String,
@@ -115,6 +182,7 @@ enum AliasFormEvent {
 
 struct AliasForm {
     editing: Option<AliasId>,
+    platform: PlatformScope,
     viewer: Entity<TextInput>,
     voice: Entity<TextInput>,
     pitch: Entity<TextInput>,
@@ -131,6 +199,7 @@ impl AliasForm {
     #[allow(clippy::too_many_arguments)]
     fn new(
         editing: Option<AliasId>,
+        platform: PlatformScope,
         viewer: &str,
         engine: Option<String>,
         voice: &str,
@@ -183,6 +252,7 @@ impl AliasForm {
 
         AliasForm {
             editing,
+            platform,
             viewer,
             voice,
             pitch,
@@ -200,6 +270,11 @@ impl AliasForm {
 
     fn set_engine(&mut self, id: &'static str, cx: &mut Context<Self>) {
         self.engine = Some(id.to_owned());
+        cx.notify();
+    }
+
+    fn set_platform(&mut self, platform: PlatformScope, cx: &mut Context<Self>) {
+        self.platform = platform;
         cx.notify();
     }
 
@@ -238,6 +313,27 @@ impl Render for AliasForm {
         let viewer_field = form_field(
             tr!("tts_aliases_form_viewer_label"),
             self.viewer.clone(),
+            &palette,
+            density,
+        );
+
+        let platform_segments = PlatformScope::ALL
+            .into_iter()
+            .map(|scope| {
+                segment(
+                    SharedString::from(format!(
+                        "va-form-platform-{}",
+                        scope.token().unwrap_or("any")
+                    )),
+                    scope.label(),
+                    self.platform == scope,
+                    cx.listener(move |this, _: &ClickEvent, _, cx| this.set_platform(scope, cx)),
+                )
+            })
+            .collect();
+        let platform_field = labelled(
+            tr!("tts_aliases_form_platform_label"),
+            div().flex().child(segmented(platform_segments, &palette)),
             &palette,
             density,
         );
@@ -338,6 +434,7 @@ impl Render for AliasForm {
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Sm, density))
+            .child(platform_field)
             .child(viewer_field)
             .child(block_row)
             .child(config);
@@ -556,7 +653,8 @@ impl VoiceAliasesView {
     }
 
     fn open_assign(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let form = cx.new(|cx| AliasForm::new(None, "", None, "", "", "", false, cx));
+        let form =
+            cx.new(|cx| AliasForm::new(None, PlatformScope::Any, "", None, "", "", "", false, cx));
         form.update(cx, |f, cx| f.focus(window, cx));
         self._form_sub = Some(cx.subscribe(&form, Self::on_form_event));
         self.form = Some(form);
@@ -568,6 +666,7 @@ impl VoiceAliasesView {
             return;
         };
         let id = row.id.clone();
+        let platform = row.platform;
         let viewer = row.viewer_name.clone();
         let engine = (!row.blocked).then(|| row.engine_id.clone());
         let voice = row.voice_id.clone();
@@ -577,6 +676,7 @@ impl VoiceAliasesView {
         let form = cx.new(|cx| {
             AliasForm::new(
                 Some(id),
+                platform,
                 &viewer,
                 engine,
                 &voice,
@@ -621,10 +721,22 @@ impl VoiceAliasesView {
 
         let repo = Arc::clone(&self.repo);
         let speak = self.speak.clone();
+        let replaces_existing = self
+            .form
+            .as_ref()
+            .is_some_and(|form| form.read(cx).editing.is_some());
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 repo.upsert(&alias).await.map_err(|e| e.to_string())?;
+                if let Some(handle) = speak.as_ref()
+                    && replaces_existing
+                    && let Err(e) = handle
+                        .send(SpeakCommand::RemoveAlias(alias.id.clone()))
+                        .await
+                {
+                    eprintln!("forge-desktop: voice alias hot-reload (replace) failed: {e}");
+                }
                 if let Some(handle) = speak
                     && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
                 {
@@ -968,6 +1080,14 @@ impl VoiceAliasesView {
                     .text_color(name_color)
                     .child(row.viewer_name.clone()),
             );
+        if let Some(kind) = row.platform.kind() {
+            viewer_inner = viewer_inner.child(platform_badge(
+                row.platform.label(),
+                platform_color(kind, palette),
+                palette,
+                density,
+            ));
+        }
         if muted {
             viewer_inner = viewer_inner.child(role_badge(
                 tr!("tts_aliases_role_blocked"),
@@ -1156,6 +1276,31 @@ fn role_badge(
     badge(palette.surface_overlay, color, label, true, ROLE_BADGE_FS)
 }
 
+fn platform_badge(
+    label: String,
+    dot: Rgba,
+    palette: &ForgePalette,
+    density: Density,
+) -> impl IntoElement {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xxs, density))
+        .py(PLATFORM_BADGE_PAD_V)
+        .px(PLATFORM_BADGE_PAD_H)
+        .rounded(radius(Radius::Pill))
+        .bg(palette.surface_overlay)
+        .child(status_dot(dot, PLATFORM_DOT))
+        .child(
+            div()
+                .font_family(mono_family())
+                .text_size(ROLE_BADGE_FS)
+                .text_color(palette.text_muted)
+                .child(label),
+        )
+}
+
 fn labelled(
     label: impl Into<SharedString>,
     control: impl IntoElement,
@@ -1197,10 +1342,18 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let engine = a.engine_id.0;
     let engine_label = engine_display_label(&engine);
     let voice = a.voice_id.0;
+    let (platform, _) = split_alias_key(&a.viewer_id);
+    let viewer_name = match a.viewer_name.split_once(':') {
+        Some((token, name)) if PlatformScope::from_token(token) == Some(platform) => {
+            name.to_owned()
+        }
+        _ => a.viewer_name,
+    };
     AliasRow {
         id: a.id,
         viewer_id: a.viewer_id,
-        viewer_name: a.viewer_name,
+        viewer_name,
+        platform,
         engine_id: engine,
         engine_label,
         voice_id: voice.clone(),
@@ -1219,7 +1372,7 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
     let rate = form.rate.read(cx).content().trim().parse::<f32>().ok();
     VoiceAlias {
         id: form.editing.clone().unwrap_or_default(),
-        viewer_id: viewer.clone(),
+        viewer_id: alias_key(form.platform, &viewer),
         viewer_name: viewer,
         engine_id: EngineId(engine.trim().to_owned()),
         voice_id: VoiceId(voice),

@@ -1069,6 +1069,8 @@ tts_aliases_role_blocked = BLOCKED
 
 tts_aliases_form_title_assign = Assign a voice
 tts_aliases_form_title_edit = Edit voice alias
+tts_aliases_form_platform_label = PLATFORM
+tts_aliases_platform_any = Any
 tts_aliases_form_viewer_label = VIEWER
 tts_aliases_form_viewer_placeholder = Viewer name
 tts_aliases_form_engine_label = ENGINE

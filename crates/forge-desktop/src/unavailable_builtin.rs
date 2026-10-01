@@ -123,5 +123,6 @@ pub fn unavailable_builtin(id: &BuiltinId) -> BuiltinObject {
         control: None,
         collections: None,
         obs_client: None,
+        vtube_client: None,
     }
 }

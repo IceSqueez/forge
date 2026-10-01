@@ -183,6 +183,7 @@ impl IntegrationDetail {
             control,
             collections,
             obs_client: obs_source,
+            vtube_client: _,
         } = object;
         let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
 

@@ -17,6 +17,7 @@ pub(crate) struct ContentSnapshot {
     pub hotkeys: Vec<HotkeyItem>,
     pub expressions: Vec<ExpressionItem>,
     pub item_count: Option<u32>,
+    pub signal: crate::catalog::CatalogSignal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +28,7 @@ pub(crate) struct ModelItem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HotkeyItem {
+    pub id: String,
     pub name: String,
 }
 
@@ -229,7 +231,11 @@ async fn refresh_models_and_hotkeys(
             })
             .unwrap_or_default();
         if let Ok(mut s) = snap.write() {
+            let changed = s.models != models;
             s.models = models;
+            if changed {
+                s.signal.bump();
+            }
         }
     }
 
@@ -258,13 +264,18 @@ async fn refresh_models_and_hotkeys(
             .map(|arr| {
                 arr.iter()
                     .map(|h| HotkeyItem {
+                        id: h["hotkeyID"].as_str().unwrap_or("").to_owned(),
                         name: h["name"].as_str().unwrap_or("").to_owned(),
                     })
                     .collect()
             })
             .unwrap_or_default();
         if let Ok(mut s) = snap.write() {
+            let changed = s.hotkeys != hotkeys;
             s.hotkeys = hotkeys;
+            if changed {
+                s.signal.bump();
+            }
         }
     }
 }
@@ -290,7 +301,11 @@ async fn refresh_expressions(
         })
         .unwrap_or_default();
     if let Ok(mut s) = snap.write() {
+        let changed = s.expressions != expressions;
         s.expressions = expressions;
+        if changed {
+            s.signal.bump();
+        }
     }
 }
 

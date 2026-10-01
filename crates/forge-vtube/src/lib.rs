@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod catalog;
 pub mod client;
 pub mod content;
 mod control;
@@ -22,6 +23,7 @@ pub mod triggers;
 pub const PLUGIN_NAME: &str = "forge";
 
 pub use auth::AuthState;
+pub use catalog::{VTubeCatalog, VTubeCatalogChanges, VTubeChoice};
 pub use client::{VTubeClient, VTubeConfig};
 pub use credentials::{VTUBE_CREDENTIAL_ID, VTubeConnectError, VTubeCredentials};
 pub use error::VTubeError;

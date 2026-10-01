@@ -13,6 +13,7 @@ use crate::config_form::{
 use crate::obs_catalog_options::obs_catalog_fields;
 use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
+use crate::vtube_catalog_options::vtube_catalog_fields;
 use forge_components::{
     BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GlyphArt, GridPicker,
     GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
@@ -695,6 +696,7 @@ impl ScreenActionsView {
     fn open_sub_form(&mut self, launch: SubFormLaunch, cx: &mut Context<Self>) {
         self.sub_form_choice_fields = collection_choice_fields(&launch.specs);
         self.sub_form_obs_fields = obs_catalog_fields(&launch.specs);
+        self.sub_form_vtube_fields = vtube_catalog_fields(&launch.specs);
         let form = cx.new(|cx| EditSubActionForm::new(launch, self.rt_handle.clone(), cx));
         self._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
         self.sub_form = Some(form);
@@ -708,6 +710,7 @@ impl ScreenActionsView {
         self._sub_form_sub = None;
         self.sub_form_choice_fields.clear();
         self.sub_form_obs_fields.clear();
+        self.sub_form_vtube_fields.clear();
     }
 
     fn on_sub_form_event(

@@ -34,6 +34,7 @@ pub struct BuiltinObject {
     pub control: Option<Arc<dyn BuiltinControl>>,
     pub collections: Option<Arc<dyn BuiltinCollections>>,
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
+    pub vtube_client: Option<Arc<forge_vtube::VTubeClient>>,
 }
 
 #[derive(Clone, Default)]
@@ -170,6 +171,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
         obs_client: None,
+        vtube_client: Some(client),
     }
 }
 
@@ -183,6 +185,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         control: Some(Arc::clone(&client) as Arc<dyn BuiltinControl>),
         collections: None,
         obs_client: Some(client),
+        vtube_client: None,
     }
 }
 
@@ -222,6 +225,7 @@ pub fn twitch_builtin_object(
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: Some(bundle as Arc<dyn BuiltinCollections>),
         obs_client: None,
+        vtube_client: None,
     }
 }
 
@@ -237,6 +241,7 @@ pub fn youtube_builtin_object(
         control: Some(bundle as Arc<dyn BuiltinControl>),
         collections: None,
         obs_client: None,
+        vtube_client: None,
     }
 }
 
@@ -252,6 +257,7 @@ pub fn kick_builtin_object(
         control: Some(bundle as Arc<dyn BuiltinControl>),
         collections: None,
         obs_client: None,
+        vtube_client: None,
     }
 }
 
@@ -697,6 +703,7 @@ fn build_discord(
         control: None,
         collections: None,
         obs_client: None,
+        vtube_client: None,
     };
     (Some(object), client)
 }
@@ -736,6 +743,7 @@ async fn build_midi(
         control: Some(client.clone()),
         collections: None,
         obs_client: None,
+        vtube_client: None,
     };
     (Some(object), Some(client))
 }
@@ -777,6 +785,7 @@ async fn build_hotkey(
         control: Some(client.clone()),
         collections: None,
         obs_client: None,
+        vtube_client: None,
     };
     (Some(object), Some(client), Some(reconciler))
 }
@@ -1634,6 +1643,7 @@ mod tests {
                 control: None,
                 collections: None,
                 obs_client: None,
+                vtube_client: None,
             };
             let bus = EventBus::new(Arc::new(StubEventLog));
             let engine = spawn_action_engine(

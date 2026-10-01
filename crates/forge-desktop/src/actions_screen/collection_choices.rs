@@ -9,6 +9,9 @@ use crate::collection_options::{
 };
 use crate::integrations::BuiltinRegistry;
 use crate::obs_catalog_options::{live_obs_client, load_obs_catalog_options, watch_obs_catalog};
+use crate::vtube_catalog_options::{
+    current_vtube_catalog_options, live_vtube_client, watch_vtube_catalog,
+};
 
 impl ScreenActionsView {
     #[must_use]
@@ -41,8 +44,24 @@ impl ScreenActionsView {
                 cx,
             ));
         }
+        if !self.sub_form_vtube_fields.is_empty() {
+            let client = live_vtube_client(&self.builtins);
+            let tasks =
+                watch_vtube_catalog(&self.bus, client, Self::reload_vtube_catalog_options, cx);
+            self._collection_watch.extend(tasks);
+        }
         self.reload_collection_options(cx);
         self.reload_obs_catalog_options(cx);
+        self.reload_vtube_catalog_options(cx);
+    }
+
+    fn reload_vtube_catalog_options(&mut self, cx: &mut Context<Self>) {
+        if self.sub_form_vtube_fields.is_empty() {
+            return;
+        }
+        let client = live_vtube_client(&self.builtins);
+        let options = current_vtube_catalog_options(client.as_deref(), &self.sub_form_vtube_fields);
+        self.apply_collection_options(options, cx);
     }
 
     fn reload_obs_catalog_options(&mut self, cx: &mut Context<Self>) {

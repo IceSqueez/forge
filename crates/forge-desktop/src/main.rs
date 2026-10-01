@@ -117,6 +117,7 @@ mod unavailable_builtin;
 mod update_check;
 mod voice_aliases;
 mod voice_gate;
+mod vtube_catalog_options;
 mod vtube_connect;
 mod vtube_connect_form;
 mod window_presence;

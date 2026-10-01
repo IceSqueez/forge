@@ -8,6 +8,7 @@ use crate::run_history_modal::RunHistoryModal;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
+use crate::vtube_catalog_options::VTubeCatalogField;
 use forge_components::{
     BreadcrumbCrumb, Confirm, Density, ForgePalette, GridPicker, Icon, InlineEdit, OverlayPosition,
     SearchState, TextArea, TextInput, ToastKind, fmt_number, fmt_relative_time, icon, overlay,
@@ -191,6 +192,7 @@ pub struct ScreenActionsView {
     collection_options: ChoiceOptions,
     sub_form_choice_fields: Vec<CollectionChoiceField>,
     sub_form_obs_fields: Vec<ObsCatalogField>,
+    sub_form_vtube_fields: Vec<VTubeCatalogField>,
     _collection_watch: Vec<gpui::Task<()>>,
     concurrent_queue_ids: HashSet<String>,
     tree_width: Pixels,
@@ -276,6 +278,7 @@ impl ScreenActionsView {
             collection_options: ChoiceOptions::new(),
             sub_form_choice_fields: Vec::new(),
             sub_form_obs_fields: Vec::new(),
+            sub_form_vtube_fields: Vec::new(),
             _collection_watch: Vec::new(),
             concurrent_queue_ids: HashSet::new(),
             tree_width: LEFT_PANEL_W,

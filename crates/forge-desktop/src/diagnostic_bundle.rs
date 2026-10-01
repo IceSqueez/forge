@@ -540,6 +540,7 @@ mod tests {
                 control: None,
                 collections: None,
                 obs_client: None,
+                vtube_client: None,
             }
         }
     }

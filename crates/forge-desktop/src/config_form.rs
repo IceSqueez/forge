@@ -10,7 +10,9 @@ use forge_registry::FormField;
 use crate::collection_options::{
     ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
 };
+use crate::obs_catalog_options::{ObsCatalogField, ObsCatalogList};
 use crate::presentation::ActivePresentation;
+use crate::vtube_catalog_options::{VTubeCatalogField, VTubeCatalogList};
 use forge_types::Variant;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
@@ -247,7 +249,7 @@ pub(crate) fn fold_config_field<V: 'static>(
                 selected: read_text(ctx.config, key),
                 dependency: None,
             }),
-            ChoiceSupport::Text if CollectionSource::parse(options_key).is_some() => {
+            ChoiceSupport::Text if has_options_provider(options_key) => {
                 out.push(ConfigField::Choice {
                     key: (*key).to_owned(),
                     gate,
@@ -333,9 +335,42 @@ struct ChoicePopover {
     _sub: Subscription,
 }
 
+fn has_options_provider(options_key: &str) -> bool {
+    CollectionSource::parse(options_key).is_some()
+        || ObsCatalogList::parse(options_key).is_some()
+        || VTubeCatalogList::parse(options_key).is_some()
+}
+
+struct ChoiceOptionsKey {
+    field_key: String,
+    options_key: String,
+}
+
+fn choice_options_keys(specs: &[FormField]) -> Vec<ChoiceOptionsKey> {
+    let mut out = Vec::new();
+    for spec in specs {
+        push_choice_options_key(spec, &mut out);
+    }
+    out
+}
+
+fn push_choice_options_key(spec: &FormField, out: &mut Vec<ChoiceOptionsKey>) {
+    match spec {
+        FormField::DynamicSelect {
+            key, options_key, ..
+        } if has_options_provider(options_key) => out.push(ChoiceOptionsKey {
+            field_key: (*key).to_owned(),
+            options_key: (*options_key).to_owned(),
+        }),
+        FormField::Optional { inner, .. } => push_choice_options_key(inner, out),
+        _ => {}
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct CollectionChoices {
     fields: Vec<CollectionChoiceField>,
+    options_keys: Vec<ChoiceOptionsKey>,
     popover: Option<ChoicePopover>,
 }
 
@@ -343,12 +378,37 @@ impl CollectionChoices {
     pub(crate) fn for_specs(specs: &[FormField]) -> Self {
         Self {
             fields: collection_choice_fields(specs),
+            options_keys: choice_options_keys(specs),
             popover: None,
         }
     }
 
     pub(crate) fn fields(&self) -> &[CollectionChoiceField] {
         &self.fields
+    }
+
+    pub(crate) fn obs_fields(&self) -> Vec<ObsCatalogField> {
+        self.options_keys
+            .iter()
+            .filter_map(|keys| {
+                ObsCatalogList::parse(&keys.options_key).map(|list| ObsCatalogField {
+                    options_key: keys.options_key.clone(),
+                    list,
+                })
+            })
+            .collect()
+    }
+
+    pub(crate) fn vtube_fields(&self) -> Vec<VTubeCatalogField> {
+        self.options_keys
+            .iter()
+            .filter_map(|keys| {
+                VTubeCatalogList::parse(&keys.options_key).map(|list| VTubeCatalogField {
+                    options_key: keys.options_key.clone(),
+                    list,
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn refresh(
@@ -366,7 +426,7 @@ impl CollectionChoices {
             else {
                 continue;
             };
-            let Some(choice_field) = self.fields.iter().find(|f| f.field_key == *key) else {
+            let Some(choice_field) = self.options_keys.iter().find(|f| f.field_key == *key) else {
                 continue;
             };
             let mut next: Vec<(String, String)> = blank
@@ -375,7 +435,7 @@ impl CollectionChoices {
                 .collect();
             next.extend(
                 options
-                    .get(&choice_field.source.options_key)
+                    .get(&choice_field.options_key)
                     .cloned()
                     .unwrap_or_default(),
             );

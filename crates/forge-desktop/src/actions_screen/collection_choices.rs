@@ -8,9 +8,13 @@ use crate::collection_options::{
     watch_collection_revisions,
 };
 use crate::integrations::BuiltinRegistry;
-use crate::obs_catalog_options::{live_obs_client, load_obs_catalog_options, watch_obs_catalog};
+use crate::obs_catalog_options::{
+    ObsCatalogField, distinct_obs_fields, live_obs_client, load_obs_catalog_options,
+    watch_obs_catalog,
+};
 use crate::vtube_catalog_options::{
-    current_vtube_catalog_options, live_vtube_client, watch_vtube_catalog,
+    VTubeCatalogField, current_vtube_catalog_options, distinct_vtube_fields, live_vtube_client,
+    watch_vtube_catalog,
 };
 
 impl ScreenActionsView {
@@ -28,6 +32,22 @@ impl ScreenActionsView {
         distinct_sources(self.sub_form_choice_fields.iter().chain(trigger_fill))
     }
 
+    fn obs_catalog_fields(&self) -> Vec<ObsCatalogField> {
+        let trigger_fill = match self.add_trigger.as_ref() {
+            Some(AddTriggerStage::Fill(form)) => form.choices.obs_fields(),
+            _ => Vec::new(),
+        };
+        distinct_obs_fields(self.sub_form_obs_fields.iter().chain(&trigger_fill))
+    }
+
+    fn vtube_catalog_fields(&self) -> Vec<VTubeCatalogField> {
+        let trigger_fill = match self.add_trigger.as_ref() {
+            Some(AddTriggerStage::Fill(form)) => form.choices.vtube_fields(),
+            _ => Vec::new(),
+        };
+        distinct_vtube_fields(self.sub_form_vtube_fields.iter().chain(&trigger_fill))
+    }
+
     pub(super) fn start_collection_options(&mut self, cx: &mut Context<Self>) {
         self.refresh_trigger_fill_choices();
         let sources = self.collection_sources();
@@ -37,18 +57,20 @@ impl ScreenActionsView {
             Self::reload_collection_options,
             cx,
         );
-        if !self.sub_form_obs_fields.is_empty() {
+        if !self.obs_catalog_fields().is_empty() {
             self._collection_watch.push(watch_obs_catalog(
                 &self.bus,
                 Self::reload_obs_catalog_options,
                 cx,
             ));
         }
-        if !self.sub_form_vtube_fields.is_empty() {
-            let client = live_vtube_client(&self.builtins);
-            let tasks =
-                watch_vtube_catalog(&self.bus, client, Self::reload_vtube_catalog_options, cx);
-            self._collection_watch.extend(tasks);
+        if !self.vtube_catalog_fields().is_empty() {
+            self._collection_watch.push(watch_vtube_catalog(
+                &self.bus,
+                self.builtins.clone(),
+                Self::reload_vtube_catalog_options,
+                cx,
+            ));
         }
         self.reload_collection_options(cx);
         self.reload_obs_catalog_options(cx);
@@ -56,20 +78,21 @@ impl ScreenActionsView {
     }
 
     fn reload_vtube_catalog_options(&mut self, cx: &mut Context<Self>) {
-        if self.sub_form_vtube_fields.is_empty() {
+        let fields = self.vtube_catalog_fields();
+        if fields.is_empty() {
             return;
         }
         let client = live_vtube_client(&self.builtins);
-        let options = current_vtube_catalog_options(client.as_deref(), &self.sub_form_vtube_fields);
+        let options = current_vtube_catalog_options(client.as_deref(), &fields);
         self.apply_collection_options(options, cx);
     }
 
     fn reload_obs_catalog_options(&mut self, cx: &mut Context<Self>) {
-        if self.sub_form_obs_fields.is_empty() {
+        let fields = self.obs_catalog_fields();
+        if fields.is_empty() {
             return;
         }
         let client = live_obs_client(&self.builtins);
-        let fields = self.sub_form_obs_fields.clone();
         async_bridge::run_async(
             &self.rt_handle,
             load_obs_catalog_options(client, fields),

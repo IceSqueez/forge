@@ -76,6 +76,18 @@ fn push_catalog_field(spec: &FormField, out: &mut Vec<ObsCatalogField>) {
     }
 }
 
+pub(crate) fn distinct_obs_fields<'a>(
+    fields: impl IntoIterator<Item = &'a ObsCatalogField>,
+) -> Vec<ObsCatalogField> {
+    let mut out: Vec<ObsCatalogField> = Vec::new();
+    for field in fields {
+        if !out.contains(field) {
+            out.push(field.clone());
+        }
+    }
+    out
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ObsCatalogSnapshot {
     pub(crate) scenes: Vec<String>,

@@ -3,6 +3,7 @@ use forge_components::{
     SearchState, TextInput, ToastKind, page_frame, platform_color, tr,
 };
 use forge_registry::TriggerRegistry;
+use forge_runtime::EventBus;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, reserved_keys};
 use forge_types::{ActionId, PermissionRung, TriggerConfig, TriggerInstance, TriggerInstanceId};
 use gpui::{
@@ -245,6 +246,7 @@ pub struct TriggersRegistryView {
     confirm_disable: Confirm<TriggerInstanceId>,
     create: Option<CreateStage>,
     builtins: BuiltinRegistry,
+    bus: Option<Arc<EventBus>>,
     collection_options: ChoiceOptions,
     _collection_watch: Vec<gpui::Task<()>>,
     _search_sub: Subscription,
@@ -294,6 +296,7 @@ impl TriggersRegistryView {
             confirm_disable: Confirm::default(),
             create: None,
             builtins: BuiltinRegistry::default(),
+            bus: None,
             collection_options: ChoiceOptions::new(),
             _collection_watch: Vec::new(),
             _search_sub: search_sub,

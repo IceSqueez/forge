@@ -71,6 +71,18 @@ fn push_catalog_field(spec: &FormField, out: &mut Vec<VTubeCatalogField>) {
     }
 }
 
+pub(crate) fn distinct_vtube_fields<'a>(
+    fields: impl IntoIterator<Item = &'a VTubeCatalogField>,
+) -> Vec<VTubeCatalogField> {
+    let mut out: Vec<VTubeCatalogField> = Vec::new();
+    for field in fields {
+        if !out.contains(field) {
+            out.push(field.clone());
+        }
+    }
+    out
+}
+
 pub(crate) fn vtube_catalog_choices(
     catalog: &VTubeCatalog,
     fields: &[VTubeCatalogField],
@@ -112,35 +124,64 @@ pub(crate) fn changes_vtube_connection(event: &Event) -> bool {
 
 pub(crate) fn watch_vtube_catalog<V: 'static>(
     bus: &Arc<EventBus>,
-    client: Option<Arc<VTubeClient>>,
+    builtins: BuiltinRegistry,
     on_change: fn(&mut V, &mut Context<V>),
     cx: &mut Context<V>,
-) -> Vec<Task<()>> {
+) -> Task<()> {
     let mut sub = bus.subscribe();
-    let connection_task = cx.spawn(async move |this, cx| {
+    let mut follow = VTubeCatalogFollow::default();
+    follow.track(live_vtube_client(&builtins), on_change, cx);
+    cx.spawn(async move |this, cx| {
         while let async_bridge::EventBatch::Ready(batch) =
             async_bridge::recv_event_batch(&mut sub).await
         {
             if !batch.iter().any(changes_vtube_connection) {
                 continue;
             }
-            if this.update(cx, on_change).is_err() {
+            let applied = this.update(cx, |view, cx| {
+                follow.track(live_vtube_client(&builtins), on_change, cx);
+                on_change(view, cx);
+            });
+            if applied.is_err() {
                 break;
             }
         }
-    });
-    let mut tasks = vec![connection_task];
-    if let Some(client) = client {
-        let mut changes = client.catalog_changes();
-        tasks.push(cx.spawn(async move |this, cx| {
-            while changes.changed().await {
-                if this.update(cx, on_change).is_err() {
-                    break;
+    })
+}
+
+#[derive(Default)]
+struct VTubeCatalogFollow {
+    client: Option<Arc<VTubeClient>>,
+    _changes: Option<Task<()>>,
+}
+
+impl VTubeCatalogFollow {
+    fn track<V: 'static>(
+        &mut self,
+        client: Option<Arc<VTubeClient>>,
+        on_change: fn(&mut V, &mut Context<V>),
+        cx: &mut Context<V>,
+    ) {
+        let unchanged = match (&self.client, &client) {
+            (Some(watched), Some(live)) => Arc::ptr_eq(watched, live),
+            (None, None) => true,
+            _ => false,
+        };
+        if unchanged {
+            return;
+        }
+        self._changes = client.as_ref().map(|client| {
+            let mut changes = client.catalog_changes();
+            cx.spawn(async move |this, cx| {
+                while changes.changed().await {
+                    if this.update(cx, on_change).is_err() {
+                        break;
+                    }
                 }
-            }
-        }));
+            })
+        });
+        self.client = client;
     }
-    tasks
 }
 
 #[cfg(test)]

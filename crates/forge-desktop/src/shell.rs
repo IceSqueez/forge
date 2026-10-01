@@ -467,6 +467,7 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let preselect = *preselect;
                 let builtins = handles.builtins.clone();
+                let bus = Arc::clone(&handles.bus);
                 let view = cx.new(|cx| {
                     TriggersRegistryView::new(
                         repo,
@@ -478,6 +479,7 @@ impl AppShell {
                         cx,
                     )
                     .with_builtins(builtins)
+                    .with_event_bus(bus)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);

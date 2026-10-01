@@ -335,4 +335,223 @@ mod tests {
         let mut late = Box::pin(handle.subscribe());
         assert_eq!(late.next().await, Some(LiveViewerCount::Reporting(9)));
     }
+
+    async fn settle_platforms(handle: &LiveViewerAggregatorHandle, expected: &[PlatformId]) {
+        let expected: LivePlatforms = expected.iter().copied().collect();
+        let mut platforms = handle.live_platforms();
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(2),
+            platforms.wait_for(|current| *current == expected),
+        )
+        .await;
+        assert!(
+            matches!(outcome, Ok(Ok(_))),
+            "live platforms never became {expected:?}"
+        );
+    }
+
+    fn attach(platform: PlatformId, generation: u64) -> AggregatorCommand {
+        AggregatorCommand::Attach {
+            generation,
+            platform,
+        }
+    }
+
+    fn detach(platform: PlatformId, generation: u64) -> AggregatorCommand {
+        AggregatorCommand::Detach {
+            generation,
+            platform,
+        }
+    }
+
+    fn live(platform: PlatformId, generation: u64, count: u64) -> AggregatorCommand {
+        AggregatorCommand::Report {
+            generation,
+            platform,
+            report: ViewerReport::Live { count },
+        }
+    }
+
+    fn absent(platform: PlatformId, generation: u64) -> AggregatorCommand {
+        AggregatorCommand::Report {
+            generation,
+            platform,
+            report: ViewerReport::Absent,
+        }
+    }
+
+    fn replay(commands: Vec<AggregatorCommand>) -> PlatformSlots {
+        let mut slots = PlatformSlots::default();
+        for command in commands {
+            slots.apply(command);
+        }
+        slots
+    }
+
+    #[test]
+    fn commands_from_a_superseded_generation_never_touch_the_current_slot() {
+        let cases: Vec<(&str, Vec<AggregatorCommand>, LiveViewerCount)> = vec![
+            (
+                "stale live report after the replacement attached",
+                vec![
+                    attach(PlatformId::Twitch, 1),
+                    live(PlatformId::Twitch, 1, 5),
+                    attach(PlatformId::Twitch, 2),
+                    live(PlatformId::Twitch, 2, 3),
+                    live(PlatformId::Twitch, 1, 9),
+                ],
+                LiveViewerCount::Reporting(3),
+            ),
+            (
+                "stale absent report after the replacement reported",
+                vec![
+                    attach(PlatformId::Twitch, 1),
+                    attach(PlatformId::Twitch, 2),
+                    live(PlatformId::Twitch, 2, 4),
+                    absent(PlatformId::Twitch, 1),
+                ],
+                LiveViewerCount::Reporting(4),
+            ),
+            (
+                "stale detach from the replaced forwarder ending late",
+                vec![
+                    attach(PlatformId::Twitch, 1),
+                    attach(PlatformId::Twitch, 2),
+                    live(PlatformId::Twitch, 2, 4),
+                    detach(PlatformId::Twitch, 1),
+                ],
+                LiveViewerCount::Reporting(4),
+            ),
+            (
+                "queued report from the source an unregister removed",
+                vec![
+                    attach(PlatformId::Twitch, 1),
+                    live(PlatformId::Twitch, 1, 6),
+                    detach(PlatformId::Twitch, 2),
+                    live(PlatformId::Twitch, 1, 6),
+                ],
+                LiveViewerCount::Empty,
+            ),
+        ];
+        for (case, commands, expected) in cases {
+            assert_eq!(replay(commands).total(), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn attaching_a_replacement_clears_the_previous_sources_count() {
+        let slots = replay(vec![
+            attach(PlatformId::Kick, 1),
+            live(PlatformId::Kick, 1, 8),
+            attach(PlatformId::Kick, 2),
+        ]);
+        assert_eq!(slots.total(), LiveViewerCount::Empty);
+    }
+
+    #[test]
+    fn a_newer_generation_on_one_platform_does_not_lock_out_older_generations_elsewhere() {
+        let slots = replay(vec![
+            attach(PlatformId::Twitch, 5),
+            live(PlatformId::Twitch, 5, 1),
+            live(PlatformId::YouTube, 2, 10),
+        ]);
+        assert_eq!(slots.total(), LiveViewerCount::Reporting(11));
+    }
+
+    #[test]
+    fn live_platforms_list_every_platform_with_a_live_report_including_zero_viewers() {
+        let slots = replay(vec![
+            live(PlatformId::Twitch, 1, 0),
+            live(PlatformId::Kick, 2, 4),
+            live(PlatformId::YouTube, 3, 2),
+            absent(PlatformId::YouTube, 3),
+        ]);
+        assert_eq!(
+            slots.live_platforms(),
+            [PlatformId::Twitch, PlatformId::Kick].into_iter().collect()
+        );
+    }
+
+    #[tokio::test]
+    async fn registering_again_for_a_platform_replaces_its_previous_source() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (first, first_tx) = channel_source();
+        let (other, other_tx) = channel_source();
+        handle.register(PlatformId::Twitch, first);
+        handle.register(PlatformId::YouTube, other);
+        first_tx.send(ViewerReport::Live { count: 5 }).unwrap();
+        other_tx.send(ViewerReport::Live { count: 1 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(6)).await;
+
+        let (second, second_tx) = channel_source();
+        handle.register(PlatformId::Twitch, second);
+        second_tx.send(ViewerReport::Live { count: 2 }).unwrap();
+
+        settle_to(&mut sub, LiveViewerCount::Reporting(3)).await;
+    }
+
+    #[tokio::test]
+    async fn replaced_source_stops_being_read() {
+        let handle = spawn_live_viewer_aggregator();
+        let (first, first_tx) = channel_source();
+        handle.register(PlatformId::Twitch, first);
+        let (second, _second_tx) = channel_source();
+        handle.register(PlatformId::Twitch, second);
+
+        let outcome = tokio::time::timeout(Duration::from_secs(2), first_tx.closed()).await;
+
+        assert!(outcome.is_ok(), "replaced source was still being polled");
+    }
+
+    #[tokio::test]
+    async fn unregister_drops_the_platform_viewers() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (twitch, twitch_tx) = channel_source();
+        let (youtube, youtube_tx) = channel_source();
+        handle.register(PlatformId::Twitch, twitch);
+        handle.register(PlatformId::YouTube, youtube);
+        twitch_tx.send(ViewerReport::Live { count: 5 }).unwrap();
+        youtube_tx.send(ViewerReport::Live { count: 2 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(7)).await;
+
+        handle.unregister(PlatformId::Twitch);
+
+        settle_to(&mut sub, LiveViewerCount::Reporting(2)).await;
+    }
+
+    #[tokio::test]
+    async fn unregister_drops_the_platform_from_the_live_set() {
+        let handle = spawn_live_viewer_aggregator();
+        let (twitch, twitch_tx) = channel_source();
+        let (kick, kick_tx) = channel_source();
+        handle.register(PlatformId::Twitch, twitch);
+        handle.register(PlatformId::Kick, kick);
+        twitch_tx.send(ViewerReport::Live { count: 0 }).unwrap();
+        kick_tx.send(ViewerReport::Live { count: 3 }).unwrap();
+        settle_platforms(&handle, &[PlatformId::Twitch, PlatformId::Kick]).await;
+
+        handle.unregister(PlatformId::Twitch);
+
+        settle_platforms(&handle, &[PlatformId::Kick]).await;
+    }
+
+    #[tokio::test]
+    async fn platform_reports_again_after_unregister_and_fresh_register() {
+        let handle = spawn_live_viewer_aggregator();
+        let mut sub = Box::pin(handle.subscribe());
+        let (first, first_tx) = channel_source();
+        handle.register(PlatformId::Kick, first);
+        first_tx.send(ViewerReport::Live { count: 5 }).unwrap();
+        settle_to(&mut sub, LiveViewerCount::Reporting(5)).await;
+        handle.unregister(PlatformId::Kick);
+        settle_to(&mut sub, LiveViewerCount::Empty).await;
+
+        let (second, second_tx) = channel_source();
+        handle.register(PlatformId::Kick, second);
+        second_tx.send(ViewerReport::Live { count: 4 }).unwrap();
+
+        settle_to(&mut sub, LiveViewerCount::Reporting(4)).await;
+    }
 }

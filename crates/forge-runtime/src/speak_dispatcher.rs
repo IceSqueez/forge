@@ -311,4 +311,24 @@ mod tests {
             assert_eq!(origin.viewer, None, "{pairs:?}");
         }
     }
+
+    #[test]
+    fn alias_key_is_scoped_to_the_triggering_platform_unless_already_scoped() {
+        for (pairs, name, expected) in [
+            (vec![("user_platform", "twitch")], "Alice", "twitch:Alice"),
+            (vec![("user_platform", " kick ")], "Alice", "kick:Alice"),
+            (vec![], "Alice", "Alice"),
+            (vec![("user_platform", "   ")], "Alice", "Alice"),
+            (
+                vec![("user_platform", "twitch")],
+                "youtube:Alice",
+                "youtube:Alice",
+            ),
+            (vec![], "kick:Alice", "kick:Alice"),
+        ] {
+            let key = platform_scoped_alias_key(&stack(&pairs), name);
+
+            assert_eq!(key, expected, "{pairs:?} / {name:?}");
+        }
+    }
 }

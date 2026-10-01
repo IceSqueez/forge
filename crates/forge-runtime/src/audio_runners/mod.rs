@@ -372,6 +372,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn alias_runners_key_the_alias_by_the_triggering_platform() {
+        let disp = RecordingDispatcher::ok();
+        let stack = ArgStack::new()
+            .set("user".to_owned(), Variant::String("Erin".to_owned()))
+            .set(
+                "user_platform".to_owned(),
+                Variant::String("twitch".to_owned()),
+            );
+        let cfg = config(&[
+            ("alias_name", Variant::String("%user%".to_owned())),
+            ("engine_id", Variant::String("piper".to_owned())),
+            ("voice_id", Variant::String("en_US-amy-medium".to_owned())),
+        ]);
+        let runners: [Box<dyn SubActionRunner>; 2] = [
+            Box::new(AliasSetRunner::new(disp.clone())),
+            Box::new(AliasSwitchRunner::new(disp.clone())),
+        ];
+
+        for runner in runners {
+            let ctx = make_ctx(&stack);
+            runner.execute(&cfg, &ctx).await;
+        }
+
+        assert_eq!(
+            disp.calls(),
+            vec![
+                DispatchCall::AliasSet {
+                    viewer_id: "twitch:Erin".to_owned(),
+                    viewer_name: "Erin".to_owned(),
+                    engine_id: "piper".to_owned(),
+                    voice_id: "en_US-amy-medium".to_owned(),
+                },
+                DispatchCall::AliasSwitch {
+                    viewer_id: "twitch:Erin".to_owned(),
+                    engine_id: "piper".to_owned(),
+                    voice_id: "en_US-amy-medium".to_owned(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn queue_clear_keep_current_makes_single_clear_call() {
         let disp = RecordingDispatcher::ok();
         let runner = QueueClearRunner::new(disp.clone());

@@ -610,4 +610,61 @@ mod tests {
             assert_eq!(voice, "default-voice", "{viewer_id:?} / {name:?}");
         }
     }
+
+    #[test]
+    fn a_platform_scoped_alias_applies_only_to_viewers_on_that_platform() {
+        for (key, viewer_id, name, expected) in [
+            ("twitch:Alice", "twitch:1", "alice", "alias-voice"),
+            ("twitch:Alice", "twitch:1", "ALICE", "alias-voice"),
+            ("twitch:Alice", "kick:1", "alice", "default-voice"),
+            ("twitch:Alice", "youtube:1", "alice", "default-voice"),
+            ("twitch:Alice", "1", "alice", "default-voice"),
+            ("Alice", "kick:1", "alice", "alias-voice"),
+            ("Alice", "youtube:1", "alice", "alias-voice"),
+            ("Alice", "1", "alice", "alias-voice"),
+        ] {
+            let voice = resolved_voice(vec![keyed_alias(key, "alias-voice")], viewer_id, name);
+
+            assert_eq!(voice, expected, "alias {key:?} vs {viewer_id:?} / {name:?}");
+        }
+    }
+
+    #[test]
+    fn a_scoped_alias_outranks_a_bare_one_on_its_platform_regardless_of_order() {
+        for scoped_first in [true, false] {
+            let mut aliases = vec![
+                keyed_alias("Alice", "bare-voice"),
+                keyed_alias("twitch:Alice", "scoped-voice"),
+            ];
+            if scoped_first {
+                aliases.reverse();
+            }
+            for (viewer_id, expected) in [
+                ("twitch:1", "scoped-voice"),
+                ("kick:1", "bare-voice"),
+                ("1", "bare-voice"),
+            ] {
+                let voice = resolved_voice(aliases.clone(), viewer_id, "alice");
+
+                assert_eq!(
+                    voice, expected,
+                    "{viewer_id:?} with scoped_first={scoped_first}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_exact_viewer_id_alias_outranks_a_platform_scoped_name_alias() {
+        let voice = resolved_voice(
+            vec![
+                keyed_alias("twitch:Alice", "scoped-voice"),
+                keyed_alias("twitch:1", "id-voice"),
+            ],
+            "twitch:1",
+            "alice",
+        );
+
+        assert_eq!(voice, "id-voice");
+    }
 }

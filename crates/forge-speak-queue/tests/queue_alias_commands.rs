@@ -2,7 +2,7 @@
 
 mod common;
 
-use forge_speak_queue::{QueueConfig, SpeakCommand};
+use forge_speak_queue::{QueueConfig, SpeakCommand, SpeakRequest};
 use forge_tts_core::{EngineId, VoiceId};
 use forge_voice::{AliasId, AssignmentStrategy};
 
@@ -217,4 +217,107 @@ async fn remove_alias_with_absent_id_leaves_existing_alias_intact() {
         ("beta-1", "beta"),
         "RemoveAlias with an absent id must be a no-op",
     );
+}
+
+fn viewer_request(viewer_id: &str, viewer_name: &str) -> SpeakRequest {
+    SpeakRequest {
+        viewer_id: viewer_id.into(),
+        viewer_name: viewer_name.into(),
+        ..request(viewer_id, "hello")
+    }
+}
+
+async fn voice_after_switch(
+    aliases: Vec<forge_voice::VoiceAlias>,
+    switch_key: &str,
+    speaker: SpeakRequest,
+) -> (String, String) {
+    let (sink, _plays) = recording_sink();
+    let deps = make_deps(
+        standard_registry(),
+        sink,
+        AssignmentStrategy::Single {
+            voice_id: VoiceId("alpha-2".into()),
+            engine_id: EngineId("alpha".into()),
+        },
+        aliases,
+    );
+    let (handle, mut stream) = forge_speak_queue::spawn(QueueConfig::default(), deps);
+
+    handle
+        .send(SpeakCommand::SwitchAlias {
+            viewer_id: switch_key.into(),
+            engine_id: EngineId("beta".into()),
+            voice_id: VoiceId("beta-1".into()),
+        })
+        .await
+        .unwrap();
+    handle.send(SpeakCommand::Enqueue(speaker)).await.unwrap();
+
+    wait_for_resolved_voice(&mut stream, 2_000).await
+}
+
+#[tokio::test]
+async fn switch_alias_with_scoped_key_repoints_the_scoped_alias() {
+    let (voice, engine) = voice_after_switch(
+        vec![alias("twitch:alice", "alpha", "alpha-1")],
+        "twitch:alice",
+        viewer_request("twitch:1", "alice"),
+    )
+    .await;
+
+    assert_eq!((voice.as_str(), engine.as_str()), ("beta-1", "beta"));
+}
+
+#[tokio::test]
+async fn switch_alias_with_scoped_key_falls_back_to_the_bare_alias() {
+    let (voice, engine) = voice_after_switch(
+        vec![alias("alice", "alpha", "alpha-1")],
+        "twitch:alice",
+        viewer_request("kick:1", "alice"),
+    )
+    .await;
+
+    assert_eq!(
+        (voice.as_str(), engine.as_str()),
+        ("beta-1", "beta"),
+        "with no scoped alias the bare one is repointed, so every platform hears the switch",
+    );
+}
+
+#[tokio::test]
+async fn switch_alias_with_scoped_key_leaves_the_bare_alias_when_a_scoped_one_exists() {
+    for bare_first in [true, false] {
+        let mut aliases = vec![
+            alias("alice", "alpha", "alpha-1"),
+            alias("twitch:alice", "alpha", "alpha-1"),
+        ];
+        if !bare_first {
+            aliases.reverse();
+        }
+
+        let (voice, engine) =
+            voice_after_switch(aliases, "twitch:alice", viewer_request("kick:1", "alice")).await;
+
+        assert_eq!(
+            (voice.as_str(), engine.as_str()),
+            ("alpha-1", "alpha"),
+            "bare_first={bare_first}: the Kick viewer must keep the bare alias voice",
+        );
+    }
+}
+
+#[tokio::test]
+async fn switch_alias_with_scoped_key_applies_to_that_platform_when_both_exist() {
+    let (voice, engine) = voice_after_switch(
+        vec![
+            alias("alice", "alpha", "alpha-1"),
+            alias("twitch:alice", "alpha", "alpha-1"),
+        ],
+        "twitch:alice",
+        viewer_request("twitch:1", "alice"),
+    )
+    .await;
+
+    assert_eq!((voice.as_str(), engine.as_str()), ("beta-1", "beta"));
 }

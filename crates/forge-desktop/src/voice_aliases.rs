@@ -1439,3 +1439,62 @@ fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
 fn fmt_field(value: Option<f32>) -> String {
     value.map(|v| format!("{v}")).unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stored_alias(viewer_id: &str, viewer_name: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId::new(),
+            viewer_id: viewer_id.to_owned(),
+            viewer_name: viewer_name.to_owned(),
+            engine_id: EngineId("piper".to_owned()),
+            voice_id: VoiceId("amy".to_owned()),
+            pitch_semitones: None,
+            rate_multiplier: None,
+            state: AliasState::Active,
+        }
+    }
+
+    #[test]
+    fn alias_key_round_trips_through_split_for_every_platform_scope() {
+        for scope in PlatformScope::ALL {
+            for name in ["Alice", "Зірка", "user_42"] {
+                let key = alias_key(scope, name);
+
+                assert_eq!(split_alias_key(&key), (scope, name), "{key:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn split_alias_key_keeps_an_unknown_prefix_as_part_of_a_bare_name() {
+        for key in ["discord:Alice", ":Alice", "Twitch:Alice"] {
+            assert_eq!(split_alias_key(key), (PlatformScope::Any, key), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn row_shows_the_viewer_name_without_the_platform_prefix() {
+        for (viewer_id, viewer_name, platform, shown) in [
+            ("twitch:Alice", "Alice", PlatformScope::Twitch, "Alice"),
+            ("kick:Alice", "kick:Alice", PlatformScope::Kick, "Alice"),
+            ("Alice", "Alice", PlatformScope::Any, "Alice"),
+            (
+                "youtube:Alice",
+                "kick:Alice",
+                PlatformScope::YouTube,
+                "kick:Alice",
+            ),
+        ] {
+            let row = row_from_alias(stored_alias(viewer_id, viewer_name));
+
+            assert_eq!(
+                (row.platform, row.viewer_name.as_str()),
+                (platform, shown),
+                "{viewer_id:?} / {viewer_name:?}"
+            );
+        }
+    }
+}

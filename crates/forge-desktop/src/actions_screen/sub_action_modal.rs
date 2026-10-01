@@ -311,7 +311,10 @@ impl EditSubActionForm {
             return;
         }
         let Some(SubFormField::Select {
-            options, selected, ..
+            options,
+            selected,
+            options_key,
+            ..
         }) = self
             .fields
             .iter()
@@ -319,6 +322,7 @@ impl EditSubActionForm {
         else {
             return;
         };
+        let accepts_typed_value = options_key.is_some();
         let palette = cx.palette();
         let picker_labels = PickerLabels {
             placeholder: tr!("widget_picker_search_placeholder").into(),
@@ -327,8 +331,14 @@ impl EditSubActionForm {
         };
         let items = select_picker_items(options);
         let current = Some(SharedString::from(selected.clone()));
-        let picker =
-            cx.new(|cx| Picker::new(picker_labels, items, palette, cx).with_current(current));
+        let picker = cx.new(|cx| {
+            let picker = Picker::new(picker_labels, items, palette, cx).with_current(current);
+            if accepts_typed_value {
+                picker.with_custom_entry(tr!("config_form_choice_custom").into())
+            } else {
+                picker
+            }
+        });
         let sub = cx.subscribe(&picker, Self::on_select_picker_event);
         picker.update(cx, |f, cx| f.focus(window, cx));
         self.select_picker = Some(SelectPickerForm {

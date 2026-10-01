@@ -1,10 +1,16 @@
 use std::collections::{BTreeMap, HashMap};
 
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, Icon, InputEvent, Picker, Radius, Spacing, TextInput,
-    accent_swatch, body_family, dropdown, icon, mono_family, radius, slider, spacing, toggle, tr,
+    BORDER_THIN, Density, ForgePalette, Icon, InputEvent, Picker, PickerEvent, PickerItem,
+    PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown, icon,
+    mono_family, radius, slider, spacing, toggle, tr,
 };
 use forge_registry::FormField;
+
+use crate::collection_options::{
+    ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
+};
+use crate::presentation::ActivePresentation;
 use forge_types::Variant;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
@@ -234,12 +240,6 @@ pub(crate) fn fold_config_field<V: 'static>(
         FormField::DynamicSelect {
             key, options_key, ..
         } => match choices {
-            ChoiceSupport::Text => out.push(build_config_input(
-                free_text(key, SharedString::default()),
-                gate,
-                ctx,
-                cx,
-            )),
             ChoiceSupport::Picker(map) => out.push(ConfigField::Choice {
                 key: (*key).to_owned(),
                 gate,
@@ -247,6 +247,21 @@ pub(crate) fn fold_config_field<V: 'static>(
                 selected: read_text(ctx.config, key),
                 dependency: None,
             }),
+            ChoiceSupport::Text if CollectionSource::parse(options_key).is_some() => {
+                out.push(ConfigField::Choice {
+                    key: (*key).to_owned(),
+                    gate,
+                    options: Vec::new(),
+                    selected: read_text(ctx.config, key),
+                    dependency: None,
+                })
+            }
+            ChoiceSupport::Text => out.push(build_config_input(
+                free_text(key, SharedString::default()),
+                gate,
+                ctx,
+                cx,
+            )),
         },
         FormField::DependentSelect {
             key,
@@ -296,6 +311,152 @@ pub(crate) fn fold_config_field<V: 'static>(
             fold_config_field(inner, Some((*key).to_owned()), ctx, out, cx);
         }
     }
+}
+
+pub(crate) fn set_picked_value(fields: &mut [ConfigField], key: &str, value: &str) {
+    for field in fields {
+        match field {
+            ConfigField::Swatch {
+                key: k, selected, ..
+            }
+            | ConfigField::Choice {
+                key: k, selected, ..
+            } if k == key => value.clone_into(selected),
+            _ => {}
+        }
+    }
+}
+
+struct ChoicePopover {
+    key: String,
+    picker: Entity<Picker>,
+    _sub: Subscription,
+}
+
+#[derive(Default)]
+pub(crate) struct CollectionChoices {
+    fields: Vec<CollectionChoiceField>,
+    popover: Option<ChoicePopover>,
+}
+
+impl CollectionChoices {
+    pub(crate) fn for_specs(specs: &[FormField]) -> Self {
+        Self {
+            fields: collection_choice_fields(specs),
+            popover: None,
+        }
+    }
+
+    pub(crate) fn fields(&self) -> &[CollectionChoiceField] {
+        &self.fields
+    }
+
+    pub(crate) fn refresh(
+        &self,
+        config_fields: &mut [ConfigField],
+        options: &ChoiceOptions,
+        blank: Option<&str>,
+    ) {
+        for field in config_fields {
+            let ConfigField::Choice {
+                key,
+                options: offered,
+                ..
+            } = field
+            else {
+                continue;
+            };
+            let Some(choice_field) = self.fields.iter().find(|f| f.field_key == *key) else {
+                continue;
+            };
+            let mut next: Vec<(String, String)> = blank
+                .map(|label| (String::new(), label.to_owned()))
+                .into_iter()
+                .collect();
+            next.extend(
+                options
+                    .get(&choice_field.source.options_key)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+            *offered = next;
+        }
+    }
+
+    pub(crate) fn toggle<V: 'static>(
+        &mut self,
+        config_fields: &[ConfigField],
+        key: String,
+        on_event: fn(&mut V, Entity<Picker>, &PickerEvent, &mut Context<V>),
+        window: &mut Window,
+        cx: &mut Context<V>,
+    ) {
+        if self.popover.as_ref().is_some_and(|open| open.key == key) {
+            self.popover = None;
+            return;
+        }
+        self.popover = open_choice_popover(config_fields, key, on_event, window, cx);
+    }
+
+    pub(crate) fn close(&mut self) {
+        self.popover = None;
+    }
+
+    pub(crate) fn take_open_key(&mut self) -> Option<String> {
+        self.popover.take().map(|open| open.key)
+    }
+
+    pub(crate) fn active(&self) -> Option<(String, Entity<Picker>)> {
+        self.popover
+            .as_ref()
+            .map(|open| (open.key.clone(), open.picker.clone()))
+    }
+}
+
+fn open_choice_popover<V: 'static>(
+    fields: &[ConfigField],
+    key: String,
+    on_event: fn(&mut V, Entity<Picker>, &PickerEvent, &mut Context<V>),
+    window: &mut Window,
+    cx: &mut Context<V>,
+) -> Option<ChoicePopover> {
+    let (options, selected) = fields.iter().find_map(|field| match field {
+        ConfigField::Choice {
+            key: k,
+            options,
+            selected,
+            ..
+        } if *k == key => Some((options, selected)),
+        _ => None,
+    })?;
+    let items: Vec<PickerItem> = options
+        .iter()
+        .map(|(value, label)| PickerItem {
+            id: SharedString::from(value.clone()),
+            label: SharedString::from(label.clone()),
+            sublabel: None,
+            icon: None,
+        })
+        .collect();
+    let labels = PickerLabels {
+        placeholder: tr!("config_form_choice_search").into(),
+        empty: tr!("config_form_choice_empty").into(),
+        loading: tr!("widget_picker_loading").into(),
+    };
+    let current = Some(SharedString::from(selected.clone()));
+    let palette = cx.palette();
+    let picker = cx.new(|cx| {
+        Picker::new(labels, items, palette, cx)
+            .with_current(current)
+            .with_custom_entry(tr!("config_form_choice_custom").into())
+    });
+    let sub = cx.subscribe(&picker, on_event);
+    picker.update(cx, |picker, cx| picker.focus(window, cx));
+    Some(ChoicePopover {
+        key,
+        picker,
+        _sub: sub,
+    })
 }
 
 pub(crate) fn dependent_options(

@@ -12,6 +12,7 @@ use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use crate::reward_collection::REWARD_OPTIONS_KEY;
 
 const KIND_ID: &str = "twitch.channel_points.fulfill_redemption";
 
@@ -49,10 +50,10 @@ pub(crate) fn redemption_config_fields() -> Vec<FormField> {
             label: "Redemption ID",
             placeholder: "%redemption.id%",
         },
-        FormField::Text {
+        FormField::DynamicSelect {
             key: "reward_id",
             label: "Reward ID",
-            placeholder: "%reward.id%",
+            options_key: REWARD_OPTIONS_KEY,
         },
     ]
 }

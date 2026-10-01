@@ -425,6 +425,7 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let bus = Arc::clone(&handles.bus);
                 let scheduler = handles.scheduler.clone();
+                let builtins = handles.builtins.clone();
                 let view = cx.new(|cx| {
                     ScreenActionsView::new(
                         action_repo,
@@ -447,6 +448,7 @@ impl AppShell {
                         preselect,
                         cx,
                     )
+                    .with_builtins(builtins)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
@@ -464,6 +466,7 @@ impl AppShell {
                 let settings_repo = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
                 let rt_handle = handles.rt_handle.clone();
                 let preselect = *preselect;
+                let builtins = handles.builtins.clone();
                 let view = cx.new(|cx| {
                     TriggersRegistryView::new(
                         repo,
@@ -474,6 +477,7 @@ impl AppShell {
                         preselect,
                         cx,
                     )
+                    .with_builtins(builtins)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);

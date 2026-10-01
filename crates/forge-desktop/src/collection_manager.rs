@@ -46,6 +46,7 @@ pub struct CollectionManager {
     form: Option<OpenForm>,
     pending_delete: Confirm<CollectionItemId>,
     listing_ticket: u64,
+    connected: bool,
     _list_sub: Subscription,
     _revision_watch: Task<()>,
 }
@@ -84,6 +85,7 @@ impl CollectionManager {
             form: None,
             pending_delete: Confirm::default(),
             listing_ticket: 0,
+            connected: true,
             _list_sub: list_sub,
             _revision_watch: revision_watch,
         };
@@ -115,9 +117,37 @@ impl CollectionManager {
         if ticket != self.listing_ticket {
             return;
         }
-        let listing = result.map_err(|failure| collection_failure_message(&failure));
+        match result {
+            Err(failure @ (CollectionFailure::NotEligible | CollectionFailure::NotConnected)) => {
+                self.form = None;
+                let reason = collection_failure_message(&failure);
+                self.list
+                    .update(cx, |list, cx| list.mark_unavailable(reason, cx));
+            }
+            result => {
+                let listing = result.map_err(|failure| collection_failure_message(&failure));
+                self.list
+                    .update(cx, |list, cx| list.apply_listing(listing, cx));
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn set_connected(&mut self, connected: bool, cx: &mut Context<Self>) {
+        if self.connected == connected {
+            return;
+        }
+        self.connected = connected;
+        if connected {
+            self.reload(cx);
+            return;
+        }
+        self.listing_ticket = self.listing_ticket.wrapping_add(1);
+        self.form = None;
+        self.pending_delete.cancel();
+        let reason = collection_failure_message(&CollectionFailure::NotConnected);
         self.list
-            .update(cx, |list, cx| list.apply_listing(listing, cx));
+            .update(cx, |list, cx| list.mark_unavailable(reason, cx));
         cx.notify();
     }
 

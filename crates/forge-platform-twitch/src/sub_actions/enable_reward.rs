@@ -13,6 +13,7 @@ use time::OffsetDateTime;
 use super::identity::SelfIdentity;
 use crate::custom_rewards::{RewardBody, update_request};
 use crate::helix::HelixTransport;
+use crate::reward_collection::MANAGEABLE_REWARD_OPTIONS_KEY;
 
 const KIND_ID: &str = "twitch.channel_points.enable_reward";
 
@@ -54,10 +55,10 @@ pub(crate) fn default_config() -> SubActionConfig {
 }
 
 pub(crate) fn config_fields() -> Vec<FormField> {
-    vec![FormField::Text {
+    vec![FormField::DynamicSelect {
         key: "reward_id",
         label: "Reward ID",
-        placeholder: "%reward.id%",
+        options_key: MANAGEABLE_REWARD_OPTIONS_KEY,
     }]
 }
 

@@ -15,12 +15,15 @@ use std::sync::Arc;
 
 use crate::actions::LIST_CONTEXT;
 use crate::async_bridge;
-use crate::config_form::ConfigField;
+use crate::collection_options::ChoiceOptions;
+use crate::config_form::{CollectionChoices, ConfigField};
+use crate::integrations::BuiltinRegistry;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 
+mod collection_choices;
 mod create;
 mod detail;
 mod list;
@@ -159,6 +162,7 @@ struct TriggerDetail {
     cooldown_input: Entity<TextInput>,
     cooldown_per_user: bool,
     permission_rung: PermissionRung,
+    choices: CollectionChoices,
     _cooldown_sub: Subscription,
 }
 
@@ -240,6 +244,9 @@ pub struct TriggersRegistryView {
     pending_delete: Confirm<TriggerInstanceId>,
     confirm_disable: Confirm<TriggerInstanceId>,
     create: Option<CreateStage>,
+    builtins: BuiltinRegistry,
+    collection_options: ChoiceOptions,
+    _collection_watch: Vec<gpui::Task<()>>,
     _search_sub: Subscription,
     _release: Subscription,
 }
@@ -286,6 +293,9 @@ impl TriggersRegistryView {
             pending_delete: Confirm::default(),
             confirm_disable: Confirm::default(),
             create: None,
+            builtins: BuiltinRegistry::default(),
+            collection_options: ChoiceOptions::new(),
+            _collection_watch: Vec::new(),
             _search_sub: search_sub,
             _release: release,
         };

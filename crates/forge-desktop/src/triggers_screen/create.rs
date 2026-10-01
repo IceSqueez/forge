@@ -1,17 +1,19 @@
 use super::{TriggersRegistryView, load_rows, platform_dot_color, timer_field_hints};
 use crate::async_bridge;
+use crate::collection_options::ChoiceOptions;
 use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
-    ChoiceSupport, ConfigField, ConfigFieldHandlers, FILL_VAL_FS, FoldContext,
-    collect_field_values, fold_config_field, render_config_row, sparse_overrides,
+    ChoiceDropdown, ChoiceSupport, CollectionChoices, ConfigField, ConfigFieldHandlers,
+    FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
+    set_picked_value, sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
 use forge_components::{
     BORDER_THIN, Density, FONT_XXS, ForgePalette, GlyphArt, GridPicker, GridPickerArt,
     GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem, GridPickerItemState,
-    GridPickerSubtitle, Icon, InputEvent, ModalSize, OverlayPosition, Radius, Spacing, TextInput,
-    body_family, ghost_button_with_icon, modal, mono_family, overlay, primary_button, radius,
-    secondary_button, spacing, tr,
+    GridPickerSubtitle, Icon, InputEvent, ModalSize, OverlayPosition, Picker, PickerEvent, Radius,
+    Spacing, TextInput, body_family, ghost_button_with_icon, modal, mono_family, overlay,
+    primary_button, radius, secondary_button, spacing, tr,
 };
 use forge_registry::{TriggerCategory, TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
@@ -38,8 +40,19 @@ pub(super) struct CreateFillForm {
     name_field: Entity<TextInput>,
     fields: Vec<ConfigField>,
     labels: Vec<SharedString>,
+    choices: CollectionChoices,
     saving: bool,
     _name_sub: Subscription,
+}
+
+impl CreateFillForm {
+    pub(super) fn choices(&self) -> &CollectionChoices {
+        &self.choices
+    }
+
+    pub(super) fn refresh_choices(&mut self, options: &ChoiceOptions, blank: &str) {
+        self.choices.refresh(&mut self.fields, options, Some(blank));
+    }
 }
 
 impl TriggersRegistryView {
@@ -138,9 +151,11 @@ impl TriggersRegistryView {
             name_field,
             fields,
             labels,
+            choices: CollectionChoices::for_specs(&specs),
             saving: false,
             _name_sub: name_sub,
         }));
+        self.start_collection_options(cx);
         cx.notify();
     }
 
@@ -197,25 +212,56 @@ impl TriggersRegistryView {
 
     fn pick_create_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
         if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
-            for field in &mut form.fields {
-                if let ConfigField::Swatch {
-                    key: k, selected, ..
-                } = field
-                    && *k == key
-                {
-                    selected.clone_from(&choice);
-                }
-            }
+            set_picked_value(&mut form.fields, &key, &choice);
         }
         cx.notify();
     }
 
-    fn create_config_handlers() -> ConfigFieldHandlers<Self> {
+    fn open_create_choice(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+            form.choices
+                .toggle(&form.fields, key, Self::on_create_choice_event, window, cx);
+        }
+        cx.notify();
+    }
+
+    fn close_create_choice(&mut self, cx: &mut Context<Self>) {
+        if let Some(CreateStage::Fill(form)) = self.create.as_mut() {
+            form.choices.close();
+        }
+        cx.notify();
+    }
+
+    fn on_create_choice_event(
+        &mut self,
+        _picker: Entity<Picker>,
+        event: &PickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(CreateStage::Fill(form)) = self.create.as_mut() else {
+            return;
+        };
+        match event {
+            PickerEvent::Selected(value) => {
+                if let Some(key) = form.choices.take_open_key() {
+                    set_picked_value(&mut form.fields, &key, value);
+                }
+            }
+            PickerEvent::Cancelled => form.choices.close(),
+        }
+        cx.notify();
+    }
+
+    fn create_config_handlers(form: &CreateFillForm) -> ConfigFieldHandlers<Self> {
         ConfigFieldHandlers {
             toggle: Self::toggle_create_config_field,
             slide: Self::slide_create_config_field,
             pick: Self::pick_create_config_field,
-            choice: None,
+            choice: Some(ChoiceDropdown {
+                open: Self::open_create_choice,
+                close: Self::close_create_choice,
+                active: form.choices.active(),
+            }),
         }
     }
 
@@ -347,6 +393,7 @@ impl TriggersRegistryView {
                 .into_any_element()
         } else {
             let last = form.fields.len().saturating_sub(1);
+            let handlers = Self::create_config_handlers(form);
             let mut col = div().flex().flex_col();
             for (i, field) in form.fields.iter().enumerate() {
                 col = col.child(render_config_row(
@@ -356,7 +403,7 @@ impl TriggersRegistryView {
                     palette,
                     "triggers-create-field",
                     &cx.entity(),
-                    &Self::create_config_handlers(),
+                    &handlers,
                 ));
             }
             div()

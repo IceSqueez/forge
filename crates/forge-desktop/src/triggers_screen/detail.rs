@@ -2,14 +2,15 @@ use super::*;
 use crate::async_bridge;
 use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
-    ChoiceSupport, ConfigFieldHandlers, FoldContext, collect_field_values, config_label_cell,
-    fold_config_field, render_config_control, sparse_overrides,
+    ChoiceDropdown, ChoiceSupport, CollectionChoices, ConfigFieldHandlers, FoldContext,
+    collect_field_values, config_label_cell, fold_config_field, render_config_control,
+    set_picked_value, sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
 use forge_components::{
-    Density, FONT_XXS, Icon, InputEvent, Radius, ResizeEdge, ResizeRange, Spacing, TextInput,
-    body_family, ghost_button_with_icon, icon, install_resize, mono_family, primary_button, radius,
-    row_card, segment, segmented, spacing, status_dot, toggle, tr,
+    Density, FONT_XXS, Icon, InputEvent, Picker, PickerEvent, Radius, ResizeEdge, ResizeRange,
+    Spacing, TextInput, body_family, ghost_button_with_icon, icon, install_resize, mono_family,
+    primary_button, radius, row_card, segment, segmented, spacing, status_dot, toggle, tr,
 };
 use forge_registry::effective_config;
 use gpui::{AnyElement, ClickEvent, FontWeight, SharedString};
@@ -112,8 +113,10 @@ impl TriggersRegistryView {
             cooldown_input,
             cooldown_per_user,
             permission_rung,
+            choices: CollectionChoices::for_specs(&specs),
             _cooldown_sub: cooldown_sub,
         });
+        self.start_collection_options(cx);
         cx.notify();
     }
 
@@ -192,25 +195,66 @@ impl TriggersRegistryView {
 
     fn pick_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
         if let Some(detail) = self.detail.as_mut() {
-            for field in &mut detail.fields {
-                if let ConfigField::Swatch {
-                    key: k, selected, ..
-                } = field
-                    && *k == key
-                {
-                    selected.clone_from(&choice);
-                }
-            }
+            set_picked_value(&mut detail.fields, &key, &choice);
         }
         self.commit_config(cx);
     }
 
-    fn detail_config_handlers() -> ConfigFieldHandlers<Self> {
+    fn open_detail_choice(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(detail) = self.detail.as_mut() {
+            detail.choices.toggle(
+                &detail.fields,
+                key,
+                Self::on_detail_choice_event,
+                window,
+                cx,
+            );
+        }
+        cx.notify();
+    }
+
+    fn close_detail_choice(&mut self, cx: &mut Context<Self>) {
+        if let Some(detail) = self.detail.as_mut() {
+            detail.choices.close();
+        }
+        cx.notify();
+    }
+
+    fn on_detail_choice_event(
+        &mut self,
+        _picker: Entity<Picker>,
+        event: &PickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(detail) = self.detail.as_mut() else {
+            return;
+        };
+        match event {
+            PickerEvent::Selected(value) => {
+                if let Some(key) = detail.choices.take_open_key() {
+                    self.pick_config_field(key, value.to_string(), cx);
+                }
+            }
+            PickerEvent::Cancelled => {
+                detail.choices.close();
+                cx.notify();
+            }
+        }
+    }
+
+    fn detail_config_handlers(&self) -> ConfigFieldHandlers<Self> {
         ConfigFieldHandlers {
             toggle: Self::toggle_config_field,
             slide: Self::slide_config_field,
             pick: Self::pick_config_field,
-            choice: None,
+            choice: Some(ChoiceDropdown {
+                open: Self::open_detail_choice,
+                close: Self::close_detail_choice,
+                active: self
+                    .detail
+                    .as_ref()
+                    .and_then(|detail| detail.choices.active()),
+            }),
         }
     }
 
@@ -649,7 +693,7 @@ impl TriggersRegistryView {
             palette,
             "triggers-cfg",
             &cx.entity(),
-            &Self::detail_config_handlers(),
+            &self.detail_config_handlers(),
         );
 
         let revert: AnyElement = if is_overridden && !matches!(field, ConfigField::Hint { .. }) {

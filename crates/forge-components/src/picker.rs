@@ -58,6 +58,7 @@ pub struct Picker {
     selected: usize,
     current: Option<SharedString>,
     loading: bool,
+    custom_entry: Option<SharedString>,
     labels: PickerLabels,
     palette: ForgePalette,
     list_scroll: UniformListScrollHandle,
@@ -91,6 +92,7 @@ impl Picker {
             selected: 0,
             current: None,
             loading: false,
+            custom_entry: None,
             labels,
             palette,
             list_scroll: UniformListScrollHandle::new(),
@@ -105,6 +107,12 @@ impl Picker {
     pub fn with_current(mut self, current: Option<SharedString>) -> Self {
         self.current = current;
         self.highlight_current();
+        self
+    }
+
+    #[must_use]
+    pub fn with_custom_entry(mut self, hint: SharedString) -> Self {
+        self.custom_entry = Some(hint);
         self
     }
 
@@ -137,7 +145,16 @@ impl Picker {
     }
 
     fn shows_search(&self) -> bool {
-        self.items.len() > SEARCH_THRESHOLD
+        self.custom_entry.is_some() || self.items.len() > SEARCH_THRESHOLD
+    }
+
+    fn custom_value(&self, cx: &App) -> Option<SharedString> {
+        self.custom_entry.as_ref()?;
+        let typed = self.search.field().read(cx).content().trim();
+        if typed.is_empty() || self.items.iter().any(|item| item.id.as_ref() == typed) {
+            return None;
+        }
+        Some(SharedString::from(typed.to_owned()))
     }
 
     fn on_search_event(
@@ -192,7 +209,26 @@ impl Picker {
         if let Some(&idx) = self.filtered.get(self.selected) {
             let id = self.items[idx].id.clone();
             cx.emit(PickerEvent::Selected(id));
+        } else if let Some(typed) = self.custom_value(cx) {
+            cx.emit(PickerEvent::Selected(typed));
         }
+    }
+
+    fn render_custom_row(
+        &self,
+        typed: SharedString,
+        hint: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let value = typed.clone();
+        dropdown_row("forge-picker-custom", typed, &self.palette)
+            .icon(Some(Icon::Pencil))
+            .suffix(hint)
+            .highlighted(self.filtered.is_empty())
+            .on_click(cx.listener(move |_this, _event, _window, cx| {
+                cx.emit(PickerEvent::Selected(value.clone()));
+            }))
+            .into_any_element()
     }
 
     fn select_next(&mut self, _: &SelectNext, _window: &mut Window, cx: &mut Context<Self>) {
@@ -290,9 +326,14 @@ fn message_row(text: SharedString, palette: ForgePalette) -> AnyElement {
 impl Render for Picker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette;
+        let custom_row = self
+            .custom_value(cx)
+            .map(|typed| self.render_custom_row(typed, self.custom_entry.clone(), cx));
 
         let list_area = if self.loading {
             message_row(self.labels.loading.clone(), p)
+        } else if self.filtered.is_empty() && custom_row.is_some() {
+            div().into_any_element()
         } else if self.filtered.is_empty() {
             message_row(self.labels.empty.clone(), p)
         } else {
@@ -332,7 +373,7 @@ impl Render for Picker {
                     .child(self.search.field().clone()),
             );
         }
-        surface.child(list_area)
+        surface.children(custom_row).child(list_area)
     }
 }
 

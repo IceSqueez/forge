@@ -340,6 +340,10 @@ impl IntegrationDetail {
         self.health_metrics = self.health.metrics();
         self.sections = self.content.sections();
         self.quick_actions = reachable_quick_actions(&*self.quick, self.collections.as_deref());
+        if let Some(manager) = self.collection_manager.clone() {
+            let connected = self.connection == ConnectionState::Connected;
+            manager.update(cx, |manager, cx| manager.set_connected(connected, cx));
+        }
         cx.notify();
     }
 

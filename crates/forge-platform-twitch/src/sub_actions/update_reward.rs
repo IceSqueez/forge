@@ -15,6 +15,7 @@ use crate::custom_rewards::{
     MAX_PROMPT_CHARS, MAX_TITLE_CHARS, RewardBody, is_valid_hex_color, update_request,
 };
 use crate::helix::HelixTransport;
+use crate::reward_collection::MANAGEABLE_REWARD_OPTIONS_KEY;
 
 const KIND_ID: &str = "twitch.channel_points.update_reward";
 
@@ -169,10 +170,10 @@ impl SubActionRunner for UpdateRewardRunner {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DynamicSelect {
                 key: "reward_id",
                 label: "Reward ID",
-                placeholder: "%reward.id%",
+                options_key: MANAGEABLE_REWARD_OPTIONS_KEY,
             },
             FormField::Optional {
                 key: "title",

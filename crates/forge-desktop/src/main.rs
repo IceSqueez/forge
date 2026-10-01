@@ -22,6 +22,7 @@ mod cloud_tts_boot;
 mod collection_form;
 mod collection_list;
 mod collection_manager;
+mod collection_options;
 mod collection_text;
 mod combo_capture;
 mod combo_conflict;

@@ -10,6 +10,7 @@ use forge_types::{
 
 use super::payload_read::{self, twitch_actor};
 use crate::payload_fields::channel_points as fields;
+use crate::reward_collection::REWARD_OPTIONS_KEY;
 
 pub(crate) struct ChannelPointsRedemptionDescriptor;
 
@@ -51,10 +52,10 @@ impl TriggerKindDescriptor for ChannelPointsRedemptionDescriptor {
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![
-            FormField::Text {
+            FormField::DynamicSelect {
                 key: "reward_id",
                 label: "Reward ID (leave blank to match any reward)",
-                placeholder: "",
+                options_key: REWARD_OPTIONS_KEY,
             },
             FormField::Text {
                 key: "reward_title",

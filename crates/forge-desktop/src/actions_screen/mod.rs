@@ -1,4 +1,7 @@
 use crate::async_bridge;
+use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
+use crate::config_form::CollectionChoices;
+use crate::integrations::BuiltinRegistry;
 use crate::presentation::ActivePresentation;
 use crate::run_history_modal::RunHistoryModal;
 use crate::screen::Screen;
@@ -30,6 +33,7 @@ use std::sync::{Arc, RwLock};
 
 mod analyzer;
 mod branch;
+mod collection_choices;
 mod editor;
 mod list;
 mod nav;
@@ -182,6 +186,10 @@ pub struct ScreenActionsView {
     bus: Arc<EventBus>,
     scheduler: QueueSchedulerHandle,
     select_options: HashMap<String, Vec<(String, String)>>,
+    builtins: BuiltinRegistry,
+    collection_options: ChoiceOptions,
+    sub_form_choice_fields: Vec<CollectionChoiceField>,
+    _collection_watch: Vec<gpui::Task<()>>,
     concurrent_queue_ids: HashSet<String>,
     tree_width: Pixels,
     loading: bool,
@@ -262,6 +270,10 @@ impl ScreenActionsView {
             bus,
             scheduler,
             select_options: HashMap::new(),
+            builtins: BuiltinRegistry::default(),
+            collection_options: ChoiceOptions::new(),
+            sub_form_choice_fields: Vec::new(),
+            _collection_watch: Vec::new(),
             concurrent_queue_ids: HashSet::new(),
             tree_width: LEFT_PANEL_W,
             loading: true,
@@ -756,6 +768,7 @@ struct AddTriggerFill {
     name_field: Entity<TextInput>,
     fields: Vec<crate::config_form::ConfigField>,
     labels: Vec<SharedString>,
+    choices: CollectionChoices,
     saving: bool,
     _name_sub: Subscription,
 }

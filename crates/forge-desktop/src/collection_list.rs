@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use forge_components::{
     FONT_XS, FONT_XXS, ForgePalette, Icon, badge, body_family, icon, icon_button, mono_family,
-    spinner, toggle, tr,
+    spinner, toggle, tooltip_builder, tr,
 };
 use forge_platform_core::{CollectionItem, CollectionItemAccess, CollectionItemId};
 use gpui::{
@@ -11,7 +11,8 @@ use gpui::{
 
 use crate::collection_text::localized_collection_text;
 use crate::presentation::ActivePresentation;
-use crate::quick_action_field_rows::{FIELD_FONT, failure_with_retry, field_frame};
+use crate::quick_action_field_rows::{FIELD_FONT, failure_note, failure_with_retry, field_frame};
+use crate::toasts::copy_to_clipboard;
 
 const LIST_GAP: gpui::Pixels = px(6.0);
 const ROW_GAP: gpui::Pixels = px(10.0);
@@ -38,6 +39,7 @@ pub enum ListLoad {
     Loading,
     Ready,
     Failed(String),
+    Unavailable(String),
 }
 
 struct ToggleColumn {
@@ -103,6 +105,13 @@ impl CollectionList {
             }
             Err(reason) => self.load = ListLoad::Failed(reason),
         }
+        cx.notify();
+    }
+
+    pub fn mark_unavailable(&mut self, reason: String, cx: &mut Context<Self>) {
+        self.items.clear();
+        self.busy.clear();
+        self.load = ListLoad::Unavailable(reason);
         cx.notify();
     }
 
@@ -184,7 +193,8 @@ impl CollectionList {
                     .text_size(FIELD_FONT)
                     .text_color(palette.text_primary)
                     .child(item.title.clone()),
-            );
+            )
+            .child(id_line(index, item, palette));
         let controls = match &item.access {
             CollectionItemAccess::ReadOnly { reason } => {
                 titles = titles.child(
@@ -281,6 +291,31 @@ impl CollectionList {
     }
 }
 
+fn id_line(index: usize, item: &CollectionItem, palette: &ForgePalette) -> AnyElement {
+    let id = item.id.as_str().to_owned();
+    let hover = palette.text_secondary;
+    div()
+        .id(("collection-row-copy-id", index))
+        .flex()
+        .items_center()
+        .gap(REASON_GAP)
+        .min_w(px(0.0))
+        .cursor_pointer()
+        .text_color(palette.text_faint)
+        .hover(move |style| style.text_color(hover))
+        .tooltip(tooltip_builder(tr!("common_copy"), palette))
+        .on_click(move |_: &ClickEvent, _, cx| copy_to_clipboard(id.clone(), cx))
+        .child(
+            div()
+                .truncate()
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .child(item.id.as_str().to_owned()),
+        )
+        .child(icon(Icon::Copy, FONT_XXS, palette.text_faint))
+        .into_any_element()
+}
+
 impl Render for CollectionList {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
@@ -312,6 +347,9 @@ impl Render for CollectionList {
                     &palette,
                     cx.listener(|_, _: &ClickEvent, _, cx| cx.emit(CollectionListEvent::Retry)),
                 ));
+            }
+            ListLoad::Unavailable(reason) => {
+                column = column.child(failure_note(reason, &palette));
             }
             ListLoad::Ready if self.items.is_empty() => {
                 column = column.child(

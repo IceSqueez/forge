@@ -3,10 +3,12 @@ use super::sub_action_modal::{
 };
 use super::*;
 use crate::async_bridge;
+use crate::collection_options::collection_choice_fields;
 use crate::config_field_label::{config_field_labels, row_label};
 use crate::config_form::{
-    ChoiceSupport, ConfigField, ConfigFieldHandlers, FILL_VAL_FS, FoldContext,
-    collect_field_values, fold_config_field, render_config_row, sparse_overrides,
+    ChoiceDropdown, ChoiceSupport, CollectionChoices, ConfigField, ConfigFieldHandlers,
+    FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
+    set_picked_value, sparse_overrides,
 };
 use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
@@ -14,10 +16,10 @@ use forge_components::{
     BORDER_THIN, Density, FONT_LG, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, GlyphArt, GridPicker,
     GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
     GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize,
-    OverlayPosition, PlatformKind, Radius, Spacing, TextInput, body_family, ghost_button_with_icon,
-    icon, menu_button, menu_divider, menu_item, modal, mono_family, overlay, platform_color,
-    primary_button, radius, row_card, secondary_button, spacing, status_dot, tooltip_lines_builder,
-    tr, with_alpha,
+    OverlayPosition, Picker, PickerEvent, PlatformKind, Radius, Spacing, TextInput, body_family,
+    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, mono_family,
+    overlay, platform_color, primary_button, radius, row_card, secondary_button, spacing,
+    status_dot, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
     FormSchemaSource, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -690,11 +692,19 @@ impl ScreenActionsView {
     }
 
     fn open_sub_form(&mut self, launch: SubFormLaunch, cx: &mut Context<Self>) {
+        self.sub_form_choice_fields = collection_choice_fields(&launch.specs);
         let form = cx.new(|cx| EditSubActionForm::new(launch, self.rt_handle.clone(), cx));
         self._sub_form_sub = Some(cx.subscribe(&form, Self::on_sub_form_event));
         self.sub_form = Some(form);
         self.fetch_select_options(cx);
+        self.start_collection_options(cx);
         cx.notify();
+    }
+
+    fn close_sub_form(&mut self) {
+        self.sub_form = None;
+        self._sub_form_sub = None;
+        self.sub_form_choice_fields.clear();
     }
 
     fn on_sub_form_event(
@@ -706,15 +716,13 @@ impl ScreenActionsView {
         match event {
             SubFormEvent::Commit(commit) => {
                 let commit = commit.clone();
-                self.sub_form = None;
-                self._sub_form_sub = None;
+                self.close_sub_form();
                 self.step_menu_open = None;
                 self.apply_sub_form_commit(commit, cx);
                 cx.notify();
             }
             SubFormEvent::Cancel => {
-                self.sub_form = None;
-                self._sub_form_sub = None;
+                self.close_sub_form();
                 cx.notify();
             }
         }
@@ -955,14 +963,16 @@ impl ScreenActionsView {
                 .with_identities(overlay_kind_by_identity),
         );
         self.concurrent_queue_ids = concurrent_queue_ids;
+        self.select_options = options;
+        self.select_options.extend(self.collection_options.clone());
         if let Some(form) = self.sub_form.clone() {
             let schema = Arc::clone(&self.overlay_schema) as Arc<dyn FormSchemaSource>;
+            let merged = self.select_options.clone();
             form.update(cx, |form, cx| {
-                form.apply_options(&options, cx);
+                form.apply_options(&merged, cx);
                 form.set_schema(schema, cx);
             });
         }
-        self.select_options = options;
         cx.notify();
     }
 
@@ -1277,9 +1287,11 @@ impl ScreenActionsView {
             name_field,
             fields,
             labels,
+            choices: CollectionChoices::for_specs(&specs),
             saving: false,
             _name_sub: name_sub,
         }));
+        self.start_collection_options(cx);
         cx.notify();
     }
 
@@ -1336,25 +1348,56 @@ impl ScreenActionsView {
 
     fn pick_trigger_config_field(&mut self, key: String, choice: String, cx: &mut Context<Self>) {
         if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
-            for field in &mut form.fields {
-                if let ConfigField::Swatch {
-                    key: k, selected, ..
-                } = field
-                    && *k == key
-                {
-                    selected.clone_from(&choice);
-                }
-            }
+            set_picked_value(&mut form.fields, &key, &choice);
         }
         cx.notify();
     }
 
-    fn trigger_config_handlers() -> ConfigFieldHandlers<Self> {
+    fn open_trigger_choice(&mut self, key: String, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+            form.choices
+                .toggle(&form.fields, key, Self::on_trigger_choice_event, window, cx);
+        }
+        cx.notify();
+    }
+
+    fn close_trigger_choice(&mut self, cx: &mut Context<Self>) {
+        if let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() {
+            form.choices.close();
+        }
+        cx.notify();
+    }
+
+    fn on_trigger_choice_event(
+        &mut self,
+        _picker: Entity<Picker>,
+        event: &PickerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(AddTriggerStage::Fill(form)) = self.add_trigger.as_mut() else {
+            return;
+        };
+        match event {
+            PickerEvent::Selected(value) => {
+                if let Some(key) = form.choices.take_open_key() {
+                    set_picked_value(&mut form.fields, &key, value);
+                }
+            }
+            PickerEvent::Cancelled => form.choices.close(),
+        }
+        cx.notify();
+    }
+
+    fn trigger_config_handlers(form: &AddTriggerFill) -> ConfigFieldHandlers<Self> {
         ConfigFieldHandlers {
             toggle: Self::toggle_trigger_config_field,
             slide: Self::slide_trigger_config_field,
             pick: Self::pick_trigger_config_field,
-            choice: None,
+            choice: Some(ChoiceDropdown {
+                open: Self::open_trigger_choice,
+                close: Self::close_trigger_choice,
+                active: form.choices.active(),
+            }),
         }
     }
 
@@ -1489,6 +1532,7 @@ impl ScreenActionsView {
         } else {
             let last = form.fields.len().saturating_sub(1);
             let view = cx.entity();
+            let handlers = Self::trigger_config_handlers(form);
             let mut col = div().flex().flex_col();
             for (i, field) in form.fields.iter().enumerate() {
                 col = col.child(render_config_row(
@@ -1498,7 +1542,7 @@ impl ScreenActionsView {
                     palette,
                     "actions-trigger-field",
                     &view,
-                    &Self::trigger_config_handlers(),
+                    &handlers,
                 ));
             }
             div()

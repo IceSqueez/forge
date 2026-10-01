@@ -454,6 +454,7 @@ pub(crate) struct StubTrigger {
     label: String,
     category: TriggerCategory,
     declares: Declares,
+    fields: Vec<FormField>,
 }
 
 impl StubTrigger {
@@ -468,7 +469,13 @@ impl StubTrigger {
             label: label.to_owned(),
             category,
             declares,
+            fields: Vec::new(),
         }
+    }
+
+    pub(crate) fn with_fields(mut self, fields: Vec<FormField>) -> Self {
+        self.fields = fields;
+        self
     }
 }
 
@@ -506,7 +513,7 @@ impl TriggerKindDescriptor for StubTrigger {
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        Vec::new()
+        self.fields.clone()
     }
 
     fn condition_display(&self, _: &TriggerConfig) -> String {
@@ -756,4 +763,151 @@ pub(crate) fn hold_one_dispatch(
     }))
     .expect("the scheduler is running");
     pump(rt);
+}
+
+pub(crate) const REWARDS: &str = "rewards";
+
+pub(crate) struct FakeCollections {
+    listing:
+        Mutex<forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>>>,
+    lists: AtomicUsize,
+    signal: forge_platform_core::CollectionRevisionSignal,
+}
+
+impl FakeCollections {
+    pub(crate) fn listing(
+        listing: forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            listing: Mutex::new(listing),
+            lists: AtomicUsize::new(0),
+            signal: forge_platform_core::CollectionRevisionSignal::new(),
+        })
+    }
+
+    pub(crate) fn relist(
+        &self,
+        listing: forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>>,
+    ) {
+        *self.listing.lock().unwrap() = listing;
+    }
+
+    pub(crate) fn bump(&self) {
+        self.signal.bump();
+    }
+
+    pub(crate) fn list_calls(&self) -> usize {
+        self.lists.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn metadata() -> forge_platform_core::CollectionMetadata {
+        forge_platform_core::CollectionMetadata {
+            id: forge_platform_core::CollectionId::new(REWARDS),
+            label: "Channel point rewards".to_owned(),
+            icon: forge_platform_core::SectionIcon::new("diamond"),
+            capacity: None,
+            fields: Vec::new(),
+            toggles: Vec::new(),
+        }
+    }
+
+    pub(crate) fn installed_as(
+        self: &Arc<Self>,
+        builtin: &str,
+    ) -> crate::integrations::BuiltinRegistry {
+        let registry = crate::integrations::BuiltinRegistry::default();
+        registry.install(crate::integrations::BuiltinObject {
+            collections: Some(Arc::clone(self) as Arc<dyn forge_platform_core::BuiltinCollections>),
+            ..crate::unavailable_builtin::unavailable_builtin(&forge_platform_core::BuiltinId::new(
+                builtin,
+            ))
+        });
+        registry
+    }
+}
+
+pub(crate) fn reward(
+    id: &str,
+    title: &str,
+    access: forge_platform_core::CollectionItemAccess,
+) -> forge_platform_core::CollectionItem {
+    forge_platform_core::CollectionItem {
+        id: forge_platform_core::CollectionItemId::new(id),
+        title: title.to_owned(),
+        values: std::collections::BTreeMap::new(),
+        toggles: std::collections::BTreeMap::new(),
+        access,
+    }
+}
+
+pub(crate) fn owned_reward(id: &str, title: &str) -> forge_platform_core::CollectionItem {
+    reward(
+        id,
+        title,
+        forge_platform_core::CollectionItemAccess::Manageable,
+    )
+}
+
+pub(crate) fn foreign_reward(id: &str, title: &str) -> forge_platform_core::CollectionItem {
+    reward(
+        id,
+        title,
+        forge_platform_core::CollectionItemAccess::ReadOnly {
+            reason: "created elsewhere".to_owned(),
+        },
+    )
+}
+
+#[async_trait::async_trait]
+impl forge_platform_core::BuiltinCollections for FakeCollections {
+    fn collections(&self) -> Vec<forge_platform_core::CollectionMetadata> {
+        vec![Self::metadata()]
+    }
+
+    fn revisions(&self) -> forge_platform_core::CollectionRevisions {
+        self.signal.subscribe()
+    }
+
+    async fn list(
+        &self,
+        _: &forge_platform_core::CollectionId,
+    ) -> forge_platform_core::CollectionOutcome<Vec<forge_platform_core::CollectionItem>> {
+        self.lists.fetch_add(1, Ordering::SeqCst);
+        self.listing.lock().unwrap().clone()
+    }
+
+    async fn create(
+        &self,
+        _: &forge_platform_core::CollectionId,
+        _: &std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue>,
+    ) -> forge_platform_core::CollectionOutcome<forge_platform_core::CollectionItem> {
+        Err(forge_platform_core::CollectionFailure::Transport)
+    }
+
+    async fn update(
+        &self,
+        _: &forge_platform_core::CollectionId,
+        _: &forge_platform_core::CollectionItemId,
+        _: &std::collections::BTreeMap<String, forge_platform_core::QuickActionFieldValue>,
+    ) -> forge_platform_core::CollectionOutcome<forge_platform_core::CollectionItem> {
+        Err(forge_platform_core::CollectionFailure::Transport)
+    }
+
+    async fn delete(
+        &self,
+        _: &forge_platform_core::CollectionId,
+        _: &forge_platform_core::CollectionItemId,
+    ) -> forge_platform_core::CollectionOutcome<()> {
+        Err(forge_platform_core::CollectionFailure::Transport)
+    }
+
+    async fn set_toggle(
+        &self,
+        _: &forge_platform_core::CollectionId,
+        _: &forge_platform_core::CollectionItemId,
+        _: &str,
+        _: bool,
+    ) -> forge_platform_core::CollectionOutcome<forge_platform_core::CollectionItem> {
+        Err(forge_platform_core::CollectionFailure::Transport)
+    }
 }

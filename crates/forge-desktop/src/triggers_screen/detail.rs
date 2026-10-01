@@ -1064,13 +1064,19 @@ mod tests {
     use std::sync::Mutex;
 
     use forge_components::ThemeId;
+    use forge_platform_core::CollectionFailure;
     use forge_registry::TriggerRegistry;
+    use forge_registry::{FormField, TriggerCategory};
     use forge_storage::StorageError;
-    use forge_types::{PlatformScope, TriggerInstance, TriggerInstanceId};
+    use forge_types::{PlatformScope, TriggerConfig, TriggerInstance, TriggerInstanceId, Variant};
 
     use super::*;
+    use crate::integrations::BuiltinRegistry;
     use crate::presentation::Presentation;
-    use crate::test_support::{StubActions, pump, runtime, test_backend};
+    use crate::test_support::{
+        Declares, FakeCollections, StubActions, StubTrigger, owned_reward, pump, runtime,
+        test_backend, trigger_registry,
+    };
 
     const KIND: &str = "midi.input.note_on";
     const NAME: &str = "Note on";
@@ -1079,6 +1085,7 @@ mod tests {
     struct RecordingTriggers {
         instance: Mutex<TriggerInstance>,
         saved: Mutex<Vec<u32>>,
+        saved_overrides: Mutex<Vec<TriggerConfig>>,
     }
 
     impl RecordingTriggers {
@@ -1086,11 +1093,16 @@ mod tests {
             Arc::new(Self {
                 instance: Mutex::new(instance),
                 saved: Mutex::new(Vec::new()),
+                saved_overrides: Mutex::new(Vec::new()),
             })
         }
 
         fn saved_cooldowns(&self) -> Vec<u32> {
             self.saved.lock().unwrap().clone()
+        }
+
+        fn last_saved_overrides(&self) -> Option<TriggerConfig> {
+            self.saved_overrides.lock().unwrap().last().cloned()
         }
     }
 
@@ -1135,6 +1147,10 @@ mod tests {
 
         async fn save(&self, instance: &TriggerInstance) -> Result<(), StorageError> {
             self.saved.lock().unwrap().push(instance.cooldown_secs);
+            self.saved_overrides
+                .lock()
+                .unwrap()
+                .push(instance.overrides.clone());
             *self.instance.lock().unwrap() = instance.clone();
             Ok(())
         }
@@ -1164,6 +1180,22 @@ mod tests {
 
     impl Fixture {
         fn new(cx: &mut gpui::TestAppContext) -> Self {
+            Self::build(
+                cx,
+                TriggerRegistry::new(),
+                KIND,
+                TriggerConfig::new(),
+                BuiltinRegistry::default(),
+            )
+        }
+
+        fn build(
+            cx: &mut gpui::TestAppContext,
+            registry: TriggerRegistry,
+            kind: &str,
+            overrides: TriggerConfig,
+            builtins: BuiltinRegistry,
+        ) -> Self {
             cx.update(|cx| {
                 cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
             });
@@ -1171,9 +1203,9 @@ mod tests {
             let id = TriggerInstanceId::new();
             let instance = TriggerInstance {
                 id,
-                kind_id: KIND.to_owned(),
+                kind_id: kind.to_owned(),
                 name: NAME.to_owned(),
-                overrides: Default::default(),
+                overrides,
                 enabled: true,
                 user_defined: false,
                 platform_scope: PlatformScope::Any,
@@ -1188,12 +1220,13 @@ mod tests {
                     TriggersRegistryView::new(
                         Arc::clone(&repo) as Arc<dyn TriggerInstanceRepo>,
                         Arc::new(StubActions),
-                        Arc::new(TriggerRegistry::new()),
+                        Arc::new(registry),
                         backend as Arc<dyn forge_storage::SettingsRepo>,
                         rt.handle().clone(),
                         None,
                         cx,
                     )
+                    .with_builtins(builtins)
                 })
             });
             let mut fixture = Self {
@@ -1213,6 +1246,7 @@ mod tests {
                     cx,
                 );
             });
+            fixture.settle(cx);
             fixture
         }
 
@@ -1293,5 +1327,136 @@ mod tests {
         fixture.release(cx);
 
         assert_eq!(fixture.repo.saved_cooldowns(), [0]);
+    }
+
+    const REWARD_KIND: &str = "twitch.channel_points.redemption";
+    const REWARD_FIELD: &str = "reward_id";
+    const LEGACY_REWARD_ID: &str = "0c7f3a52-legacy";
+
+    fn reward_registry() -> TriggerRegistry {
+        trigger_registry(vec![
+            StubTrigger::new(
+                REWARD_KIND,
+                "Reward redeemed",
+                TriggerCategory::ChannelPoints,
+                Declares::Nothing,
+            )
+            .with_fields(vec![FormField::DynamicSelect {
+                key: "reward_id",
+                label: "Reward",
+                options_key: "collections.twitch.rewards",
+            }]),
+        ])
+    }
+
+    fn reward_sheet(
+        cx: &mut gpui::TestAppContext,
+        fake: &Arc<FakeCollections>,
+        stored: Option<&str>,
+    ) -> Fixture {
+        let overrides: TriggerConfig = stored
+            .map(|id| (REWARD_FIELD.to_owned(), Variant::String(id.to_owned())))
+            .into_iter()
+            .collect();
+        Fixture::build(
+            cx,
+            reward_registry(),
+            REWARD_KIND,
+            overrides,
+            fake.installed_as("twitch"),
+        )
+    }
+
+    fn reward_choice(fixture: &Fixture, cx: &mut gpui::TestAppContext) -> (String, Vec<String>) {
+        fixture.view().read_with(cx, |view, _| {
+            view.detail
+                .as_ref()
+                .unwrap()
+                .fields
+                .iter()
+                .find_map(|field| match field {
+                    ConfigField::Choice {
+                        key,
+                        selected,
+                        options,
+                        ..
+                    } if key == REWARD_FIELD => Some((
+                        selected.clone(),
+                        options.iter().map(|(value, _)| value.clone()).collect(),
+                    )),
+                    _ => None,
+                })
+                .unwrap()
+        })
+    }
+
+    #[gpui::test]
+    fn a_reward_filter_offers_match_any_first_then_every_listed_reward(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fake = FakeCollections::listing(Ok(vec![
+            owned_reward("r-1", "Hydrate"),
+            owned_reward("r-2", "Stretch"),
+        ]));
+
+        let fixture = reward_sheet(cx, &fake, None);
+
+        assert_eq!(reward_choice(&fixture, cx).1, ["", "r-1", "r-2"]);
+    }
+
+    #[gpui::test]
+    fn a_stored_reward_id_the_listing_no_longer_has_still_shows_as_the_selection(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fake = FakeCollections::listing(Ok(vec![owned_reward("r-1", "Hydrate")]));
+
+        let fixture = reward_sheet(cx, &fake, Some(LEGACY_REWARD_ID));
+
+        assert_eq!(reward_choice(&fixture, cx).0, LEGACY_REWARD_ID);
+    }
+
+    #[gpui::test]
+    fn a_revision_bump_reoffers_the_fresh_reward_listing(cx: &mut gpui::TestAppContext) {
+        let fake = FakeCollections::listing(Ok(vec![owned_reward("r-1", "Hydrate")]));
+        let mut fixture = reward_sheet(cx, &fake, None);
+        fake.relist(Ok(vec![owned_reward("r-9", "Brand new")]));
+
+        fake.bump();
+        fixture.settle(cx);
+
+        assert_eq!(reward_choice(&fixture, cx).1, ["", "r-9"]);
+    }
+
+    #[gpui::test]
+    fn a_reward_listing_that_fails_after_a_disconnect_withdraws_the_stale_rewards(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fake = FakeCollections::listing(Ok(vec![owned_reward("r-1", "Hydrate")]));
+        let mut fixture = reward_sheet(cx, &fake, None);
+        fake.relist(Err(CollectionFailure::NotConnected));
+
+        fake.bump();
+        fixture.settle(cx);
+
+        assert_eq!(reward_choice(&fixture, cx).1, [""]);
+    }
+
+    #[gpui::test]
+    fn picking_a_reward_saves_its_id_as_the_filter(cx: &mut gpui::TestAppContext) {
+        let fake = FakeCollections::listing(Ok(vec![owned_reward("r-1", "Hydrate")]));
+        let mut fixture = reward_sheet(cx, &fake, Some(LEGACY_REWARD_ID));
+
+        fixture.view().update(cx, |view, cx| {
+            view.pick_config_field(REWARD_FIELD.to_owned(), "r-1".to_owned(), cx)
+        });
+        fixture.settle(cx);
+
+        assert_eq!(
+            fixture
+                .repo
+                .last_saved_overrides()
+                .and_then(|overrides| overrides.get(REWARD_FIELD).cloned()),
+            Some(Variant::String("r-1".to_owned()))
+        );
     }
 }

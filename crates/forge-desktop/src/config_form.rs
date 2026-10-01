@@ -1237,4 +1237,52 @@ mod tests {
 
         assert_eq!(collected(cx, &fields, &gated_on), FieldConfig::new());
     }
+
+    fn dynamic_select(options_key: &'static str) -> FormField {
+        FormField::DynamicSelect {
+            key: "target",
+            label: "Target",
+            options_key,
+        }
+    }
+
+    #[gpui::test]
+    fn a_stored_raw_reward_id_survives_a_reload_and_resave_unchanged(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let stored = config(&[("target", Variant::String("%reward.id%".into()))]);
+        let (_host, fields) = build(
+            cx,
+            &dynamic_select("collections.twitch.rewards.manageable"),
+            &FieldConfig::new(),
+            &stored,
+            "",
+        );
+
+        assert_eq!(collected(cx, &fields, &FieldConfig::new()), stored);
+    }
+
+    #[gpui::test]
+    fn only_a_collection_select_becomes_a_choice_when_the_form_has_no_option_map(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (options_key, expect_choice) in [
+            ("collections.twitch.rewards", true),
+            ("obs.scene_names", false),
+        ] {
+            let (_host, fields) = build(
+                cx,
+                &dynamic_select(options_key),
+                &FieldConfig::new(),
+                &FieldConfig::new(),
+                "",
+            );
+
+            assert_eq!(
+                matches!(fields.as_slice(), [ConfigField::Choice { .. }]),
+                expect_choice,
+                "{options_key}"
+            );
+        }
+    }
 }

@@ -1445,3 +1445,168 @@ fn push_form_field(
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use forge_components::{ThemeId, bind_picker_keys, bind_text_input_keys};
+    use gpui::{TestAppContext, VisualTestContext};
+
+    use super::*;
+    use crate::actions_screen::overlay_schema::OverlayContentSchema;
+    use crate::presentation::Presentation;
+    use crate::test_support::runtime;
+
+    const REWARD_FIELD: &str = "reward_id";
+    const OWNED_REWARDS: &str = "collections.twitch.rewards.manageable";
+    const MODE_FIELD: &str = "mode";
+
+    fn specs() -> Vec<FormField> {
+        vec![
+            FormField::DynamicSelect {
+                key: REWARD_FIELD,
+                label: "Reward",
+                options_key: OWNED_REWARDS,
+            },
+            FormField::Select {
+                key: MODE_FIELD,
+                label: "Mode",
+                options: &["on", "off"],
+            },
+        ]
+    }
+
+    fn launch(stored_reward: Option<&str>) -> SubFormLaunch {
+        let config: SubActionConfig = stored_reward
+            .map(|id| (REWARD_FIELD.to_owned(), Variant::String(id.to_owned())))
+            .into_iter()
+            .collect();
+        SubFormLaunch {
+            kind_id: "twitch.channel_points.enable_reward".to_owned(),
+            target: SubFormTarget::Add,
+            specs: specs(),
+            config,
+            name_value: String::new(),
+            condition_value: String::new(),
+            continue_on_error: false,
+            kind_label: "Enable reward".to_owned(),
+            icon_name: "gift".to_owned(),
+            category: None,
+            chain_len: 0,
+            options_seed: HashMap::new(),
+            refinement: None,
+            schema: Arc::new(OverlayContentSchema::new(Arc::new(
+                OverlayKindRegistry::new(),
+            ))) as Arc<dyn FormSchemaSource>,
+        }
+    }
+
+    fn open<'a>(
+        cx: &'a mut TestAppContext,
+        stored_reward: Option<&str>,
+    ) -> (
+        Entity<EditSubActionForm>,
+        &'a mut VisualTestContext,
+        tokio::runtime::Runtime,
+    ) {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            bind_picker_keys(cx);
+            bind_text_input_keys(cx);
+        });
+        let rt = runtime();
+        let handle = rt.handle().clone();
+        let launch = launch(stored_reward);
+        let (form, vcx) =
+            cx.add_window_view(move |_window, cx| EditSubActionForm::new(launch, handle, cx));
+        vcx.run_until_parked();
+        (form, vcx, rt)
+    }
+
+    fn select(
+        form: &Entity<EditSubActionForm>,
+        vcx: &mut VisualTestContext,
+        key: &str,
+    ) -> (String, Vec<String>) {
+        vcx.update(|_window, cx| {
+            form.read(cx)
+                .fields
+                .iter()
+                .find_map(|field| match field {
+                    SubFormField::Select {
+                        key: k,
+                        selected,
+                        options,
+                        ..
+                    } if k == key => Some((
+                        selected.clone(),
+                        options.iter().map(|(value, _)| value.clone()).collect(),
+                    )),
+                    _ => None,
+                })
+                .unwrap()
+        })
+    }
+
+    fn deliver_rewards(form: &Entity<EditSubActionForm>, vcx: &mut VisualTestContext) {
+        let map = HashMap::from([(
+            OWNED_REWARDS.to_owned(),
+            vec![("r-1".to_owned(), "Hydrate".to_owned())],
+        )]);
+        vcx.update(|_window, cx| form.update(cx, |form, cx| form.apply_options(&map, cx)));
+    }
+
+    fn type_into_picker(
+        form: &Entity<EditSubActionForm>,
+        vcx: &mut VisualTestContext,
+        key: &str,
+        typed: &str,
+    ) {
+        vcx.update(|window, cx| {
+            form.update(cx, |form, cx| {
+                form.open_select_picker(key.to_owned(), window, cx)
+            })
+        });
+        vcx.run_until_parked();
+        vcx.simulate_input(typed);
+        vcx.simulate_keystrokes("enter");
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn arriving_rewards_fill_the_reward_select(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open(cx, None);
+
+        deliver_rewards(&form, vcx);
+
+        assert_eq!(select(&form, vcx, REWARD_FIELD).1, ["r-1"]);
+    }
+
+    #[gpui::test]
+    fn a_stored_raw_reward_id_stays_selected_after_the_rewards_arrive(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open(cx, Some("%reward.id%"));
+
+        deliver_rewards(&form, vcx);
+
+        assert_eq!(select(&form, vcx, REWARD_FIELD).0, "%reward.id%");
+    }
+
+    #[gpui::test]
+    fn the_reward_select_accepts_a_typed_variable(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open(cx, None);
+        deliver_rewards(&form, vcx);
+
+        type_into_picker(&form, vcx, REWARD_FIELD, "%reward.id%");
+
+        assert_eq!(select(&form, vcx, REWARD_FIELD).0, "%reward.id%");
+    }
+
+    #[gpui::test]
+    fn a_fixed_option_select_does_not_accept_typed_text(cx: &mut TestAppContext) {
+        let (form, vcx, _rt) = open(cx, None);
+
+        type_into_picker(&form, vcx, MODE_FIELD, "sideways");
+
+        assert_ne!(select(&form, vcx, MODE_FIELD).0, "sideways");
+    }
+}

@@ -186,3 +186,224 @@ fn watch_revisions<V: 'static>(
         }
     })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use forge_platform_core::CollectionFailure;
+    use gpui::{AppContext, TestAppContext};
+
+    use super::*;
+    use crate::test_support::{FakeCollections, foreign_reward, owned_reward, runtime};
+
+    const REWARD_KEY: &str = "collections.twitch.rewards";
+    const OWNED_REWARD_KEY: &str = "collections.twitch.rewards.manageable";
+
+    fn titles(choices: &[(String, String)]) -> Vec<&str> {
+        choices.iter().map(|(_, title)| title.as_str()).collect()
+    }
+
+    fn mixed_rewards() -> Vec<CollectionItem> {
+        vec![
+            owned_reward("r-owned", "Hydrate"),
+            foreign_reward("r-foreign", "Highlight my message"),
+        ]
+    }
+
+    #[test]
+    fn an_options_key_names_its_builtin_collection_and_whether_only_owned_rows_count() {
+        for (key, builtin, collection, manageable_only) in [
+            (REWARD_KEY, "twitch", "rewards", false),
+            (OWNED_REWARD_KEY, "twitch", "rewards", true),
+            ("collections.kick.rewards", "kick", "rewards", false),
+        ] {
+            let source = CollectionSource::parse(key).unwrap();
+
+            assert_eq!(
+                (
+                    source.builtin.as_str(),
+                    source.collection.to_string(),
+                    source.manageable_only,
+                    source.options_key.as_str(),
+                ),
+                (builtin, collection.to_owned(), manageable_only, key),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_key_outside_the_collections_namespace_or_malformed_is_not_a_collection_source() {
+        for key in [
+            "obs.scene_names",
+            "action.ids",
+            "collections.twitch",
+            "collections.twitch.",
+            "collections..rewards",
+            "collections.twitch.rewards.extra",
+            "collections.twitch.manageable",
+            "collections.",
+            "",
+        ] {
+            assert_eq!(CollectionSource::parse(key), None, "{key:?}");
+        }
+    }
+
+    #[test]
+    fn only_collection_backed_selects_are_picked_up_even_when_wrapped_optional() {
+        let specs = vec![
+            FormField::DynamicSelect {
+                key: "reward_id",
+                label: "Reward",
+                options_key: REWARD_KEY,
+            },
+            FormField::DynamicSelect {
+                key: "scene",
+                label: "Scene",
+                options_key: "obs.scene_names",
+            },
+            FormField::Text {
+                key: "reward_title",
+                label: "Title",
+                placeholder: "",
+            },
+            FormField::Optional {
+                key: "target",
+                label: "Target",
+                inner: Box::new(FormField::DynamicSelect {
+                    key: "target",
+                    label: "Target",
+                    options_key: OWNED_REWARD_KEY,
+                }),
+            },
+        ];
+
+        let picked: Vec<(String, bool)> = collection_choice_fields(&specs)
+            .into_iter()
+            .map(|field| (field.field_key, field.source.manageable_only))
+            .collect();
+
+        assert_eq!(
+            picked,
+            vec![("reward_id".to_owned(), false), ("target".to_owned(), true)]
+        );
+    }
+
+    #[test]
+    fn owned_only_choices_drop_rewards_forge_cannot_modify_while_plain_choices_keep_all() {
+        let rewards = mixed_rewards();
+
+        assert_eq!(
+            (
+                titles(&collection_choices(&rewards, true)),
+                titles(&collection_choices(&rewards, false)),
+            ),
+            (vec!["Hydrate"], vec!["Hydrate", "Highlight my message"])
+        );
+    }
+
+    #[test]
+    fn a_choice_stores_the_reward_id_and_shows_its_title() {
+        assert_eq!(
+            collection_choices(&[owned_reward("r-owned", "Hydrate")], false),
+            vec![("r-owned".to_owned(), "Hydrate".to_owned())]
+        );
+    }
+
+    fn sources(keys: &[&str]) -> Vec<CollectionSource> {
+        keys.iter()
+            .map(|key| CollectionSource::parse(key).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn plain_and_owned_keys_over_one_collection_fill_from_a_single_listing() {
+        let fake = FakeCollections::listing(Ok(mixed_rewards()));
+        let builtins = fake.installed_as("twitch");
+        let rt = runtime();
+
+        let options = rt.block_on(load_collection_options(
+            builtins,
+            sources(&[REWARD_KEY, OWNED_REWARD_KEY]),
+        ));
+
+        assert_eq!(
+            (
+                titles(&options[REWARD_KEY]),
+                titles(&options[OWNED_REWARD_KEY]),
+                fake.list_calls(),
+            ),
+            (vec!["Hydrate", "Highlight my message"], vec!["Hydrate"], 1)
+        );
+    }
+
+    #[test]
+    fn a_failed_listing_clears_the_key_instead_of_leaving_it_unset() {
+        for failure in [
+            CollectionFailure::NotConnected,
+            CollectionFailure::NotEligible,
+            CollectionFailure::Transport,
+        ] {
+            let fake = FakeCollections::listing(Err(failure.clone()));
+            let rt = runtime();
+
+            let options = rt.block_on(load_collection_options(
+                fake.installed_as("twitch"),
+                sources(&[REWARD_KEY]),
+            ));
+
+            assert_eq!(
+                options.get(REWARD_KEY),
+                Some(&Vec::new()),
+                "{failure:?} must replace stale rewards with an empty list"
+            );
+        }
+    }
+
+    #[test]
+    fn a_builtin_that_is_not_installed_offers_an_empty_list() {
+        let fake = FakeCollections::listing(Ok(mixed_rewards()));
+        let rt = runtime();
+
+        let options = rt.block_on(load_collection_options(
+            fake.installed_as("kick"),
+            sources(&[REWARD_KEY]),
+        ));
+
+        assert_eq!(options.get(REWARD_KEY), Some(&Vec::new()));
+    }
+
+    struct Watcher {
+        reloads: usize,
+        _watch: Vec<Task<()>>,
+    }
+
+    fn count_reload(watcher: &mut Watcher, _: &mut Context<Watcher>) {
+        watcher.reloads += 1;
+    }
+
+    #[gpui::test]
+    fn a_revision_bump_reloads_once_even_when_two_fields_share_the_builtin(
+        cx: &mut TestAppContext,
+    ) {
+        let fake = FakeCollections::listing(Ok(Vec::new()));
+        let builtins = fake.installed_as("twitch");
+        let watcher = cx.update(|cx| {
+            cx.new(|cx| Watcher {
+                reloads: 0,
+                _watch: watch_collection_revisions(
+                    &builtins,
+                    &sources(&[REWARD_KEY, OWNED_REWARD_KEY]),
+                    count_reload,
+                    cx,
+                ),
+            })
+        });
+        cx.run_until_parked();
+
+        fake.bump();
+        cx.run_until_parked();
+
+        assert_eq!(cx.update(|cx| watcher.read(cx).reloads), 1);
+    }
+}

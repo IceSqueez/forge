@@ -685,4 +685,77 @@ mod tests {
             );
         }
     }
+
+    fn open_typable(
+        cx: &mut gpui::TestAppContext,
+        roster: Vec<PickerItem>,
+    ) -> (Entity<Picker>, Entity<Heard>, &mut VisualTestContext) {
+        cx.update(bind_picker_keys);
+        cx.update(crate::text_input::bind_text_input_keys);
+        let (picker, vcx) = cx.add_window_view(|_window, cx| {
+            Picker::new(labels(), roster, FORGE_DEFAULT, cx).with_custom_entry("custom".into())
+        });
+        let heard = vcx.update(|window, cx| {
+            picker.update(cx, |view, cx| view.focus(window, cx));
+            cx.new(|cx| Heard {
+                events: Vec::new(),
+                _sub: cx.subscribe(&picker, |this: &mut Heard, _view, event, _cx| {
+                    this.events.push(event.clone());
+                }),
+            })
+        });
+        vcx.run_until_parked();
+        (picker, heard, vcx)
+    }
+
+    #[gpui::test]
+    fn a_typable_picker_offers_the_search_field_even_for_a_short_list(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, _heard, vcx) = open_typable(cx, items(3));
+
+        let search_focused = vcx.update(|window, cx| {
+            picker
+                .read(cx)
+                .search
+                .field()
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        });
+
+        assert!(search_focused);
+    }
+
+    #[gpui::test]
+    fn enter_on_a_typed_value_with_no_matching_row_selects_the_trimmed_text(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (_picker, heard, vcx) = open_typable(cx, items(3));
+
+        vcx.simulate_input("  %reward.id%  ");
+        vcx.simulate_keystrokes("enter");
+
+        assert_eq!(selections(&heard, vcx), vec!["%reward.id%".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn enter_on_a_typed_value_that_matches_a_row_selects_that_row(cx: &mut gpui::TestAppContext) {
+        let (_picker, heard, vcx) = open_typable(cx, items(3));
+
+        vcx.simulate_input("item 2");
+        vcx.simulate_keystrokes("enter");
+
+        assert_eq!(selections(&heard, vcx), vec!["id-2".to_owned()]);
+    }
+
+    #[gpui::test]
+    fn enter_on_whitespace_alone_over_an_empty_list_selects_nothing(cx: &mut gpui::TestAppContext) {
+        let (_picker, heard, vcx) = open_typable(cx, Vec::new());
+
+        vcx.simulate_input("   ");
+        vcx.simulate_keystrokes("enter");
+
+        assert_eq!(selections(&heard, vcx), Vec::<String>::new());
+    }
 }

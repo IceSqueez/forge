@@ -581,3 +581,185 @@ fn report_failure(failure: &CollectionFailure, cx: &mut Context<CollectionManage
     tracing::warn!(%failure, "collection write failed");
     cx.push_toast(ToastKind::Error, collection_failure_message(failure));
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{Density, ThemeId};
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::presentation::Presentation;
+    use crate::test_support::{FakeCollections, owned_reward, pump, runtime};
+
+    struct Harness {
+        manager: Entity<CollectionManager>,
+        fake: Arc<FakeCollections>,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl Harness {
+        fn open(
+            cx: &mut TestAppContext,
+            listing: CollectionOutcome<Vec<CollectionItem>>,
+            settle: bool,
+        ) -> Self {
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let fake = FakeCollections::listing(listing);
+            let capability = Arc::clone(&fake) as Arc<dyn BuiltinCollections>;
+            let handle = rt.handle().clone();
+            let manager = cx.update(|cx| {
+                cx.new(|cx| {
+                    CollectionManager::new(
+                        capability,
+                        FakeCollections::metadata(),
+                        gpui::rgba(0x9146ffff),
+                        handle,
+                        cx,
+                    )
+                })
+            });
+            let harness = Self { manager, fake, rt };
+            if settle {
+                harness.settle(cx);
+            }
+            harness
+        }
+
+        fn settle(&self, cx: &mut TestAppContext) {
+            pump(&self.rt);
+            cx.run_until_parked();
+            pump(&self.rt);
+            cx.run_until_parked();
+        }
+
+        fn connect(&self, cx: &mut TestAppContext, connected: bool) {
+            self.manager
+                .update(cx, |manager, cx| manager.set_connected(connected, cx));
+            self.settle(cx);
+        }
+
+        fn load(&self, cx: &mut TestAppContext) -> ListLoad {
+            self.manager
+                .read_with(cx, |manager, cx| manager.list.read(cx).load().clone())
+        }
+
+        fn rows(&self, cx: &mut TestAppContext) -> usize {
+            self.manager
+                .read_with(cx, |manager, cx| manager.list.read(cx).count())
+        }
+
+        fn form_open(&self, cx: &mut TestAppContext) -> bool {
+            self.manager
+                .read_with(cx, |manager, _| manager.form.is_some())
+        }
+    }
+
+    fn rewards() -> Vec<CollectionItem> {
+        vec![owned_reward("r-1", "Hydrate")]
+    }
+
+    #[gpui::test]
+    fn an_ineligible_or_offline_channel_shows_unavailable_while_other_failures_stay_retryable(
+        cx: &mut TestAppContext,
+    ) {
+        for (failure, unavailable) in [
+            (CollectionFailure::NotEligible, true),
+            (CollectionFailure::NotConnected, true),
+            (CollectionFailure::Transport, false),
+            (CollectionFailure::Unauthorized, false),
+            (CollectionFailure::RateLimited, false),
+        ] {
+            let harness = Harness::open(cx, Err(failure.clone()), true);
+
+            let load = harness.load(cx);
+
+            assert_eq!(
+                (
+                    matches!(load, ListLoad::Unavailable(_)),
+                    matches!(load, ListLoad::Failed(_)),
+                ),
+                (unavailable, !unavailable),
+                "{failure:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_dropped_connection_clears_the_rows_and_marks_the_list_unavailable(
+        cx: &mut TestAppContext,
+    ) {
+        let harness = Harness::open(cx, Ok(rewards()), true);
+
+        harness.connect(cx, false);
+
+        assert_eq!(
+            (
+                matches!(harness.load(cx), ListLoad::Unavailable(_)),
+                harness.rows(cx)
+            ),
+            (true, 0)
+        );
+    }
+
+    #[gpui::test]
+    fn a_dropped_connection_closes_an_open_edit_form(cx: &mut TestAppContext) {
+        let harness = Harness::open(cx, Ok(rewards()), true);
+        harness.manager.update(cx, |manager, cx| {
+            manager.on_list_event(
+                manager.list.clone(),
+                &CollectionListEvent::Edit(CollectionItemId::new("r-1")),
+                cx,
+            )
+        });
+        assert!(harness.form_open(cx));
+
+        harness.connect(cx, false);
+
+        assert!(!harness.form_open(cx));
+    }
+
+    #[gpui::test]
+    fn a_restored_connection_relists_the_rewards(cx: &mut TestAppContext) {
+        let harness = Harness::open(cx, Ok(rewards()), true);
+        harness.connect(cx, false);
+
+        harness.connect(cx, true);
+
+        assert_eq!(
+            (
+                harness.load(cx),
+                harness.rows(cx),
+                harness.fake.list_calls()
+            ),
+            (ListLoad::Ready, 1, 2)
+        );
+    }
+
+    #[gpui::test]
+    fn repeating_the_current_connection_state_does_not_relist(cx: &mut TestAppContext) {
+        let harness = Harness::open(cx, Ok(rewards()), true);
+
+        harness.connect(cx, true);
+        harness.connect(cx, true);
+
+        assert_eq!(harness.fake.list_calls(), 1);
+    }
+
+    #[gpui::test]
+    fn a_listing_in_flight_when_the_connection_drops_is_discarded(cx: &mut TestAppContext) {
+        let harness = Harness::open(cx, Ok(rewards()), false);
+
+        harness.connect(cx, false);
+
+        assert_eq!(
+            (
+                matches!(harness.load(cx), ListLoad::Unavailable(_)),
+                harness.rows(cx)
+            ),
+            (true, 0)
+        );
+    }
+}

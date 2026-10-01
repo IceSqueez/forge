@@ -5,6 +5,7 @@ mod frames;
 mod ids;
 mod ledger;
 mod rest;
+mod rewards;
 mod socket;
 mod state;
 
@@ -14,3 +15,4 @@ pub use fake::FakeTwitch;
 pub use ledger::{
     CredentialCheck, Ledger, RecordedRequest, RecordedSession, RecordedSubscription, TappedRequest,
 };
+pub use rewards::{FakeReward, MAX_CUSTOM_REWARDS};

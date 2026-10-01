@@ -77,6 +77,19 @@ enum Command {
         /// Launch even while a game is on screen: the compositor is never asked.
         #[arg(long)]
         allow_over_game: bool,
+        /// Pre-seed the fake Twitch with a channel-point reward another app owns; repeatable.
+        #[arg(long = "dashboard-reward", value_name = "TITLE")]
+        dashboard_rewards: Vec<String>,
+    },
+    /// Run only the fake Twitch for the fixture's account and print the environment a forge
+    /// started elsewhere needs to reach it, one KEY=VALUE per line, until interrupted.
+    FakeTwitch {
+        /// Fixture JSON file; the chat-command fixture when omitted.
+        #[arg(long)]
+        fixture: Option<PathBuf>,
+        /// Pre-seed a channel-point reward another app owns; repeatable.
+        #[arg(long = "dashboard-reward", value_name = "TITLE")]
+        dashboard_rewards: Vec<String>,
     },
     /// Work with scenario files.
     Scenario {
@@ -161,6 +174,7 @@ async fn main() -> ExitCode {
             ready_timeout_secs,
             attempts,
             allow_over_game,
+            dashboard_rewards,
         } => launch(LaunchArgs {
             forge,
             fixture,
@@ -169,9 +183,16 @@ async fn main() -> ExitCode {
             ready_timeout: Duration::from_secs(ready_timeout_secs),
             attempts,
             allow_over_game,
+            dashboard_rewards,
         })
         .await
         .map(|()| ExitCode::SUCCESS),
+        Command::FakeTwitch {
+            fixture,
+            dashboard_rewards,
+        } => fake_twitch(fixture, dashboard_rewards)
+            .await
+            .map(|()| ExitCode::SUCCESS),
         Command::Scenario {
             command: ScenarioCommand::Check { file },
         } => check_scenario(&file).map(|()| ExitCode::SUCCESS),
@@ -258,6 +279,7 @@ struct LaunchArgs {
     ready_timeout: Duration,
     attempts: u32,
     allow_over_game: bool,
+    dashboard_rewards: Vec<String>,
 }
 
 fn game_guard(allow_over_game: bool) -> GameGuard {
@@ -280,6 +302,11 @@ async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
         Some(account) => Some(FakeTwitch::start(FakeTwitchConfig::for_account(account)).await?),
         None => None,
     };
+    if let Some(fake) = &fake {
+        for title in &args.dashboard_rewards {
+            fake.seed_dashboard_reward(title);
+        }
+    }
     let options = LaunchOptions {
         emulator,
         forge: ForgeCommand::binary(args.forge),
@@ -334,6 +361,34 @@ async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
         fake.shutdown().await;
     }
     outcome
+}
+
+async fn fake_twitch(
+    fixture: Option<PathBuf>,
+    dashboard_rewards: Vec<String>,
+) -> Result<(), EmulatorError> {
+    let fixture = match &fixture {
+        Some(path) => read_fixture(path)?,
+        None => Fixture::chat_command_mvp(),
+    };
+    let account = fixture.twitch.unwrap_or_default();
+    let fake = FakeTwitch::start(FakeTwitchConfig::for_account(&account)).await?;
+    for title in &dashboard_rewards {
+        fake.seed_dashboard_reward(title);
+    }
+    let output_error = |e: std::io::Error| EmulatorError::Output {
+        reason: e.to_string(),
+    };
+    let mut out = std::io::stdout();
+    for (variable, url) in fake.endpoint_overrides() {
+        writeln!(out, "{variable}={url}").map_err(output_error)?;
+    }
+    writeln!(out, "FORGE_TWITCH_CLIENT_ID={}", account.client_id)
+        .and_then(|()| out.flush())
+        .map_err(output_error)?;
+    stop_requested().await;
+    fake.shutdown().await;
+    Ok(())
 }
 
 fn prepare_run_root(requested: Option<PathBuf>) -> Result<PathBuf, EmulatorError> {

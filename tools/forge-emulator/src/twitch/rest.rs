@@ -11,7 +11,10 @@ use super::chat::{Viewer, user_json};
 use super::config::FakeTwitchConfig;
 use super::ids;
 use super::ledger::{CredentialCheck, RecordedRequest};
+use super::rewards::RewardAnswer;
 use super::state::{Inner, Shared, SubscriptionOutcome, SubscriptionRequest};
+
+const CUSTOM_REWARDS: &str = "/helix/channel_points/custom_rewards";
 
 #[derive(Debug, Clone, Copy)]
 enum Route {
@@ -21,6 +24,10 @@ enum Route {
     Polls,
     Predictions,
     SendChatMessage,
+    ListRewards,
+    CreateReward,
+    UpdateReward,
+    DeleteReward,
 }
 
 impl Route {
@@ -32,6 +39,10 @@ impl Route {
             ("GET", "/helix/polls") => Self::Polls,
             ("GET", "/helix/predictions") => Self::Predictions,
             ("POST", "/helix/chat/messages") => Self::SendChatMessage,
+            ("GET", CUSTOM_REWARDS) => Self::ListRewards,
+            ("POST", CUSTOM_REWARDS) => Self::CreateReward,
+            ("PATCH", CUSTOM_REWARDS) => Self::UpdateReward,
+            ("DELETE", CUSTOM_REWARDS) => Self::DeleteReward,
             _ => return None,
         };
         Some(route)
@@ -56,12 +67,13 @@ async fn handle(
     let credentials = check_credentials(&headers, shared.config());
     let route = Route::of(&method, uri.path());
 
-    let (status, response) = shared.mutate(|inner| {
+    let answer = shared.mutate(|inner| {
         let answer = match route {
-            None => error_body(StatusCode::NOT_FOUND, ""),
-            Some(_) if credentials != CredentialCheck::Accepted => {
-                error_body(StatusCode::UNAUTHORIZED, refusal_message(credentials))
-            }
+            None => plain(error_body(StatusCode::NOT_FOUND, "")),
+            Some(_) if credentials != CredentialCheck::Accepted => plain(error_body(
+                StatusCode::UNAUTHORIZED,
+                refusal_message(credentials),
+            )),
             Some(route) => serve(inner, shared.config(), route, &query, body.as_ref()),
         };
         inner.record_request(RecordedRequest {
@@ -70,13 +82,29 @@ async fn handle(
             query: query.clone(),
             body: body.clone(),
             credentials,
-            status: answer.0.as_u16(),
-            response: answer.1.clone(),
+            status: answer.status.as_u16(),
+            response: answer.body.clone(),
             modeled: route.is_some(),
         });
         answer
     });
-    (status, Json(response)).into_response()
+    if let Some((subscription_type, event)) = &answer.notification {
+        let deliveries =
+            shared.read(|inner| inner.notification_deliveries(subscription_type, event));
+        super::fake::deliver(deliveries).await;
+    }
+    if answer.status == StatusCode::NO_CONTENT {
+        return answer.status.into_response();
+    }
+    (answer.status, Json(answer.body)).into_response()
+}
+
+fn plain((status, body): (StatusCode, Value)) -> RewardAnswer {
+    RewardAnswer {
+        status,
+        body,
+        notification: None,
+    }
 }
 
 fn decode_body(bytes: &Bytes) -> Option<Value> {
@@ -134,6 +162,22 @@ fn serve(
     route: Route,
     query: &[(String, String)],
     body: Option<&Value>,
+) -> RewardAnswer {
+    match route {
+        Route::ListRewards => inner.rewards.list(config, query),
+        Route::CreateReward => inner.rewards.create(config, query, body),
+        Route::UpdateReward => inner.rewards.update(config, query, body),
+        Route::DeleteReward => inner.rewards.delete(config, query),
+        other => plain(serve_plain(inner, config, other, query, body)),
+    }
+}
+
+fn serve_plain(
+    inner: &mut Inner,
+    config: &FakeTwitchConfig,
+    route: Route,
+    query: &[(String, String)],
+    body: Option<&Value>,
 ) -> (StatusCode, Value) {
     match route {
         Route::CreateSubscription => create_subscription(inner, body),
@@ -145,6 +189,9 @@ fn serve(
             (StatusCode::OK, json!({ "data": [], "pagination": {} }))
         }
         Route::SendChatMessage => send_chat_message(body),
+        Route::ListRewards | Route::CreateReward | Route::UpdateReward | Route::DeleteReward => {
+            error_body(StatusCode::NOT_FOUND, "")
+        }
     }
 }
 
@@ -213,11 +260,12 @@ fn users(inner: &Inner, config: &FakeTwitchConfig, query: &[(String, String)]) -
             .collect::<Vec<_>>()
     };
     let (ids, logins) = (values("id"), values("login"));
-    let broadcaster = user_json(
+    let mut broadcaster = user_json(
         &config.broadcaster_user_id,
         &config.broadcaster_login,
         &config.broadcaster_login,
     );
+    broadcaster["broadcaster_type"] = json!(config.broadcaster_type);
     if ids.is_empty() && logins.is_empty() {
         return vec![broadcaster];
     }

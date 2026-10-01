@@ -13,6 +13,7 @@ use super::config::FakeTwitchConfig;
 use super::ids;
 use super::ledger::{Ledger, TappedRequest};
 use super::rest;
+use super::rewards::FakeReward;
 use super::socket;
 use super::state::{Outbox, Shared};
 use crate::EmulatorError;
@@ -158,6 +159,15 @@ impl FakeTwitch {
         }
     }
 
+    pub fn seed_dashboard_reward(&self, title: &str) -> FakeReward {
+        self.shared
+            .mutate(|inner| inner.rewards.seed_dashboard_reward(title))
+    }
+
+    pub fn rewards(&self) -> Vec<FakeReward> {
+        self.shared.read(|inner| inner.rewards.snapshot())
+    }
+
     pub async fn shutdown(mut self) {
         let _ = self.shutdown.send(true);
         for mut task in std::mem::take(&mut self.tasks) {
@@ -179,7 +189,7 @@ impl Drop for FakeTwitch {
     }
 }
 
-async fn deliver(deliveries: Vec<(Outbox, String)>) -> usize {
+pub(super) async fn deliver(deliveries: Vec<(Outbox, String)>) -> usize {
     let mut reached = 0;
     for (outbox, frame) in deliveries {
         if outbox.send(frame).await.is_ok() {

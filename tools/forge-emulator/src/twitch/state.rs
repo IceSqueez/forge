@@ -11,6 +11,7 @@ use super::ids;
 use super::ledger::{
     Ledger, RecordedRequest, RecordedSession, RecordedSubscription, TappedRequest,
 };
+use super::rewards::RewardStore;
 
 pub(crate) type Outbox = mpsc::Sender<String>;
 
@@ -32,6 +33,7 @@ pub(crate) struct Inner {
     pub(crate) ledger: Ledger,
     outboxes: HashMap<String, Outbox>,
     pub(crate) viewers: HashMap<String, Viewer>,
+    pub(crate) rewards: RewardStore,
     request_tap: Option<mpsc::UnboundedSender<TappedRequest>>,
 }
 

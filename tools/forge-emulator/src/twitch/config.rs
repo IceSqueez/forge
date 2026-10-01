@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::fixture::TwitchAccount;
 
 const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
+const DEFAULT_BROADCASTER_TYPE: &str = "affiliate";
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct FakeTwitchConfig {
@@ -11,6 +12,7 @@ pub struct FakeTwitchConfig {
     pub access_token: String,
     pub broadcaster_user_id: String,
     pub broadcaster_login: String,
+    pub broadcaster_type: String,
     pub keepalive_interval: Duration,
 }
 
@@ -21,6 +23,7 @@ impl FakeTwitchConfig {
             access_token: account.access_token.clone(),
             broadcaster_user_id: account.user_id.clone(),
             broadcaster_login: account.login.clone(),
+            broadcaster_type: DEFAULT_BROADCASTER_TYPE.to_owned(),
             keepalive_interval: DEFAULT_KEEPALIVE_INTERVAL,
         }
     }
@@ -33,6 +36,7 @@ impl fmt::Debug for FakeTwitchConfig {
             .field("access_token", &"<redacted>")
             .field("broadcaster_user_id", &self.broadcaster_user_id)
             .field("broadcaster_login", &self.broadcaster_login)
+            .field("broadcaster_type", &self.broadcaster_type)
             .field("keepalive_interval", &self.keepalive_interval)
             .finish()
     }

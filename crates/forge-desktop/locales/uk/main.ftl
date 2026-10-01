@@ -2128,6 +2128,10 @@ obs_connect_test_detail = obs-websocket v{ $version } · сцен: { $scenes } �
 obs_connect_test_failed = Перевірка не вдалася
 obs_connect_failed = Не вдалося підключитися
 obs_connect_error_title = Хибні налаштування
+obs_connect_error_unreachable = На цьому хості та порту ніхто не відповів. Чи запущено OBS з увімкненим WebSocket-сервером?
+obs_connect_error_auth = OBS відхилив пароль
+obs_connect_error_timeout = OBS не відповів вчасно
+obs_connect_error_unknown = OBS перервав спробу підключення
 obs_connect_error_invalid_port = Порт має бути числом від 1 до 65535
 obs_connect_settings_save_failed = Не вдалося зберегти налаштування підключення OBS
 

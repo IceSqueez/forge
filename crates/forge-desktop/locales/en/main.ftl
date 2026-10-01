@@ -1507,7 +1507,7 @@ kick_description = Chat, subs, hosts - hybrid: official OAuth API for send, comm
 
 stream_apps_title = Stream apps
 stream_apps_subtitle = Local apps Forge talks to over WebSocket. Connect to control them from actions.
-stream_apps_breadcrumb = Stream Apps
+stream_apps_breadcrumb = Stream apps
 stream_apps_obs_desc = Scenes, sources, recording control, replay buffers - full obs-websocket API
 stream_apps_vtube_desc = Vtuber avatar control: hotkeys, expressions, item triggers
 
@@ -2075,6 +2075,10 @@ obs_connect_test_detail = obs-websocket v{ $version } · { $scenes } scenes · {
 obs_connect_test_failed = Test failed
 obs_connect_failed = Connection failed
 obs_connect_error_title = Invalid settings
+obs_connect_error_unreachable = Nothing answered on that host and port. Is OBS running with its WebSocket server on?
+obs_connect_error_auth = OBS rejected the password
+obs_connect_error_timeout = OBS did not answer in time
+obs_connect_error_unknown = OBS ended the connection attempt
 obs_connect_error_invalid_port = Port must be a number between 1 and 65535
 obs_connect_settings_save_failed = Could not save the OBS connection settings
 
@@ -2347,7 +2351,7 @@ discord_stat_budget_unknown = no bucket data yet
 discord_stat_send = Last send
 discord_stat_send_ok = Delivered
 discord_stat_send_failed = Failed
-discord_stat_send_none = No sends yet
+discord_stat_send_none = no sends yet
 discord_stat_errors = Errors
 discord_stat_errors_hint = last 60 min
 

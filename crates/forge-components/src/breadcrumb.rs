@@ -5,13 +5,17 @@ use gpui::{
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
-use crate::tokens::{BORDER_THIN, Density, FONT_SM, Spacing, body_family, spacing};
+use crate::tokens::{BORDER_THIN, Density, FONT_XS, Spacing, body_family, spacing};
 
 type CrumbClick = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
 const HOME_ICON_SIZE: Pixels = px(13.0);
 
 const SEPARATOR_ICON_SIZE: Pixels = px(11.0);
+
+const TRAIL_GAP: Pixels = px(8.0);
+
+const MIN_HEIGHT: Pixels = px(40.0);
 
 pub struct BreadcrumbCrumb {
     label: SharedString,
@@ -91,15 +95,13 @@ impl RenderOnce for Breadcrumb {
         let crumbs = self.crumbs;
         let right = self.right;
 
-        let gap = spacing(Spacing::Xs, d);
         let last = crumbs.len().saturating_sub(1);
 
-        let mut trail =
-            div()
-                .flex()
-                .items_center()
-                .gap(gap)
-                .child(icon(Icon::Home, HOME_ICON_SIZE, faint));
+        let mut trail = div().flex().items_center().gap(TRAIL_GAP).child(icon(
+            Icon::Home,
+            HOME_ICON_SIZE,
+            faint,
+        ));
 
         for (i, crumb) in crumbs.into_iter().enumerate() {
             let ink = if i == last { current } else { ancestor };
@@ -108,7 +110,7 @@ impl RenderOnce for Breadcrumb {
 
             let label = div()
                 .font_family(body_family())
-                .text_size(FONT_SM)
+                .text_size(FONT_XS)
                 .text_color(ink);
 
             let label_el = match (crumb.id, crumb.on_click) {
@@ -132,9 +134,13 @@ impl RenderOnce for Breadcrumb {
 
         div()
             .w_full()
+            .min_h(MIN_HEIGHT)
+            .flex_none()
+            .flex()
+            .items_center()
             .py(spacing(Spacing::Sm, d))
             .px(spacing(Spacing::Md, d))
-            .border(BORDER_THIN)
+            .border_b(BORDER_THIN)
             .border_color(border)
             .bg(shell)
             .child(inner)

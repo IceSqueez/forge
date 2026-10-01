@@ -294,18 +294,18 @@ impl VTubeConnectForm {
         self.status = Status::Busy(tr!("vtube_connect_testing"));
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                forge_vtube::probe_connection(&form.host, form.port)
-                    .await
-                    .map_err(|e| e.to_string())
-            },
+            async move { forge_vtube::probe_connection(&form.host, form.port).await },
             |this, result, cx| this.apply_probe(result, cx),
             cx,
         );
         cx.notify();
     }
 
-    fn apply_probe(&mut self, result: Result<VTubeProbeResult, String>, cx: &mut Context<Self>) {
+    fn apply_probe(
+        &mut self,
+        result: Result<VTubeProbeResult, forge_vtube::VTubeError>,
+        cx: &mut Context<Self>,
+    ) {
         self.testing = false;
         self.status = match result {
             Ok(report) => Status::Success {
@@ -319,7 +319,7 @@ impl VTubeConnectForm {
             },
             Err(error) => Status::Failure {
                 title: tr!("vtube_connect_test_failed"),
-                detail: error,
+                detail: friendly_vtube_error(&error),
             },
         };
         cx.notify();
@@ -778,6 +778,17 @@ fn connect_outcome(event: &Event) -> Option<ConnectOutcome> {
         Some(REASON_AWAITING_APPROVAL) => Some(ConnectOutcome::AwaitingApproval),
         Some(reason) => Some(ConnectOutcome::Failed(reason.to_owned())),
         None => None,
+    }
+}
+
+fn friendly_vtube_error(error: &forge_vtube::VTubeError) -> String {
+    tracing::warn!(error = %error, "vtube probe failed");
+    match error {
+        forge_vtube::VTubeError::Connect(_) => failure_detail("connect_failed"),
+        forge_vtube::VTubeError::TokenRejected => failure_detail("auth_required"),
+        forge_vtube::VTubeError::TokenDenied => failure_detail("auth_denied"),
+        forge_vtube::VTubeError::TokenTimeout => failure_detail("auth_timeout"),
+        _ => failure_detail(""),
     }
 }
 

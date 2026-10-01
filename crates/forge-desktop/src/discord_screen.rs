@@ -564,11 +564,11 @@ impl DiscordScreenView {
         let (send_value, send_ink) = match health.last_send_ok {
             Some(true) => (tr!("discord_stat_send_ok"), palette.success),
             Some(false) => (tr!("discord_stat_send_failed"), palette.random),
-            None => (tr!("discord_stat_send_none"), palette.text_faint),
+            None => (NO_VALUE.to_owned(), palette.text_primary),
         };
         let send_hint = match self.last_send_at() {
             Some(at) => fmt_relative_time(Some(at)),
-            None => NO_VALUE.to_owned(),
+            None => tr!("discord_stat_send_none"),
         };
 
         let errors = health.errors_last_hour;

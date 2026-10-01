@@ -1,7 +1,7 @@
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, OverlayPosition, Radius,
-    TextInput, body_family, ghost_button_with_icon, icon, modal, mono_family, overlay,
-    primary_button, secondary_button, tr,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, ModalSize, OverlayPosition,
+    Radius, TextInput, body_family, ghost_button_with_icon, icon, modal, modal_width, mono_family,
+    overlay, primary_button, secondary_button, tr,
 };
 use forge_discord::validate_webhook_url;
 use gpui::{
@@ -12,7 +12,6 @@ use gpui::{
 use crate::presentation::ActivePresentation;
 use crate::toasts::copy_to_clipboard;
 
-const MODAL_W: Pixels = px(520.0);
 const BODY_PAD_V: Pixels = px(16.0);
 const BODY_PAD_H: Pixels = px(18.0);
 
@@ -69,7 +68,8 @@ impl DiscordWebhookModal {
         let name_field = cx.new(|cx| {
             let mut input = TextInput::new(tr!("discord_modal_name_placeholder"), cx)
                 .with_palette(palette)
-                .with_font_size(FONT_XS);
+                .with_font_size(FONT_XS)
+                .plain();
             input.set_content(name, cx);
             input
         });
@@ -367,7 +367,7 @@ impl Render for DiscordWebhookModal {
         let card = modal(title, body, &palette)
             .header_icon(Icon::BrandDiscord, palette.brand)
             .subtitle(tr!("discord_modal_subtitle"))
-            .width(MODAL_W)
+            .width(modal_width(ModalSize::Sm))
             .flush_body()
             .footer(self.render_footer(&palette, cx))
             .on_close(

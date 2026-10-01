@@ -160,7 +160,7 @@ impl ObsConnectView {
                 "3.",
                 vec![
                     fragment(tr!("obs_connect_step_port_prefix"), palette.text_primary),
-                    mono_fragment(tr!("obs_connect_step_port_field"), palette.text_muted),
+                    mono_fragment(tr!("obs_connect_step_port_field"), palette.text_primary),
                     fragment(
                         tr!("obs_connect_step_port_default_prefix"),
                         palette.text_primary,
@@ -327,29 +327,32 @@ fn card_header(glyph: Icon, tint: Rgba, title: String, palette: &ForgePalette) -
         )
 }
 
-fn fragment(text: impl Into<SharedString>, tint: Rgba) -> AnyElement {
-    div()
-        .font_family(body_family())
-        .text_size(STEP_TEXT_SIZE)
-        .text_color(tint)
-        .line_height(STEP_LINE_HEIGHT)
-        .child(text.into())
-        .into_any_element()
+fn fragment(text: impl Into<SharedString>, tint: Rgba) -> Vec<AnyElement> {
+    words(text, tint, body_family())
 }
 
-fn mono_fragment(text: impl Into<SharedString>, tint: Rgba) -> AnyElement {
-    div()
-        .font_family(mono_family())
-        .text_size(STEP_TEXT_SIZE)
-        .text_color(tint)
-        .line_height(STEP_LINE_HEIGHT)
-        .child(text.into())
-        .into_any_element()
+fn mono_fragment(text: impl Into<SharedString>, tint: Rgba) -> Vec<AnyElement> {
+    words(text, tint, mono_family())
+}
+
+fn words(text: impl Into<SharedString>, tint: Rgba, family: gpui::SharedString) -> Vec<AnyElement> {
+    let text: SharedString = text.into();
+    text.split_whitespace()
+        .map(|word| {
+            div()
+                .font_family(family.clone())
+                .text_size(STEP_TEXT_SIZE)
+                .text_color(tint)
+                .line_height(STEP_LINE_HEIGHT)
+                .child(word.to_owned())
+                .into_any_element()
+        })
+        .collect()
 }
 
 fn step_row(
     number: &'static str,
-    parts: Vec<AnyElement>,
+    parts: Vec<Vec<AnyElement>>,
     last: bool,
     palette: &ForgePalette,
 ) -> AnyElement {
@@ -360,7 +363,7 @@ fn step_row(
         .flex_row()
         .flex_wrap()
         .gap_x(WORD_GAP)
-        .children(parts);
+        .children(parts.into_iter().flatten());
 
     let mut row = div()
         .w_full()

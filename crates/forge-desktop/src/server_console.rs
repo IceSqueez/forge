@@ -43,6 +43,9 @@ const RECENT_CLIENT_WINDOW_SECONDS: i64 = 600;
 const RECENT_CLIENT_WINDOW_MINUTES: i64 = RECENT_CLIENT_WINDOW_SECONDS / 60;
 
 const CLIENT_DOT: Pixels = px(6.0);
+const FOOTER_PAD_V: Pixels = px(7.0);
+const FOOTER_PAD_H: Pixels = px(14.0);
+const FOOTER_EXTRA_MARGIN: Pixels = px(4.0);
 const FOOTER_DOT: Pixels = px(6.0);
 const DOT_CELL_W: Pixels = px(12.0);
 const EVS_CELL_W: Pixels = px(60.0);
@@ -1383,10 +1386,11 @@ impl ServerConsoleView {
             .flex()
             .items_center()
             .justify_between()
-            .py(spacing(Spacing::Xs, density))
-            .px(spacing(Spacing::Sm, density))
+            .mt(FOOTER_EXTRA_MARGIN)
+            .py(FOOTER_PAD_V)
+            .px(FOOTER_PAD_H)
             .border_t(BORDER_THIN)
-            .border_color(palette.border_regular)
+            .border_color(palette.surface_overlay)
             .bg(palette.shell)
             .child(left)
             .child(right)

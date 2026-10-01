@@ -340,7 +340,7 @@ impl ObsCredentialsForm {
         cx.notify();
     }
 
-    fn apply_probe(&mut self, result: Result<ProbeReport, String>, cx: &mut Context<Self>) {
+    fn apply_probe(&mut self, result: Result<ProbeReport, AttemptError>, cx: &mut Context<Self>) {
         self.busy = false;
         self.banner = match result {
             Ok(report) => Banner::Success {
@@ -354,7 +354,7 @@ impl ObsCredentialsForm {
             },
             Err(error) => Banner::Failure {
                 title: tr!("obs_connect_test_failed"),
-                detail: error,
+                detail: error.describe(),
             },
         };
         cx.notify();
@@ -396,7 +396,7 @@ impl ObsCredentialsForm {
         cx.notify();
     }
 
-    fn apply_connect(&mut self, result: Result<(), String>, cx: &mut Context<Self>) {
+    fn apply_connect(&mut self, result: Result<(), AttemptError>, cx: &mut Context<Self>) {
         self.busy = false;
         match result {
             Ok(()) => {
@@ -406,7 +406,7 @@ impl ObsCredentialsForm {
             Err(error) => {
                 self.banner = Banner::Failure {
                     title: tr!("obs_connect_failed"),
-                    detail: error,
+                    detail: error.describe(),
                 };
             }
         }
@@ -767,10 +767,32 @@ async fn load_prefill(
     }
 }
 
-async fn probe(form: FormValues) -> Result<ProbeReport, String> {
+enum AttemptError {
+    Obs(forge_obs::ObsError),
+    Other(String),
+}
+
+impl AttemptError {
+    fn describe(&self) -> String {
+        match self {
+            Self::Obs(error) => {
+                tracing::warn!(error = %error, "obs connection attempt failed");
+                match error {
+                    forge_obs::ObsError::Connect(_) => tr!("obs_connect_error_unreachable"),
+                    forge_obs::ObsError::Authentication => tr!("obs_connect_error_auth"),
+                    forge_obs::ObsError::Timeout => tr!("obs_connect_error_timeout"),
+                    _ => tr!("obs_connect_error_unknown"),
+                }
+            }
+            Self::Other(detail) => detail.clone(),
+        }
+    }
+}
+
+async fn probe(form: FormValues) -> Result<ProbeReport, AttemptError> {
     let result = forge_obs::probe_connection(&form.host, form.port, &form.password)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(AttemptError::Obs)?;
     Ok(ProbeReport {
         websocket_version: result.obs_websocket_version,
         scene_count: result.scene_count,
@@ -786,26 +808,26 @@ async fn connect_obs(
     form: FormValues,
     auto_reconnect: bool,
     connect_on_launch: bool,
-) -> Result<(), String> {
+) -> Result<(), AttemptError> {
     forge_obs::probe_connection(&form.host, form.port, &form.password)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(AttemptError::Obs)?;
 
     forge_obs::credentials::store(&*credentials, &form.host, form.port, &form.password)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AttemptError::Other(e.to_string()))?;
     set_bool_setting(&*settings, OBS_AUTO_RECONNECT_KEY, auto_reconnect)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AttemptError::Other(e.to_string()))?;
     set_bool_setting(&*settings, OBS_CONNECT_ON_LAUNCH_KEY, connect_on_launch)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AttemptError::Other(e.to_string()))?;
 
     seed.disconnect_live().await;
 
     let client = forge_obs::credentials::load_and_connect(&*credentials, bus)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AttemptError::Other(e.to_string()))?;
     client.set_auto_reconnect(auto_reconnect);
     seed.install(client);
     Ok(())

@@ -25,7 +25,36 @@ pub(crate) fn localized_collection_text(english: &str) -> String {
         "Twitch AutoMod rejected the reward text" => tr!("collection_text_automod_rejected"),
         "Twitch rejected the reward settings" => tr!("collection_text_settings_rejected"),
         "This reward no longer exists" => tr!("collection_text_reward_gone"),
-        other => other.to_owned(),
+        "Twitch rejected the per-viewer limit" => tr!("collection_text_rejected_per_viewer"),
+        "Twitch rejected the per-stream limit" => tr!("collection_text_rejected_per_stream"),
+        "Twitch rejected the cooldown" => tr!("collection_text_rejected_cooldown"),
+        "Twitch rejected the background color" => tr!("collection_text_rejected_color"),
+        "Twitch rejected the prompt" => tr!("collection_text_rejected_prompt"),
+        "Twitch rejected the cost" => tr!("collection_text_rejected_cost"),
+        "Twitch rejected the title" => tr!("collection_text_rejected_title"),
+        "Unknown collection" => tr!("collection_text_unknown_collection"),
+        "Unknown reward toggle" => tr!("collection_text_unknown_toggle"),
+        other => localized_bounded_text(other),
+    }
+}
+
+fn bounded_number(english: &str, prefix: &str, suffix: &str) -> Option<u64> {
+    english
+        .strip_prefix(prefix)?
+        .strip_suffix(suffix)?
+        .parse()
+        .ok()
+}
+
+fn localized_bounded_text(english: &str) -> String {
+    if let Some(max) = bounded_number(english, "Title must be at most ", " characters") {
+        tr!("collection_text_title_max", max = max)
+    } else if let Some(max) = bounded_number(english, "Prompt must be at most ", " characters") {
+        tr!("collection_text_prompt_max", max = max)
+    } else if let Some(min) = bounded_number(english, "Cost must be at least ", "") {
+        tr!("collection_text_cost_min", min = min)
+    } else {
+        english.to_owned()
     }
 }
 

@@ -321,3 +321,58 @@ async fn switch_alias_with_scoped_key_applies_to_that_platform_when_both_exist()
 
     assert_eq!((voice.as_str(), engine.as_str()), ("beta-1", "beta"));
 }
+
+#[tokio::test]
+async fn switch_alias_key_matching_is_case_insensitive_except_for_the_exact_id() {
+    let alpha = ("alpha-1", "alpha");
+    let beta = ("beta-1", "beta");
+    let cases = [
+        (
+            vec![alias("Alice", "alpha", "alpha-1")],
+            "twitch:alice",
+            viewer_request("kick:1", "alice"),
+            beta,
+        ),
+        (
+            vec![
+                alias("alice", "alpha", "alpha-1"),
+                alias("twitch:Alice", "alpha", "alpha-1"),
+            ],
+            "twitch:ALICE",
+            viewer_request("twitch:1", "alice"),
+            beta,
+        ),
+        (
+            vec![
+                alias("alice", "alpha", "alpha-1"),
+                alias("twitch:Alice", "alpha", "alpha-1"),
+            ],
+            "twitch:ALICE",
+            viewer_request("kick:1", "alice"),
+            alpha,
+        ),
+        (
+            vec![
+                alias("youtube:UCabc", "alpha", "alpha-1"),
+                alias("youtube:ucabc", "alpha", "alpha-1"),
+            ],
+            "youtube:ucabc",
+            viewer_request("youtube:UCabc", "nobody"),
+            alpha,
+        ),
+        (
+            vec![
+                alias("youtube:UCabc", "alpha", "alpha-1"),
+                alias("youtube:ucabc", "alpha", "alpha-1"),
+            ],
+            "youtube:ucabc",
+            viewer_request("youtube:ucabc", "nobody"),
+            beta,
+        ),
+    ];
+
+    for (index, (aliases, key, speaker, expected)) in cases.into_iter().enumerate() {
+        let (voice, engine) = voice_after_switch(aliases, key, speaker).await;
+        assert_eq!((voice.as_str(), engine.as_str()), expected, "case {index}");
+    }
+}

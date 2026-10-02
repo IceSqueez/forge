@@ -41,7 +41,7 @@ version = "0.5.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/IceSqueez/forge"
-rust-version = "1.97"
+rust-version = "1.99"
 
 [workspace.dependencies]
 tokio = { version = "1.53", features = ["full"] }

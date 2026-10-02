@@ -31,7 +31,7 @@ const ROW_MONO_NAME_FONT: Pixels = px(11.5);
 const ROW_TRAILING_GLYPH: Pixels = px(12.0);
 const ROW_TINTED_LABEL_FONT: Pixels = px(10.0);
 const ROW_PAD_X: Pixels = px(14.0);
-const LINE_HEIGHT_RATIO: f32 = 1.618_034;
+const LINE_HEIGHT_RATIO: f32 = std::f32::consts::GOLDEN_RATIO;
 
 pub type SectionRefresh = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 

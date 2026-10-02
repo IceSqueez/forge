@@ -1908,8 +1908,16 @@ impl Render for HotkeysScreenView {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    use forge_hotkey::HotkeyConfig;
+    use gpui::TestAppContext;
+
     use super::*;
+    use crate::screen::Screen;
+    use crate::test_support::{
+        hub_crumb_targets, quiet_bus, runtime, sandboxed_provider, test_backend,
+    };
 
     #[test]
     fn capture_claims_as_the_binding_a_capture_must_not_conflict_with() {
@@ -1937,5 +1945,48 @@ mod tests {
         for (case, capture, expected) in cases {
             assert_eq!(capture.claimant(), expected, "wrong claimant while {case}");
         }
+    }
+
+    #[gpui::test]
+    fn the_crumb_leads_back_to_the_hotkeys_category_on_the_hub(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let bus = quiet_bus(&rt);
+        let storage = rt.block_on(sandboxed_provider());
+        let (settings, _writes) = test_backend();
+        let reconciler = {
+            let _entered = rt.enter();
+            let (client, _backend) = forge_hotkey::testing::test_client(
+                HotkeyConfig::default(),
+                Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+            );
+            HotkeyReconciler::new(
+                client,
+                storage.trigger_instance_repo(),
+                storage.soundboard_clips_repo(),
+            )
+        };
+        let backend = Arc::clone(&storage);
+        let handle = rt.handle().clone();
+
+        let targets = hub_crumb_targets(cx, |_, cx| {
+            HotkeysScreenView::new(
+                reconciler,
+                None,
+                backend,
+                settings as Arc<dyn SettingsRepo>,
+                bus,
+                handle,
+                cx,
+            )
+        });
+
+        let category = forge_hotkey::HOTKEY_INTEGRATION.category;
+        assert!(!targets.is_empty(), "no click reached the crumb");
+        assert!(
+            targets
+                .iter()
+                .all(|screen| *screen == Screen::Integrations(Some(category))),
+            "{targets:?}"
+        );
     }
 }

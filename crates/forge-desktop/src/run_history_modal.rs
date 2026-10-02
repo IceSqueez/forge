@@ -724,9 +724,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use forge_types::{ActionId, EventId};
+    use gpui::{Entity, Subscription, TestAppContext, size};
     use time::OffsetDateTime;
 
     use super::*;
+    use crate::test_support::{ClickArea, click_grid, install_presentation};
 
     fn run(outcomes: Vec<SubActionOutcome>) -> ExecutionContext {
         ExecutionContext {
@@ -784,5 +786,67 @@ mod tests {
         ] {
             assert_eq!(disabled_integration_of(&run(outcomes)), None, "{case}");
         }
+    }
+
+    struct Opened {
+        targets: Vec<IntegrationId>,
+        _sub: Subscription,
+    }
+
+    const WINDOW_W: f32 = 1200.0;
+    const WINDOW_H: f32 = 800.0;
+    const DETAIL_BAND: std::ops::Range<f32> = 120.0..260.0;
+    const SCAN_STEP_X: f32 = 12.0;
+    const SCAN_STEP_Y: f32 = 6.0;
+
+    #[gpui::test]
+    fn clicking_the_switched_off_integration_asks_to_open_that_integration(
+        cx: &mut TestAppContext,
+    ) {
+        install_presentation(cx);
+        let (modal, vcx) = cx.add_window_view(|_, _| {
+            RunHistoryModal::new("Scene", Arc::new(TriggerRegistry::new()))
+        });
+        let opened: Entity<Opened> = vcx.update(|_, cx| {
+            cx.new(|cx| Opened {
+                targets: Vec::new(),
+                _sub: cx.subscribe(
+                    &modal,
+                    |opened: &mut Opened, _, event: &RunHistoryOpenIntegration, _| {
+                        opened.targets.push(event.0.clone());
+                    },
+                ),
+            })
+        });
+        modal.update(vcx, |modal, cx| {
+            modal.set_runs(
+                vec![run(vec![SubActionOutcome::IntegrationDisabled(
+                    IntegrationId::new("obs"),
+                )])],
+                cx,
+            )
+        });
+        vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
+        vcx.run_until_parked();
+
+        click_grid(
+            vcx,
+            ClickArea {
+                x: 0.0..WINDOW_W,
+                y: DETAIL_BAND,
+                step_x: SCAN_STEP_X,
+                step_y: SCAN_STEP_Y,
+            },
+        );
+
+        let targets = opened.read_with(vcx, |opened, _| opened.targets.clone());
+        assert!(
+            !targets.is_empty(),
+            "no click reached the switched-off badge"
+        );
+        assert!(
+            targets.iter().all(|id| *id == IntegrationId::new("obs")),
+            "{targets:?}"
+        );
     }
 }

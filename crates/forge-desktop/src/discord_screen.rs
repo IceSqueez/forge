@@ -1138,3 +1138,42 @@ impl Render for DiscordScreenView {
             .children(prompt)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_storage::CredentialsRepo;
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::screen::Screen;
+    use crate::test_support::{StubActions, hub_crumb_targets, quiet_bus, runtime, test_backend};
+
+    #[gpui::test]
+    fn the_crumb_leads_back_to_the_discord_category_on_the_hub(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let bus = quiet_bus(&rt);
+        let (backend, _writes) = test_backend();
+        let client = {
+            let _entered = rt.enter();
+            DiscordClient::new(
+                forge_discord::DiscordConfig::default(),
+                Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
+                backend as Arc<dyn CredentialsRepo>,
+            )
+        };
+        let handle = rt.handle().clone();
+
+        let targets = hub_crumb_targets(cx, |_, cx| {
+            DiscordScreenView::new(client, None, Arc::new(StubActions), bus, handle, cx)
+        });
+
+        let category = forge_discord::DISCORD_INTEGRATION.category;
+        assert!(!targets.is_empty(), "no click reached the crumb");
+        assert!(
+            targets
+                .iter()
+                .all(|screen| *screen == Screen::Integrations(Some(category))),
+            "{targets:?}"
+        );
+    }
+}

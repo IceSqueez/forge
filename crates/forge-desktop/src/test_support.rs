@@ -1204,3 +1204,108 @@ pub(crate) fn switch_lifecycle(
     });
     cx.run_until_parked();
 }
+
+pub(crate) struct NavLog {
+    screens: Vec<crate::screen::Screen>,
+    _sub: gpui::Subscription,
+}
+
+impl NavLog {
+    pub(crate) fn screens(&self) -> Vec<crate::screen::Screen> {
+        self.screens.clone()
+    }
+}
+
+pub(crate) fn nav_log<V: gpui::EventEmitter<crate::sidebar::NavRequested>>(
+    view: &gpui::Entity<V>,
+    cx: &mut gpui::App,
+) -> gpui::Entity<NavLog> {
+    gpui::AppContext::new(cx, |cx| NavLog {
+        screens: Vec::new(),
+        _sub: cx.subscribe(
+            view,
+            |log: &mut NavLog, _, event: &crate::sidebar::NavRequested, _| {
+                log.screens.push(event.0.clone());
+            },
+        ),
+    })
+}
+
+pub(crate) fn error_toasts(cx: &gpui::App) -> usize {
+    cx.global::<crate::toasts::Toasts>()
+        .items()
+        .iter()
+        .filter(|toast| toast.kind == forge_components::ToastKind::Error)
+        .count()
+}
+
+pub(crate) fn install_presentation(cx: &mut gpui::TestAppContext) {
+    cx.update(|cx| {
+        cx.set_global(crate::presentation::Presentation::new(
+            forge_components::ThemeId::ForgeDefault,
+            forge_components::Density::Cozy,
+        ))
+    });
+}
+
+pub(crate) struct ClickArea {
+    pub(crate) x: std::ops::Range<f32>,
+    pub(crate) y: std::ops::Range<f32>,
+    pub(crate) step_x: f32,
+    pub(crate) step_y: f32,
+}
+
+pub(crate) fn click_grid(vcx: &mut gpui::VisualTestContext, area: ClickArea) {
+    let mut y = area.y.start + area.step_y / 2.0;
+    while y < area.y.end {
+        let mut x = area.x.start + area.step_x / 2.0;
+        while x < area.x.end {
+            vcx.simulate_click(
+                gpui::point(gpui::px(x), gpui::px(y)),
+                gpui::Modifiers::none(),
+            );
+            x += area.step_x;
+        }
+        y += area.step_y;
+    }
+}
+
+const CRUMB_WINDOW_W: f32 = 1000.0;
+const CRUMB_WINDOW_H: f32 = 700.0;
+const CRUMB_BAND_W: f32 = 400.0;
+const CRUMB_BAND_H: f32 = 64.0;
+const CRUMB_SCAN_STEP: f32 = 4.0;
+
+pub(crate) fn hub_crumb_targets<V>(
+    cx: &mut gpui::TestAppContext,
+    build: impl FnOnce(&mut gpui::Window, &mut gpui::Context<V>) -> V,
+) -> Vec<crate::screen::Screen>
+where
+    V: gpui::Render + gpui::EventEmitter<crate::sidebar::NavRequested>,
+{
+    install_presentation(cx);
+    let (view, vcx) = cx.add_window_view(build);
+    let log = vcx.update(|_, cx| nav_log(&view, cx));
+    vcx.simulate_resize(gpui::size(
+        gpui::px(CRUMB_WINDOW_W),
+        gpui::px(CRUMB_WINDOW_H),
+    ));
+    vcx.run_until_parked();
+    click_grid(
+        vcx,
+        ClickArea {
+            x: 0.0..CRUMB_BAND_W,
+            y: 0.0..CRUMB_BAND_H,
+            step_x: CRUMB_SCAN_STEP,
+            step_y: CRUMB_SCAN_STEP,
+        },
+    );
+    log.read_with(vcx, |log, _| log.screens())
+        .into_iter()
+        .filter(|screen| matches!(screen, crate::screen::Screen::Integrations(_)))
+        .collect()
+}
+
+pub(crate) fn quiet_bus(rt: &tokio::runtime::Runtime) -> Arc<EventBus> {
+    rt.block_on(async { EventBus::new(Arc::new(StubEventLog)) })
+}

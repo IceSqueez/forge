@@ -233,3 +233,96 @@ impl Render for IntegrationFailedView {
         page_frame(crumbs, &palette).header_right(badge).body(body)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::integration_supervisor::LifecycleStates;
+    use crate::test_support::{error_toasts, hub_crumb_targets, runtime};
+    use crate::toasts::Toasts;
+
+    fn failed(id: &IntegrationId) -> LifecycleStates {
+        LifecycleStates::from([(id.clone(), LifecycleState::Failed("boom".to_owned()))])
+    }
+
+    fn open(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        id: IntegrationId,
+    ) -> Entity<IntegrationFailedView> {
+        let handle = rt.handle().clone();
+        cx.update(|cx| {
+            cx.set_global(Toasts::new());
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(failed(&id)));
+            cx.new(|cx| IntegrationFailedView::new(id, lifecycle, None, handle, cx))
+        })
+    }
+
+    #[gpui::test]
+    fn sign_in_is_offered_only_for_integrations_that_hold_a_connection(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let cases = [
+            (forge_platform_twitch::TWITCH_INTEGRATION.id, true),
+            (forge_platform_youtube::YOUTUBE_INTEGRATION.id, true),
+            (forge_platform_kick::KICK_INTEGRATION.id, true),
+            (forge_obs::OBS_INTEGRATION.id, true),
+            (forge_vtube::VTUBE_INTEGRATION.id, true),
+            (forge_discord::DISCORD_INTEGRATION.id, false),
+            (forge_midi::MIDI_INTEGRATION.id, false),
+            (forge_hotkey::HOTKEY_INTEGRATION.id, false),
+            (IntegrationId::new("unknown"), false),
+        ];
+
+        for (id, expected) in cases {
+            let view = open(cx, &rt, id.clone());
+            let offered = view.read_with(cx, |view, _| view.offers_sign_in());
+            assert_eq!(offered, expected, "{id}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_retry_that_could_not_restart_raises_an_error_toast(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, forge_obs::OBS_INTEGRATION.id);
+
+        view.update(cx, |view, cx| {
+            view.apply_retry_outcome(Err("port in use".to_owned()), cx)
+        });
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+    }
+
+    #[gpui::test]
+    fn a_retry_that_restarted_raises_no_toast(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, forge_obs::OBS_INTEGRATION.id);
+
+        view.update(cx, |view, cx| {
+            view.apply_retry_outcome(Ok(LifecycleState::Running), cx)
+        });
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 0);
+    }
+
+    #[gpui::test]
+    fn the_crumb_leads_back_to_the_integration_category_on_the_hub(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let handle = rt.handle().clone();
+        let kick = forge_platform_kick::KICK_INTEGRATION;
+
+        let targets = hub_crumb_targets(cx, |_, cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(failed(&kick.id)));
+            IntegrationFailedView::new(kick.id.clone(), lifecycle, None, handle, cx)
+        });
+
+        assert!(!targets.is_empty(), "no click reached the crumb");
+        assert!(
+            targets
+                .iter()
+                .all(|screen| *screen == Screen::Integrations(Some(kick.category))),
+            "{targets:?}"
+        );
+    }
+}

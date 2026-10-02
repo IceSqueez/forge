@@ -859,9 +859,11 @@ mod tests {
     use super::*;
     use crate::integration_supervisor::LifecycleStates;
     use crate::test_support::{
-        Sandboxed, SettingWrite, idle_supervisor, link, owned_sub_actions, owned_triggers, pump,
-        runtime, sandboxed_provider, seed_action, seed_trigger, step, test_backend,
+        ClickArea, Sandboxed, SettingWrite, click_grid, error_toasts, idle_supervisor,
+        install_presentation, link, nav_log, owned_sub_actions, owned_triggers, pump, runtime,
+        sandboxed_provider, seed_action, seed_trigger, step, test_backend,
     };
+    use crate::toasts::Toasts;
 
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
@@ -1063,5 +1065,198 @@ mod tests {
 
         assert_eq!(hub.pending(cx), None);
         assert_eq!(hub.drain_writes(&rt), vec![enabled_write(&obs(), false)]);
+    }
+
+    #[test]
+    fn connect_follow_up_depends_on_the_direction_and_the_failure() {
+        let cases = [
+            (true, Ok(()), ConnectFollowUp::Done),
+            (
+                true,
+                Err(ControlFailure::NotConnected),
+                ConnectFollowUp::OpenSignIn,
+            ),
+            (
+                true,
+                Err(ControlFailure::Unauthorized),
+                ConnectFollowUp::Report,
+            ),
+            (
+                true,
+                Err(ControlFailure::Transport),
+                ConnectFollowUp::Report,
+            ),
+            (
+                true,
+                Err(ControlFailure::Unsupported),
+                ConnectFollowUp::Report,
+            ),
+            (false, Ok(()), ConnectFollowUp::Done),
+            (
+                false,
+                Err(ControlFailure::NotConnected),
+                ConnectFollowUp::Done,
+            ),
+            (
+                false,
+                Err(ControlFailure::Unauthorized),
+                ConnectFollowUp::Report,
+            ),
+            (
+                false,
+                Err(ControlFailure::Transport),
+                ConnectFollowUp::Report,
+            ),
+            (
+                false,
+                Err(ControlFailure::Unsupported),
+                ConnectFollowUp::Report,
+            ),
+        ];
+
+        for (connect, outcome, expected) in cases {
+            assert_eq!(
+                ConnectFollowUp::resolve(connect, &outcome),
+                expected,
+                "connect={connect} outcome={outcome:?}"
+            );
+        }
+    }
+
+    struct Applied {
+        screens: Vec<Screen>,
+        error_toasts: usize,
+    }
+
+    fn apply(
+        cx: &mut TestAppContext,
+        hub: &Hub,
+        connect: bool,
+        outcome: ControlOutcome,
+    ) -> Applied {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let log = cx.update(|cx| nav_log(&hub.view, cx));
+        hub.view.update(cx, |view, cx| {
+            view.apply_connect_outcome(kick(), connect, outcome, cx)
+        });
+        Applied {
+            screens: log.read_with(cx, |log, _| log.screens()),
+            error_toasts: cx.update(|cx| error_toasts(cx)),
+        }
+    }
+
+    #[gpui::test]
+    fn a_connect_refused_for_want_of_sign_in_opens_the_integration_page(cx: &mut TestAppContext) {
+        let rt = runtime();
+        for welcome in [false, true] {
+            let hub = mount_as(cx, &rt, welcome);
+
+            let applied = apply(cx, &hub, true, Err(ControlFailure::NotConnected));
+
+            assert_eq!(
+                applied.screens,
+                vec![Screen::BuiltinDetail(kick())],
+                "welcome={welcome}"
+            );
+            assert_eq!(applied.error_toasts, 0, "welcome={welcome}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_failed_connection_change_raises_an_error_toast_and_stays_put(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let hub = mount(cx, &rt);
+
+        for (connect, failure) in [
+            (true, ControlFailure::Transport),
+            (true, ControlFailure::Unauthorized),
+            (false, ControlFailure::Transport),
+        ] {
+            let applied = apply(cx, &hub, connect, Err(failure.clone()));
+
+            assert_eq!(applied.error_toasts, 1, "connect={connect} {failure:?}");
+            assert_eq!(applied.screens, Vec::new(), "connect={connect} {failure:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_settled_connection_change_neither_navigates_nor_toasts(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let hub = mount(cx, &rt);
+
+        for (connect, outcome) in [
+            (true, Ok(())),
+            (false, Ok(())),
+            (false, Err(ControlFailure::NotConnected)),
+        ] {
+            let applied = apply(cx, &hub, connect, outcome.clone());
+
+            assert_eq!(applied.error_toasts, 0, "connect={connect} {outcome:?}");
+            assert_eq!(applied.screens, Vec::new(), "connect={connect} {outcome:?}");
+        }
+    }
+
+    const CARD_WINDOW_W: f32 = 1200.0;
+    const CARD_WINDOW_H: f32 = 600.0;
+    const CARD_FOOTER_BAND: std::ops::Range<f32> = 150.0..400.0;
+    const CARD_SCAN_STEP_X: f32 = 16.0;
+    const CARD_SCAN_STEP_Y: f32 = 6.0;
+
+    #[gpui::test]
+    fn a_failed_card_offers_retry_with_and_without_a_disclaimer(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let storage = rt.block_on(sandboxed_provider());
+        let (settings, mut writes) = test_backend();
+        let supervisor =
+            idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[twitch(), kick()]);
+        pump(&rt);
+        while writes.try_recv().is_ok() {}
+        let launch = HubLaunch {
+            supervisor,
+            builtins: BuiltinRegistry::default(),
+            backend: Arc::clone(&storage),
+            sub_actions: Arc::new(owned_sub_actions(&[])),
+            triggers: Arc::new(owned_triggers(&[])),
+            rt_handle: rt.handle().clone(),
+        };
+        let focus = declaration_of(&kick()).map(|declaration| declaration.category);
+        assert_eq!(
+            focus,
+            declaration_of(&twitch()).map(|declaration| declaration.category),
+            "both cards must share the focused section"
+        );
+        install_presentation(cx);
+        let failed = LifecycleStates::from([
+            (twitch(), LifecycleState::Failed("boom".to_owned())),
+            (kick(), LifecycleState::Failed("boom".to_owned())),
+        ]);
+        let (_view, vcx) = cx.add_window_view(|_, cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(failed));
+            let connectivity = cx.new(|_| PlatformConnectivity::new());
+            IntegrationsHubView::new(focus, lifecycle, connectivity, launch, cx)
+        });
+        vcx.simulate_resize(gpui::size(px(CARD_WINDOW_W), px(CARD_WINDOW_H)));
+        vcx.run_until_parked();
+
+        click_grid(
+            vcx,
+            ClickArea {
+                x: 0.0..CARD_WINDOW_W,
+                y: CARD_FOOTER_BAND,
+                step_x: CARD_SCAN_STEP_X,
+                step_y: CARD_SCAN_STEP_Y,
+            },
+        );
+        pump(&rt);
+
+        let retried: HashSet<IntegrationId> = std::iter::from_fn(|| writes.try_recv().ok())
+            .filter(|(_, value)| value == "true")
+            .filter_map(|(key, _)| {
+                [twitch(), kick()]
+                    .into_iter()
+                    .find(|id| key == integration_enabled_key(id))
+            })
+            .collect();
+        assert_eq!(retried, HashSet::from([twitch(), kick()]));
     }
 }

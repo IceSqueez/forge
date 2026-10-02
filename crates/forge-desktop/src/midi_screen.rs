@@ -2156,4 +2156,37 @@ mod tests {
             );
         }
     }
+
+    #[gpui::test]
+    fn the_crumb_leads_back_to_the_midi_category_on_the_hub(cx: &mut gpui::TestAppContext) {
+        let rt = crate::test_support::runtime();
+        let bus = crate::test_support::quiet_bus(&rt);
+        let storage = rt.block_on(crate::test_support::sandboxed_provider());
+        let (settings, _writes) = crate::test_support::test_backend();
+        let trigger_repo = storage.trigger_instance_repo();
+        let action_repo = storage.action_repo();
+        let handle = rt.handle().clone();
+
+        let targets = crate::test_support::hub_crumb_targets(cx, |_, cx| {
+            MidiScreenView::new(
+                SwitchableMidiSink::new(),
+                None,
+                trigger_repo,
+                action_repo,
+                settings as Arc<dyn SettingsRepo>,
+                bus,
+                handle,
+                cx,
+            )
+        });
+
+        let category = forge_midi::MIDI_INTEGRATION.category;
+        assert!(!targets.is_empty(), "no click reached the crumb");
+        assert!(
+            targets
+                .iter()
+                .all(|screen| *screen == crate::screen::Screen::Integrations(Some(category))),
+            "{targets:?}"
+        );
+    }
 }

@@ -67,3 +67,39 @@ impl ScreenActionsView {
         cx.notify();
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::actions_screen::integration_gating::tests::{Rig, detail, obs};
+    use crate::integration_supervisor::LifecycleState;
+    use crate::test_support::{nav_log, step};
+
+    #[gpui::test]
+    fn opening_an_integration_from_run_history_closes_the_modal_and_navigates_there(
+        cx: &mut TestAppContext,
+    ) {
+        let open = detail(vec![step("obs.scene.set", true)]);
+        let action_id = open.action.id;
+        let rig = Rig::open(cx, LifecycleState::Disabled, Some(open));
+        let log = cx.update(|cx| nav_log(&rig.view, cx));
+        let modal = rig.view.update(cx, |view, cx| {
+            view.selected = Some(action_id);
+            view.open_history_modal(cx);
+            view.history_modal.as_ref().map(|host| host.view.clone())
+        });
+        let modal = modal.expect("the history modal opens for the selected action");
+
+        modal.update(cx, |modal, cx| modal.open_integration(obs(), cx));
+
+        let still_open = rig
+            .view
+            .read_with(cx, |view, _| view.history_modal.is_some());
+        let screens = log.read_with(cx, |log, _| log.screens());
+        assert!(!still_open, "the history modal stayed open");
+        assert_eq!(screens, vec![Screen::BuiltinDetail(obs())]);
+    }
+}

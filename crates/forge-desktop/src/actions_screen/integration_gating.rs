@@ -82,7 +82,7 @@ impl ScreenActionsView {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use forge_components::ThemeId;
     use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
     use forge_storage::MockTriggerInstanceRepo;
@@ -102,7 +102,7 @@ mod tests {
     const OBS_SCENE_CHANGED: &str = "obs.scene.changed";
     const CORE_LOG: &str = "core.log";
 
-    fn obs() -> IntegrationId {
+    pub(in crate::actions_screen) fn obs() -> IntegrationId {
         IntegrationId::new("obs")
     }
 
@@ -110,7 +110,7 @@ mod tests {
         LifecycleStates::from([(obs(), state)])
     }
 
-    fn detail(steps: Vec<SubActionStep>) -> ActionDetail {
+    pub(in crate::actions_screen) fn detail(steps: Vec<SubActionStep>) -> ActionDetail {
         ActionDetail {
             action: action_running("Scene", steps),
             trigger_instances: Vec::new(),
@@ -119,14 +119,14 @@ mod tests {
         }
     }
 
-    struct Rig {
-        view: Entity<ScreenActionsView>,
+    pub(in crate::actions_screen) struct Rig {
+        pub(in crate::actions_screen) view: Entity<ScreenActionsView>,
         lifecycle: Entity<crate::integration_lifecycle::IntegrationLifecycle>,
         _rt: tokio::runtime::Runtime,
     }
 
     impl Rig {
-        fn open(
+        pub(in crate::actions_screen) fn open(
             cx: &mut gpui::TestAppContext,
             initial: LifecycleState,
             open: Option<ActionDetail>,

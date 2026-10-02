@@ -1622,4 +1622,28 @@ mod tests {
         assert_eq!(run.signal, ChainSignal::Completed);
         assert_eq!(send_requests(&events), 1);
     }
+
+    #[tokio::test]
+    async fn a_blank_target_chat_send_fails_the_run_unsent_when_every_chat_platform_is_disabled() {
+        let (eng, events) = capturing_engine(chat_send_registry(), 8);
+        for platform in ["twitch", "youtube", "kick"] {
+            eng.integration_gate()
+                .disable(IntegrationId::from_static(platform));
+        }
+
+        let run = eng
+            .run_sequential(
+                &[chat_send_to("")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(
+            run.telemetry[0].outcome,
+            SubActionOutcome::Failed(forge_types::NO_CHAT_PLATFORM_ENABLED_REASON.to_owned())
+        );
+        assert_eq!(send_requests(&events), 0);
+    }
 }

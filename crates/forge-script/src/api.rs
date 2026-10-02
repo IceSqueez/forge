@@ -1242,4 +1242,105 @@ mod tests {
         assert!(second, "the send after re-enabling must succeed");
         assert_eq!(sent_requests(&captured), 1);
     }
+
+    const UNTARGETED_CHAT_CALLS: [&str; 7] = [
+        r#"forge::chat::send("hello")"#,
+        r#"forge::chat::reply("msg-1", "hello")"#,
+        r#"forge::chat::whisper("viewer", "hello")"#,
+        r#"forge::chat::send("", "hello")"#,
+        r#"forge::chat::send("  ", "hello")"#,
+        r#"forge::chat::reply(" ", "msg-1", "hello")"#,
+        r#"forge::chat::whisper("\t", "viewer", "hello")"#,
+    ];
+
+    fn availability_disabling(ids: &[&'static str]) -> SwitchableAvailability {
+        let availability = SwitchableAvailability::default();
+        for id in ids {
+            availability.set_disabled(id, true);
+        }
+        availability
+    }
+
+    async fn eval_gated(
+        availability: SwitchableAvailability,
+        call: &'static str,
+    ) -> (Result<rhai::Dynamic, crate::ScriptError>, Vec<Event>) {
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let (engine, _dp) = gated_engine(availability, Arc::clone(&captured)).await;
+        let result = tokio::task::spawn_blocking(move || engine.eval_script(call))
+            .await
+            .unwrap();
+        let sent = captured
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "chat.send.request")
+            .cloned()
+            .collect();
+        (result, sent)
+    }
+
+    #[tokio::test]
+    async fn untargeted_chat_calls_fail_unsent_when_every_chat_platform_is_disabled() {
+        for call in UNTARGETED_CHAT_CALLS {
+            let (result, sent) =
+                eval_gated(availability_disabling(&["twitch", "youtube", "kick"]), call).await;
+
+            match result {
+                Err(crate::ScriptError::Runtime { reason, .. }) => assert!(
+                    reason.contains(NO_CHAT_PLATFORM_ENABLED_REASON),
+                    "{call} failed for the wrong reason: {reason}"
+                ),
+                other => panic!("{call} must fail as a runtime error, got {other:?}"),
+            }
+            assert!(sent.is_empty(), "{call} published {sent:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn untargeted_chat_calls_broadcast_without_a_target_while_one_chat_platform_is_enabled() {
+        for call in UNTARGETED_CHAT_CALLS {
+            let (result, sent) =
+                eval_gated(availability_disabling(&["twitch", "youtube"]), call).await;
+
+            assert!(result.is_ok(), "{call} failed: {result:?}");
+            assert_eq!(sent.len(), 1, "{call}");
+            assert!(
+                sent[0].payload.get("target").is_none(),
+                "{call} published {}",
+                sent[0].payload
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_padded_chat_target_is_published_trimmed() {
+        let (result, sent) = eval_gated(
+            SwitchableAvailability::default(),
+            r#"forge::chat::send(" twitch ", "hello")"#,
+        )
+        .await;
+
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].payload["target"].as_str(), Some("twitch"));
+    }
+
+    #[tokio::test]
+    async fn a_padded_chat_target_naming_a_disabled_platform_is_refused_unsent() {
+        let (result, sent) = eval_gated(
+            SwitchableAvailability::disabling("twitch"),
+            r#"forge::chat::send(" twitch ", "hello")"#,
+        )
+        .await;
+
+        match result {
+            Err(crate::ScriptError::Runtime { reason, .. }) => assert!(
+                reason.contains("integration disabled: twitch"),
+                "failed for the wrong reason: {reason}"
+            ),
+            other => panic!("must fail as a runtime error, got {other:?}"),
+        }
+        assert!(sent.is_empty(), "published {sent:?}");
+    }
 }

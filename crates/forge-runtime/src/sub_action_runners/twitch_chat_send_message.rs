@@ -119,8 +119,68 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::Mutex;
+
+    use forge_events::EventPublisher;
+    use forge_registry::{CancelSignal, ControlCell, TelemetrySink};
+    use forge_types::{EventId, SubActionOutcome};
+
     use super::*;
+    use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
+
+    #[derive(Default)]
+    struct CapturingPublisher(Mutex<Vec<Event>>);
+
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    impl CapturingPublisher {
+        fn sent_requests(&self) -> Vec<serde_json::Value> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| e.kind == "chat.send.request")
+                .map(|e| e.payload.clone())
+                .collect()
+        }
+    }
+
+    fn gate_disabling(ids: &[&'static str]) -> IntegrationGate {
+        let gate = IntegrationGate::new();
+        for id in ids {
+            gate.disable(IntegrationId::from_static(id));
+        }
+        gate
+    }
+
+    async fn run_gated(
+        target: Option<&str>,
+        gate: IntegrationGate,
+    ) -> (SubActionOutcome, Vec<serde_json::Value>) {
+        let publisher = CapturingPublisher::default();
+        let executor = GatedLeafExecutor::new(gate, CancelSignal::new());
+        let args = ArgStack::new();
+        let ctx = RunContext {
+            arg_stack: &args,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &publisher,
+            executor: &executor,
+            cancel: CancelSignal::new(),
+            control: ControlCell::new(),
+            telemetry: TelemetrySink::new(),
+        };
+        let (telemetry, _) = TwitchChatSendMessageRunner
+            .execute(&config_with_target(target), &ctx)
+            .await;
+        (telemetry.outcome, publisher.sent_requests())
+    }
 
     fn config_with_target(target: Option<&str>) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
@@ -150,5 +210,67 @@ mod tests {
                 "target {target:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_blank_target_broadcasts_without_a_target_key_while_any_chat_platform_is_enabled() {
+        for (target, disabled) in [
+            ("", &[][..]),
+            ("  \t", &[][..]),
+            ("", &["twitch", "youtube"][..]),
+            (" ", &["youtube", "kick", "obs"][..]),
+        ] {
+            let (outcome, sent) = run_gated(Some(target), gate_disabling(disabled)).await;
+
+            assert_eq!(
+                outcome,
+                SubActionOutcome::Success,
+                "{target:?} {disabled:?}"
+            );
+            assert_eq!(sent.len(), 1, "{target:?} {disabled:?}");
+            assert!(
+                sent[0].get("target").is_none(),
+                "{target:?} {disabled:?} published {}",
+                sent[0]
+            );
+            assert_eq!(sent[0]["message"].as_str(), Some("hi"));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_blank_target_fails_unsent_when_every_chat_platform_is_disabled() {
+        let (outcome, sent) =
+            run_gated(Some("  "), gate_disabling(&["twitch", "youtube", "kick"])).await;
+
+        assert_eq!(
+            outcome,
+            SubActionOutcome::Failed(NO_CHAT_PLATFORM_ENABLED_REASON.to_owned())
+        );
+        assert!(sent.is_empty(), "published {sent:?}");
+    }
+
+    #[tokio::test]
+    async fn a_padded_target_is_published_trimmed() {
+        let (outcome, sent) = run_gated(Some("  kick \t"), IntegrationGate::new()).await;
+
+        assert_eq!(outcome, SubActionOutcome::Success);
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["target"].as_str(), Some("kick"));
+    }
+
+    #[tokio::test]
+    async fn a_blank_target_broadcasts_when_the_executor_knows_no_integration_availability() {
+        let publisher = CapturingPublisher::default();
+        let args = ArgStack::new();
+        let ctx = RunContext::leaf(&args, 0, EventId::new(), &publisher);
+
+        let (telemetry, _) = TwitchChatSendMessageRunner
+            .execute(&config_with_target(Some("")), &ctx)
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let sent = publisher.sent_requests();
+        assert_eq!(sent.len(), 1);
+        assert!(sent[0].get("target").is_none(), "published {}", sent[0]);
     }
 }

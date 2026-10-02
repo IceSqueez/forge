@@ -51,4 +51,20 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn requested_chat_target_trims_padding_and_reads_blank_as_broadcast() {
+        for (raw, expected) in [
+            ("twitch", Some("twitch")),
+            ("  kick \t", Some("kick")),
+            ("\r\nyoutube\n", Some("youtube")),
+            ("my chat", Some("my chat")),
+            ("", None),
+            ("   ", None),
+            ("\t\r\n", None),
+            ("\u{3000}\u{a0}", None),
+        ] {
+            assert_eq!(requested_chat_target(raw), expected, "raw {raw:?}");
+        }
+    }
 }

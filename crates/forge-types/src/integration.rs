@@ -38,3 +38,39 @@ impl fmt::Display for IntegrationId {
         f.write_str(&self.0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    struct Disabled(HashSet<&'static str>);
+
+    impl IntegrationAvailability for Disabled {
+        fn is_disabled(&self, integration: &IntegrationId) -> bool {
+            self.0.contains(integration.as_str())
+        }
+    }
+
+    #[test]
+    fn a_chat_platform_counts_as_enabled_until_twitch_youtube_and_kick_are_all_disabled() {
+        for (disabled, expected) in [
+            (&[][..], true),
+            (&["obs"][..], true),
+            (&["youtube", "kick"][..], true),
+            (&["twitch", "kick"][..], true),
+            (&["twitch", "youtube"][..], true),
+            (&["twitch", "youtube", "obs", "vtube"][..], true),
+            (&["twitch", "youtube", "kick"][..], false),
+            (&["twitch", "youtube", "kick", "obs"][..], false),
+        ] {
+            let availability = Disabled(disabled.iter().copied().collect());
+            assert_eq!(
+                availability.any_chat_platform_enabled(),
+                expected,
+                "disabled {disabled:?}"
+            );
+        }
+    }
+}

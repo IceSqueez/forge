@@ -138,6 +138,19 @@ pub struct ObsHealth {
     pub throughput: Vec<f32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConnectionsTally {
+    pub connections: Vec<(Integration, bool)>,
+    pub connected: usize,
+    pub total: usize,
+}
+
+impl ConnectionsTally {
+    pub fn warn(&self) -> bool {
+        self.connected < self.total
+    }
+}
+
 pub struct HomeStats {
     live_viewers: Option<u64>,
     actions_count: Option<usize>,
@@ -242,20 +255,21 @@ impl HomeStats {
             .map_or_else(|| NO_DATA.to_owned(), |n| n.to_string())
     }
 
-    pub fn connected_count(&self) -> usize {
-        self.connections.iter().filter(|(_, ok)| *ok).count()
-    }
-
-    pub fn total_count(&self) -> usize {
-        self.connections.len()
-    }
-
-    pub fn connections_warn(&self) -> bool {
-        self.connected_count() < self.total_count()
-    }
-
-    pub fn connections_snapshot(&self) -> Vec<(Integration, bool)> {
-        self.connections.clone()
+    pub fn enabled_connections(
+        &self,
+        is_enabled: impl Fn(Integration) -> bool,
+    ) -> ConnectionsTally {
+        let connections: Vec<(Integration, bool)> = self
+            .connections
+            .iter()
+            .copied()
+            .filter(|(integ, _)| is_enabled(*integ))
+            .collect();
+        ConnectionsTally {
+            connected: connections.iter().filter(|(_, ok)| *ok).count(),
+            total: connections.len(),
+            connections,
+        }
     }
 
     pub fn obs_health_snapshot(&self) -> Option<ObsHealth> {

@@ -1,13 +1,19 @@
 use std::collections::HashMap;
 
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_types::{Action, IntegrationId, SubActionStep, TriggerInstance};
+use forge_types::{Action, ActionId, IntegrationId, SubActionStep, TriggerInstance};
 
 use crate::actions_screen::nested_chains;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferencingAction {
+    pub id: ActionId,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct IntegrationReferences {
-    pub actions: Vec<String>,
+    pub actions: Vec<ReferencingAction>,
     pub triggers: usize,
 }
 
@@ -32,7 +38,10 @@ pub fn tally_references(
                 .entry(owner)
                 .or_default()
                 .actions
-                .push(action.name.clone());
+                .push(ReferencingAction {
+                    id: action.id,
+                    name: action.name.clone(),
+                });
         }
     }
     for trigger in triggers {

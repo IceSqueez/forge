@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use forge_registry::{FormField, SubActionRegistry, TriggerRegistry, declared_variables};
 use forge_types::{
-    Action, ExecutionMode, SubActionOutcome, SubActionStep, TriggerInstance, Variant,
-    normalize_var_name,
+    Action, ExecutionMode, IntegrationId, SubActionOutcome, SubActionStep, TriggerInstance,
+    Variant, normalize_var_name,
 };
 
 use super::nav;
@@ -28,6 +28,7 @@ pub(super) enum Finding {
     SomeTriggersOnly(String),
     LastRunFailed(String),
     ControlFlowInConcurrentAction,
+    IntegrationDisabled(IntegrationId),
 }
 
 impl Finding {
@@ -37,7 +38,8 @@ impl Finding {
             Finding::ProducedLater(_)
             | Finding::IsolatedSibling(_)
             | Finding::SomeTriggersOnly(_)
-            | Finding::ControlFlowInConcurrentAction => HealthSeverity::Yellow,
+            | Finding::ControlFlowInConcurrentAction
+            | Finding::IntegrationDisabled(_) => HealthSeverity::Yellow,
         }
     }
 }
@@ -55,6 +57,46 @@ impl StepHealth {
             .max()
             .unwrap_or(HealthSeverity::Green)
     }
+
+    pub(super) fn disabled_integration(&self) -> Option<&IntegrationId> {
+        self.findings.iter().find_map(|finding| match finding {
+            Finding::IntegrationDisabled(id) => Some(id),
+            _ => None,
+        })
+    }
+}
+
+pub(super) fn flag_switched_off(
+    steps: &[SubActionStep],
+    registry: &SubActionRegistry,
+    switched_off: &HashSet<IntegrationId>,
+    health: &mut [StepHealth],
+) {
+    for (step, health) in steps.iter().zip(health.iter_mut()) {
+        if let Some(owner) = switched_off_owner(step, registry, switched_off) {
+            health.findings.push(Finding::IntegrationDisabled(owner));
+        }
+    }
+}
+
+fn switched_off_owner(
+    step: &SubActionStep,
+    registry: &SubActionRegistry,
+    switched_off: &HashSet<IntegrationId>,
+) -> Option<IntegrationId> {
+    if !step.enabled {
+        return None;
+    }
+    if let Some(owner) = registry.owning_integration(&step.kind_id)
+        && switched_off.contains(owner)
+    {
+        return Some(owner.clone());
+    }
+    nested_chains(step, registry).iter().find_map(|chain| {
+        chain
+            .iter()
+            .find_map(|nested| switched_off_owner(nested, registry, switched_off))
+    })
 }
 
 pub(super) fn sends_order_sensitive_overlay(

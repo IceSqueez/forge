@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
-    ghost_button_with_icon, hub_tile, icon, mono_family, page_frame, primary_button_with_icon,
-    radius, tr, with_alpha,
+    ghost_button_with_icon, health_tile, hub_tile, icon, integration_inactive_badge, mono_family,
+    page_frame, primary_button_with_icon, radius, tr,
 };
 use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -52,17 +52,6 @@ const ROW_PAD_V: Pixels = px(7.0);
 const ROW_GAP: Pixels = px(10.0);
 const ROW_HINT: Pixels = px(11.0);
 const ROW_CHEVRON: Pixels = px(13.0);
-const HEALTH_TILE: Pixels = px(18.0);
-const HEALTH_CORNER: Pixels = px(5.0);
-const HEALTH_GLYPH: Pixels = px(12.0);
-const HEALTH_TILE_ALPHA: f32 = 0.14;
-const INACTIVE_SIZE: Pixels = px(9.5);
-const INACTIVE_GLYPH: Pixels = px(10.0);
-const INACTIVE_GAP: Pixels = px(4.0);
-const INACTIVE_PAD_V: Pixels = px(1.0);
-const INACTIVE_PAD_H: Pixels = px(6.0);
-const INACTIVE_FILL_ALPHA: f32 = 0.06;
-const INACTIVE_BORDER_ALPHA: f32 = 0.2;
 const KEPT_PAD_TOP: Pixels = px(8.0);
 const KEPT_PAD_BOTTOM: Pixels = px(12.0);
 const KEPT_GAP: Pixels = px(6.0);
@@ -322,14 +311,14 @@ impl IntegrationDisabledView {
                         ElementId::NamedInteger("integration-disabled-action".into(), index as u64),
                         palette,
                     )
-                    .child(health_tile(palette))
+                    .child(health_tile(Icon::PlugOff, palette.warning))
                     .child(
                         div()
                             .flex_none()
                             .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_primary)
-                            .child(SharedString::from(action.clone())),
+                            .child(SharedString::from(action.name.clone())),
                     )
                     .child(
                         div()
@@ -345,17 +334,21 @@ impl IntegrationDisabledView {
                             )),
                     )
                     .child(icon(Icon::ChevronRight, ROW_CHEVRON, palette.text_faint))
-                    .on_click(
-                        cx.listener(|this, _: &ClickEvent, _, cx| {
-                            this.go(Screen::Actions(None), cx)
-                        }),
-                    ),
+                    .on_click({
+                        let action_id = action.id;
+                        cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            this.go(Screen::Actions(Some(action_id)), cx)
+                        })
+                    }),
                 );
             }
             if self.references.triggers > 0 {
                 rows = rows.child(
                     affected_row("integration-disabled-triggers".into(), palette)
-                        .child(inactive_badge(palette))
+                        .child(integration_inactive_badge(
+                            tr!("integration_inactive_short"),
+                            palette,
+                        ))
                         .child(
                             div()
                                 .flex_1()
@@ -485,38 +478,6 @@ fn affected_row(id: ElementId, palette: &ForgePalette) -> gpui::Stateful<gpui::D
         .px(PANEL_HEAD_PAD_H)
         .cursor_pointer()
         .hover(move |style| style.bg(hover))
-}
-
-fn health_tile(palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .size(HEALTH_TILE)
-        .rounded(HEALTH_CORNER)
-        .bg(with_alpha(palette.warning, HEALTH_TILE_ALPHA))
-        .child(icon(Icon::PlugOff, HEALTH_GLYPH, palette.warning))
-}
-
-fn inactive_badge(palette: &ForgePalette) -> impl IntoElement {
-    div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .gap(INACTIVE_GAP)
-        .py(INACTIVE_PAD_V)
-        .px(INACTIVE_PAD_H)
-        .rounded(radius(Radius::Sm))
-        .bg(with_alpha(palette.warning, INACTIVE_FILL_ALPHA))
-        .border(BORDER_THIN)
-        .border_color(with_alpha(palette.warning, INACTIVE_BORDER_ALPHA))
-        .font_family(mono_family())
-        .font_weight(FontWeight::MEDIUM)
-        .text_size(INACTIVE_SIZE)
-        .text_color(palette.warning)
-        .child(icon(Icon::PlugOff, INACTIVE_GLYPH, palette.warning))
-        .child(tr!("integration_inactive_short"))
 }
 
 impl Render for IntegrationDisabledView {

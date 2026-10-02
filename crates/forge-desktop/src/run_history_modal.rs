@@ -1,13 +1,15 @@
 use crate::actions_screen::parse_variable_segments;
+use crate::integration_switch::integration_name;
 use crate::presentation::ActivePresentation;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
-    Spacing, body_family, error_row, fmt_relative_time, icon, json_highlighted, modal, mono_family,
-    overlay, radius, spacing, status_dot, tr,
+    Spacing, body_family, error_row, fmt_relative_time, icon, integration_disabled_reason,
+    json_highlighted, modal, mono_family, overlay, radius, spacing, status_dot, tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{
-    ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
+    ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId, SubActionOutcome,
+    SubActionTelemetry,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, EventEmitter, Pixels, Rgba, SharedString, Window, div,
@@ -27,8 +29,27 @@ const STEP_NEST_INDENT: Pixels = px(14.0);
 const EMPTY_GLYPH: Pixels = px(26.0);
 const CHIP_RADIUS: Pixels = px(6.0);
 const HALF_BORDER: Pixels = px(0.5);
+const RAIL_DISABLED_GLYPH: Pixels = px(10.0);
 
 pub struct RunHistoryDismissed;
+
+pub fn disabled_integration_of(ctx: &ExecutionContext) -> Option<&IntegrationId> {
+    ctx.telemetry.iter().find_map(|step| match &step.outcome {
+        SubActionOutcome::IntegrationDisabled(integration) => Some(integration),
+        _ => None,
+    })
+}
+
+fn disabled_reason_chip(integration: &IntegrationId, palette: &ForgePalette) -> AnyElement {
+    integration_disabled_reason(
+        tr!(
+            "action_editor_run_history_integration_disabled",
+            name = integration_name(integration).to_string()
+        ),
+        palette,
+    )
+    .into_any_element()
+}
 
 enum Load {
     Pending,
@@ -219,6 +240,10 @@ impl RunHistoryModal {
                     .text_color(time_color)
                     .child(when),
             )
+            .children(
+                disabled_integration_of(ctx)
+                    .map(|_| icon(Icon::PlugOff, RAIL_DISABLED_GLYPH, palette.random)),
+            )
             .child(
                 div()
                     .flex_none()
@@ -257,16 +282,20 @@ impl RunHistoryModal {
             ),
         };
 
-        let badge = div()
-            .flex_shrink_0()
-            .py(px(1.0))
-            .px(px(6.0))
-            .rounded(CHIP_RADIUS)
-            .bg(palette.surface_overlay)
-            .font_family(mono_family())
-            .text_size(FONT_XXS)
-            .text_color(badge_color)
-            .child(badge_label);
+        let badge = match disabled_integration_of(ctx) {
+            Some(integration) => disabled_reason_chip(integration, palette),
+            None => div()
+                .flex_shrink_0()
+                .py(px(1.0))
+                .px(px(6.0))
+                .rounded(CHIP_RADIUS)
+                .bg(palette.surface_overlay)
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(badge_color)
+                .child(badge_label)
+                .into_any_element(),
+        };
 
         let top = div()
             .flex()
@@ -406,10 +435,15 @@ impl RunHistoryModal {
                 tr!("action_editor_run_history_step_ok"),
                 None,
             ),
-            SubActionOutcome::Failed(_) | SubActionOutcome::IntegrationDisabled(_) => (
+            SubActionOutcome::Failed(_) => (
                 palette.random,
                 tr!("action_editor_run_history_step_failed"),
                 step.outcome.failure_reason(),
+            ),
+            SubActionOutcome::IntegrationDisabled(_) => (
+                palette.random,
+                tr!("action_editor_run_history_step_failed"),
+                None,
             ),
             SubActionOutcome::Skipped(message) => (
                 palette.text_muted,
@@ -457,14 +491,18 @@ impl RunHistoryModal {
                         count = step.duration_ms as i64
                     )),
             )
-            .child(
-                div()
+            .child(match &step.outcome {
+                SubActionOutcome::IntegrationDisabled(integration) => {
+                    disabled_reason_chip(integration, palette)
+                }
+                _ => div()
                     .flex_shrink_0()
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(status_color)
-                    .child(status_label),
-            );
+                    .child(status_label)
+                    .into_any_element(),
+            });
 
         let mut row = div()
             .flex()

@@ -20,6 +20,7 @@ pub mod hub_card;
 pub mod icons;
 pub mod inline_edit;
 pub mod input_bar;
+pub mod integration_gating;
 pub mod locale;
 pub mod menu;
 pub mod modal;
@@ -88,6 +89,10 @@ pub use hub_card::{
 pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};
 pub use input_bar::{InputBar, InputBarEvent, platform_bit};
+pub use integration_gating::{
+    IntegrationDisabledNotice, health_tile, integration_disabled_notice,
+    integration_disabled_reason, integration_inactive_badge,
+};
 pub use locale::{
     ArgsBuilder, fmt_bytes, fmt_clock, fmt_number, fmt_relative_time, fmt_short_date, fmt_uptime,
     fmt_uptime_short, install_bundle, set_locale_id, tr_lookup,

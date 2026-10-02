@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use forge_platform_core::ConnectionAffordance;
 use forge_types::IntegrationId;
 
@@ -64,6 +66,18 @@ impl IntegrationLifecycle {
 
     pub fn is_on(&self, id: &IntegrationId) -> bool {
         is_desired_on(&self.state_of(id))
+    }
+
+    pub fn is_switched_off(&self, id: &IntegrationId) -> bool {
+        self.is_known(id) && !self.is_on(id)
+    }
+
+    pub fn switched_off(&self) -> HashSet<IntegrationId> {
+        self.states
+            .iter()
+            .filter(|(_, state)| !is_desired_on(state))
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     pub fn on_count<'a>(&self, ids: impl Iterator<Item = &'a IntegrationId>) -> usize {

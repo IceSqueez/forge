@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use forge_components::{
     BORDER_THIN, ChipGlyph, FONT_XS, Icon, InputEvent, OverlayPosition, Radius, Spacing, TextInput,
-    body_family, chip, ghost_button_with_icon, icon, modal, mono_family, overlay, primary_button,
-    radius, secondary_button, spacing, toggle, tr, with_alpha,
+    body_family, chip, ghost_button_with_icon, icon, integration_disabled_notice, modal,
+    mono_family, overlay, primary_button, radius, secondary_button, spacing, toggle, tr,
+    with_alpha,
 };
 use forge_types::ClipId;
 use gpui::{
@@ -15,7 +16,9 @@ use crate::async_bridge;
 use crate::combo_capture::{CapturedKey, ComboCapture, captured_key, warn_if_typing_key};
 use crate::combo_conflict::{Claimant, ComboHolder, ComboHolders, conflict_prompt};
 use crate::hotkey_action_modal::keycaps;
+use crate::integration_switch::{IntegrationSwitch, SwitchWatch, integration_name};
 use crate::presentation::ActivePresentation;
+use crate::soundboard::hotkeys_notice::hotkeys_integration;
 use crate::soundboard::{
     CATEGORY_ORDER, audio_dialog_extensions, category_color, category_label, field_lite_label,
 };
@@ -79,6 +82,7 @@ pub struct ClipEditor {
     edit_id: Option<ClipId>,
     key: Option<KeyField>,
     kept_hotkey: Option<String>,
+    integrations: Option<SwitchWatch>,
     rt_handle: tokio::runtime::Handle,
     _name_sub: Subscription,
 }
@@ -127,9 +131,51 @@ impl ClipEditor {
             edit_id: launch.edit_id,
             key,
             kept_hotkey,
+            integrations: None,
             rt_handle,
             _name_sub: name_sub,
         }
+    }
+
+    #[must_use]
+    pub fn with_integration_switch(
+        mut self,
+        switch: IntegrationSwitch,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        self.integrations = Some(switch.watch(cx, |this: &mut Self, off, _cx| {
+            if let Some(integrations) = &mut this.integrations {
+                integrations.replace(off);
+            }
+        }));
+        self
+    }
+
+    fn enable_hotkeys(&mut self, cx: &mut Context<Self>) {
+        if let Some(integrations) = &self.integrations {
+            integrations.enable(&hotkeys_integration());
+        }
+        cx.notify();
+    }
+
+    fn render_hotkeys_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let integrations = self.integrations.as_ref()?;
+        let hotkeys = hotkeys_integration();
+        if !integrations.is_off(&hotkeys) {
+            return None;
+        }
+        let palette = cx.palette();
+        let name = integration_name(&hotkeys).to_string();
+        Some(
+            integration_disabled_notice(
+                "sb-modal-hotkeys-enable",
+                tr!("soundboard_modal_key_disabled", name = name.clone()),
+                tr!("integration_disabled_enable", name = name),
+                &palette,
+            )
+            .on_enable(cx.listener(|this, _: &ClickEvent, _, cx| this.enable_hotkeys(cx)))
+            .into_any_element(),
+        )
     }
 
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -391,6 +437,7 @@ impl ClipEditor {
                     .text_color(palette.text_faint)
                     .child(tr!("soundboard_modal_key_hint")),
             )
+            .children(self.render_hotkeys_notice(cx))
             .into_any_element()
     }
 

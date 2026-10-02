@@ -9,14 +9,15 @@ use forge_components::{
 use forge_registry::TriggerRegistry;
 use forge_storage::DataProvider;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, Subscription,
-    Window, div, prelude::*, px, relative,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
+    Subscription, Window, div, prelude::*, px, relative,
 };
 
 use crate::async_bridge;
 use crate::event_loss::EventLoss;
 use crate::event_loss_card::event_loss_card;
-use crate::home_stats::{HomeEvent, HomeStats, Integration, ObsHealth};
+use crate::home_stats::{ConnectionsTally, HomeEvent, HomeStats, Integration, ObsHealth};
+use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::shell::refresh_dashboard_stats;
@@ -86,8 +87,10 @@ pub struct HomeView {
     backend: Arc<dyn DataProvider>,
     trigger_registry: Arc<TriggerRegistry>,
     rt_handle: tokio::runtime::Handle,
+    lifecycle: Option<Entity<IntegrationLifecycle>>,
     _stats_obs: Subscription,
     _loss_obs: Subscription,
+    _lifecycle_obs: Option<Subscription>,
 }
 
 impl HomeView {
@@ -107,8 +110,32 @@ impl HomeView {
             backend,
             trigger_registry,
             rt_handle,
+            lifecycle: None,
             _stats_obs: stats_obs,
             _loss_obs: loss_obs,
+            _lifecycle_obs: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_lifecycle(
+        mut self,
+        lifecycle: Entity<IntegrationLifecycle>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        self._lifecycle_obs = Some(cx.observe(&lifecycle, |_, _, cx| cx.notify()));
+        self.lifecycle = Some(lifecycle);
+        self
+    }
+
+    fn connections(&self, cx: &App) -> ConnectionsTally {
+        let stats = self.stats.read(cx);
+        match &self.lifecycle {
+            Some(lifecycle) => {
+                let lifecycle = lifecycle.read(cx);
+                stats.enabled_connections(|integ| lifecycle.is_on(&integ.builtin_id()))
+            }
+            None => stats.enabled_connections(|_| true),
         }
     }
 
@@ -994,10 +1021,10 @@ impl Render for HomeView {
         let commands = stats.commands_display();
         let fired = stats.triggers_fired_display();
         let globals = stats.globals_display();
-        let connected = stats.connected_count();
-        let total = stats.total_count();
-        let warn = stats.connections_warn();
-        let connections = stats.connections_snapshot();
+        let tally = self.connections(cx);
+        let warn = tally.warn();
+        let (connected, total) = (tally.connected, tally.total);
+        let connections = tally.connections;
         let recent = stats.recent(5);
         let obs_health = stats.obs_health_snapshot();
 

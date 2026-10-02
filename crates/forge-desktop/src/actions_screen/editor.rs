@@ -10,6 +10,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::integration_switch::{inactive_badge, integration_name};
 use crate::obs_catalog_options::obs_catalog_fields;
 use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
@@ -19,9 +20,9 @@ use forge_components::{
     GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup, GridPickerItem,
     GridPickerItemState, GridPickerSubtitle, Icon, InputEvent, MenuPlacement, ModalSize,
     OverlayPosition, Picker, PickerEvent, PlatformKind, Radius, Spacing, TextInput, body_family,
-    ghost_button_with_icon, icon, menu_button, menu_divider, menu_item, modal, mono_family,
-    overlay, platform_color, primary_button, radius, row_card, secondary_button, spacing,
-    status_dot, tooltip_lines_builder, tr, with_alpha,
+    ghost_button_with_icon, health_tile, icon, menu_button, menu_divider, menu_item, modal,
+    mono_family, overlay, platform_color, primary_button, radius, row_card, secondary_button,
+    spacing, status_dot, tooltip_lines_builder, tr, with_alpha,
 };
 use forge_registry::{
     FormSchemaSource, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
@@ -65,6 +66,12 @@ fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
         }
         analyzer::Finding::ControlFlowInConcurrentAction => {
             tr!("action_editor_health_control_flow_concurrent")
+        }
+        analyzer::Finding::IntegrationDisabled(owner) => {
+            tr!(
+                "action_editor_health_integration_disabled",
+                name = integration_name(owner).to_string()
+            )
         }
     };
     SharedString::from(text)
@@ -2189,6 +2196,7 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let descriptor = self.trigger_registry.get(&instance.kind_id);
+        let switched_off_owner = self.switched_off_trigger_owner(&instance.kind_id);
         let accent = if instance.enabled {
             palette.brand
         } else {
@@ -2257,7 +2265,13 @@ impl ScreenActionsView {
                     .text_size(FONT_XXS)
                     .text_color(palette.bits)
                     .child(condition),
+            )
+            .children(
+                switched_off_owner
+                    .as_ref()
+                    .map(|owner| inactive_badge(owner, palette)),
             );
+        let dimmed = !instance.enabled || switched_off_owner.is_some();
 
         let instance_id = instance.id;
         let unlink = trigger_unlink_btn(
@@ -2269,7 +2283,7 @@ impl ScreenActionsView {
             }),
         );
 
-        row_card(title, palette)
+        let card = row_card(title, palette)
             .leading(leading)
             .trailing(unlink)
             .trailing_reveal(SharedString::from(format!(
@@ -2282,7 +2296,11 @@ impl ScreenActionsView {
                 cx.listener(move |_this, _: &ClickEvent, _, cx| {
                     cx.emit(NavRequested(Screen::Triggers(Some(instance_id))))
                 }),
-            )
+            );
+        div()
+            .w_full()
+            .when(dimmed, |row| row.opacity(TRIGGER_DIMMED_OPACITY))
+            .child(card)
             .into_any_element()
     }
 
@@ -2374,20 +2392,25 @@ impl ScreenActionsView {
             analyzer::HealthSeverity::Yellow => palette.warning,
             analyzer::HealthSeverity::Red => palette.random,
         };
-        let tile = div()
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .size(STEP_HEALTH_TILE)
-            .rounded(px(5.0))
-            .bg(with_alpha(color, STEP_HEALTH_TILE_ALPHA))
-            .child(icon(Icon::Heartbeat, STEP_HEALTH_GLYPH, color));
-        let mut lines: Vec<SharedString> = vec![match severity {
-            analyzer::HealthSeverity::Green => tr!("action_editor_health_ok").into(),
-            analyzer::HealthSeverity::Yellow => tr!("action_editor_health_warn").into(),
-            analyzer::HealthSeverity::Red => tr!("action_editor_health_error").into(),
-        }];
+        let (glyph, color, title): (Icon, Rgba, SharedString) = match health.disabled_integration()
+        {
+            Some(_) => (
+                Icon::PlugOff,
+                palette.warning,
+                tr!("action_editor_health_disabled").into(),
+            ),
+            None => (
+                Icon::Heartbeat,
+                color,
+                match severity {
+                    analyzer::HealthSeverity::Green => tr!("action_editor_health_ok").into(),
+                    analyzer::HealthSeverity::Yellow => tr!("action_editor_health_warn").into(),
+                    analyzer::HealthSeverity::Red => tr!("action_editor_health_error").into(),
+                },
+            ),
+        };
+        let tile = health_tile(glyph, color);
+        let mut lines: Vec<SharedString> = vec![title];
         lines.extend(health.findings.iter().map(analyzer_finding_message));
         div()
             .id(SharedString::from(format!("actions-step-health-{i}")))
@@ -2470,9 +2493,28 @@ impl ScreenActionsView {
             .children(health_dot);
 
         let enabled = step.enabled;
+        let switched_off_owner = self.switched_off_step_owner(step);
+        let meta = match &switched_off_owner {
+            Some(owner) => div()
+                .flex()
+                .flex_col()
+                .child(variable_text(&detail_str, palette))
+                .child(
+                    div()
+                        .mt(STEP_NOTICE_MT)
+                        .child(self.render_disabled_step_notice(
+                            owner,
+                            SharedString::from(format!("actions-step-enable-{depth}-{i}")),
+                            palette,
+                            cx,
+                        )),
+                )
+                .into_any_element(),
+            None => variable_text(&detail_str, palette).into_any_element(),
+        };
         let mut card = row_card(title_el, palette)
             .leading(icon(glyph, CARD_GLYPH, glyph_color))
-            .meta(variable_text(&detail_str, palette))
+            .meta(meta)
             .trailing(self.render_step_controls(i, total, enabled, palette, cx))
             .idle_background(palette.elevated)
             .bordered(palette.border_regular, BORDER_THIN, radius(Radius::Md))
@@ -2481,6 +2523,9 @@ impl ScreenActionsView {
                 SharedString::from(format!("actions-step-card-{i}")),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.open_edit_sub_action(i, cx)),
             );
+        if switched_off_owner.is_some() {
+            card = card.align_top();
+        }
         if self.step_menu_open != Some(i) {
             card = card.trailing_reveal(SharedString::from(format!("actions-step-row-{i}")));
         }

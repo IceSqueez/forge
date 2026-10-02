@@ -18,6 +18,7 @@ use crate::actions::LIST_CONTEXT;
 use crate::async_bridge;
 use crate::collection_options::ChoiceOptions;
 use crate::config_form::{CollectionChoices, ConfigField};
+use crate::integration_switch::{IntegrationSwitch, SwitchWatch};
 use crate::integrations::BuiltinRegistry;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
@@ -247,6 +248,7 @@ pub struct TriggersRegistryView {
     create: Option<CreateStage>,
     builtins: BuiltinRegistry,
     bus: Option<Arc<EventBus>>,
+    integrations: Option<SwitchWatch>,
     collection_options: ChoiceOptions,
     _collection_watch: Vec<gpui::Task<()>>,
     _search_sub: Subscription,
@@ -297,6 +299,7 @@ impl TriggersRegistryView {
             create: None,
             builtins: BuiltinRegistry::default(),
             bus: None,
+            integrations: None,
             collection_options: ChoiceOptions::new(),
             _collection_watch: Vec::new(),
             _search_sub: search_sub,
@@ -305,6 +308,27 @@ impl TriggersRegistryView {
         view.reload(cx);
         view.load_favorites(cx);
         view
+    }
+
+    #[must_use]
+    pub fn with_integration_switch(
+        mut self,
+        switch: IntegrationSwitch,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        self.integrations = Some(switch.watch(cx, |this: &mut Self, off, _cx| {
+            if let Some(integrations) = &mut this.integrations {
+                integrations.replace(off);
+            }
+        }));
+        self
+    }
+
+    fn switched_off_owner(&self, kind_id: &str) -> Option<forge_types::IntegrationId> {
+        let integrations = self.integrations.as_ref()?;
+        integrations
+            .off_owner(self.registry.owning_integration(kind_id))
+            .cloned()
     }
 
     fn load_favorites(&self, cx: &mut Context<Self>) {

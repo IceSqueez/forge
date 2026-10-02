@@ -42,6 +42,8 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
 
+pub(crate) mod hotkeys_notice;
+
 const SCROLL_PAD_X: Pixels = px(22.0);
 const SCROLL_PAD_Y: Pixels = px(18.0);
 const SECTION_GAP: Pixels = px(14.0);
@@ -124,6 +126,7 @@ pub struct SoundboardView {
     category_filter: Option<String>,
     modal: Option<Entity<ClipEditor>>,
     keys: ClipKeyState,
+    integrations: Option<crate::integration_switch::SwitchWatch>,
     _modal_sub: Option<Subscription>,
     pending_delete: Confirm<ClipId>,
     _search_sub: Subscription,
@@ -185,6 +188,7 @@ impl SoundboardView {
             category_filter: None,
             modal: None,
             keys,
+            integrations: None,
             _modal_sub: None,
             pending_delete: Confirm::default(),
             _search_sub: search_sub,
@@ -800,7 +804,14 @@ impl SoundboardView {
     ) {
         let rt_handle = self.rt_handle.clone();
         let holders = self.keys.available().then(|| self.keys.holders());
-        let modal = cx.new(|cx| ClipEditor::new(launch, holders, rt_handle, cx));
+        let switch = self.integration_switch();
+        let modal = cx.new(|cx| {
+            let editor = ClipEditor::new(launch, holders, rt_handle, cx);
+            match switch {
+                Some(switch) => editor.with_integration_switch(switch, cx),
+                None => editor,
+            }
+        });
         modal.update(cx, |m, cx| m.focus(window, cx));
         self._modal_sub = Some(cx.subscribe(&modal, Self::on_modal_event));
         self.modal = Some(modal);
@@ -1951,6 +1962,7 @@ impl Render for SoundboardView {
                 .gap(SECTION_GAP)
                 .children(error_banner)
                 .child(self.render_hero(&palette, density, cx))
+                .children(self.render_hotkeys_notice(&palette, cx))
                 .child(self.render_pads(&palette, density, cx))
                 .children(self.render_library(&palette, density, cx))
                 .child(self.render_add_bar(&palette, cx))

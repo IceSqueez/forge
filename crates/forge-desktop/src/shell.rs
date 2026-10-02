@@ -31,6 +31,7 @@ use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut}
 use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+use crate::integration_switch::IntegrationSwitch;
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::integrations_hub::{HubLaunch, IntegrationsHubView};
 use crate::midi_screen::MidiScreenView;
@@ -150,6 +151,7 @@ impl AppShell {
                 let home_backend = Arc::clone(&handles.backend);
                 let home_registry = Arc::clone(&handles.trigger_registry);
                 let home_rt = handles.rt_handle.clone();
+                let home_lifecycle = topics.integration_lifecycle.clone();
                 let home = cx.new(|cx| {
                     HomeView::new(
                         topics.home_stats.clone(),
@@ -159,6 +161,7 @@ impl AppShell {
                         home_rt,
                         cx,
                     )
+                    .with_lifecycle(home_lifecycle, cx)
                 });
                 cx.subscribe(&home, |this, _home, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
@@ -357,8 +360,12 @@ impl AppShell {
                     handles.hotkey_reconciler.clone(),
                     Arc::clone(&handles.backend),
                 );
-                cx.new(|cx| SoundboardView::new(player, settings_repo, rt_handle, bus, keys, cx))
-                    .into()
+                let switch = Self::integration_switch(topics, handles);
+                cx.new(|cx| {
+                    SoundboardView::new(player, settings_repo, rt_handle, bus, keys, cx)
+                        .with_integration_switch(switch, cx)
+                })
+                .into()
             }
             Screen::Tts(preselect) => {
                 let preselect = *preselect;
@@ -457,6 +464,7 @@ impl AppShell {
                 let bus = Arc::clone(&handles.bus);
                 let scheduler = handles.scheduler.clone();
                 let builtins = handles.builtins.clone();
+                let switch = Self::integration_switch(topics, handles);
                 let view = cx.new(|cx| {
                     ScreenActionsView::new(
                         action_repo,
@@ -480,6 +488,7 @@ impl AppShell {
                         cx,
                     )
                     .with_builtins(builtins)
+                    .with_integration_switch(switch, cx)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
@@ -499,6 +508,7 @@ impl AppShell {
                 let preselect = *preselect;
                 let builtins = handles.builtins.clone();
                 let bus = Arc::clone(&handles.bus);
+                let switch = Self::integration_switch(topics, handles);
                 let view = cx.new(|cx| {
                     TriggersRegistryView::new(
                         repo,
@@ -511,6 +521,7 @@ impl AppShell {
                     )
                     .with_builtins(builtins)
                     .with_event_bus(bus)
+                    .with_integration_switch(switch, cx)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
@@ -544,6 +555,13 @@ impl AppShell {
         }
     }
 
+    fn integration_switch(topics: &Topics, handles: &Arc<RuntimeHandles>) -> IntegrationSwitch {
+        IntegrationSwitch::new(
+            topics.integration_lifecycle.clone(),
+            handles.integrations.clone(),
+        )
+    }
+
     fn hub_launch(handles: &Arc<RuntimeHandles>) -> HubLaunch {
         HubLaunch {
             supervisor: handles.integrations.clone(),
@@ -556,8 +574,7 @@ impl AppShell {
     }
 
     fn is_switched_off(id: &IntegrationId, topics: &Topics, cx: &Context<Self>) -> bool {
-        let lifecycle = topics.integration_lifecycle.read(cx);
-        lifecycle.is_known(id) && !lifecycle.is_on(id)
+        topics.integration_lifecycle.read(cx).is_switched_off(id)
     }
 
     fn disabled_screen(

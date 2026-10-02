@@ -1,6 +1,7 @@
 use crate::async_bridge;
 use crate::collection_options::{ChoiceOptions, CollectionChoiceField};
 use crate::config_form::CollectionChoices;
+use crate::integration_switch::SwitchWatch;
 use crate::integrations::BuiltinRegistry;
 use crate::obs_catalog_options::ObsCatalogField;
 use crate::presentation::ActivePresentation;
@@ -37,6 +38,7 @@ mod analyzer;
 mod branch;
 mod collection_choices;
 mod editor;
+mod integration_gating;
 mod list;
 mod nav;
 mod overlay_schema;
@@ -69,8 +71,6 @@ const PILL_RADIUS: Pixels = px(8.0);
 const PILL_DOT: Pixels = px(5.0);
 const CARD_GLYPH: Pixels = px(13.0);
 const TRIGGER_DOT: Pixels = px(7.0);
-const STEP_HEALTH_TILE: Pixels = px(18.0);
-const STEP_HEALTH_GLYPH: Pixels = px(12.0);
 const STEP_HEALTH_TILE_ALPHA: f32 = 0.14;
 const TRIGGER_GLYPH: Pixels = px(13.0);
 const UNLINK_GLYPH: Pixels = px(13.0);
@@ -95,6 +95,8 @@ const PANE_PAD_V: Pixels = px(18.0);
 const PANE_PAD_H: Pixels = px(22.0);
 const STEP_GAP: Pixels = px(6.0);
 const STEP_DISABLED_OPACITY: f32 = 0.55;
+const STEP_NOTICE_MT: Pixels = px(8.0);
+const TRIGGER_DIMMED_OPACITY: f32 = 0.7;
 const STEP_CARD_PAD_V: Pixels = px(10.0);
 const STEP_CARD_PAD_H: Pixels = px(12.0);
 const HEADER_ACTION_H: Pixels = px(28.0);
@@ -224,6 +226,7 @@ pub struct ScreenActionsView {
     nav_path: Vec<nav::NavFrame>,
     case_fields: BTreeMap<(usize, usize), CaseField>,
     step_health: Vec<analyzer::StepHealth>,
+    integrations: Option<SwitchWatch>,
     _search_sub: Subscription,
 }
 
@@ -310,6 +313,7 @@ impl ScreenActionsView {
             nav_path: Vec::new(),
             case_fields: BTreeMap::new(),
             step_health: Vec::new(),
+            integrations: None,
             _search_sub: search_sub,
         };
         view.reload(cx);
@@ -552,13 +556,24 @@ impl ScreenActionsView {
 
     fn recompute_step_health(&mut self) {
         self.step_health = match &self.detail {
-            Some(detail) => analyzer::analyze(
-                &detail.action,
-                &detail.trigger_instances,
-                &detail.last_step_outcomes,
-                &self.sub_action_registry,
-                &self.trigger_registry,
-            ),
+            Some(detail) => {
+                let mut health = analyzer::analyze(
+                    &detail.action,
+                    &detail.trigger_instances,
+                    &detail.last_step_outcomes,
+                    &self.sub_action_registry,
+                    &self.trigger_registry,
+                );
+                if let Some(integrations) = &self.integrations {
+                    analyzer::flag_switched_off(
+                        &detail.action.sub_actions,
+                        &self.sub_action_registry,
+                        integrations.off(),
+                        &mut health,
+                    );
+                }
+                health
+            }
             None => Vec::new(),
         };
     }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::actions::{ListActivate, ListSelectNext, ListSelectPrev};
 use crate::async_bridge;
+use crate::integration_switch::inactive_badge;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use forge_components::{
@@ -726,6 +727,10 @@ impl TriggersRegistryView {
                 BADGE_FS,
             ));
         }
+        let switched_off_owner = self.switched_off_owner(&instance.kind_id);
+        if let Some(owner) = &switched_off_owner {
+            kind = kind.child(inactive_badge(owner, palette));
+        }
         let gate = if cooldown_applies(descriptor) {
             cooldown_suffix(instance.cooldown_secs, instance.cooldown_global)
         } else {
@@ -868,7 +873,9 @@ impl TriggersRegistryView {
             .bg(row_bg)
             .border_b(BORDER_THIN)
             .border_color(palette.border_regular)
-            .when(!instance.enabled, |row| row.opacity(DISABLED_OPACITY))
+            .when(!instance.enabled || switched_off_owner.is_some(), |row| {
+                row.opacity(DISABLED_OPACITY)
+            })
             .on_hover(
                 cx.listener(move |this, hovered: &bool, _, cx| this.set_hover(id, *hovered, cx)),
             )

@@ -164,7 +164,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette) -> Option<AnyElement>
         return None;
     }
     let mut chips = div().flex().flex_wrap().gap(CHIP_GAP);
-    for name in actions.iter().take(SHOWN_CHIPS) {
+    for action in actions.iter().take(SHOWN_CHIPS) {
         chips = chips.child(
             div()
                 .flex()
@@ -178,7 +178,7 @@ fn used_by(prompt: &DisablePrompt, palette: &ForgePalette) -> Option<AnyElement>
                 .text_size(CHIP_SIZE)
                 .text_color(palette.text_secondary)
                 .child(icon(Icon::Bolt, CHIP_ICON, palette.brand))
-                .child(SharedString::from(name.clone())),
+                .child(SharedString::from(action.name.clone())),
         );
     }
     let more = actions.len().saturating_sub(SHOWN_CHIPS);

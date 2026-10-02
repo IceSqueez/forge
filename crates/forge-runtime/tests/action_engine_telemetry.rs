@@ -9,9 +9,9 @@ use async_trait::async_trait;
 use forge_registry::{
     FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry, SubActionRunner,
 };
-use forge_runtime::sub_action_runners::TwitchChatSendMessageRunner;
+use forge_runtime::sub_action_runners::{ScriptRunInlineRunner, TwitchChatSendMessageRunner};
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo,
+    ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo, ScriptRegistry,
     spawn_action_engine,
 };
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
@@ -667,4 +667,142 @@ async fn a_quick_chat_send_targeted_at_a_disabled_platform_reports_integration_d
         .unwrap();
 
     assert_eq!(outcome, SubActionOutcome::IntegrationDisabled(kick));
+}
+
+struct CapturingPublisher(Arc<Mutex<Vec<forge_events::Event>>>);
+
+impl forge_events::EventPublisher for CapturingPublisher {
+    fn publish(&self, event: forge_events::Event) {
+        self.0.lock().unwrap().push(event);
+    }
+}
+
+struct ScriptHarness {
+    engine: forge_runtime::ActionEngineHandle,
+    history: Arc<SpyHistoryRepo>,
+    published: Arc<Mutex<Vec<forge_events::Event>>>,
+    _backend: Arc<forge_storage_sqlite::SqliteBackend>,
+    _media: tempfile::TempDir,
+}
+
+impl ScriptHarness {
+    async fn new(repo: &Arc<SpyActionRepo>) -> Self {
+        let media = tempfile::tempdir().unwrap();
+        let backend = Arc::new(
+            forge_storage_sqlite::SqliteBackend::open_for_test(
+                ":memory:",
+                [0xcd; 32],
+                media.path().join("media"),
+                None,
+            )
+            .await
+            .unwrap(),
+        );
+        let published = Arc::new(Mutex::new(Vec::new()));
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(ScriptRunInlineRunner::new(
+            Arc::new(ScriptRegistry::new()),
+            Arc::clone(&backend) as Arc<dyn forge_storage::GlobalsRepo>,
+            Arc::new(CapturingPublisher(Arc::clone(&published))),
+            Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>,
+        )))
+        .unwrap();
+        let history = Arc::new(SpyHistoryRepo::new());
+        let engine = spawn_with(repo, &history, reg);
+        Self {
+            engine,
+            history,
+            published,
+            _backend: backend,
+            _media: media,
+        }
+    }
+
+    fn chat_sends(&self) -> usize {
+        self.published
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "chat.send.request")
+            .count()
+    }
+
+    async fn run_quick(&self, body: &str) -> SubActionOutcome {
+        self.engine
+            .execute_quick_action(
+                inline_script_step(body),
+                "twitch".to_owned(),
+                "Quick".to_owned(),
+                None,
+            )
+            .await
+            .unwrap()
+            .outcome()
+            .await
+            .unwrap()
+    }
+}
+
+const SEND_TO_TWITCH: &str = r#"forge::chat::send("twitch", "hello")"#;
+
+fn inline_script_step(body: &str) -> SubActionStep {
+    let mut step = action_with(vec!["script.run.inline"]).sub_actions.remove(0);
+    step.config = SubActionConfig::from([("body".to_owned(), Variant::String(body.to_owned()))]);
+    step
+}
+
+fn names_disabled_twitch(reason: &str) -> bool {
+    reason.contains(&integration_disabled_reason(&twitch()))
+}
+
+#[tokio::test]
+async fn a_quick_script_sending_to_a_disabled_integration_fails_naming_it_and_sends_nothing() {
+    let harness = ScriptHarness::new(&Arc::new(SpyActionRepo::new())).await;
+    harness.engine.integration_gate().disable(twitch());
+
+    let outcome = harness.run_quick(SEND_TO_TWITCH).await;
+
+    assert!(
+        matches!(&outcome, SubActionOutcome::Failed(reason) if names_disabled_twitch(reason)),
+        "the quick script must fail naming the disabled integration, got {outcome:?}"
+    );
+    assert_eq!(harness.chat_sends(), 0);
+}
+
+#[tokio::test]
+async fn re_enabling_an_integration_lets_the_next_quick_script_send_through() {
+    let harness = ScriptHarness::new(&Arc::new(SpyActionRepo::new())).await;
+    harness.engine.integration_gate().disable(twitch());
+    let blocked = harness.run_quick(SEND_TO_TWITCH).await;
+
+    harness.engine.integration_gate().enable(&twitch());
+    let admitted = harness.run_quick(SEND_TO_TWITCH).await;
+
+    assert!(blocked.is_failure(), "got {blocked:?}");
+    assert_eq!(admitted, SubActionOutcome::Success);
+    assert_eq!(harness.chat_sends(), 1);
+}
+
+#[tokio::test]
+async fn an_action_script_sending_to_a_disabled_integration_fails_the_run_and_sends_nothing() {
+    let repo = Arc::new(SpyActionRepo::new());
+    let mut action = action_with(vec!["script.run.inline"]);
+    action.sub_actions[0] = inline_script_step(SEND_TO_TWITCH);
+    let id = action.id;
+    repo.seed(action);
+    let harness = ScriptHarness::new(&repo).await;
+    harness.engine.integration_gate().disable(twitch());
+
+    harness.engine.dispatch(request(id)).await.unwrap();
+
+    assert!(
+        eventually(|| !harness.history.saved().is_empty()).await,
+        "the run was never saved to history",
+    );
+    assert!(
+        matches!(&harness.history.saved()[0].1, ExecutionOutcome::Failed(reason) if names_disabled_twitch(reason)),
+        "the run must fail naming the disabled integration, got {:?}",
+        harness.history.saved()[0].1,
+    );
+    assert_eq!(harness.chat_sends(), 0);
 }

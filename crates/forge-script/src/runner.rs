@@ -81,3 +81,68 @@ pub async fn run_inline(
         output_display,
     })
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::sync::Mutex;
+
+    use forge_events::Event;
+    use forge_types::IntegrationId;
+
+    use super::*;
+    use crate::test_support::sandboxed_backend;
+
+    struct CapturingPublisher(Arc<Mutex<Vec<Event>>>);
+
+    impl EventPublisher for CapturingPublisher {
+        fn publish(&self, event: Event) {
+            self.0.lock().unwrap().push(event);
+        }
+    }
+
+    struct TwitchDisabled;
+
+    impl IntegrationAvailability for TwitchDisabled {
+        fn is_disabled(&self, integration: &IntegrationId) -> bool {
+            integration.as_str() == "twitch"
+        }
+    }
+
+    #[tokio::test]
+    async fn an_editor_run_sending_to_a_disabled_integration_fails_and_publishes_no_send() {
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let host = ScriptHost {
+            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            bus: Arc::new(CapturingPublisher(Arc::clone(&captured))),
+            integrations: Arc::new(TwitchDisabled),
+        };
+
+        let result = run_inline(
+            r#"forge::chat::send("twitch", "hello")"#.to_owned(),
+            ScriptContract::default(),
+            ArgStack::new(),
+            host,
+            ScriptId::new(),
+        )
+        .await;
+
+        match result {
+            Err(ScriptError::Runtime { reason, .. }) => assert!(
+                reason.contains("integration disabled: twitch"),
+                "the run must fail naming the disabled integration, got: {reason}"
+            ),
+            other => panic!("expected a runtime error, got {other:?}"),
+        }
+        assert!(
+            !captured
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|e| e.kind == "chat.send.request"),
+            "no chat.send.request may leave a run aimed at a disabled integration"
+        );
+    }
+}

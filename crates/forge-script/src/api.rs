@@ -1092,4 +1092,124 @@ mod tests {
             assert_eq!(ev.caused_by, Some(caused_by));
         }
     }
+
+    #[derive(Clone, Default)]
+    struct SwitchableAvailability(Arc<Mutex<std::collections::HashSet<IntegrationId>>>);
+
+    impl SwitchableAvailability {
+        fn disabling(id: &'static str) -> Self {
+            let this = Self::default();
+            this.set_disabled(id, true);
+            this
+        }
+
+        fn set_disabled(&self, id: &'static str, disabled: bool) {
+            let mut set = self.0.lock().unwrap();
+            if disabled {
+                set.insert(IntegrationId::from_static(id));
+            } else {
+                set.remove(&IntegrationId::from_static(id));
+            }
+        }
+    }
+
+    impl IntegrationAvailability for SwitchableAvailability {
+        fn is_disabled(&self, integration: &IntegrationId) -> bool {
+            self.0.lock().unwrap().contains(integration)
+        }
+    }
+
+    async fn gated_engine(
+        availability: SwitchableAvailability,
+        captured: Arc<Mutex<Vec<Event>>>,
+    ) -> (Engine, Sandboxed<Arc<SqliteBackend>>) {
+        let dp = open_dp().await;
+        let (api, _) = make_api_with_publisher(Arc::clone(&dp), captured);
+        let api = api.with_integration_availability(Arc::new(availability));
+        (Engine::with_api(EngineConfig::default(), api), dp)
+    }
+
+    fn sent_requests(captured: &Mutex<Vec<Event>>) -> usize {
+        captured
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "chat.send.request")
+            .count()
+    }
+
+    #[tokio::test]
+    async fn targeted_chat_calls_to_a_disabled_integration_fail_naming_it_and_publish_nothing() {
+        for call in [
+            r#"forge::chat::send("twitch", "hello")"#,
+            r#"forge::chat::reply("twitch", "msg-1", "hello")"#,
+            r#"forge::chat::whisper("twitch", "viewer", "hello")"#,
+        ] {
+            let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+            let (engine, _dp) = gated_engine(
+                SwitchableAvailability::disabling("twitch"),
+                Arc::clone(&captured),
+            )
+            .await;
+
+            let result = tokio::task::spawn_blocking(move || engine.eval_script(call))
+                .await
+                .unwrap();
+
+            match result {
+                Err(crate::ScriptError::Runtime { reason, .. }) => assert!(
+                    reason.contains("integration disabled: twitch"),
+                    "{call} must fail naming the disabled integration, got: {reason}"
+                ),
+                other => panic!("{call} must fail as a runtime error, got {other:?}"),
+            }
+            assert_eq!(sent_requests(&captured), 0, "{call} must publish nothing");
+        }
+    }
+
+    #[tokio::test]
+    async fn targeted_chat_send_to_an_enabled_integration_publishes_while_another_is_disabled() {
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let (engine, _dp) = gated_engine(
+            SwitchableAvailability::disabling("kick"),
+            Arc::clone(&captured),
+        )
+        .await;
+
+        let result = tokio::task::spawn_blocking(move || {
+            engine.eval_script(r#"forge::chat::send("twitch", "hello")"#)
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            result.is_ok(),
+            "send to an enabled integration failed: {result:?}"
+        );
+        assert_eq!(sent_requests(&captured), 1);
+    }
+
+    #[tokio::test]
+    async fn re_enabling_an_integration_lets_the_same_engine_send_to_it_again() {
+        let availability = SwitchableAvailability::disabling("twitch");
+        let captured: Arc<Mutex<Vec<Event>>> = Arc::new(Mutex::new(Vec::new()));
+        let (engine, _dp) = gated_engine(availability.clone(), Arc::clone(&captured)).await;
+        let engine = Arc::new(engine);
+        let send = r#"forge::chat::send("twitch", "hello")"#;
+
+        let first = {
+            let engine = Arc::clone(&engine);
+            tokio::task::spawn_blocking(move || engine.eval_script(send).is_ok())
+                .await
+                .unwrap()
+        };
+        availability.set_disabled("twitch", false);
+        let second = tokio::task::spawn_blocking(move || engine.eval_script(send).is_ok())
+            .await
+            .unwrap();
+
+        assert!(!first, "the send while disabled must fail");
+        assert!(second, "the send after re-enabling must succeed");
+        assert_eq!(sent_requests(&captured), 1);
+    }
 }

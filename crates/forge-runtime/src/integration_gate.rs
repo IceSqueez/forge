@@ -402,4 +402,47 @@ mod tests {
         assert_eq!(a.0.outcome, SubActionOutcome::IntegrationDisabled(twitch()));
         assert_eq!(b.0.outcome, SubActionOutcome::IntegrationDisabled(twitch()));
     }
+
+    #[tokio::test]
+    async fn the_quick_action_executor_reports_live_gate_state_to_scripts() {
+        let gate = IntegrationGate::new();
+        let executor = GatedLeafExecutor::new(gate.clone(), CancelSignal::new());
+        let availability = executor
+            .integration_availability()
+            .expect("the quick-action executor must expose integration availability");
+
+        gate.disable(twitch());
+        let while_disabled = availability.is_disabled(&twitch());
+        gate.enable(&twitch());
+        let after_enable = availability.is_disabled(&twitch());
+
+        assert!(
+            while_disabled,
+            "a disable after construction must be visible"
+        );
+        assert!(!after_enable, "a re-enable must be visible");
+    }
+
+    #[tokio::test]
+    async fn the_quick_action_executor_completes_child_chains_without_running_them() {
+        let executor = GatedLeafExecutor::new(IntegrationGate::new(), CancelSignal::new());
+        let stack = ArgStack::new().set("user".to_owned(), forge_types::Variant::Int(7));
+        let steps = [SubActionStep {
+            kind_id: "test.step".to_owned(),
+            config: SubActionConfig::new(),
+            enabled: true,
+            continue_on_error: false,
+            condition: None,
+            label: None,
+        }];
+
+        let outcome = executor
+            .run_child_chain(&steps, &stack, EventId::new())
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.signal, ChainSignal::Completed);
+        assert!(outcome.telemetry.is_empty(), "no child step may run");
+        assert_eq!(outcome.arg_stack.snapshot(), stack.snapshot());
+    }
 }

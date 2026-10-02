@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_storage::{GlobalsRepo, SettingsRepo};
-use forge_types::{ArgStack, EventId, ScriptContract, ScriptId};
+use forge_types::{ArgStack, EventId, IntegrationAvailability, ScriptContract, ScriptId};
 
 use crate::error::ScriptError;
 use crate::{Engine, ForgeApi, build_scope_for_contract, load_script_engine_config};
@@ -23,15 +23,26 @@ pub fn content_hash(body: &str) -> String {
     format!("{:016x}", h.finish())
 }
 
+pub struct ScriptHost {
+    pub globals: Arc<dyn GlobalsRepo>,
+    pub settings: Arc<dyn SettingsRepo>,
+    pub bus: Arc<dyn EventPublisher>,
+    pub integrations: Arc<dyn IntegrationAvailability>,
+}
+
 pub async fn run_inline(
     body: String,
     contract: ScriptContract,
     arg_stack: ArgStack,
-    globals: Arc<dyn GlobalsRepo>,
-    settings: Arc<dyn SettingsRepo>,
-    bus: Arc<dyn EventPublisher>,
+    host: ScriptHost,
     script_id: ScriptId,
 ) -> Result<RunResult, ScriptError> {
+    let ScriptHost {
+        globals,
+        settings,
+        bus,
+        integrations,
+    } = host;
     let mut scope =
         build_scope_for_contract(&contract, &arg_stack).map_err(|e| ScriptError::Runtime {
             script: body.chars().take(80).collect(),
@@ -39,7 +50,9 @@ pub async fn run_inline(
         })?;
     let cfg = load_script_engine_config(settings.as_ref()).await;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
-    let api = ForgeApi::new(bus, globals, EventId::new(), deadline).with_script_id(script_id);
+    let api = ForgeApi::new(bus, globals, EventId::new(), deadline)
+        .with_script_id(script_id)
+        .with_integration_availability(integrations);
     let error_count = api.error_count_handle();
     let engine = Engine::with_api(cfg, api);
     let start = std::time::Instant::now();

@@ -15,7 +15,7 @@ use tracing::{info, warn};
 use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
-use crate::integration_gate::{IntegrationGate, run_gated_step, step_owner};
+use crate::integration_gate::{GatedLeafExecutor, IntegrationGate, run_gated_step, step_owner};
 use crate::run_history::RunHistoryWriter;
 use crate::{Config, EventBus};
 
@@ -468,7 +468,12 @@ async fn run_quick_action(
     bus.publish(run_event);
 
     let stack = ArgStack::new();
-    let run_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
+    let leaf_ctx = RunContext::leaf(&stack, 0, run_event_id, publisher.as_ref());
+    let executor = GatedLeafExecutor::new(integrations.clone(), leaf_ctx.cancel.clone());
+    let run_ctx = RunContext {
+        executor: &executor,
+        ..leaf_ctx
+    };
 
     let started_at = OffsetDateTime::now_utc();
     let (mut telemetry, produced_stack) = match sub_action_registry.get(&req.step.kind_id) {

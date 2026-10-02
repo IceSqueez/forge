@@ -27,4 +27,4 @@ pub use format::format_script;
 pub use http_client::{HttpError, HttpResponse, ScriptHttpClient};
 pub use http_config::{ScriptHttpConfig, load_script_http_config};
 pub use math_evaluator::MathEvaluator;
-pub use runner::{RunResult, content_hash, run_inline};
+pub use runner::{RunResult, ScriptHost, content_hash, run_inline};

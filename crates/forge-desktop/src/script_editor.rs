@@ -13,15 +13,16 @@ use forge_components::{
 use forge_events::{Event, EventPublisher};
 use forge_runtime::{EventBus, ScriptRegistry};
 use forge_script::{
-    MethodDescriptor, RunResult, ScriptError, content_hash, format_script, inert_annotation_lines,
-    is_engine_bound_name, run_inline, validate_syntax,
+    MethodDescriptor, RunResult, ScriptError, ScriptHost, content_hash, format_script,
+    inert_annotation_lines, is_engine_bound_name, run_inline, validate_syntax,
 };
 use forge_storage::{
     DataProvider, ExecutionStatus, GlobalsRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
     SettingsRepo,
 };
 use forge_types::{
-    Action, ActionId, ArgStack, ScriptContract, ScriptId, ScriptInput, Variant, VariantKind,
+    Action, ActionId, ArgStack, IntegrationAvailability, ScriptContract, ScriptId, ScriptInput,
+    Variant, VariantKind,
 };
 use gpui::{
     AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, MouseButton,
@@ -493,6 +494,7 @@ pub struct ScriptEditorView {
     backend: Arc<dyn DataProvider>,
     script_registry: Arc<ScriptRegistry>,
     bus: Arc<EventBus>,
+    integrations: Arc<dyn IntegrationAvailability>,
     rt_handle: tokio::runtime::Handle,
 
     scripts: Vec<ScriptEntry>,
@@ -544,6 +546,7 @@ impl ScriptEditorView {
         backend: Arc<dyn DataProvider>,
         script_registry: Arc<ScriptRegistry>,
         bus: Arc<EventBus>,
+        integrations: Arc<dyn IntegrationAvailability>,
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -596,6 +599,7 @@ impl ScriptEditorView {
             backend,
             script_registry,
             bus,
+            integrations,
             rt_handle,
             scripts: Vec::new(),
             selected: None,
@@ -1220,19 +1224,20 @@ impl ScriptEditorView {
             .as_ref()
             .map(|o| o.record.contract.clone())
             .unwrap_or_default();
-        let globals = Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>;
-        let settings = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-        let publisher = Arc::clone(&self.bus) as Arc<dyn EventPublisher>;
+        let host = ScriptHost {
+            globals: Arc::clone(&self.backend) as Arc<dyn GlobalsRepo>,
+            settings: Arc::clone(&self.backend) as Arc<dyn SettingsRepo>,
+            bus: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
+            integrations: Arc::clone(&self.integrations),
+        };
         let scripts = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 let started_at = OffsetDateTime::now_utc();
-                let result = run_inline(
-                    body, contract, args, globals, settings, publisher, script_id,
-                )
-                .await
-                .map_err(|e| e.to_string());
+                let result = run_inline(body, contract, args, host, script_id)
+                    .await
+                    .map_err(|e| e.to_string());
                 if let Ok(r) = &result {
                     let status = if r.error_count == 0 {
                         ExecutionStatus::Success

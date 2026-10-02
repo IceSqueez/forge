@@ -2,10 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use forge_registry::{RunContext, StepTimer, SubActionRegistry, SubActionRunner};
+use async_trait::async_trait;
+use forge_registry::{
+    CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, RegistryError, RunContext,
+    StepTimer, SubActionRegistry, SubActionRunner,
+};
 use forge_types::{
-    ArgStack, IntegrationAvailability, IntegrationId, SubActionConfig, SubActionOutcome,
-    SubActionTelemetry,
+    ArgStack, EventId, IntegrationAvailability, IntegrationId, SubActionConfig, SubActionOutcome,
+    SubActionStep, SubActionTelemetry,
 };
 use tokio::sync::Notify;
 
@@ -85,6 +89,41 @@ impl IntegrationGate {
 impl IntegrationAvailability for IntegrationGate {
     fn is_disabled(&self, integration: &IntegrationId) -> bool {
         IntegrationGate::is_disabled(self, integration)
+    }
+}
+
+pub(crate) struct GatedLeafExecutor {
+    gate: IntegrationGate,
+    cancel: CancelSignal,
+}
+
+impl GatedLeafExecutor {
+    pub(crate) fn new(gate: IntegrationGate, cancel: CancelSignal) -> Self {
+        Self { gate, cancel }
+    }
+}
+
+#[async_trait]
+impl ChainExecutor for GatedLeafExecutor {
+    async fn run_child_chain(
+        &self,
+        _steps: &[SubActionStep],
+        arg_stack: &ArgStack,
+        _parent_event_id: EventId,
+    ) -> Result<ChildChainOutcome, RegistryError> {
+        Ok(ChildChainOutcome {
+            signal: ChainSignal::Completed,
+            arg_stack: arg_stack.clone(),
+            telemetry: Vec::new(),
+        })
+    }
+
+    fn cancel_signal(&self) -> CancelSignal {
+        self.cancel.clone()
+    }
+
+    fn integration_availability(&self) -> Option<Arc<dyn IntegrationAvailability>> {
+        Some(Arc::new(self.gate.clone()))
     }
 }
 

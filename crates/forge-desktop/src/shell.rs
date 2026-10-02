@@ -7,7 +7,7 @@ use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
 use forge_runtime::dashboard::compute_stats;
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo};
-use forge_types::IntegrationId;
+use forge_types::{IntegrationAvailability, IntegrationId};
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, FocusHandle, Window, deferred,
     div, prelude::*,
@@ -506,9 +506,19 @@ impl AppShell {
                 let backend = handles.backend.clone();
                 let script_registry = handles.script_registry.clone();
                 let bus = handles.bus.clone();
+                let integrations: Arc<dyn IntegrationAvailability> =
+                    Arc::new(handles.action_engine.integration_gate().clone());
                 let rt_handle = handles.rt_handle.clone();
-                let editor = cx
-                    .new(|cx| ScriptEditorView::new(backend, script_registry, bus, rt_handle, cx));
+                let editor = cx.new(|cx| {
+                    ScriptEditorView::new(
+                        backend,
+                        script_registry,
+                        bus,
+                        integrations,
+                        rt_handle,
+                        cx,
+                    )
+                });
                 cx.subscribe(&editor, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
                 })

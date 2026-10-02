@@ -13,8 +13,8 @@ use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
 use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use forge_types::{ActionId, TriggerInstanceId};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Keystroke, Pixels, Point, SharedString, Subscription,
-    Task, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Keystroke, Pixels, Point, SharedString,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
@@ -35,9 +35,11 @@ use crate::hotkey_bindings::{
     relink_action, set_binding_edge, set_binding_enabled,
 };
 use crate::hotkey_sync::HotkeyReconciler;
+use crate::hub_crumb::hub_crumb;
 use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
+use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 
 const ENABLE_FAILED_KIND: &str = "hotkey.engine.enable_failed";
@@ -1832,6 +1834,8 @@ fn section_label(label: &str, palette: &ForgePalette, right: AnyElement) -> impl
         .child(right)
 }
 
+impl EventEmitter<NavRequested> for HotkeysScreenView {}
+
 impl Render for HotkeysScreenView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
@@ -1874,7 +1878,7 @@ impl Render for HotkeysScreenView {
 
         let frame = page_frame(
             vec![
-                BreadcrumbCrumb::leaf(tr!("hotkeys_breadcrumb_builtin")),
+                hub_crumb(None, cx),
                 BreadcrumbCrumb::leaf(tr!("hotkeys_hero_title")),
             ],
             &palette,

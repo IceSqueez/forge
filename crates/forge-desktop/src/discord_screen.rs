@@ -10,8 +10,8 @@ use forge_discord::{DiscordClient, DiscordSendHealth, WebhookPost};
 use forge_runtime::EventBus;
 use forge_storage::ActionRepo;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Pixels, Point, Rgba, SharedString, Subscription, Task,
-    Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 use time::OffsetDateTime;
 
@@ -23,8 +23,10 @@ use crate::discord_webhook_modal::{
 use crate::discord_webhooks::{
     DISCORD_EVENT_PREFIX, WebhookRow, distinct_linked_actions, load_webhooks, name_is_taken,
 };
+use crate::hub_crumb::hub_crumb;
 use crate::integration_supervisor::IntegrationSlot;
 use crate::presentation::ActivePresentation;
+use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 
 const SCROLL_PAD_X: Pixels = px(22.0);
@@ -1059,6 +1061,8 @@ fn section_label(label: &str, palette: &ForgePalette, right: AnyElement) -> impl
         .child(right)
 }
 
+impl EventEmitter<NavRequested> for DiscordScreenView {}
+
 impl Render for DiscordScreenView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
@@ -1110,7 +1114,7 @@ impl Render for DiscordScreenView {
 
         let frame = page_frame(
             vec![
-                BreadcrumbCrumb::leaf(tr!("discord_breadcrumb_builtin")),
+                hub_crumb(None, cx),
                 BreadcrumbCrumb::leaf(tr!("discord_hero_title")),
             ],
             &palette,

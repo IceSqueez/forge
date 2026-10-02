@@ -26,8 +26,8 @@ use forge_storage::{
 };
 use forge_types::{ClipId, OutputDevice};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, Pixels, Rgba, SharedString, Subscription, Task,
-    Window, div, prelude::*, px, svg,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, Pixels, Rgba, SharedString,
+    Subscription, Task, Window, div, prelude::*, px, svg,
 };
 use time::OffsetDateTime;
 
@@ -38,7 +38,10 @@ use crate::clip_messages::{clip_refusal_message, failure_message};
 use crate::clip_playback::{PadPlayClaims, clip_id_of};
 use crate::combo_conflict::release_holder;
 use crate::hotkey_sync::HotkeyReconciler;
+use crate::hub_crumb::{core_category, hub_crumb};
 use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
+use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
 
@@ -1918,6 +1921,8 @@ impl SoundboardView {
     }
 }
 
+impl EventEmitter<NavRequested> for SoundboardView {}
+
 impl Render for SoundboardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.settings = self.player.settings_handle().load();
@@ -1987,7 +1992,7 @@ impl Render for SoundboardView {
 
         let frame = page_frame(
             vec![
-                BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_builtin")),
+                hub_crumb(core_category(&Screen::Soundboard), cx),
                 BreadcrumbCrumb::leaf(tr!("soundboard_breadcrumb_soundboard")),
             ],
             &palette,

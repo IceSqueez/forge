@@ -48,6 +48,7 @@ mod hotkey_action_modal;
 mod hotkey_bindings;
 mod hotkey_sync;
 mod hotkeys_screen;
+mod hub_crumb;
 mod i18n;
 mod in_flight_steps;
 mod instance_lock;

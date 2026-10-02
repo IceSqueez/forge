@@ -9,8 +9,8 @@ use forge_runtime::dashboard::compute_stats;
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo};
 use forge_types::{IntegrationAvailability, IntegrationId};
 use gpui::{
-    AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, FocusHandle, Window, deferred,
-    div, prelude::*,
+    AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, EventEmitter, FocusHandle,
+    Window, deferred, div, prelude::*,
 };
 
 use crate::home_stats::HomeStats;
@@ -361,11 +361,11 @@ impl AppShell {
                     Arc::clone(&handles.backend),
                 );
                 let switch = Self::integration_switch(topics, handles);
-                cx.new(|cx| {
+                let view = cx.new(|cx| {
                     SoundboardView::new(player, settings_repo, rt_handle, bus, keys, cx)
                         .with_integration_switch(switch, cx)
-                })
-                .into()
+                });
+                Self::routed(view, cx)
             }
             Screen::Tts(preselect) => {
                 let preselect = *preselect;
@@ -376,7 +376,7 @@ impl AppShell {
                 let pipeline_config = handles.pipeline_config.clone();
                 let bot_accounts = handles.bot_accounts.clone();
                 let tts_registry = handles.tts_registry.clone();
-                cx.new(|cx| {
+                let view = cx.new(|cx| {
                     TtsView::new(
                         speak_state,
                         speak,
@@ -388,8 +388,8 @@ impl AppShell {
                         preselect,
                         cx,
                     )
-                })
-                .into()
+                });
+                Self::routed(view, cx)
             }
             Screen::Overlays => {
                 let launch = OverlaysLaunch {
@@ -555,6 +555,17 @@ impl AppShell {
         }
     }
 
+    fn routed<V: Render + EventEmitter<NavRequested>>(
+        view: Entity<V>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
+        cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
+            this.navigate(event.0.clone(), cx);
+        })
+        .detach();
+        view.into()
+    }
+
     fn integration_switch(topics: &Topics, handles: &Arc<RuntimeHandles>) -> IntegrationSwitch {
         IntegrationSwitch::new(
             topics.integration_lifecycle.clone(),
@@ -632,10 +643,10 @@ impl AppShell {
         let engine = handles
             .integrations
             .slot(&forge_hotkey::HOTKEY_INTEGRATION.id);
-        cx.new(|cx| {
+        let view = cx.new(|cx| {
             HotkeysScreenView::new(reconciler, engine, backend, settings, bus, rt_handle, cx)
-        })
-        .into()
+        });
+        Self::routed(view, cx)
     }
 
     fn discord_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
@@ -646,8 +657,9 @@ impl AppShell {
         let integration = handles
             .integrations
             .slot(&forge_discord::DISCORD_INTEGRATION.id);
-        cx.new(|cx| DiscordScreenView::new(client, integration, action_repo, bus, rt_handle, cx))
-            .into()
+        let view = cx
+            .new(|cx| DiscordScreenView::new(client, integration, action_repo, bus, rt_handle, cx));
+        Self::routed(view, cx)
     }
 
     fn midi_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
@@ -658,7 +670,7 @@ impl AppShell {
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
         let bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();
-        cx.new(|cx| {
+        let view = cx.new(|cx| {
             MidiScreenView::new(
                 sink,
                 integration,
@@ -669,8 +681,8 @@ impl AppShell {
                 rt_handle,
                 cx,
             )
-        })
-        .into()
+        });
+        Self::routed(view, cx)
     }
 
     fn vtube_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {

@@ -23,6 +23,7 @@ use gpui::{
 
 use crate::async_bridge::{self, ErrorSink};
 use crate::builtin_sections::grow_cell;
+use crate::hub_crumb::{core_category, hub_crumb};
 use crate::overlay_url::{
     extract_port, overlay_file_url, overlay_origin, overlay_page_url, resolve_routable_host,
 };
@@ -1505,7 +1506,7 @@ impl Render for ServerConsoleView {
 
         let frame = page_frame(
             vec![
-                BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
+                hub_crumb(core_category(&Screen::Server), cx),
                 BreadcrumbCrumb::leaf(tr!("server_breadcrumb_server")),
             ],
             &palette,

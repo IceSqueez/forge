@@ -787,7 +787,6 @@ tts_tab_filters = Filters
 
 ## TTS - breadcrumb
 
-tts_breadcrumb_builtin = Builtin
 tts_breadcrumb_tts = Text-to-Speech
 
 ## TTS Dashboard - control strip
@@ -1103,7 +1102,6 @@ tts_aliases_footer_caption = Showing { $shown } of { $total } manual aliases · 
 
 ## Soundboard - breadcrumb
 
-soundboard_breadcrumb_builtin = Builtin
 soundboard_breadcrumb_soundboard = Soundboard
 
 ## Soundboard - header / modal
@@ -1418,7 +1416,6 @@ twitch_device_denied_detail = You declined access on Twitch. Retry to request a 
 
 ## Server screen
 
-server_breadcrumb_builtin = Builtin
 server_breadcrumb_server = WebSocket server
 server_status_listening = Listening · { $clients ->
     [one] { $clients } client
@@ -2117,7 +2114,6 @@ common_duplicate = Duplicate
 
 ## MIDI - breadcrumb + header
 
-midi_breadcrumb_builtin = Builtin
 midi_header_summary = { $devices ->
     [one] { $devices } device
    *[other] { $devices } devices
@@ -2206,7 +2202,6 @@ midi_engine_stopped = MIDI engine stopped
 
 ## Hotkeys - hero
 
-hotkeys_breadcrumb_builtin = Builtin
 hotkeys_hero_title = Hotkeys
 hotkeys_hero_blurb = System-wide keyboard shortcuts that fire actions even when Forge is in the background.
 hotkeys_hero_enabled = Enabled
@@ -2305,7 +2300,6 @@ hotkeys_footer_hold_closed = hold force-closed { $when }
 
 ## Discord - breadcrumb + hero
 
-discord_breadcrumb_builtin = Builtin
 discord_hero_title = Discord
 discord_hero_blurb = Post to your server channels through incoming webhooks. Each binding is one channel endpoint an action can write to.
 discord_hero_webhooks = { $count } webhooks
@@ -2385,7 +2379,6 @@ discord_footer_idle = Nothing sent yet
 
 ## Overlays - registry
 
-overlays_breadcrumb_builtin = Builtin
 overlays_breadcrumb_overlays = Overlays
 overlays_header_summary = { $enabled }/{ $total } active - served on :{ $port }
 overlays_header_summary_stopped = { $enabled }/{ $total } active - server stopped

@@ -9,10 +9,14 @@ use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo};
 use forge_tts_core::TtsRegistry;
 use forge_types::Shared;
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Window, div,
+    prelude::*, px,
 };
 
+use crate::hub_crumb::{core_category, hub_crumb};
 use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
+use crate::sidebar::NavRequested;
 use crate::speak_state::SpeakState;
 use crate::tts_dashboard::TtsDashboardView;
 use crate::tts_engines::TtsEnginesView;
@@ -242,6 +246,8 @@ impl TtsView {
     }
 }
 
+impl EventEmitter<NavRequested> for TtsView {}
+
 impl Render for TtsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
@@ -253,7 +259,7 @@ impl Render for TtsView {
 
         page_frame(
             vec![
-                BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_builtin")),
+                hub_crumb(core_category(&Screen::Tts(None)), cx),
                 BreadcrumbCrumb::leaf(tr!("tts_breadcrumb_tts")),
                 BreadcrumbCrumb::leaf(self.section.label()),
             ],

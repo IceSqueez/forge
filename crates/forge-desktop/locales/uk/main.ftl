@@ -801,7 +801,6 @@ tts_tab_filters = Фільтри
 
 ## TTS - хлібні крихти
 
-tts_breadcrumb_builtin = Вбудоване
 tts_breadcrumb_tts = Text-to-Speech
 
 ## TTS Dashboard - смуга керування
@@ -1122,7 +1121,6 @@ tts_aliases_footer_caption = Показано { $shown } з { $total } ручн�
 
 ## Звукова панель - хлібні крихти
 
-soundboard_breadcrumb_builtin = Вбудоване
 soundboard_breadcrumb_soundboard = Звукова панель
 
 ## Звукова панель - заголовок / модальне вікно
@@ -1441,7 +1439,6 @@ twitch_device_denied_detail = Ви відмовили в доступі на Twi
 
 ## Екран сервера
 
-server_breadcrumb_builtin = Вбудований
 server_breadcrumb_server = WebSocket-сервер
 server_status_listening = Слухає · { $clients ->
     [one] { $clients } клієнт
@@ -2170,7 +2167,6 @@ common_duplicate = Дублювати
 
 ## MIDI - breadcrumb + header
 
-midi_breadcrumb_builtin = Вбудоване
 midi_header_summary = { $devices ->
     [one] { $devices } пристрій
     [few] { $devices } пристрої
@@ -2264,7 +2260,6 @@ midi_engine_stopped = Рушій MIDI зупинено
 
 ## Hotkeys - hero
 
-hotkeys_breadcrumb_builtin = Вбудоване
 hotkeys_hero_title = Гарячі клавіші
 hotkeys_hero_blurb = Загальносистемні комбінації клавіш, які запускають дії, навіть коли Forge працює у фоні.
 hotkeys_hero_enabled = Увімкнено
@@ -2363,7 +2358,6 @@ hotkeys_footer_hold_closed = утримання примусово закрит�
 
 ## Discord - breadcrumb + hero
 
-discord_breadcrumb_builtin = Вбудоване
 discord_hero_title = Discord
 discord_hero_blurb = Публікація в канали сервера через вхідні вебхуки. Кожна прив'язка - це одна кінцева точка каналу, куди може писати дія.
 discord_hero_webhooks = { $count } вебхуків
@@ -2443,7 +2437,6 @@ discord_footer_idle = Ще нічого не надіслано
 
 ## Overlays - registry
 
-overlays_breadcrumb_builtin = Вбудоване
 overlays_breadcrumb_overlays = Оверлеї
 overlays_header_summary = { $enabled }/{ $total } активних - віддається на :{ $port }
 overlays_header_summary_stopped = { $enabled }/{ $total } активних - сервер зупинено

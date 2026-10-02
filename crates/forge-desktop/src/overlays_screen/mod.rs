@@ -42,8 +42,10 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::audio_router::AudioRouter;
+use crate::hub_crumb::{core_category, hub_crumb};
 use crate::overlay_url::{overlay_origin, overlay_page_url, resolve_routable_host};
 use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::{PushToast, copy_to_clipboard};
 
@@ -1040,7 +1042,7 @@ impl Render for OverlaysView {
 
         let frame = page_frame(
             vec![
-                BreadcrumbCrumb::leaf(tr!("overlays_breadcrumb_builtin")),
+                hub_crumb(core_category(&Screen::Overlays), cx),
                 BreadcrumbCrumb::leaf(tr!("overlays_breadcrumb_overlays")),
             ],
             &palette,

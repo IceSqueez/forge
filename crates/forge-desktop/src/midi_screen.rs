@@ -12,18 +12,20 @@ use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, set_json_sett
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, Pixels, Point, Rgba, SharedString, Subscription,
-    Task, Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, Pixels, Point, Rgba, SharedString,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
 use crate::builtin_sections::grow_cell;
+use crate::hub_crumb::hub_crumb;
 use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::midi_mapping_modal::{
     MappingDraft, MappingModalLaunch, MidiMappingModal, MidiMappingModalEvent,
 };
 use crate::midi_signal::{MIDI_INPUT_PREFIX, MidiSignal, kind_color, note_name};
 use crate::presentation::ActivePresentation;
+use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 
 pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
@@ -1509,6 +1511,8 @@ fn section_label(
         .children(right)
 }
 
+impl EventEmitter<NavRequested> for MidiScreenView {}
+
 impl Render for MidiScreenView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
@@ -1574,10 +1578,7 @@ impl Render for MidiScreenView {
             );
 
         let frame = page_frame(
-            vec![
-                BreadcrumbCrumb::leaf(tr!("midi_breadcrumb_builtin")),
-                BreadcrumbCrumb::leaf("MIDI"),
-            ],
+            vec![hub_crumb(None, cx), BreadcrumbCrumb::leaf("MIDI")],
             &palette,
         )
         .header_right(header_right)

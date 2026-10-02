@@ -1,7 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use forge_overlay::config::{
-    ACCENT, ANIMATION, DEFAULT_ICON, DURATION, FONT, HEADLINE, ICON, POSITION, SOUND, SUBLINE,
+    ACCENT, ANIMATION, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, ELEMENT_HEIGHT,
+    ELEMENT_WIDTH, FONT, HEADLINE, ICON, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
+    MIGRATION_ACKNOWLEDGED, SOUND, SUBLINE, TEXT_SIZE,
 };
 use forge_overlay::{
     GENERATED_MEDIA_DIRECTORY, ICON_FILE_FIELD, ICON_TINTABLE_FIELD, OverlayConfig,
@@ -93,10 +95,16 @@ fn config_keys_reach_the_page_exactly_as_they_are_stored() {
         SUBLINE,
         ACCENT,
         FONT,
-        POSITION,
         ANIMATION,
         DURATION,
         SOUND,
+        TEXT_SIZE,
+        DESIGN_WIDTH,
+        DESIGN_HEIGHT,
+        MARGIN_TOP,
+        MARGIN_RIGHT,
+        MARGIN_BOTTOM,
+        MARGIN_LEFT,
         stored_by_a_newer_build,
     ] {
         assert!(
@@ -192,4 +200,29 @@ fn the_page_credential_is_a_top_level_slot_present_only_when_the_instance_holds_
         unbound.get("credential").is_none(),
         "an instance carrying no credential still emitted the slot as null"
     );
+}
+
+#[test]
+fn retired_sizing_keys_and_the_migration_notice_never_reach_the_page() {
+    let doc = document(OverlayConfig::from([
+        (ELEMENT_WIDTH.to_owned(), Variant::Int(640)),
+        (ELEMENT_HEIGHT.to_owned(), Variant::Int(200)),
+        ("canvas_width".to_owned(), Variant::Int(1920)),
+        ("canvas_height".to_owned(), Variant::Int(1080)),
+        (MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false)),
+    ]));
+    let config = doc["config"].as_object().expect("config is an object");
+
+    for key in [
+        ELEMENT_WIDTH,
+        ELEMENT_HEIGHT,
+        "canvas_width",
+        "canvas_height",
+        MIGRATION_ACKNOWLEDGED,
+    ] {
+        assert!(
+            !config.contains_key(key),
+            "'{key}' reached a page that no longer sizes or places itself by it"
+        );
+    }
 }

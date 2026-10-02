@@ -10,7 +10,7 @@ const { WebSocketServer } = require("ws");
 
 const ASSETS = path.resolve(
   __dirname,
-  "../../../crates/forge-overlay/assets",
+  "../../crates/forge-overlay/assets",
 );
 
 const TYPES = {

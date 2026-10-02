@@ -43,6 +43,10 @@ const TARGET_KEY: &str = "target";
 const ACCENT_KEY: &str = "accent";
 const HEADLINE_KEY: &str = "headline";
 const SUBLINE_KEY: &str = "subline";
+const POSITION_KEY: &str = "position";
+const ELEMENT_WIDTH_KEY: &str = "element_width";
+const DESIGN_WIDTH_KEY: &str = "design_width";
+const MIGRATION_ACKNOWLEDGED_KEY: &str = "migration_acknowledged";
 
 const TAG_KEY: &str = "type";
 const TAGGED_VALUE_KEY: &str = "value";
@@ -252,6 +256,13 @@ fn harness(definitions: Vec<OverlayDefinition>, attach_sink: bool) -> Harness {
         retained,
         service,
     }
+}
+
+fn current_schema(kind_id: &str) -> u32 {
+    registry()
+        .get(kind_id)
+        .expect("a builtin overlay kind")
+        .config_schema_version()
 }
 
 fn definition_of_kind(id: &str, kind_id: &str) -> OverlayDefinition {
@@ -523,6 +534,7 @@ async fn a_pass_stamps_only_the_records_whose_generator_version_is_stale() {
     let stale = definition("stale-box");
     let mut current = definition("current-box");
     current.generator_version = GENERATOR_VERSION;
+    current.config_schema_version = current_schema(ALERT_KIND);
     let harness = harness(vec![stale.clone(), current.clone()], false);
 
     harness.service.materialize_all().await.expect("pass");
@@ -534,6 +546,90 @@ async fn a_pass_stamps_only_the_records_whose_generator_version_is_stale() {
         "an up to date record was written back for no reason"
     );
     assert_eq!(saved[0].generator_version, GENERATOR_VERSION);
+}
+
+#[tokio::test]
+async fn a_pass_persists_an_older_record_upgraded_to_the_box_contract_once() {
+    let mut older = definition_of_kind("chat-box", CHAT_KIND);
+    older.config_schema_version = 1;
+    older.generator_version = GENERATOR_VERSION;
+    older.config = OverlayConfig::from([
+        (
+            POSITION_KEY.to_owned(),
+            Variant::String("center".to_owned()),
+        ),
+        (ELEMENT_WIDTH_KEY.to_owned(), Variant::Int(500)),
+    ]);
+    let harness = harness(vec![older.clone()], false);
+
+    harness.service.materialize_all().await.expect("pass");
+
+    let saved = harness.saved();
+    assert_eq!(
+        saved.len(),
+        1,
+        "the upgraded record was not written back exactly once"
+    );
+    let upgraded = &saved[0];
+    assert_eq!(upgraded.config_schema_version, current_schema(CHAT_KIND));
+    assert_eq!(
+        upgraded.config.get(POSITION_KEY),
+        Some(&Variant::String("bottom".to_owned()))
+    );
+    assert_eq!(
+        upgraded.config.get(DESIGN_WIDTH_KEY),
+        Some(&Variant::Int(500))
+    );
+    assert_eq!(
+        upgraded.config.get(MIGRATION_ACKNOWLEDGED_KEY),
+        Some(&Variant::Bool(false)),
+        "the upgrade changed the streamer's sizing without raising the notice"
+    );
+}
+
+#[tokio::test]
+async fn the_page_built_by_an_upgrading_pass_reads_the_upgraded_config() {
+    let mut older = definition("sub-alert");
+    older.config_schema_version = 2;
+    older.config = OverlayConfig::from([(ELEMENT_WIDTH_KEY.to_owned(), Variant::Int(1000))]);
+    let harness = harness(vec![older.clone()], false);
+
+    harness.service.materialize_all().await.expect("pass");
+
+    let written: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(harness.directory_of(&older.id).join(CONFIG_FILE)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(written["config"][DESIGN_WIDTH_KEY].as_i64(), Some(1000));
+    assert!(
+        written["config"].get(ELEMENT_WIDTH_KEY).is_none(),
+        "the page was built from the stored record instead of the upgraded one"
+    );
+}
+
+#[tokio::test]
+async fn an_upgrading_pass_leaves_a_source_file_the_user_owns_untouched() {
+    let mut older = definition("sub-alert");
+    older.config_schema_version = 2;
+    older.source_overrides = vec![STYLE_FILE.to_owned()];
+    let harness = harness(vec![older.clone()], false);
+    let directory = harness.root.join(older.id.as_str());
+    fs::create_dir_all(&directory).unwrap();
+    let user_body = "body { padding: 32px; }\n";
+    fs::write(directory.join(STYLE_FILE), user_body).unwrap();
+
+    harness.service.materialize_all().await.expect("pass");
+
+    assert_eq!(
+        harness.saved()[0].config_schema_version,
+        current_schema(ALERT_KIND),
+        "the record was not upgraded, so this proves nothing about overrides"
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join(STYLE_FILE)).unwrap(),
+        user_body,
+        "the upgrade rewrote a source file the user owns"
+    );
 }
 
 #[tokio::test]

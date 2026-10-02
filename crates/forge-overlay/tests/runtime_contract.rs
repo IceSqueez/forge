@@ -2,9 +2,12 @@
 
 use std::collections::BTreeSet;
 
-use forge_overlay::config::{ACCENT_OPTIONS, ELEMENT_HEIGHT, ELEMENT_WIDTH, TEXT_SIZE};
+use forge_overlay::config::{
+    ACCENT_OPTIONS, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, TEXT_SIZE,
+};
 use forge_overlay::metrics::{
-    ELEMENT_HEIGHT_PROPERTY, ELEMENT_WIDTH_PROPERTY, TEXT_SCALE_PROPERTY, TEXT_SIZE_PROPERTY,
+    MARGIN_BOTTOM_PROPERTY, MARGIN_LEFT_PROPERTY, MARGIN_RIGHT_PROPERTY, MARGIN_TOP_PROPERTY,
+    TEXT_SCALE_PROPERTY, TEXT_SIZE_PROPERTY,
 };
 use forge_overlay::{
     OverlayKindRegistry, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, RUNTIME_SOURCE,
@@ -144,17 +147,12 @@ fn the_runtime_fetches_the_sample_document_this_build_generates() {
 
 #[test]
 fn the_runtime_publishes_the_size_properties_the_stylesheets_read_and_leaves_the_scale_to_them() {
-    for declaration in [
-        format!("var ELEMENT_WIDTH_PROPERTY = \"{ELEMENT_WIDTH_PROPERTY}\";"),
-        format!("var ELEMENT_HEIGHT_PROPERTY = \"{ELEMENT_HEIGHT_PROPERTY}\";"),
-        format!("var TEXT_SIZE_PROPERTY = \"{TEXT_SIZE_PROPERTY}\";"),
-    ] {
-        assert!(
-            RUNTIME_SOURCE.contains(&declaration),
-            "the runtime does not state '{declaration}', so a page is handed a property no \
-             stylesheet spends"
-        );
-    }
+    let declaration = format!("var TEXT_SIZE_PROPERTY = \"{TEXT_SIZE_PROPERTY}\";");
+    assert!(
+        RUNTIME_SOURCE.contains(&declaration),
+        "the runtime does not state '{declaration}', so a page is handed a property no \
+         stylesheet spends"
+    );
 
     assert!(
         !RUNTIME_SOURCE.contains(&format!("\"{TEXT_SCALE_PROPERTY}\"")),
@@ -165,17 +163,12 @@ fn the_runtime_publishes_the_size_properties_the_stylesheets_read_and_leaves_the
 
 #[test]
 fn a_size_reaches_the_page_in_the_unit_the_stylesheet_that_spends_it_expects() {
-    for call in [
-        format!("applySize(ELEMENT_WIDTH_PROPERTY, values.{ELEMENT_WIDTH}, PIXEL_UNIT);"),
-        format!("applySize(ELEMENT_HEIGHT_PROPERTY, values.{ELEMENT_HEIGHT}, PIXEL_UNIT);"),
-        format!("applySize(TEXT_SIZE_PROPERTY, values.{TEXT_SIZE}, NO_UNIT);"),
-    ] {
-        assert!(
-            RUNTIME_SOURCE.contains(&call),
-            "the runtime does not state '{call}', so a size arrives in a unit its stylesheet \
-             cannot multiply"
-        );
-    }
+    let call = format!("applySize(TEXT_SIZE_PROPERTY, values.{TEXT_SIZE}, NO_UNIT);");
+    assert!(
+        RUNTIME_SOURCE.contains(&call),
+        "the runtime does not state '{call}', so a size arrives in a unit its stylesheet \
+         cannot multiply"
+    );
 
     for unit in ["var PIXEL_UNIT = \"px\";", "var NO_UNIT = \"\";"] {
         assert!(
@@ -242,6 +235,24 @@ fn no_look_plays_the_overlays_sound_on_top_of_the_runtime() {
             !members_called_on(descriptor.page_assets().behavior, "forge.").contains("sound"),
             "{} plays the sound itself on top of the runtime, so every show plays it twice",
             descriptor.id()
+        );
+    }
+}
+
+#[test]
+fn each_margin_key_reaches_the_property_its_stylesheet_pads_by_as_a_share_of_its_own_axis() {
+    for (key, property, vertical) in [
+        (MARGIN_TOP, MARGIN_TOP_PROPERTY, true),
+        (MARGIN_RIGHT, MARGIN_RIGHT_PROPERTY, false),
+        (MARGIN_BOTTOM, MARGIN_BOTTOM_PROPERTY, true),
+        (MARGIN_LEFT, MARGIN_LEFT_PROPERTY, false),
+    ] {
+        let side = format!("{{ key: \"{key}\", property: \"{property}\", vertical: {vertical} }}");
+
+        assert!(
+            RUNTIME_SOURCE.contains(&side),
+            "the runtime does not state '{side}', so {key} pads the wrong side or by the wrong \
+             axis of the box"
         );
     }
 }

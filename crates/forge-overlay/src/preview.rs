@@ -234,6 +234,10 @@ mod tests {
     use crate::descriptor::OverlayKindDescriptor;
     use crate::kinds::{alert::AlertOverlayKind, frame::FrameOverlayKind};
 
+    fn one_text(key: &str, value: &str) -> OverlayConfig {
+        OverlayConfig::from([(key.to_owned(), config::text(value))])
+    }
+
     fn appearance(key: &str, value: &str) -> PreviewComposition {
         compose(
             PreviewShape::Strip,
@@ -262,20 +266,60 @@ mod tests {
     }
 
     #[test]
-    fn every_offered_position_maps_to_its_own_placement() {
-        let positions: Vec<PreviewPosition> = config::POSITION_OPTIONS
-            .iter()
-            .map(|name| appearance(config::POSITION, name).position)
-            .collect();
+    fn a_look_that_keeps_position_places_each_offered_edge_on_its_own_side() {
+        for shape in [PreviewShape::MessageFeed, PreviewShape::BorderedFrame] {
+            for (stored, expected) in [
+                (config::POSITION_TOP, PreviewPosition::Top),
+                (config::POSITION_BOTTOM, PreviewPosition::Bottom),
+            ] {
+                let config =
+                    OverlayConfig::from([(config::POSITION.to_owned(), config::text(stored))]);
 
-        for (index, position) in positions.iter().enumerate() {
-            for (other_index, other) in positions.iter().enumerate().skip(index + 1) {
-                assert_ne!(
-                    position,
-                    other,
-                    "positions {:?} and {:?} both render the same placement",
-                    config::POSITION_OPTIONS[index],
-                    config::POSITION_OPTIONS[other_index]
+                assert_eq!(
+                    compose(shape, &config).position,
+                    expected,
+                    "{shape:?} placed {stored:?} on the wrong edge"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_look_that_keeps_position_falls_back_to_the_bottom_edge_for_anything_else() {
+        for shape in [PreviewShape::MessageFeed, PreviewShape::BorderedFrame] {
+            for (label, config) in [
+                ("absent", OverlayConfig::new()),
+                ("the retired center", one_text(config::POSITION, "center")),
+                (
+                    "written by a newer build",
+                    one_text(config::POSITION, "diagonal"),
+                ),
+                (
+                    "stored with the wrong type",
+                    OverlayConfig::from([(config::POSITION.to_owned(), Variant::Int(0))]),
+                ),
+            ] {
+                assert_eq!(
+                    compose(shape, &config).position,
+                    PreviewPosition::Bottom,
+                    "{shape:?} with a position {label}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_look_without_position_centers_whatever_position_an_older_record_still_holds() {
+        for shape in [
+            PreviewShape::BadgeBanner,
+            PreviewShape::Strip,
+            PreviewShape::ProgressBar,
+        ] {
+            for stored in [config::POSITION_TOP, config::POSITION_BOTTOM, "center"] {
+                assert_eq!(
+                    compose(shape, &one_text(config::POSITION, stored)).position,
+                    PreviewPosition::Center,
+                    "{shape:?} still placed itself by a stored {stored:?}"
                 );
             }
         }
@@ -290,7 +334,6 @@ mod tests {
                 OverlayConfig::from([
                     (config::ACCENT.to_owned(), config::text("teal")),
                     (config::FONT.to_owned(), config::text("Comic Sans")),
-                    (config::POSITION.to_owned(), config::text("diagonal")),
                 ]),
             ),
             (
@@ -298,7 +341,6 @@ mod tests {
                 OverlayConfig::from([
                     (config::ACCENT.to_owned(), Variant::Int(3)),
                     (config::FONT.to_owned(), Variant::Bool(true)),
-                    (config::POSITION.to_owned(), Variant::Int(0)),
                 ]),
             ),
         ] {
@@ -306,11 +348,6 @@ mod tests {
 
             assert_eq!(composition.accent, PreviewAccent::Mauve, "accent {label}");
             assert_eq!(composition.font, PreviewFont::Sans, "font {label}");
-            assert_eq!(
-                composition.position,
-                PreviewPosition::Center,
-                "position {label}"
-            );
         }
     }
 

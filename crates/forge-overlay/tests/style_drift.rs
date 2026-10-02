@@ -14,7 +14,10 @@ const SCALED_NUMBERS: &[(&str, &[f32])] = &[
         "overlay.chat",
         &[6.0, 6.0, 6.0, 8.0, 10.0, 11.0, 13.0, 13.0],
     ),
-    ("overlay.frame", &[-13.0, -13.0, 3.0, 8.0, 11.0, 13.0, 14.0]),
+    (
+        "overlay.frame",
+        &[-13.0, -13.0, 3.0, 8.0, 11.0, 13.0, 14.0, 16.0],
+    ),
     (
         "overlay.goal",
         &[4.0, 8.0, 10.0, 12.0, 12.0, 14.0, 14.0, 18.0],
@@ -30,6 +33,8 @@ const BREAKING_TEXT: &[(&str, &[&str])] = &[
     ("overlay.chat", &[".author", ".message"]),
     ("overlay.goal", &[".label", ".figure"]),
 ];
+
+const ELLIPSIZING_TEXT: &[(&str, &str)] = &[("overlay.ticker", ".body")];
 
 fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
@@ -57,6 +62,21 @@ fn rule_block(style: &str, selector: &str) -> String {
     let start = style
         .find(&opening)
         .unwrap_or_else(|| panic!("the stylesheet has no '{selector}' rule"))
+        + opening.len();
+    let rest = &style[start..];
+    let end = rest
+        .find('}')
+        .unwrap_or_else(|| panic!("the '{selector}' rule is never closed"));
+    rest[..end].to_owned()
+}
+
+fn standalone_rule(style: &str, selector: &str) -> String {
+    let opening = format!("{selector} {{");
+    let start = style
+        .match_indices(&opening)
+        .map(|(at, _)| at)
+        .find(|&at| at == 0 || style[..at].ends_with("\n\n"))
+        .unwrap_or_else(|| panic!("the stylesheet has no standalone '{selector}' rule"))
         + opening.len();
     let rest = &style[start..];
     let end = rest
@@ -185,7 +205,7 @@ fn every_number_a_page_scales_is_the_number_it_drew_before_a_text_size_could_be_
 }
 
 #[test]
-fn a_kind_whose_element_takes_a_width_lets_an_unbreakable_word_break_inside_it() {
+fn every_kind_whose_element_is_bound_to_the_box_width_keeps_its_text_inside_that_width() {
     let reg = registry();
     let widthful: BTreeSet<&str> = reg
         .all()
@@ -194,13 +214,20 @@ fn a_kind_whose_element_takes_a_width_lets_an_unbreakable_word_break_inside_it()
         })
         .map(|descriptor| descriptor.id())
         .collect();
-    let breaking: BTreeSet<&str> = BREAKING_TEXT.iter().map(|(kind_id, _)| *kind_id).collect();
+    let contained: BTreeSet<&str> = BREAKING_TEXT
+        .iter()
+        .map(|(kind_id, _)| *kind_id)
+        .chain(ELLIPSIZING_TEXT.iter().map(|(kind_id, _)| *kind_id))
+        .collect();
 
     assert_eq!(
-        widthful, breaking,
-        "a kind whose card the user can narrow has no rule keeping a long word inside it"
+        widthful, contained,
+        "a kind bound to the box width has no rule keeping a long word inside the box"
     );
+}
 
+#[test]
+fn wrapping_text_lets_an_unbreakable_word_break_inside_the_box() {
     for (kind_id, selectors) in BREAKING_TEXT {
         let style = stylesheet(kind_id);
 
@@ -211,12 +238,30 @@ fn a_kind_whose_element_takes_a_width_lets_an_unbreakable_word_break_inside_it()
                 assert!(
                     block.contains(declaration),
                     "{kind_id} {selector} lacks '{declaration}', so a long word pushes the card \
-                     wider than the width the user chose"
+                     past the edge of the box"
                 );
             }
             assert!(
                 !block.contains("white-space: nowrap;"),
                 "{kind_id} {selector} refuses to wrap, so nothing the break rules say can apply"
+            );
+        }
+    }
+}
+
+#[test]
+fn single_line_text_ellipsizes_at_the_box_edge_instead_of_spilling() {
+    for (kind_id, selector) in ELLIPSIZING_TEXT {
+        let block = rule_block(stylesheet(kind_id), selector);
+
+        for declaration in [
+            "min-width: 0;",
+            "overflow: hidden;",
+            "text-overflow: ellipsis;",
+        ] {
+            assert!(
+                block.contains(declaration),
+                "{kind_id} {selector} lacks '{declaration}', so a long line runs past the box"
             );
         }
     }
@@ -237,4 +282,47 @@ fn a_kind_is_guarded_against_style_drift_exactly_when_it_draws_a_page() {
         "a drawing kind with no guard drifts away from the size its preview draws, and a guard on \
          a kind that draws nothing pins geometry no page has"
     );
+}
+
+#[test]
+fn every_stock_look_clips_at_the_box_and_keeps_its_margins_inside_it() {
+    for kind_id in [
+        "overlay.alert",
+        "overlay.blank",
+        "overlay.chat",
+        "overlay.frame",
+        "overlay.goal",
+        "overlay.ticker",
+    ] {
+        let style = stylesheet(kind_id);
+        let root = standalone_rule(style, "html,\nbody");
+
+        for declaration in ["width: 100%;", "height: 100%;", "overflow: hidden;"] {
+            assert!(
+                root.contains(declaration),
+                "{kind_id} root lacks '{declaration}', so a look can paint past the source box"
+            );
+        }
+        assert!(
+            standalone_rule(style, "body").contains("box-sizing: border-box;"),
+            "{kind_id} adds its margins on top of the box instead of inside it"
+        );
+    }
+}
+
+#[test]
+fn only_the_looks_that_keep_position_read_it_from_the_page() {
+    for (kind_id, reads_position) in [
+        ("overlay.alert", false),
+        ("overlay.goal", false),
+        ("overlay.ticker", false),
+        ("overlay.chat", true),
+        ("overlay.frame", true),
+    ] {
+        assert_eq!(
+            stylesheet(kind_id).contains("data-position"),
+            reads_position,
+            "{kind_id} disagrees with the box contract about placing itself by position"
+        );
+    }
 }

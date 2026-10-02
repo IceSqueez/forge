@@ -499,38 +499,12 @@ mod tests {
     const TICKER_KIND: &str = "overlay.ticker";
     const AUDIO_KIND: &str = "overlay.audio";
 
-    const UNCONSTRAINED: [Option<Length>; 6] = [None, None, None, None, None, None];
-
-    fn element(width: Option<u32>, height: Option<u32>, text_size: Option<u32>) -> PreviewElement {
-        PreviewElement {
-            width,
-            height,
-            text_size,
-        }
+    fn element(text_size: Option<u32>) -> PreviewElement {
+        PreviewElement { text_size }
     }
 
     fn scale() -> Scale {
         Scale::new(CANVAS_FACTOR, TEXT_FACTOR)
-    }
-
-    fn pixels(value: f32) -> Option<Length> {
-        Some(Length::from(px(value)))
-    }
-
-    fn canvas_span() -> Option<Length> {
-        Some(Length::from(relative(1.0)))
-    }
-
-    fn extents(mut root: Div) -> [Option<Length>; 6] {
-        let style = root.style();
-        [
-            style.size.width,
-            style.min_size.width,
-            style.max_size.width,
-            style.size.height,
-            style.min_size.height,
-            style.max_size.height,
-        ]
     }
 
     #[test]
@@ -553,7 +527,7 @@ mod tests {
             (AUDIO_KIND, Some(40), 1.0),
             (ALERT_KIND, None, 1.0),
         ] {
-            let plan = ElementPlan::of(kind, element(None, None, text_size));
+            let plan = ElementPlan::of(kind, element(text_size));
 
             assert_eq!(
                 plan.text_scale(),
@@ -563,49 +537,31 @@ mod tests {
         }
     }
 
-    #[test]
-    fn an_axis_takes_the_bound_and_the_fallback_its_kind_declares() {
-        for (kind, element, expected) in [
-            (
-                ALERT_KIND,
-                element(Some(600), Some(200), None),
-                [pixels(300.0), None, None, None, pixels(100.0), None],
-            ),
-            (ALERT_KIND, element(None, None, None), UNCONSTRAINED),
-            (
-                CHAT_KIND,
-                element(Some(600), Some(200), None),
-                [pixels(300.0), None, None, None, None, pixels(100.0)],
-            ),
-            (
-                CHAT_KIND,
-                element(None, None, None),
-                [pixels(180.0), None, None, None, None, canvas_span()],
-            ),
-            (
-                FRAME_KIND,
-                element(Some(600), Some(200), None),
-                UNCONSTRAINED,
-            ),
-            (
-                GOAL_KIND,
-                element(None, None, None),
-                [pixels(160.0), None, None, None, None, None],
-            ),
-            (
-                TICKER_KIND,
-                element(Some(600), Some(200), None),
-                [None, None, None, None, pixels(100.0), None],
-            ),
-            (
-                AUDIO_KIND,
-                element(Some(600), Some(200), Some(40)),
-                UNCONSTRAINED,
-            ),
-        ] {
-            let plan = ElementPlan::of(kind, element);
+    fn extents(mut root: Div) -> [Option<Length>; 4] {
+        let style = root.style();
+        [
+            style.size.width,
+            style.max_size.width,
+            style.size.height,
+            style.max_size.height,
+        ]
+    }
 
-            assert_eq!(extents(sized(div(), plan, scale())), expected, "{kind}");
+    #[test]
+    fn each_element_is_bound_to_the_box_the_way_its_stylesheet_binds_it() {
+        let whole = Some(Length::from(relative(1.0)));
+
+        for (kind, expected) in [
+            (ALERT_KIND, [None, whole, None, whole]),
+            (CHAT_KIND, [whole, None, whole, None]),
+            (GOAL_KIND, [whole, None, None, whole]),
+            (TICKER_KIND, [whole, None, None, whole]),
+            (FRAME_KIND, [None, None, None, None]),
+            (AUDIO_KIND, [None, None, None, None]),
+        ] {
+            let plan = ElementPlan::of(kind, element(None));
+
+            assert_eq!(extents(sized(div(), plan)), expected, "{kind}");
         }
     }
 }

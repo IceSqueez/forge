@@ -472,6 +472,7 @@ mod tests {
     use crate::assets::PageAssets;
     use crate::descriptor::DeliveryDisposition;
     use crate::kinds::alert::AlertOverlayKind;
+    use crate::kinds::chat::ChatOverlayKind;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
 
     const PROBE_TOGGLE: &str = "probe.toggle";
@@ -611,14 +612,18 @@ mod tests {
 
     #[test]
     fn validate_rejects_a_choice_outside_the_declared_options() {
-        for (key, value) in [
-            (ACCENT, "teal"),
-            (FONT, "Comic Sans"),
-            (POSITION, "diagonal"),
-            (ANIMATION, "explode"),
-            (ACCENT, ""),
+        let alert = AlertOverlayKind;
+        let chat = ChatOverlayKind;
+
+        for (descriptor, key, value) in [
+            (&alert as &dyn OverlayKindDescriptor, ACCENT, "teal"),
+            (&alert, FONT, "Comic Sans"),
+            (&alert, ANIMATION, "explode"),
+            (&alert, ACCENT, ""),
+            (&chat, POSITION, "diagonal"),
+            (&chat, POSITION, "center"),
         ] {
-            let err = validate_overlay_config(&AlertOverlayKind, &one(key, text(value)))
+            let err = validate_overlay_config(descriptor, &one(key, text(value)))
                 .expect_err("an unlisted choice must be rejected");
 
             assert!(

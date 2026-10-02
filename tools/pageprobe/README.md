@@ -17,6 +17,7 @@ Setup once: `npm ci` (downloads Chromium for puppeteer on first run).
 | `watchlive.js` | `node watchlive.js <page url> ...` | frames a live page receives |
 | `serve.js` | required by `shoot.js` / `overflow.js` / `probe.js` | a mock page host serving the crate assets plus a config you pass |
 | `shoot.js` | `node shoot.js '<json cases>'` | screenshots of one overlay kind under several configs |
+| `boxprobe.js` | `node boxprobe.js` | loads every stock look at its design size and exits 1 when anything painted at rest leaves the content area (box minus margins) |
 | `overflow.js` | `node overflow.js '<json cases>'` | whether anything paints outside the stage |
 | `probe.js` | `node probe.js ...` | jsdom read of what the runtime published and what the stylesheet declares |
 

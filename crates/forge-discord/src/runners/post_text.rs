@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
 use crate::sink::DiscordSink;
 
 pub struct PostTextRunner {
@@ -49,14 +50,16 @@ impl SubActionRunner for PostTextRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
+        let mut config = BTreeMap::from([
             ("webhook_name".to_owned(), Variant::String(String::new())),
             ("content".to_owned(), Variant::String(String::new())),
-        ])
+        ]);
+        config.extend(mention_default_entries());
+        config
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![
+        let mut fields = vec![
             FormField::Text {
                 key: "webhook_name",
                 label: "Webhook",
@@ -66,7 +69,9 @@ impl SubActionRunner for PostTextRunner {
                 key: "content",
                 label: "Message",
             },
-        ]
+        ];
+        fields.extend(mention_form_fields());
+        fields
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
@@ -112,8 +117,12 @@ impl SubActionRunner for PostTextRunner {
             );
         }
 
-        let outcome =
-            SubActionOutcome::from_result(&self.sink.post_text(&webhook_name, &content).await);
+        let outcome = SubActionOutcome::from_result(
+            &self
+                .sink
+                .post_text(&webhook_name, &content, mention_policy(config))
+                .await,
+        );
 
         (
             SubActionTelemetry {

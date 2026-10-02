@@ -1,5 +1,6 @@
 mod delete_message;
 mod edit_message;
+mod mention_fields;
 mod post_embed;
 mod post_text;
 mod send_file;

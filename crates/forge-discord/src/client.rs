@@ -15,6 +15,7 @@ use crate::events::{publish_failed, publish_posted, publish_rate_limited};
 use crate::health::{
     DiscordHealthSnapshot, make_health_state, record_missing_webhook, update_on_send,
 };
+use crate::mention::MentionPolicy;
 use crate::ratelimit::{DiscordRateLimiter, RateLimitOutcome};
 use crate::sink::DiscordSink;
 
@@ -125,8 +126,21 @@ impl DiscordClient {
         webhook_name: &str,
         content: &str,
     ) -> Result<String, DiscordError> {
+        self.post_text_with_mentions(webhook_name, content, MentionPolicy::default())
+            .await
+    }
+
+    pub async fn post_text_with_mentions(
+        &self,
+        webhook_name: &str,
+        content: &str,
+        mentions: MentionPolicy,
+    ) -> Result<String, DiscordError> {
         let cred = self.load_webhook_checked(webhook_name).await?;
-        let body = serde_json::json!({ "content": content });
+        let body = serde_json::json!({
+            "content": content,
+            "allowed_mentions": mentions.to_wire(),
+        });
         self.execute_post(&cred.url, body, webhook_name, 0, true)
             .await
     }
@@ -150,6 +164,24 @@ impl DiscordClient {
         content: Option<&str>,
         embed: Option<DiscordEmbed>,
     ) -> Result<(), DiscordError> {
+        self.edit_message_with_mentions(
+            webhook_name,
+            message_id,
+            content,
+            embed,
+            MentionPolicy::default(),
+        )
+        .await
+    }
+
+    pub async fn edit_message_with_mentions(
+        &self,
+        webhook_name: &str,
+        message_id: &str,
+        content: Option<&str>,
+        embed: Option<DiscordEmbed>,
+        mentions: MentionPolicy,
+    ) -> Result<(), DiscordError> {
         if let Some(e) = &embed {
             e.validate()?;
         }
@@ -162,6 +194,7 @@ impl DiscordClient {
                 "content".to_owned(),
                 serde_json::Value::String(c.to_owned()),
             );
+            map.insert("allowed_mentions".to_owned(), mentions.to_wire());
         }
         if let Some(e) = &embed {
             map.insert("embeds".to_owned(), serde_json::json!([embed_to_wire(e)]));
@@ -729,8 +762,14 @@ impl DiscordClient {
 
 #[async_trait::async_trait]
 impl DiscordSink for DiscordClient {
-    async fn post_text(&self, webhook_name: &str, content: &str) -> Result<String, DiscordError> {
-        self.post_text(webhook_name, content).await
+    async fn post_text(
+        &self,
+        webhook_name: &str,
+        content: &str,
+        mentions: MentionPolicy,
+    ) -> Result<String, DiscordError> {
+        self.post_text_with_mentions(webhook_name, content, mentions)
+            .await
     }
 
     async fn post_embed(
@@ -747,8 +786,9 @@ impl DiscordSink for DiscordClient {
         message_id: &str,
         content: Option<&str>,
         embed: Option<DiscordEmbed>,
+        mentions: MentionPolicy,
     ) -> Result<(), DiscordError> {
-        self.edit_message(webhook_name, message_id, content, embed)
+        self.edit_message_with_mentions(webhook_name, message_id, content, embed, mentions)
             .await
     }
 

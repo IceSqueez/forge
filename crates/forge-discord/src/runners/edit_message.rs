@@ -10,6 +10,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
 use crate::embed::DiscordEmbed;
 use crate::sink::DiscordSink;
 
@@ -50,15 +51,17 @@ impl SubActionRunner for EditMessageRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
+        let mut config = BTreeMap::from([
             ("webhook_name".to_owned(), Variant::String(String::new())),
             ("message_id".to_owned(), Variant::String(String::new())),
             ("content".to_owned(), Variant::String(String::new())),
-        ])
+        ]);
+        config.extend(mention_default_entries());
+        config
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![
+        let mut fields = vec![
             FormField::Text {
                 key: "webhook_name",
                 label: "Webhook",
@@ -73,7 +76,9 @@ impl SubActionRunner for EditMessageRunner {
                 key: "content",
                 label: "New Content",
             },
-        ]
+        ];
+        fields.extend(mention_form_fields());
+        fields
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
@@ -137,7 +142,13 @@ impl SubActionRunner for EditMessageRunner {
         let outcome = SubActionOutcome::from_result(
             &self
                 .sink
-                .edit_message(&webhook_name, &message_id, content.as_deref(), embed)
+                .edit_message(
+                    &webhook_name,
+                    &message_id,
+                    content.as_deref(),
+                    embed,
+                    mention_policy(config),
+                )
                 .await,
         );
 

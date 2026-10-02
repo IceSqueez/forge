@@ -44,6 +44,8 @@ fn descriptor_label(spec: &FormField) -> &'static str {
 
 pub(crate) fn localized_label(english: &'static str) -> String {
     match english {
+        "Allow @everyone / @here" => tr!("config_field_label_allow_everyone_pings"),
+        "Allow role pings" => tr!("config_field_label_allow_role_pings"),
         "Ban type" => tr!("config_field_label_ban_type"),
         "Case sensitive" => tr!("config_field_label_case_sensitive"),
         "Channel" => tr!("config_field_label_channel"),

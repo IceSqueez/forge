@@ -121,6 +121,7 @@ pub fn run_boot(
     let event_log = cx.new(|_| EventLog::new());
     let globals = cx.new(|_| Globals::empty());
     let platforms = cx.new(|_| PlatformConnectivity::new());
+    mirror_connections_into_home(&platforms, home_stats.clone(), cx);
     let speak = cx.new(|_| SpeakState::new());
     let queue_health = cx.new(|_| QueueHealth::new());
     let event_loss = cx.new(|_| EventLoss::new());
@@ -313,6 +314,22 @@ async fn seed_chat_history(
         feed.seed(messages);
         cx.notify();
     });
+}
+
+fn mirror_connections_into_home(
+    platforms: &Entity<PlatformConnectivity>,
+    home_stats: Entity<HomeStats>,
+    cx: &mut App,
+) {
+    cx.observe(platforms, move |platforms, cx| {
+        let connections = platforms.read(cx).connections().to_vec();
+        home_stats.update(cx, |stats, cx| {
+            if stats.set_connections(&connections) {
+                cx.notify();
+            }
+        });
+    })
+    .detach();
 }
 
 fn start_bridge(

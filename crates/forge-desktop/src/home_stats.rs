@@ -272,6 +272,14 @@ impl HomeStats {
         }
     }
 
+    pub fn set_connections(&mut self, connections: &[(Integration, bool)]) -> bool {
+        if self.connections == connections {
+            return false;
+        }
+        self.connections = connections.to_vec();
+        true
+    }
+
     pub fn obs_health_snapshot(&self) -> Option<ObsHealth> {
         self.obs_health.clone()
     }

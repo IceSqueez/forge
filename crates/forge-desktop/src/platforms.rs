@@ -28,6 +28,10 @@ impl PlatformConnectivity {
         }
     }
 
+    pub fn connections(&self) -> &[(Integration, bool)] {
+        &self.connections
+    }
+
     pub fn is_connected(&self, integ: Integration) -> bool {
         self.connections
             .iter()

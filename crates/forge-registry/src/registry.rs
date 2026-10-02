@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use forge_types::IntegrationId;
+
 use crate::descriptor::TriggerKindDescriptor;
 use crate::error::RegistryError;
 use crate::runner::SubActionRunner;
@@ -7,6 +9,7 @@ use crate::runner::SubActionRunner;
 #[derive(Default)]
 pub struct TriggerRegistry {
     descriptors: HashMap<String, Box<dyn TriggerKindDescriptor>>,
+    owners: HashMap<String, IntegrationId>,
 }
 
 impl TriggerRegistry {
@@ -23,6 +26,13 @@ impl TriggerRegistry {
         Ok(())
     }
 
+    pub fn owned_by(&mut self, owner: IntegrationId) -> OwnedTriggerRegistration<'_> {
+        OwnedTriggerRegistration {
+            registry: self,
+            owner,
+        }
+    }
+
     pub fn get(&self, kind_id: &str) -> Option<&dyn TriggerKindDescriptor> {
         self.descriptors.get(kind_id).map(|b| b.as_ref())
     }
@@ -30,11 +40,30 @@ impl TriggerRegistry {
     pub fn all(&self) -> impl Iterator<Item = &dyn TriggerKindDescriptor> {
         self.descriptors.values().map(|b| b.as_ref())
     }
+
+    pub fn owning_integration(&self, kind_id: &str) -> Option<&IntegrationId> {
+        self.owners.get(kind_id)
+    }
+}
+
+pub struct OwnedTriggerRegistration<'a> {
+    registry: &'a mut TriggerRegistry,
+    owner: IntegrationId,
+}
+
+impl OwnedTriggerRegistration<'_> {
+    pub fn register(&mut self, d: Box<dyn TriggerKindDescriptor>) -> Result<(), RegistryError> {
+        let id = d.id().to_owned();
+        self.registry.register(d)?;
+        self.registry.owners.insert(id, self.owner.clone());
+        Ok(())
+    }
 }
 
 #[derive(Default)]
 pub struct SubActionRegistry {
     runners: HashMap<String, Box<dyn SubActionRunner>>,
+    owners: HashMap<String, IntegrationId>,
 }
 
 impl SubActionRegistry {
@@ -51,12 +80,37 @@ impl SubActionRegistry {
         Ok(())
     }
 
+    pub fn owned_by(&mut self, owner: IntegrationId) -> OwnedSubActionRegistration<'_> {
+        OwnedSubActionRegistration {
+            registry: self,
+            owner,
+        }
+    }
+
     pub fn get(&self, kind_id: &str) -> Option<&dyn SubActionRunner> {
         self.runners.get(kind_id).map(|b| b.as_ref())
     }
 
     pub fn all(&self) -> impl Iterator<Item = &dyn SubActionRunner> {
         self.runners.values().map(|b| b.as_ref())
+    }
+
+    pub fn owning_integration(&self, kind_id: &str) -> Option<&IntegrationId> {
+        self.owners.get(kind_id)
+    }
+}
+
+pub struct OwnedSubActionRegistration<'a> {
+    registry: &'a mut SubActionRegistry,
+    owner: IntegrationId,
+}
+
+impl OwnedSubActionRegistration<'_> {
+    pub fn register(&mut self, r: Box<dyn SubActionRunner>) -> Result<(), RegistryError> {
+        let id = r.id().to_owned();
+        self.registry.register(r)?;
+        self.registry.owners.insert(id, self.owner.clone());
+        Ok(())
     }
 }
 

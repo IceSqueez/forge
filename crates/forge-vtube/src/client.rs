@@ -6,8 +6,9 @@ use tokio::sync::{Notify, broadcast, mpsc};
 use tokio::task::JoinHandle;
 
 use forge_events::EventPublisher;
-use forge_platform_core::{AtomicConnectionState, BuiltinId, ConnectionState, HealthDelta};
+use forge_platform_core::{AtomicConnectionState, ConnectionState, HealthDelta};
 use forge_storage::CredentialsRepo;
+use forge_types::IntegrationId;
 
 use crate::auth::AuthState;
 use crate::error::VTubeError;
@@ -57,7 +58,7 @@ pub(crate) fn split_endpoint(endpoint: &str) -> (String, u16) {
 
 pub struct VTubeClient {
     pub(crate) config: VTubeConfig,
-    pub(crate) vtube_id: BuiltinId,
+    pub(crate) vtube_id: IntegrationId,
     pub(crate) state: Arc<AtomicConnectionState>,
     pub(crate) auth_state: Arc<RwLock<AuthState>>,
     pub(crate) shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
@@ -134,7 +135,7 @@ impl VTubeClient {
 
         Self {
             config: cfg,
-            vtube_id: BuiltinId::new(VTUBE_PLATFORM_ID),
+            vtube_id: crate::VTUBE_INTEGRATION.id,
             state,
             auth_state,
             shutdown,
@@ -228,7 +229,7 @@ impl VTubeClient {
             config: VTubeConfig {
                 endpoint: endpoint.into(),
             },
-            vtube_id: BuiltinId::new(VTUBE_PLATFORM_ID),
+            vtube_id: IntegrationId::new(VTUBE_PLATFORM_ID),
             state: Arc::new(AtomicConnectionState::new(ConnectionState::Disconnected)),
             auth_state: Arc::new(RwLock::new(AuthState::Cold)),
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),

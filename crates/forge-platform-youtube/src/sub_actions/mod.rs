@@ -55,6 +55,7 @@ pub fn register_youtube_sub_actions(
     thumbnail: Arc<YoutubeThumbnail>,
     channel_lookup: Arc<YoutubeChannelLookup>,
 ) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::YOUTUBE_INTEGRATION.id);
     reg.register(Box::new(SendMessageRunner::new(Arc::clone(&sender))))?;
     reg.register(Box::new(CreatePollRunner::new(Arc::clone(&sender))))?;
     reg.register(Box::new(DeleteMessageRunner::new(sender)))?;

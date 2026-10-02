@@ -145,6 +145,7 @@ use warning_sent::WarningSentDescriptor;
 use whisper_received::WhisperReceivedDescriptor;
 
 pub fn register_twitch_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::TWITCH_INTEGRATION.id);
     reg.register(Box::new(ChannelBanDescriptor))?;
     reg.register(Box::new(ChannelTimeoutDescriptor))?;
     reg.register(Box::new(ChannelUnbanDescriptor))?;

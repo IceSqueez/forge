@@ -22,6 +22,7 @@ pub fn register_discord_sub_actions(
     reg: &mut SubActionRegistry,
     client: Arc<DiscordClient>,
 ) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::DISCORD_INTEGRATION.id);
     let sink: Arc<dyn DiscordSink> = client;
     reg.register(Box::new(PostTextRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(PostEmbedRunner::new(Arc::clone(&sink))))?;

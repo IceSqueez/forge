@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::BuiltinId;
 use forge_registry::FormField;
 use forge_runtime::EventBus;
+use forge_types::IntegrationId;
 use forge_vtube::{VTubeCatalog, VTubeChoice, VTubeClient};
 use gpui::{Context, Task};
 
@@ -103,7 +103,7 @@ pub(crate) fn vtube_catalog_choices(
 
 pub(crate) fn live_vtube_client(builtins: &BuiltinRegistry) -> Option<Arc<VTubeClient>> {
     builtins
-        .get(&BuiltinId::new(VTUBE_BUILTIN_ID))
+        .get(&IntegrationId::new(VTUBE_BUILTIN_ID))
         .and_then(|object| object.vtube_client)
 }
 

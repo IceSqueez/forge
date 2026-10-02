@@ -12,6 +12,7 @@ use crate::combo::HotkeyCombo;
 use crate::payload_fields as fields;
 
 pub fn register_hotkey_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::HOTKEY_INTEGRATION.id);
     reg.register(Box::new(HotkeyPressedDescriptor))?;
     reg.register(Box::new(HotkeyReleasedDescriptor))?;
     Ok(())

@@ -2,14 +2,13 @@ use std::time::Duration;
 
 use time::OffsetDateTime;
 
-use forge_platform_core::{
-    BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction,
-};
+use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
+use forge_types::IntegrationId;
 
 use crate::client::VTubeClient;
 
 impl BuiltinStatus for VTubeClient {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.vtube_id
     }
 

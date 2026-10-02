@@ -142,8 +142,11 @@ pub(super) fn analyze(
     }
 
     for (i, health) in result.iter_mut().enumerate() {
-        if let Some(Some(SubActionOutcome::Failed(msg))) = last_step_outcomes.get(i) {
-            health.findings.push(Finding::LastRunFailed(msg.clone()));
+        if let Some(Some(reason)) = last_step_outcomes
+            .get(i)
+            .map(|outcome| outcome.as_ref().and_then(SubActionOutcome::failure_reason))
+        {
+            health.findings.push(Finding::LastRunFailed(reason));
         }
     }
 

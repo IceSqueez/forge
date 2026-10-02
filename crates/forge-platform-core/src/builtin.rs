@@ -6,30 +6,10 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use forge_types::{SubActionStep, Variant};
+use forge_types::{IntegrationId, SubActionStep, Variant};
 
 use crate::ConnectionState;
 use crate::collections::CollectionId;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct BuiltinId(pub String);
-
-impl BuiltinId {
-    pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for BuiltinId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -469,7 +449,7 @@ pub enum HeaderAction {
 }
 
 pub trait BuiltinStatus: Send + Sync {
-    fn id(&self) -> &BuiltinId;
+    fn id(&self) -> &IntegrationId;
     fn display_name(&self) -> &str;
     fn version(&self) -> Option<&str>;
     fn connection(&self) -> ConnectionState;
@@ -580,10 +560,10 @@ mod tests {
 
     #[test]
     fn builtin_id_serde_transparent() {
-        let id = BuiltinId::new("kick");
+        let id = IntegrationId::new("kick");
         let json = serde_json::to_string(&id).unwrap();
         assert_eq!(json, r#""kick""#);
-        let back: BuiltinId = serde_json::from_str(&json).unwrap();
+        let back: IntegrationId = serde_json::from_str(&json).unwrap();
         assert_eq!(back, id);
     }
 

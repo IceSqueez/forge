@@ -58,6 +58,7 @@ pub fn register_kick_sub_actions(
     reg: &mut SubActionRegistry,
     deps: KickSubActionDeps,
 ) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::KICK_INTEGRATION.id);
     let KickSubActionDeps {
         client,
         token_source,

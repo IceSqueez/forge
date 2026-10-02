@@ -11,10 +11,11 @@ use tokio::task::JoinHandle;
 
 use forge_events::{Event, EventPublisher};
 use forge_platform_core::{
-    AtomicConnectionState, Backoff, BuiltinControl, BuiltinId, BuiltinStatus, CapabilityFlags,
+    AtomicConnectionState, Backoff, BuiltinControl, BuiltinStatus, CapabilityFlags,
     ConnectionState, ControlFailure, ControlOutcome, HeaderAction, HealthDelta, HeroBadge,
     HeroBadgeTone, connection_state_changed_event,
 };
+use forge_types::IntegrationId;
 
 use crate::catalog::ObsCatalog;
 use crate::error::ObsError;
@@ -53,7 +54,7 @@ pub struct ObsClient {
     shutdown: Arc<tokio::sync::Mutex<Arc<Notify>>>,
     supervisor: Arc<std::sync::Mutex<Option<JoinHandle<()>>>>,
     connected_at: Arc<RwLock<Option<OffsetDateTime>>>,
-    obs_id: BuiltinId,
+    obs_id: IntegrationId,
     obs_version: Arc<OnceLock<String>>,
     obs_ws_version: Arc<OnceLock<String>>,
     pub(crate) health_state: Arc<RwLock<HealthSnapshot>>,
@@ -123,7 +124,7 @@ impl ObsClient {
             shutdown,
             supervisor: Arc::new(std::sync::Mutex::new(Some(handle))),
             connected_at,
-            obs_id: BuiltinId::new(OBS_PLATFORM_ID),
+            obs_id: crate::OBS_INTEGRATION.id,
             obs_version,
             obs_ws_version,
             health_state,
@@ -174,7 +175,7 @@ impl ObsClient {
             shutdown: Arc::new(tokio::sync::Mutex::new(Arc::new(Notify::new()))),
             supervisor: Arc::new(std::sync::Mutex::new(None)),
             connected_at: Arc::new(RwLock::new(None)),
-            obs_id: BuiltinId::new(OBS_PLATFORM_ID),
+            obs_id: IntegrationId::new(OBS_PLATFORM_ID),
             obs_version: Arc::new(OnceLock::new()),
             obs_ws_version: Arc::new(OnceLock::new()),
             health_state,
@@ -193,7 +194,7 @@ impl ObsClient {
 }
 
 impl BuiltinStatus for ObsClient {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.obs_id
     }
 

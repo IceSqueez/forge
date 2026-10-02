@@ -97,6 +97,7 @@ pub fn register_obs_sub_actions(
     reg: &mut SubActionRegistry,
     sink: Arc<dyn ObsSink>,
 ) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::OBS_INTEGRATION.id);
     reg.register(Box::new(QueryInputListRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(QueryInputSettingsRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(QueryRecordStatusRunner::new(Arc::clone(&sink))))?;

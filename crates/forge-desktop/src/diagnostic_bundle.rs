@@ -9,7 +9,7 @@ use forge_types::run_disclosure::{
     DisclosedOutcome, DisclosedRun, DisclosedStep, DisclosedStepOutcome, DisclosedTrigger,
     DisclosedValue,
 };
-use forge_types::{LogLevel, SCRIPT_LOG_TARGET};
+use forge_types::{LogLevel, SCRIPT_LOG_TARGET, integration_disabled_reason};
 use time::OffsetDateTime;
 
 use crate::integrations::BuiltinRegistry;
@@ -330,6 +330,9 @@ fn step_outcome_shape(outcome: &DisclosedStepOutcome) -> String {
         DisclosedStepOutcome::Skipped { reason_chars } => {
             format!("skipped(reason {STAMP} len={reason_chars}>)")
         }
+        DisclosedStepOutcome::IntegrationDisabled(integration) => {
+            format!("failed({})", integration_disabled_reason(integration))
+        }
     }
 }
 
@@ -391,9 +394,10 @@ mod tests {
     use std::time::Duration;
 
     use forge_platform_core::{
-        BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
+        BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
         DetailSection, HeaderAction, HealthMetric, HealthStream, QuickAction, QuickActions,
     };
+    use forge_types::IntegrationId;
 
     use super::*;
     use crate::integrations::BuiltinObject;
@@ -523,13 +527,13 @@ mod tests {
     }
 
     struct ProbeBuiltin {
-        id: BuiltinId,
+        id: IntegrationId,
     }
 
     impl ProbeBuiltin {
         fn object(id: &str) -> BuiltinObject {
             let probe = Arc::new(Self {
-                id: BuiltinId::new(id),
+                id: IntegrationId::new(id),
             });
             BuiltinObject {
                 icon: forge_platform_core::SectionIcon::new("bug"),
@@ -546,7 +550,7 @@ mod tests {
     }
 
     impl BuiltinStatus for ProbeBuiltin {
-        fn id(&self) -> &BuiltinId {
+        fn id(&self) -> &IntegrationId {
             &self.id
         }
         fn display_name(&self) -> &str {

@@ -2,6 +2,7 @@ pub mod action;
 pub mod data_flow;
 pub mod execution;
 pub mod ids;
+pub mod integration;
 pub mod log_target;
 pub mod permission_rung;
 pub mod platform;
@@ -25,9 +26,11 @@ pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome,
-    SubActionTelemetry, normalize_var_name, strip_var_decoration, variant_preview,
+    SubActionTelemetry, integration_disabled_reason, normalize_var_name, strip_var_decoration,
+    variant_preview,
 };
 pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
+pub use integration::IntegrationId;
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::PlatformId;

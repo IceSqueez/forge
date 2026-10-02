@@ -117,6 +117,7 @@ pub fn register_twitch_sub_actions(
     creds: Arc<dyn CredentialsRepo>,
     lifecycle: TwitchLifecycle,
 ) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::TWITCH_INTEGRATION.id);
     let identity = Arc::new(SelfIdentity::new(creds));
     reg.register(Box::new(SendAnnouncementRunner::new(
         Arc::clone(&transport),

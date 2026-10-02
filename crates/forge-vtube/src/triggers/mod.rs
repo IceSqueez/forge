@@ -21,6 +21,7 @@ pub use model_unloaded::ModelUnloadedDescriptor;
 use forge_registry::{RegistryError, TriggerRegistry};
 
 pub fn register_vtube_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::VTUBE_INTEGRATION.id);
     reg.register(Box::new(ModelLoadedDescriptor))?;
     reg.register(Box::new(ModelUnloadedDescriptor))?;
     reg.register(Box::new(ModelConfigChangedDescriptor))?;

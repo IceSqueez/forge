@@ -9,7 +9,7 @@ use std::time::Duration;
 use forge_components::ToastKind;
 use forge_events::{Event, EventsError};
 use forge_runtime::{ActionEngineHandle, EventBus, EventSubscription};
-use forge_types::{SubActionOutcome, SubActionStep};
+use forge_types::{SubActionOutcome, SubActionStep, integration_disabled_reason};
 use gpui::{App, AsyncApp, Context, Entity, SharedString};
 use tokio::runtime::Handle;
 
@@ -59,6 +59,9 @@ pub async fn run_quick_step(
     match pending.outcome().await.map_err(|err| err.to_string())? {
         SubActionOutcome::Success => Ok(()),
         SubActionOutcome::Failed(reason) | SubActionOutcome::Skipped(reason) => Err(reason),
+        SubActionOutcome::IntegrationDisabled(integration) => {
+            Err(integration_disabled_reason(&integration))
+        }
     }
 }
 

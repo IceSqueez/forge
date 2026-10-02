@@ -818,7 +818,7 @@ impl FakeCollections {
         let registry = crate::integrations::BuiltinRegistry::default();
         registry.install(crate::integrations::BuiltinObject {
             collections: Some(Arc::clone(self) as Arc<dyn forge_platform_core::BuiltinCollections>),
-            ..crate::unavailable_builtin::unavailable_builtin(&forge_platform_core::BuiltinId::new(
+            ..crate::unavailable_builtin::unavailable_builtin(&forge_types::IntegrationId::new(
                 builtin,
             ))
         });

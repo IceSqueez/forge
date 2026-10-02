@@ -291,10 +291,7 @@ impl RunHistoryModal {
             )
             .child(badge);
 
-        let step_failed = ctx
-            .telemetry
-            .iter()
-            .any(|step| matches!(step.outcome, SubActionOutcome::Failed(_)));
+        let step_failed = ctx.telemetry.iter().any(|step| step.outcome.is_failure());
 
         let mut col = div()
             .w_full()
@@ -409,10 +406,10 @@ impl RunHistoryModal {
                 tr!("action_editor_run_history_step_ok"),
                 None,
             ),
-            SubActionOutcome::Failed(message) => (
+            SubActionOutcome::Failed(_) | SubActionOutcome::IntegrationDisabled(_) => (
                 palette.random,
                 tr!("action_editor_run_history_step_failed"),
-                Some(message.clone()),
+                step.outcome.failure_reason(),
             ),
             SubActionOutcome::Skipped(message) => (
                 palette.text_muted,

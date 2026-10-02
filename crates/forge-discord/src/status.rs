@@ -1,13 +1,12 @@
 use std::time::Duration;
 
-use forge_platform_core::{
-    BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction,
-};
+use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
+use forge_types::IntegrationId;
 
 use crate::client::DiscordClient;
 
 impl BuiltinStatus for DiscordClient {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.id
     }
 

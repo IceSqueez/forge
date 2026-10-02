@@ -52,6 +52,7 @@ pub fn register_vtube_sub_actions(
     reg: &mut SubActionRegistry,
     sink: Arc<dyn VTubeSink>,
 ) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::VTUBE_INTEGRATION.id);
     let holds = Arc::new(HoldRegistry::new());
     reg.register(Box::new(HotkeyTriggerRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ExpressionSetRunner::new(Arc::clone(&sink))))?;

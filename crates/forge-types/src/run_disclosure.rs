@@ -7,6 +7,7 @@ use crate::execution::{
     ExecutionContext, ExecutionMetadata, ExecutionOutcome, SubActionOutcome, SubActionTelemetry,
 };
 use crate::ids::{ActionId, EventId};
+use crate::integration::IntegrationId;
 use crate::redaction::STAMP;
 use crate::variant::Variant;
 
@@ -113,6 +114,7 @@ pub enum DisclosedStepOutcome {
     Success,
     Failed { reason_chars: usize },
     Skipped { reason_chars: usize },
+    IntegrationDisabled(IntegrationId),
 }
 
 impl From<&SubActionOutcome> for DisclosedStepOutcome {
@@ -125,6 +127,9 @@ impl From<&SubActionOutcome> for DisclosedStepOutcome {
             SubActionOutcome::Skipped(reason) => Self::Skipped {
                 reason_chars: reason.chars().count(),
             },
+            SubActionOutcome::IntegrationDisabled(integration) => {
+                Self::IntegrationDisabled(integration.clone())
+            }
         }
     }
 }

@@ -3,22 +3,22 @@ use std::time::Duration;
 
 use forge_components::tr;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState,
-    DetailSection, HeaderAction, HealthMetric, HealthStream, HealthValue, QuickAction,
-    QuickActions, SectionIcon,
+    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState, DetailSection,
+    HeaderAction, HealthMetric, HealthStream, HealthValue, QuickAction, QuickActions, SectionIcon,
 };
+use forge_types::IntegrationId;
 
 use crate::integrations::BuiltinObject;
 
 const MISSING_VALUE: &str = "-";
 
 struct UnavailableStatus {
-    id: BuiltinId,
+    id: IntegrationId,
     display_name: String,
 }
 
 impl BuiltinStatus for UnavailableStatus {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.id
     }
     fn display_name(&self) -> &str {
@@ -97,7 +97,7 @@ fn blank_metric(label: String) -> HealthMetric {
     }
 }
 
-fn identity(id: &BuiltinId) -> (String, &'static str) {
+fn identity(id: &IntegrationId) -> (String, &'static str) {
     match id.as_str() {
         "twitch" => ("Twitch".to_owned(), "brand-twitch"),
         "youtube" => ("YouTube".to_owned(), "brand-youtube"),
@@ -109,7 +109,7 @@ fn identity(id: &BuiltinId) -> (String, &'static str) {
     }
 }
 
-pub fn unavailable_builtin(id: &BuiltinId) -> BuiltinObject {
+pub fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
     let (display_name, icon) = identity(id);
     BuiltinObject {
         icon: SectionIcon::new(icon),

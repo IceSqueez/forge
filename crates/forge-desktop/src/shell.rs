@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
 use forge_events::EventPublisher;
-use forge_platform_core::BuiltinId;
 use forge_registry::TriggerRegistry;
 use forge_runtime::dashboard::compute_stats;
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo};
+use forge_types::IntegrationId;
 use gpui::{
     AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, FocusHandle, Window, deferred,
     div, prelude::*,
@@ -625,7 +625,7 @@ impl AppShell {
     }
 
     fn go_twitch(&mut self, _: &GoTwitch, _: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Screen::BuiltinDetail(BuiltinId::new("twitch")), cx);
+        self.navigate(Screen::BuiltinDetail(IntegrationId::new("twitch")), cx);
     }
 
     fn go_settings(&mut self, _: &GoSettings, _: &mut Window, cx: &mut Context<Self>) {

@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use forge_events::EventPublisher;
-use forge_platform_core::{BuiltinId, ConnectionState};
+use forge_platform_core::ConnectionState;
 use forge_storage::{CredentialId, CredentialsRepo};
+use forge_types::IntegrationId;
 use tokio::sync::broadcast;
 
 use crate::config::DiscordConfig;
@@ -22,7 +23,7 @@ use crate::sink::DiscordSink;
 pub(crate) type HealthTx = broadcast::Sender<forge_platform_core::HealthDelta>;
 
 pub struct DiscordClient {
-    pub(crate) id: BuiltinId,
+    pub(crate) id: IntegrationId,
     pub(crate) publisher: Arc<dyn EventPublisher>,
     pub(crate) creds: Arc<dyn CredentialsRepo>,
     pub(crate) http: reqwest::Client,
@@ -48,7 +49,7 @@ impl DiscordClient {
         let rate_limiter = Arc::new(Mutex::new(DiscordRateLimiter::new()));
 
         let client = Arc::new(Self {
-            id: BuiltinId::new("discord"),
+            id: crate::DISCORD_INTEGRATION.id,
             publisher,
             creds,
             http,
@@ -699,7 +700,7 @@ impl DiscordClient {
 
         let (health_tx, health_state) = make_health_state();
         Arc::new(Self {
-            id: BuiltinId::new("discord"),
+            id: IntegrationId::new("discord"),
             publisher: Arc::new(NoopPublisher),
             creds,
             http: reqwest::Client::new(),
@@ -750,7 +751,7 @@ impl DiscordClient {
         let content_state = make_content_state();
         let http = reqwest::Client::new();
         Arc::new(Self {
-            id: BuiltinId::new("discord"),
+            id: IntegrationId::new("discord"),
             publisher: Arc::new(NoopPublisher),
             creds: Arc::new(EmptyCreds),
             http,

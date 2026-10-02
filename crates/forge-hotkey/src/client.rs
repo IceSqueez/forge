@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use forge_events::EventPublisher;
-use forge_platform_core::BuiltinId;
+use forge_types::IntegrationId;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::backend::{HotkeyBackend, HotkeyId, NullBackend};
@@ -26,7 +26,7 @@ pub struct EnableFailure {
 }
 
 pub struct HotkeyClient {
-    pub(crate) id: BuiltinId,
+    pub(crate) id: IntegrationId,
     pub(crate) config: HotkeyConfig,
     pub(crate) backend: Arc<dyn HotkeyBackend>,
     pub(crate) registry: RwLock<HashMap<String, HotkeyId>>,
@@ -54,7 +54,7 @@ impl HotkeyClient {
         let hold_ceiling_secs = AtomicU64::new(config.hold_ceiling_secs.unwrap_or(0));
 
         let client = Arc::new(Self {
-            id: BuiltinId::new("hotkey"),
+            id: crate::HOTKEY_INTEGRATION.id,
             config,
             backend,
             registry: RwLock::new(HashMap::new()),
@@ -245,7 +245,7 @@ impl HotkeyClient {
         let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
 
         Arc::new(Self {
-            id: BuiltinId::new("hotkey"),
+            id: IntegrationId::new("hotkey"),
             config: HotkeyConfig::default(),
             backend: Arc::new(backend),
             registry: RwLock::new(HashMap::new()),

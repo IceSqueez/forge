@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_obs::{ObsClient, ObsSource};
-use forge_platform_core::BuiltinId;
 use forge_registry::FormField;
 use forge_runtime::EventBus;
+use forge_types::IntegrationId;
 use gpui::{Context, Task};
 
 use crate::async_bridge;
@@ -140,7 +140,7 @@ pub(crate) fn obs_catalog_choices(
 
 pub(crate) fn live_obs_client(builtins: &BuiltinRegistry) -> Option<Arc<ObsClient>> {
     builtins
-        .get(&BuiltinId::new(OBS_BUILTIN_ID))
+        .get(&IntegrationId::new(OBS_BUILTIN_ID))
         .and_then(|object| object.obs_client)
 }
 

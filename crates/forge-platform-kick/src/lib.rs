@@ -11,6 +11,7 @@ pub mod credentials;
 pub mod credentials_manager;
 pub mod error;
 mod event_channel;
+pub mod integration;
 #[cfg(test)]
 mod log_capture;
 pub mod moderation;
@@ -32,6 +33,7 @@ pub use chat::{KickChat, KickChatHandle};
 pub use chat_platform::KickPlatform;
 pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
+pub use integration::KICK_INTEGRATION;
 pub use moderation::KickModeration;
 pub use poller::{KickViewerSource, spawn_kick_poller};
 pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewardParams};

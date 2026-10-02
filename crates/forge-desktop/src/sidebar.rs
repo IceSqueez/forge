@@ -3,7 +3,7 @@ use forge_components::{
     ResizeRange, body_family, icon, install_resize, mono_family, platform_color, radius,
     status_dot, tr,
 };
-use forge_platform_core::BuiltinId;
+use forge_types::IntegrationId;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, SharedString,
     Window, div, prelude::*, px,
@@ -180,19 +180,19 @@ impl SidebarNav {
             NavEntry::FlatLink {
                 dot: platform_color(PlatformKind::Twitch, palette),
                 label: NavText::Brand("Twitch"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("twitch")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("twitch")),
                 integ: Integration::Twitch,
             },
             NavEntry::FlatLink {
                 dot: platform_color(PlatformKind::YouTube, palette),
                 label: NavText::Brand("YouTube"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("youtube")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("youtube")),
                 integ: Integration::YouTube,
             },
             NavEntry::FlatLink {
                 dot: platform_color(PlatformKind::Kick, palette),
                 label: NavText::Brand("Kick"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("kick")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("kick")),
                 integ: Integration::Kick,
             },
             NavEntry::MiniLabelLink {
@@ -202,13 +202,13 @@ impl SidebarNav {
             NavEntry::FlatLink {
                 dot: palette.success,
                 label: NavText::Brand("OBS Studio"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("obs")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("obs")),
                 integ: Integration::Obs,
             },
             NavEntry::FlatLink {
                 dot: palette.warning,
                 label: NavText::Brand("VTube Studio"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("vtube")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("vtube")),
                 integ: Integration::VTube,
             },
             NavEntry::MiniLabel(NavText::Key("nav_section_builtin")),
@@ -225,17 +225,17 @@ impl SidebarNav {
             NavEntry::FlatIconLeaf {
                 icon: Icon::Piano,
                 label: NavText::Brand("MIDI"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("midi")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("midi")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Keyboard,
                 label: NavText::Key("nav_item_hotkey"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("hotkey")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("hotkey")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::BrandDiscord,
                 label: NavText::Brand("Discord"),
-                screen: Screen::BuiltinDetail(BuiltinId::new("discord")),
+                screen: Screen::BuiltinDetail(IntegrationId::new("discord")),
             },
             NavEntry::FlatIconLeaf {
                 icon: Icon::Browser,

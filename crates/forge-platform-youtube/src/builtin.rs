@@ -3,13 +3,14 @@ use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, ChatPlatform,
-    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent,
-    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
-    QuickActionFieldValue, QuickActionLiveness, QuickActions, SectionIcon, ViewerReport,
+    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform, ConnectionState,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
+    HeroBadgeTone, LiveViewerSource, QuickAction, QuickActionAccent, QuickActionChoiceOption,
+    QuickActionChoiceSource, QuickActionField, QuickActionFieldKind, QuickActionFieldValue,
+    QuickActionLiveness, QuickActions, SectionIcon, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
+use forge_types::IntegrationId;
 use forge_types::{SubActionStep, Variant};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
@@ -36,6 +37,7 @@ use crate::viewer_poll::{YoutubeViewerPoll, YoutubeViewerSource};
 const QUOTA_DAILY_BUDGET: u64 = 10_000;
 
 pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut registry = registry.owned_by(crate::YOUTUBE_INTEGRATION.id);
     registry.register(Box::new(ChatMessageDescriptor))?;
     registry.register(Box::new(ChatCommandDescriptor))?;
     registry.register(Box::new(SupportSuperChatDescriptor))?;
@@ -53,7 +55,7 @@ pub fn register_youtube_triggers(registry: &mut TriggerRegistry) -> Result<(), R
 }
 
 pub struct YoutubeIntegrationBundle {
-    id: BuiltinId,
+    id: IntegrationId,
     channel_id: String,
     display_name: OnceLock<String>,
     token_expires_at: RwLock<Option<SystemTime>>,
@@ -97,7 +99,7 @@ impl YoutubeIntegrationBundle {
         );
 
         let bundle = Arc::new(Self {
-            id: BuiltinId::new("youtube"),
+            id: crate::YOUTUBE_INTEGRATION.id,
             channel_id,
             display_name: OnceLock::new(),
             token_expires_at: RwLock::new(None),
@@ -266,7 +268,7 @@ fn preferred_hero_name(channel_title: &str, channel_handle: Option<&str>) -> Str
 }
 
 impl BuiltinStatus for YoutubeIntegrationBundle {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.id
     }
 

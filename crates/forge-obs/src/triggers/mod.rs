@@ -101,6 +101,7 @@ pub use virtualcam_stopped::VirtualcamStoppedDescriptor;
 use forge_registry::{RegistryError, TriggerRegistry};
 
 pub fn register_obs_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::OBS_INTEGRATION.id);
     reg.register(Box::new(ConnectionAuthFailedDescriptor))?;
     reg.register(Box::new(ConnectionConnectedDescriptor))?;
     reg.register(Box::new(ConnectionDisconnectedDescriptor))?;

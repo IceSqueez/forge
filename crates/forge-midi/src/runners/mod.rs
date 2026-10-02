@@ -13,6 +13,7 @@ pub fn register_midi_sub_actions(
     reg: &mut SubActionRegistry,
     client: Arc<MidiClient>,
 ) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::MIDI_INTEGRATION.id);
     let sink: Arc<dyn MidiSink> = client;
     reg.register(Box::new(MidiSendRunner::new(sink)))?;
     Ok(())

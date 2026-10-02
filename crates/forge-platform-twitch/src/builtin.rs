@@ -10,13 +10,14 @@ use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 #[cfg(test)]
 use forge_platform_core::TokenBucketRateLimiter;
 use forge_platform_core::{
-    BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags, CollectionId,
-    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction,
-    QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
-    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter,
-    SectionIcon, SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
+    BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, CollectionId, ConnectionState,
+    DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue, HeroBadge,
+    HeroBadgeTone, LiveViewerSource, PlatformEndpoints, QuickAction, QuickActionAccent,
+    QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField, QuickActionFieldKind,
+    QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter, SectionIcon,
+    SubscriptionRow, SubscriptionStatus, ViewerReport, ViewerReportStream,
 };
+use forge_types::IntegrationId;
 use std::collections::BTreeMap;
 
 use forge_events::EventPublisher;
@@ -77,7 +78,7 @@ pub struct ChatSessionConfig {
 }
 
 pub struct TwitchIntegrationBundle {
-    id: BuiltinId,
+    id: IntegrationId,
     login: Option<String>,
     state_tx: watch::Sender<ChatConnectionState>,
     state_rx: watch::Receiver<ChatConnectionState>,
@@ -128,7 +129,7 @@ impl TwitchIntegrationBundle {
             Arc::clone(&rate_limiter),
         );
         let bundle = Arc::new(Self {
-            id: BuiltinId::new("twitch"),
+            id: crate::TWITCH_INTEGRATION.id,
             login,
             state_tx,
             state_rx,
@@ -376,7 +377,7 @@ impl TwitchIntegrationBundle {
             "test-client".to_owned(),
         ));
         Arc::new(Self {
-            id: BuiltinId::new("twitch"),
+            id: IntegrationId::new("twitch"),
             login,
             state_tx: watch::channel(ChatConnectionState::Disconnected).0,
             state_rx,
@@ -492,7 +493,7 @@ fn extract_viewer_count(body: &serde_json::Value) -> Option<u64> {
 }
 
 impl BuiltinStatus for TwitchIntegrationBundle {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.id
     }
 

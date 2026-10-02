@@ -17,6 +17,7 @@ pub use program_change::MidiProgramChangeDescriptor;
 use forge_registry::{RegistryError, TriggerRegistry};
 
 pub fn register_midi_triggers(reg: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut reg = reg.owned_by(crate::MIDI_INTEGRATION.id);
     reg.register(Box::new(MidiNoteOnDescriptor))?;
     reg.register(Box::new(MidiNoteOffDescriptor))?;
     reg.register(Box::new(MidiCcDescriptor))?;

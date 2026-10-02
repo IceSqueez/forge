@@ -1,7 +1,7 @@
 use forge_components::{ForgePalette, PlatformKind, fmt_number, platform_color};
 use forge_events::{Event, EventSource};
-use forge_platform_core::BuiltinId;
 use forge_runtime::{LiveViewerCount, dashboard::DashboardStats};
+use forge_types::IntegrationId;
 use gpui::{Rgba, SharedString};
 
 use crate::event_log::EventLog;
@@ -31,8 +31,8 @@ impl Integration {
         }
     }
 
-    pub fn builtin_id(self) -> BuiltinId {
-        BuiltinId::new(self.id_str())
+    pub fn builtin_id(self) -> IntegrationId {
+        IntegrationId::new(self.id_str())
     }
 
     pub fn id_str(self) -> &'static str {

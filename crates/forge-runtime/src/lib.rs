@@ -18,6 +18,7 @@ mod egress;
 pub mod event_log_bridge;
 mod event_log_writer;
 mod event_ring;
+pub mod integration_gate;
 pub mod live_viewers;
 mod overlay_lanes;
 pub mod overlay_media;
@@ -55,6 +56,7 @@ pub use config::Config;
 pub use delivery::CriticalSubscription;
 pub use delivery_loss::{ConsumerLoss, DeliveryTier, LossCount, LossWatch};
 pub use event_log_bridge::spawn_event_log_bridge;
+pub use integration_gate::IntegrationGate;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{

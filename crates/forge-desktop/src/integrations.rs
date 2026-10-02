@@ -4,13 +4,14 @@ use std::time::Duration;
 
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
-    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId, BuiltinStatus,
-    ChatPlatform, LiveViewerSource, PlatformEndpoints, PlatformError, QuickActions,
-    RateLimitOutcome, RateLimiter, SectionIcon, TokenBucketRateLimiter,
+    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, ChatPlatform,
+    LiveViewerSource, PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome,
+    RateLimiter, SectionIcon, TokenBucketRateLimiter,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
+use forge_types::IntegrationId;
 use forge_types::{EventId, PlatformId};
 use tokio::sync::mpsc;
 
@@ -39,17 +40,17 @@ pub struct BuiltinObject {
 
 #[derive(Clone, Default)]
 pub struct BuiltinRegistry {
-    entries: Arc<std::sync::RwLock<HashMap<BuiltinId, BuiltinObject>>>,
+    entries: Arc<std::sync::RwLock<HashMap<IntegrationId, BuiltinObject>>>,
 }
 
 impl BuiltinRegistry {
-    fn seeded(entries: HashMap<BuiltinId, BuiltinObject>) -> Self {
+    fn seeded(entries: HashMap<IntegrationId, BuiltinObject>) -> Self {
         Self {
             entries: Arc::new(std::sync::RwLock::new(entries)),
         }
     }
 
-    pub fn get(&self, id: &BuiltinId) -> Option<BuiltinObject> {
+    pub fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
         let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
         guard.get(id).cloned()
     }
@@ -65,7 +66,7 @@ impl BuiltinRegistry {
         guard.insert(id, object);
     }
 
-    pub fn remove(&self, id: &BuiltinId) {
+    pub fn remove(&self, id: &IntegrationId) {
         let mut guard = self.entries.write().unwrap_or_else(|e| e.into_inner());
         guard.remove(id);
     }
@@ -286,12 +287,12 @@ pub async fn build_integrations(
 ) -> Integrations {
     register_platform_triggers(triggers);
 
-    let mut builtins: HashMap<BuiltinId, BuiltinObject> = HashMap::new();
+    let mut builtins: HashMap<IntegrationId, BuiltinObject> = HashMap::new();
     let mut viewer_sources: Vec<(PlatformId, Box<dyn LiveViewerSource>)> = Vec::new();
 
     let mut insert = |id: &str, object: Option<BuiltinObject>| {
         if let Some(object) = object {
-            builtins.insert(BuiltinId::new(id), object);
+            builtins.insert(IntegrationId::new(id), object);
         }
     };
 
@@ -1534,13 +1535,14 @@ mod tests {
 
         use forge_components::{Density, ThemeId};
         use forge_platform_core::{
-            BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
-            ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
-            HealthValue, QuickAction, QuickActions, SectionIcon,
+            BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ConnectionState,
+            DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream, HealthValue,
+            QuickAction, QuickActions, SectionIcon,
         };
         use forge_runtime::{
             ActionCancelRegistry, spawn_action_engine, spawn_live_viewer_aggregator,
         };
+        use forge_types::IntegrationId;
         use gpui::{AppContext as _, TestAppContext};
 
         use super::super::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
@@ -1556,12 +1558,12 @@ mod tests {
         use tokio::sync::mpsc;
 
         struct HeldStreamBuiltin {
-            id: BuiltinId,
+            id: IntegrationId,
             deltas: Mutex<Option<mpsc::UnboundedReceiver<HealthDelta>>>,
         }
 
         impl BuiltinStatus for HeldStreamBuiltin {
-            fn id(&self) -> &BuiltinId {
+            fn id(&self) -> &IntegrationId {
                 &self.id
             }
             fn display_name(&self) -> &str {
@@ -1631,7 +1633,7 @@ mod tests {
             let _enter = rt.enter();
             let (deltas_tx, deltas_rx) = mpsc::unbounded_channel();
             let probe = Arc::new(HeldStreamBuiltin {
-                id: BuiltinId::new("obs"),
+                id: IntegrationId::new("obs"),
                 deltas: Mutex::new(Some(deltas_rx)),
             });
             let object = BuiltinObject {

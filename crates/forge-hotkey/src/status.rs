@@ -1,14 +1,13 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use forge_platform_core::{
-    BuiltinId, BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction,
-};
+use forge_platform_core::{BuiltinStatus, CapabilityFlags, ConnectionState, HeaderAction};
+use forge_types::IntegrationId;
 
 use crate::client::HotkeyClient;
 
 impl BuiltinStatus for HotkeyClient {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.id
     }
 

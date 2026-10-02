@@ -8,6 +8,7 @@ pub mod chat;
 pub mod collections;
 pub mod endpoints;
 pub mod error;
+pub mod integration;
 pub mod live_viewers;
 pub mod net;
 pub mod paths;
@@ -16,14 +17,13 @@ pub mod rate_limit;
 pub use auth::AuthFlow;
 pub use backoff::Backoff;
 pub use builtin::{
-    ActiveRow, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinId,
-    BuiltinStatus, CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome,
-    DetailSection, HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream,
-    HealthValue, HeroBadge, HeroBadgeTone, InfoField, KeyValueRow, ListFooter, PickerKind,
-    QuickAction, QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource,
-    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
-    QuickActions, RowAction, SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus,
-    TokenColor, TrailingToken,
+    ActiveRow, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
+    CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome, DetailSection,
+    HeaderAction, HealthBar, HealthDelta, HealthLevel, HealthMetric, HealthStream, HealthValue,
+    HeroBadge, HeroBadgeTone, InfoField, KeyValueRow, ListFooter, PickerKind, QuickAction,
+    QuickActionAccent, QuickActionChoiceOption, QuickActionChoiceSource, QuickActionField,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, RowAction,
+    SectionIcon, StatColumn, SubscriptionRow, SubscriptionStatus, TokenColor, TrailingToken,
 };
 pub use capabilities::PlatformCapabilities;
 pub use chat::{
@@ -37,6 +37,7 @@ pub use collections::{
 };
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};
+pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::is_private_or_special;
 pub use poll::DedupSet;

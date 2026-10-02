@@ -5,7 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use forge_events::EventPublisher;
-use forge_platform_core::BuiltinId;
+use forge_types::IntegrationId;
 
 use crate::backend::{MidiBackend, MidirBackend};
 use crate::config::MidiConfig;
@@ -20,7 +20,7 @@ use crate::supervisor::{SupervisorCommand, run_supervisor};
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct MidiClient {
-    pub(crate) id: BuiltinId,
+    pub(crate) id: IntegrationId,
     pub(crate) config: MidiConfig,
     pub(crate) backend: Arc<dyn MidiBackend>,
     pub(crate) publisher: Arc<dyn EventPublisher>,
@@ -43,7 +43,7 @@ impl MidiClient {
         let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
 
         let client = Arc::new(Self {
-            id: BuiltinId::new("midi"),
+            id: crate::MIDI_INTEGRATION.id,
             config,
             backend,
             publisher,
@@ -131,7 +131,7 @@ impl MidiClient {
         let (health_tx, health_state) = make_health_state();
         let (control_tx, _control_rx) = mpsc::channel::<SupervisorCommand>(8);
         Arc::new(Self {
-            id: BuiltinId::new("midi"),
+            id: IntegrationId::new("midi"),
             config: MidiConfig::default(),
             backend,
             publisher: Arc::new(NoopPublisher),
@@ -161,7 +161,7 @@ mod tests {
         let (health_tx, health_state) = make_health_state();
         let (control_tx, control_rx) = mpsc::channel::<SupervisorCommand>(8);
         let client = Arc::new(MidiClient {
-            id: BuiltinId::new("midi"),
+            id: IntegrationId::new("midi"),
             config: MidiConfig::default(),
             backend: Arc::new(MockMidiBackend::new(vec![], vec![])),
             publisher: Arc::new(NoopPublisher),

@@ -1,4 +1,5 @@
 use crate::ids::{ActionId, EventId};
+use crate::integration::IntegrationId;
 use crate::redaction::RedactedText;
 use crate::template::{TemplatePiece, TemplatePieces};
 use crate::variant::Variant;
@@ -19,6 +20,13 @@ pub enum SubActionOutcome {
     Success,
     Failed(String),
     Skipped(String),
+    IntegrationDisabled(IntegrationId),
+}
+
+const INTEGRATION_DISABLED_REASON: &str = "integration disabled";
+
+pub fn integration_disabled_reason(integration: &IntegrationId) -> String {
+    format!("{INTEGRATION_DISABLED_REASON}: {integration}")
 }
 
 impl SubActionOutcome {
@@ -27,6 +35,20 @@ impl SubActionOutcome {
             Ok(_) => Self::Success,
             Err(e) => Self::Failed(e.to_string()),
         }
+    }
+
+    pub fn failure_reason(&self) -> Option<String> {
+        match self {
+            Self::Failed(reason) => Some(reason.clone()),
+            Self::IntegrationDisabled(integration) => {
+                Some(integration_disabled_reason(integration))
+            }
+            Self::Success | Self::Skipped(_) => None,
+        }
+    }
+
+    pub fn is_failure(&self) -> bool {
+        matches!(self, Self::Failed(_) | Self::IntegrationDisabled(_))
     }
 }
 

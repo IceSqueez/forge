@@ -30,7 +30,9 @@ pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;
 pub use refinement::{FormRefinement, FormSchemaSource, refined_fields};
-pub use registry::{SubActionRegistry, TriggerRegistry};
+pub use registry::{
+    OwnedSubActionRegistration, OwnedTriggerRegistration, SubActionRegistry, TriggerRegistry,
+};
 pub use run_context::RunContext;
 pub use runner::{SubActionConfig, SubActionRunner};
 pub use synthesis::{SynthesisSample, synthesize_args};

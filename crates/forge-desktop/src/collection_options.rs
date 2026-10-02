@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use forge_platform_core::{
-    BuiltinId, CollectionId, CollectionItem, CollectionItemAccess, CollectionRevisions,
-    RevisionWait,
+    CollectionId, CollectionItem, CollectionItemAccess, CollectionRevisions, RevisionWait,
 };
 use forge_registry::FormField;
+use forge_types::IntegrationId;
 use gpui::{Context, Task};
 
 use crate::integrations::BuiltinRegistry;
@@ -17,7 +17,7 @@ pub(crate) type ChoiceOptions = HashMap<String, Vec<(String, String)>>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CollectionSource {
     pub(crate) options_key: String,
-    pub(crate) builtin: BuiltinId,
+    pub(crate) builtin: IntegrationId,
     pub(crate) collection: CollectionId,
     pub(crate) manageable_only: bool,
 }
@@ -35,7 +35,7 @@ impl CollectionSource {
         }
         Some(Self {
             options_key: options_key.to_owned(),
-            builtin: BuiltinId::new(builtin),
+            builtin: IntegrationId::new(builtin),
             collection: CollectionId::new(collection),
             manageable_only,
         })
@@ -100,7 +100,7 @@ pub(crate) async fn load_collection_options(
     builtins: BuiltinRegistry,
     sources: Vec<CollectionSource>,
 ) -> ChoiceOptions {
-    let mut listed: Vec<((BuiltinId, CollectionId), Vec<CollectionItem>)> = Vec::new();
+    let mut listed: Vec<((IntegrationId, CollectionId), Vec<CollectionItem>)> = Vec::new();
     let mut options = ChoiceOptions::new();
     for source in sources {
         let owner = (source.builtin.clone(), source.collection.clone());
@@ -154,7 +154,7 @@ pub(crate) fn watch_collection_revisions<V: 'static>(
     on_change: fn(&mut V, &mut Context<V>),
     cx: &mut Context<V>,
 ) -> Vec<Task<()>> {
-    let mut watched: Vec<&BuiltinId> = Vec::new();
+    let mut watched: Vec<&IntegrationId> = Vec::new();
     let mut tasks = Vec::new();
     for source in sources {
         if watched.contains(&&source.builtin) {

@@ -15,6 +15,7 @@ use tracing::{info, warn};
 use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
+use crate::integration_gate::{IntegrationGate, run_gated_step};
 use crate::run_history::RunHistoryWriter;
 use crate::{Config, EventBus};
 
@@ -45,6 +46,7 @@ pub struct ActionEngineHandle {
     sender: mpsc::Sender<EngineJob>,
     quick_sender: mpsc::Sender<QuickActionRequest>,
     stop: Arc<watch::Sender<bool>>,
+    integrations: IntegrationGate,
 }
 
 pub struct ExecutionRequest {
@@ -117,6 +119,10 @@ impl ActionEngineHandle {
         Ok(PendingQuickAction(pending))
     }
 
+    pub fn integration_gate(&self) -> &IntegrationGate {
+        &self.integrations
+    }
+
     pub fn shutdown(self) {
         self.stop.send_replace(true);
     }
@@ -151,6 +157,7 @@ impl ActionEngine {
             gate,
             config,
         ));
+        let integrations = chain_engine.integration_gate().clone();
         let history = RunHistoryWriter::spawn(&bus, history, actions);
         let engine = Arc::new(Self {
             bus: Arc::clone(&bus),
@@ -166,11 +173,13 @@ impl ActionEngine {
             bus,
             history,
             sub_action_registry,
+            integrations.clone(),
         ));
         ActionEngineHandle {
             sender: tx,
             quick_sender: quick_tx,
             stop: Arc::new(stop_tx),
+            integrations,
         }
     }
 
@@ -419,6 +428,7 @@ async fn run_quick_action_loop(
     bus: Arc<EventBus>,
     history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
+    integrations: IntegrationGate,
 ) {
     loop {
         tokio::select! {
@@ -431,6 +441,7 @@ async fn run_quick_action_loop(
                         Arc::clone(&bus),
                         history.clone(),
                         Arc::clone(&sub_action_registry),
+                        integrations.clone(),
                     ));
                 }
                 None => return,
@@ -444,6 +455,7 @@ async fn run_quick_action(
     bus: Arc<EventBus>,
     history: RunHistoryWriter,
     sub_action_registry: Arc<SubActionRegistry>,
+    integrations: IntegrationGate,
 ) {
     let publisher: Arc<dyn forge_events::EventPublisher> =
         Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>;
@@ -462,7 +474,14 @@ async fn run_quick_action(
     let (mut telemetry, produced_stack) = match sub_action_registry.get(&req.step.kind_id) {
         Some(runner) => {
             let resolved = effective_config(&runner.default_config(), &req.step.config);
-            runner.execute(&resolved, &run_ctx).await
+            run_gated_step(
+                &integrations,
+                sub_action_registry.owning_integration(&req.step.kind_id),
+                &run_ctx,
+                &req.step.kind_id,
+                runner.execute(&resolved, &run_ctx),
+            )
+            .await
         }
         None => {
             warn!(
@@ -484,7 +503,7 @@ async fn run_quick_action(
 
     let outcome = match &telemetry.outcome {
         SubActionOutcome::Success => "success",
-        SubActionOutcome::Failed(_) => "failed",
+        SubActionOutcome::Failed(_) | SubActionOutcome::IntegrationDisabled(_) => "failed",
         SubActionOutcome::Skipped(_) => "skipped",
     };
 
@@ -500,9 +519,9 @@ async fn run_quick_action(
         run_event_id,
     ));
 
-    let run_outcome = match &telemetry.outcome {
-        SubActionOutcome::Success | SubActionOutcome::Skipped(_) => ExecutionOutcome::Success,
-        SubActionOutcome::Failed(message) => ExecutionOutcome::Failed(message.clone()),
+    let run_outcome = match telemetry.outcome.failure_reason() {
+        Some(reason) => ExecutionOutcome::Failed(reason),
+        None => ExecutionOutcome::Success,
     };
     let reported = telemetry.outcome.clone();
     let ctx = ExecutionContext {

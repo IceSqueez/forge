@@ -1,6 +1,6 @@
 use std::fmt;
 
-use forge_platform_core::BuiltinId;
+use forge_types::IntegrationId;
 use forge_types::{ActionId, TriggerInstanceId};
 
 use crate::settings::SettingsSection;
@@ -18,7 +18,7 @@ pub enum Screen {
     Scripts,
     Platforms,
     StreamApps,
-    BuiltinDetail(BuiltinId),
+    BuiltinDetail(IntegrationId),
     Tts(Option<TtsSection>),
     Soundboard,
     Overlays,
@@ -117,7 +117,7 @@ impl Screen {
             "platforms" => Ok(Screen::Platforms),
             "stream-apps" => Ok(Screen::StreamApps),
             "builtin-detail" => param
-                .map(|id| Screen::BuiltinDetail(BuiltinId::new(id)))
+                .map(|id| Screen::BuiltinDetail(IntegrationId::new(id)))
                 .ok_or(ScreenArgError::MissingBuiltinId),
             "tts" => match param {
                 None => Ok(Screen::Tts(None)),

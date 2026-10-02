@@ -19,6 +19,7 @@ use crate::action_engine::{
     condition_failed_telemetry, condition_skipped_telemetry, disabled_telemetry, skipped_telemetry,
 };
 use crate::condition::ConditionGate;
+use crate::integration_gate::{IntegrationGate, run_gated_step};
 
 pub(crate) fn capture_args_in(
     registry: &SubActionRegistry,
@@ -75,8 +76,10 @@ pub(crate) fn publish_subaction_done(
 ) {
     let (outcome, message) = match &telemetry.outcome {
         SubActionOutcome::Success => ("success", None),
-        SubActionOutcome::Failed(m) => ("failed", Some(m.as_str())),
-        SubActionOutcome::Skipped(m) => ("skipped", Some(m.as_str())),
+        SubActionOutcome::Skipped(m) => ("skipped", Some(m.clone())),
+        SubActionOutcome::Failed(_) | SubActionOutcome::IntegrationDisabled(_) => {
+            ("failed", telemetry.outcome.failure_reason())
+        }
     };
     let mut payload = json!({
         "step_index": telemetry.index,
@@ -86,6 +89,9 @@ pub(crate) fn publish_subaction_done(
     });
     if let Some(msg) = message {
         payload["message"] = json!(msg);
+    }
+    if let SubActionOutcome::IntegrationDisabled(integration) = &telemetry.outcome {
+        payload["integration"] = json!(integration.as_str());
     }
     publisher.publish(Event::caused_by(
         EventSource::Core,
@@ -99,6 +105,7 @@ pub struct ChainEngine {
     registry: Arc<SubActionRegistry>,
     publisher: Arc<dyn EventPublisher>,
     gate: Arc<ConditionGate>,
+    integrations: IntegrationGate,
     config: Config,
 }
 
@@ -125,8 +132,13 @@ impl ChainEngine {
             registry,
             publisher,
             gate,
+            integrations: IntegrationGate::new(),
             config,
         }
+    }
+
+    pub fn integration_gate(&self) -> &IntegrationGate {
+        &self.integrations
     }
 
     async fn check_condition(&self, step: &SubActionStep, scope: &ArgStack) -> ConditionVerdict {
@@ -254,7 +266,14 @@ impl ChainEngine {
             let (mut tel, updated) = match self.registry.get(&step.kind_id) {
                 Some(runner) => {
                     let resolved = effective_config(&runner.default_config(), &step.config);
-                    runner.execute(&resolved, &run_ctx).await
+                    run_gated_step(
+                        &self.integrations,
+                        self.registry.owning_integration(&step.kind_id),
+                        &run_ctx,
+                        &step.kind_id,
+                        runner.execute(&resolved, &run_ctx),
+                    )
+                    .await
                 }
                 None => {
                     warn!(
@@ -279,10 +298,7 @@ impl ChainEngine {
             tel.produced = produced;
             publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
 
-            let failure = match &tel.outcome {
-                SubActionOutcome::Failed(m) => Some(m.clone()),
-                _ => None,
-            };
+            let failure = tel.outcome.failure_reason();
             telemetry.push(tel);
             telemetry.extend(nested);
 
@@ -394,7 +410,14 @@ impl ChainEngine {
                     let (mut tel, updated) = match self.registry.get(&step.kind_id) {
                         Some(runner) => {
                             let resolved = effective_config(&runner.default_config(), &step.config);
-                            runner.execute(&resolved, &run_ctx).await
+                            run_gated_step(
+                                &self.integrations,
+                                self.registry.owning_integration(&step.kind_id),
+                                &run_ctx,
+                                &step.kind_id,
+                                runner.execute(&resolved, &run_ctx),
+                            )
+                            .await
                         }
                         None => {
                             warn!(
@@ -412,9 +435,10 @@ impl ChainEngine {
                     };
                     publish_subaction_done(self.publisher.as_ref(), run_event_id, &tel);
 
-                    let failure = match (&tel.outcome, step.continue_on_error) {
-                        (SubActionOutcome::Failed(m), false) => Some(m.clone()),
-                        _ => None,
+                    let failure = if step.continue_on_error {
+                        None
+                    } else {
+                        tel.outcome.failure_reason()
                     };
                     (tel, nested_sink.drain(), failure)
                 }

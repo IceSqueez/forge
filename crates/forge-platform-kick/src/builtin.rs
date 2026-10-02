@@ -3,13 +3,14 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
 use forge_platform_core::{
-    BannerLevel, BuiltinContent, BuiltinHealth, BuiltinId, BuiltinStatus, CapabilityFlags,
-    ChatPlatform, ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric,
-    HealthStream, HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActionAccent,
-    QuickActionField, QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness,
-    QuickActions, RateLimiter, SectionIcon, ViewerReport,
+    BannerLevel, BuiltinContent, BuiltinHealth, BuiltinStatus, CapabilityFlags, ChatPlatform,
+    ConnectionState, DetailSection, HeaderAction, HealthDelta, HealthMetric, HealthStream,
+    HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActionAccent, QuickActionField,
+    QuickActionFieldKind, QuickActionFieldValue, QuickActionLiveness, QuickActions, RateLimiter,
+    SectionIcon, ViewerReport,
 };
 use forge_registry::{RegistryError, TriggerRegistry};
+use forge_types::IntegrationId;
 use forge_types::{SubActionStep, Variant};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
@@ -30,6 +31,7 @@ use crate::triggers::sub::SubDescriptor;
 use crate::triggers::sub_gift::SubGiftDescriptor;
 
 pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), RegistryError> {
+    let mut registry = registry.owned_by(crate::KICK_INTEGRATION.id);
     registry.register(Box::new(ChatDescriptor))?;
     registry.register(Box::new(ChatCommandDescriptor))?;
     registry.register(Box::new(SubDescriptor))?;
@@ -44,7 +46,7 @@ pub fn register_kick_triggers(registry: &mut TriggerRegistry) -> Result<(), Regi
 }
 
 pub struct KickIntegrationBundle {
-    id: BuiltinId,
+    id: IntegrationId,
     slug: String,
     user_id: u64,
     token_expires_at: RwLock<Option<SystemTime>>,
@@ -69,7 +71,7 @@ impl KickIntegrationBundle {
         let (health_tx, _) = broadcast::channel(16);
         let state_rx = platform.state_receiver();
         let bundle = Arc::new(Self {
-            id: BuiltinId::new("kick"),
+            id: crate::KICK_INTEGRATION.id,
             slug,
             user_id,
             token_expires_at: RwLock::new(None),
@@ -220,7 +222,7 @@ fn viewers_health_value(report: ViewerReport) -> HealthValue {
 }
 
 impl BuiltinStatus for KickIntegrationBundle {
-    fn id(&self) -> &BuiltinId {
+    fn id(&self) -> &IntegrationId {
         &self.id
     }
 

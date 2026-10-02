@@ -10,6 +10,7 @@ pub mod credentials_manager;
 mod custom_rewards;
 mod event_channel;
 pub mod helix;
+pub mod integration;
 mod lifecycle;
 #[cfg(test)]
 mod log_capture;
@@ -36,6 +37,7 @@ pub use helix::{
     HelixError, HelixHttpTransport, HelixMethod, HelixRequest, HelixTokenRefresher,
     HelixTokenSource, HelixTransport,
 };
+pub use integration::TWITCH_INTEGRATION;
 pub use lifecycle::TwitchLifecycle;
 pub use sub_actions::identity::BroadcasterTier;
 pub use sub_actions::register_twitch_sub_actions;

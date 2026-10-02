@@ -5,10 +5,15 @@ use crate::descriptor::{
 };
 use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
+use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.ticker";
 
+pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
+
 const TICKER_DISPLAY_SECS: i64 = 8;
+const DESIGN_WIDTH_PX: u32 = 1920;
+const DESIGN_HEIGHT_PX: u32 = 96;
 
 pub struct TickerOverlayKind;
 
@@ -38,14 +43,24 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        1
+        BOX_CONTRACT_SCHEMA_VERSION
+    }
+
+    fn default_design_size(&self) -> DesignSize {
+        DesignSize {
+            width: DESIGN_WIDTH_PX,
+            height: DESIGN_HEIGHT_PX,
+        }
+    }
+
+    fn default_margins(&self) -> ContentMargins {
+        ContentMargins::NONE
     }
 
     fn look_defaults(&self) -> OverlayConfig {
         let mut defaults = config::shared_style_defaults(
             "yellow",
             "Bebas Neue",
-            "bottom",
             "slide-left",
             metrics::TICKER_SIZING,
         );
@@ -65,7 +80,7 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn look_fields(&self) -> Vec<SectionedField> {
-        config::shared_fields(metrics::TICKER_SIZING)
+        config::shared_fields()
     }
 
     fn page_assets(&self) -> PageAssets {

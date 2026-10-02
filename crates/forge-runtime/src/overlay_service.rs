@@ -9,7 +9,7 @@ use forge_overlay::{
     OverlayKindRegistry, OverlayMedia, SampleContext, SampleTrigger, delivered_content,
     display_window, ensure_shared_directory, joined_to_show, materialize_overlay,
     read_overlay_source, remove_overlay_directory, sample_content, sample_context, take_speech,
-    write_overlay_source,
+    upgrade_config, write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_registry::{
@@ -552,8 +552,9 @@ impl OverlayServiceHandle {
 
     async fn write_files(
         &self,
-        definition: &OverlayDefinition,
+        stored: &OverlayDefinition,
     ) -> Result<MaterializeReport, OverlayServiceError> {
+        let definition = &self.upgraded(stored);
         let root = self.root().await;
         let instance = instance_of(
             definition,
@@ -578,13 +579,33 @@ impl OverlayServiceHandle {
             );
         }
 
-        if definition.generator_version != GENERATOR_VERSION {
-            let mut stamped = definition.clone();
-            stamped.generator_version = GENERATOR_VERSION;
+        let mut stamped = definition.clone();
+        stamped.generator_version = GENERATOR_VERSION;
+        if stamped != *stored {
             self.inner.repo.save(&stamped).await?;
         }
 
         Ok(report)
+    }
+
+    fn upgraded(&self, stored: &OverlayDefinition) -> OverlayDefinition {
+        let mut current = stored.clone();
+        let Some(descriptor) = self.inner.kinds.get(&stored.kind_id) else {
+            return current;
+        };
+        if let Some(config) =
+            upgrade_config(descriptor, stored.config_schema_version, &stored.config)
+        {
+            tracing::info!(
+                overlay = %stored.id,
+                from = stored.config_schema_version,
+                to = descriptor.config_schema_version(),
+                "overlay settings upgraded to the current layout"
+            );
+            current.config = config;
+            current.config_schema_version = descriptor.config_schema_version();
+        }
+        current
     }
 
     pub async fn sample(&self, id: &OverlayId) -> SampleContext {

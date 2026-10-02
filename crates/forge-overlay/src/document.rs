@@ -2,7 +2,7 @@ use forge_types::Variant;
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::config::effective_overlay_config;
+use crate::config::{MIGRATION_ACKNOWLEDGED, RETIRED_KEYS, effective_overlay_config};
 use crate::descriptor::OverlayKindDescriptor;
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
@@ -36,6 +36,7 @@ pub fn config_document(
     let effective = effective_overlay_config(descriptor, &instance.config);
     let config = effective
         .iter()
+        .filter(|(key, _)| page_reads(key))
         .map(|(key, value)| (key.clone(), page_value(instance, key, value)))
         .collect();
 
@@ -51,6 +52,10 @@ pub fn config_document(
     };
 
     Ok(serde_json::to_string_pretty(&document)?)
+}
+
+fn page_reads(key: &str) -> bool {
+    key != MIGRATION_ACKNOWLEDGED && !RETIRED_KEYS.contains(&key)
 }
 
 fn page_value(instance: &OverlayInstance, key: &str, value: &Variant) -> Value {

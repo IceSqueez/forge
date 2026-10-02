@@ -4,8 +4,8 @@ use forge_components::{
 };
 use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, SURFACE_RGB, TICKER};
 use forge_overlay::{
-    AxisBound, AxisFallback, ElementAxis, ElementSizing, PreviewComposition, PreviewElement,
-    PreviewFont, PreviewLineRole, PreviewPosition, PreviewShape, element_sizing,
+    AxisBound, ElementSizing, PreviewComposition, PreviewElement, PreviewFont, PreviewLineRole,
+    PreviewPosition, PreviewShape, element_sizing,
 };
 use gpui::{
     AnyElement, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, prelude::*, px, relative,
@@ -19,6 +19,7 @@ const CHANNEL_MAX: f32 = 255.0;
 const UNSCALED_TEXT: f32 = 1.0;
 
 const TRACK_WASH_ALPHA: f32 = 0.14;
+const WHOLE_BOX: f32 = 1.0;
 
 #[derive(Clone, Copy)]
 pub(super) struct Scale {
@@ -43,7 +44,6 @@ impl Scale {
 #[derive(Clone, Copy)]
 pub(super) struct ElementPlan {
     sizing: Option<ElementSizing>,
-    element: PreviewElement,
     text_scale: f32,
 }
 
@@ -53,11 +53,7 @@ impl ElementPlan {
         let text_scale = sizing
             .zip(element.text_size)
             .map_or(UNSCALED_TEXT, |(sizing, size)| sizing.text_scale(size));
-        Self {
-            sizing,
-            element,
-            text_scale,
-        }
+        Self { sizing, text_scale }
     }
 
     pub(super) fn text_scale(self) -> f32 {
@@ -65,50 +61,22 @@ impl ElementPlan {
     }
 }
 
-fn sized(root: Div, plan: ElementPlan, scale: Scale) -> Div {
+fn sized(root: Div, plan: ElementPlan) -> Div {
     let Some(sizing) = plan.sizing else {
         return root;
     };
+    let whole_box = || Length::from(relative(WHOLE_BOX));
 
-    let root = match axis_extent(sizing.width, plan.element.width, scale) {
-        Some((AxisBound::Exact, length)) => root.w(length),
-        Some((AxisBound::AtLeast, length)) => root.min_w(length),
-        Some((AxisBound::AtMost, length)) => root.max_w(length),
+    let root = match sizing.width {
+        Some(AxisBound::Exact) => root.w(whole_box()),
+        Some(AxisBound::AtMost) => root.max_w(whole_box()),
         None => root,
     };
 
-    match axis_extent(sizing.height, plan.element.height, scale) {
-        Some((AxisBound::Exact, length)) => root.h(length),
-        Some((AxisBound::AtLeast, length)) => root.min_h(length),
-        Some((AxisBound::AtMost, length)) => root.max_h(length),
+    match sizing.height {
+        Some(AxisBound::Exact) => root.h(whole_box()),
+        Some(AxisBound::AtMost) => root.max_h(whole_box()),
         None => root,
-    }
-}
-
-fn axis_extent(
-    rule: Option<ElementAxis>,
-    value: Option<u32>,
-    scale: Scale,
-) -> Option<(AxisBound, Length)> {
-    let rule = rule?;
-    let length = match value {
-        Some(pixels) => Length::from(scale.at(pixels as f32)),
-        None => match rule.fallback {
-            AxisFallback::Content => return None,
-            AxisFallback::Canvas => Length::from(relative(1.0)),
-            AxisFallback::Pixels(metric) => Length::from(scale.at(metric)),
-        },
-    };
-    Some((rule.bound, length))
-}
-
-pub(super) fn body_padding(shape: PreviewShape) -> Option<f32> {
-    match shape {
-        PreviewShape::Blank => None,
-        PreviewShape::BadgeBanner => Some(ALERT.body_padding),
-        PreviewShape::MessageFeed => Some(CHAT.body_padding),
-        PreviewShape::ProgressBar => Some(GOAL.body_padding),
-        PreviewShape::BorderedFrame | PreviewShape::Strip => None,
     }
 }
 
@@ -238,7 +206,7 @@ fn badge_banner(
         }))
         .child(lines);
 
-    sized(card, plan, scale).into_any_element()
+    sized(card, plan).into_any_element()
 }
 
 fn banner_headline(
@@ -370,7 +338,7 @@ fn message_feed(
         .font_family(family)
         .child(row);
 
-    sized(div().flex_none().flex().child(rows), plan, scale).into_any_element()
+    sized(div().flex_none().flex().child(rows), plan).into_any_element()
 }
 
 fn progress_bar(
@@ -432,7 +400,7 @@ fn progress_bar(
                 .child(figure),
         );
 
-    sized(card, plan, scale).into_any_element()
+    sized(card, plan).into_any_element()
 }
 
 fn strip(
@@ -496,7 +464,7 @@ fn strip(
         )
         .child(body);
 
-    sized(bar, plan, scale).into_any_element()
+    sized(bar, plan).into_any_element()
 }
 
 fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<SharedString> {

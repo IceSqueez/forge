@@ -6,6 +6,7 @@ use crate::config::{self, DURATION, SOUND, SPEECH, SPEECH_VOICE, effective_overl
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::source_box::{ContentMargins, DesignSize};
 
 pub const DEFAULT_DISPLAY_SECS: i64 = 5;
 
@@ -19,15 +20,24 @@ pub(crate) fn base_fields(disposition: DeliveryDisposition) -> Vec<SectionedFiel
     fields.push(config::sound_field());
     fields.push(config::speech_field());
     fields.push(config::speech_voice_field());
+    fields.extend(config::design_size_fields());
+    fields.extend(config::margin_fields());
     fields
 }
 
-pub(crate) fn base_defaults(disposition: DeliveryDisposition, display_secs: i64) -> OverlayConfig {
+pub(crate) fn base_defaults(
+    disposition: DeliveryDisposition,
+    display_secs: i64,
+    design_size: DesignSize,
+    margins: ContentMargins,
+) -> OverlayConfig {
     let mut defaults = OverlayConfig::from([
         (SOUND.to_owned(), config::text("")),
         (SPEECH.to_owned(), config::text("")),
         (SPEECH_VOICE.to_owned(), config::text("")),
     ]);
+    design_size.write_into(&mut defaults);
+    margins.write_into(&mut defaults);
     if disposition == DeliveryDisposition::Transient {
         defaults.insert(DURATION.to_owned(), Variant::Int(display_secs));
     }

@@ -8,6 +8,7 @@
 html,
 body {
   margin: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
   background: transparent;
@@ -16,18 +17,9 @@ body {
 body {
   display: flex;
   box-sizing: border-box;
-  padding: 32px;
-  justify-content: center;
-}
-
-body[data-position="top"] {
-  align-items: flex-start;
-}
-body[data-position="center"] {
+  padding: var(--margin-top, 0px) var(--margin-right, 0px) var(--margin-bottom, 0px) var(--margin-left, 0px);
   align-items: center;
-}
-body[data-position="bottom"] {
-  align-items: flex-end;
+  justify-content: center;
 }
 
 #stage {
@@ -35,8 +27,9 @@ body[data-position="bottom"] {
   box-sizing: border-box;
   gap: calc(14px * var(--text-scale));
   align-items: center;
-  width: var(--element-width, auto);
-  min-height: var(--element-height, auto);
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
   padding: calc(16px * var(--text-scale)) calc(22px * var(--text-scale));
   border: 1px solid var(--accent);
   border-radius: calc(12px * var(--text-scale));

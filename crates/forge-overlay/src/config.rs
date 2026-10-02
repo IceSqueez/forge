@@ -4,7 +4,6 @@ use forge_types::Variant;
 use crate::descriptor::{ConfigSection, OverlayConfig, OverlayKindDescriptor, SectionedField};
 use crate::error::OverlayError;
 use crate::metrics::ElementSizing;
-use crate::preview::{CANVAS_HEIGHT_PX, CANVAS_WIDTH_PX};
 
 pub const HEADLINE: &str = "headline";
 pub const SUBLINE: &str = "subline";
@@ -13,6 +12,13 @@ pub const FONT: &str = "font";
 pub const POSITION: &str = "position";
 pub const ELEMENT_WIDTH: &str = "element_width";
 pub const ELEMENT_HEIGHT: &str = "element_height";
+pub const DESIGN_WIDTH: &str = "design_width";
+pub const DESIGN_HEIGHT: &str = "design_height";
+pub const MARGIN_TOP: &str = "margin_top";
+pub const MARGIN_RIGHT: &str = "margin_right";
+pub const MARGIN_BOTTOM: &str = "margin_bottom";
+pub const MARGIN_LEFT: &str = "margin_left";
+pub const MIGRATION_ACKNOWLEDGED: &str = "migration_acknowledged";
 pub const TEXT_SIZE: &str = "text_size";
 pub const ANIMATION: &str = "animation";
 pub const DURATION: &str = "duration";
@@ -45,7 +51,9 @@ pub const DEFAULT_ICON: &str = "star-filled";
 
 pub const ACCENT_OPTIONS: &[&str] = &["mauve", "sky", "green", "peach", "yellow", "red"];
 pub const FONT_OPTIONS: &[&str] = &["Inter", "JetBrains Mono", "Rubik", "Bebas Neue"];
-pub const POSITION_OPTIONS: &[&str] = &["top", "center", "bottom"];
+pub const POSITION_OPTIONS: &[&str] = &["top", "bottom"];
+pub const POSITION_TOP: &str = "top";
+pub const POSITION_BOTTOM: &str = "bottom";
 pub const ANIMATION_OPTIONS: &[&str] = &[
     "fade",
     "slide-up",
@@ -58,11 +66,20 @@ pub const ANIMATION_OPTIONS: &[&str] = &[
 pub const DURATION_MIN_SECS: i64 = 1;
 pub const DURATION_MAX_SECS: i64 = 15;
 
-pub const RETIRED_KEYS: &[&str] = &["canvas_width", "canvas_height"];
+pub const RETIRED_KEYS: &[&str] = &[
+    "canvas_width",
+    "canvas_height",
+    ELEMENT_WIDTH,
+    ELEMENT_HEIGHT,
+];
 
-pub const ELEMENT_SIZE_MIN_PX: i64 = 40;
-pub const ELEMENT_WIDTH_MAX_PX: i64 = CANVAS_WIDTH_PX as i64;
-pub const ELEMENT_HEIGHT_MAX_PX: i64 = CANVAS_HEIGHT_PX as i64;
+pub const DESIGN_SIZE_MIN_PX: i64 = 40;
+pub const DESIGN_SIZE_MAX_PX: i64 = 7680;
+
+pub const MARGIN_MIN_PERCENT: i64 = 0;
+pub const MARGIN_MAX_PERCENT: i64 = 45;
+
+pub const MARGIN_SIDES: [&str; 4] = [MARGIN_TOP, MARGIN_RIGHT, MARGIN_BOTTOM, MARGIN_LEFT];
 
 pub const TEXT_SIZE_MIN_PX: i64 = 8;
 pub const TEXT_SIZE_MAX_PX: i64 = 200;
@@ -178,7 +195,7 @@ pub(crate) fn text(value: &str) -> Variant {
     Variant::String(value.to_owned())
 }
 
-pub(crate) fn shared_fields(sizing: ElementSizing) -> Vec<SectionedField> {
+pub(crate) fn shared_fields() -> Vec<SectionedField> {
     let mut fields = vec![
         in_section(
             ConfigSection::Content,
@@ -197,12 +214,12 @@ pub(crate) fn shared_fields(sizing: ElementSizing) -> Vec<SectionedField> {
             },
         ),
     ];
-    fields.extend(shared_style_fields(sizing));
+    fields.extend(shared_style_fields());
     fields
 }
 
-pub(crate) fn shared_style_fields(sizing: ElementSizing) -> Vec<SectionedField> {
-    let mut fields = vec![
+pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
+    vec![
         in_section(
             ConfigSection::Style,
             FormField::Swatch {
@@ -221,55 +238,77 @@ pub(crate) fn shared_style_fields(sizing: ElementSizing) -> Vec<SectionedField> 
         ),
         in_section(
             ConfigSection::Style,
-            FormField::Select {
-                key: POSITION,
-                label: "Position",
-                options: POSITION_OPTIONS,
+            FormField::Integer {
+                key: TEXT_SIZE,
+                label: "Text size",
+                min: TEXT_SIZE_MIN_PX,
+                max: TEXT_SIZE_MAX_PX,
             },
         ),
-    ];
-
-    if sizing.width.is_some() {
-        fields.push(in_section(
-            ConfigSection::Style,
-            FormField::Integer {
-                key: ELEMENT_WIDTH,
-                label: "Width",
-                min: ELEMENT_SIZE_MIN_PX,
-                max: ELEMENT_WIDTH_MAX_PX,
+        in_section(
+            ConfigSection::Behavior,
+            FormField::Select {
+                key: ANIMATION,
+                label: "Animation",
+                options: ANIMATION_OPTIONS,
             },
-        ));
-    }
-    if sizing.height.is_some() {
-        fields.push(in_section(
-            ConfigSection::Style,
-            FormField::Integer {
-                key: ELEMENT_HEIGHT,
-                label: "Height",
-                min: ELEMENT_SIZE_MIN_PX,
-                max: ELEMENT_HEIGHT_MAX_PX,
-            },
-        ));
-    }
+        ),
+    ]
+}
 
-    fields.push(in_section(
+pub(crate) fn position_field(label: &'static str) -> SectionedField {
+    in_section(
         ConfigSection::Style,
-        FormField::Integer {
-            key: TEXT_SIZE,
-            label: "Text size",
-            min: TEXT_SIZE_MIN_PX,
-            max: TEXT_SIZE_MAX_PX,
-        },
-    ));
-    fields.push(in_section(
-        ConfigSection::Behavior,
         FormField::Select {
-            key: ANIMATION,
-            label: "Animation",
-            options: ANIMATION_OPTIONS,
+            key: POSITION,
+            label,
+            options: POSITION_OPTIONS,
         },
-    ));
-    fields
+    )
+}
+
+pub(crate) fn design_size_fields() -> [SectionedField; 2] {
+    [
+        in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: DESIGN_WIDTH,
+                label: "Source width",
+                min: DESIGN_SIZE_MIN_PX,
+                max: DESIGN_SIZE_MAX_PX,
+            },
+        ),
+        in_section(
+            ConfigSection::Style,
+            FormField::Integer {
+                key: DESIGN_HEIGHT,
+                label: "Source height",
+                min: DESIGN_SIZE_MIN_PX,
+                max: DESIGN_SIZE_MAX_PX,
+            },
+        ),
+    ]
+}
+
+pub(crate) fn margin_fields() -> [SectionedField; 4] {
+    [
+        (MARGIN_TOP, "Margin top"),
+        (MARGIN_RIGHT, "Margin right"),
+        (MARGIN_BOTTOM, "Margin bottom"),
+        (MARGIN_LEFT, "Margin left"),
+    ]
+    .map(|(key, label)| {
+        in_section(
+            ConfigSection::Style,
+            FormField::Slider {
+                key,
+                label,
+                min: MARGIN_MIN_PERCENT,
+                max: MARGIN_MAX_PERCENT,
+                unit: "%",
+            },
+        )
+    })
 }
 
 pub(crate) fn author_field() -> SectionedField {
@@ -412,14 +451,12 @@ fn in_section(section: ConfigSection, field: FormField) -> SectionedField {
 pub(crate) fn shared_style_defaults(
     accent: &str,
     font: &str,
-    position: &str,
     animation: &str,
     sizing: ElementSizing,
 ) -> OverlayConfig {
     OverlayConfig::from([
         (ACCENT.to_owned(), text(accent)),
         (FONT.to_owned(), text(font)),
-        (POSITION.to_owned(), text(position)),
         (ANIMATION.to_owned(), text(animation)),
         (
             TEXT_SIZE.to_owned(),

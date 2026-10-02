@@ -5,8 +5,15 @@ use crate::descriptor::{
 };
 use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
+use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.alert";
+
+pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 3;
+
+const DESIGN_WIDTH_PX: u32 = 800;
+const DESIGN_HEIGHT_PX: u32 = 600;
+const MARGIN_PERCENT: u32 = 10;
 
 pub struct AlertOverlayKind;
 
@@ -36,17 +43,23 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        2
+        BOX_CONTRACT_SCHEMA_VERSION
+    }
+
+    fn default_design_size(&self) -> DesignSize {
+        DesignSize {
+            width: DESIGN_WIDTH_PX,
+            height: DESIGN_HEIGHT_PX,
+        }
+    }
+
+    fn default_margins(&self) -> ContentMargins {
+        ContentMargins::even(MARGIN_PERCENT)
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults(
-            "mauve",
-            "Rubik",
-            "top",
-            "slide-up",
-            metrics::ALERT_SIZING,
-        );
+        let mut defaults =
+            config::shared_style_defaults("mauve", "Rubik", "slide-up", metrics::ALERT_SIZING);
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Thanks for the sub!"),
@@ -60,7 +73,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn look_fields(&self) -> Vec<SectionedField> {
-        let mut fields = config::shared_fields(metrics::ALERT_SIZING);
+        let mut fields = config::shared_fields();
         fields.push(config::icon_field());
         fields
     }

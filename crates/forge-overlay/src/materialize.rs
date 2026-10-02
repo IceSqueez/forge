@@ -9,7 +9,7 @@ use crate::instance::OverlayInstance;
 use crate::media::{GENERATED_MEDIA_DIRECTORY, MediaIssue, ResolvedMedia};
 use crate::registry::OverlayKindRegistry;
 
-pub const GENERATOR_VERSION: u32 = 3;
+pub const GENERATOR_VERSION: u32 = 4;
 
 const MAX_IDENTITY_LEN: usize = 64;
 

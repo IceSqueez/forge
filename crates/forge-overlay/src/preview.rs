@@ -3,9 +3,7 @@ use forge_types::Variant;
 use crate::config;
 use crate::descriptor::OverlayConfig;
 use crate::metrics::{self, ElementSizing};
-
-pub const CANVAS_WIDTH_PX: u32 = 1920;
-pub const CANVAS_HEIGHT_PX: u32 = 1080;
+use crate::source_box::{ContentMargins, DesignSize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewShape {
@@ -58,17 +56,17 @@ pub struct PreviewCanvas {
     pub height: u32,
 }
 
-impl PreviewCanvas {
-    pub const REFERENCE: Self = Self {
-        width: CANVAS_WIDTH_PX,
-        height: CANVAS_HEIGHT_PX,
-    };
+impl From<DesignSize> for PreviewCanvas {
+    fn from(size: DesignSize) -> Self {
+        Self {
+            width: size.width,
+            height: size.height,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviewElement {
-    pub width: Option<u32>,
-    pub height: Option<u32>,
     pub text_size: Option<u32>,
 }
 
@@ -79,6 +77,7 @@ pub struct PreviewComposition {
     pub font: PreviewFont,
     pub position: PreviewPosition,
     pub canvas: PreviewCanvas,
+    pub margins: ContentMargins,
     pub element: PreviewElement,
     pub lines: Vec<PreviewLine>,
     pub fill: Option<f32>,
@@ -89,8 +88,9 @@ pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewCom
         shape,
         accent: accent_of(config),
         font: font_of(config),
-        position: position_of(config),
-        canvas: PreviewCanvas::REFERENCE,
+        position: position_of(shape, config),
+        canvas: DesignSize::read(config, DesignSize::BROWSER_SOURCE_DEFAULT).into(),
+        margins: ContentMargins::read(config, ContentMargins::NONE),
         element: element_of(shape, config),
         lines: lines_of(shape, config),
         fill: fill_of(shape, config),
@@ -115,11 +115,17 @@ fn font_of(config: &OverlayConfig) -> PreviewFont {
     }
 }
 
-fn position_of(config: &OverlayConfig) -> PreviewPosition {
-    match config::read_str(config, config::POSITION) {
-        "top" => PreviewPosition::Top,
-        "bottom" => PreviewPosition::Bottom,
-        _ => PreviewPosition::Center,
+fn position_of(shape: PreviewShape, config: &OverlayConfig) -> PreviewPosition {
+    if !matches!(
+        shape,
+        PreviewShape::MessageFeed | PreviewShape::BorderedFrame
+    ) {
+        return PreviewPosition::Center;
+    }
+    if config::read_str(config, config::POSITION) == config::POSITION_TOP {
+        PreviewPosition::Top
+    } else {
+        PreviewPosition::Bottom
     }
 }
 
@@ -136,26 +142,10 @@ fn sizing_of(shape: PreviewShape) -> Option<ElementSizing> {
 
 fn element_of(shape: PreviewShape, config: &OverlayConfig) -> PreviewElement {
     let Some(sizing) = sizing_of(shape) else {
-        return PreviewElement {
-            width: None,
-            height: None,
-            text_size: None,
-        };
+        return PreviewElement { text_size: None };
     };
 
     PreviewElement {
-        width: sizing.width.and(bounded_px(
-            config,
-            config::ELEMENT_WIDTH,
-            config::ELEMENT_SIZE_MIN_PX,
-            config::ELEMENT_WIDTH_MAX_PX,
-        )),
-        height: sizing.height.and(bounded_px(
-            config,
-            config::ELEMENT_HEIGHT,
-            config::ELEMENT_SIZE_MIN_PX,
-            config::ELEMENT_HEIGHT_MAX_PX,
-        )),
         text_size: Some(
             bounded_px(
                 config,

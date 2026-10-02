@@ -8,14 +8,23 @@
 html,
 body {
   margin: 0;
+  width: 100%;
   height: 100%;
   overflow: hidden;
   background: transparent;
 }
 
+body {
+  display: flex;
+  box-sizing: border-box;
+  padding: var(--margin-top, 0px) var(--margin-right, 0px) var(--margin-bottom, 0px) var(--margin-left, 0px);
+}
+
 #stage {
-  position: absolute;
-  inset: 16px;
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: calc(16px * var(--text-scale));
   border: 3px solid var(--accent);
   border-radius: 14px;
   font-family: var(--font);

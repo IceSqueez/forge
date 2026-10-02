@@ -5,15 +5,18 @@ pub const PILL_RADIUS: f32 = 999.0;
 
 pub const TEXT_SIZE_PROPERTY: &str = "--text-size";
 pub const TEXT_SCALE_PROPERTY: &str = "--text-scale";
-pub const ELEMENT_WIDTH_PROPERTY: &str = "--element-width";
-pub const ELEMENT_HEIGHT_PROPERTY: &str = "--element-height";
+pub const MARGIN_TOP_PROPERTY: &str = "--margin-top";
+pub const MARGIN_RIGHT_PROPERTY: &str = "--margin-right";
+pub const MARGIN_BOTTOM_PROPERTY: &str = "--margin-bottom";
+pub const MARGIN_LEFT_PROPERTY: &str = "--margin-left";
 
 const WIDTH_AXIS: &str = "width";
 const HEIGHT_AXIS: &str = "height";
+const WHOLE_BOX: &str = "100%";
+const NO_MARGIN: &str = "0px";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AlertMetrics {
-    pub body_padding: f32,
     pub gap: f32,
     pub padding_block: f32,
     pub padding_inline: f32,
@@ -27,8 +30,6 @@ pub struct AlertMetrics {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChatMetrics {
-    pub body_padding: f32,
-    pub column_width: f32,
     pub row_gap: f32,
     pub row_padding_block: f32,
     pub row_padding_inline: f32,
@@ -58,8 +59,6 @@ pub struct FrameMetrics {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GoalMetrics {
-    pub body_padding: f32,
-    pub width: f32,
     pub gap: f32,
     pub padding_block: f32,
     pub padding_inline: f32,
@@ -88,7 +87,6 @@ pub struct TickerMetrics {
 }
 
 pub const ALERT: AlertMetrics = AlertMetrics {
-    body_padding: 32.0,
     gap: 14.0,
     padding_block: 16.0,
     padding_inline: 22.0,
@@ -101,8 +99,6 @@ pub const ALERT: AlertMetrics = AlertMetrics {
 };
 
 pub const CHAT: ChatMetrics = ChatMetrics {
-    body_padding: 24.0,
-    column_width: 360.0,
     row_gap: 6.0,
     row_padding_block: 6.0,
     row_padding_inline: 10.0,
@@ -130,8 +126,6 @@ pub const FRAME: FrameMetrics = FrameMetrics {
 };
 
 pub const GOAL: GoalMetrics = GoalMetrics {
-    body_padding: 32.0,
-    width: 320.0,
     gap: 8.0,
     padding_block: 14.0,
     padding_inline: 18.0,
@@ -161,51 +155,25 @@ pub const TICKER: TickerMetrics = TickerMetrics {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AxisBound {
     Exact,
-    AtLeast,
     AtMost,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AxisFallback {
-    Content,
-    Canvas,
-    Pixels(f32),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ElementAxis {
-    pub bound: AxisBound,
-    pub fallback: AxisFallback,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ElementSizing {
-    pub width: Option<ElementAxis>,
-    pub height: Option<ElementAxis>,
+    pub width: Option<AxisBound>,
+    pub height: Option<AxisBound>,
     pub base_text_size: f32,
 }
 
 pub const ALERT_SIZING: ElementSizing = ElementSizing {
-    width: Some(ElementAxis {
-        bound: AxisBound::Exact,
-        fallback: AxisFallback::Content,
-    }),
-    height: Some(ElementAxis {
-        bound: AxisBound::AtLeast,
-        fallback: AxisFallback::Content,
-    }),
+    width: Some(AxisBound::AtMost),
+    height: Some(AxisBound::AtMost),
     base_text_size: ALERT.headline_size,
 };
 
 pub const CHAT_SIZING: ElementSizing = ElementSizing {
-    width: Some(ElementAxis {
-        bound: AxisBound::Exact,
-        fallback: AxisFallback::Pixels(CHAT.column_width),
-    }),
-    height: Some(ElementAxis {
-        bound: AxisBound::AtMost,
-        fallback: AxisFallback::Canvas,
-    }),
+    width: Some(AxisBound::Exact),
+    height: Some(AxisBound::Exact),
     base_text_size: CHAT.message_size,
 };
 
@@ -216,23 +184,14 @@ pub const FRAME_SIZING: ElementSizing = ElementSizing {
 };
 
 pub const GOAL_SIZING: ElementSizing = ElementSizing {
-    width: Some(ElementAxis {
-        bound: AxisBound::Exact,
-        fallback: AxisFallback::Pixels(GOAL.width),
-    }),
-    height: Some(ElementAxis {
-        bound: AxisBound::AtLeast,
-        fallback: AxisFallback::Content,
-    }),
+    width: Some(AxisBound::Exact),
+    height: Some(AxisBound::AtMost),
     base_text_size: GOAL.label_size,
 };
 
 pub const TICKER_SIZING: ElementSizing = ElementSizing {
-    width: None,
-    height: Some(ElementAxis {
-        bound: AxisBound::AtLeast,
-        fallback: AxisFallback::Content,
-    }),
+    width: Some(AxisBound::Exact),
+    height: Some(AxisBound::AtMost),
     base_text_size: TICKER.headline_size,
 };
 
@@ -257,12 +216,12 @@ impl ElementSizing {
     }
 
     pub fn declarations(self) -> Vec<String> {
-        let mut out = vec![text_scale(self.base_text_size)];
-        if let Some(axis) = self.width {
-            out.push(axis_extent(WIDTH_AXIS, ELEMENT_WIDTH_PROPERTY, axis));
+        let mut out = vec![text_scale(self.base_text_size), content_margins()];
+        if let Some(bound) = self.width {
+            out.push(axis_extent(WIDTH_AXIS, bound));
         }
-        if let Some(axis) = self.height {
-            out.push(axis_extent(HEIGHT_AXIS, ELEMENT_HEIGHT_PROPERTY, axis));
+        if let Some(bound) = self.height {
+            out.push(axis_extent(HEIGHT_AXIS, bound));
         }
         out
     }
@@ -299,7 +258,6 @@ fn guard(
 impl AlertMetrics {
     pub fn declarations(&self) -> Vec<String> {
         vec![
-            length("padding", self.body_padding),
             scaled_length("gap", self.gap),
             scaled_length_pair("padding", self.padding_block, self.padding_inline),
             accent_border("border", self.border),
@@ -316,7 +274,6 @@ impl AlertMetrics {
 impl ChatMetrics {
     pub fn declarations(&self) -> Vec<String> {
         vec![
-            length("padding", self.body_padding),
             scaled_length("gap", self.row_gap),
             scaled_length_pair("padding", self.row_padding_block, self.row_padding_inline),
             scaled_length("border-radius", self.row_radius),
@@ -331,7 +288,7 @@ impl ChatMetrics {
 impl FrameMetrics {
     pub fn declarations(&self) -> Vec<String> {
         vec![
-            length("inset", self.inset),
+            scaled_length("margin", self.inset),
             accent_border("border", self.border),
             length("border-radius", self.radius),
             length("left", self.label_inset_inline),
@@ -354,7 +311,6 @@ impl FrameMetrics {
 impl GoalMetrics {
     pub fn declarations(&self) -> Vec<String> {
         vec![
-            length("padding", self.body_padding),
             scaled_length("gap", self.gap),
             scaled_length_pair("padding", self.padding_block, self.padding_inline),
             accent_border("border", self.border),
@@ -410,18 +366,23 @@ fn text_scale(base: f32) -> String {
     format!("{TEXT_SCALE_PROPERTY}: calc(var({TEXT_SIZE_PROPERTY}, {base}) / {base});")
 }
 
-fn axis_extent(axis: &str, property: &str, rule: ElementAxis) -> String {
-    let bounded = match rule.bound {
-        AxisBound::Exact => axis.to_owned(),
-        AxisBound::AtLeast => format!("min-{axis}"),
-        AxisBound::AtMost => format!("max-{axis}"),
-    };
-    let fallback = match rule.fallback {
-        AxisFallback::Content => "auto".to_owned(),
-        AxisFallback::Canvas => "100%".to_owned(),
-        AxisFallback::Pixels(value) => format!("{value}px"),
-    };
-    format!("{bounded}: var({property}, {fallback});")
+fn axis_extent(axis: &str, bound: AxisBound) -> String {
+    match bound {
+        AxisBound::Exact => format!("{axis}: {WHOLE_BOX};"),
+        AxisBound::AtMost => format!("max-{axis}: {WHOLE_BOX};"),
+    }
+}
+
+fn content_margins() -> String {
+    let sides = [
+        MARGIN_TOP_PROPERTY,
+        MARGIN_RIGHT_PROPERTY,
+        MARGIN_BOTTOM_PROPERTY,
+        MARGIN_LEFT_PROPERTY,
+    ]
+    .map(|property| format!("var({property}, {NO_MARGIN})"))
+    .join(" ");
+    format!("padding: {sides};")
 }
 
 fn accent_border(property: &str, width: f32) -> String {

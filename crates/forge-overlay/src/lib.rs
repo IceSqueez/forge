@@ -17,6 +17,8 @@ pub mod preview;
 pub mod registry;
 pub mod sample;
 pub mod source;
+pub mod source_box;
+pub mod upgrade;
 pub mod wiring;
 
 pub use assets::{
@@ -54,16 +56,16 @@ pub use media::{
     emitted_media_value, glyph_media, image_reference, image_references, key_holds_media,
     media_slot, read_icon_value, read_media_value,
 };
-pub use metrics::{
-    AxisBound, AxisFallback, ElementAxis, ElementSizing, StyleGuard, element_sizing, style_guards,
-};
+pub use metrics::{AxisBound, ElementSizing, StyleGuard, element_sizing, style_guards};
 pub use preview::{
-    CANVAS_HEIGHT_PX, CANVAS_WIDTH_PX, PreviewAccent, PreviewCanvas, PreviewComposition,
-    PreviewElement, PreviewFont, PreviewLine, PreviewLineRole, PreviewPosition, PreviewShape,
+    PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLine,
+    PreviewLineRole, PreviewPosition, PreviewShape,
 };
 pub use registry::OverlayKindRegistry;
 pub use sample::{SampleContext, SampleTrigger, sample_content, sample_context};
 pub use source::{read_overlay_source, write_overlay_source};
+pub use source_box::{ContentMargins, DesignSize};
+pub use upgrade::{acknowledge_sizing_notice, sizing_notice_pending, upgrade_config};
 pub use wiring::{
     EventWiringTrigger, accepts_event_wiring, is_curated, order_curated_first, suggested_content,
 };

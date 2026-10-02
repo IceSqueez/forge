@@ -18,15 +18,16 @@
  * properties, position and animation become data-position and data-animation on
  * <body>. Stylesheets read those.
  *
- * The element_width, element_height and text_size entries are applied the same
- * way, as pixels of the 1920x1080 browser source. Width and height become the
- * --element-width and --element-height custom properties with their px unit
- * attached; a stylesheet spends them through var() with its own fallback, so an
- * entry config.json leaves out is an element that sizes itself. text_size becomes
- * the unitless --text-size, and each stylesheet divides it by the text size that
- * kind draws at to reach its own --text-scale, which every size it states is
- * multiplied by. A config.json without text_size leaves every page exactly as it
- * was drawn before any of these three entries existed.
+ * The page viewport is the box: the browser source's own width and height. The
+ * margin_top, margin_right, margin_bottom and margin_left entries are percents
+ * of that box, applied as the --margin-top, --margin-right, --margin-bottom and
+ * --margin-left custom properties in pixels and recomputed whenever the box is
+ * resized; a stylesheet pads its root with them, so its content sits inside the
+ * box minus the margins while motion may still use the margin area. text_size
+ * becomes the unitless --text-size, and each stylesheet divides it by the text
+ * size that kind draws at to reach its own --text-scale, which every size it
+ * states is multiplied by. design_width and design_height only frame the box on
+ * a preview page; a page on a browser source never lays out by them.
  *
  * The connection has no subscription surface. The page says who it is, and from
  * then on it only receives. It opens ws://<this host>/ws/v1/ and, when config.json
@@ -82,7 +83,8 @@
  * A page reached with ?preview=1 in its query previews itself. It reads
  * sample.json, the generated sample document sitting beside config.json, and
  * delivers that content to itself as soon as the page is ready; it paints a
- * checkerboard behind the page so transparent areas are visible; and it never
+ * checkerboard over the box, sized to design_width x design_height, so the
+ * transparent area of the source is visible; and it never
  * hides anything on a timer, so a transient overlay stays up to be looked at.
  * Nothing else changes: a preview page connects, identifies and receives exactly
  * like the page a browser source loads; it only says so in its auth frame, so
@@ -134,6 +136,7 @@
   var CHECKER_TILE_PX = 24;
   var CHECKER_BASE = "#15151c";
   var CHECKER_SQUARE = "#23232e";
+  var PREVIEW_BACKDROP = "#0b0b10";
   var SOCKET_PATH = "/ws/v1/";
   var AUTH_REQUEST_ID = "1";
   var CONTENT_FRAME = "content";
@@ -175,11 +178,16 @@
   var FALLBACK_ACCENT = ACCENT_HEX.mauve;
   var FONT_NAME = /^[A-Za-z0-9 _-]+$/;
 
-  var ELEMENT_WIDTH_PROPERTY = "--element-width";
-  var ELEMENT_HEIGHT_PROPERTY = "--element-height";
   var TEXT_SIZE_PROPERTY = "--text-size";
   var PIXEL_UNIT = "px";
   var NO_UNIT = "";
+  var PERCENT = 100;
+  var MARGIN_SIDES = [
+    { key: "margin_top", property: "--margin-top", vertical: true },
+    { key: "margin_right", property: "--margin-right", vertical: false },
+    { key: "margin_bottom", property: "--margin-bottom", vertical: true },
+    { key: "margin_left", property: "--margin-left", vertical: false },
+  ];
 
   var document_ = window.document;
   var readyCallbacks = [];
@@ -273,11 +281,15 @@
       CHECKER_SQUARE +
       " 75%)";
 
-    var backdrop = document_.documentElement.style;
-    backdrop.setProperty("background-color", CHECKER_BASE);
-    backdrop.setProperty("background-image", square + ", " + square);
-    backdrop.setProperty("background-position", "0 0, " + offset + " " + offset);
-    backdrop.setProperty("background-size", tile + " " + tile);
+    document_.documentElement.style.setProperty(
+      "background-color",
+      PREVIEW_BACKDROP,
+    );
+    var box = document_.body.style;
+    box.setProperty("background-color", CHECKER_BASE);
+    box.setProperty("background-image", square + ", " + square);
+    box.setProperty("background-position", "0 0, " + offset + " " + offset);
+    box.setProperty("background-size", tile + " " + tile);
   }
 
   function applyAppearance(values) {
@@ -292,9 +304,9 @@
       );
     }
 
-    applySize(ELEMENT_WIDTH_PROPERTY, values.element_width, PIXEL_UNIT);
-    applySize(ELEMENT_HEIGHT_PROPERTY, values.element_height, PIXEL_UNIT);
     applySize(TEXT_SIZE_PROPERTY, values.text_size, NO_UNIT);
+    frameDesignBox(values);
+    applyMargins(values);
 
     document_.body.dataset.position = values.position || "";
     document_.body.dataset.animation = values.animation || "";
@@ -307,6 +319,41 @@
     } else {
       root.removeProperty(property);
     }
+  }
+
+  function isPositive(value) {
+    return typeof value === "number" && isFinite(value) && value > 0;
+  }
+
+  function frameDesignBox(values) {
+    if (
+      !previewing ||
+      !isPositive(values.design_width) ||
+      !isPositive(values.design_height)
+    ) {
+      return;
+    }
+    var box = document_.body.style;
+    box.setProperty("width", values.design_width + PIXEL_UNIT);
+    box.setProperty("height", values.design_height + PIXEL_UNIT);
+  }
+
+  function applyMargins(values) {
+    var width = document_.body.clientWidth;
+    var height = document_.body.clientHeight;
+    var root = document_.documentElement.style;
+    MARGIN_SIDES.forEach(function (side) {
+      var percent = values[side.key];
+      if (!isPositive(percent)) {
+        root.removeProperty(side.property);
+        return;
+      }
+      var extent = side.vertical ? height : width;
+      root.setProperty(
+        side.property,
+        Math.round((extent * percent) / PERCENT) + PIXEL_UNIT,
+      );
+    });
   }
 
   function fireReady() {
@@ -837,6 +884,12 @@
     set: set,
     show: show,
     sound: sound,
+  });
+
+  window.addEventListener("resize", function () {
+    if (config) {
+      applyMargins(config);
+    }
   });
 
   loadConfig();

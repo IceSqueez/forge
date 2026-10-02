@@ -6,6 +6,7 @@ use forge_types::Variant;
 use crate::assets::PageAssets;
 use crate::base;
 use crate::preview::PreviewComposition;
+use crate::source_box::{ContentMargins, DesignSize};
 
 pub type OverlayConfig = BTreeMap<String, Variant>;
 
@@ -52,9 +53,19 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn default_display_secs(&self) -> i64 {
         base::DEFAULT_DISPLAY_SECS
     }
+    fn default_design_size(&self) -> DesignSize {
+        DesignSize::BROWSER_SOURCE_DEFAULT
+    }
+    fn default_margins(&self) -> ContentMargins {
+        ContentMargins::NONE
+    }
     fn default_config(&self) -> OverlayConfig {
-        let mut defaults =
-            base::base_defaults(self.delivery_disposition(), self.default_display_secs());
+        let mut defaults = base::base_defaults(
+            self.delivery_disposition(),
+            self.default_display_secs(),
+            self.default_design_size(),
+            self.default_margins(),
+        );
         defaults.extend(self.look_defaults());
         defaults
     }

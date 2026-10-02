@@ -5,8 +5,14 @@ use crate::descriptor::{
 };
 use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
+use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.frame";
+
+pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
+
+const DESIGN_WIDTH_PX: u32 = 1280;
+const DESIGN_HEIGHT_PX: u32 = 720;
 
 pub struct FrameOverlayKind;
 
@@ -36,16 +42,26 @@ impl OverlayKindDescriptor for FrameOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        1
+        BOX_CONTRACT_SCHEMA_VERSION
+    }
+
+    fn default_design_size(&self) -> DesignSize {
+        DesignSize {
+            width: DESIGN_WIDTH_PX,
+            height: DESIGN_HEIGHT_PX,
+        }
+    }
+
+    fn default_margins(&self) -> ContentMargins {
+        ContentMargins::NONE
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults(
-            "peach",
-            "Inter",
-            "center",
-            "fade",
-            metrics::FRAME_SIZING,
+        let mut defaults =
+            config::shared_style_defaults("peach", "Inter", "fade", metrics::FRAME_SIZING);
+        defaults.insert(
+            config::POSITION.to_owned(),
+            config::text(config::POSITION_BOTTOM),
         );
         defaults.insert(config::HEADLINE.to_owned(), config::text(""));
         defaults.insert(config::SUBLINE.to_owned(), config::text("LIVE"));
@@ -53,7 +69,9 @@ impl OverlayKindDescriptor for FrameOverlayKind {
     }
 
     fn look_fields(&self) -> Vec<SectionedField> {
-        config::shared_fields(metrics::FRAME_SIZING)
+        let mut fields = config::shared_fields();
+        fields.push(config::position_field("Caption edge"));
+        fields
     }
 
     fn page_assets(&self) -> PageAssets {

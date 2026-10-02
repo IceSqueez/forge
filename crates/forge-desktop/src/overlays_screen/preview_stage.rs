@@ -22,8 +22,7 @@ use crate::async_bridge::{self, ErrorSink};
 use super::OverlaysView;
 use super::event_wiring;
 use super::preview_shapes::{
-    ElementPlan, Scale, StageGlyphs, body_padding, centers_horizontally, fills_canvas,
-    render_composition,
+    ElementPlan, Scale, StageGlyphs, centers_horizontally, fills_canvas, render_composition,
 };
 
 const REGION_PAD: Pixels = px(20.0);
@@ -658,9 +657,6 @@ fn render_canvas(
         } else {
             stage.justify_start()
         };
-        if let Some(padding) = body_padding(shape) {
-            stage = stage.p(scale.at(padding));
-        }
     }
 
     stage

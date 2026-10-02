@@ -5,8 +5,14 @@ use crate::descriptor::{
 };
 use crate::metrics;
 use crate::preview::{PreviewComposition, PreviewShape, compose};
+use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.goal";
+
+pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
+
+const DESIGN_WIDTH_PX: u32 = 640;
+const DESIGN_HEIGHT_PX: u32 = 160;
 
 pub struct GoalOverlayKind;
 
@@ -36,12 +42,23 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        1
+        BOX_CONTRACT_SCHEMA_VERSION
+    }
+
+    fn default_design_size(&self) -> DesignSize {
+        DesignSize {
+            width: DESIGN_WIDTH_PX,
+            height: DESIGN_HEIGHT_PX,
+        }
+    }
+
+    fn default_margins(&self) -> ContentMargins {
+        ContentMargins::NONE
     }
 
     fn look_defaults(&self) -> OverlayConfig {
         let mut defaults =
-            config::shared_style_defaults("green", "Inter", "bottom", "fade", metrics::GOAL_SIZING);
+            config::shared_style_defaults("green", "Inter", "fade", metrics::GOAL_SIZING);
         defaults.insert(config::LABEL.to_owned(), config::text("Sub goal"));
         defaults.insert(config::VALUE.to_owned(), config::text("42"));
         defaults.insert(config::TARGET.to_owned(), config::text("100"));
@@ -54,7 +71,7 @@ impl OverlayKindDescriptor for GoalOverlayKind {
             config::value_field(),
             config::target_field(),
         ];
-        fields.extend(config::shared_style_fields(metrics::GOAL_SIZING));
+        fields.extend(config::shared_style_fields());
         fields
     }
 

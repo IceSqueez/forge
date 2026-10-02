@@ -245,3 +245,247 @@ impl OverlayPropertyPanel {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_overlay::ConfigSection;
+    use forge_overlay::config::{
+        DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, HEADLINE, MARGIN_BOTTOM, MARGIN_LEFT,
+        MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT, MARGIN_RIGHT, MARGIN_TOP, SOUND,
+    };
+    use forge_overlay::kinds::chat::ChatOverlayKind;
+    use forge_types::Variant;
+
+    use super::*;
+    use crate::overlays_screen::look_change::carried_config;
+
+    const HELD: i64 = 1280;
+
+    fn config(entries: &[(&str, i64)]) -> OverlayConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), Variant::Int(*value)))
+            .collect()
+    }
+
+    fn source_box_of(carried: &OverlayConfig) -> (DesignSize, ContentMargins) {
+        (
+            DesignSize::read(
+                carried,
+                DesignSize {
+                    width: 0,
+                    height: 0,
+                },
+            ),
+            ContentMargins::read(carried, ContentMargins::even(u32::MAX)),
+        )
+    }
+
+    #[test]
+    fn a_typed_design_size_settles_inside_the_bounds_the_page_accepts() {
+        for (typed, expected) in [
+            ("1920", 1920),
+            (" 1080 ", 1080),
+            ("99999", DESIGN_SIZE_MAX_PX),
+            ("7681", DESIGN_SIZE_MAX_PX),
+            ("7680", DESIGN_SIZE_MAX_PX),
+            ("40", DESIGN_SIZE_MIN_PX),
+            ("39", DESIGN_SIZE_MIN_PX),
+            ("0", DESIGN_SIZE_MIN_PX),
+            ("-640", DESIGN_SIZE_MIN_PX),
+        ] {
+            assert_eq!(bounded_design_px(typed, HELD), expected, "typed {typed:?}");
+        }
+    }
+
+    #[test]
+    fn a_design_size_that_is_not_a_number_falls_back_to_the_size_already_held() {
+        for typed in [
+            "",
+            "   ",
+            "wide",
+            "12.5",
+            "1920px",
+            "1 920",
+            "99999999999999999999",
+        ] {
+            assert_eq!(bounded_design_px(typed, HELD), HELD, "typed {typed:?}");
+        }
+    }
+
+    #[test]
+    fn a_held_size_outside_the_bounds_is_pulled_back_when_the_typed_text_is_unusable() {
+        assert_eq!(bounded_design_px("", 99_999), DESIGN_SIZE_MAX_PX);
+    }
+
+    #[test]
+    fn a_look_change_from_untouched_sizing_carries_the_old_looks_default_box() {
+        let defaults = config(&[
+            (DESIGN_WIDTH, 1920),
+            (DESIGN_HEIGHT, 120),
+            (MARGIN_TOP, 10),
+            (MARGIN_RIGHT, 5),
+            (MARGIN_BOTTOM, 10),
+            (MARGIN_LEFT, 5),
+        ]);
+
+        let carried = with_source_box(&defaults, OverlayConfig::new());
+
+        assert_eq!(
+            source_box_of(&carried),
+            (
+                DesignSize {
+                    width: 1920,
+                    height: 120
+                },
+                ContentMargins {
+                    top: 10,
+                    right: 5,
+                    bottom: 10,
+                    left: 5
+                }
+            ),
+            "the new look must inherit the box the old look was showing, not its own default"
+        );
+    }
+
+    #[test]
+    fn a_look_change_carries_the_box_the_user_set_over_the_old_looks_default() {
+        let defaults = config(&[(DESIGN_WIDTH, 800), (DESIGN_HEIGHT, 600), (MARGIN_TOP, 0)]);
+        let sparse = config(&[(DESIGN_WIDTH, 1280), (MARGIN_TOP, 30)]);
+
+        let carried = with_source_box(&defaults, sparse);
+
+        assert_eq!(
+            source_box_of(&carried),
+            (
+                DesignSize {
+                    width: 1280,
+                    height: 600
+                },
+                ContentMargins {
+                    top: 30,
+                    right: 0,
+                    bottom: 0,
+                    left: 0
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn a_look_change_without_any_declared_box_carries_the_browser_source_default_and_no_margins() {
+        let carried = with_source_box(&OverlayConfig::new(), OverlayConfig::new());
+
+        assert_eq!(
+            source_box_of(&carried),
+            (DesignSize::BROWSER_SOURCE_DEFAULT, ContentMargins::NONE)
+        );
+    }
+
+    #[test]
+    fn a_look_change_carries_an_out_of_bounds_box_at_its_bounds() {
+        let sparse = config(&[
+            (DESIGN_WIDTH, 99_999),
+            (DESIGN_HEIGHT, 1),
+            (MARGIN_TOP, 99),
+            (MARGIN_LEFT, -5),
+        ]);
+
+        let carried = with_source_box(&OverlayConfig::new(), sparse);
+
+        assert_eq!(
+            [DESIGN_WIDTH, DESIGN_HEIGHT, MARGIN_TOP, MARGIN_LEFT]
+                .map(|key| carried.get(key).and_then(Variant::as_int)),
+            [
+                Some(DESIGN_SIZE_MAX_PX),
+                Some(DESIGN_SIZE_MIN_PX),
+                Some(MARGIN_MAX_PERCENT),
+                Some(MARGIN_MIN_PERCENT)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_look_change_keeps_every_other_carried_value_untouched() {
+        let mut sparse = config(&[(DESIGN_WIDTH, 1280)]);
+        sparse.insert(HEADLINE.to_owned(), Variant::String("hello".into()));
+
+        let carried = with_source_box(&OverlayConfig::new(), sparse);
+
+        assert_eq!(
+            carried.get(HEADLINE),
+            Some(&Variant::String("hello".into()))
+        );
+    }
+
+    #[test]
+    fn the_carried_box_survives_the_new_looks_key_filter() {
+        let sparse = config(&[(DESIGN_WIDTH, 1280), (MARGIN_BOTTOM, 20)]);
+        let carried = with_source_box(&OverlayConfig::new(), sparse);
+
+        let landed = carried_config(&ChatOverlayKind, &carried);
+
+        assert_eq!(
+            source_box_of(&landed),
+            (
+                DesignSize {
+                    width: 1280,
+                    height: DesignSize::BROWSER_SOURCE_DEFAULT.height
+                },
+                ContentMargins {
+                    top: 0,
+                    right: 0,
+                    bottom: 20,
+                    left: 0
+                }
+            ),
+            "the target look dropped the box the panel carried into the change"
+        );
+    }
+
+    #[test]
+    fn a_pending_sizing_notice_survives_the_look_change_that_filters_undeclared_keys() {
+        let mut from = config(&[(DESIGN_WIDTH, 1280)]);
+        from.insert(MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false));
+        let mut into = carried_config(&ChatOverlayKind, &from);
+
+        keep_sizing_notice(&from, &mut into);
+
+        assert_eq!(
+            into.get(MIGRATION_ACKNOWLEDGED),
+            Some(&Variant::Bool(false))
+        );
+    }
+
+    #[test]
+    fn a_look_change_never_invents_a_sizing_notice_the_overlay_did_not_carry() {
+        let from = config(&[(DESIGN_WIDTH, 1280)]);
+        let mut into = carried_config(&ChatOverlayKind, &from);
+
+        keep_sizing_notice(&from, &mut into);
+
+        assert!(!into.contains_key(MIGRATION_ACKNOWLEDGED));
+    }
+
+    #[test]
+    fn source_box_keys_move_to_the_source_section_whatever_section_the_look_declares() {
+        for (key, declared, expected) in [
+            (DESIGN_WIDTH, ConfigSection::Style, PanelSection::Source),
+            (DESIGN_HEIGHT, ConfigSection::Content, PanelSection::Source),
+            (MARGIN_TOP, ConfigSection::Style, PanelSection::Source),
+            (MARGIN_RIGHT, ConfigSection::Behavior, PanelSection::Source),
+            (MARGIN_BOTTOM, ConfigSection::Style, PanelSection::Source),
+            (MARGIN_LEFT, ConfigSection::Style, PanelSection::Source),
+            (HEADLINE, ConfigSection::Style, PanelSection::Style),
+            (SOUND, ConfigSection::Behavior, PanelSection::Audio),
+            (DURATION, ConfigSection::Behavior, PanelSection::Display),
+        ] {
+            assert_eq!(
+                PanelSection::of(key, declared),
+                expected,
+                "{key} declared in {declared:?}"
+            );
+        }
+    }
+}

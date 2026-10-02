@@ -797,6 +797,60 @@ mod tests {
         }
     }
 
+    const FIT_W: f32 = 400.0;
+    const FIT_H: f32 = 200.0;
+    const TOLERANCE: f32 = 0.001;
+
+    fn fit() -> CanvasFit {
+        CanvasFit {
+            width: px(FIT_W),
+            height: px(FIT_H),
+            scale: 1.0,
+        }
+    }
+
+    fn sides(inset: MarginInset) -> [f32; 4] {
+        [inset.top, inset.right, inset.bottom, inset.left].map(f32::from)
+    }
+
+    #[test]
+    fn each_margin_insets_its_side_by_its_percent_of_the_matching_canvas_extent() {
+        let inset = MarginInset::of(
+            ContentMargins {
+                top: 10,
+                right: 25,
+                bottom: 45,
+                left: 0,
+            },
+            fit(),
+        );
+
+        let expected = [FIT_H * 0.10, FIT_W * 0.25, FIT_H * 0.45, 0.0];
+        for (side, (got, want)) in ["top", "right", "bottom", "left"]
+            .iter()
+            .zip(sides(inset).into_iter().zip(expected))
+        {
+            assert!((got - want).abs() < TOLERANCE, "{side}: {got} != {want}");
+        }
+    }
+
+    #[test]
+    fn the_margin_guide_shows_only_when_some_side_is_inset() {
+        assert!(!MarginInset::of(ContentMargins::NONE, fit()).visible());
+        for margins in [
+            ContentMargins {
+                top: 1,
+                ..ContentMargins::NONE
+            },
+            ContentMargins {
+                left: 1,
+                ..ContentMargins::NONE
+            },
+        ] {
+            assert!(MarginInset::of(margins, fit()).visible(), "{margins:?}");
+        }
+    }
+
     #[test]
     fn a_landing_no_page_received_blames_the_browser_source_only_while_the_server_runs() {
         assert_eq!(

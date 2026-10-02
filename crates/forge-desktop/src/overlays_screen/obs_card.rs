@@ -261,3 +261,36 @@ fn tip(label: String, value: String, palette: &ForgePalette) -> AnyElement {
         )
         .into_any_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config(entries: &[(&str, &str)]) -> OverlayConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), Variant::String((*value).to_owned())))
+            .collect()
+    }
+
+    #[test]
+    fn the_card_asks_obs_to_control_audio_only_when_the_overlay_can_make_sound() {
+        for (stored, receiver, expected) in [
+            (config(&[]), false, false),
+            (config(&[(SOUND, ""), (SPEECH, "   ")]), false, false),
+            (config(&[]), true, true),
+            (
+                config(&[(SOUND, "clip:01J9P4S2M7Q8V3X5Y6Z7A8B9C0")]),
+                false,
+                true,
+            ),
+            (config(&[(SPEECH, "{user} followed")]), false, true),
+        ] {
+            assert_eq!(
+                obs_recommendations(&stored, receiver).control_audio,
+                expected,
+                "{stored:?} receiver={receiver}"
+            );
+        }
+    }
+}

@@ -770,13 +770,22 @@ mod tests {
     use forge_overlay::config::{
         ACCENT_OPTIONS, ELEMENT_WIDTH, HEADLINE, ICON, ICON_OPTIONS_KEY, SOUND,
     };
-    use forge_overlay::{OverlayKindRegistry, image_reference};
+    use forge_overlay::config::{
+        DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, MARGIN_BOTTOM,
+        MARGIN_LEFT, MARGIN_MAX_PERCENT, MARGIN_RIGHT, MARGIN_TOP, MIGRATION_ACKNOWLEDGED,
+    };
+    use forge_overlay::kinds::frame::FrameOverlayKind;
+    use forge_overlay::kinds::goal::GoalOverlayKind;
+    use forge_overlay::{OverlayKindDescriptor, OverlayKindRegistry, image_reference};
     use forge_registry::FormField;
     use forge_runtime::EventBus;
     use forge_storage::{OverlayCredential, OverlayDefinition, StorageError};
     use forge_types::Variant;
     use time::OffsetDateTime;
 
+    use super::super::base_sections::BaseLaunch;
+    use super::super::look_change::look_summary;
+    use super::super::sizing_section::is_source_box_key;
     use super::*;
     use crate::presentation::Presentation;
     use crate::test_support::{StubEventLog, pump, runtime, test_backend};
@@ -925,6 +934,46 @@ mod tests {
         ]
     }
 
+    fn launch(
+        cx: &mut gpui::TestAppContext,
+        stored: OverlayConfig,
+        specs: Vec<SectionedField>,
+        defaults: OverlayConfig,
+        choices: HashMap<String, Vec<(String, String)>>,
+    ) -> (PanelLaunch, Arc<RecordingOverlays>, tokio::runtime::Runtime) {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+        });
+        let rt = runtime();
+        let repo = RecordingOverlays::new();
+        let (backend, _writes) = test_backend();
+        let service = OverlayServiceHandle::new(
+            Arc::clone(&repo) as Arc<dyn OverlayRepo>,
+            backend as Arc<dyn forge_storage::SettingsRepo>,
+            Arc::new(OverlayKindRegistry::new()),
+            EventBus::new(Arc::new(StubEventLog)),
+            None,
+        );
+        let mut effective = defaults.clone();
+        for (key, value) in &stored {
+            effective.insert(key.clone(), value.clone());
+        }
+        let launch = PanelLaunch {
+            overlay_id: OverlayId::new(OVERLAY),
+            specs,
+            defaults,
+            stored,
+            effective,
+            choices,
+            icon_images: Vec::new(),
+            overridden_files: Vec::new(),
+            repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
+            service,
+            rt_handle: rt.handle().clone(),
+        };
+        (launch, repo, rt)
+    }
+
     struct Fixture {
         panel: Option<Entity<OverlayPropertyPanel>>,
         saves: Entity<Saves>,
@@ -965,37 +1014,17 @@ mod tests {
             specs: Vec<SectionedField>,
             choices: HashMap<String, Vec<(String, String)>>,
         ) -> Self {
-            cx.update(|cx| {
-                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
-            });
-            let rt = runtime();
-            let repo = RecordingOverlays::new();
-            let (backend, _writes) = test_backend();
-            let service = OverlayServiceHandle::new(
-                Arc::clone(&repo) as Arc<dyn OverlayRepo>,
-                backend as Arc<dyn forge_storage::SettingsRepo>,
-                Arc::new(OverlayKindRegistry::new()),
-                EventBus::new(Arc::new(StubEventLog)),
-                None,
-            );
-            let defaults = defaults();
-            let mut effective = defaults.clone();
-            for (key, value) in &stored {
-                effective.insert(key.clone(), value.clone());
-            }
-            let launch = PanelLaunch {
-                overlay_id: OverlayId::new(OVERLAY),
-                specs,
-                defaults,
-                stored,
-                effective,
-                choices,
-                icon_images: Vec::new(),
-                overridden_files: Vec::new(),
-                repo: Arc::clone(&repo) as Arc<dyn OverlayRepo>,
-                service,
-                rt_handle: rt.handle().clone(),
-            };
+            Self::build_over(cx, stored, specs, defaults(), choices)
+        }
+
+        fn build_over(
+            cx: &mut gpui::TestAppContext,
+            stored: OverlayConfig,
+            specs: Vec<SectionedField>,
+            defaults: OverlayConfig,
+            choices: HashMap<String, Vec<(String, String)>>,
+        ) -> Self {
+            let (launch, repo, rt) = launch(cx, stored, specs, defaults, choices);
             let panel = cx.update(|cx| cx.new(|cx| OverlayPropertyPanel::new(launch, cx)));
             let saves = cx.update(|cx| {
                 cx.new(|cx| Saves {
@@ -1518,6 +1547,358 @@ mod tests {
             unknown.icon_tint(cx),
             palette.brand,
             "an accent this palette cannot name has to fall back to the brand tint"
+        );
+    }
+
+    const PANEL_H: f32 = 1200.0;
+    const SCAN_STEP: f32 = 4.0;
+    const HELD_WIDTH: i64 = 1500;
+
+    fn source_specs() -> Vec<SectionedField> {
+        FrameOverlayKind
+            .config_fields()
+            .into_iter()
+            .filter(|sectioned| is_source_box_key(sectioned.field.key()))
+            .collect()
+    }
+
+    fn int_at(config: &OverlayConfig, key: &str) -> Option<i64> {
+        config.get(key).and_then(Variant::as_int)
+    }
+
+    impl Fixture {
+        fn with_source_box(cx: &mut gpui::TestAppContext, stored: OverlayConfig) -> Self {
+            Self::build_over(
+                cx,
+                stored,
+                source_specs(),
+                FrameOverlayKind.default_config(),
+                HashMap::new(),
+            )
+        }
+
+        fn input_text(&self, cx: &mut gpui::TestAppContext, key: &str) -> String {
+            self.panel().update(cx, |panel, cx| {
+                panel
+                    .fields
+                    .iter()
+                    .find_map(|field| match field {
+                        ConfigField::Input {
+                            key: field_key,
+                            input,
+                            ..
+                        } if field_key == key => Some(input.read(cx).content().to_owned()),
+                        _ => None,
+                    })
+                    .expect("the design size is a typed field")
+            })
+        }
+
+        fn submit(&self, cx: &mut gpui::TestAppContext, key: &str) {
+            let input = self.panel().read_with(cx, |panel, _| {
+                panel
+                    .fields
+                    .iter()
+                    .find_map(|field| match field {
+                        ConfigField::Input {
+                            key: field_key,
+                            input,
+                            ..
+                        } if field_key == key => Some(input.clone()),
+                        _ => None,
+                    })
+                    .expect("the design size is a typed field")
+            });
+            input.update(cx, |input, cx| {
+                let typed = SharedString::from(input.content().to_owned());
+                cx.emit(forge_components::InputEvent::Submitted(typed));
+            });
+            cx.run_until_parked();
+        }
+    }
+
+    #[gpui::test]
+    fn a_design_width_typed_past_the_page_bound_is_saved_at_the_bound(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_source_box(cx, OverlayConfig::new());
+        fixture.type_into(cx, DESIGN_WIDTH, "99999");
+
+        fixture.submit(cx, DESIGN_WIDTH);
+
+        assert_eq!(
+            fixture
+                .saves(cx)
+                .last()
+                .and_then(|config| int_at(config, DESIGN_WIDTH)),
+            Some(DESIGN_SIZE_MAX_PX)
+        );
+    }
+
+    #[gpui::test]
+    fn a_design_height_typed_under_the_page_bound_shows_the_bound_it_was_saved_at(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::with_source_box(cx, OverlayConfig::new());
+        fixture.type_into(cx, DESIGN_HEIGHT, "3");
+
+        fixture.submit(cx, DESIGN_HEIGHT);
+
+        assert_eq!(
+            fixture.input_text(cx, DESIGN_HEIGHT),
+            DESIGN_SIZE_MIN_PX.to_string(),
+            "the field kept showing a size the overlay never received"
+        );
+    }
+
+    #[gpui::test]
+    fn a_cleared_design_width_snaps_back_to_the_size_it_held_and_saves_nothing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture =
+            Fixture::with_source_box(cx, config(&[(DESIGN_WIDTH, Variant::Int(HELD_WIDTH))]));
+        fixture.type_into(cx, DESIGN_WIDTH, "");
+
+        fixture.submit(cx, DESIGN_WIDTH);
+
+        assert_eq!(fixture.input_text(cx, DESIGN_WIDTH), HELD_WIDTH.to_string());
+        assert!(fixture.saves(cx).is_empty());
+    }
+
+    #[gpui::test]
+    fn a_margin_stored_past_its_bound_is_saved_back_inside_it(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::with_source_box(
+            cx,
+            config(&[
+                (MARGIN_TOP, Variant::Int(99)),
+                (MARGIN_LEFT, Variant::Int(-5)),
+            ]),
+        );
+
+        fixture.commit(cx);
+
+        let saved = fixture.saves(cx).last().cloned().unwrap_or_default();
+        assert_eq!(
+            [int_at(&saved, MARGIN_TOP), int_at(&saved, MARGIN_LEFT)],
+            [Some(MARGIN_MAX_PERCENT), None],
+            "a margin outside 0-45 must settle at the bound; 0 is the default and stays sparse"
+        );
+    }
+
+    struct Heard {
+        saves: Vec<OverlayConfig>,
+        looks: Vec<(String, OverlayConfig)>,
+        _subs: [Subscription; 2],
+    }
+
+    struct Shown<'a> {
+        heard: Entity<Heard>,
+        vcx: &'a mut gpui::VisualTestContext,
+        _rt: tokio::runtime::Runtime,
+    }
+
+    fn show(cx: &mut gpui::TestAppContext, stored: OverlayConfig) -> Shown<'_> {
+        cx.update(forge_components::bind_picker_keys);
+        let (launch, _repo, rt) = launch(
+            cx,
+            stored,
+            source_specs(),
+            FrameOverlayKind.default_config(),
+            HashMap::new(),
+        );
+        let (panel, vcx) = cx.add_window_view(|_window, cx| OverlayPropertyPanel::new(launch, cx));
+        vcx.simulate_resize(gpui::size(PANE_W, px(PANEL_H)));
+        let heard = vcx.update(|_window, cx| {
+            panel.update(cx, |panel, cx| {
+                panel.adopt_base(
+                    BaseLaunch {
+                        look: look_summary(&FrameOverlayKind),
+                        looks: vec![
+                            look_summary(&GoalOverlayKind),
+                            look_summary(&FrameOverlayKind),
+                        ],
+                        receiver: false,
+                    },
+                    cx,
+                );
+            });
+            cx.new(|cx| Heard {
+                saves: Vec::new(),
+                looks: Vec::new(),
+                _subs: [
+                    cx.subscribe(&panel, |this: &mut Heard, _panel, event, _cx| {
+                        let PropertyPanelEvent::Save(config) = event;
+                        this.saves.push(config.clone());
+                    }),
+                    cx.subscribe(&panel, |this: &mut Heard, _panel, event, _cx| {
+                        if let BaseEvent::ChangeLook { kind_id, config } = event {
+                            this.looks.push((kind_id.clone(), config.clone()));
+                        }
+                    }),
+                ],
+            })
+        });
+        vcx.run_until_parked();
+        Shown {
+            heard,
+            vcx,
+            _rt: rt,
+        }
+    }
+
+    impl Shown<'_> {
+        fn click_first_until(
+            &mut self,
+            reached: impl Fn(&Window, &App, &Heard) -> bool,
+        ) -> Option<gpui::Point<Pixels>> {
+            let mut y = 0.0;
+            while y < PANEL_H {
+                let mut x = 0.0;
+                while x < f32::from(PANE_W) {
+                    let at = gpui::point(px(x), px(y));
+                    self.vcx.simulate_click(at, gpui::Modifiers::none());
+                    if self.reached(&reached) {
+                        return Some(at);
+                    }
+                    x += SCAN_STEP;
+                }
+                y += SCAN_STEP;
+            }
+            None
+        }
+
+        fn reached(&mut self, test: &impl Fn(&Window, &App, &Heard) -> bool) -> bool {
+            let heard = self.heard.clone();
+            self.vcx
+                .update(|window, cx| test(window, cx, heard.read(cx)))
+        }
+
+        fn saves(&mut self) -> Vec<OverlayConfig> {
+            let heard = self.heard.clone();
+            self.vcx.update(|_window, cx| heard.read(cx).saves.clone())
+        }
+
+        fn looks(&mut self) -> Vec<(String, OverlayConfig)> {
+            let heard = self.heard.clone();
+            self.vcx.update(|_window, cx| heard.read(cx).looks.clone())
+        }
+    }
+
+    fn picker_focused(window: &Window, cx: &App, _: &Heard) -> bool {
+        window.focused(cx).is_some()
+    }
+
+    fn predating(entries: &[(&str, Variant)]) -> OverlayConfig {
+        let mut stored = config(entries);
+        stored.insert(MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false));
+        stored
+    }
+
+    #[gpui::test]
+    fn got_it_on_the_sizing_notice_saves_the_acknowledgement(cx: &mut gpui::TestAppContext) {
+        let mut shown = show(cx, predating(&[]));
+
+        shown.click_first_until(|_, _, heard| !heard.saves.is_empty());
+
+        assert_eq!(
+            shown.saves(),
+            vec![config(&[(MIGRATION_ACKNOWLEDGED, Variant::Bool(true))])]
+        );
+    }
+
+    #[gpui::test]
+    fn the_sizing_notice_is_gone_once_acknowledged(cx: &mut gpui::TestAppContext) {
+        let mut shown = show(cx, predating(&[]));
+        let acknowledged_at = shown
+            .click_first_until(|_, _, heard| !heard.saves.is_empty())
+            .expect("the notice offers a button that acknowledges it");
+
+        shown
+            .vcx
+            .simulate_click(acknowledged_at, gpui::Modifiers::none());
+
+        assert_eq!(
+            shown.saves().len(),
+            1,
+            "the acknowledged notice still answered a click where its button was"
+        );
+    }
+
+    #[gpui::test]
+    fn a_look_picked_from_the_keyboard_carries_the_source_box_into_the_change(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut shown = show(
+            cx,
+            config(&[
+                (DESIGN_WIDTH, Variant::Int(HELD_WIDTH)),
+                (MARGIN_TOP, Variant::Int(30)),
+            ]),
+        );
+        shown.click_first_until(picker_focused);
+
+        shown.vcx.simulate_keystrokes("down enter");
+
+        let defaults = FrameOverlayKind.default_design_size();
+        let looks = shown.looks();
+        let carried: Vec<_> = looks
+            .iter()
+            .map(|(kind, config)| {
+                (
+                    kind.as_str(),
+                    [
+                        DESIGN_WIDTH,
+                        DESIGN_HEIGHT,
+                        MARGIN_TOP,
+                        MARGIN_RIGHT,
+                        MARGIN_BOTTOM,
+                        MARGIN_LEFT,
+                    ]
+                    .map(|key| int_at(config, key)),
+                )
+            })
+            .collect();
+        assert_eq!(
+            carried,
+            vec![(
+                GoalOverlayKind.id(),
+                [
+                    Some(HELD_WIDTH),
+                    Some(i64::from(defaults.height)),
+                    Some(30),
+                    Some(0),
+                    Some(0),
+                    Some(0)
+                ]
+            )]
+        );
+    }
+
+    #[gpui::test]
+    fn a_look_row_clicked_in_the_open_picker_changes_the_look(cx: &mut gpui::TestAppContext) {
+        let mut shown = show(cx, OverlayConfig::new());
+        let trigger = shown
+            .click_first_until(picker_focused)
+            .expect("the look field opens the picker");
+
+        let mut y = f32::from(trigger.y);
+        while shown.looks().is_empty() && y < PANEL_H {
+            if !shown.reached(&picker_focused) {
+                shown.vcx.simulate_click(trigger, gpui::Modifiers::none());
+            }
+            y += SCAN_STEP;
+            shown
+                .vcx
+                .simulate_click(gpui::point(PANE_W / 2.0, px(y)), gpui::Modifiers::none());
+        }
+
+        assert_eq!(
+            shown
+                .looks()
+                .into_iter()
+                .map(|(kind, _)| kind)
+                .collect::<Vec<_>>(),
+            vec![GoalOverlayKind.id().to_owned()]
         );
     }
 }

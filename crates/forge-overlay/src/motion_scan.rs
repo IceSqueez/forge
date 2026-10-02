@@ -1,11 +1,12 @@
 use crate::descriptor::OverlayKindDescriptor;
 
-const ID_ATTRIBUTE: &str = "id=";
+const ID_ATTRIBUTE_NAME: &str = "id";
+const ATTRIBUTE_ASSIGN: char = '=';
 const BIND_ATTRIBUTE: &str = "data-bind";
 const REVEAL_CALL: &str = "forge.show(";
 const RETIRED_ANIMATION_ATTRIBUTE: &str = "data-animation";
 const ATTRIBUTE_QUOTES: [char; 2] = ['"', '\''];
-const VALUE_TERMINATORS: [char; 5] = ['"', '\'', '>', '/', ' '];
+const VALUE_TERMINATORS: [char; 4] = ['"', '\'', '>', '/'];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MotionIssue {
@@ -55,15 +56,29 @@ pub fn motion_issues(
 }
 
 fn declares_id(markup: &str, id: &str) -> bool {
-    markup.match_indices(ID_ATTRIBUTE).any(|(at, _)| {
+    let lowered = markup.to_ascii_lowercase();
+    lowered.match_indices(ID_ATTRIBUTE_NAME).any(|(at, _)| {
         let stands_alone = markup[..at]
             .chars()
             .next_back()
             .is_some_and(char::is_whitespace);
-        let value = markup[at + ID_ATTRIBUTE.len()..].trim_start_matches(ATTRIBUTE_QUOTES);
         stands_alone
-            && value
-                .strip_prefix(id)
-                .is_some_and(|rest| rest.is_empty() || rest.starts_with(VALUE_TERMINATORS))
+            && assigned_value(&markup[at + ID_ATTRIBUTE_NAME.len()..])
+                .is_some_and(|value| names_id(value, id))
+    })
+}
+
+fn assigned_value(after_name: &str) -> Option<&str> {
+    let value = after_name
+        .trim_start()
+        .strip_prefix(ATTRIBUTE_ASSIGN)?
+        .trim_start();
+    Some(value.strip_prefix(ATTRIBUTE_QUOTES).unwrap_or(value))
+}
+
+fn names_id(value: &str, id: &str) -> bool {
+    value.strip_prefix(id).is_some_and(|rest| {
+        rest.is_empty()
+            || rest.starts_with(|c: char| c.is_whitespace() || VALUE_TERMINATORS.contains(&c))
     })
 }

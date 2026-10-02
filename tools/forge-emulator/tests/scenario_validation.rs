@@ -1115,3 +1115,121 @@ fn actions_of_both_trigger_kinds_share_one_namespace() {
         ),
     ]);
 }
+
+fn with_discord(mut scenario: Value) -> Value {
+    scenario["fixture"]["discord_webhooks"] = json!([{ "name": "go-live" }]);
+    scenario["fakes"]["discord"] = json!({});
+    scenario
+}
+
+fn posted(post: Value) -> Value {
+    expecting(pause(), json!([{ "discord_post": post }]))
+}
+
+#[test]
+fn discord_fake_and_post_expectation_problems_are_located() {
+    let mut webhooks_without_fake = with_discord(base());
+    webhooks_without_fake["fakes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("discord");
+    let mut fake_without_webhooks = base();
+    fake_without_webhooks["fakes"]["discord"] = json!({});
+    let mut repeated_webhook = with_discord(base());
+    repeated_webhook["fixture"]["discord_webhooks"] =
+        json!([{ "name": "go-live" }, { "name": "go-live" }]);
+    let fine = json!({ "webhook": "go-live", "within_ms": 1000 });
+    assert_cases(vec![
+        (
+            "webhooks seeded without a fake to receive them",
+            webhooks_without_fake,
+            vec![(
+                "fakes.discord",
+                "is required because the fixture seeds Discord webhooks; without it they have no address to post to",
+            )],
+        ),
+        (
+            "a fake Discord with no webhook to answer",
+            fake_without_webhooks,
+            vec![(
+                "fakes.discord",
+                "needs fixture.discord_webhooks: the fake answers only the webhooks the fixture seeds",
+            )],
+        ),
+        (
+            "two webhooks sharing one name",
+            repeated_webhook,
+            vec![(
+                "fixture",
+                "two Discord webhooks are both named `go-live`, so a step could not tell them apart",
+            )],
+        ),
+        (
+            "a post expected without any fake Discord",
+            with_steps([posted(fine.clone())]),
+            vec![
+                (
+                    "steps[2].expect[0].discord_post",
+                    "needs a fake Discord: add fixture.discord_webhooks and fakes.discord",
+                ),
+                (
+                    "steps[2].expect[0].discord_post.webhook",
+                    "expects a post to `go-live`, which fixture.discord_webhooks does not declare",
+                ),
+            ],
+        ),
+        (
+            "a post to a webhook the fixture never seeds",
+            with_discord(with_steps([posted(
+                json!({ "webhook": "alerts", "within_ms": 1000 }),
+            )])),
+            vec![(
+                "steps[2].expect[0].discord_post.webhook",
+                "expects a post to `alerts`, which fixture.discord_webhooks does not declare",
+            )],
+        ),
+        (
+            "an empty content needle and unknown or repeated mention kinds",
+            with_discord(with_steps([posted(json!({
+                "webhook": "go-live",
+                "content_contains": "",
+                "mention_parse": ["users", "here", "users"],
+                "within_ms": 1000
+            }))])),
+            vec![
+                (
+                    "steps[2].expect[0].discord_post.content_contains",
+                    "must not be empty: it would match every post",
+                ),
+                (
+                    "steps[2].expect[0].discord_post.mention_parse[1]",
+                    "`here` is repeated or not one of users, roles, everyone",
+                ),
+                (
+                    "steps[2].expect[0].discord_post.mention_parse[2]",
+                    "`users` is repeated or not one of users, roles, everyone",
+                ),
+            ],
+        ),
+        (
+            "a deadline over the ceiling",
+            with_discord(with_steps([posted(
+                json!({ "webhook": "go-live", "within_ms": 120_001 }),
+            )])),
+            vec![(
+                "steps[2].expect[0].discord_post.within_ms",
+                "must be between 1 and 120000, got 120001",
+            )],
+        ),
+        (
+            "every mention kind once, at the deadline ceiling",
+            with_discord(with_steps([posted(json!({
+                "webhook": "go-live",
+                "content_contains": "<@&",
+                "mention_parse": ["everyone", "roles", "users"],
+                "within_ms": 120_000
+            }))])),
+            Vec::new(),
+        ),
+    ]);
+}

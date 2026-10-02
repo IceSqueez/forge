@@ -22,7 +22,13 @@ pub struct Scenario {
 pub struct Fakes {
     #[serde(default)]
     pub twitch: Option<FakeTwitchSetup>,
+    #[serde(default)]
+    pub discord: Option<FakeDiscordSetup>,
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FakeDiscordSetup {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

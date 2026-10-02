@@ -1,0 +1,81 @@
+{
+  "name": "going live posts a role ping to the Discord webhook",
+  "purpose": "One stream.online notification runs the action bound to the go-live trigger, whose single step posts a Discord webhook message mentioning a role and @everyone. The step keeps the default mention toggles: role pings on, @everyone and @here off. The fake Discord records the request body, so the post must carry allowed_mentions.parse of exactly users and roles; a post without allowed_mentions, or one that also parses everyone, fails here. The webhook address forge posts to is seeded straight into its credential store, so no forge-side endpoint override is involved.",
+  "fixture": {
+    "twitch": {},
+    "discord_webhooks": [{ "name": "go-live" }],
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.stream.online",
+        "action_name": "Announce Go Live",
+        "steps": [
+          {
+            "kind_id": "discord.webhook.send_message",
+            "config": {
+              "webhook_name": { "type": "string", "value": "go-live" },
+              "content": { "type": "string", "value": "<@&123456789012345678> forge_emulator is live @everyone" },
+              "allow_role_pings": { "type": "bool", "value": true },
+              "allow_everyone_pings": { "type": "bool", "value": false }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {},
+    "discord": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["stream.online"], "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "twitch_event": {
+          "subscription_type": "stream.online",
+          "event": {
+            "id": "9001",
+            "broadcaster_user_id": "100000001",
+            "broadcaster_user_login": "forge_emulator",
+            "broadcaster_user_name": "forge_emulator",
+            "type": "live",
+            "started_at": "2026-10-02T18:00:00Z"
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Announce Go Live" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "done", "cause": "started" } },
+        {
+          "discord_post": {
+            "webhook": "go-live",
+            "content_contains": "<@&123456789012345678>",
+            "mention_parse": ["users", "roles"],
+            "within_ms": 5000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

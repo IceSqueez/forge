@@ -1293,6 +1293,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-discord"
+version = "0.5.5"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-storage",
+ "forge-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "forge-emulator"
 version = "0.0.0"
 dependencies = [
@@ -1300,6 +1320,7 @@ dependencies = [
  "axum",
  "clap",
  "directories",
+ "forge-discord",
  "forge-events",
  "forge-overlay",
  "forge-platform-core",

@@ -134,6 +134,32 @@ trigger can put its action on one by name:
 Concurrency 1 is a blocking queue. An action with no `queue` runs on `Default`; naming a queue
 the fixture does not declare fails validation.
 
+## Discord webhooks
+
+`fixture.discord_webhooks` names the webhooks a step may post to, and `fakes.discord: {}`
+starts a fake Discord that answers them. The run seeds each webhook's credential with the
+fake's loopback address, so forge posts there with no endpoint override: forge checks the
+`discord.com` host only when a user saves a webhook, never when it loads a stored one.
+
+```json
+"discord_webhooks": [{ "name": "go-live" }]
+```
+
+The fake answers like Discord: `200` with the created message when the post carries
+`?wait=true`, `204` without it, `200` to an edit and `204` to a delete under
+`/messages/{id}`, and `404` with code `10015` to an id or token it does not know. Every
+request is recorded with its content, embeds, `allowed_mentions` and uploaded file names.
+The `discord_post` expectation passes when, after the step acts, the webhook accepted a post
+matching every given condition:
+
+```json
+{ "discord_post": { "webhook": "go-live", "content_contains": "<@&123>",
+                    "mention_parse": ["users", "roles"], "within_ms": 5000 } }
+```
+
+`mention_parse` is compared as a set against `allowed_mentions.parse`; a post that carries no
+`allowed_mentions` never matches it.
+
 ## Throughput runs
 
 `stress run <profile> --forge <binary>` is a separate mode from scenarios: it seeds the profile's
@@ -272,3 +298,7 @@ fake. A crowd may hold up to 100 000 viewers and a million messages.
 `reconnect-keeps-subscriptions.json` was the first defect this harness found - forge ran a
 second full subscription pass on a successor EventSub session - and was kept red as evidence
 until that was fixed. It has passed since; if it ever fails again, the regression is forge's.
+
+`go-live-pings-the-discord-role.json` follows a `stream.online` notification to a Discord
+webhook post and judges the post's `allowed_mentions`: the role ping is parsed and
+`@everyone` is not.

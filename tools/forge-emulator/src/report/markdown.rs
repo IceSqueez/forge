@@ -284,6 +284,29 @@ fn expectation_evidence(evidence: &Evidence) -> Vec<String> {
             }
             lines
         }
+        Evidence::Discord(posts) => {
+            let mut lines = vec![format!(
+                "requests the fake Discord recorded in the window: {}",
+                posts.len()
+            )];
+            listed(&mut lines, "request", posts, |post| {
+                format!(
+                    "{} to {} answered {}: content {}, allowed_mentions {}, {} file(s)",
+                    post.method,
+                    code(post.webhook.as_deref().unwrap_or("an unknown webhook")),
+                    post.status,
+                    code(&clip(post.content.as_deref().unwrap_or(""), LINE_CHARS)),
+                    code(
+                        &post
+                            .allowed_mentions
+                            .as_ref()
+                            .map_or_else(|| "absent".to_owned(), ToString::to_string)
+                    ),
+                    post.files.len()
+                )
+            });
+            lines
+        }
         Evidence::Log(log) => {
             let mut lines = Vec::new();
             if let Some(record) = &log.matched {

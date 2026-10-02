@@ -7,10 +7,7 @@ use super::event::decode_push;
 pub enum Observation {
     Event(Event),
     Dropped(u64),
-    Undecodable {
-        frame: String,
-        reason: String,
-    },
+    Undecodable { frame: String, reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

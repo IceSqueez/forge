@@ -1,3 +1,4 @@
+mod discord_checks;
 mod event_checks;
 mod journal;
 mod ledger_checks;

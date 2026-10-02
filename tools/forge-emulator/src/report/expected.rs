@@ -83,6 +83,32 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
                 span_ms(content.within_ms)
             )
         }
+        Expectation::DiscordPost(post) => {
+            let mut conditions = Vec::new();
+            if let Some(needle) = &post.content_contains {
+                conditions.push(format!("content containing {}", quoted(needle)));
+            }
+            if let Some(kinds) = &post.mention_parse {
+                conditions.push(format!(
+                    "allowed_mentions.parse = [{}]",
+                    kinds
+                        .iter()
+                        .map(|kind| code(kind))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            let conditions = if conditions.is_empty() {
+                String::new()
+            } else {
+                format!(" with {}", conditions.join(" and "))
+            };
+            format!(
+                "forge posts to the Discord webhook {}{conditions} within {}",
+                code(&post.webhook),
+                span_ms(post.within_ms)
+            )
+        }
         Expectation::LogLine(line) => {
             let fields: Vec<String> = line
                 .fields

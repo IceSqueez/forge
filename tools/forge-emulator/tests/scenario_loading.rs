@@ -55,7 +55,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
 "steps": [{"do": {"forge_ready": {"within_ms": 1}},
   "expect": [{"event_seen": {}}]}]}"#,
             (3, 26),
-            "unknown variant `event_seen`, expected one of `event`, `event_absent`, `caused_by`, `twitch_subscription`, `twitch_no_unexpected_requests`, `twitch_request_count`, `overlay_content`, `log_line`",
+            "unknown variant `event_seen`, expected one of `event`, `event_absent`, `caused_by`, `twitch_subscription`, `twitch_no_unexpected_requests`, `twitch_request_count`, `overlay_content`, `log_line`, `discord_post`",
         ),
         (
             "unknown top-level field",
@@ -69,7 +69,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p",
 "fixture": {"twich": {}}, "steps": []}"#,
             (2, 19),
-            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`",
+            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`, `discord_webhooks`",
         ),
         (
             "missing deadline",

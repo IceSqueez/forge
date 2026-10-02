@@ -1,3 +1,4 @@
+use crate::discord::RecordedPost;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -181,6 +182,10 @@ pub enum FailureCause {
     LogUnreadable {
         reason: String,
     },
+    NoDiscordPost {
+        observed: usize,
+    },
+    NoFakeDiscord,
 }
 
 impl fmt::Display for FailureCause {
@@ -253,6 +258,11 @@ impl fmt::Display for FailureCause {
             ),
             Self::NoLogLine => write!(f, "no log line with those fields appeared in time"),
             Self::LogUnreadable { reason } => write!(f, "forge's log could not be read: {reason}"),
+            Self::NoDiscordPost { observed } => write!(
+                f,
+                "no matching Discord post arrived in time, the fake recorded {observed} request(s)"
+            ),
+            Self::NoFakeDiscord => write!(f, "the run has no fake Discord"),
         }
     }
 }
@@ -266,6 +276,7 @@ pub enum Evidence {
     Ledger(LedgerExcerpt),
     Overlay(OverlayEvidence),
     Log(LogEvidence),
+    Discord(Vec<RecordedPost>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

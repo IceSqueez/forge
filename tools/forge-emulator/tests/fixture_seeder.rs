@@ -585,3 +585,50 @@ async fn an_event_triggers_overlay_send_step_reaches_storage_addressed_by_the_mi
     );
     assert_ne!(minted, "Alert Box");
 }
+
+struct SilentPublisher;
+
+impl forge_events::EventPublisher for SilentPublisher {
+    fn publish(&self, _: Event) {}
+}
+
+fn go_live_webhook(url: &str) -> Fixture {
+    Fixture {
+        discord_webhooks: vec![forge_emulator::fixture::DiscordWebhook {
+            name: "go-live".to_owned(),
+            url: url.to_owned(),
+        }],
+        ..Fixture::default()
+    }
+}
+
+#[tokio::test]
+async fn a_seeded_discord_webhook_is_the_endpoint_forge_discord_posts_to() {
+    let url = "http://127.0.0.1:9/api/webhooks/1300000000000000001/fake-discord-token-0";
+    let (dir, _) = seed_fresh(&go_live_webhook(url)).await;
+    let backend = Arc::new(reopen(dir.path()).await);
+    let client = forge_discord::DiscordClient::new(
+        forge_discord::DiscordConfig::default(),
+        Arc::new(SilentPublisher),
+        Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+    );
+
+    let names = client.list_webhooks().await.unwrap();
+    let stored = client.webhook_url("go-live").await.unwrap();
+    backend.shutdown().await;
+
+    assert_eq!(names, ["go-live"]);
+    assert_eq!(stored, url);
+}
+
+#[tokio::test]
+async fn a_discord_webhook_without_an_address_is_refused_instead_of_seeded() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let refused = seed(Path::new(EMULATOR), dir.path(), &go_live_webhook("  ")).await;
+
+    assert!(
+        matches!(&refused, Err(EmulatorError::SeederProcess { reason }) if reason.contains("has no address")),
+        "{refused:?}"
+    );
+}

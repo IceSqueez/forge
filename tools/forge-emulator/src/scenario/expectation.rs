@@ -14,6 +14,18 @@ pub enum Expectation {
     TwitchRequestCount(RequestCount),
     OverlayContent(OverlayContent),
     LogLine(LogLine),
+    DiscordPost(DiscordPost),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscordPost {
+    pub webhook: String,
+    #[serde(default)]
+    pub content_contains: Option<String>,
+    #[serde(default)]
+    pub mention_parse: Option<Vec<String>>,
+    pub within_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -143,6 +155,7 @@ impl Expectation {
             Self::TwitchRequestCount(_) => "twitch_request_count",
             Self::OverlayContent(_) => "overlay_content",
             Self::LogLine(_) => "log_line",
+            Self::DiscordPost(_) => "discord_post",
         }
     }
 
@@ -155,7 +168,12 @@ impl Expectation {
             Self::EventAbsent(_)
             | Self::CausedBy(_)
             | Self::OverlayContent(_)
-            | Self::LogLine(_) => false,
+            | Self::LogLine(_)
+            | Self::DiscordPost(_) => false,
         }
+    }
+
+    pub fn needs_fake_discord(&self) -> bool {
+        matches!(self, Self::DiscordPost(_))
     }
 }

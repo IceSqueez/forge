@@ -5,8 +5,8 @@ use forge_types::Variant;
 
 use super::crowd::{Crowd, CrowdLine, template_problem};
 use super::expectation::{
-    AbsentEvent, Causation, Expectation, LogLine, ObservedEvent, OverlayContent, RequestCount,
-    TwitchSubscription,
+    AbsentEvent, Causation, DiscordPost, Expectation, LogLine, ObservedEvent, OverlayContent,
+    RequestCount, TwitchSubscription,
 };
 use super::matcher::{PayloadMatchers, ValueMatcher};
 use super::model::Scenario;
@@ -28,6 +28,7 @@ const COMMAND_POINTER: &str = "/command";
 const ACTION_START: &str = "action.start";
 const ACTION_NAME_POINTER: &str = "/action_name";
 const PROSE_FIELD: &str = "message";
+const MENTION_KINDS: [&str; 3] = ["users", "roles", "everyone"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioProblem {
@@ -58,6 +59,7 @@ struct Validator<'a> {
     scenario: &'a Scenario,
     problems: Vec<ScenarioProblem>,
     fake_twitch: bool,
+    fake_discord: bool,
     subscriptions_awaited: HashSet<&'a str>,
     session_subscribed: bool,
     command_matches_sent: u64,
@@ -71,6 +73,7 @@ impl<'a> Validator<'a> {
             scenario,
             problems: Vec::new(),
             fake_twitch: scenario.fakes.twitch.is_some() && scenario.fixture.twitch.is_some(),
+            fake_discord: scenario.fakes.discord.is_some(),
             subscriptions_awaited: HashSet::new(),
             session_subscribed: false,
             command_matches_sent: 0,
@@ -133,6 +136,12 @@ impl<'a> Validator<'a> {
                 if expectation.needs_fake_twitch() {
                     self.require_fake_twitch(&location);
                 }
+                if expectation.needs_fake_discord() && !self.fake_discord {
+                    self.report(
+                        &location,
+                        "needs a fake Discord: add fixture.discord_webhooks and fakes.discord",
+                    );
+                }
                 self.check_expectation(&location, expectation);
             }
         }
@@ -177,6 +186,18 @@ impl<'a> Validator<'a> {
                 );
             }
             (None, None) => {}
+        }
+        let seeds_webhooks = !scenario.fixture.discord_webhooks.is_empty();
+        match (seeds_webhooks, &scenario.fakes.discord) {
+            (true, None) => self.report(
+                "fakes.discord",
+                "is required because the fixture seeds Discord webhooks; without it they have no address to post to",
+            ),
+            (false, Some(_)) => self.report(
+                "fakes.discord",
+                "needs fixture.discord_webhooks: the fake answers only the webhooks the fixture seeds",
+            ),
+            _ => {}
         }
     }
 
@@ -469,6 +490,7 @@ impl<'a> Validator<'a> {
             Expectation::TwitchRequestCount(count) => self.check_request_count(location, count),
             Expectation::OverlayContent(content) => self.check_overlay_content(location, content),
             Expectation::LogLine(line) => self.check_log_line(location, line),
+            Expectation::DiscordPost(post) => self.check_discord_post(location, post),
         }
     }
 
@@ -667,6 +689,53 @@ impl<'a> Validator<'a> {
         for key in content.values.0.keys() {
             if key.trim().is_empty() {
                 self.report(format!("{location}.values"), "has a blank content key");
+            }
+        }
+    }
+
+    fn check_discord_post(&mut self, location: &str, post: &DiscordPost) {
+        let declared = self
+            .scenario
+            .fixture
+            .discord_webhooks
+            .iter()
+            .any(|webhook| webhook.name == post.webhook);
+        if !declared {
+            self.report(
+                format!("{location}.webhook"),
+                format!(
+                    "expects a post to `{}`, which fixture.discord_webhooks does not declare",
+                    post.webhook
+                ),
+            );
+        }
+        self.in_range(
+            format!("{location}.within_ms"),
+            post.within_ms,
+            1,
+            MAX_WAIT_MS,
+        );
+        if post.content_contains.as_deref() == Some("") {
+            self.report(
+                format!("{location}.content_contains"),
+                "must not be empty: it would match every post",
+            );
+        }
+        for (index, kind) in post.mention_parse.iter().flatten().enumerate() {
+            let repeated = post
+                .mention_parse
+                .iter()
+                .flatten()
+                .take(index)
+                .any(|earlier| earlier == kind);
+            if !MENTION_KINDS.contains(&kind.as_str()) || repeated {
+                self.report(
+                    format!("{location}.mention_parse[{index}]"),
+                    format!(
+                        "`{kind}` is repeated or not one of {}",
+                        MENTION_KINDS.join(", ")
+                    ),
+                );
             }
         }
     }

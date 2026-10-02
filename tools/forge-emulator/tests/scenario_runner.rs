@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint};
+use forge_emulator::discord::FakeDiscord;
 use forge_emulator::fixture::{SeedReport, SeededCommand, SeededServer, TwitchAccount};
 use forge_emulator::overlay::OverlayPages;
 use forge_emulator::run::{
@@ -281,6 +282,7 @@ async fn subscribe_session(api: &str, session_id: &str, subscription_type: &str)
 struct Harness {
     forge: PretendForge,
     fake: Option<FakeTwitch>,
+    discord: Option<FakeDiscord>,
     client: ControlClient,
     journal: Journal,
     actions: ActionIndex,
@@ -331,6 +333,7 @@ impl Harness {
         Self {
             forge,
             fake,
+            discord: None,
             client,
             journal,
             actions,
@@ -345,6 +348,7 @@ impl Harness {
             client: &self.client,
             journal: &self.journal,
             twitch: self.fake.as_ref(),
+            discord: self.discord.as_ref(),
             actions: &self.actions,
             pages: &self.pages,
             log_dir: self.logs.path().to_owned(),
@@ -774,5 +778,123 @@ async fn twitch_event_no_session_holds_fails_the_step_naming_the_live_subscripti
         reason.contains("`channel.raid`")
             && reason.contains(&format!("live subscriptions: {CHAT}, {SUBSCRIBE}")),
         "{reason}"
+    );
+}
+
+const GO_LIVE: &str = "go-live";
+
+fn discord_scenario(steps: Value) -> Scenario {
+    scenario(
+        json!({ "discord_webhooks": [{ "name": GO_LIVE }] }),
+        json!({ "discord": {} }),
+        steps,
+    )
+}
+
+async fn harness_with_discord() -> (Harness, String) {
+    let mut harness = Harness::start(COOPERATIVE, false).await;
+    let discord = FakeDiscord::start(&[GO_LIVE.to_owned()]).await.unwrap();
+    let url = discord.webhook_url(GO_LIVE).unwrap();
+    harness.discord = Some(discord);
+    (harness, url)
+}
+
+async fn post_to_webhook(url: &str, body: Value) {
+    let status = reqwest::Client::new()
+        .post(format!("{url}?wait=true"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert!(status.is_success(), "{status}");
+}
+
+fn role_ping_post(within_ms: u64) -> Value {
+    json!({ "discord_post": {
+        "webhook": GO_LIVE,
+        "content_contains": "<@&42>",
+        "mention_parse": ["roles", "users"],
+        "within_ms": within_ms
+    } })
+}
+
+#[tokio::test]
+async fn discord_post_passes_on_a_post_with_the_expected_mention_parse_in_any_order() {
+    let (harness, url) = harness_with_discord().await;
+    post_to_webhook(
+        &url,
+        json!({ "content": "<@&42> we are live", "allowed_mentions": { "parse": ["users", "roles"] } }),
+    )
+    .await;
+    let scenario = discord_scenario(json!([
+        { "do": { "forge_ready": { "within_ms": 1000 } }, "expect": [role_ping_post(1000)] }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(verdicts(&steps[0]), [Verdict::Passed], "{steps:#?}");
+}
+
+#[tokio::test]
+async fn discord_post_with_a_different_mention_parse_fails_and_shows_what_arrived() {
+    let (harness, url) = harness_with_discord().await;
+    post_to_webhook(
+        &url,
+        json!({ "content": "<@&42> we are live", "allowed_mentions": { "parse": ["users"] } }),
+    )
+    .await;
+    let scenario = discord_scenario(json!([
+        { "do": { "forge_ready": { "within_ms": 1000 } }, "expect": [role_ping_post(50)] }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    let expectation = &steps[0].expectations[0];
+    assert_eq!(
+        expectation.verdict,
+        Verdict::Failed(FailureCause::NoDiscordPost { observed: 1 })
+    );
+    assert!(
+        matches!(&expectation.evidence, forge_emulator::run::Evidence::Discord(posts)
+            if posts[0].mention_parse() == Some(vec!["users".to_owned()])),
+        "{:?}",
+        expectation.evidence
+    );
+}
+
+#[tokio::test]
+async fn a_discord_post_made_before_a_step_starts_never_satisfies_its_expectations() {
+    let (harness, url) = harness_with_discord().await;
+    post_to_webhook(
+        &url,
+        json!({ "content": "<@&42> we are live", "allowed_mentions": { "parse": ["users", "roles"] } }),
+    )
+    .await;
+    let scenario = discord_scenario(json!([
+        ready(),
+        { "do": { "pause": { "ms": 1, "reason": "nothing posts now" } }, "expect": [role_ping_post(50)] }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        verdicts(&steps[1]),
+        [Verdict::Failed(FailureCause::NoDiscordPost { observed: 0 })]
+    );
+}
+
+#[tokio::test]
+async fn discord_post_without_a_fake_discord_fails_as_unrunnable() {
+    let harness = Harness::start(COOPERATIVE, false).await;
+    let scenario = discord_scenario(json!([
+        { "do": { "forge_ready": { "within_ms": 1000 } }, "expect": [role_ping_post(50)] }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        verdicts(&steps[0]),
+        [Verdict::Failed(FailureCause::NoFakeDiscord)]
     );
 }

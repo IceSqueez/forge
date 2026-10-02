@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
+use super::discord_checks::observe_discord_post;
 use super::event_checks::{
     Assessment, NamedEvents, Window, assess_causation, observe_absence, observe_event,
 };
@@ -20,6 +21,7 @@ use super::outcome::{
 use super::overlay_checks::observe_overlay_content;
 use super::steps::{ActionIndex, Stimuli};
 use crate::control::ControlClient;
+use crate::discord::FakeDiscord;
 use crate::overlay::{OverlayMarks, OverlayPages};
 use crate::scenario::{Expectation, Scenario, Step, StepAction};
 use crate::twitch::FakeTwitch;
@@ -28,6 +30,7 @@ pub struct Session<'a> {
     pub client: &'a ControlClient,
     pub journal: &'a Journal,
     pub twitch: Option<&'a FakeTwitch>,
+    pub discord: Option<&'a FakeDiscord>,
     pub actions: &'a ActionIndex,
     pub pages: &'a OverlayPages,
     pub log_dir: PathBuf,
@@ -80,6 +83,10 @@ async fn run_step(
         )
     };
     let marks = session.pages.marks();
+    let discord_from = match (is_ready_step, session.discord) {
+        (false, Some(discord)) => discord.posts().len(),
+        _ => 0,
+    };
     let performed = if is_ready_step {
         Ok(session.ready.clone())
     } else {
@@ -121,6 +128,7 @@ async fn run_step(
         marks,
         acted,
         log_tail,
+        discord_from,
     };
     let mut expectations = Vec::with_capacity(step.expect.len());
     for (position, expectation) in step.expect.iter().enumerate() {
@@ -151,6 +159,7 @@ struct ExpectationContext<'s, 'a> {
     marks: OverlayMarks,
     acted: Instant,
     log_tail: LogTail,
+    discord_from: usize,
 }
 
 impl ExpectationContext<'_, '_> {
@@ -232,6 +241,16 @@ impl ExpectationContext<'_, '_> {
                 let until = deadline(line.within_ms);
                 let (verdict, evidence) =
                     observe_log_line(self.log_tail.clone(), until, line).await;
+                (verdict, evidence, Some(until))
+            }
+            Expectation::DiscordPost(post) => {
+                let until = deadline(post.within_ms);
+                let (verdict, evidence) = match session.discord {
+                    Some(discord) => {
+                        observe_discord_post(discord, self.discord_from, until, post).await
+                    }
+                    None => (Verdict::Failed(FailureCause::NoFakeDiscord), Evidence::None),
+                };
                 (verdict, evidence, Some(until))
             }
         };

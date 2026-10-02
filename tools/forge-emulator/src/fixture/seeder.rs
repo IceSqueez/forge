@@ -18,14 +18,15 @@ use super::report::{
     SeedReport, SeededCommand, SeededEventTrigger, SeededOverlay, SeededServer, SeededTwitch,
 };
 use super::spec::{
-    ChatCommand, DEFAULT_QUEUE_NAME, EventTrigger, Fixture, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY,
-    OverlayFixture, QueueFixture, TwitchAccount,
+    ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, EventTrigger, Fixture, OVERLAY_SEND_KIND,
+    OVERLAY_TARGET_KEY, OverlayFixture, QueueFixture, TwitchAccount,
 };
 use crate::EmulatorError;
 
 const DATABASE_FILE: &str = "forge.db";
 const SERVER_BEARER_CREDENTIAL: &str = "server:bearer";
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
+const DISCORD_CREDENTIAL_PREFIX: &str = "discord:";
 const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const BEARER_TOKEN_BYTES: usize = 32;
@@ -98,6 +99,9 @@ async fn write_fixture(
     for queue in &fixture.queues {
         seed_queue(provider, queue).await?;
     }
+    for webhook in &fixture.discord_webhooks {
+        seed_discord_webhook(provider, webhook).await?;
+    }
     let kinds = builtin_overlay_kinds()?;
     let mut overlays = Vec::with_capacity(fixture.overlays.len());
     for overlay in &fixture.overlays {
@@ -131,6 +135,28 @@ async fn seed_queue(
             description: String::new(),
             concurrency: queue.concurrency,
         })
+        .await
+        .map_err(storage_error)
+}
+
+async fn seed_discord_webhook(
+    provider: &dyn DataProvider,
+    webhook: &DiscordWebhook,
+) -> Result<(), EmulatorError> {
+    if webhook.url.trim().is_empty() {
+        return Err(EmulatorError::InvalidFixture {
+            reason: format!(
+                "Discord webhook `{}` has no address; a scenario run fills it from fakes.discord",
+                webhook.name
+            ),
+        });
+    }
+    let credential = serde_json::json!({ "url": webhook.url }).to_string();
+    provider
+        .store(
+            &CredentialId::new(format!("{DISCORD_CREDENTIAL_PREFIX}{}", webhook.name)),
+            &credential,
+        )
         .await
         .map_err(storage_error)
 }

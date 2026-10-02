@@ -14,6 +14,7 @@ use super::session::{Session, execute_steps, interrupted, not_run};
 use super::steps::ActionIndex;
 use crate::EmulatorError;
 use crate::control::EventFilter;
+use crate::discord::FakeDiscord;
 use crate::fixture::Redactions;
 use crate::launch::{
     ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, OutputStream, launch_forge,
@@ -64,11 +65,33 @@ pub async fn run_scenario(
         (Some(account), Some(setup)) => Some(FakeTwitch::start(setup.config_for(account)).await?),
         _ => None,
     };
+    let discord = match &scenario.fakes.discord {
+        Some(_) => {
+            let names: Vec<String> = scenario
+                .fixture
+                .discord_webhooks
+                .iter()
+                .map(|webhook| webhook.name.clone())
+                .collect();
+            match FakeDiscord::start(&names).await {
+                Ok(discord) => Some(discord),
+                Err(e) => {
+                    shut_down_fakes(fake, None).await;
+                    return Err(e);
+                }
+            }
+        }
+        None => None,
+    };
+    let fixture = match &discord {
+        Some(discord) => discord.addressed(&scenario.fixture),
+        None => scenario.fixture.clone(),
+    };
     let launch = LaunchOptions {
         emulator: options.emulator,
         forge: options.forge,
         run_root: options.run_root.clone(),
-        fixture: scenario.fixture.clone(),
+        fixture,
         endpoint_overrides: fake
             .as_ref()
             .map(|fake| fake.endpoint_overrides().to_vec())
@@ -84,7 +107,7 @@ pub async fn run_scenario(
     let launched = tokio::select! {
         launched = launch_forge(&launch) => launched,
         () = &mut stop => {
-            shut_down_fake(fake).await;
+            shut_down_fakes(fake, discord).await;
             return Ok(interrupted_before_ready(scenario));
         }
     };
@@ -97,7 +120,7 @@ pub async fn run_scenario(
     } = match launched {
         Ok(launched) => launched,
         Err(e) => {
-            shut_down_fake(fake).await;
+            shut_down_fakes(fake, discord).await;
             return Err(e);
         }
     };
@@ -108,7 +131,7 @@ pub async fn run_scenario(
     {
         drop(client);
         let _ = process.shutdown(options.shutdown_grace).await;
-        shut_down_fake(fake).await;
+        shut_down_fakes(fake, discord).await;
         return Err(e);
     }
     let version = client.forge_version().await.ok();
@@ -119,7 +142,7 @@ pub async fn run_scenario(
         Err(e) => {
             drop(client);
             let _ = process.shutdown(options.shutdown_grace).await;
-            shut_down_fake(fake).await;
+            shut_down_fakes(fake, discord).await;
             return Err(e);
         }
     };
@@ -128,6 +151,7 @@ pub async fn run_scenario(
         client: &client,
         journal: &journal,
         twitch: fake.as_ref(),
+        discord: discord.as_ref(),
         actions: &actions,
         pages: &pages,
         log_dir: log_dir.clone(),
@@ -152,7 +176,7 @@ pub async fn run_scenario(
         Err(e) => (None, Some(e.to_string())),
     };
     feeder.abort();
-    shut_down_fake(fake).await;
+    shut_down_fakes(fake, discord).await;
 
     let forge = ForgeEvidence {
         run_root: options.run_root,
@@ -214,9 +238,12 @@ pub fn verdict(steps: &[StepOutcome], forge_exited_during_run: bool) -> Scenario
     }
 }
 
-async fn shut_down_fake(fake: Option<FakeTwitch>) {
+async fn shut_down_fakes(fake: Option<FakeTwitch>, discord: Option<FakeDiscord>) {
     if let Some(fake) = fake {
         fake.shutdown().await;
+    }
+    if let Some(discord) = discord {
+        discord.shutdown().await;
     }
 }
 

@@ -55,6 +55,7 @@ rustix = { version = "1.1", features = ["process"] }
 [dev-dependencies]
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["ws"] }
+forge-discord = { path = "../../crates/forge-discord" }
 forge-registry = { path = "../../crates/forge-registry" }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }

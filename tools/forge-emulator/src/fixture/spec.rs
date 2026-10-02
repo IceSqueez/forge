@@ -21,6 +21,16 @@ pub struct Fixture {
     pub event_triggers: Vec<EventTrigger>,
     #[serde(default)]
     pub queues: Vec<QueueFixture>,
+    #[serde(default)]
+    pub discord_webhooks: Vec<DiscordWebhook>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscordWebhook {
+    pub name: String,
+    #[serde(default)]
+    pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,6 +113,7 @@ impl Fixture {
             }],
             event_triggers: Vec::new(),
             queues: Vec::new(),
+            discord_webhooks: Vec::new(),
         }
     }
 
@@ -173,6 +184,22 @@ impl Fixture {
                 return Err(invalid(format!(
                     "event trigger for action `{}` names no trigger kind",
                     trigger.action_name
+                )));
+            }
+        }
+        for (index, webhook) in self.discord_webhooks.iter().enumerate() {
+            if webhook.name.trim().is_empty() {
+                return Err(invalid(format!(
+                    "discord_webhooks[{index}] has a blank name"
+                )));
+            }
+            if self.discord_webhooks[..index]
+                .iter()
+                .any(|earlier| earlier.name == webhook.name)
+            {
+                return Err(invalid(format!(
+                    "two Discord webhooks are both named `{}`, so a step could not tell them apart",
+                    webhook.name
                 )));
             }
         }

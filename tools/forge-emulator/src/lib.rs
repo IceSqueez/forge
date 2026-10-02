@@ -1,4 +1,5 @@
 pub mod control;
+pub mod discord;
 mod error;
 pub mod fixture;
 pub mod launch;

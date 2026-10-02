@@ -2152,10 +2152,12 @@ mod tests {
     use gpui::{AppContext as _, Entity, TestAppContext};
     use time::OffsetDateTime;
 
-    use super::ChatView;
+    use super::{ChatView, PlatformFilter};
     use crate::chat_feed::{ChatFeed, ChatMessage};
-    use crate::home_stats::HomeStats;
-    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime};
+    use crate::home_stats::{HomeStats, Integration};
+    use crate::integration_lifecycle::IntegrationLifecycle;
+    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, switch_lifecycle};
 
     const CAP: usize = 5;
     const OVERFLOW: usize = 8;
@@ -2182,6 +2184,14 @@ mod tests {
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
     ) -> (Entity<ChatFeed>, Entity<ChatView>) {
+        mount_gated(cx, rt, None)
+    }
+
+    fn mount_gated(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        lifecycle: Option<Entity<IntegrationLifecycle>>,
+    ) -> (Entity<ChatFeed>, Entity<ChatView>) {
         let _enter = rt.enter();
         let feed = cx.new(|_| {
             let mut feed = ChatFeed::new();
@@ -2200,7 +2210,7 @@ mod tests {
             Arc::new(ActionCancelRegistry::new()),
         );
         let view = cx.new(|cx| {
-            ChatView::new(
+            let view = ChatView::new(
                 feed.clone(),
                 home_stats,
                 rt.handle().clone(),
@@ -2211,7 +2221,11 @@ mod tests {
                 forge_types::Shared::default(),
                 FORGE_DEFAULT,
                 cx,
-            )
+            );
+            match lifecycle {
+                Some(lifecycle) => view.with_lifecycle(lifecycle, cx),
+                None => view,
+            }
         });
         (feed, view)
     }
@@ -2267,5 +2281,103 @@ mod tests {
         });
         assert_eq!(visible, expected);
         assert_eq!(list_len, expected.len());
+    }
+
+    fn chat_states(entries: &[(Integration, LifecycleState)]) -> LifecycleStates {
+        entries
+            .iter()
+            .map(|(integration, state)| (integration.builtin_id(), state.clone()))
+            .collect()
+    }
+
+    fn offered(cx: &mut TestAppContext, view: &Entity<ChatView>) -> [bool; 4] {
+        view.read_with(cx, |view, cx| {
+            [
+                PlatformFilter::All,
+                PlatformFilter::Single(Platform::Twitch),
+                PlatformFilter::Single(Platform::YouTube),
+                PlatformFilter::Single(Platform::Kick),
+            ]
+            .map(|filter| view.filter_offered(filter, cx))
+        })
+    }
+
+    #[gpui::test]
+    fn without_a_lifecycle_every_platform_filter_is_offered(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (_feed, view) = mount(cx, &rt);
+
+        assert_eq!(offered(cx, &view), [true; 4]);
+    }
+
+    #[gpui::test]
+    fn only_platforms_the_user_keeps_on_are_offered_as_filters(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let lifecycle = cx.new(|_| {
+            IntegrationLifecycle::new(chat_states(&[
+                (Integration::Twitch, LifecycleState::Running),
+                (
+                    Integration::YouTube,
+                    LifecycleState::Failed("quota".to_owned()),
+                ),
+                (Integration::Kick, LifecycleState::Disabled),
+            ]))
+        });
+        let (_feed, view) = mount_gated(cx, &rt, Some(lifecycle));
+
+        assert_eq!(offered(cx, &view), [true, true, true, false]);
+    }
+
+    fn filtering_kick(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+    ) -> (Entity<IntegrationLifecycle>, Entity<ChatView>) {
+        let lifecycle = cx.new(|_| {
+            IntegrationLifecycle::new(chat_states(&[
+                (Integration::Twitch, LifecycleState::Running),
+                (Integration::Kick, LifecycleState::Running),
+            ]))
+        });
+        let (_feed, view) = mount_gated(cx, rt, Some(lifecycle.clone()));
+        view.update(cx, |view, cx| {
+            view.set_platform_filter(PlatformFilter::Single(Platform::Kick), cx)
+        });
+        (lifecycle, view)
+    }
+
+    #[gpui::test]
+    fn switching_off_the_filtered_platform_resets_the_filter_to_all(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (lifecycle, view) = filtering_kick(cx, &rt);
+
+        switch_lifecycle(
+            cx,
+            &lifecycle,
+            chat_states(&[
+                (Integration::Twitch, LifecycleState::Running),
+                (Integration::Kick, LifecycleState::Stopping),
+            ]),
+        );
+
+        assert!(view.read_with(cx, |view, _| view.platform_filter == PlatformFilter::All));
+    }
+
+    #[gpui::test]
+    fn switching_off_another_platform_keeps_the_active_filter(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (lifecycle, view) = filtering_kick(cx, &rt);
+
+        switch_lifecycle(
+            cx,
+            &lifecycle,
+            chat_states(&[
+                (Integration::Twitch, LifecycleState::Disabled),
+                (Integration::Kick, LifecycleState::Running),
+            ]),
+        );
+
+        assert!(view.read_with(cx, |view, _| {
+            view.platform_filter == PlatformFilter::Single(Platform::Kick)
+        }));
     }
 }

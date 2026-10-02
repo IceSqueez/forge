@@ -230,6 +230,15 @@ pub(super) mod tests {
                     .collect()
             })
         }
+
+        fn flagged_failed(&self, cx: &mut gpui::TestAppContext) -> Vec<Option<IntegrationId>> {
+            self.view.read_with(cx, |view, _| {
+                view.step_health
+                    .iter()
+                    .map(|health| health.failed_integration().cloned())
+                    .collect()
+            })
+        }
     }
 
     #[gpui::test]
@@ -296,5 +305,82 @@ pub(super) mod tests {
         });
 
         assert_eq!(owners, [Some(obs()), None]);
+    }
+
+    fn failed() -> LifecycleState {
+        LifecycleState::Failed("token revoked".to_owned())
+    }
+
+    #[gpui::test]
+    fn the_closed_gate_of_a_step_follows_its_owner_lifecycle(cx: &mut gpui::TestAppContext) {
+        for (state, probe, expected, case) in [
+            (
+                LifecycleState::Disabled,
+                step(OBS_SCENE, true),
+                Some(ClosedGate::SwitchedOff(obs())),
+                "a switched-off owner",
+            ),
+            (
+                failed(),
+                step(OBS_SCENE, true),
+                Some(ClosedGate::Failed(obs())),
+                "a failed owner",
+            ),
+            (
+                failed(),
+                step(OBS_SCENE, false),
+                None,
+                "a disabled step of a failed owner",
+            ),
+            (failed(), step(CORE_LOG, true), None, "an ownerless step"),
+            (
+                LifecycleState::Running,
+                step(OBS_SCENE, true),
+                None,
+                "a running owner",
+            ),
+        ] {
+            let rig = Rig::open(cx, state, None);
+
+            let gate = rig
+                .view
+                .read_with(cx, |view, _| view.closed_step_gate(&probe));
+
+            assert_eq!(gate, expected, "{case}");
+        }
+    }
+
+    #[gpui::test]
+    fn step_health_follows_the_integration_failing_and_recovering(cx: &mut gpui::TestAppContext) {
+        let rig = Rig::open(
+            cx,
+            LifecycleState::Running,
+            Some(detail(vec![step(CORE_LOG, true), step(OBS_SCENE, true)])),
+        );
+
+        let before = rig.flagged_failed(cx);
+        switch_lifecycle(cx, &rig.lifecycle, obs_in(failed()));
+        let failing = rig.flagged_failed(cx);
+        switch_lifecycle(cx, &rig.lifecycle, obs_in(LifecycleState::Running));
+        let recovered = rig.flagged_failed(cx);
+
+        assert_eq!(
+            (before, failing, recovered),
+            (vec![None, None], vec![None, Some(obs())], vec![None, None])
+        );
+    }
+
+    #[gpui::test]
+    fn the_closed_gate_follows_the_integration_failing_after_the_screen_opened(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = Rig::open(cx, LifecycleState::Running, None);
+
+        switch_lifecycle(cx, &rig.lifecycle, obs_in(failed()));
+        let gate = rig
+            .view
+            .read_with(cx, |view, _| view.closed_step_gate(&step(OBS_SCENE, true)));
+
+        assert_eq!(gate, Some(ClosedGate::Failed(obs())));
     }
 }

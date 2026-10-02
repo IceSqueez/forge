@@ -1019,3 +1019,110 @@ impl ScreenActionsView {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use forge_runtime::{ActionCancelRegistry, Catalog, QueueScheduler, spawn_action_engine};
+    use forge_types::{IntegrationId, integration_disabled_reason};
+
+    use super::*;
+    use crate::test_support::{
+        StubEventLog, owned_sub_actions, runtime, sandboxed_provider, seed_action, step,
+    };
+
+    const OBS_SCENE: &str = "obs.scene.set";
+    const RUN_SETTLE: Duration = Duration::from_secs(5);
+
+    fn launch(action_id: ActionId, queue_id: QueueId) -> TestRunLaunch {
+        TestRunLaunch {
+            action_id,
+            action_name: "Scene".into(),
+            queue_id,
+            bypass_pause: false,
+            rows: vec![TestRunRow {
+                index: 0,
+                name: OBS_SCENE.into(),
+                icon: Icon::Bolt,
+                color: gpui::rgba(0),
+                status: RowStatus::Queued,
+            }],
+            triggers: Vec::new(),
+            selected_trigger: None,
+            trigger_kind: None,
+            initial_args: ArgStack::new(),
+            note: Some(TestRunNote::NoTriggers),
+        }
+    }
+
+    async fn action_done(mut sub: forge_runtime::EventSubscription) {
+        while let Ok(event) = sub.recv().await {
+            if event.kind == "action.done" {
+                return;
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn a_run_refused_at_once_by_a_switched_off_integration_halts_with_the_reason(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rt = runtime();
+        let obs = IntegrationId::new("obs");
+        let (_provider, bus, scheduler, action_id, queue_id) = rt.block_on(async {
+            let provider = sandboxed_provider().await;
+            let action_id = seed_action(&provider, "Scene", vec![step(OBS_SCENE, true)]).await;
+            let queue = provider
+                .queue_repo()
+                .get_by_name("Default")
+                .await
+                .unwrap()
+                .expect("migrations seed the default queue");
+            let queue_id = queue.id;
+            let bus = EventBus::new(Arc::new(StubEventLog));
+            let engine = spawn_action_engine(
+                Arc::clone(&bus),
+                Catalog::from_provider(provider.as_ref()),
+                provider.action_repo(),
+                provider.history_repo(),
+                Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
+                Arc::new(ActionCancelRegistry::new()),
+            );
+            engine.integration_gate().disable(obs.clone());
+            let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue]);
+            (provider, bus, scheduler, action_id, queue_id)
+        });
+        let finished = bus.subscribe();
+
+        let modal = cx.update(|cx| {
+            cx.new(|cx| {
+                TestRunModal::new(
+                    launch(action_id, queue_id),
+                    Arc::clone(&bus),
+                    scheduler.clone(),
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        rt.block_on(async { tokio::time::timeout(RUN_SETTLE, action_done(finished)).await })
+            .expect("the engine finishes the refused run");
+        cx.run_until_parked();
+
+        let (halted_at, reason) = modal.read_with(cx, |modal, _| {
+            let halted_at = match modal.phase {
+                TestRunPhase::Halted { step } => Some(step),
+                _ => None,
+            };
+            let reason = match &modal.rows[0].status {
+                RowStatus::Failed { message } => Some(message.to_string()),
+                _ => None,
+            };
+            (halted_at, reason)
+        });
+        assert_eq!(
+            (halted_at, reason),
+            (Some(0), Some(integration_disabled_reason(&obs)))
+        );
+    }
+}

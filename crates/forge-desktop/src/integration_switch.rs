@@ -241,6 +241,78 @@ mod tests {
         });
     }
 
+    fn failed() -> LifecycleState {
+        LifecycleState::Failed("token revoked".to_owned())
+    }
+
+    fn failed_set(host: &Entity<Host>, cx: &mut TestAppContext) -> HashSet<IntegrationId> {
+        host.read_with(cx, |host, _| {
+            host.watch
+                .as_ref()
+                .expect("the host keeps its watch")
+                .failed()
+                .clone()
+        })
+    }
+
+    #[gpui::test]
+    fn a_watch_starts_from_the_integrations_already_failed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (_lifecycle, host) = watching(
+            cx,
+            &rt,
+            states(&[(obs(), failed()), (twitch(), LifecycleState::Disabled)]),
+        );
+
+        assert_eq!(failed_set(&host, cx), HashSet::from([obs()]));
+    }
+
+    #[gpui::test]
+    fn syncing_after_a_lifecycle_change_picks_up_the_new_failed_set(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (lifecycle, host) = watching(
+            cx,
+            &rt,
+            states(&[(obs(), failed()), (twitch(), LifecycleState::Running)]),
+        );
+
+        switch_lifecycle(
+            cx,
+            &lifecycle,
+            states(&[(obs(), LifecycleState::Running), (twitch(), failed())]),
+        );
+        host.update(cx, |host, cx| {
+            if let Some(watch) = &mut host.watch {
+                watch.sync_failed(cx);
+            }
+        });
+
+        assert_eq!(failed_set(&host, cx), HashSet::from([twitch()]));
+    }
+
+    #[gpui::test]
+    fn an_owner_counts_as_failed_only_when_it_is_in_the_failed_set(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (_lifecycle, host) = watching(
+            cx,
+            &rt,
+            states(&[(obs(), failed()), (twitch(), LifecycleState::Disabled)]),
+        );
+
+        host.read_with(cx, |host, _| {
+            let watch = host.watch.as_ref().expect("the host keeps its watch");
+            let (obs, twitch) = (obs(), twitch());
+            assert_eq!(
+                [
+                    watch.failed_owner(Some(&obs)),
+                    watch.failed_owner(Some(&twitch)),
+                    watch.failed_owner(None),
+                ],
+                [Some(&obs), None, None]
+            );
+        });
+    }
+
     #[gpui::test]
     fn enabling_through_the_switch_persists_the_integration_as_enabled(cx: &mut TestAppContext) {
         let rt = runtime();

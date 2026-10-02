@@ -215,6 +215,22 @@ mod tests {
     }
 
     #[test]
+    fn only_an_integration_in_the_failed_state_lands_in_the_failed_set() {
+        let lifecycle = IntegrationLifecycle::new(LifecycleStates::from([
+            (IntegrationId::new("disabled"), LifecycleState::Disabled),
+            (IntegrationId::new("stopping"), LifecycleState::Stopping),
+            (IntegrationId::new("starting"), LifecycleState::Starting),
+            (IntegrationId::new("running"), LifecycleState::Running),
+            (IntegrationId::new("failed"), failed()),
+        ]));
+
+        assert_eq!(
+            lifecycle.failed(),
+            HashSet::from([IntegrationId::new("failed")])
+        );
+    }
+
+    #[test]
     fn replacing_the_states_reports_a_change_only_when_they_differ() {
         let twitch = IntegrationId::new("twitch");
         let running = LifecycleStates::from([(twitch.clone(), LifecycleState::Running)]);

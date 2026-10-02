@@ -1114,7 +1114,7 @@ impl Render for DiscordScreenView {
 
         let frame = page_frame(
             vec![
-                hub_crumb(None, cx),
+                hub_crumb(Some(forge_discord::DISCORD_INTEGRATION.category), cx),
                 BreadcrumbCrumb::leaf(tr!("discord_hero_title")),
             ],
             &palette,

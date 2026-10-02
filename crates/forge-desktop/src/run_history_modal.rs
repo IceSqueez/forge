@@ -4,7 +4,8 @@ use crate::presentation::ActivePresentation;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
     Spacing, body_family, error_row, fmt_relative_time, icon, integration_disabled_reason,
-    json_highlighted, modal, mono_family, overlay, radius, spacing, status_dot, tr,
+    json_highlighted, modal, mono_family, overlay, radius, spacing, status_dot, tooltip_builder,
+    tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{
@@ -12,8 +13,8 @@ use forge_types::{
     SubActionTelemetry,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, EventEmitter, Pixels, Rgba, SharedString, Window, div,
-    prelude::*, px,
+    AnyElement, ClickEvent, Context, ElementId, EventEmitter, Pixels, Rgba, SharedString, Window,
+    div, prelude::*, px,
 };
 use std::sync::Arc;
 
@@ -33,6 +34,8 @@ const RAIL_DISABLED_GLYPH: Pixels = px(10.0);
 
 pub struct RunHistoryDismissed;
 
+pub struct RunHistoryOpenIntegration(pub IntegrationId);
+
 pub fn disabled_integration_of(ctx: &ExecutionContext) -> Option<&IntegrationId> {
     ctx.telemetry.iter().find_map(|step| match &step.outcome {
         SubActionOutcome::IntegrationDisabled(integration) => Some(integration),
@@ -40,15 +43,37 @@ pub fn disabled_integration_of(ctx: &ExecutionContext) -> Option<&IntegrationId>
     })
 }
 
-fn disabled_reason_chip(integration: &IntegrationId, palette: &ForgePalette) -> AnyElement {
-    integration_disabled_reason(
-        tr!(
-            "action_editor_run_history_integration_disabled",
-            name = integration_name(integration).to_string()
-        ),
-        palette,
-    )
-    .into_any_element()
+fn disabled_reason_link(
+    element_id: ElementId,
+    integration: &IntegrationId,
+    palette: &ForgePalette,
+    cx: &mut Context<RunHistoryModal>,
+) -> AnyElement {
+    let target = integration.clone();
+    div()
+        .id(element_id)
+        .flex_none()
+        .cursor_pointer()
+        .child(integration_disabled_reason(
+            tr!(
+                "action_editor_run_history_integration_disabled",
+                name = integration_name(integration).to_string()
+            ),
+            palette,
+        ))
+        .tooltip(tooltip_builder(
+            tr!(
+                "action_editor_run_history_open_integration",
+                name = integration_name(integration).to_string()
+            ),
+            palette,
+        ))
+        .on_click(
+            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.open_integration(target.clone(), cx)
+            }),
+        )
+        .into_any_element()
 }
 
 enum Load {
@@ -65,6 +90,8 @@ pub struct RunHistoryModal {
 }
 
 impl EventEmitter<RunHistoryDismissed> for RunHistoryModal {}
+
+impl EventEmitter<RunHistoryOpenIntegration> for RunHistoryModal {}
 
 impl RunHistoryModal {
     pub fn new(subtitle: impl Into<SharedString>, trigger_registry: Arc<TriggerRegistry>) -> Self {
@@ -95,6 +122,10 @@ impl RunHistoryModal {
 
     fn dismiss(&mut self, cx: &mut Context<Self>) {
         cx.emit(RunHistoryDismissed);
+    }
+
+    pub fn open_integration(&mut self, integration: IntegrationId, cx: &mut Context<Self>) {
+        cx.emit(RunHistoryOpenIntegration(integration));
     }
 
     fn render_loading(&self, palette: &ForgePalette) -> AnyElement {
@@ -177,7 +208,7 @@ impl RunHistoryModal {
             .h_full()
             .overflow_y_scroll()
             .pl(spacing(Spacing::Md, Density::Cozy))
-            .child(self.render_detail(&runs[selected], palette));
+            .child(self.render_detail(&runs[selected], palette, cx));
 
         div()
             .w_full()
@@ -255,7 +286,12 @@ impl RunHistoryModal {
             .into_any_element()
     }
 
-    fn render_detail(&self, ctx: &ExecutionContext, palette: &ForgePalette) -> AnyElement {
+    fn render_detail(
+        &self,
+        ctx: &ExecutionContext,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let when = fmt_relative_time(Some(ctx.started_at));
         let duration = match ctx.completed_at {
             Some(done) => {
@@ -283,7 +319,12 @@ impl RunHistoryModal {
         };
 
         let badge = match disabled_integration_of(ctx) {
-            Some(integration) => disabled_reason_chip(integration, palette),
+            Some(integration) => disabled_reason_link(
+                ElementId::Name("run-history-disabled-run".into()),
+                integration,
+                palette,
+                cx,
+            ),
             None => div()
                 .flex_shrink_0()
                 .py(px(1.0))
@@ -351,8 +392,8 @@ impl RunHistoryModal {
                 .pl(ROW_DOT + spacing(Spacing::Xs, Density::Cozy))
                 .border_t(HALF_BORDER)
                 .border_color(palette.border_regular);
-            for step in &ctx.telemetry {
-                steps = steps.child(self.render_telemetry_row(step, palette));
+            for (index, step) in ctx.telemetry.iter().enumerate() {
+                steps = steps.child(self.render_telemetry_row(index, step, palette, cx));
             }
             col = col.child(steps);
         }
@@ -425,8 +466,10 @@ impl RunHistoryModal {
 
     fn render_telemetry_row(
         &self,
+        index: usize,
         step: &SubActionTelemetry,
         palette: &ForgePalette,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let nested = step.is_nested();
         let (status_color, status_label, message) = match &step.outcome {
@@ -492,9 +535,12 @@ impl RunHistoryModal {
                     )),
             )
             .child(match &step.outcome {
-                SubActionOutcome::IntegrationDisabled(integration) => {
-                    disabled_reason_chip(integration, palette)
-                }
+                SubActionOutcome::IntegrationDisabled(integration) => disabled_reason_link(
+                    ElementId::NamedInteger("run-history-disabled-step".into(), index as u64),
+                    integration,
+                    palette,
+                    cx,
+                ),
                 _ => div()
                     .flex_shrink_0()
                     .font_family(mono_family())

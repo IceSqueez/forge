@@ -2,11 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_components::{
-    BadgeMarker, BreadcrumbCrumb, CompactTone, ForgePalette, HUB_TILE_SIZE, Icon, body_family,
-    compact_button, hub_card, hub_note, hub_section_header, hub_tile, icon, lifecycle_badge,
-    mono_family, page_frame, toggle, tr,
+    BadgeMarker, BreadcrumbCrumb, CompactTone, ForgePalette, HUB_TILE_SIZE, Icon, ToastKind,
+    body_family, compact_button, hub_card, hub_note, hub_section_header, hub_tile, icon,
+    lifecycle_badge, mono_family, page_frame, toggle, tr,
 };
-use forge_platform_core::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
+use forge_platform_core::{
+    ConnectionAffordance, ControlFailure, ControlOutcome, IntegrationCategory,
+    IntegrationDeclaration,
+};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_storage::{DataProvider, StorageError};
 use forge_types::{Action, IntegrationId, TriggerInstance, TriggerInstanceId};
@@ -15,6 +18,7 @@ use gpui::{
     SharedString, Subscription, Window, div, prelude::*, px,
 };
 
+use crate::async_bridge;
 use crate::home_stats::Integration;
 use crate::integration_catalog::{
     CoreFeature, activity_key, core_features, core_tint, declaration_of, declarations,
@@ -29,8 +33,27 @@ use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use crate::toasts::PushToast;
 
 mod welcome;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectFollowUp {
+    Done,
+    OpenSignIn,
+    Report,
+}
+
+impl ConnectFollowUp {
+    pub fn resolve(connect: bool, outcome: &ControlOutcome) -> Self {
+        match outcome {
+            Ok(()) => Self::Done,
+            Err(ControlFailure::NotConnected) if connect => Self::OpenSignIn,
+            Err(ControlFailure::NotConnected) => Self::Done,
+            Err(_) => Self::Report,
+        }
+    }
+}
 
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
@@ -204,16 +227,69 @@ impl IntegrationsHubView {
             return;
         };
         let id = id.clone();
-        self.launch.rt_handle.spawn(async move {
-            let outcome = if connect {
-                control.reconnect().await
-            } else {
-                control.disconnect().await
-            };
-            if let Err(e) = outcome {
-                tracing::warn!(integration = %id, error = %e, "integration connection change failed");
+        async_bridge::run_async(
+            &self.launch.rt_handle,
+            async move {
+                if connect {
+                    control.reconnect().await
+                } else {
+                    control.disconnect().await
+                }
+            },
+            move |this, outcome, cx| this.apply_connect_outcome(id, connect, outcome, cx),
+            cx,
+        );
+    }
+
+    pub fn apply_connect_outcome(
+        &mut self,
+        id: IntegrationId,
+        connect: bool,
+        outcome: ControlOutcome,
+        cx: &mut Context<Self>,
+    ) {
+        match ConnectFollowUp::resolve(connect, &outcome) {
+            ConnectFollowUp::Done => {}
+            ConnectFollowUp::OpenSignIn => self.go(Screen::BuiltinDetail(id), cx),
+            ConnectFollowUp::Report => {
+                if let Err(e) = outcome {
+                    tracing::warn!(integration = %id, error = %e, "integration connection change failed");
+                }
+                let name = declaration_of(&id)
+                    .map(|declaration| declaration.brand_name)
+                    .unwrap_or(id.as_str())
+                    .to_owned();
+                let message = if connect {
+                    tr!("integration_connect_failed", name = name)
+                } else {
+                    tr!("integration_disconnect_failed", name = name)
+                };
+                cx.push_toast(ToastKind::Error, message);
             }
-        });
+        }
+    }
+
+    fn retry_link(
+        &self,
+        id: &IntegrationId,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let retry_id = id.clone();
+        div()
+            .id(ElementId::Name(format!("hub-retry-{id}").into()))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(OPEN_GAP)
+            .cursor_pointer()
+            .font_family(body_family())
+            .text_size(FOOTER_TEXT)
+            .text_color(palette.brand)
+            .child(icon(Icon::Refresh, FOOTER_ICON, palette.brand))
+            .child(tr!("integration_retry"))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.retry(&retry_id)))
+            .into_any_element()
     }
 
     fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
@@ -306,47 +382,47 @@ impl IntegrationsHubView {
             }),
         );
 
-        let note = match &status {
-            CardStatus::Failed(reason) => {
+        let disclaimer = disclaimer_of(&id);
+        let note = match (&status, &disclaimer) {
+            (CardStatus::Failed(reason), None) => Some(
+                hub_note(Icon::AlertCircle, palette.random, reason.clone())
+                    .emphasized()
+                    .tooltip(reason.clone())
+                    .action(self.retry_link(&id, palette, cx)),
+            ),
+            (_, Some(disclaimer)) => Some(
+                hub_note(
+                    Icon::AlertTriangle,
+                    palette.warning,
+                    tr!(disclaimer.short_key),
+                )
+                .tooltip(tr!(disclaimer.full_key)),
+            ),
+            (CardStatus::Active, None) => self.activity.get(&id).map(|count| {
+                hub_note(
+                    Icon::CircleCheck,
+                    palette.success,
+                    tr!(&activity_key(&id), count = *count as i64),
+                )
+            }),
+            _ => None,
+        };
+        let footer_retry = match (&status, &disclaimer) {
+            (CardStatus::Failed(reason), Some(_)) => {
                 let retry_id = id.clone();
-                let retry = div()
-                    .id(ElementId::Name(format!("hub-retry-{id}").into()))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap(OPEN_GAP)
-                    .cursor_pointer()
-                    .font_family(body_family())
-                    .text_size(FOOTER_TEXT)
-                    .text_color(palette.brand)
-                    .child(icon(Icon::Refresh, FOOTER_ICON, palette.brand))
-                    .child(tr!("integration_retry"))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.retry(&retry_id)));
                 Some(
-                    hub_note(Icon::AlertCircle, palette.random, reason.clone())
-                        .emphasized()
-                        .tooltip(reason.clone())
-                        .action(retry),
+                    compact_button(
+                        ElementId::Name(format!("hub-retry-{id}").into()),
+                        CompactTone::Primary,
+                        Icon::Refresh,
+                        palette,
+                    )
+                    .label(tr!("integration_retry"))
+                    .tooltip(reason.clone())
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.retry(&retry_id))),
                 )
             }
-            _ => match disclaimer_of(&id) {
-                Some(disclaimer) => Some(
-                    hub_note(
-                        Icon::AlertTriangle,
-                        palette.warning,
-                        tr!(disclaimer.short_key),
-                    )
-                    .tooltip(tr!(disclaimer.full_key)),
-                ),
-                None if status == CardStatus::Active => self.activity.get(&id).map(|count| {
-                    hub_note(
-                        Icon::CircleCheck,
-                        palette.success,
-                        tr!(&activity_key(&id), count = *count as i64),
-                    )
-                }),
-                None => None,
-            },
+            _ => None,
         };
 
         let mut card = hub_card(
@@ -371,6 +447,10 @@ impl IntegrationsHubView {
         } else {
             card.footer_left(self.reference_chip(&id, &references, !on, palette, cx))
         };
+
+        if let Some(retry) = footer_retry {
+            card = card.footer_action(retry);
+        }
 
         let running = state == LifecycleState::Running;
         let connectable = running && declaration.connection == ConnectionAffordance::Connectable;

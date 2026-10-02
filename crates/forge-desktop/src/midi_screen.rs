@@ -1578,7 +1578,10 @@ impl Render for MidiScreenView {
             );
 
         let frame = page_frame(
-            vec![hub_crumb(None, cx), BreadcrumbCrumb::leaf("MIDI")],
+            vec![
+                hub_crumb(Some(forge_midi::MIDI_INTEGRATION.category), cx),
+                BreadcrumbCrumb::leaf("MIDI"),
+            ],
             &palette,
         )
         .header_right(header_right)

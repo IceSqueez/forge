@@ -1878,7 +1878,7 @@ impl Render for HotkeysScreenView {
 
         let frame = page_frame(
             vec![
-                hub_crumb(None, cx),
+                hub_crumb(Some(forge_hotkey::HOTKEY_INTEGRATION.category), cx),
                 BreadcrumbCrumb::leaf(tr!("hotkeys_hero_title")),
             ],
             &palette,

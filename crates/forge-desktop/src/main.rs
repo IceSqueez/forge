@@ -57,6 +57,7 @@ mod integration_detail;
 mod integration_disable_modal;
 mod integration_disabled;
 mod integration_factories;
+mod integration_failed;
 mod integration_lifecycle;
 mod integration_quick_action_modal;
 mod integration_quick_actions;

@@ -1,6 +1,6 @@
 use super::*;
 use crate::async_bridge;
-use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal};
+use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 
 impl ScreenActionsView {
     pub(super) fn open_history_modal(&mut self, cx: &mut Context<Self>) {
@@ -16,10 +16,13 @@ impl ScreenActionsView {
 
         let registry = Arc::clone(&self.trigger_registry);
         let view = cx.new(|_| RunHistoryModal::new(action_name, registry));
-        let sub = cx.subscribe(&view, Self::on_history_event);
+        let subs = [
+            cx.subscribe(&view, Self::on_history_event),
+            cx.subscribe(&view, Self::on_history_open_integration),
+        ];
         self.history_modal = Some(HistoryModalHost {
             view: view.clone(),
-            _sub: sub,
+            _subs: subs,
         });
 
         let service = Arc::clone(&self.actions_service);
@@ -50,6 +53,17 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) {
         self.history_modal = None;
+        cx.notify();
+    }
+
+    fn on_history_open_integration(
+        &mut self,
+        _view: Entity<RunHistoryModal>,
+        event: &RunHistoryOpenIntegration,
+        cx: &mut Context<Self>,
+    ) {
+        self.history_modal = None;
+        cx.emit(NavRequested(Screen::BuiltinDetail(event.0.clone())));
         cx.notify();
     }
 }

@@ -29,6 +29,7 @@ use crate::hotkey_sync::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
 use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
+use crate::integration_failed::{IntegrationFailedView, SignInRequested};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_supervisor::{LifecycleState, LifecycleStates};
 use crate::integration_switch::IntegrationSwitch;
@@ -244,87 +245,10 @@ impl AppShell {
             Screen::BuiltinDetail(id) if Self::is_switched_off(id, topics, cx) => {
                 Self::disabled_screen(id, topics, handles, cx)
             }
-            Screen::BuiltinDetail(id) => {
-                let builtin = match id.as_str() {
-                    OBS_BUILTIN_ID => match handles.obs_install_seed.live() {
-                        Some(client) => Some(obs_builtin_object(client)),
-                        None => return Self::obs_connect_screen(handles, cx),
-                    },
-                    VTUBE_BUILTIN_ID => match handles.vtube_install_seed.live() {
-                        Some(client) => Some(vtube_builtin_object(client)),
-                        None => return Self::vtube_connect_screen(handles, cx),
-                    },
-                    MIDI_BUILTIN_ID => return Self::midi_screen(handles, cx),
-                    HOTKEY_BUILTIN_ID => match handles.hotkey_reconciler.clone() {
-                        Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
-                        None => handles.builtins.get(id),
-                    },
-                    DISCORD_BUILTIN_ID => return Self::discord_screen(handles, cx),
-                    _ => handles.builtins.get(id),
-                };
-                let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
-
-                let connectivity = topics.platforms.clone();
-                let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
-                let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
-                let history = handles.backend.history_repo();
-                let trigger_registry = handles.trigger_registry.clone();
-                let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
-                let event_bus = Arc::clone(&handles.bus);
-                let rt_handle = handles.rt_handle.clone();
-                let action_engine = handles.action_engine.clone();
-                let live_viewers = handles.live_viewers.clone();
-                let twitch_slot = handles
-                    .integrations
-                    .slot(&forge_platform_twitch::TWITCH_INTEGRATION.id);
-                let kick_slot = handles
-                    .integrations
-                    .slot(&forge_platform_kick::KICK_INTEGRATION.id);
-                let youtube_slot = handles
-                    .integrations
-                    .slot(&forge_platform_youtube::YOUTUBE_INTEGRATION.id);
-                let obs_install_seed = handles.obs_install_seed.clone();
-                let vtube_install_seed = handles.vtube_install_seed.clone();
-                let detail = cx.new(|cx| {
-                    IntegrationDetail::new(
-                        object,
-                        rt_handle,
-                        action_engine,
-                        credentials,
-                        settings,
-                        history,
-                        trigger_registry,
-                        bus,
-                        event_bus,
-                        live_viewers,
-                        twitch_slot,
-                        kick_slot,
-                        youtube_slot,
-                        obs_install_seed,
-                        vtube_install_seed,
-                        connectivity,
-                        cx,
-                    )
-                });
-                cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
-                cx.subscribe(&detail, |this, _view, _: &ObsConnected, cx| {
-                    this.enable_integration(&forge_obs::OBS_INTEGRATION.id);
-                    this.rebuild_current(cx);
-                })
-                .detach();
-                cx.subscribe(&detail, |this, _view, _: &ObsSignedOut, cx| {
-                    this.rebuild_current(cx);
-                })
-                .detach();
-                cx.subscribe(&detail, |this, _view, _: &VTubeSignedOut, cx| {
-                    this.rebuild_current(cx);
-                })
-                .detach();
-                detail.into()
+            Screen::BuiltinDetail(id) if Self::has_failed(id, topics, cx) => {
+                Self::failed_screen(id, topics, handles, cx)
             }
+            Screen::BuiltinDetail(id) => Self::builtin_detail_screen(id, topics, handles, cx),
             Screen::Settings(preselect) => {
                 let handles = Arc::clone(handles);
                 let preselect = *preselect;
@@ -588,6 +512,123 @@ impl AppShell {
         topics.integration_lifecycle.read(cx).is_switched_off(id)
     }
 
+    fn builtin_detail_screen(
+        id: &IntegrationId,
+        topics: &Topics,
+        handles: &Arc<RuntimeHandles>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
+        let builtin = match id.as_str() {
+            OBS_BUILTIN_ID => match handles.obs_install_seed.live() {
+                Some(client) => Some(obs_builtin_object(client)),
+                None => return Self::obs_connect_screen(handles, cx),
+            },
+            VTUBE_BUILTIN_ID => match handles.vtube_install_seed.live() {
+                Some(client) => Some(vtube_builtin_object(client)),
+                None => return Self::vtube_connect_screen(handles, cx),
+            },
+            MIDI_BUILTIN_ID => return Self::midi_screen(handles, cx),
+            HOTKEY_BUILTIN_ID => match handles.hotkey_reconciler.clone() {
+                Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
+                None => handles.builtins.get(id),
+            },
+            DISCORD_BUILTIN_ID => return Self::discord_screen(handles, cx),
+            _ => handles.builtins.get(id),
+        };
+        let object = builtin.unwrap_or_else(|| unavailable_builtin(id));
+
+        let connectivity = topics.platforms.clone();
+        let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
+        let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
+        let history = handles.backend.history_repo();
+        let trigger_registry = handles.trigger_registry.clone();
+        let bus = Arc::clone(&handles.bus) as Arc<dyn EventPublisher>;
+        let event_bus = Arc::clone(&handles.bus);
+        let rt_handle = handles.rt_handle.clone();
+        let action_engine = handles.action_engine.clone();
+        let live_viewers = handles.live_viewers.clone();
+        let twitch_slot = handles
+            .integrations
+            .slot(&forge_platform_twitch::TWITCH_INTEGRATION.id);
+        let kick_slot = handles
+            .integrations
+            .slot(&forge_platform_kick::KICK_INTEGRATION.id);
+        let youtube_slot = handles
+            .integrations
+            .slot(&forge_platform_youtube::YOUTUBE_INTEGRATION.id);
+        let obs_install_seed = handles.obs_install_seed.clone();
+        let vtube_install_seed = handles.vtube_install_seed.clone();
+        let detail = cx.new(|cx| {
+            IntegrationDetail::new(
+                object,
+                rt_handle,
+                action_engine,
+                credentials,
+                settings,
+                history,
+                trigger_registry,
+                bus,
+                event_bus,
+                live_viewers,
+                twitch_slot,
+                kick_slot,
+                youtube_slot,
+                obs_install_seed,
+                vtube_install_seed,
+                connectivity,
+                cx,
+            )
+        });
+        cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
+            this.navigate(event.0.clone(), cx);
+        })
+        .detach();
+        cx.subscribe(&detail, |this, _view, _: &ObsConnected, cx| {
+            this.enable_integration(&forge_obs::OBS_INTEGRATION.id);
+            this.rebuild_current(cx);
+        })
+        .detach();
+        cx.subscribe(&detail, |this, _view, _: &ObsSignedOut, cx| {
+            this.rebuild_current(cx);
+        })
+        .detach();
+        cx.subscribe(&detail, |this, _view, _: &VTubeSignedOut, cx| {
+            this.rebuild_current(cx);
+        })
+        .detach();
+        detail.into()
+    }
+
+    fn has_failed(id: &IntegrationId, topics: &Topics, cx: &Context<Self>) -> bool {
+        matches!(
+            topics.integration_lifecycle.read(cx).state_of(id),
+            LifecycleState::Failed(_)
+        )
+    }
+
+    fn failed_screen(
+        id: &IntegrationId,
+        topics: &Topics,
+        handles: &Arc<RuntimeHandles>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
+        let lifecycle = topics.integration_lifecycle.clone();
+        let slot = handles.integrations.slot(id);
+        let rt_handle = handles.rt_handle.clone();
+        let id = id.clone();
+        let view =
+            cx.new(|cx| IntegrationFailedView::new(id.clone(), lifecycle, slot, rt_handle, cx));
+        cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
+            this.navigate(event.0.clone(), cx);
+        })
+        .detach();
+        cx.subscribe(&view, move |this, _view, _: &SignInRequested, cx| {
+            this.show_detail_despite_failure(&id, cx);
+        })
+        .detach();
+        view.into()
+    }
+
     fn disabled_screen(
         id: &IntegrationId,
         topics: &Topics,
@@ -754,6 +795,14 @@ impl AppShell {
         {
             self.rebuild_current(cx);
         }
+    }
+
+    fn show_detail_despite_failure(&mut self, id: &IntegrationId, cx: &mut Context<Self>) {
+        if self.router.screen != Screen::BuiltinDetail(id.clone()) {
+            return;
+        }
+        self.router.content = Self::builtin_detail_screen(id, &self.topics, &self.handles, cx);
+        cx.notify();
     }
 
     fn rebuild_current(&mut self, cx: &mut Context<Self>) {

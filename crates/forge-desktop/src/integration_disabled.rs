@@ -190,7 +190,6 @@ impl IntegrationDisabledView {
 
     fn hero(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let name = self.name();
-        let look = look_of(&self.id, palette);
         let starting = matches!(
             self.state(cx),
             LifecycleState::Starting | LifecycleState::Stopping
@@ -213,71 +212,92 @@ impl IntegrationDisabledView {
             "integration-disabled-enable",
             cx.listener(|this, _: &ClickEvent, _, cx| this.enable(cx)),
         );
-        div()
-            .mb(HERO_MB)
-            .flex()
-            .items_center()
-            .gap(HERO_GAP)
-            .py(HERO_PAD_V)
-            .px(HERO_PAD_H)
-            .bg(palette.shell)
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .rounded(radius(Radius::Md))
-            .child(hub_tile(
-                look.tile_glyph(),
-                look.tint,
-                true,
-                HERO_TILE,
-                palette,
-            ))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .font_family(body_family())
-                    .child(
-                        div()
-                            .mb(HERO_TITLE_MB)
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_size(HERO_TITLE)
-                            .text_color(palette.text_primary)
-                            .child(tr!("integration_disabled_title", name = name.to_string())),
-                    )
-                    .child(
-                        div()
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_muted)
-                            .child(tr!("integration_disabled_lead")),
-                    ),
-            )
-            .child(all)
-            .child(enable)
-            .into_any_element()
-    }
-
-    fn disclaimer(&self, palette: &ForgePalette) -> Option<AnyElement> {
-        let disclaimer = disclaimer_of(&self.id)?;
-        Some(
+        hero_card(
+            &self.id,
+            tr!("integration_disabled_title", name = name.to_string()),
             div()
-                .mb(DISCLAIMER_MB)
-                .flex()
-                .items_start()
-                .gap(DISCLAIMER_GAP)
-                .font_family(body_family())
-                .text_size(FONT_XXS)
-                .line_height(relative(DISCLAIMER_LINE_HEIGHT))
+                .text_size(FONT_XS)
                 .text_color(palette.text_muted)
-                .child(div().mt(DISCLAIMER_ICON_MT).child(icon(
-                    Icon::AlertTriangle,
-                    DISCLAIMER_ICON,
-                    palette.warning,
-                )))
-                .child(div().flex_1().min_w_0().child(tr!(disclaimer.full_key)))
+                .child(tr!("integration_disabled_lead"))
                 .into_any_element(),
+            vec![all.into_any_element(), enable.into_any_element()],
+            palette,
         )
     }
 
+    fn disclaimer(&self, palette: &ForgePalette) -> Option<AnyElement> {
+        disclaimer_block(&self.id, palette)
+    }
+}
+
+pub fn hero_card(
+    id: &IntegrationId,
+    title: String,
+    lead: AnyElement,
+    actions: Vec<AnyElement>,
+    palette: &ForgePalette,
+) -> AnyElement {
+    let look = look_of(id, palette);
+    div()
+        .mb(HERO_MB)
+        .flex()
+        .items_center()
+        .gap(HERO_GAP)
+        .py(HERO_PAD_V)
+        .px(HERO_PAD_H)
+        .bg(palette.shell)
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .rounded(radius(Radius::Md))
+        .child(hub_tile(
+            look.tile_glyph(),
+            look.tint,
+            true,
+            HERO_TILE,
+            palette,
+        ))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .font_family(body_family())
+                .child(
+                    div()
+                        .mb(HERO_TITLE_MB)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(HERO_TITLE)
+                        .text_color(palette.text_primary)
+                        .child(title),
+                )
+                .child(lead),
+        )
+        .children(actions)
+        .into_any_element()
+}
+
+pub fn disclaimer_block(id: &IntegrationId, palette: &ForgePalette) -> Option<AnyElement> {
+    let disclaimer = disclaimer_of(id)?;
+    Some(
+        div()
+            .mb(DISCLAIMER_MB)
+            .flex()
+            .items_start()
+            .gap(DISCLAIMER_GAP)
+            .font_family(body_family())
+            .text_size(FONT_XXS)
+            .line_height(relative(DISCLAIMER_LINE_HEIGHT))
+            .text_color(palette.text_muted)
+            .child(div().mt(DISCLAIMER_ICON_MT).child(icon(
+                Icon::AlertTriangle,
+                DISCLAIMER_ICON,
+                palette.warning,
+            )))
+            .child(div().flex_1().min_w_0().child(tr!(disclaimer.full_key)))
+            .into_any_element(),
+    )
+}
+
+impl IntegrationDisabledView {
     fn affected(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let name = self.name();
         let total = self.references.total();

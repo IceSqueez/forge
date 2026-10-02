@@ -167,7 +167,7 @@ struct ActionForm {
 
 struct HistoryModalHost {
     view: Entity<RunHistoryModal>,
-    _sub: Subscription,
+    _subs: [Subscription; 2],
 }
 
 pub struct ScreenActionsView {

@@ -33,7 +33,9 @@ use crate::builtin_sections::{
 };
 use crate::collection_manager::{CollectionManager, CollectionManagerEvent};
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch};
+use crate::hub_crumb::hub_crumb;
 use crate::in_flight_steps::InFlightSteps;
+use crate::integration_catalog::declaration_of;
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integration_quick_actions::accent_color;
 use crate::integration_supervisor::IntegrationSlot;
@@ -42,7 +44,7 @@ use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::ActivePresentation;
-use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal};
+use crate::run_history_modal::{RunHistoryDismissed, RunHistoryModal, RunHistoryOpenIntegration};
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
@@ -100,7 +102,7 @@ pub struct IntegrationDetail {
     _qa_modal_sub: Option<Subscription>,
     _collection_manager_sub: Option<Subscription>,
     _obs_modal_sub: Option<Subscription>,
-    _history_modal_sub: Option<Subscription>,
+    _history_modal_subs: Vec<Subscription>,
     _conn_obs: Subscription,
     _qa_search_sub: Subscription,
     _health_bridge: Task<()>,
@@ -265,7 +267,7 @@ impl IntegrationDetail {
             _qa_modal_sub: None,
             _collection_manager_sub: None,
             _obs_modal_sub: None,
-            _history_modal_sub: None,
+            _history_modal_subs: Vec::new(),
             _conn_obs: conn_obs,
             _qa_search_sub: qa_search_sub,
             _health_bridge: health_bridge,
@@ -808,7 +810,10 @@ impl IntegrationDetail {
     pub(crate) fn open_run_history(&mut self, cx: &mut Context<Self>) {
         let registry = Arc::clone(&self.trigger_registry);
         let modal = cx.new(|_| RunHistoryModal::new(self.display_name.clone(), registry));
-        self._history_modal_sub = Some(cx.subscribe(&modal, Self::on_run_history_event));
+        self._history_modal_subs = vec![
+            cx.subscribe(&modal, Self::on_run_history_event),
+            cx.subscribe(&modal, Self::on_run_history_open_integration),
+        ];
         self.history_modal = Some(modal.clone());
 
         let history = Arc::clone(&self.history);
@@ -846,7 +851,19 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) {
         self.history_modal = None;
-        self._history_modal_sub = None;
+        self._history_modal_subs.clear();
+        cx.notify();
+    }
+
+    fn on_run_history_open_integration(
+        &mut self,
+        _modal: Entity<RunHistoryModal>,
+        event: &RunHistoryOpenIntegration,
+        cx: &mut Context<Self>,
+    ) {
+        self.history_modal = None;
+        self._history_modal_subs.clear();
+        self.navigate_to(Screen::BuiltinDetail(event.0.clone()), cx);
         cx.notify();
     }
 
@@ -1376,12 +1393,9 @@ impl Render for IntegrationDetail {
             .is_pending()
             .then(|| self.disconnect_overlay(&palette, cx));
 
-        let ancestor_crumb = BreadcrumbCrumb::link(
-            tr!("integrations_breadcrumb"),
-            "integration-crumb-ancestor",
-            cx.listener(|this, _: &ClickEvent, _, cx| {
-                this.navigate_to(Screen::Integrations(None), cx)
-            }),
+        let ancestor_crumb = hub_crumb(
+            declaration_of(self.status.id()).map(|declaration| declaration.category),
+            cx,
         );
 
         let is_oauth_platform = self.is_oauth_platform();

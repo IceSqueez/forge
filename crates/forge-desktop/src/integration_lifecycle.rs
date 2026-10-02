@@ -80,6 +80,14 @@ impl IntegrationLifecycle {
             .collect()
     }
 
+    pub fn failed(&self) -> HashSet<IntegrationId> {
+        self.states
+            .iter()
+            .filter(|(_, state)| matches!(state, LifecycleState::Failed(_)))
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
     pub fn on_count<'a>(&self, ids: impl Iterator<Item = &'a IntegrationId>) -> usize {
         ids.filter(|id| self.is_on(id)).count()
     }

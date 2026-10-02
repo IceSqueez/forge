@@ -571,6 +571,12 @@ impl ScreenActionsView {
                         integrations.off(),
                         &mut health,
                     );
+                    analyzer::flag_failed(
+                        &detail.action.sub_actions,
+                        &self.sub_action_registry,
+                        integrations.failed(),
+                        &mut health,
+                    );
                 }
                 health
             }

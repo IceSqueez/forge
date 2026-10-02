@@ -73,6 +73,12 @@ fn analyzer_finding_message(finding: &analyzer::Finding) -> SharedString {
                 name = integration_name(owner).to_string()
             )
         }
+        analyzer::Finding::IntegrationFailed(owner) => {
+            tr!(
+                "action_editor_health_integration_failed",
+                name = integration_name(owner).to_string()
+            )
+        }
     };
     SharedString::from(text)
 }
@@ -2392,13 +2398,15 @@ impl ScreenActionsView {
             analyzer::HealthSeverity::Yellow => palette.warning,
             analyzer::HealthSeverity::Red => palette.random,
         };
-        let (glyph, color, title): (Icon, Rgba, SharedString) = match health.disabled_integration()
-        {
-            Some(_) => (
-                Icon::PlugOff,
-                palette.warning,
-                tr!("action_editor_health_disabled").into(),
-            ),
+        let gate_title = if health.disabled_integration().is_some() {
+            Some(tr!("action_editor_health_disabled"))
+        } else if health.failed_integration().is_some() {
+            Some(tr!("action_editor_health_failed"))
+        } else {
+            None
+        };
+        let (glyph, color, title): (Icon, Rgba, SharedString) = match gate_title {
+            Some(title) => (Icon::PlugOff, palette.warning, title.into()),
             None => (
                 Icon::Heartbeat,
                 color,
@@ -2493,17 +2501,17 @@ impl ScreenActionsView {
             .children(health_dot);
 
         let enabled = step.enabled;
-        let switched_off_owner = self.switched_off_step_owner(step);
-        let meta = match &switched_off_owner {
-            Some(owner) => div()
+        let closed_gate = self.closed_step_gate(step);
+        let meta = match &closed_gate {
+            Some(gate) => div()
                 .flex()
                 .flex_col()
                 .child(variable_text(&detail_str, palette))
                 .child(
                     div()
                         .mt(STEP_NOTICE_MT)
-                        .child(self.render_disabled_step_notice(
-                            owner,
+                        .child(self.render_closed_gate_notice(
+                            gate,
                             SharedString::from(format!("actions-step-enable-{depth}-{i}")),
                             palette,
                             cx,
@@ -2523,7 +2531,7 @@ impl ScreenActionsView {
                 SharedString::from(format!("actions-step-card-{i}")),
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.open_edit_sub_action(i, cx)),
             );
-        if switched_off_owner.is_some() {
+        if closed_gate.is_some() {
             card = card.align_top();
         }
         if self.step_menu_open != Some(i) {

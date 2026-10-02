@@ -20,6 +20,7 @@ use crate::actions_screen::ScreenActionsView;
 use crate::chat::ChatView;
 use crate::chrome::Chrome;
 use crate::clip_key_state::ClipKeyState;
+use crate::detail_route::{DetailRoute, is_detail_of};
 use crate::discord_screen::DiscordScreenView;
 use crate::event_feed::EventFeedView;
 use crate::first_run;
@@ -200,6 +201,7 @@ impl AppShell {
                         palette,
                         cx,
                     )
+                    .with_lifecycle(topics.integration_lifecycle.clone(), cx)
                 })
                 .into()
             }
@@ -242,13 +244,11 @@ impl AppShell {
                 .detach();
                 hub.into()
             }
-            Screen::BuiltinDetail(id) if Self::is_switched_off(id, topics, cx) => {
-                Self::disabled_screen(id, topics, handles, cx)
-            }
-            Screen::BuiltinDetail(id) if Self::has_failed(id, topics, cx) => {
-                Self::failed_screen(id, topics, handles, cx)
-            }
-            Screen::BuiltinDetail(id) => Self::builtin_detail_screen(id, topics, handles, cx),
+            Screen::BuiltinDetail(id) => match Self::detail_route(id, topics, cx) {
+                DetailRoute::Disabled => Self::disabled_screen(id, topics, handles, cx),
+                DetailRoute::Failed => Self::failed_screen(id, topics, handles, cx),
+                DetailRoute::Live => Self::builtin_detail_screen(id, topics, handles, cx),
+            },
             Screen::Settings(preselect) => {
                 let handles = Arc::clone(handles);
                 let preselect = *preselect;
@@ -508,8 +508,8 @@ impl AppShell {
         }
     }
 
-    fn is_switched_off(id: &IntegrationId, topics: &Topics, cx: &Context<Self>) -> bool {
-        topics.integration_lifecycle.read(cx).is_switched_off(id)
+    fn detail_route(id: &IntegrationId, topics: &Topics, cx: &Context<Self>) -> DetailRoute {
+        DetailRoute::resolve(topics.integration_lifecycle.read(cx), id)
     }
 
     fn builtin_detail_screen(
@@ -597,13 +597,6 @@ impl AppShell {
         })
         .detach();
         detail.into()
-    }
-
-    fn has_failed(id: &IntegrationId, topics: &Topics, cx: &Context<Self>) -> bool {
-        matches!(
-            topics.integration_lifecycle.read(cx).state_of(id),
-            LifecycleState::Failed(_)
-        )
     }
 
     fn failed_screen(
@@ -798,7 +791,7 @@ impl AppShell {
     }
 
     fn show_detail_despite_failure(&mut self, id: &IntegrationId, cx: &mut Context<Self>) {
-        if self.router.screen != Screen::BuiltinDetail(id.clone()) {
+        if !is_detail_of(&self.router.screen, id) {
             return;
         }
         self.router.content = Self::builtin_detail_screen(id, &self.topics, &self.handles, cx);

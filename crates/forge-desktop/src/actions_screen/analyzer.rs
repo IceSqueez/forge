@@ -29,6 +29,7 @@ pub(super) enum Finding {
     LastRunFailed(String),
     ControlFlowInConcurrentAction,
     IntegrationDisabled(IntegrationId),
+    IntegrationFailed(IntegrationId),
 }
 
 impl Finding {
@@ -39,7 +40,8 @@ impl Finding {
             | Finding::IsolatedSibling(_)
             | Finding::SomeTriggersOnly(_)
             | Finding::ControlFlowInConcurrentAction
-            | Finding::IntegrationDisabled(_) => HealthSeverity::Yellow,
+            | Finding::IntegrationDisabled(_)
+            | Finding::IntegrationFailed(_) => HealthSeverity::Yellow,
         }
     }
 }
@@ -64,6 +66,13 @@ impl StepHealth {
             _ => None,
         })
     }
+
+    pub(super) fn failed_integration(&self) -> Option<&IntegrationId> {
+        self.findings.iter().find_map(|finding| match finding {
+            Finding::IntegrationFailed(id) => Some(id),
+            _ => None,
+        })
+    }
 }
 
 pub(super) fn flag_switched_off(
@@ -72,30 +81,55 @@ pub(super) fn flag_switched_off(
     switched_off: &HashSet<IntegrationId>,
     health: &mut [StepHealth],
 ) {
+    flag_gated(
+        steps,
+        registry,
+        switched_off,
+        health,
+        Finding::IntegrationDisabled,
+    );
+}
+
+pub(super) fn flag_failed(
+    steps: &[SubActionStep],
+    registry: &SubActionRegistry,
+    failed: &HashSet<IntegrationId>,
+    health: &mut [StepHealth],
+) {
+    flag_gated(steps, registry, failed, health, Finding::IntegrationFailed);
+}
+
+fn flag_gated(
+    steps: &[SubActionStep],
+    registry: &SubActionRegistry,
+    gated: &HashSet<IntegrationId>,
+    health: &mut [StepHealth],
+    finding: fn(IntegrationId) -> Finding,
+) {
     for (step, health) in steps.iter().zip(health.iter_mut()) {
-        if let Some(owner) = switched_off_owner(step, registry, switched_off) {
-            health.findings.push(Finding::IntegrationDisabled(owner));
+        if let Some(owner) = gated_owner(step, registry, gated) {
+            health.findings.push(finding(owner));
         }
     }
 }
 
-fn switched_off_owner(
+fn gated_owner(
     step: &SubActionStep,
     registry: &SubActionRegistry,
-    switched_off: &HashSet<IntegrationId>,
+    gated: &HashSet<IntegrationId>,
 ) -> Option<IntegrationId> {
     if !step.enabled {
         return None;
     }
     if let Some(owner) = registry.owning_integration(&step.kind_id)
-        && switched_off.contains(owner)
+        && gated.contains(owner)
     {
         return Some(owner.clone());
     }
     nested_chains(step, registry).iter().find_map(|chain| {
         chain
             .iter()
-            .find_map(|nested| switched_off_owner(nested, registry, switched_off))
+            .find_map(|nested| gated_owner(nested, registry, gated))
     })
 }
 

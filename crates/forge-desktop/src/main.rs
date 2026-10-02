@@ -30,6 +30,7 @@ mod config_field_label;
 mod config_form;
 mod connect_flow;
 mod data_backup;
+mod detail_route;
 mod diagnostic_bundle;
 mod discord_screen;
 mod discord_webhook_modal;

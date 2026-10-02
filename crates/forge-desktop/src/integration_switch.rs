@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use forge_components::{ForgePalette, integration_inactive_badge, tr};
 use forge_types::IntegrationId;
-use gpui::{Context, Entity, IntoElement, SharedString, Subscription};
+use gpui::{App, Context, Entity, IntoElement, SharedString, Subscription};
 
 use crate::integration_catalog::declaration_of;
 use crate::integration_lifecycle::IntegrationLifecycle;
@@ -17,7 +17,22 @@ pub struct IntegrationSwitch {
 pub struct SwitchWatch {
     switch: IntegrationSwitch,
     off: HashSet<IntegrationId>,
+    failed: HashSet<IntegrationId>,
     _observer: Subscription,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClosedGate {
+    SwitchedOff(IntegrationId),
+    Failed(IntegrationId),
+}
+
+impl ClosedGate {
+    pub fn owner(&self) -> &IntegrationId {
+        match self {
+            ClosedGate::SwitchedOff(owner) | ClosedGate::Failed(owner) => owner,
+        }
+    }
 }
 
 impl IntegrationSwitch {
@@ -40,6 +55,7 @@ impl IntegrationSwitch {
         apply: impl Fn(&mut V, HashSet<IntegrationId>, &mut Context<V>) + 'static,
     ) -> SwitchWatch {
         let off = self.lifecycle.read(cx).switched_off();
+        let failed = self.lifecycle.read(cx).failed();
         let observer = cx.observe(&self.lifecycle, move |view, lifecycle, cx| {
             let off = lifecycle.read(cx).switched_off();
             apply(view, off, cx);
@@ -48,6 +64,7 @@ impl IntegrationSwitch {
         SwitchWatch {
             switch: self,
             off,
+            failed,
             _observer: observer,
         }
     }
@@ -56,6 +73,18 @@ impl IntegrationSwitch {
 impl SwitchWatch {
     pub fn replace(&mut self, off: HashSet<IntegrationId>) {
         self.off = off;
+    }
+
+    pub fn sync_failed(&mut self, cx: &App) {
+        self.failed = self.switch.lifecycle.read(cx).failed();
+    }
+
+    pub fn failed(&self) -> &HashSet<IntegrationId> {
+        &self.failed
+    }
+
+    pub fn failed_owner<'a>(&self, owner: Option<&'a IntegrationId>) -> Option<&'a IntegrationId> {
+        owner.filter(|id| self.failed.contains(*id))
     }
 
     pub fn off(&self) -> &HashSet<IntegrationId> {

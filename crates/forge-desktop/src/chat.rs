@@ -30,9 +30,12 @@ use crate::chat_drawer::{
 };
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::home_stats::HomeStats;
+use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
+
+mod platform_gate;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -157,7 +160,7 @@ fn blocked_alias(viewer: &str) -> VoiceAlias {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum PlatformFilter {
+pub(crate) enum PlatformFilter {
     All,
     Single(Platform),
 }
@@ -248,6 +251,8 @@ pub struct ChatView {
     _drawer_search_sub: Subscription,
     _whisper_sub: Subscription,
     _reply_sub: Subscription,
+    lifecycle: Option<Entity<IntegrationLifecycle>>,
+    _lifecycle_obs: Option<Subscription>,
 }
 
 fn platform_display_name(platform: Platform) -> &'static str {
@@ -344,6 +349,8 @@ impl ChatView {
             _drawer_search_sub: drawer_search_sub,
             _whisper_sub: whisper_sub,
             _reply_sub: reply_sub,
+            lifecycle: None,
+            _lifecycle_obs: None,
         };
         this.rebuild_visible(cx);
         this.chat_list.reset(this.visible.len());
@@ -1067,6 +1074,9 @@ impl ChatView {
             .items_center()
             .gap(spacing(Spacing::Xxs, density));
         for (id, label, filter, dot) in platform_chips {
+            if !self.filter_offered(filter, cx) {
+                continue;
+            }
             let active = self.platform_filter == filter;
             chips = chips.child(
                 chip(label, ChipGlyph::Dot(dot), active, palette)

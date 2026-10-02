@@ -15,6 +15,7 @@ use gpui::{AnyElement, ClickEvent, Context, Pixels, div, prelude::*, px};
 
 use super::OverlaysView;
 use super::preview_stage::HINT_GLYPH;
+use crate::motion_labels::preset_label;
 
 const LINE_TOP: Pixels = px(8.0);
 const LINE_GAP: Pixels = px(12.0);
@@ -23,6 +24,7 @@ const REPLAY_GAP: Pixels = px(3.0);
 const MILLIS_PER_SEC: u128 = 1_000;
 const TENTHS_PER_SEC: u128 = 10;
 const MILLIS_PER_TENTH: u128 = MILLIS_PER_SEC / TENTHS_PER_SEC;
+const HALF_TENTH_MILLIS: u128 = MILLIS_PER_TENTH / 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct TimedPreset {
@@ -154,8 +156,9 @@ pub(super) fn span_text(span: Duration) -> String {
         let value = millis.to_string();
         return tr!("overlays_motion_ms", value = value.as_str());
     }
-    let whole = millis / MILLIS_PER_SEC;
-    let tenths = (millis % MILLIS_PER_SEC) / MILLIS_PER_TENTH;
+    let rounded_tenths = (millis + HALF_TENTH_MILLIS) / MILLIS_PER_TENTH;
+    let whole = rounded_tenths / TENTHS_PER_SEC;
+    let tenths = rounded_tenths % TENTHS_PER_SEC;
     let value = if tenths == 0 {
         whole.to_string()
     } else {
@@ -164,10 +167,11 @@ pub(super) fn span_text(span: Duration) -> String {
     tr!("overlays_motion_secs", value = value.as_str())
 }
 
-fn timed_text(timed: &TimedPreset) -> String {
+fn timed_text(key: &str, timed: &TimedPreset) -> String {
+    let label = preset_label(key, &timed.preset);
     match timed.duration {
-        Some(duration) => format!("{} {}", timed.preset, span_text(duration)),
-        None => timed.preset.clone(),
+        Some(duration) => format!("{label} {}", span_text(duration)),
+        None => label,
     }
 }
 
@@ -180,22 +184,23 @@ fn unit_text(unit: TextUnit) -> String {
 
 fn text_preset_text(text: &TextPreset) -> String {
     let Some(unit) = text.unit else {
-        return text.preset.clone();
+        return preset_label(TEXT_EFFECT, &text.preset);
     };
     let unit = unit_text(unit);
+    let effect = preset_label(TEXT_EFFECT, &text.preset);
     match text.stagger {
         Some(stagger) => {
             let stagger = span_text(stagger);
             tr!(
                 "overlays_motion_text_staggered",
-                effect = text.preset.as_str(),
+                effect = effect.as_str(),
                 unit = unit.as_str(),
                 stagger = stagger.as_str()
             )
         }
         None => tr!(
             "overlays_motion_text_by",
-            effect = text.preset.as_str(),
+            effect = effect.as_str(),
             unit = unit.as_str()
         ),
     }
@@ -205,7 +210,10 @@ impl MotionTimeline {
     pub(super) fn parts(&self) -> Vec<(String, String)> {
         let mut parts = Vec::new();
         if let Some(entrance) = &self.entrance {
-            parts.push((tr!("overlays_motion_entrance"), timed_text(entrance)));
+            parts.push((
+                tr!("overlays_motion_entrance"),
+                timed_text(ENTRANCE, entrance),
+            ));
         }
         if let Some(text) = &self.text {
             parts.push((tr!("overlays_motion_text"), text_preset_text(text)));
@@ -214,7 +222,7 @@ impl MotionTimeline {
             parts.push((tr!("overlays_motion_on_screen"), span_text(on_screen)));
         }
         if let Some(exit) = &self.exit {
-            parts.push((tr!("overlays_motion_exit"), timed_text(exit)));
+            parts.push((tr!("overlays_motion_exit"), timed_text(EXIT, exit)));
         }
         if let Some(total) = self.total {
             parts.push((tr!("overlays_motion_total"), span_text(total)));

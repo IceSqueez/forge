@@ -233,7 +233,10 @@ pub(crate) fn fold_config_field<V: 'static>(
                 gate,
                 options: options
                     .iter()
-                    .map(|opt| ((*opt).to_owned(), (*opt).to_owned()))
+                    .map(|opt| {
+                        let label = crate::motion_labels::preset_label(key, opt);
+                        ((*opt).to_owned(), label)
+                    })
                     .collect(),
                 selected: read_text(ctx.config, key),
                 dependency: None,

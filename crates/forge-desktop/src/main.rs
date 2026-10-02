@@ -61,6 +61,7 @@ mod log_tail;
 mod midi_mapping_modal;
 mod midi_screen;
 mod midi_signal;
+mod motion_labels;
 mod obs_catalog_options;
 mod obs_connect;
 mod obs_credentials_form;

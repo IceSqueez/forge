@@ -60,6 +60,9 @@ pub mod reserved_keys {
     pub const STAY_AWAKE: &str = "app.stay_awake";
     pub const UPDATES_DISMISSED_VERSION: &str = "updates.dismissed_version";
     pub const CREDENTIALS_KEY_LOSS: &str = "credentials.key_loss_stranded";
+    pub const INTEGRATION_ENABLED_PREFIX: &str = "integration.enabled.";
+    pub const RETIRED_MIDI_ENABLED: &str = "midi.enabled";
+    pub const RETIRED_HOTKEY_ENABLED: &str = "hotkey.enabled";
 }
 
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
@@ -82,7 +85,9 @@ pub mod disclosure {
     pub fn class_of(key: &str) -> SettingDisclosure {
         use SettingDisclosure::{Kind, Presence, Verbatim, Withheld};
 
-        if key.starts_with(reserved_keys::TTS_ENGINE_PARAMS_PREFIX) {
+        if key.starts_with(reserved_keys::TTS_ENGINE_PARAMS_PREFIX)
+            || key.starts_with(reserved_keys::INTEGRATION_ENABLED_PREFIX)
+        {
             return Verbatim;
         }
 
@@ -121,7 +126,9 @@ pub mod disclosure {
             | reserved_keys::UPDATES_NOTIFY
             | reserved_keys::STAY_AWAKE
             | reserved_keys::UPDATES_DISMISSED_VERSION
-            | reserved_keys::CREDENTIALS_KEY_LOSS => Verbatim,
+            | reserved_keys::CREDENTIALS_KEY_LOSS
+            | reserved_keys::RETIRED_MIDI_ENABLED
+            | reserved_keys::RETIRED_HOTKEY_ENABLED => Verbatim,
 
             reserved_keys::SCRIPT_HTTP_ALLOWED_DOMAINS
             | reserved_keys::SERVER_ADDITIONAL_ORIGINS
@@ -340,7 +347,7 @@ pub trait SettingsRepo: Send + Sync {
     }
 }
 
-fn decode_bool_setting(s: &str) -> Option<bool> {
+pub(crate) fn decode_bool_setting(s: &str) -> Option<bool> {
     if s == "1" || s.eq_ignore_ascii_case("true") {
         Some(true)
     } else if s == "0" || s.eq_ignore_ascii_case("false") {

@@ -8,6 +8,7 @@ pub mod error;
 pub mod event_log;
 pub mod globals;
 pub mod history;
+pub mod integration_state;
 pub mod media;
 pub mod overlay;
 pub mod provider;
@@ -37,6 +38,10 @@ pub use event_log::{
 };
 pub use globals::{GlobalEntry, GlobalsRepo};
 pub use history::{ActionStats, HistoryRepo};
+pub use integration_state::{
+    has_credentials_for, has_setting, integration_enabled_key, resolve_integration_enabled,
+    set_integration_enabled, stored_integration_enabled,
+};
 pub use media::{
     AcceptedMedia, MAX_AUDIO_BLOB_BYTES, MAX_IMAGE_BLOB_BYTES, MEDIA_BLOB_HARD_CEILING_BYTES,
     MEDIA_CONTENT_DIGEST_BYTES, MEDIA_CONTENT_HASH, MediaBlob, MediaBlobId, MediaFormat, MediaKind,

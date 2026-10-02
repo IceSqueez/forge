@@ -38,6 +38,7 @@ pub(crate) struct Show {
     pub(crate) content: serde_json::Value,
     pub(crate) duration_ms: Option<u64>,
     pub(crate) window: Duration,
+    pub(crate) exit_tail: Duration,
     pub(crate) speech: Option<ShowSpeech>,
 }
 
@@ -180,18 +181,20 @@ impl ShowSequencer {
     async fn present_all(self: Arc<Self>, id: OverlayId) {
         while let Some(next) = self.next(&id) {
             let delivery = self.present(&id, &next.show).await;
-            self.hold(&id, next.show).await;
+            let ceiling = Instant::now() + SHOW_CEILING;
+            let exit_tail = next.show.exit_tail;
+            self.hold(&id, next.show, ceiling).await;
+            tokio::time::sleep_until((Instant::now() + exit_tail).min(ceiling)).await;
             let _ = next.done.send(ShowEnd::Shown(delivery));
         }
     }
 
-    async fn hold(&self, id: &OverlayId, show: Show) {
+    async fn hold(&self, id: &OverlayId, show: Show, ceiling: Instant) {
         let window = show.window.min(SHOW_CEILING);
         let (Some(speaker), Some(speech)) = (self.speaker.clone(), show.speech) else {
-            tokio::time::sleep(window).await;
+            tokio::time::sleep_until((Instant::now() + window).min(ceiling)).await;
             return;
         };
-        let ceiling = Instant::now() + SHOW_CEILING;
         let token = speech.show.clone();
         let cancel = CancelSignal::new();
         let started = SpeechStartSignal::new();

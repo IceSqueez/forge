@@ -13,6 +13,8 @@ pub mod kinds;
 pub mod materialize;
 pub mod media;
 pub mod metrics;
+pub mod motion;
+pub mod motion_scan;
 pub mod preview;
 pub mod registry;
 pub mod sample;
@@ -22,14 +24,17 @@ pub mod upgrade;
 pub mod wiring;
 
 pub use assets::{
-    BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, OVERRIDABLE_FILES, PageAssets, RESERVED_DIRECTORY,
-    RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE, STYLE_FILE,
+    BEHAVIOR_FILE, CONFIG_FILE, MARKUP_FILE, MOTION_ASSET, MOTION_SOURCE, OVERRIDABLE_FILES,
+    PageAssets, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE, STYLE_FILE,
 };
 pub use audio_transport::{
     AudioAnnouncement, AudioCommand, announcement_content, command_content, joined_to_show,
     silent_reveal_content,
 };
-pub use base::{DEFAULT_DISPLAY_SECS, SpeechProgram, display_window, take_speech};
+pub use base::{
+    DEFAULT_DISPLAY_SECS, ShowTiming, SpeechProgram, display_window, exit_tail, show_timing,
+    take_speech,
+};
 pub use browser_preview::{
     PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, preview_page_url,
 };
@@ -57,6 +62,8 @@ pub use media::{
     media_slot, read_icon_value, read_media_value,
 };
 pub use metrics::{AxisBound, ElementSizing, StyleGuard, element_sizing, style_guards};
+pub use motion::{MotionAxes, MotionProfile};
+pub use motion_scan::{MotionIssue, OverriddenSources, motion_issues};
 pub use preview::{
     PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLine,
     PreviewLineRole, PreviewPosition, PreviewShape,

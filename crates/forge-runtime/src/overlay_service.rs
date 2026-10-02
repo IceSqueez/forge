@@ -7,8 +7,8 @@ use forge_events::{Event, EventSource};
 use forge_overlay::{
     DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
     OverlayKindRegistry, OverlayMedia, SampleContext, SampleTrigger, delivered_content,
-    display_window, ensure_shared_directory, joined_to_show, materialize_overlay,
-    read_overlay_source, remove_overlay_directory, sample_content, sample_context, take_speech,
+    ensure_shared_directory, joined_to_show, materialize_overlay, read_overlay_source,
+    remove_overlay_directory, sample_content, sample_context, show_timing, take_speech,
     upgrade_config, write_overlay_source,
 };
 use forge_platform_core::paths;
@@ -401,7 +401,7 @@ impl OverlayServiceHandle {
                 show: Ulid::generate().to_string(),
                 origin: SpeechOrigin::from_args(args, caused_by),
             });
-        let Some(window) = display_window(descriptor, &definition.config, duration_ms) else {
+        let Some(timing) = show_timing(descriptor, &definition.config, duration_ms) else {
             let disposition = descriptor.delivery_disposition();
             let delivery = self
                 .push(&definition.id, disposition, &content, duration_ms)
@@ -419,7 +419,8 @@ impl OverlayServiceHandle {
         let show = Show {
             content: content_json(&content),
             duration_ms: duration_ms.map(|ms| ms.min(ceiling_ms)),
-            window: window.min(SHOW_CEILING),
+            window: timing.window.min(SHOW_CEILING),
+            exit_tail: timing.exit_tail,
             speech,
         };
         self.inner

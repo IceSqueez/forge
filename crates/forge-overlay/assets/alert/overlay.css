@@ -1,7 +1,6 @@
 :root {
   --accent: #cba6f7;
   --font: sans-serif;
-  --reveal: 0.4s;
   --text-scale: calc(var(--text-size, 20) / 20);
 }
 
@@ -35,9 +34,6 @@ body {
   border-radius: calc(12px * var(--text-scale));
   background: rgba(20, 20, 28, 0.86);
   font-family: var(--font);
-  transition:
-    opacity var(--reveal) ease,
-    transform var(--reveal) ease;
 }
 
 .icon {
@@ -77,25 +73,4 @@ body {
 
 #stage.hidden {
   opacity: 0;
-}
-
-#stage.show {
-  opacity: 1;
-  transform: none;
-}
-
-body[data-animation="slide-up"] #stage.hidden {
-  transform: translateY(20px);
-}
-body[data-animation="slide-down"] #stage.hidden {
-  transform: translateY(-20px);
-}
-body[data-animation="slide-left"] #stage.hidden {
-  transform: translateX(20px);
-}
-body[data-animation="pop"] #stage.hidden {
-  transform: scale(0.9);
-}
-body[data-animation="wipe-left"] #stage.hidden {
-  transform: translateX(40px);
 }

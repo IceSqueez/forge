@@ -23,6 +23,8 @@ forge.ready(function (config) {
       rows.appendChild(row);
     }
 
+    forge.show(row);
+
     while (rows.children.length > ROW_CAP) {
       rows.removeChild(newestOnTop ? rows.lastChild : rows.firstChild);
     }

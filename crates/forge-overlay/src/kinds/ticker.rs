@@ -4,12 +4,15 @@ use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
 use crate::metrics;
+use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.ticker";
 
 pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
+
+pub const MOTION_SCHEMA_VERSION: u32 = 3;
 
 const TICKER_DISPLAY_SECS: i64 = 8;
 const DESIGN_WIDTH_PX: u32 = 1920;
@@ -43,7 +46,18 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        BOX_CONTRACT_SCHEMA_VERSION
+        MOTION_SCHEMA_VERSION
+    }
+
+    fn motion(&self) -> MotionProfile {
+        MotionProfile {
+            axes: MotionAxes::ALL,
+            entrance: motion::SLIDE_LEFT,
+            entrance_ms: motion::DEFAULT_ENTRANCE_MS,
+            exit: motion::SLIDE_RIGHT,
+            exit_ms: motion::DEFAULT_EXIT_MS,
+            reveal_target_id: motion::STAGE_ID,
+        }
     }
 
     fn default_design_size(&self) -> DesignSize {
@@ -58,12 +72,8 @@ impl OverlayKindDescriptor for TickerOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults = config::shared_style_defaults(
-            "yellow",
-            "Bebas Neue",
-            "slide-left",
-            metrics::TICKER_SIZING,
-        );
+        let mut defaults =
+            config::shared_style_defaults("yellow", "Bebas Neue", metrics::TICKER_SIZING);
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Latest cheer: %bits_amount% bits"),

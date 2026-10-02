@@ -1,7 +1,6 @@
 :root {
   --accent: #f9e2af;
   --font: sans-serif;
-  --reveal: 0.4s;
   --text-scale: calc(var(--text-size, 19) / 19);
 }
 
@@ -35,9 +34,6 @@ body {
   background: rgba(20, 20, 28, 0.9);
   font-family: var(--font);
   white-space: nowrap;
-  transition:
-    opacity var(--reveal) ease,
-    transform var(--reveal) ease;
 }
 
 .mark {
@@ -70,25 +66,4 @@ body {
 
 #stage.hidden {
   opacity: 0;
-}
-
-#stage.show {
-  opacity: 1;
-  transform: none;
-}
-
-body[data-animation="slide-up"] #stage.hidden {
-  transform: translateY(100%);
-}
-body[data-animation="slide-down"] #stage.hidden {
-  transform: translateY(-100%);
-}
-body[data-animation="slide-left"] #stage.hidden {
-  transform: translateX(100%);
-}
-body[data-animation="pop"] #stage.hidden {
-  transform: scale(0.96);
-}
-body[data-animation="wipe-left"] #stage.hidden {
-  transform: translateX(30%);
 }

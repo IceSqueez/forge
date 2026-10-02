@@ -1,7 +1,6 @@
 :root {
   --accent: #fab387;
   --font: sans-serif;
-  --reveal: 0.4s;
   --text-scale: calc(var(--text-size, 13) / 13);
 }
 
@@ -28,9 +27,6 @@ body {
   border: 3px solid var(--accent);
   border-radius: 14px;
   font-family: var(--font);
-  transition:
-    opacity var(--reveal) ease,
-    transform var(--reveal) ease;
 }
 
 .corner {
@@ -70,25 +66,4 @@ body[data-position="top"] .corner {
 
 #stage.hidden {
   opacity: 0;
-}
-
-#stage.show {
-  opacity: 1;
-  transform: none;
-}
-
-body[data-animation="pop"] #stage.hidden {
-  transform: scale(0.98);
-}
-body[data-animation="slide-up"] #stage.hidden {
-  transform: translateY(12px);
-}
-body[data-animation="slide-down"] #stage.hidden {
-  transform: translateY(-12px);
-}
-body[data-animation="slide-left"] #stage.hidden {
-  transform: translateX(12px);
-}
-body[data-animation="wipe-left"] #stage.hidden {
-  transform: translateX(24px);
 }

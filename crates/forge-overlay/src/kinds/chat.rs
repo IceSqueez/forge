@@ -4,12 +4,18 @@ use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
 use crate::metrics;
+use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.chat";
 
 pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
+
+pub const MOTION_SCHEMA_VERSION: u32 = 3;
+
+const ROW_ENTRANCE_MS: i64 = 300;
+const ROW_TEMPLATE_ID: &str = "row-template";
 
 const DESIGN_WIDTH_PX: u32 = 400;
 const DESIGN_HEIGHT_PX: u32 = 600;
@@ -42,7 +48,18 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        BOX_CONTRACT_SCHEMA_VERSION
+        MOTION_SCHEMA_VERSION
+    }
+
+    fn motion(&self) -> MotionProfile {
+        MotionProfile {
+            axes: MotionAxes::ENTRANCE_ONLY,
+            entrance: motion::SLIDE_UP,
+            entrance_ms: ROW_ENTRANCE_MS,
+            exit: motion::NO_MOTION,
+            exit_ms: motion::DEFAULT_EXIT_MS,
+            reveal_target_id: ROW_TEMPLATE_ID,
+        }
     }
 
     fn default_design_size(&self) -> DesignSize {
@@ -57,8 +74,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults =
-            config::shared_style_defaults("sky", "Inter", "slide-up", metrics::CHAT_SIZING);
+        let mut defaults = config::shared_style_defaults("sky", "Inter", metrics::CHAT_SIZING);
         defaults.insert(
             config::POSITION.to_owned(),
             config::text(config::POSITION_BOTTOM),

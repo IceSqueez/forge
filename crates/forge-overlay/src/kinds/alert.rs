@@ -4,12 +4,15 @@ use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
 use crate::metrics;
+use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.alert";
 
 pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 3;
+
+pub const MOTION_SCHEMA_VERSION: u32 = 4;
 
 const DESIGN_WIDTH_PX: u32 = 800;
 const DESIGN_HEIGHT_PX: u32 = 600;
@@ -43,7 +46,18 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        BOX_CONTRACT_SCHEMA_VERSION
+        MOTION_SCHEMA_VERSION
+    }
+
+    fn motion(&self) -> MotionProfile {
+        MotionProfile {
+            axes: MotionAxes::ALL,
+            entrance: motion::SLIDE_UP,
+            entrance_ms: motion::DEFAULT_ENTRANCE_MS,
+            exit: motion::SLIDE_DOWN,
+            exit_ms: motion::DEFAULT_EXIT_MS,
+            reveal_target_id: motion::STAGE_ID,
+        }
     }
 
     fn default_design_size(&self) -> DesignSize {
@@ -58,8 +72,7 @@ impl OverlayKindDescriptor for AlertOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults =
-            config::shared_style_defaults("mauve", "Rubik", "slide-up", metrics::ALERT_SIZING);
+        let mut defaults = config::shared_style_defaults("mauve", "Rubik", metrics::ALERT_SIZING);
         defaults.insert(
             config::HEADLINE.to_owned(),
             config::text("Thanks for the sub!"),

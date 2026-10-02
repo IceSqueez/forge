@@ -6,6 +6,7 @@ use crate::config::{self, DURATION, SOUND, SPEECH, SPEECH_VOICE, effective_overl
 use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
+use crate::motion;
 use crate::source_box::{ContentMargins, DesignSize};
 
 pub const DEFAULT_DISPLAY_SECS: i64 = 5;
@@ -61,6 +62,39 @@ pub fn display_window(
     };
     let secs = u64::try_from(configured).unwrap_or(DEFAULT_DISPLAY_SECS.unsigned_abs());
     Some(Duration::from_millis(secs.saturating_mul(MILLIS_PER_SEC)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ShowTiming {
+    pub window: Duration,
+    pub exit_tail: Duration,
+}
+
+impl ShowTiming {
+    pub fn total(self) -> Duration {
+        self.window.saturating_add(self.exit_tail)
+    }
+}
+
+pub fn show_timing(
+    descriptor: &dyn OverlayKindDescriptor,
+    stored: &OverlayConfig,
+    override_ms: Option<u64>,
+) -> Option<ShowTiming> {
+    let window = display_window(descriptor, stored, override_ms)?;
+    Some(ShowTiming {
+        window,
+        exit_tail: exit_tail(descriptor, stored),
+    })
+}
+
+pub fn exit_tail(descriptor: &dyn OverlayKindDescriptor, stored: &OverlayConfig) -> Duration {
+    if descriptor.delivery_disposition() != DeliveryDisposition::Transient
+        || !descriptor.motion().axes.exit
+    {
+        return Duration::ZERO;
+    }
+    motion::exit_duration(&effective_overlay_config(descriptor, stored))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

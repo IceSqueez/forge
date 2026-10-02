@@ -4,12 +4,15 @@ use crate::descriptor::{
     DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
 use crate::metrics;
+use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
 use crate::source_box::{ContentMargins, DesignSize};
 
 pub const KIND_ID: &str = "overlay.goal";
 
 pub const BOX_CONTRACT_SCHEMA_VERSION: u32 = 2;
+
+pub const MOTION_SCHEMA_VERSION: u32 = 3;
 
 const DESIGN_WIDTH_PX: u32 = 640;
 const DESIGN_HEIGHT_PX: u32 = 160;
@@ -42,7 +45,18 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn config_schema_version(&self) -> u32 {
-        BOX_CONTRACT_SCHEMA_VERSION
+        MOTION_SCHEMA_VERSION
+    }
+
+    fn motion(&self) -> MotionProfile {
+        MotionProfile {
+            axes: MotionAxes::ENTRANCE_AND_TEXT,
+            entrance: motion::FADE,
+            entrance_ms: motion::DEFAULT_ENTRANCE_MS,
+            exit: motion::NO_MOTION,
+            exit_ms: motion::DEFAULT_EXIT_MS,
+            reveal_target_id: motion::STAGE_ID,
+        }
     }
 
     fn default_design_size(&self) -> DesignSize {
@@ -57,8 +71,7 @@ impl OverlayKindDescriptor for GoalOverlayKind {
     }
 
     fn look_defaults(&self) -> OverlayConfig {
-        let mut defaults =
-            config::shared_style_defaults("green", "Inter", "fade", metrics::GOAL_SIZING);
+        let mut defaults = config::shared_style_defaults("green", "Inter", metrics::GOAL_SIZING);
         defaults.insert(config::LABEL.to_owned(), config::text("Sub goal"));
         defaults.insert(config::VALUE.to_owned(), config::text("42"));
         defaults.insert(config::TARGET.to_owned(), config::text("100"));

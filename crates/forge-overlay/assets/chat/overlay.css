@@ -49,7 +49,6 @@ body[data-position="top"] #stage {
   padding: calc(6px * var(--text-scale)) calc(10px * var(--text-scale));
   border-radius: calc(8px * var(--text-scale));
   background: rgba(20, 20, 28, 0.78);
-  animation: rowEnter 0.2s ease;
 }
 
 .badges {
@@ -77,70 +76,4 @@ body[data-position="top"] #stage {
   font-size: calc(13px * var(--text-scale));
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-@keyframes rowEnter {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-body[data-animation="slide-up"] .row {
-  animation-name: rowEnterSlideUp;
-}
-body[data-animation="slide-down"] .row {
-  animation-name: rowEnterSlideDown;
-}
-body[data-animation="slide-left"] .row {
-  animation-name: rowEnterSlideLeft;
-}
-body[data-animation="wipe-left"] .row {
-  animation-name: rowEnterSlideLeft;
-}
-body[data-animation="pop"] .row {
-  animation-name: rowEnterPop;
-}
-
-@keyframes rowEnterSlideUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes rowEnterSlideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes rowEnterSlideLeft {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes rowEnterPop {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }

@@ -14,6 +14,10 @@ pub const RUNTIME_ASSET: &str = "runtime-v1.js";
 
 pub const RUNTIME_SOURCE: &str = include_str!("../assets/shared/runtime-v1.js");
 
+pub const MOTION_ASSET: &str = "motion-v1.js";
+
+pub const MOTION_SOURCE: &str = include_str!("../assets/shared/motion-v1.js");
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageAssets {
     pub markup: &'static str,

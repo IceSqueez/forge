@@ -71,6 +71,7 @@ pub const RETIRED_KEYS: &[&str] = &[
     "canvas_height",
     ELEMENT_WIDTH,
     ELEMENT_HEIGHT,
+    ANIMATION,
 ];
 
 pub const DESIGN_SIZE_MIN_PX: i64 = 40;
@@ -243,14 +244,6 @@ pub(crate) fn shared_style_fields() -> Vec<SectionedField> {
                 label: "Text size",
                 min: TEXT_SIZE_MIN_PX,
                 max: TEXT_SIZE_MAX_PX,
-            },
-        ),
-        in_section(
-            ConfigSection::Behavior,
-            FormField::Select {
-                key: ANIMATION,
-                label: "Animation",
-                options: ANIMATION_OPTIONS,
             },
         ),
     ]
@@ -451,13 +444,11 @@ fn in_section(section: ConfigSection, field: FormField) -> SectionedField {
 pub(crate) fn shared_style_defaults(
     accent: &str,
     font: &str,
-    animation: &str,
     sizing: ElementSizing,
 ) -> OverlayConfig {
     OverlayConfig::from([
         (ACCENT.to_owned(), text(accent)),
         (FONT.to_owned(), text(font)),
-        (ANIMATION.to_owned(), text(animation)),
         (
             TEXT_SIZE.to_owned(),
             Variant::Int(i64::from(sizing.default_text_size_px())),

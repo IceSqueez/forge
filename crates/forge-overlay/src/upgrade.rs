@@ -2,12 +2,17 @@ use forge_registry::FormField;
 use forge_types::Variant;
 
 use crate::config::{
-    DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX, DESIGN_WIDTH, ELEMENT_HEIGHT,
-    ELEMENT_WIDTH, MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT, MARGIN_SIDES, MIGRATION_ACKNOWLEDGED,
-    POSITION, POSITION_BOTTOM, POSITION_OPTIONS, RETIRED_KEYS,
+    ANIMATION, ANIMATION_OPTIONS, DESIGN_HEIGHT, DESIGN_SIZE_MAX_PX, DESIGN_SIZE_MIN_PX,
+    DESIGN_WIDTH, ELEMENT_HEIGHT, ELEMENT_WIDTH, MARGIN_MAX_PERCENT, MARGIN_MIN_PERCENT,
+    MARGIN_SIDES, MIGRATION_ACKNOWLEDGED, POSITION, POSITION_BOTTOM, POSITION_OPTIONS,
+    RETIRED_KEYS,
 };
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
 use crate::kinds::{alert, chat, frame, goal, ticker};
+use crate::motion::{
+    ENTRANCE, ENTRANCE_MS, EXIT, EXIT_MS, FADE, NO_MOTION, POP, SLIDE_DOWN, SLIDE_LEFT,
+    SLIDE_RIGHT, SLIDE_UP, TEXT_EFFECT, WIPE,
+};
 use crate::source_box::DesignSize;
 
 const PERCENT: i64 = 100;
@@ -51,6 +56,88 @@ const BOX_CONTRACT_STEPS: &[BoxContractStep] = &[
     },
 ];
 
+const LEGACY_TRANSITION_MS: i64 = 400;
+const LEGACY_ROW_ENTRANCE_MS: i64 = 200;
+
+struct LegacyPreset {
+    entrance: &'static str,
+    row_entrance: &'static str,
+    exit: &'static str,
+}
+
+const LEGACY_PRESETS: [LegacyPreset; 6] = [
+    LegacyPreset {
+        entrance: FADE,
+        row_entrance: FADE,
+        exit: FADE,
+    },
+    LegacyPreset {
+        entrance: SLIDE_UP,
+        row_entrance: SLIDE_UP,
+        exit: SLIDE_DOWN,
+    },
+    LegacyPreset {
+        entrance: SLIDE_DOWN,
+        row_entrance: SLIDE_DOWN,
+        exit: SLIDE_UP,
+    },
+    LegacyPreset {
+        entrance: SLIDE_LEFT,
+        row_entrance: SLIDE_LEFT,
+        exit: SLIDE_RIGHT,
+    },
+    LegacyPreset {
+        entrance: POP,
+        row_entrance: POP,
+        exit: POP,
+    },
+    LegacyPreset {
+        entrance: WIPE,
+        row_entrance: SLIDE_LEFT,
+        exit: FADE,
+    },
+];
+
+struct MotionStep {
+    kind_id: &'static str,
+    schema_version: u32,
+    legacy_entrance_ms: i64,
+    rows_enter: bool,
+}
+
+const MOTION_STEPS: &[MotionStep] = &[
+    MotionStep {
+        kind_id: alert::KIND_ID,
+        schema_version: alert::MOTION_SCHEMA_VERSION,
+        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        rows_enter: false,
+    },
+    MotionStep {
+        kind_id: chat::KIND_ID,
+        schema_version: chat::MOTION_SCHEMA_VERSION,
+        legacy_entrance_ms: LEGACY_ROW_ENTRANCE_MS,
+        rows_enter: true,
+    },
+    MotionStep {
+        kind_id: frame::KIND_ID,
+        schema_version: frame::MOTION_SCHEMA_VERSION,
+        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        rows_enter: false,
+    },
+    MotionStep {
+        kind_id: goal::KIND_ID,
+        schema_version: goal::MOTION_SCHEMA_VERSION,
+        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        rows_enter: false,
+    },
+    MotionStep {
+        kind_id: ticker::KIND_ID,
+        schema_version: ticker::MOTION_SCHEMA_VERSION,
+        legacy_entrance_ms: LEGACY_TRANSITION_MS,
+        rows_enter: false,
+    },
+];
+
 pub fn upgrade_config(
     descriptor: &dyn OverlayKindDescriptor,
     stored_version: u32,
@@ -60,6 +147,12 @@ pub fn upgrade_config(
         return None;
     }
     let mut upgraded = config.clone();
+    if let Some(step) = MOTION_STEPS
+        .iter()
+        .find(|step| step.kind_id == descriptor.id() && stored_version < step.schema_version)
+    {
+        adopt_motion_presets(descriptor, step, &mut upgraded);
+    }
     if let Some(step) = BOX_CONTRACT_STEPS
         .iter()
         .find(|step| step.kind_id == descriptor.id() && stored_version < step.schema_version)
@@ -103,6 +196,56 @@ fn adopt_box_contract(
     }
     fold_position(descriptor, config);
     config.insert(MIGRATION_ACKNOWLEDGED.to_owned(), Variant::Bool(false));
+}
+
+fn adopt_motion_presets(
+    descriptor: &dyn OverlayKindDescriptor,
+    step: &MotionStep,
+    config: &mut OverlayConfig,
+) {
+    let axes = descriptor.motion().axes;
+    let legacy = config
+        .remove(ANIMATION)
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .and_then(|value| legacy_preset(&value));
+
+    if axes.entrance {
+        if let Some(preset) = legacy {
+            let entrance = if step.rows_enter {
+                preset.row_entrance
+            } else {
+                preset.entrance
+            };
+            config
+                .entry(ENTRANCE.to_owned())
+                .or_insert_with(|| Variant::String(entrance.to_owned()));
+        }
+        config
+            .entry(ENTRANCE_MS.to_owned())
+            .or_insert(Variant::Int(step.legacy_entrance_ms));
+    }
+    if axes.text_effect {
+        config
+            .entry(TEXT_EFFECT.to_owned())
+            .or_insert_with(|| Variant::String(NO_MOTION.to_owned()));
+    }
+    if axes.exit {
+        if let Some(preset) = legacy {
+            config
+                .entry(EXIT.to_owned())
+                .or_insert_with(|| Variant::String(preset.exit.to_owned()));
+        }
+        config
+            .entry(EXIT_MS.to_owned())
+            .or_insert(Variant::Int(step.legacy_entrance_ms));
+    }
+}
+
+fn legacy_preset(value: &str) -> Option<&'static LegacyPreset> {
+    ANIMATION_OPTIONS
+        .iter()
+        .zip(LEGACY_PRESETS.iter())
+        .find_map(|(legacy, preset)| (*legacy == value).then_some(preset))
 }
 
 fn seeded(config: &OverlayConfig, design_key: &str, element_key: &str, fallback: u32) -> u32 {

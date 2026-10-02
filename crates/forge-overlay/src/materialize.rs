@@ -2,14 +2,17 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::assets::{CONFIG_FILE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE, SAMPLE_FILE};
+use crate::assets::{
+    CONFIG_FILE, MOTION_ASSET, MOTION_SOURCE, RESERVED_DIRECTORY, RUNTIME_ASSET, RUNTIME_SOURCE,
+    SAMPLE_FILE,
+};
 use crate::document::{config_document, sample_document};
 use crate::error::OverlayError;
 use crate::instance::OverlayInstance;
 use crate::media::{GENERATED_MEDIA_DIRECTORY, MediaIssue, ResolvedMedia};
 use crate::registry::OverlayKindRegistry;
 
-pub const GENERATOR_VERSION: u32 = 4;
+pub const GENERATOR_VERSION: u32 = 5;
 
 const MAX_IDENTITY_LEN: usize = 64;
 
@@ -31,6 +34,7 @@ pub fn ensure_shared_directory(root: &Path) -> Result<PathBuf, OverlayError> {
     reject_symlink(&shared)?;
     create_dir(&shared)?;
     write_atomic(&shared, RUNTIME_ASSET, RUNTIME_SOURCE.as_bytes())?;
+    write_atomic(&shared, MOTION_ASSET, MOTION_SOURCE.as_bytes())?;
     Ok(shared)
 }
 

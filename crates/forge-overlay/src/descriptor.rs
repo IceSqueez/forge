@@ -5,6 +5,7 @@ use forge_types::Variant;
 
 use crate::assets::PageAssets;
 use crate::base;
+use crate::motion::{self, MotionProfile};
 use crate::preview::PreviewComposition;
 use crate::source_box::{ContentMargins, DesignSize};
 
@@ -59,6 +60,9 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn default_margins(&self) -> ContentMargins {
         ContentMargins::NONE
     }
+    fn motion(&self) -> MotionProfile {
+        MotionProfile::STILL
+    }
     fn default_config(&self) -> OverlayConfig {
         let mut defaults = base::base_defaults(
             self.delivery_disposition(),
@@ -67,10 +71,12 @@ pub trait OverlayKindDescriptor: Send + Sync {
             self.default_margins(),
         );
         defaults.extend(self.look_defaults());
+        defaults.extend(motion::motion_defaults(self.motion()));
         defaults
     }
     fn config_fields(&self) -> Vec<SectionedField> {
         let mut fields = self.look_fields();
+        fields.extend(motion::motion_fields(self.motion().axes));
         fields.extend(base::base_fields(self.delivery_disposition()));
         fields
     }

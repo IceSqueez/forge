@@ -7,16 +7,15 @@
  *   forge.ready(callback)        callback(config) once config.json is loaded
  *   forge.content(callback)      callback(values, durationMs) per delivery
  *   forge.set(name, text)        writes text into every [data-bind="name"] node
- *   forge.show(selector)         reveals matching elements
- *   forge.show(selector, ms)     reveals them, hides them again after ms, or
+ *   forge.show(target)           reveals matching elements, or the element
+ *   forge.show(target, ms)       reveals them, hides them again after ms, or
  *                                once the show's speech has ended if later
  *   forge.sound(name)            plays a file from this overlay's folder
  *
  * config.json sits next to the page. Its config object is what the ready callback
- * receives, and the accent, font, position and animation entries are applied here
- * rather than by the page: accent and font become the --accent and --font custom
- * properties, position and animation become data-position and data-animation on
- * <body>. Stylesheets read those.
+ * receives, and the accent, font and position entries are applied here rather
+ * than by the page: accent and font become the --accent and --font custom
+ * properties, position becomes data-position on <body>. Stylesheets read those.
  *
  * The page viewport is the box: the browser source's own width and height. The
  * margin_top, margin_right, margin_bottom and margin_left entries are percents
@@ -84,8 +83,8 @@
  * sample.json, the generated sample document sitting beside config.json, and
  * delivers that content to itself as soon as the page is ready; it paints a
  * checkerboard over the box, sized to design_width x design_height, so the
- * transparent area of the source is visible; and it never
- * hides anything on a timer, so a transient overlay stays up to be looked at.
+ * transparent area of the source is visible; and a transient overlay replays its
+ * show in a loop, entrance to exit, so its motion can be looked at.
  * Nothing else changes: a preview page connects, identifies and receives exactly
  * like the page a browser source loads; it only says so in its auth frame, so
  * forge counts it apart from this overlay's browser sources. Without the flag the
@@ -143,6 +142,8 @@
   var RELOAD_FRAME = "reload";
   var CLEAR_FRAME = "clear";
   var HIDDEN_CLASS = "hidden";
+  var MOTION_ASSET = "motion-v1.js";
+  var PREVIEW_REPLAY_PAUSE_MS = 1200;
   var RECONNECT_BASE_MS = 500;
   var RECONNECT_CAP_MS = 15000;
   var RELOAD_DELAY_MS = 250;
@@ -190,12 +191,15 @@
   ];
 
   var document_ = window.document;
+  var runtimeScript = document_.currentScript;
   var readyCallbacks = [];
   var contentCallbacks = [];
   var hideTimers = new Map();
   var clipsInFlight = new Map();
   var waitingShow = null;
   var shownToken = "";
+  var showSeed = 0;
+  var previewSample = null;
   var hidesAfterSpeech = [];
 
   var config = null;
@@ -247,6 +251,7 @@
 
     paintCheckerboard();
     loadSample(function (values) {
+      previewSample = values;
       fireReady();
       connect();
       deliver(values, 0);
@@ -309,7 +314,6 @@
     applyMargins(values);
 
     document_.body.dataset.position = values.position || "";
-    document_.body.dataset.animation = values.animation || "";
   }
 
   function applySize(property, value, unit) {
@@ -742,6 +746,8 @@
     unclear();
     shownToken = token;
     hidesAfterSpeech = [];
+    var engine = motion();
+    showSeed = engine ? engine.seed(values) : 0;
     var configured = (config && config.sound) || "";
     playSound(configured, afterSound);
     playedThisDelivery = configured;
@@ -755,6 +761,10 @@
     dropWaitingShow();
     shownToken = "";
     hidesAfterSpeech = [];
+    var engine = motion();
+    if (engine) {
+      engine.cancelAll();
+    }
     document_.body.style.visibility = "hidden";
   }
 
@@ -809,34 +819,110 @@
     });
   }
 
-  function show(selector, milliseconds) {
-    if (!selector) {
+  function motion() {
+    return window.forgeMotion || null;
+  }
+
+  function loadMotion(then) {
+    var source = runtimeScript && runtimeScript.src;
+    if (!source) {
+      then();
       return;
     }
-    var nodes = document_.querySelectorAll(selector);
+    var script = document_.createElement("script");
+    script.src = new URL(MOTION_ASSET, source).href;
+    script.onload = then;
+    script.onerror = function () {
+      warn("could not load " + MOTION_ASSET + ", so overlays show without motion");
+      then();
+    };
+    document_.head.appendChild(script);
+  }
+
+  function targetsOf(target) {
+    if (typeof target === "string") {
+      return Array.from(document_.querySelectorAll(target)).filter(function (node) {
+        var engine = motion();
+        return !engine || !engine.owns(node);
+      });
+    }
+    return target && target.nodeType === window.Node.ELEMENT_NODE ? [target] : [];
+  }
+
+  function reveal(node, windowMs) {
+    var engine = motion();
+    if (engine) {
+      engine.cancel(node);
+    }
+    node.classList.remove(HIDDEN_CLASS);
+    if (engine && config) {
+      engine.enter(node, engine.plan(config, windowMs), showSeed);
+    }
+  }
+
+  function conceal(nodes, then) {
+    var engine = motion();
+    var remaining = nodes.length;
+    var concealed = function (node) {
+      node.classList.add(HIDDEN_CLASS);
+      remaining -= 1;
+      if (remaining === 0) {
+        then();
+      }
+    };
+    if (!remaining) {
+      then();
+      return;
+    }
     nodes.forEach(function (node) {
-      node.classList.remove(HIDDEN_CLASS);
+      if (!engine || !config) {
+        concealed(node);
+        return;
+      }
+      engine.exit(node, engine.plan(config, 0), showSeed, function () {
+        concealed(node);
+      });
+    });
+  }
+
+  function replayPreview() {
+    if (!previewing || !previewSample) {
+      return;
+    }
+    window.setTimeout(function () {
+      contentCallbacks.forEach(function (callback) {
+        invoke(callback, previewSample, 0);
+      });
+    }, PREVIEW_REPLAY_PAUSE_MS);
+  }
+
+  function show(target, milliseconds) {
+    if (!target) {
+      return;
+    }
+    var nodes = targetsOf(target);
+    var windowMs = milliseconds > 0 ? milliseconds : 0;
+    nodes.forEach(function (node) {
+      reveal(node, windowMs);
     });
 
-    var pending = hideTimers.get(selector);
+    var pending = hideTimers.get(target);
     if (pending) {
       window.clearTimeout(pending);
-      hideTimers.delete(selector);
+      hideTimers.delete(target);
     }
-    if (previewing || !(milliseconds > 0)) {
+    if (!(windowMs > 0)) {
       return;
     }
 
     hideTimers.set(
-      selector,
+      target,
       window.setTimeout(function () {
-        hideTimers.delete(selector);
+        hideTimers.delete(target);
         hideAfterSpeech(function () {
-          nodes.forEach(function (node) {
-            node.classList.add(HIDDEN_CLASS);
-          });
+          conceal(nodes, replayPreview);
         });
-      }, milliseconds),
+      }, windowMs),
     );
   }
 
@@ -892,5 +978,5 @@
     }
   });
 
-  loadConfig();
+  loadMotion(loadConfig);
 })();

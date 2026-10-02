@@ -319,4 +319,29 @@ mod tests {
         let r = reg.get("core.globals.set").unwrap();
         assert_eq!(r.id(), "core.globals.set");
     }
+
+    #[test]
+    fn a_rejected_duplicate_under_an_owner_leaves_the_original_ownership_untouched() {
+        let twitch = forge_types::IntegrationId::from_static("twitch");
+        let mut triggers = TriggerRegistry::new();
+        triggers
+            .register(Box::new(StubDescriptor { kind_id: "shared" }))
+            .unwrap();
+        let mut sub_actions = SubActionRegistry::new();
+        sub_actions
+            .register(Box::new(StubRunner { kind_id: "shared" }))
+            .unwrap();
+
+        let trigger_dup = triggers
+            .owned_by(twitch.clone())
+            .register(Box::new(StubDescriptor { kind_id: "shared" }));
+        let runner_dup = sub_actions
+            .owned_by(twitch)
+            .register(Box::new(StubRunner { kind_id: "shared" }));
+
+        assert!(trigger_dup.is_err());
+        assert!(runner_dup.is_err());
+        assert_eq!(triggers.owning_integration("shared"), None);
+        assert_eq!(sub_actions.owning_integration("shared"), None);
+    }
 }

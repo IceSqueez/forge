@@ -1070,4 +1070,223 @@ mod tests {
             );
         }
     }
+
+    async fn every_registry_entry() -> (TriggerRegistry, SubActionRegistry) {
+        let media_root = tempfile::tempdir().unwrap();
+        let backend: Arc<dyn DataProvider> = Arc::new(
+            forge_storage_sqlite::SqliteBackend::open_for_test(
+                "sqlite::memory:",
+                [0x11; 32],
+                media_root.path().to_owned(),
+                None,
+            )
+            .await
+            .unwrap(),
+        );
+        let bus = test_bus();
+        let mut triggers = TriggerRegistry::new();
+        forge_runtime::register_core_triggers(&mut triggers).unwrap();
+        register_platform_triggers(&mut triggers);
+
+        let mut sub_actions = SubActionRegistry::new();
+        forge_runtime::register_core_sub_actions(
+            &mut sub_actions,
+            Arc::clone(&backend) as Arc<dyn forge_storage::GlobalsRepo>,
+            Arc::clone(&backend) as Arc<dyn forge_storage::UserGlobalsRepo>,
+            Arc::new(forge_runtime::ScriptRegistry::new()),
+            publisher(&bus),
+            Arc::clone(&backend) as Arc<dyn forge_storage::SettingsRepo>,
+            forge_runtime::SchedulerCell::new(),
+            backend.trigger_instance_repo(),
+            backend.action_repo(),
+            Arc::clone(&backend) as Arc<dyn forge_storage::ScriptRepo>,
+            Arc::new(forge_runtime::ActionCancelRegistry::new()),
+            forge_runtime::OverlayServiceCell::new(),
+            forge_runtime::Config::default(),
+        )
+        .unwrap();
+        wire_obs(&mut sub_actions, &backend, &bus);
+        wire_vtube(&mut sub_actions, &backend, &bus);
+        wire_discord(&mut sub_actions, &backend, &bus);
+        wire_midi(&mut sub_actions, &backend, &bus, Vec::new());
+        register_twitch_runners(&mut sub_actions, &backend, &bus);
+        register_youtube_runners(&mut sub_actions, &backend);
+        register_kick_runners(&mut sub_actions, &backend);
+        (triggers, sub_actions)
+    }
+
+    fn register_twitch_runners(
+        sub_actions: &mut SubActionRegistry,
+        backend: &Arc<dyn DataProvider>,
+        bus: &Arc<EventBus>,
+    ) {
+        let creds = creds_of(backend);
+        let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+            Arc::clone(&creds),
+            "test-client".to_owned(),
+        ));
+        let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
+            Arc::new(forge_platform_twitch::HelixHttpTransport::new(
+                &PlatformEndpoints::default(),
+                Arc::new(NoopRateLimiter),
+                publisher(bus),
+                "test-client".to_owned(),
+                manager as Arc<dyn forge_platform_twitch::HelixTokenSource>,
+            ));
+        forge_platform_twitch::register_twitch_sub_actions(
+            sub_actions,
+            transport,
+            creds,
+            forge_platform_twitch::TwitchLifecycle::new(),
+        )
+        .unwrap();
+    }
+
+    fn youtube_token_source() -> Arc<
+        dyn Fn() -> futures_util::future::BoxFuture<'static, Result<String, PlatformError>>
+            + Send
+            + Sync,
+    > {
+        Arc::new(|| Box::pin(async { Ok("token".to_owned()) }))
+    }
+
+    fn register_youtube_runners(sub_actions: &mut SubActionRegistry, _: &Arc<dyn DataProvider>) {
+        use forge_platform_youtube as yt;
+        let quota = Arc::new(tokio::sync::Mutex::new(yt::QuotaState::default()));
+        let chat = yt::LiveChatIdHandle::new();
+        let broadcast = yt::ActiveBroadcastIdHandle::new();
+        yt::register_youtube_sub_actions(
+            sub_actions,
+            Arc::new(yt::YoutubeSendChat::new(
+                youtube_token_source(),
+                chat.clone(),
+                Arc::clone(&quota),
+            )),
+            Arc::new(yt::YoutubeModeration::new(
+                youtube_token_source(),
+                chat,
+                Arc::clone(&quota),
+            )),
+            Arc::new(yt::YoutubeStreamMetadata::new(
+                youtube_token_source(),
+                broadcast.clone(),
+                Arc::clone(&quota),
+            )),
+            Arc::new(yt::YoutubeStreamStats::new(
+                youtube_token_source(),
+                broadcast.clone(),
+                Arc::clone(&quota),
+            )),
+            Arc::new(yt::YoutubeAdBreak::new(
+                youtube_token_source(),
+                broadcast.clone(),
+                Arc::clone(&quota),
+            )),
+            Arc::new(yt::YoutubeThumbnail::new(
+                youtube_token_source(),
+                broadcast,
+                Arc::clone(&quota),
+            )),
+            Arc::new(yt::YoutubeChannelLookup::new(youtube_token_source(), quota)),
+        )
+        .unwrap();
+    }
+
+    fn register_kick_runners(sub_actions: &mut SubActionRegistry, _: &Arc<dyn DataProvider>) {
+        use forge_platform_kick as kick;
+        let limiter: Arc<dyn RateLimiter> = Arc::new(NoopRateLimiter);
+        kick::register_kick_sub_actions(
+            sub_actions,
+            kick::KickSubActionDeps {
+                client: Arc::new(kick::KickSendChat::new(Arc::clone(&limiter))),
+                token_source: Arc::new(|| Box::pin(async { Ok("token".to_owned()) })),
+                broadcaster_id_source: Arc::new(|| Box::pin(async { Ok(1) })),
+                moderation: Arc::new(kick::KickModeration::new(Arc::clone(&limiter))),
+                channel: Arc::new(kick::KickChannel::new(Arc::clone(&limiter))),
+                rewards: Arc::new(kick::KickRewards::new(Arc::clone(&limiter))),
+                categories: Arc::new(kick::KickCategories::new(limiter)),
+            },
+        )
+        .unwrap();
+    }
+
+    fn declared_integrations() -> Vec<IntegrationId> {
+        vec![
+            forge_platform_twitch::TWITCH_INTEGRATION.id,
+            forge_platform_youtube::YOUTUBE_INTEGRATION.id,
+            forge_platform_kick::KICK_INTEGRATION.id,
+            forge_obs::OBS_INTEGRATION.id,
+            forge_vtube::VTUBE_INTEGRATION.id,
+            forge_discord::DISCORD_INTEGRATION.id,
+            forge_midi::MIDI_INTEGRATION.id,
+            forge_hotkey::HOTKEY_INTEGRATION.id,
+        ]
+    }
+
+    const TARGET_ROUTED_CORE_RUNNERS: &[&str] = &["twitch.chat.send_message"];
+
+    fn ownership_violations<'a>(
+        kinds: impl Iterator<Item = &'a str>,
+        owner_of: impl Fn(&str) -> Option<IntegrationId>,
+    ) -> Vec<String> {
+        let declared = declared_integrations();
+        kinds
+            .filter(|kind| !TARGET_ROUTED_CORE_RUNNERS.contains(kind))
+            .filter_map(|kind| {
+                let namespace = kind.split('.').next().unwrap_or(kind);
+                let expected = declared
+                    .iter()
+                    .find(|integration| integration.as_str() == namespace)
+                    .cloned();
+                let actual = owner_of(kind);
+                (actual != expected)
+                    .then(|| format!("{kind}: owned by {actual:?}, expected {expected:?}"))
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn every_trigger_belongs_to_the_integration_named_by_its_namespace_or_to_core() {
+        let (triggers, _) = every_registry_entry().await;
+
+        let violations = ownership_violations(triggers.all().map(|d| d.id()), |kind| {
+            triggers.owning_integration(kind).cloned()
+        });
+
+        assert!(violations.is_empty(), "{violations:#?}");
+        for integration in [
+            forge_platform_twitch::TWITCH_INTEGRATION.id,
+            forge_midi::MIDI_INTEGRATION.id,
+            forge_hotkey::HOTKEY_INTEGRATION.id,
+        ] {
+            assert!(
+                triggers
+                    .all()
+                    .any(|d| triggers.owning_integration(d.id()) == Some(&integration)),
+                "{integration} owns no trigger"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_sub_action_belongs_to_the_integration_named_by_its_namespace_or_to_core() {
+        let (_, sub_actions) = every_registry_entry().await;
+
+        let violations = ownership_violations(sub_actions.all().map(|r| r.id()), |kind| {
+            sub_actions.owning_integration(kind).cloned()
+        });
+
+        assert!(violations.is_empty(), "{violations:#?}");
+        for integration in declared_integrations()
+            .into_iter()
+            .filter(|id| id.as_str() != "hotkey")
+        {
+            assert!(
+                sub_actions
+                    .all()
+                    .any(|r| sub_actions.owning_integration(r.id()) == Some(&integration)),
+                "{integration} owns no sub-action"
+            );
+        }
+    }
 }

@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use forge_registry::{
     FormField, RegistryError, RunContext, SubActionCategory, SubActionRegistry, SubActionRunner,
 };
+use forge_runtime::sub_action_runners::TwitchChatSendMessageRunner;
 use forge_runtime::{
     ActionCancelRegistry, Catalog, EventBus, ExecutionRequest, NullEventLogRepo,
     spawn_action_engine,
@@ -20,7 +21,8 @@ use forge_storage::{
 };
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMode, ExecutionOutcome,
-    QueueId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
+    IntegrationId, QueueId, SubActionConfig, SubActionOutcome, SubActionStep, SubActionTelemetry,
+    Variant, integration_disabled_reason,
 };
 use time::OffsetDateTime;
 use tokio::sync::Notify;
@@ -451,5 +453,191 @@ async fn a_failed_telemetry_write_does_not_stop_later_runs_from_recording() {
     assert!(
         eventually(|| repo.records().len() == 2).await,
         "a later run must still record telemetry after a failed write",
+    );
+}
+
+struct OkRunner {
+    runs: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait]
+impl SubActionRunner for OkRunner {
+    fn id(&self) -> &str {
+        "test.owned"
+    }
+    fn category(&self) -> SubActionCategory {
+        SubActionCategory::Util
+    }
+    fn label(&self) -> &str {
+        ""
+    }
+    fn summary(&self) -> &str {
+        ""
+    }
+    fn search_text(&self) -> &str {
+        ""
+    }
+    fn icon_name(&self) -> &str {
+        ""
+    }
+    fn default_config(&self) -> SubActionConfig {
+        SubActionConfig::new()
+    }
+    fn config_fields(&self) -> Vec<FormField> {
+        Vec::new()
+    }
+    fn validate_config(&self, _: &SubActionConfig) -> Result<(), RegistryError> {
+        Ok(())
+    }
+    async fn execute(
+        &self,
+        _: &SubActionConfig,
+        ctx: &RunContext<'_>,
+    ) -> (SubActionTelemetry, Option<ArgStack>) {
+        self.runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        (
+            forge_registry::StepTimer::start(ctx, "test.owned").success(),
+            None,
+        )
+    }
+}
+
+fn twitch() -> IntegrationId {
+    IntegrationId::from_static("twitch")
+}
+
+fn disabled_twitch_reason() -> ExecutionOutcome {
+    ExecutionOutcome::Failed(integration_disabled_reason(&twitch()))
+}
+
+fn spawn_with(
+    repo: &Arc<SpyActionRepo>,
+    history: &Arc<SpyHistoryRepo>,
+    reg: SubActionRegistry,
+) -> forge_runtime::ActionEngineHandle {
+    spawn_action_engine(
+        EventBus::new(Arc::new(NullEventLogRepo)),
+        catalog_over(repo),
+        repo.clone(),
+        history.clone(),
+        Arc::new(reg),
+        Arc::new(ActionCancelRegistry::new()),
+    )
+}
+
+#[tokio::test]
+async fn a_run_reaching_a_disabled_integration_step_is_recorded_as_a_failure_naming_it() {
+    let repo = Arc::new(SpyActionRepo::new());
+    let action = action_with(vec!["test.owned"]);
+    let id = action.id;
+    repo.seed(action);
+    let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut reg = SubActionRegistry::new();
+    reg.owned_by(twitch())
+        .register(Box::new(OkRunner {
+            runs: Arc::clone(&runs),
+        }))
+        .unwrap();
+    let history = Arc::new(SpyHistoryRepo::new());
+    let engine = spawn_with(&repo, &history, reg);
+    engine.integration_gate().disable(twitch());
+
+    engine.dispatch(request(id)).await.unwrap();
+
+    assert!(
+        eventually(|| !history.saved().is_empty()).await,
+        "the run was never saved to history",
+    );
+    assert_eq!(history.saved()[0].1, disabled_twitch_reason());
+    assert!(eventually(|| repo.records().len() == 1).await);
+    assert_eq!(repo.records()[0].2, ExecutionStatus::Error);
+    assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn disabling_an_integration_mid_run_fails_the_run_instead_of_cancelling_it() {
+    let repo = Arc::new(SpyActionRepo::new());
+    let action = action_with(vec!["test.gate"]);
+    let id = action.id;
+    repo.seed(action);
+    let running = Arc::new(Notify::new());
+    let mut reg = SubActionRegistry::new();
+    reg.owned_by(twitch())
+        .register(Box::new(GateRunner {
+            running: Arc::clone(&running),
+        }))
+        .unwrap();
+    let history = Arc::new(SpyHistoryRepo::new());
+    let engine = spawn_with(&repo, &history, reg);
+
+    engine.dispatch(request(id)).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), running.notified())
+        .await
+        .expect("the owned step never started");
+    assert_eq!(engine.integration_gate().disable(twitch()), 1);
+
+    assert!(
+        eventually(|| !history.saved().is_empty()).await,
+        "the run was never saved to history",
+    );
+    assert_eq!(history.saved()[0].1, disabled_twitch_reason());
+}
+
+#[tokio::test]
+async fn a_quick_action_of_a_disabled_integration_reports_integration_disabled() {
+    let repo = Arc::new(SpyActionRepo::new());
+    let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut reg = SubActionRegistry::new();
+    reg.owned_by(twitch())
+        .register(Box::new(OkRunner {
+            runs: Arc::clone(&runs),
+        }))
+        .unwrap();
+    let engine = spawn_with(&repo, &Arc::new(SpyHistoryRepo::new()), reg);
+    engine.integration_gate().disable(twitch());
+
+    let outcome = engine
+        .execute_quick_action(
+            action_with(vec!["test.owned"]).sub_actions.remove(0),
+            "twitch".to_owned(),
+            "Quick".to_owned(),
+            None,
+        )
+        .await
+        .unwrap()
+        .outcome()
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, SubActionOutcome::IntegrationDisabled(twitch()));
+    assert_eq!(runs.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn a_chat_send_targeted_at_a_disabled_platform_fails_the_run_visibly() {
+    let repo = Arc::new(SpyActionRepo::new());
+    let mut action = action_with(vec!["twitch.chat.send_message"]);
+    action.sub_actions[0].config = SubActionConfig::from([
+        ("message".to_owned(), Variant::String("hello".to_owned())),
+        ("target".to_owned(), Variant::String("twitch".to_owned())),
+    ]);
+    let id = action.id;
+    repo.seed(action);
+    let mut reg = SubActionRegistry::new();
+    reg.register(Box::new(TwitchChatSendMessageRunner)).unwrap();
+    let history = Arc::new(SpyHistoryRepo::new());
+    let engine = spawn_with(&repo, &history, reg);
+    engine.integration_gate().disable(twitch());
+
+    engine.dispatch(request(id)).await.unwrap();
+
+    assert!(
+        eventually(|| !history.saved().is_empty()).await,
+        "the run was never saved to history",
+    );
+    assert!(
+        matches!(&history.saved()[0].1, ExecutionOutcome::Failed(reason) if reason.contains("twitch")),
+        "a send targeted at a disabled platform must fail naming it, got {:?}",
+        history.saved()[0].1,
     );
 }

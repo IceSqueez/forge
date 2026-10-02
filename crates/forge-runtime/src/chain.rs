@@ -533,7 +533,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use forge_registry::{FormField, SubActionCategory, SubActionConfig, SubActionRunner};
-    use forge_types::Variant;
+    use forge_types::{IntegrationId, Variant, integration_disabled_reason};
     use time::OffsetDateTime;
 
     use super::*;
@@ -1444,5 +1444,108 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn twitch_owned_registry(
+        twitch_runs: &Arc<AtomicUsize>,
+        core_runs: &Arc<AtomicUsize>,
+    ) -> Arc<SubActionRegistry> {
+        let mut owned = scripted("twitch.step", SubActionOutcome::Success);
+        owned.runs = Arc::clone(twitch_runs);
+        let mut core = scripted("core.after", SubActionOutcome::Success);
+        core.runs = Arc::clone(core_runs);
+        let mut reg = SubActionRegistry::new();
+        reg.owned_by(IntegrationId::from_static("twitch"))
+            .register(Box::new(owned))
+            .unwrap();
+        reg.register(Box::new(core)).unwrap();
+        Arc::new(reg)
+    }
+
+    #[tokio::test]
+    async fn a_step_of_a_disabled_integration_fails_the_sequential_chain_naming_the_integration() {
+        let twitch_runs = Arc::new(AtomicUsize::new(0));
+        let core_runs = Arc::new(AtomicUsize::new(0));
+        let (eng, events) = capturing_engine(twitch_owned_registry(&twitch_runs, &core_runs), 8);
+        eng.integration_gate()
+            .disable(IntegrationId::from_static("twitch"));
+
+        let run = eng
+            .run_sequential(
+                &[step("twitch.step"), step("core.after")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(
+            run.signal,
+            ChainSignal::Error(integration_disabled_reason(&IntegrationId::from_static(
+                "twitch"
+            )))
+        );
+        assert_eq!(twitch_runs.load(Ordering::Relaxed), 0);
+        assert_eq!(core_runs.load(Ordering::Relaxed), 0, "the chain must stop");
+        let done = events
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|e| e.kind == "subaction.done")
+            .cloned()
+            .expect("the disabled step must still report subaction.done");
+        assert_eq!(done.payload["outcome"], "failed");
+        assert_eq!(done.payload["integration"], "twitch");
+    }
+
+    #[tokio::test]
+    async fn continue_on_error_carries_the_chain_past_a_disabled_integration_step() {
+        let twitch_runs = Arc::new(AtomicUsize::new(0));
+        let core_runs = Arc::new(AtomicUsize::new(0));
+        let eng = engine(twitch_owned_registry(&twitch_runs, &core_runs), 8);
+        eng.integration_gate()
+            .disable(IntegrationId::from_static("twitch"));
+
+        let run = eng
+            .run_sequential(
+                &[flagged_step("twitch.step"), step("core.after")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(
+            run.telemetry[0].outcome,
+            SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("twitch"))
+        );
+        assert_eq!(core_runs.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn a_disabled_integration_step_fails_a_concurrent_chain_while_core_siblings_run() {
+        let twitch_runs = Arc::new(AtomicUsize::new(0));
+        let core_runs = Arc::new(AtomicUsize::new(0));
+        let eng = engine(twitch_owned_registry(&twitch_runs, &core_runs), 8);
+        eng.integration_gate()
+            .disable(IntegrationId::from_static("twitch"));
+
+        let run = eng
+            .run_concurrent(
+                &[step("twitch.step"), step("core.after")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert!(
+            matches!(&run.signal, ChainSignal::Error(reason) if reason.contains("twitch")),
+            "{:?}",
+            run.signal
+        );
+        assert_eq!(twitch_runs.load(Ordering::Relaxed), 0);
+        assert_eq!(core_runs.load(Ordering::Relaxed), 1);
     }
 }

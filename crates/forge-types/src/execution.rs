@@ -434,11 +434,38 @@ mod tests {
     }
 
     #[test]
+    fn a_disabled_integration_is_a_failure_naming_the_integration_while_a_skip_is_not() {
+        let twitch = IntegrationId::from_static("twitch");
+        let cases = [
+            (SubActionOutcome::Success, None),
+            (
+                SubActionOutcome::Failed("timeout".to_owned()),
+                Some("timeout".to_owned()),
+            ),
+            (SubActionOutcome::Skipped("disabled".to_owned()), None),
+            (
+                SubActionOutcome::IntegrationDisabled(twitch.clone()),
+                Some(integration_disabled_reason(&twitch)),
+            ),
+        ];
+        for (outcome, expected) in cases {
+            assert_eq!(outcome.failure_reason(), expected, "{outcome:?}");
+            assert_eq!(outcome.is_failure(), expected.is_some(), "{outcome:?}");
+        }
+        assert!(integration_disabled_reason(&twitch).contains("twitch"));
+        assert_ne!(
+            integration_disabled_reason(&twitch),
+            integration_disabled_reason(&IntegrationId::from_static("kick")),
+        );
+    }
+
+    #[test]
     fn sub_action_outcome_variants_serde_roundtrip() {
         let outcomes = [
             SubActionOutcome::Success,
             SubActionOutcome::Failed("timeout".to_string()),
             SubActionOutcome::Skipped("disabled".to_string()),
+            SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("twitch")),
         ];
         for o in outcomes {
             let json = serde_json::to_string(&o).unwrap();

@@ -784,4 +784,34 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    async fn stopping_the_poller_ends_its_task_and_closes_both_of_its_outputs() {
+        let (event_tx, mut event_rx) = mpsc::channel(8);
+        let (source, poller) = spawn_kick_poller(
+            Arc::new(KickChannel::new(Arc::new(GrantLimiter))),
+            Arc::new(KickRewards::new(Arc::new(GrantLimiter))),
+            err_token(),
+            event_tx,
+        );
+        let mut reports = source.subscribe();
+        assert!(
+            tokio::time::timeout(StdDuration::from_millis(50), event_rx.recv())
+                .await
+                .is_err(),
+            "a running poller keeps its event channel open"
+        );
+
+        poller.stop();
+
+        let closed = tokio::time::timeout(StdDuration::from_secs(2), async {
+            while reports.changed().await.is_ok() {}
+            event_rx.recv().await
+        })
+        .await;
+        assert!(
+            matches!(closed, Ok(None)),
+            "the poller task outlived stop()"
+        );
+    }
 }

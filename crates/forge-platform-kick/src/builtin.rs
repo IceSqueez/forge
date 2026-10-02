@@ -918,6 +918,27 @@ mod tests {
                 }
             );
         }
+
+        #[tokio::test]
+        async fn shutting_down_twice_stops_every_bridge_that_holds_the_bundle() {
+            let (bundle, _viewer_tx) = bundle_with_viewer_channel();
+
+            bundle.shutdown().await;
+            bundle.shutdown().await;
+
+            let released = tokio::time::timeout(StdDuration::from_secs(2), async {
+                while Arc::strong_count(&bundle) > 1 {
+                    tokio::time::sleep(StdDuration::from_millis(5)).await;
+                }
+            })
+            .await;
+            assert!(
+                released.is_ok(),
+                "{} task(s) still hold the bundle after shutdown",
+                Arc::strong_count(&bundle) - 1
+            );
+            assert!(!bundle.current_state().is_connected());
+        }
     }
 
     mod roster {

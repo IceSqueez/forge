@@ -2098,4 +2098,46 @@ mod tests {
             "expected at least the announcement-color and ad-duration static choices, got {checked}"
         );
     }
+
+    #[tokio::test]
+    async fn shutting_down_twice_stops_the_chat_session_and_every_task_holding_the_bundle() {
+        let creds: Arc<dyn CredentialsRepo> = Arc::new(NullCreds);
+        let bundle = TwitchIntegrationBundle::new(
+            Some("streamer".to_owned()),
+            ChatSessionConfig {
+                client_id: "test-client".to_owned(),
+                broadcaster_id: "1".to_owned(),
+                user_id: "1".to_owned(),
+                endpoints: crate::sub_actions::test_support::unreachable_twitch_endpoints(),
+            },
+            Arc::new(crate::event_channel::PlatformEventChannel::new()),
+            Arc::clone(&creds),
+            Arc::new(TwitchCredentialsManager::new(
+                creds,
+                "test-client".to_owned(),
+            )),
+            SubscriptionTracker::default(),
+            Arc::new(TokenBucketRateLimiter::new(
+                HELIX_BUDGET_CAPACITY,
+                HELIX_BUDGET_WINDOW,
+            )),
+            TwitchLifecycle::new(),
+        );
+
+        bundle.shutdown().await;
+        bundle.shutdown().await;
+
+        let released = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while Arc::strong_count(&bundle) > 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(
+            released.is_ok(),
+            "{} task(s) still hold the bundle after shutdown",
+            Arc::strong_count(&bundle) - 1
+        );
+        assert!(bundle.handle.lock().await.is_none());
+    }
 }

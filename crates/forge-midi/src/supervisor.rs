@@ -941,4 +941,30 @@ mod tests {
             "expected output port added event"
         );
     }
+
+    #[tokio::test]
+    async fn shutdown_closes_every_open_input_port_and_ends_the_engine_task() {
+        let backend = Arc::new(MockMidiBackend::new(
+            vec![input_port("A"), input_port("B")],
+            vec![],
+        ));
+        let client = start_client(Arc::clone(&backend), RecordingPublisher::new()).await;
+        let open_ports = || backend.state.lock().unwrap().senders.len();
+        assert_eq!(open_ports(), 2, "both inputs open while running");
+
+        client.shutdown().await.unwrap();
+
+        let stopped = tokio::time::timeout(Duration::from_secs(2), async {
+            while open_ports() > 0 || Arc::strong_count(&client) > 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(
+            stopped.is_ok(),
+            "{} port(s) open, {} extra client holder(s) after shutdown",
+            open_ports(),
+            Arc::strong_count(&client) - 1
+        );
+    }
 }

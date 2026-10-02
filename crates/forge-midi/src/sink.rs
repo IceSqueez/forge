@@ -77,4 +77,47 @@ pub(crate) mod tests {
             Ok(())
         }
     }
+
+    #[tokio::test]
+    async fn switchable_sink_reaches_only_the_currently_installed_engine() {
+        use crate::backend::MidiBackend;
+        use crate::backend::tests::MockMidiBackend;
+        use crate::config::MidiConfig;
+        use crate::events::{MidiPortInfo, PortDirection};
+
+        struct NoopPublisher;
+        impl forge_events::EventPublisher for NoopPublisher {
+            fn publish(&self, _: forge_events::Event) {}
+        }
+
+        let note = MidiOutMessage::NoteOn {
+            note: 60,
+            velocity: 100,
+            channel: 0,
+        };
+        let backend = Arc::new(MockMidiBackend::new(
+            vec![],
+            vec![MidiPortInfo {
+                name: "Out".to_owned(),
+                direction: PortDirection::Output,
+            }],
+        ));
+        let sink = SwitchableMidiSink::new();
+
+        let before = sink.send_output("Out", &note).await;
+        sink.install(MidiClient::start(
+            MidiConfig::default(),
+            Arc::new(NoopPublisher),
+            Arc::clone(&backend) as Arc<dyn MidiBackend>,
+        ));
+        let installed = sink.send_output("Out", &note).await;
+        let taken = sink.take();
+        let after = sink.send_output("Out", &note).await;
+
+        assert!(matches!(before, Err(MidiError::SupervisorUnavailable)));
+        assert!(installed.is_ok());
+        assert!(taken.is_some());
+        assert!(matches!(after, Err(MidiError::SupervisorUnavailable)));
+        assert_eq!(backend.sent_outputs().len(), 1);
+    }
 }

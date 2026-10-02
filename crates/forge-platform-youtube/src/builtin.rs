@@ -1186,4 +1186,26 @@ mod tests {
             HealthValue::Status { active: true, .. }
         ));
     }
+
+    #[tokio::test]
+    async fn shutting_down_twice_disconnects_and_stops_every_bridge_that_holds_the_bundle() {
+        let (bundle, platform) = make_bundle(Arc::new(EmptyRepo));
+        platform.connect().await.unwrap();
+
+        bundle.shutdown().await;
+        bundle.shutdown().await;
+
+        let released = tokio::time::timeout(Duration::from_secs(2), async {
+            while Arc::strong_count(&bundle) > 1 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(
+            released.is_ok(),
+            "{} task(s) still hold the bundle after shutdown",
+            Arc::strong_count(&bundle) - 1
+        );
+        assert!(!platform.connection_state().is_connected());
+    }
 }

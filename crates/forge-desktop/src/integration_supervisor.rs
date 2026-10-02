@@ -419,3 +419,497 @@ impl IntegrationSlot {
         });
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use forge_events::{Event, EventPublisher};
+    use forge_platform_core::SectionIcon;
+    use forge_runtime::spawn_live_viewer_aggregator;
+    use forge_storage::credentials::MockCredentialsRepo;
+    use forge_storage::integration_enabled_key;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct MemorySettings(Mutex<HashMap<String, String>>);
+
+    impl MemorySettings {
+        fn value(&self, key: &str) -> Option<String> {
+            self.0.lock().unwrap().get(key).cloned()
+        }
+    }
+
+    #[async_trait]
+    impl SettingsRepo for MemorySettings {
+        async fn get_string(&self, key: &str) -> Result<Option<String>, StorageError> {
+            Ok(self.value(key))
+        }
+        async fn set_string(&self, key: &str, value: &str) -> Result<(), StorageError> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(key.to_owned(), value.to_owned());
+            Ok(())
+        }
+        async fn delete(&self, key: &str) -> Result<bool, StorageError> {
+            Ok(self.0.lock().unwrap().remove(key).is_some())
+        }
+        async fn load_all(&self) -> Result<HashMap<String, String>, StorageError> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+    }
+
+    struct NoopPublisher;
+
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    #[derive(Default)]
+    struct Behaviour {
+        configured: bool,
+        hold_start: Option<oneshot::Receiver<()>>,
+        fail_once: Option<String>,
+        teardown_hangs: bool,
+        installs_object: bool,
+    }
+
+    struct FakeFactory {
+        id: IntegrationId,
+        behaviour: Mutex<Behaviour>,
+        configured: bool,
+        teardown_hangs: bool,
+        installs_object: bool,
+        starts: AtomicUsize,
+        teardowns: Arc<AtomicUsize>,
+        held_by_tasks: Arc<()>,
+    }
+
+    impl FakeFactory {
+        fn new(id: &'static str, behaviour: Behaviour) -> Arc<Self> {
+            Arc::new(Self {
+                id: IntegrationId::from_static(id),
+                configured: behaviour.configured,
+                teardown_hangs: behaviour.teardown_hangs,
+                installs_object: behaviour.installs_object,
+                behaviour: Mutex::new(behaviour),
+                starts: AtomicUsize::new(0),
+                teardowns: Arc::new(AtomicUsize::new(0)),
+                held_by_tasks: Arc::new(()),
+            })
+        }
+
+        fn starts(&self) -> usize {
+            self.starts.load(Ordering::SeqCst)
+        }
+
+        fn teardowns(&self) -> usize {
+            self.teardowns.load(Ordering::SeqCst)
+        }
+
+        fn live_tasks(&self) -> usize {
+            Arc::strong_count(&self.held_by_tasks) - 1
+        }
+    }
+
+    #[async_trait]
+    impl IntegrationFactory for FakeFactory {
+        fn id(&self) -> IntegrationId {
+            self.id.clone()
+        }
+
+        async fn is_configured(&self) -> Result<bool, StorageError> {
+            Ok(self.configured)
+        }
+
+        async fn start(&self) -> Result<RunningIntegration, String> {
+            self.starts.fetch_add(1, Ordering::SeqCst);
+            let (hold, failure) = {
+                let mut behaviour = self.behaviour.lock().unwrap();
+                (behaviour.hold_start.take(), behaviour.fail_once.take())
+            };
+            if let Some(hold) = hold {
+                let _ = hold.await;
+            }
+            if let Some(reason) = failure {
+                return Err(reason);
+            }
+            let mut tasks = TaskGroup::default();
+            let held = Arc::clone(&self.held_by_tasks);
+            tasks.track(tokio::spawn(async move {
+                let _held = held;
+                std::future::pending::<()>().await;
+            }));
+            let teardowns = Arc::clone(&self.teardowns);
+            let hangs = self.teardown_hangs;
+            let mut running = RunningIntegration::idle().with_teardown(Box::pin(async move {
+                tasks.abort_all();
+                teardowns.fetch_add(1, Ordering::SeqCst);
+                if hangs {
+                    std::future::pending::<()>().await;
+                }
+            }));
+            if self.installs_object {
+                let client = forge_discord::DiscordClient::new(
+                    forge_discord::DiscordConfig::default(),
+                    Arc::new(NoopPublisher),
+                    Arc::new(MockCredentialsRepo::new()),
+                );
+                running = running.with_object(BuiltinObject {
+                    icon: SectionIcon::new("brand-discord"),
+                    status: client.clone(),
+                    health: client.clone(),
+                    content: client.clone(),
+                    quick: client,
+                    control: None,
+                    collections: None,
+                    obs_client: None,
+                    vtube_client: None,
+                });
+            }
+            Ok(running)
+        }
+    }
+
+    struct Harness {
+        supervisor: IntegrationSupervisor,
+        settings: Arc<MemorySettings>,
+        gate: IntegrationGate,
+        builtins: BuiltinRegistry,
+    }
+
+    impl Harness {
+        fn launch(factory: &Arc<FakeFactory>) -> Self {
+            let settings = Arc::new(MemorySettings::default());
+            let gate = IntegrationGate::new();
+            let builtins = BuiltinRegistry::default();
+            let supervisor = IntegrationSupervisor::launch(
+                vec![Arc::clone(factory) as Arc<dyn IntegrationFactory>],
+                Arc::clone(&settings) as Arc<dyn SettingsRepo>,
+                gate.clone(),
+                builtins.clone(),
+                spawn_live_viewer_aggregator(),
+            );
+            Self {
+                supervisor,
+                settings,
+                gate,
+                builtins,
+            }
+        }
+
+        fn slot(&self, factory: &FakeFactory) -> IntegrationSlot {
+            self.supervisor.slot(&factory.id).expect("declared slot")
+        }
+    }
+
+    async fn settle_tasks(done: impl Fn() -> bool) -> bool {
+        for _ in 0..200 {
+            if done() {
+                return true;
+            }
+            tokio::task::yield_now().await;
+        }
+        done()
+    }
+
+    #[tokio::test]
+    async fn a_launched_integration_stays_stopped_with_its_steps_gated_until_enabled() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+
+        let harness = Harness::launch(&factory);
+
+        assert_eq!(
+            harness.supervisor.state_of(&factory.id),
+            LifecycleState::Disabled
+        );
+        assert!(harness.gate.is_disabled(&factory.id));
+        assert_eq!(factory.starts(), 0);
+    }
+
+    #[tokio::test]
+    async fn boot_starts_only_integrations_resolved_as_enabled() {
+        for (stored, configured, expect_running) in [
+            (None, true, true),
+            (None, false, false),
+            (Some("false"), true, false),
+            (Some("true"), false, true),
+        ] {
+            let factory = FakeFactory::new(
+                "twitch",
+                Behaviour {
+                    configured,
+                    ..Behaviour::default()
+                },
+            );
+            let harness = Harness::launch(&factory);
+            if let Some(value) = stored {
+                harness
+                    .settings
+                    .set_string(&integration_enabled_key(&factory.id), value)
+                    .await
+                    .unwrap();
+            }
+
+            harness.supervisor.boot().await;
+
+            let case = format!("stored {stored:?}, configured {configured}");
+            assert_eq!(
+                harness.supervisor.state_of(&factory.id) == LifecycleState::Running,
+                expect_running,
+                "{case}"
+            );
+            assert_eq!(factory.starts(), usize::from(expect_running), "{case}");
+            assert_eq!(
+                harness
+                    .settings
+                    .value(&integration_enabled_key(&factory.id))
+                    .as_deref(),
+                Some(if expect_running { "true" } else { "false" }),
+                "{case}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn enabling_starts_installs_and_opens_the_gate_and_disabling_reverses_all_of_it() {
+        let factory = FakeFactory::new(
+            "discord",
+            Behaviour {
+                installs_object: true,
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+
+        let enabled = slot.set_enabled(true).await.unwrap();
+
+        assert_eq!(enabled, LifecycleState::Running);
+        assert!(!harness.gate.is_disabled(&factory.id));
+        assert!(harness.builtins.get(&factory.id).is_some());
+        assert_eq!(
+            harness
+                .settings
+                .value(&integration_enabled_key(&factory.id))
+                .as_deref(),
+            Some("true")
+        );
+
+        let disabled = slot.set_enabled(false).await.unwrap();
+
+        assert_eq!(disabled, LifecycleState::Disabled);
+        assert!(harness.gate.is_disabled(&factory.id));
+        assert!(harness.builtins.get(&factory.id).is_none());
+        assert_eq!(factory.teardowns(), 1);
+        assert_eq!(
+            harness
+                .settings
+                .value(&integration_enabled_key(&factory.id))
+                .as_deref(),
+            Some("false")
+        );
+    }
+
+    #[tokio::test]
+    async fn enabling_an_already_running_integration_does_not_restart_it() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+
+        slot.set_enabled(true).await.unwrap();
+        let again = slot.set_enabled(true).await.unwrap();
+
+        assert_eq!(again, LifecycleState::Running);
+        assert_eq!(factory.starts(), 1);
+        assert_eq!(factory.teardowns(), 0);
+    }
+
+    #[tokio::test]
+    async fn disabling_a_stopped_integration_runs_no_teardown() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let harness = Harness::launch(&factory);
+
+        let state = harness.slot(&factory).set_enabled(false).await.unwrap();
+
+        assert_eq!(state, LifecycleState::Disabled);
+        assert_eq!(factory.teardowns(), 0);
+    }
+
+    async fn toggle_while_starting(final_enabled: bool) -> (Arc<FakeFactory>, Harness) {
+        let (release, hold) = oneshot::channel();
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                hold_start: Some(hold),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        let first = tokio::spawn({
+            let slot = slot.clone();
+            async move { slot.set_enabled(true).await }
+        });
+        assert!(
+            settle_tasks(|| factory.starts() == 1).await,
+            "start never began"
+        );
+
+        let mut toggles = Vec::new();
+        for enabled in [false, true, false, true, final_enabled] {
+            let slot = slot.clone();
+            toggles.push(tokio::spawn(async move { slot.set_enabled(enabled).await }));
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+        }
+        assert_eq!(
+            harness.supervisor.state_of(&factory.id),
+            LifecycleState::Starting
+        );
+        release.send(()).unwrap();
+
+        first.await.unwrap().unwrap();
+        for toggle in toggles {
+            toggle.await.unwrap().unwrap();
+        }
+        (factory, harness)
+    }
+
+    #[tokio::test]
+    async fn rapid_toggles_during_a_start_coalesce_to_the_last_wish_without_restarting() {
+        let (factory, harness) = toggle_while_starting(true).await;
+
+        assert_eq!(
+            harness.supervisor.state_of(&factory.id),
+            LifecycleState::Running
+        );
+        assert_eq!(factory.starts(), 1);
+        assert_eq!(factory.teardowns(), 0);
+        assert!(!harness.gate.is_disabled(&factory.id));
+    }
+
+    #[tokio::test]
+    async fn disabling_during_a_start_tears_the_fresh_instance_down_once_it_is_up() {
+        let (factory, harness) = toggle_while_starting(false).await;
+
+        assert_eq!(
+            harness.supervisor.state_of(&factory.id),
+            LifecycleState::Disabled
+        );
+        assert_eq!(factory.starts(), 1);
+        assert_eq!(factory.teardowns(), 1);
+        assert!(harness.gate.is_disabled(&factory.id));
+        assert!(settle_tasks(|| factory.live_tasks() == 0).await);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_teardown_that_never_finishes_is_abandoned_at_the_bound() {
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                teardown_hangs: true,
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        slot.set_enabled(true).await.unwrap();
+        let began = tokio::time::Instant::now();
+
+        let state = tokio::time::timeout(TEARDOWN_BOUND * 2, slot.set_enabled(false))
+            .await
+            .expect("disable must settle once the teardown bound passes")
+            .unwrap();
+
+        assert_eq!(state, LifecycleState::Disabled);
+        assert_eq!(began.elapsed(), TEARDOWN_BOUND);
+        assert!(harness.gate.is_disabled(&factory.id));
+    }
+
+    #[tokio::test]
+    async fn repeated_enable_disable_cycles_leave_no_integration_task_alive() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+
+        for cycle in 0..3 {
+            slot.set_enabled(true).await.unwrap();
+            assert!(
+                settle_tasks(|| factory.live_tasks() == 1).await,
+                "cycle {cycle}: the running instance owns exactly one task"
+            );
+            slot.set_enabled(false).await.unwrap();
+            assert!(
+                settle_tasks(|| factory.live_tasks() == 0).await,
+                "cycle {cycle}: {} task(s) survived the disable",
+                factory.live_tasks()
+            );
+        }
+        assert_eq!((factory.starts(), factory.teardowns()), (3, 3));
+    }
+
+    #[tokio::test]
+    async fn a_failed_start_keeps_the_gate_closed_and_a_later_enable_retries() {
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                fail_once: Some("token rejected".to_owned()),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+
+        let failed = slot.set_enabled(true).await.unwrap();
+
+        assert_eq!(failed, LifecycleState::Failed("token rejected".to_owned()));
+        assert!(harness.gate.is_disabled(&factory.id));
+
+        let retried = slot.set_enabled(true).await.unwrap();
+
+        assert_eq!(retried, LifecycleState::Running);
+        assert_eq!(factory.starts(), 2);
+        assert!(!harness.gate.is_disabled(&factory.id));
+    }
+
+    #[tokio::test]
+    async fn activating_a_running_integration_rebuilds_it_and_hands_back_the_new_object() {
+        let factory = FakeFactory::new(
+            "discord",
+            Behaviour {
+                installs_object: true,
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        slot.set_enabled(true).await.unwrap();
+
+        let object = slot.activate().await;
+
+        assert!(object.is_ok());
+        assert_eq!((factory.starts(), factory.teardowns()), (2, 1));
+        assert!(settle_tasks(|| factory.live_tasks() == 1).await);
+    }
+
+    #[tokio::test]
+    async fn activating_an_integration_that_starts_without_a_session_reports_an_error() {
+        let factory = FakeFactory::new("twitch", Behaviour::default());
+        let harness = Harness::launch(&factory);
+
+        let result = harness.slot(&factory).activate().await;
+
+        assert!(result.is_err());
+        assert_eq!(
+            harness.supervisor.state_of(&factory.id),
+            LifecycleState::Running
+        );
+    }
+}

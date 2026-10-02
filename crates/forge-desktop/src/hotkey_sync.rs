@@ -891,4 +891,73 @@ mod tests {
         );
         assert_eq!(registered(&client), ["F5", "F9"]);
     }
+
+    struct CountingEngine(std::sync::atomic::AtomicUsize);
+
+    #[async_trait]
+    impl crate::integration_supervisor::IntegrationFactory for CountingEngine {
+        fn id(&self) -> forge_types::IntegrationId {
+            forge_hotkey::HOTKEY_INTEGRATION.id
+        }
+        async fn is_configured(&self) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+        async fn start(&self) -> Result<crate::integration_supervisor::RunningIntegration, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::integration_supervisor::RunningIntegration::idle())
+        }
+    }
+
+    async fn engine_starts_after(starts: &CountingEngine, at_least: usize) -> bool {
+        tokio::time::timeout(STILL_WAITING, async {
+            while starts.0.load(Ordering::SeqCst) < at_least {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+
+    #[tokio::test]
+    async fn only_a_binding_added_after_boot_switches_the_disabled_engine_on() {
+        let synced = synced().await;
+        let engine = Arc::new(CountingEngine(std::sync::atomic::AtomicUsize::new(0)));
+        let provider: &Arc<dyn DataProvider> = &synced.storage;
+        let supervisor = crate::integration_supervisor::IntegrationSupervisor::launch(
+            vec![Arc::clone(&engine) as Arc<dyn crate::integration_supervisor::IntegrationFactory>],
+            Arc::clone(provider) as Arc<dyn forge_storage::SettingsRepo>,
+            forge_runtime::IntegrationGate::new(),
+            crate::integrations::BuiltinRegistry::default(),
+            forge_runtime::spawn_live_viewer_aggregator(),
+        );
+        synced.reconciler.enable_engine_on_new_bindings(
+            supervisor
+                .slot(&forge_hotkey::HOTKEY_INTEGRATION.id)
+                .unwrap(),
+        );
+        synced
+            .stored
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("F5")))
+            .await
+            .unwrap();
+
+        synced.reconciler.reconcile().await;
+        synced.reconciler.reconcile().await;
+        let started_at_boot = engine_starts_after(&engine, 1).await;
+        synced
+            .repo
+            .save(&instance(HOTKEY_PRESSED_KIND, Some("F6")))
+            .await
+            .unwrap();
+        let started_on_new_binding = engine_starts_after(&engine, 1).await;
+
+        assert!(
+            !started_at_boot,
+            "existing bindings must not override the stored choice"
+        );
+        assert!(
+            started_on_new_binding,
+            "a new binding must switch the engine on"
+        );
+    }
 }

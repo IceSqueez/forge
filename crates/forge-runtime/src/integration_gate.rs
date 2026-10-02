@@ -134,3 +134,224 @@ where
         result = run => result,
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::pin::pin;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use forge_events::{Event, EventPublisher};
+    use forge_types::EventId;
+    use futures_util::FutureExt;
+    use tokio::sync::oneshot;
+
+    use super::*;
+
+    struct NoopPublisher;
+
+    impl EventPublisher for NoopPublisher {
+        fn publish(&self, _: Event) {}
+    }
+
+    struct DropFlag(Arc<AtomicBool>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    fn twitch() -> IntegrationId {
+        IntegrationId::from_static("twitch")
+    }
+
+    fn kick() -> IntegrationId {
+        IntegrationId::from_static("kick")
+    }
+
+    fn telemetry(ctx: &RunContext<'_>, outcome: SubActionOutcome) -> SubActionTelemetry {
+        StepTimer::start(ctx, "test.step").finish(outcome)
+    }
+
+    async fn run_once(
+        gate: &IntegrationGate,
+        owner: Option<&IntegrationId>,
+        ran: &AtomicBool,
+    ) -> SubActionOutcome {
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let (tel, _) = run_gated_step(gate, owner, &ctx, "test.step", async {
+            ran.store(true, Ordering::SeqCst);
+            (telemetry(&ctx, SubActionOutcome::Success), None)
+        })
+        .await;
+        tel.outcome
+    }
+
+    #[tokio::test]
+    async fn a_step_of_a_disabled_integration_never_runs_and_fails_as_integration_disabled() {
+        let gate = IntegrationGate::new();
+        gate.disable(twitch());
+        let ran = AtomicBool::new(false);
+
+        let outcome = run_once(&gate, Some(&twitch()), &ran).await;
+
+        assert_eq!(outcome, SubActionOutcome::IntegrationDisabled(twitch()));
+        assert!(!ran.load(Ordering::SeqCst), "the runner must not execute");
+    }
+
+    #[tokio::test]
+    async fn a_step_of_an_enabled_integration_runs_and_keeps_its_own_outcome() {
+        let gate = IntegrationGate::new();
+        gate.disable(kick());
+        let ran = AtomicBool::new(false);
+
+        let outcome = run_once(&gate, Some(&twitch()), &ran).await;
+
+        assert_eq!(outcome, SubActionOutcome::Success);
+        assert!(ran.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn a_core_step_runs_regardless_of_disabled_integrations() {
+        let gate = IntegrationGate::new();
+        gate.disable(twitch());
+        let ran = AtomicBool::new(false);
+
+        let outcome = run_once(&gate, None, &ran).await;
+
+        assert_eq!(outcome, SubActionOutcome::Success);
+        assert!(ran.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn re_enabling_an_integration_admits_its_steps_again() {
+        let gate = IntegrationGate::new();
+        gate.disable(twitch());
+        gate.enable(&twitch());
+        let ran = AtomicBool::new(false);
+
+        let outcome = run_once(&gate, Some(&twitch()), &ran).await;
+
+        assert_eq!(outcome, SubActionOutcome::Success);
+        assert!(!gate.is_disabled(&twitch()));
+    }
+
+    #[tokio::test]
+    async fn disabling_mid_flight_cancels_the_running_step_and_drops_its_work() {
+        let gate = IntegrationGate::new();
+        let owner = twitch();
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let dropped = Arc::new(AtomicBool::new(false));
+        let guard = DropFlag(Arc::clone(&dropped));
+        let (_never_tx, never_rx) = oneshot::channel::<()>();
+        let mut step = pin!(run_gated_step(
+            &gate,
+            Some(&owner),
+            &ctx,
+            "test.step",
+            async {
+                let _guard = guard;
+                let _ = never_rx.await;
+                (telemetry(&ctx, SubActionOutcome::Success), None)
+            },
+        ));
+        assert!(
+            step.as_mut().now_or_never().is_none(),
+            "step must be in flight"
+        );
+
+        let cancelled = gate.disable(twitch());
+        let (tel, produced) = step.await;
+
+        assert_eq!(cancelled, 1);
+        assert_eq!(tel.outcome, SubActionOutcome::IntegrationDisabled(twitch()));
+        assert!(produced.is_none());
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "the runner future must be dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn disabling_another_integration_leaves_an_in_flight_step_running() {
+        let gate = IntegrationGate::new();
+        let owner = twitch();
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let (release_tx, release_rx) = oneshot::channel::<()>();
+        let mut step = pin!(run_gated_step(
+            &gate,
+            Some(&owner),
+            &ctx,
+            "test.step",
+            async {
+                let _ = release_rx.await;
+                (telemetry(&ctx, SubActionOutcome::Success), None)
+            },
+        ));
+        assert!(step.as_mut().now_or_never().is_none());
+
+        let cancelled = gate.disable(kick());
+        release_tx.send(()).unwrap();
+        let (tel, _) = step.await;
+
+        assert_eq!(cancelled, 0);
+        assert_eq!(tel.outcome, SubActionOutcome::Success);
+    }
+
+    #[tokio::test]
+    async fn finished_and_abandoned_steps_are_released_from_the_in_flight_set() {
+        let gate = IntegrationGate::new();
+        let owner = twitch();
+        let ran = AtomicBool::new(false);
+        run_once(&gate, Some(&twitch()), &ran).await;
+
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let (_never_tx, never_rx) = oneshot::channel::<()>();
+        {
+            let mut abandoned = pin!(run_gated_step(
+                &gate,
+                Some(&owner),
+                &ctx,
+                "test.step",
+                async {
+                    let _ = never_rx.await;
+                    (telemetry(&ctx, SubActionOutcome::Success), None)
+                },
+            ));
+            assert!(abandoned.as_mut().now_or_never().is_none());
+        }
+
+        assert_eq!(gate.disable(twitch()), 0);
+    }
+
+    #[tokio::test]
+    async fn every_in_flight_step_of_the_integration_is_cancelled_at_once() {
+        let gate = IntegrationGate::new();
+        let owner = twitch();
+        let stack = ArgStack::new();
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NoopPublisher);
+        let (_tx_a, rx_a) = oneshot::channel::<()>();
+        let (_tx_b, rx_b) = oneshot::channel::<()>();
+        let mut first = pin!(run_gated_step(&gate, Some(&owner), &ctx, "a", async {
+            let _ = rx_a.await;
+            (telemetry(&ctx, SubActionOutcome::Success), None)
+        }));
+        let mut second = pin!(run_gated_step(&gate, Some(&owner), &ctx, "b", async {
+            let _ = rx_b.await;
+            (telemetry(&ctx, SubActionOutcome::Success), None)
+        }));
+        assert!(first.as_mut().now_or_never().is_none());
+        assert!(second.as_mut().now_or_never().is_none());
+
+        assert_eq!(gate.disable(twitch()), 2);
+        let (a, b) = tokio::join!(first, second);
+
+        assert_eq!(a.0.outcome, SubActionOutcome::IntegrationDisabled(twitch()));
+        assert_eq!(b.0.outcome, SubActionOutcome::IntegrationDisabled(twitch()));
+    }
+}

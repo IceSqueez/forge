@@ -1,5 +1,5 @@
 use super::*;
-use crate::async_bridge::{BridgeFlow, drain_events};
+use crate::async_bridge::{BridgeFlow, drain_subscription};
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, MenuItem, Radius, Spacing, body_family,
     context_menu, ghost_button_with_icon, menu_header, menu_item, modal, mono_family,
@@ -144,9 +144,9 @@ impl TestRunModal {
             note,
         } = launch;
 
-        let bridge_bus = Arc::clone(&bus);
+        let subscription = bus.subscribe();
         let bridge = cx.spawn(async move |this, cx| {
-            drain_events(&bridge_bus, cx, move |batch, cx| {
+            drain_subscription(subscription, cx, move |batch, cx| {
                 for event in batch {
                     match this.update(cx, |this, cx| this.on_test_event(event, cx)) {
                         Ok(true) | Err(_) => return BridgeFlow::Stop,

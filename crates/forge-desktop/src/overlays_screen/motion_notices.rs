@@ -151,3 +151,108 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const REVEAL_TARGET: &str = "stage";
+
+    fn notices(issues: &[MotionIssue]) -> MotionNotices {
+        MotionNotices {
+            issues: issues.to_vec(),
+            reveal_target: REVEAL_TARGET.to_owned(),
+        }
+    }
+
+    fn noted(notices: &MotionNotices) -> Vec<(&'static str, usize)> {
+        [ENTRANCE, TEXT_EFFECT, EXIT, "intensity", "duration"]
+            .into_iter()
+            .map(|key| (key, notices.notes_for(key).len()))
+            .collect()
+    }
+
+    #[test]
+    fn no_issues_put_no_note_on_any_field() {
+        assert_eq!(
+            noted(&MotionNotices::default()),
+            vec![
+                (ENTRANCE, 0),
+                (TEXT_EFFECT, 0),
+                (EXIT, 0),
+                ("intensity", 0),
+                ("duration", 0)
+            ]
+        );
+    }
+
+    #[test]
+    fn each_issue_notes_only_the_preset_fields_it_breaks() {
+        for (issue, expected) in [
+            (
+                MotionIssue::RevealTargetMissing,
+                vec![
+                    (ENTRANCE, 1),
+                    (TEXT_EFFECT, 1),
+                    (EXIT, 1),
+                    ("intensity", 0),
+                    ("duration", 0),
+                ],
+            ),
+            (
+                MotionIssue::RevealCallMissing,
+                vec![
+                    (ENTRANCE, 1),
+                    (TEXT_EFFECT, 1),
+                    (EXIT, 1),
+                    ("intensity", 0),
+                    ("duration", 0),
+                ],
+            ),
+            (
+                MotionIssue::TextTargetsMissing,
+                vec![
+                    (ENTRANCE, 0),
+                    (TEXT_EFFECT, 1),
+                    (EXIT, 0),
+                    ("intensity", 0),
+                    ("duration", 0),
+                ],
+            ),
+            (
+                MotionIssue::RetiredAnimationRules,
+                vec![
+                    (ENTRANCE, 1),
+                    (TEXT_EFFECT, 0),
+                    (EXIT, 1),
+                    ("intensity", 0),
+                    ("duration", 0),
+                ],
+            ),
+        ] {
+            assert_eq!(noted(&notices(&[issue])), expected, "{issue:?}");
+        }
+    }
+
+    #[test]
+    fn issues_stack_on_a_field_they_share() {
+        let both = notices(&[
+            MotionIssue::TextTargetsMissing,
+            MotionIssue::RevealCallMissing,
+        ]);
+
+        assert_eq!(both.notes_for(TEXT_EFFECT).len(), 2);
+        assert_eq!(both.notes_for(ENTRANCE).len(), 1);
+    }
+
+    #[test]
+    fn missing_target_note_names_the_element_the_user_must_add() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let note = notices(&[MotionIssue::RevealTargetMissing])
+            .notes_for(ENTRANCE)
+            .remove(0);
+
+        assert!(note.contains(REVEAL_TARGET), "{note}");
+        assert!(note.contains(MARKUP_FILE), "{note}");
+    }
+}

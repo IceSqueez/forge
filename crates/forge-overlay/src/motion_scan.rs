@@ -82,3 +82,119 @@ fn names_id(value: &str, id: &str) -> bool {
             || rest.starts_with(|c: char| c.is_whitespace() || VALUE_TERMINATORS.contains(&c))
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kinds::alert::AlertOverlayKind;
+    use crate::kinds::blank::BlankOverlayKind;
+    use crate::kinds::goal::GoalOverlayKind;
+
+    #[test]
+    fn id_attribute_is_recognised_in_every_legal_spelling_and_never_in_lookalikes() {
+        for (markup, declared) in [
+            (r#"<div id="stage">"#, true),
+            (r#"<div ID="stage">"#, true),
+            (r#"<div Id='stage'>"#, true),
+            (r#"<div id = "stage">"#, true),
+            ("<div id\n=\n'stage'>", true),
+            (r#"<div class="a" id="stage" >"#, true),
+            ("<div\n\tid=\"stage\">", true),
+            ("<div id=stage>", true),
+            (r#"<div id="stage"/>"#, true),
+            (r#"<div data-id="stage">"#, false),
+            (r#"<div sid="stage">"#, false),
+            (r#"<div id="stages">"#, false),
+            (r#"<div id="stage-2">"#, false),
+            (r#"<div id="main">"#, false),
+            (r#"<div class="id stage">"#, false),
+            (r#"<div id:"stage">"#, false),
+            ("", false),
+        ] {
+            assert_eq!(declares_id(markup, "stage"), declared, "{markup:?}");
+        }
+    }
+
+    #[test]
+    fn a_later_declaration_counts_after_an_earlier_lookalike() {
+        assert!(declares_id(
+            r#"<i data-id="stage"></i><div id="stage"></div>"#,
+            "stage"
+        ));
+    }
+
+    #[test]
+    fn missing_reveal_target_is_reported_for_markup_without_the_stage_id() {
+        let issues = motion_issues(
+            &AlertOverlayKind,
+            OverriddenSources {
+                markup: Some(r#"<div data-bind="headline" id="main"></div>"#),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(issues, vec![MotionIssue::RevealTargetMissing]);
+    }
+
+    #[test]
+    fn text_effect_without_any_bound_element_is_reported_only_for_kinds_with_the_text_axis() {
+        let markup = Some(r#"<div id="stage"></div>"#);
+        let sources = OverriddenSources {
+            markup,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            motion_issues(&GoalOverlayKind, sources),
+            vec![MotionIssue::TextTargetsMissing]
+        );
+        let profile_without_text = motion_issues(&crate::kinds::frame::FrameOverlayKind, sources);
+        assert!(profile_without_text.is_empty());
+    }
+
+    #[test]
+    fn behavior_without_reveal_call_and_style_with_retired_rules_are_each_reported() {
+        let issues = motion_issues(
+            &AlertOverlayKind,
+            OverriddenSources {
+                markup: None,
+                behavior: Some("render();"),
+                style: Some("#stage { data-animation: x }"),
+            },
+        );
+
+        assert_eq!(
+            issues,
+            vec![
+                MotionIssue::RevealCallMissing,
+                MotionIssue::RetiredAnimationRules
+            ]
+        );
+    }
+
+    #[test]
+    fn compliant_overrides_and_non_overridden_files_report_nothing() {
+        let clean = OverriddenSources {
+            markup: Some(r#"<div id="stage" data-bind="x"></div>"#),
+            behavior: Some("forge.show(render);"),
+            style: Some("#stage {}"),
+        };
+
+        assert!(motion_issues(&AlertOverlayKind, clean).is_empty());
+        assert!(motion_issues(&AlertOverlayKind, OverriddenSources::default()).is_empty());
+    }
+
+    #[test]
+    fn a_kind_without_motion_never_reports_issues() {
+        let issues = motion_issues(
+            &BlankOverlayKind,
+            OverriddenSources {
+                markup: Some(""),
+                behavior: Some(""),
+                style: Some("data-animation"),
+            },
+        );
+
+        assert!(issues.is_empty());
+    }
+}

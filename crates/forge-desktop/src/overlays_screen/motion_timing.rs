@@ -305,3 +305,229 @@ impl OverlaysView {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_overlay::config::DURATION;
+    use forge_overlay::kinds::alert::AlertOverlayKind;
+    use forge_overlay::kinds::blank::BlankOverlayKind;
+    use forge_overlay::kinds::frame::FrameOverlayKind;
+    use forge_overlay::kinds::goal::GoalOverlayKind;
+
+    use super::*;
+
+    fn config(entries: &[(&str, Variant)]) -> OverlayConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect()
+    }
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    fn millis(value: u64) -> Option<Duration> {
+        Some(Duration::from_millis(value))
+    }
+
+    #[test]
+    fn timeline_spans_match_the_overlay_crates_show_timing_for_each_config() {
+        for (stored, window, tail) in [
+            (
+                config(&[
+                    (DURATION, Variant::Int(7)),
+                    (EXIT, text("fade")),
+                    (EXIT_MS, Variant::Int(800)),
+                ]),
+                7_000,
+                800,
+            ),
+            (
+                config(&[(DURATION, Variant::Int(3)), (EXIT, text(NO_MOTION))]),
+                3_000,
+                0,
+            ),
+            (
+                config(&[
+                    (EXIT, text("pop")),
+                    (EXIT_MS, Variant::Int(MOTION_MS_MIN - 1)),
+                ]),
+                5_000,
+                MOTION_MS_MIN.unsigned_abs(),
+            ),
+            (
+                config(&[
+                    (EXIT, text("pop")),
+                    (EXIT_MS, Variant::Int(MOTION_MS_MAX + 1)),
+                ]),
+                5_000,
+                MOTION_MS_MAX.unsigned_abs(),
+            ),
+        ] {
+            let timeline = motion_timeline(&AlertOverlayKind, &stored).expect("alert has motion");
+            let oracle = show_timing(&AlertOverlayKind, &stored, None).expect("alert is transient");
+
+            assert_eq!(timeline.on_screen, Some(oracle.window), "{stored:?}");
+            assert_eq!(timeline.total, Some(oracle.total()), "{stored:?}");
+            assert_eq!(timeline.on_screen, millis(window), "{stored:?}");
+            assert_eq!(timeline.total, millis(window + tail), "{stored:?}");
+            assert_eq!(
+                timeline.exit.and_then(|exit| exit.duration),
+                (tail > 0).then(|| Duration::from_millis(tail)),
+                "{stored:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn replacing_kinds_have_no_on_screen_exit_or_total_spans() {
+        let timeline =
+            motion_timeline(&GoalOverlayKind, &OverlayConfig::new()).expect("goal has motion");
+
+        assert_eq!(timeline.on_screen, None);
+        assert_eq!(timeline.exit, None);
+        assert_eq!(timeline.total, None);
+        assert!(timeline.entrance.is_some());
+        assert!(timeline.text.is_some());
+    }
+
+    #[test]
+    fn axes_a_kind_lacks_are_absent_and_a_still_kind_has_no_timeline() {
+        let frame =
+            motion_timeline(&FrameOverlayKind, &OverlayConfig::new()).expect("frame has motion");
+
+        assert!(frame.entrance.is_some());
+        assert_eq!(frame.text, None);
+        assert!(motion_timeline(&BlankOverlayKind, &OverlayConfig::new()).is_none());
+    }
+
+    #[test]
+    fn entrance_duration_is_hidden_for_no_motion_and_clamped_otherwise() {
+        let duration_for = |stored: OverlayConfig| {
+            motion_timeline(&AlertOverlayKind, &stored)
+                .and_then(|timeline| timeline.entrance)
+                .and_then(|entrance| entrance.duration)
+        };
+
+        assert_eq!(duration_for(config(&[(ENTRANCE, text(NO_MOTION))])), None);
+        assert_eq!(
+            duration_for(config(&[
+                (ENTRANCE, text("pop")),
+                (ENTRANCE_MS, Variant::Int(1))
+            ])),
+            millis(MOTION_MS_MIN.unsigned_abs())
+        );
+        assert_eq!(
+            duration_for(config(&[
+                (ENTRANCE, text("pop")),
+                (ENTRANCE_MS, Variant::Int(MOTION_MS_MAX + 1))
+            ])),
+            millis(MOTION_MS_MAX.unsigned_abs())
+        );
+        assert_eq!(
+            duration_for(config(&[(ENTRANCE, text("pop"))])),
+            millis(DEFAULT_ENTRANCE_MS.unsigned_abs())
+        );
+    }
+
+    #[test]
+    fn text_effect_reports_unit_and_stagger_only_when_an_effect_is_chosen_and_stagger_is_custom() {
+        let text_for = |stored: OverlayConfig| {
+            motion_timeline(&GoalOverlayKind, &stored)
+                .and_then(|timeline| timeline.text)
+                .expect("goal has a text axis")
+        };
+
+        let off = text_for(config(&[
+            (TEXT_EFFECT, text(NO_MOTION)),
+            (TEXT_UNIT, text(TEXT_UNIT_WORD)),
+        ]));
+        assert_eq!((off.unit, off.stagger), (None, None));
+
+        let by_word = text_for(config(&[
+            (TEXT_EFFECT, text("wave")),
+            (TEXT_UNIT, text(TEXT_UNIT_WORD)),
+        ]));
+        assert_eq!(
+            (by_word.unit, by_word.stagger),
+            (Some(TextUnit::Word), None)
+        );
+
+        let too_fast = text_for(config(&[
+            (TEXT_EFFECT, text("wave")),
+            (TEXT_STAGGER_CUSTOM, Variant::Bool(true)),
+            (TEXT_STAGGER_MS, Variant::Int(TEXT_STAGGER_MS_MIN - 1)),
+        ]));
+        assert_eq!(
+            (too_fast.unit, too_fast.stagger),
+            (
+                Some(TextUnit::Letter),
+                millis(TEXT_STAGGER_MS_MIN.unsigned_abs())
+            )
+        );
+
+        let too_slow = text_for(config(&[
+            (TEXT_EFFECT, text("wave")),
+            (TEXT_STAGGER_CUSTOM, Variant::Bool(true)),
+            (TEXT_STAGGER_MS, Variant::Int(TEXT_STAGGER_MS_MAX + 1)),
+        ]));
+        assert_eq!(too_slow.stagger, millis(TEXT_STAGGER_MS_MAX.unsigned_abs()));
+    }
+
+    fn plain(rendered: String) -> String {
+        rendered.replace(['\u{2068}', '\u{2069}'], "")
+    }
+
+    fn english() {
+        crate::i18n::install_language(forge_storage::Language::En);
+    }
+
+    #[test]
+    fn spans_under_a_second_read_in_ms_and_longer_ones_in_seconds_with_a_tenth_only_when_nonzero() {
+        english();
+        for (span, expected) in [
+            (0, "0 ms"),
+            (999, "999 ms"),
+            (1_000, "1 s"),
+            (1_200, "1.2 s"),
+            (7_800, "7.8 s"),
+            (12_000, "12 s"),
+        ] {
+            assert_eq!(plain(span_text(Duration::from_millis(span))), expected);
+        }
+    }
+
+    #[test]
+    fn rendered_line_lists_each_phase_in_order_with_the_total_as_window_plus_tail() {
+        english();
+        let stored = config(&[
+            (DURATION, Variant::Int(7)),
+            (ENTRANCE, text("slide-up")),
+            (ENTRANCE_MS, Variant::Int(600)),
+            (TEXT_EFFECT, text("wave")),
+            (TEXT_UNIT, text(TEXT_UNIT_WORD)),
+            (EXIT, text("dust")),
+            (EXIT_MS, Variant::Int(800)),
+        ]);
+
+        let parts: Vec<(String, String)> = motion_timeline(&AlertOverlayKind, &stored)
+            .expect("alert has motion")
+            .parts()
+            .into_iter()
+            .map(|(label, value)| (label, plain(value)))
+            .collect();
+
+        assert_eq!(
+            parts,
+            vec![
+                ("Entrance".to_owned(), "slide-up 600 ms".to_owned()),
+                ("Text".to_owned(), "wave by word".to_owned()),
+                ("On screen".to_owned(), "7 s".to_owned()),
+                ("Exit".to_owned(), "dust 800 ms".to_owned()),
+                ("Total show".to_owned(), "7.8 s".to_owned()),
+            ]
+        );
+    }
+}

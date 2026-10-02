@@ -249,4 +249,9 @@ mod tests {
             assert!(!Screen::accepted_cli_names().contains(&retired));
         }
     }
+
+    #[test]
+    fn the_welcome_name_opens_the_welcome_screen() {
+        assert_eq!(Screen::parse_cli("welcome"), Ok(Screen::Welcome));
+    }
 }

@@ -772,21 +772,17 @@ mod tests {
     use std::collections::HashSet;
     use std::time::Duration;
 
-    use async_trait::async_trait;
-    use forge_runtime::{IntegrationGate, spawn_live_viewer_aggregator};
     use forge_storage::{SettingsRepo, integration_enabled_key};
-    use forge_types::{ActionId, QueueId, SubActionStep};
     use gpui::TestAppContext;
     use tokio::sync::mpsc::UnboundedReceiver;
 
     use super::*;
-    use crate::integration_supervisor::{IntegrationFactory, LifecycleStates, RunningIntegration};
+    use crate::integration_supervisor::LifecycleStates;
     use crate::test_support::{
-        Sandboxed, SettingWrite, action_running, owned_sub_actions, owned_triggers, pump, runtime,
-        sandboxed_backend, step, test_backend, trigger_of,
+        Sandboxed, SettingWrite, idle_supervisor, link, owned_sub_actions, owned_triggers, pump,
+        runtime, sandboxed_provider, seed_action, seed_trigger, step, test_backend,
     };
 
-    const TEST_KEY: [u8; 32] = [0x11; 32];
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
     const SETTLE_ROUNDS: usize = 500;
@@ -803,73 +799,9 @@ mod tests {
         IntegrationId::new("kick")
     }
 
-    struct IdleFactory(IntegrationId);
-
-    #[async_trait]
-    impl IntegrationFactory for IdleFactory {
-        fn id(&self) -> IntegrationId {
-            self.0.clone()
-        }
-
-        async fn is_configured(&self) -> Result<bool, StorageError> {
-            Ok(true)
-        }
-
-        async fn start(&self) -> Result<RunningIntegration, String> {
-            Ok(RunningIntegration::idle())
-        }
-    }
-
-    async fn provider() -> Sandboxed<Arc<dyn DataProvider>> {
-        sandboxed_backend("sqlite::memory:", TEST_KEY)
-            .await
-            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
-    }
-
-    async fn default_queue(backend: &Arc<dyn DataProvider>) -> QueueId {
-        backend
-            .queue_repo()
-            .get_by_name("Default")
-            .await
-            .unwrap()
-            .expect("migrations seed the default queue")
-            .id
-    }
-
-    async fn seed_action(
-        backend: &Arc<dyn DataProvider>,
-        name: &str,
-        steps: Vec<SubActionStep>,
-    ) -> ActionId {
-        let action = Action {
-            queue_id: default_queue(backend).await,
-            ..action_running(name, steps)
-        };
-        backend.action_repo().save(&action).await.unwrap();
-        action.id
-    }
-
-    async fn seed_trigger(backend: &Arc<dyn DataProvider>, kind_id: &str) -> TriggerInstanceId {
-        let instance = trigger_of(kind_id);
-        backend
-            .trigger_instance_repo()
-            .save(&instance)
-            .await
-            .unwrap();
-        instance.id
-    }
-
-    async fn link(backend: &Arc<dyn DataProvider>, action: ActionId, trigger: TriggerInstanceId) {
-        backend
-            .trigger_instance_repo()
-            .link_action(action, trigger, 0)
-            .await
-            .unwrap();
-    }
-
     #[tokio::test]
     async fn only_triggers_wired_to_an_action_are_counted_each_once() {
-        let storage = provider().await;
+        let storage = sandboxed_provider().await;
         let first = seed_action(&storage, "Scene", Vec::new()).await;
         let second = seed_action(&storage, "Alert", Vec::new()).await;
         let shared = seed_trigger(&storage, TWITCH_CHAT).await;
@@ -912,27 +844,23 @@ mod tests {
     }
 
     fn mount(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) -> Hub {
+        mount_as(cx, rt, false)
+    }
+
+    fn mount_as(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime, welcome: bool) -> Hub {
         let storage = rt.block_on(async {
-            let storage = provider().await;
+            let storage = sandboxed_provider().await;
             let scene = seed_action(&storage, "Scene", vec![step(OBS_SCENE, true)]).await;
             let chat = seed_trigger(&storage, TWITCH_CHAT).await;
             link(&storage, scene, chat).await;
             storage
         });
         let (settings, writes) = test_backend();
-        let supervisor = {
-            let _entered = rt.enter();
-            IntegrationSupervisor::launch(
-                [twitch(), obs(), kick()]
-                    .into_iter()
-                    .map(|id| Arc::new(IdleFactory(id)) as Arc<dyn IntegrationFactory>)
-                    .collect(),
-                settings as Arc<dyn SettingsRepo>,
-                IntegrationGate::new(),
-                BuiltinRegistry::default(),
-                spawn_live_viewer_aggregator(),
-            )
-        };
+        let supervisor = idle_supervisor(
+            rt,
+            settings as Arc<dyn SettingsRepo>,
+            &[twitch(), obs(), kick()],
+        );
         let launch = HubLaunch {
             supervisor,
             builtins: BuiltinRegistry::default(),
@@ -944,7 +872,10 @@ mod tests {
         let view = cx.update(|cx| {
             let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
             let connectivity = cx.new(|_| PlatformConnectivity::new());
-            cx.new(|cx| IntegrationsHubView::new(None, lifecycle, connectivity, launch, cx))
+            cx.new(|cx| {
+                let hub = IntegrationsHubView::new(None, lifecycle, connectivity, launch, cx);
+                if welcome { hub.welcome() } else { hub }
+            })
         });
         let mut hub = Hub {
             view,
@@ -1040,5 +971,17 @@ mod tests {
 
         assert_eq!(hub.pending(cx), None);
         assert_eq!(hub.drain_writes(&rt), vec![enabled_write(&obs(), true)]);
+    }
+
+    #[gpui::test]
+    fn the_welcome_hub_disables_a_referenced_integration_without_asking(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut hub = mount_as(cx, &rt, true);
+
+        hub.view
+            .update(cx, |view, cx| view.request_enabled(obs(), false, cx));
+
+        assert_eq!(hub.pending(cx), None);
+        assert_eq!(hub.drain_writes(&rt), vec![enabled_write(&obs(), false)]);
     }
 }

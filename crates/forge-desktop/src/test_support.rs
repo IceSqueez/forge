@@ -1056,3 +1056,96 @@ pub(crate) fn trigger_of(kind_id: &str) -> forge_types::TriggerInstance {
         permission_rung: forge_types::PermissionRung::Everyone,
     }
 }
+
+pub(crate) const STORAGE_KEY: [u8; 32] = [0x11; 32];
+
+pub(crate) struct IdleFactory(pub(crate) forge_types::IntegrationId);
+
+#[async_trait::async_trait]
+impl crate::integration_supervisor::IntegrationFactory for IdleFactory {
+    fn id(&self) -> forge_types::IntegrationId {
+        self.0.clone()
+    }
+
+    async fn is_configured(&self) -> Result<bool, StorageError> {
+        Ok(true)
+    }
+
+    async fn start(&self) -> Result<crate::integration_supervisor::RunningIntegration, String> {
+        Ok(crate::integration_supervisor::RunningIntegration::idle())
+    }
+}
+
+pub(crate) fn idle_supervisor(
+    rt: &tokio::runtime::Runtime,
+    settings: Arc<dyn SettingsRepo>,
+    ids: &[forge_types::IntegrationId],
+) -> crate::integration_supervisor::IntegrationSupervisor {
+    let _entered = rt.enter();
+    crate::integration_supervisor::IntegrationSupervisor::launch(
+        ids.iter()
+            .map(|id| {
+                Arc::new(IdleFactory(id.clone()))
+                    as Arc<dyn crate::integration_supervisor::IntegrationFactory>
+            })
+            .collect(),
+        settings,
+        forge_runtime::IntegrationGate::new(),
+        crate::integrations::BuiltinRegistry::default(),
+        forge_runtime::spawn_live_viewer_aggregator(),
+    )
+}
+
+pub(crate) async fn sandboxed_provider() -> Sandboxed<Arc<dyn DataProvider>> {
+    sandboxed_backend("sqlite::memory:", STORAGE_KEY)
+        .await
+        .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
+}
+
+async fn default_queue(backend: &Arc<dyn DataProvider>) -> forge_types::QueueId {
+    backend
+        .queue_repo()
+        .get_by_name("Default")
+        .await
+        .unwrap()
+        .expect("migrations seed the default queue")
+        .id
+}
+
+pub(crate) async fn seed_action(
+    backend: &Arc<dyn DataProvider>,
+    name: &str,
+    steps: Vec<forge_types::SubActionStep>,
+) -> ActionId {
+    let action = Action {
+        queue_id: default_queue(backend).await,
+        ..action_running(name, steps)
+    };
+    backend.action_repo().save(&action).await.unwrap();
+    action.id
+}
+
+pub(crate) async fn seed_trigger(
+    backend: &Arc<dyn DataProvider>,
+    kind_id: &str,
+) -> forge_types::TriggerInstanceId {
+    let instance = trigger_of(kind_id);
+    backend
+        .trigger_instance_repo()
+        .save(&instance)
+        .await
+        .unwrap();
+    instance.id
+}
+
+pub(crate) async fn link(
+    backend: &Arc<dyn DataProvider>,
+    action: ActionId,
+    trigger: forge_types::TriggerInstanceId,
+) {
+    backend
+        .trigger_instance_repo()
+        .link_action(action, trigger, 0)
+        .await
+        .unwrap();
+}

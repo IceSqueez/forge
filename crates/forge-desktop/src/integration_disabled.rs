@@ -552,3 +552,135 @@ impl Render for IntegrationDisabledView {
         page_frame(crumbs, &palette).header_right(badge).body(body)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use std::time::Duration;
+
+    use forge_storage::{CredentialId, SettingsRepo, integration_enabled_key};
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::integration_supervisor::LifecycleStates;
+    use crate::test_support::{
+        Sandboxed, idle_supervisor, link, owned_sub_actions, owned_triggers, pump, runtime,
+        sandboxed_provider, seed_action, seed_trigger, step, test_backend,
+    };
+
+    const OBS_SCENE: &str = "obs.scene.set";
+    const TWITCH_CHAT: &str = "twitch.chat";
+    const SETTLE_ROUNDS: usize = 500;
+
+    fn obs() -> IntegrationId {
+        IntegrationId::new("obs")
+    }
+
+    fn kick() -> IntegrationId {
+        IntegrationId::new("kick")
+    }
+
+    fn seeded_storage(rt: &tokio::runtime::Runtime) -> Sandboxed<Arc<dyn DataProvider>> {
+        rt.block_on(async {
+            let storage = sandboxed_provider().await;
+            let scene = seed_action(&storage, "Scene", vec![step(OBS_SCENE, true)]).await;
+            let chat = seed_trigger(&storage, TWITCH_CHAT).await;
+            link(&storage, scene, chat).await;
+            (Arc::clone(&storage) as Arc<dyn CredentialsRepo>)
+                .store(&CredentialId::new("obs:password"), "hunter2")
+                .await
+                .unwrap();
+            storage
+        })
+    }
+
+    fn open(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        storage: &Sandboxed<Arc<dyn DataProvider>>,
+        id: IntegrationId,
+        slot: Option<IntegrationSlot>,
+    ) -> Entity<IntegrationDisabledView> {
+        let launch = DisabledLaunch {
+            slot,
+            backend: Arc::clone(storage),
+            sub_actions: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
+            triggers: Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
+            rt_handle: rt.handle().clone(),
+        };
+        cx.update(|cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
+            cx.new(|cx| IntegrationDisabledView::new(id, lifecycle, launch, cx))
+        })
+    }
+
+    fn settle_until(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        view: &Entity<IntegrationDisabledView>,
+        loaded: impl Fn(&IntegrationDisabledView) -> bool,
+    ) -> bool {
+        (0..SETTLE_ROUNDS).any(|_| {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            view.read_with(cx, |view, _| loaded(view))
+        })
+    }
+
+    #[gpui::test]
+    fn the_page_lists_what_the_integration_breaks_and_keeps_its_sign_in(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let storage = seeded_storage(&rt);
+        let view = open(cx, &rt, &storage, obs(), None);
+
+        let loaded = settle_until(cx, &rt, &view, |view| !view.kept.is_empty());
+
+        assert!(loaded, "the page never loaded what is kept");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.references.actions, vec!["Scene".to_owned()]);
+            assert_eq!(view.references.triggers, 0);
+            assert_eq!(view.kept, vec![Kept::Credentials]);
+        });
+    }
+
+    #[gpui::test]
+    fn the_page_of_an_unused_integration_with_no_sign_in_lists_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let storage = seeded_storage(&rt);
+        let view = open(cx, &rt, &storage, kick(), None);
+        view.update(cx, |view, _| {
+            view.apply_loaded(
+                IntegrationReferences {
+                    actions: vec!["stale".to_owned()],
+                    triggers: 1,
+                },
+                true,
+            )
+        });
+
+        let loaded = settle_until(cx, &rt, &view, |view| view.kept.is_empty());
+
+        assert!(loaded, "the page never replaced the stale listing");
+        view.read_with(cx, |view, _| assert_eq!(view.references.total(), 0));
+    }
+
+    #[gpui::test]
+    fn enabling_from_the_page_switches_the_integration_on(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let storage = seeded_storage(&rt);
+        let (settings, mut writes) = test_backend();
+        let supervisor = idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[obs()]);
+        pump(&rt);
+        while writes.try_recv().is_ok() {}
+        let view = open(cx, &rt, &storage, obs(), supervisor.slot(&obs()));
+
+        view.update(cx, |view, cx| view.enable(cx));
+        pump(&rt);
+
+        let written: Vec<_> = std::iter::from_fn(|| writes.try_recv().ok()).collect();
+        assert_eq!(
+            written,
+            vec![(integration_enabled_key(&obs()), "true".to_owned())]
+        );
+    }
+}

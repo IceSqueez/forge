@@ -53,15 +53,32 @@ impl BuiltinStatus for DiscordClient {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_platform_core::{BuiltinStatus, ConnectionState};
 
     use crate::client::DiscordClient;
+    use crate::client::tests::MockCreds;
 
     #[test]
     fn connection_disconnected_when_no_webhooks() {
         let c = DiscordClient::new_for_test();
         let s: &dyn BuiltinStatus = &*c;
         assert_eq!(s.connection(), ConnectionState::Disconnected);
+    }
+
+    #[tokio::test]
+    async fn the_activity_count_shows_configured_webhooks_and_hides_when_there_are_none() {
+        for (webhooks, expected) in [(&[][..], None), (&["alerts", "clips"][..], Some(2))] {
+            let creds = MockCreds::new();
+            for name in webhooks {
+                creds.insert(&format!("discord:{name}"), "{}");
+            }
+            let client = DiscordClient::new_for_test_with_creds(creds.creds());
+            client.list_webhooks().await.unwrap();
+
+            let status: &dyn BuiltinStatus = &*client;
+            assert_eq!(status.activity_count(), expected, "{webhooks:?}");
+        }
     }
 }

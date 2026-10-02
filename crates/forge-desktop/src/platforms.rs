@@ -64,3 +64,32 @@ impl PlatformConnectivity {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_connected_tally_counts_only_enabled_integrations() {
+        let mut connectivity = PlatformConnectivity::new();
+        connectivity.set_connected(Integration::Twitch, true);
+        connectivity.set_connected(Integration::Obs, true);
+        let enabled = |on: &'static [Integration]| move |integ: Integration| on.contains(&integ);
+
+        for (on, expected, case) in [
+            (&[][..], (0, 0), "everything switched off"),
+            (
+                &[Integration::Twitch, Integration::Kick][..],
+                (1, 2),
+                "one of two enabled is connected",
+            ),
+            (
+                &[Integration::Kick][..],
+                (0, 1),
+                "a connected integration that is switched off is not counted",
+            ),
+        ] {
+            assert_eq!(connectivity.tally_enabled(enabled(on)), expected, "{case}");
+        }
+    }
+}

@@ -1303,26 +1303,237 @@ pub(crate) mod tests {
         assert_eq!(remaining, 4);
     }
 
-    #[tokio::test]
-    async fn webhook_url_not_in_error_message_after_network_failure() {
-        use std::time::Duration;
+    fn closed_loopback_port() -> u16 {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    }
 
-        let url = "https://192.0.2.1/api/webhooks/123/SECRET_TOKEN";
-        let creds = MockCreds::new();
-        creds.insert(
-            "discord:test-webhook",
-            &serde_json::json!({ "url": url }).to_string(),
+    #[tokio::test]
+    async fn no_request_path_error_display_echoes_the_webhook_secret() {
+        const SECRET: &str = "SECRET_WEBHOOK_TOKEN";
+        let unreachable = format!(
+            "http://127.0.0.1:{}/api/webhooks/123/{SECRET}",
+            closed_loopback_port()
         );
-        let publisher = MockPublisher::new();
-        let config = DiscordConfig {
-            request_timeout: Duration::from_millis(500),
+        let malformed = format!("http://[::1/api/webhooks/123/{SECRET}");
+        for url in [unreachable, malformed] {
+            let creds = MockCreds::new();
+            creds.insert(
+                "discord:leaky",
+                &serde_json::json!({ "url": url }).to_string(),
+            );
+            let client = DiscordClient::new(
+                DiscordConfig::default(),
+                MockPublisher::new().publisher(),
+                creds.creds(),
+            );
+            let embed = DiscordEmbed {
+                title: Some("t".to_owned()),
+                ..Default::default()
+            };
+            let errors = [
+                client
+                    .post_text_with_mentions("leaky", "hi", MentionPolicy::default())
+                    .await
+                    .unwrap_err(),
+                client.post_embed("leaky", embed).await.unwrap_err(),
+                client
+                    .edit_message_with_mentions(
+                        "leaky",
+                        "1",
+                        Some("hi"),
+                        None,
+                        MentionPolicy::default(),
+                    )
+                    .await
+                    .unwrap_err(),
+                client
+                    .send_file("leaky", Some("hi"), "a.png", &[1])
+                    .await
+                    .unwrap_err(),
+                client.delete_message("leaky", "1").await.unwrap_err(),
+            ];
+            for err in errors {
+                assert!(matches!(err, DiscordError::Connect(_)), "{err:?}");
+                let shown = err.to_string();
+                assert!(!shown.contains(SECRET), "secret leaked from {url}: {shown}");
+                assert!(!shown.contains("/api/webhooks/"), "url leaked: {shown}");
+            }
+        }
+    }
+
+    fn mention_cases() -> [(MentionPolicy, serde_json::Value); 4] {
+        let policy = |allow_roles, allow_everyone| MentionPolicy {
+            allow_roles,
+            allow_everyone,
         };
-        let client = DiscordClient::new(config, publisher.publisher(), creds.creds());
-        let result = client.post_text("test-webhook", "hi").await;
-        let err = result.unwrap_err();
-        let msg = err.to_string();
-        assert!(!msg.contains("SECRET_TOKEN"), "url leaked: {msg}");
-        assert!(!msg.contains("192.0.2.1"), "url leaked: {msg}");
+        [
+            (
+                policy(true, false),
+                serde_json::json!({ "parse": ["users", "roles"] }),
+            ),
+            (
+                policy(true, true),
+                serde_json::json!({ "parse": ["users", "roles", "everyone"] }),
+            ),
+            (
+                policy(false, false),
+                serde_json::json!({ "parse": ["users"] }),
+            ),
+            (
+                policy(false, true),
+                serde_json::json!({ "parse": ["users", "everyone"] }),
+            ),
+        ]
+    }
+
+    async fn request_bodies(server: &MockServer) -> Vec<serde_json::Value> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|request| serde_json::from_slice(&request.body).unwrap())
+            .collect()
+    }
+
+    async fn mount_accepting(server: &MockServer, verb: &str) {
+        Mock::given(method(verb))
+            .respond_with(make_standard_response("msg_mentions"))
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn post_text_sends_the_allowed_mentions_of_each_toggle_combination() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        mount_accepting(&server, "POST").await;
+
+        for (policy, _) in mention_cases() {
+            client
+                .post_text_with_mentions("alerts", "<@&42> @everyone live", policy)
+                .await
+                .unwrap();
+        }
+
+        let sent: Vec<serde_json::Value> = request_bodies(&server)
+            .await
+            .into_iter()
+            .map(|body| body["allowed_mentions"].clone())
+            .collect();
+        let expected: Vec<serde_json::Value> =
+            mention_cases().into_iter().map(|(_, wire)| wire).collect();
+        assert_eq!(sent, expected);
+    }
+
+    #[tokio::test]
+    async fn post_text_without_a_policy_pings_users_and_roles_but_never_everyone() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        mount_accepting(&server, "POST").await;
+
+        client.post_text("alerts", "@everyone test").await.unwrap();
+
+        let bodies = request_bodies(&server).await;
+        assert_eq!(
+            bodies[0]["allowed_mentions"],
+            serde_json::json!({ "parse": ["users", "roles"] })
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_message_sends_the_allowed_mentions_of_each_toggle_combination() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        mount_accepting(&server, "PATCH").await;
+
+        for (policy, _) in mention_cases() {
+            client
+                .edit_message_with_mentions("alerts", "msg1", Some("<@&42> live"), None, policy)
+                .await
+                .unwrap();
+        }
+
+        let sent: Vec<serde_json::Value> = request_bodies(&server)
+            .await
+            .into_iter()
+            .map(|body| body["allowed_mentions"].clone())
+            .collect();
+        let expected: Vec<serde_json::Value> =
+            mention_cases().into_iter().map(|(_, wire)| wire).collect();
+        assert_eq!(sent, expected);
+    }
+
+    #[tokio::test]
+    async fn edit_message_with_only_an_embed_sends_no_allowed_mentions() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        mount_accepting(&server, "PATCH").await;
+        let embed = DiscordEmbed {
+            title: Some("live".to_owned()),
+            ..Default::default()
+        };
+
+        client
+            .edit_message_with_mentions(
+                "alerts",
+                "msg1",
+                None,
+                Some(embed),
+                MentionPolicy {
+                    allow_roles: true,
+                    allow_everyone: true,
+                },
+            )
+            .await
+            .unwrap();
+
+        let body = &request_bodies(&server).await[0];
+        assert!(body.get("allowed_mentions").is_none(), "{body}");
+        assert!(body.get("content").is_none(), "{body}");
+    }
+
+    #[tokio::test]
+    async fn post_embed_sends_no_allowed_mentions() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        mount_accepting(&server, "POST").await;
+        let embed = DiscordEmbed {
+            description: Some("<@&42> @everyone".to_owned()),
+            ..Default::default()
+        };
+
+        client.post_embed("alerts", embed).await.unwrap();
+
+        let body = &request_bodies(&server).await[0];
+        assert!(body.get("allowed_mentions").is_none(), "{body}");
+    }
+
+    fn multipart_field<'a>(body: &'a str, name: &str) -> &'a str {
+        let marker = format!("name=\"{name}\"");
+        let after_header = &body[body.find(&marker).unwrap()..];
+        let value_start = after_header.find("\r\n\r\n").unwrap() + 4;
+        let value = &after_header[value_start..];
+        &value[..value.find("\r\n--").unwrap()]
+    }
+
+    #[tokio::test]
+    async fn send_file_caption_payload_carries_no_allowed_mentions() {
+        let server = MockServer::start().await;
+        let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
+        mount_accepting(&server, "POST").await;
+
+        client
+            .send_file("alerts", Some("@everyone clip"), "clip.png", &[1, 2])
+            .await
+            .unwrap();
+
+        let requests = server.received_requests().await.unwrap();
+        let body = String::from_utf8_lossy(&requests[0].body).into_owned();
+        let payload: serde_json::Value =
+            serde_json::from_str(multipart_field(&body, "payload_json")).unwrap();
+        assert_eq!(payload, serde_json::json!({ "content": "@everyone clip" }));
     }
 
     #[tokio::test]

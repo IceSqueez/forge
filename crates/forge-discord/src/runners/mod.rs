@@ -37,13 +37,19 @@ mod tests {
     use super::*;
     use crate::embed::DiscordEmbed;
     use crate::error::DiscordError;
+    use crate::mention::MentionPolicy;
     use async_trait::async_trait;
 
     struct MockSink;
 
     #[async_trait]
     impl DiscordSink for MockSink {
-        async fn post_text(&self, _: &str, _: &str) -> Result<String, DiscordError> {
+        async fn post_text(
+            &self,
+            _: &str,
+            _: &str,
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
             Ok(String::new())
         }
         async fn post_embed(&self, _: &str, _: DiscordEmbed) -> Result<String, DiscordError> {
@@ -55,6 +61,7 @@ mod tests {
             _: &str,
             _: Option<&str>,
             _: Option<DiscordEmbed>,
+            _: MentionPolicy,
         ) -> Result<(), DiscordError> {
             Ok(())
         }

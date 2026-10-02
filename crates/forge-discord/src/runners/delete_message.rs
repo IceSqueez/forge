@@ -138,6 +138,7 @@ mod tests {
     use super::*;
     use crate::embed::DiscordEmbed;
     use crate::error::DiscordError;
+    use crate::mention::MentionPolicy;
     use forge_events::{Event, EventPublisher};
     use forge_types::EventId;
     use std::sync::Mutex;
@@ -169,7 +170,12 @@ mod tests {
 
     #[async_trait]
     impl DiscordSink for CapturingSink {
-        async fn post_text(&self, _: &str, _: &str) -> Result<String, DiscordError> {
+        async fn post_text(
+            &self,
+            _: &str,
+            _: &str,
+            _: MentionPolicy,
+        ) -> Result<String, DiscordError> {
             Ok(String::new())
         }
         async fn post_embed(&self, _: &str, _: DiscordEmbed) -> Result<String, DiscordError> {
@@ -181,6 +187,7 @@ mod tests {
             _: &str,
             _: Option<&str>,
             _: Option<DiscordEmbed>,
+            _: MentionPolicy,
         ) -> Result<(), DiscordError> {
             Ok(())
         }

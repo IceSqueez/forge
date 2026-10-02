@@ -141,3 +141,40 @@ pub fn disclaimer_of(id: &IntegrationId) -> Option<Disclaimer> {
 pub fn activity_key(id: &IntegrationId) -> String {
     format!("integration_activity_{id}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_integration_and_core_feature_sits_in_a_displayed_category() {
+        let placed = declarations()
+            .into_iter()
+            .map(|declaration| (declaration.id.to_string(), declaration.category))
+            .chain(
+                core_features()
+                    .into_iter()
+                    .map(|feature| (feature.key.to_owned(), feature.category)),
+            );
+        for (name, category) in placed {
+            assert!(
+                IntegrationCategory::DISPLAY_ORDER.contains(&category),
+                "{name} is filed under {}, which the hub and sidebar never render",
+                category.key()
+            );
+        }
+    }
+
+    #[test]
+    fn each_declared_integration_is_found_by_its_own_id_only() {
+        for declaration in declarations() {
+            assert_eq!(
+                declaration_of(&declaration.id).map(|found| found.brand_name),
+                Some(declaration.brand_name),
+                "{}",
+                declaration.id
+            );
+        }
+        assert!(declaration_of(&IntegrationId::new("trovo")).is_none());
+    }
+}

@@ -540,3 +540,196 @@ impl Render for SidebarNav {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_components::ThemeId;
+    use forge_types::IntegrationId;
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::integration_catalog::declaration_of;
+    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+
+    enum Row {
+        Label(&'static str),
+        Integration(IntegrationId),
+        Other,
+    }
+
+    fn entries(cx: &mut TestAppContext, states: LifecycleStates) -> Vec<NavEntry> {
+        let nav = cx.update(|cx| {
+            let connectivity = cx.new(|_| PlatformConnectivity::new());
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(states));
+            cx.new(|cx| SidebarNav::new(Screen::Home, connectivity, lifecycle, cx))
+        });
+        let palette = ThemeId::ForgeDefault.palette();
+        nav.read_with(cx, |nav, cx| nav.integration_entries(&palette, cx))
+    }
+
+    fn integration_rows(cx: &mut TestAppContext, states: LifecycleStates) -> Vec<Row> {
+        entries(cx, states)
+            .into_iter()
+            .map(|entry| match entry {
+                NavEntry::MiniLabel(text) => Row::Label(text.id()),
+                NavEntry::FlatLink {
+                    screen: Screen::BuiltinDetail(id),
+                    ..
+                }
+                | NavEntry::FlatIconLeaf {
+                    screen: Screen::BuiltinDetail(id),
+                    ..
+                } => Row::Integration(id),
+                _ => Row::Other,
+            })
+            .collect()
+    }
+
+    fn hub_badge(cx: &mut TestAppContext, states: LifecycleStates) -> Option<SharedString> {
+        entries(cx, states)
+            .into_iter()
+            .find_map(|entry| match entry {
+                NavEntry::SectionLeaf {
+                    screen: Screen::Integrations(None),
+                    badge,
+                    ..
+                } => badge,
+                _ => None,
+            })
+    }
+
+    fn states(entries: &[(&'static str, LifecycleState)]) -> LifecycleStates {
+        entries
+            .iter()
+            .map(|(id, state)| (IntegrationId::from_static(id), state.clone()))
+            .collect()
+    }
+
+    fn every_integration(state: LifecycleState) -> LifecycleStates {
+        crate::integration_catalog::declarations()
+            .into_iter()
+            .map(|declaration| (declaration.id, state.clone()))
+            .collect()
+    }
+
+    fn listed(rows: &[Row]) -> Vec<IntegrationId> {
+        rows.iter()
+            .filter_map(|row| match row {
+                Row::Integration(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn labels(rows: &[Row]) -> Vec<&'static str> {
+        rows.iter()
+            .filter_map(|row| match row {
+                Row::Label(key) => Some(*key),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[gpui::test]
+    fn only_integrations_the_user_wants_on_are_listed(cx: &mut TestAppContext) {
+        let rows = integration_rows(
+            cx,
+            states(&[
+                ("twitch", LifecycleState::Running),
+                ("youtube", LifecycleState::Disabled),
+                ("kick", LifecycleState::Failed("offline".to_owned())),
+                ("obs", LifecycleState::Stopping),
+                ("midi", LifecycleState::Starting),
+            ]),
+        );
+
+        assert_eq!(
+            listed(&rows),
+            ["twitch", "kick", "midi"].map(IntegrationId::from_static)
+        );
+    }
+
+    #[gpui::test]
+    fn each_listed_integration_sits_under_its_own_category_label(cx: &mut TestAppContext) {
+        let rows = integration_rows(cx, every_integration(LifecycleState::Running));
+
+        let mut current_label = None;
+        let mut checked = 0;
+        for row in &rows {
+            match row {
+                Row::Label(key) => current_label = Some(*key),
+                Row::Integration(id) => {
+                    let declaration = declaration_of(id).expect("only declared integrations");
+                    assert_eq!(
+                        current_label,
+                        Some(declaration.category.label_key()),
+                        "{id}"
+                    );
+                    checked += 1;
+                }
+                Row::Other => {}
+            }
+        }
+        assert_eq!(checked, crate::integration_catalog::declarations().len());
+    }
+
+    #[gpui::test]
+    fn a_category_keeps_its_label_only_while_it_holds_an_enabled_integration_or_core_feature(
+        cx: &mut TestAppContext,
+    ) {
+        let core_categories: Vec<&'static str> = IntegrationCategory::DISPLAY_ORDER
+            .iter()
+            .filter(|category| {
+                core_features()
+                    .iter()
+                    .any(|feature| feature.category == **category)
+            })
+            .map(|category| category.label_key())
+            .collect();
+        let with_controls: Vec<&'static str> = IntegrationCategory::DISPLAY_ORDER
+            .iter()
+            .filter(|category| {
+                **category == IntegrationCategory::CONTROLS
+                    || core_features()
+                        .iter()
+                        .any(|feature| feature.category == **category)
+            })
+            .map(|category| category.label_key())
+            .collect();
+
+        for (states, expected, case) in [
+            (
+                every_integration(LifecycleState::Disabled),
+                core_categories,
+                "nothing enabled",
+            ),
+            (
+                states(&[
+                    ("twitch", LifecycleState::Disabled),
+                    ("midi", LifecycleState::Running),
+                ]),
+                with_controls,
+                "one controls integration enabled",
+            ),
+        ] {
+            let rows = integration_rows(cx, states);
+
+            assert_eq!(labels(&rows), expected, "{case}");
+        }
+    }
+
+    #[gpui::test]
+    fn the_hub_link_counts_enabled_out_of_installed_integrations(cx: &mut TestAppContext) {
+        let badge = hub_badge(
+            cx,
+            states(&[
+                ("twitch", LifecycleState::Running),
+                ("kick", LifecycleState::Failed("offline".to_owned())),
+                ("obs", LifecycleState::Disabled),
+            ]),
+        );
+
+        assert_eq!(badge, Some(SharedString::from("2/3")));
+    }
+}

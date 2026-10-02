@@ -911,3 +911,148 @@ impl forge_platform_core::BuiltinCollections for FakeCollections {
         Err(forge_platform_core::CollectionFailure::Transport)
     }
 }
+
+pub(crate) const NESTING_KIND: &str = "stub.container";
+pub(crate) const NESTED_CHAIN_KEY: &str = "body";
+
+struct StubRunner {
+    id: &'static str,
+    nests: bool,
+}
+
+#[async_trait::async_trait]
+impl forge_registry::SubActionRunner for StubRunner {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn category(&self) -> forge_registry::SubActionCategory {
+        forge_registry::SubActionCategory::Chat
+    }
+
+    fn label(&self) -> &str {
+        self.id
+    }
+
+    fn summary(&self) -> &str {
+        self.id
+    }
+
+    fn search_text(&self) -> &str {
+        self.id
+    }
+
+    fn icon_name(&self) -> &str {
+        "bolt"
+    }
+
+    fn default_config(&self) -> forge_types::SubActionConfig {
+        forge_types::SubActionConfig::new()
+    }
+
+    fn config_fields(&self) -> Vec<FormField> {
+        if self.nests {
+            vec![FormField::SubChain {
+                key: NESTED_CHAIN_KEY,
+                label: "Body",
+            }]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn validate_config(
+        &self,
+        _: &forge_types::SubActionConfig,
+    ) -> Result<(), forge_registry::RegistryError> {
+        Ok(())
+    }
+
+    async fn execute(
+        &self,
+        _: &forge_types::SubActionConfig,
+        _: &forge_registry::RunContext<'_>,
+    ) -> (
+        forge_types::SubActionTelemetry,
+        Option<forge_types::ArgStack>,
+    ) {
+        unreachable!("stub steps are inspected, never run")
+    }
+}
+
+pub(crate) fn owned_sub_actions(owned: &[(&'static str, &'static str)]) -> SubActionRegistry {
+    let mut registry = SubActionRegistry::new();
+    registry
+        .register(Box::new(StubRunner {
+            id: NESTING_KIND,
+            nests: true,
+        }))
+        .expect("the container stub registers");
+    for (kind, owner) in owned {
+        registry
+            .owned_by(forge_types::IntegrationId::from_static(owner))
+            .register(Box::new(StubRunner {
+                id: kind,
+                nests: false,
+            }))
+            .expect("every owned stub carries its own id");
+    }
+    registry
+}
+
+pub(crate) fn owned_triggers(owned: &[(&'static str, &'static str)]) -> TriggerRegistry {
+    let mut registry = TriggerRegistry::new();
+    for (kind, owner) in owned {
+        registry
+            .owned_by(forge_types::IntegrationId::from_static(owner))
+            .register(Box::new(StubTrigger::new(
+                kind,
+                kind,
+                TriggerCategory::Chat,
+                Declares::Nothing,
+            )))
+            .expect("every owned stub carries its own id");
+    }
+    registry
+}
+
+pub(crate) fn step(kind_id: &str, enabled: bool) -> forge_types::SubActionStep {
+    forge_types::SubActionStep {
+        kind_id: kind_id.to_owned(),
+        config: forge_types::SubActionConfig::new(),
+        enabled,
+        continue_on_error: false,
+        condition: None,
+        label: None,
+    }
+}
+
+pub(crate) fn action_running(name: &str, steps: Vec<forge_types::SubActionStep>) -> Action {
+    Action {
+        id: ActionId::new(),
+        name: name.to_owned(),
+        group: None,
+        queue_id: forge_types::QueueId::new(),
+        enabled: true,
+        concurrent: false,
+        bypass_pause: false,
+        execution_mode: forge_types::ExecutionMode::Sequential,
+        description: None,
+        sub_actions: steps,
+    }
+}
+
+pub(crate) fn trigger_of(kind_id: &str) -> forge_types::TriggerInstance {
+    forge_types::TriggerInstance {
+        id: forge_types::TriggerInstanceId::new(),
+        kind_id: kind_id.to_owned(),
+        name: kind_id.to_owned(),
+        overrides: TriggerConfig::new(),
+        enabled: true,
+        user_defined: true,
+        platform_scope: forge_types::PlatformScope::default(),
+        cooldown_secs: 0,
+        cooldown_global: true,
+        permission_rung: forge_types::PermissionRung::Everyone,
+    }
+}

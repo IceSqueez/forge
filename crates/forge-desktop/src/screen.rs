@@ -185,8 +185,65 @@ mod tests {
                 false,
                 "the screen the section was reached from",
             ),
+            (
+                Screen::Integrations(Some(IntegrationCategory::AUDIO)),
+                Screen::Integrations(None),
+                true,
+                "a category view of the hub",
+            ),
         ] {
             assert_eq!(current.same_nav(&leaf), same, "{case}");
+        }
+    }
+
+    #[test]
+    fn the_integrations_screen_opens_on_the_hub_or_any_category() {
+        assert_eq!(
+            Screen::parse_cli("integrations"),
+            Ok(Screen::Integrations(None))
+        );
+        for category in IntegrationCategory::DISPLAY_ORDER {
+            assert_eq!(
+                Screen::parse_cli(&format!("integrations:{}", category.key())),
+                Ok(Screen::Integrations(Some(*category))),
+                "{}",
+                category.key()
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_integrations_category_is_rejected_naming_it() {
+        for section in ["", "Streaming", "platforms", "stream_apps"] {
+            assert_eq!(
+                Screen::parse_cli(&format!("integrations:{section}")),
+                Err(ScreenArgError::UnknownSection {
+                    screen: "integrations",
+                    section: section.to_owned(),
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn every_advertised_screen_name_opens_a_screen() {
+        for name in Screen::accepted_cli_names() {
+            let parsed = Screen::parse_cli(name);
+            assert!(
+                parsed.is_ok() || parsed == Err(ScreenArgError::MissingBuiltinId),
+                "{name} is advertised but rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn the_screen_names_the_hub_replaced_are_no_longer_accepted() {
+        for retired in ["platforms", "stream-apps"] {
+            assert_eq!(
+                Screen::parse_cli(retired),
+                Err(ScreenArgError::UnknownScreen(retired.to_owned()))
+            );
+            assert!(!Screen::accepted_cli_names().contains(&retired));
         }
     }
 }

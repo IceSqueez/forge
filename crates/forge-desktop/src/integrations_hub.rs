@@ -719,3 +719,280 @@ impl Render for IntegrationsHubView {
             .children(modal)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashSet;
+    use std::time::Duration;
+
+    use async_trait::async_trait;
+    use forge_runtime::{IntegrationGate, spawn_live_viewer_aggregator};
+    use forge_storage::{SettingsRepo, integration_enabled_key};
+    use forge_types::{ActionId, QueueId, SubActionStep};
+    use gpui::TestAppContext;
+    use tokio::sync::mpsc::UnboundedReceiver;
+
+    use super::*;
+    use crate::integration_supervisor::{IntegrationFactory, LifecycleStates, RunningIntegration};
+    use crate::test_support::{
+        Sandboxed, SettingWrite, action_running, owned_sub_actions, owned_triggers, pump, runtime,
+        sandboxed_backend, step, test_backend, trigger_of,
+    };
+
+    const TEST_KEY: [u8; 32] = [0x11; 32];
+    const OBS_SCENE: &str = "obs.scene.set";
+    const TWITCH_CHAT: &str = "twitch.chat";
+    const SETTLE_ROUNDS: usize = 500;
+
+    fn twitch() -> IntegrationId {
+        IntegrationId::new("twitch")
+    }
+
+    fn obs() -> IntegrationId {
+        IntegrationId::new("obs")
+    }
+
+    fn kick() -> IntegrationId {
+        IntegrationId::new("kick")
+    }
+
+    struct IdleFactory(IntegrationId);
+
+    #[async_trait]
+    impl IntegrationFactory for IdleFactory {
+        fn id(&self) -> IntegrationId {
+            self.0.clone()
+        }
+
+        async fn is_configured(&self) -> Result<bool, StorageError> {
+            Ok(true)
+        }
+
+        async fn start(&self) -> Result<RunningIntegration, String> {
+            Ok(RunningIntegration::idle())
+        }
+    }
+
+    async fn provider() -> Sandboxed<Arc<dyn DataProvider>> {
+        sandboxed_backend("sqlite::memory:", TEST_KEY)
+            .await
+            .map(|backend| Arc::new(backend) as Arc<dyn DataProvider>)
+    }
+
+    async fn default_queue(backend: &Arc<dyn DataProvider>) -> QueueId {
+        backend
+            .queue_repo()
+            .get_by_name("Default")
+            .await
+            .unwrap()
+            .expect("migrations seed the default queue")
+            .id
+    }
+
+    async fn seed_action(
+        backend: &Arc<dyn DataProvider>,
+        name: &str,
+        steps: Vec<SubActionStep>,
+    ) -> ActionId {
+        let action = Action {
+            queue_id: default_queue(backend).await,
+            ..action_running(name, steps)
+        };
+        backend.action_repo().save(&action).await.unwrap();
+        action.id
+    }
+
+    async fn seed_trigger(backend: &Arc<dyn DataProvider>, kind_id: &str) -> TriggerInstanceId {
+        let instance = trigger_of(kind_id);
+        backend
+            .trigger_instance_repo()
+            .save(&instance)
+            .await
+            .unwrap();
+        instance.id
+    }
+
+    async fn link(backend: &Arc<dyn DataProvider>, action: ActionId, trigger: TriggerInstanceId) {
+        backend
+            .trigger_instance_repo()
+            .link_action(action, trigger, 0)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn only_triggers_wired_to_an_action_are_counted_each_once() {
+        let storage = provider().await;
+        let first = seed_action(&storage, "Scene", Vec::new()).await;
+        let second = seed_action(&storage, "Alert", Vec::new()).await;
+        let shared = seed_trigger(&storage, TWITCH_CHAT).await;
+        let single = seed_trigger(&storage, TWITCH_CHAT).await;
+        seed_trigger(&storage, TWITCH_CHAT).await;
+        link(&storage, first, shared).await;
+        link(&storage, second, shared).await;
+        link(&storage, second, single).await;
+
+        let (_, wired) = wired_triggers(storage.as_ref()).await.unwrap();
+
+        let ids: Vec<TriggerInstanceId> = wired.iter().map(|instance| instance.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(
+            ids.into_iter().collect::<HashSet<_>>(),
+            HashSet::from([shared, single])
+        );
+    }
+
+    struct Hub {
+        view: Entity<IntegrationsHubView>,
+        writes: UnboundedReceiver<SettingWrite>,
+        _storage: Sandboxed<Arc<dyn DataProvider>>,
+    }
+
+    impl Hub {
+        fn drain_writes(&mut self, rt: &tokio::runtime::Runtime) -> Vec<SettingWrite> {
+            pump(rt);
+            std::iter::from_fn(|| self.writes.try_recv().ok()).collect()
+        }
+
+        fn pending(&self, cx: &mut TestAppContext) -> Option<IntegrationId> {
+            self.view
+                .read_with(cx, |view, _| view.pending_disable.clone())
+        }
+    }
+
+    fn enabled_write(id: &IntegrationId, enabled: bool) -> SettingWrite {
+        (integration_enabled_key(id), enabled.to_string())
+    }
+
+    fn mount(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) -> Hub {
+        let storage = rt.block_on(async {
+            let storage = provider().await;
+            let scene = seed_action(&storage, "Scene", vec![step(OBS_SCENE, true)]).await;
+            let chat = seed_trigger(&storage, TWITCH_CHAT).await;
+            link(&storage, scene, chat).await;
+            storage
+        });
+        let (settings, writes) = test_backend();
+        let supervisor = {
+            let _entered = rt.enter();
+            IntegrationSupervisor::launch(
+                [twitch(), obs(), kick()]
+                    .into_iter()
+                    .map(|id| Arc::new(IdleFactory(id)) as Arc<dyn IntegrationFactory>)
+                    .collect(),
+                settings as Arc<dyn SettingsRepo>,
+                IntegrationGate::new(),
+                BuiltinRegistry::default(),
+                spawn_live_viewer_aggregator(),
+            )
+        };
+        let launch = HubLaunch {
+            supervisor,
+            builtins: BuiltinRegistry::default(),
+            backend: Arc::clone(&storage),
+            sub_actions: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
+            triggers: Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
+            rt_handle: rt.handle().clone(),
+        };
+        let view = cx.update(|cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
+            let connectivity = cx.new(|_| PlatformConnectivity::new());
+            cx.new(|cx| IntegrationsHubView::new(None, lifecycle, connectivity, launch, cx))
+        });
+        let mut hub = Hub {
+            view,
+            writes,
+            _storage: storage,
+        };
+        let counted = (0..SETTLE_ROUNDS).any(|_| {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            hub.view
+                .read_with(cx, |view, _| view.references_of(&obs()).total() > 0)
+        });
+        assert!(counted, "the hub never counted the seeded references");
+        hub.drain_writes(rt);
+        hub
+    }
+
+    #[gpui::test]
+    fn disabling_an_integration_something_references_waits_for_confirmation(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let mut hub = mount(cx, &rt);
+
+        for (id, case) in [
+            (twitch(), "referenced only by a wired trigger"),
+            (obs(), "referenced only by an action step"),
+        ] {
+            hub.view
+                .update(cx, |view, cx| view.request_enabled(id.clone(), false, cx));
+
+            assert_eq!(hub.pending(cx), Some(id), "{case}");
+            assert_eq!(hub.drain_writes(&rt), Vec::new(), "{case}");
+            hub.view.update(cx, |view, cx| view.cancel_disable(cx));
+        }
+    }
+
+    #[gpui::test]
+    fn disabling_an_unreferenced_integration_applies_at_once(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut hub = mount(cx, &rt);
+
+        hub.view
+            .update(cx, |view, cx| view.request_enabled(kick(), false, cx));
+
+        assert_eq!(hub.pending(cx), None);
+        assert_eq!(hub.drain_writes(&rt), vec![enabled_write(&kick(), false)]);
+    }
+
+    #[gpui::test]
+    fn confirming_the_prompt_disables_the_integration_and_closes_it(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut hub = mount(cx, &rt);
+        hub.view
+            .update(cx, |view, cx| view.request_enabled(twitch(), false, cx));
+
+        hub.view.update(cx, |view, cx| view.confirm_disable(cx));
+
+        assert_eq!(hub.pending(cx), None);
+        assert_eq!(hub.drain_writes(&rt), vec![enabled_write(&twitch(), false)]);
+    }
+
+    #[gpui::test]
+    fn cancelling_the_prompt_keeps_the_integration_enabled(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut hub = mount(cx, &rt);
+        hub.view
+            .update(cx, |view, cx| view.request_enabled(twitch(), false, cx));
+
+        hub.view.update(cx, |view, cx| view.cancel_disable(cx));
+
+        assert_eq!(hub.pending(cx), None);
+        assert_eq!(hub.drain_writes(&rt), Vec::new());
+    }
+
+    #[gpui::test]
+    fn confirming_with_no_prompt_open_disables_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut hub = mount(cx, &rt);
+
+        hub.view.update(cx, |view, cx| view.confirm_disable(cx));
+
+        assert_eq!(hub.drain_writes(&rt), Vec::new());
+    }
+
+    #[gpui::test]
+    fn enabling_a_referenced_integration_never_asks(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut hub = mount(cx, &rt);
+
+        hub.view
+            .update(cx, |view, cx| view.request_enabled(obs(), true, cx));
+
+        assert_eq!(hub.pending(cx), None);
+        assert_eq!(hub.drain_writes(&rt), vec![enabled_write(&obs(), true)]);
+    }
+}

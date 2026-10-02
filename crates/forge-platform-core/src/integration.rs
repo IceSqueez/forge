@@ -82,3 +82,36 @@ pub struct IntegrationDeclaration {
     pub description_key: &'static str,
     pub connection: ConnectionAffordance,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_displayed_category_resolves_back_from_its_own_key() {
+        for category in IntegrationCategory::DISPLAY_ORDER {
+            assert_eq!(
+                IntegrationCategory::from_key(category.key()),
+                Some(*category),
+                "{}",
+                category.key()
+            );
+        }
+    }
+
+    #[test]
+    fn keys_outside_the_category_set_resolve_to_no_category() {
+        for key in [
+            "",
+            "Streaming",
+            " streaming",
+            "streaming ",
+            "streaming_platforms",
+            "stream_apps",
+            "devices_and_input",
+            "music",
+        ] {
+            assert_eq!(IntegrationCategory::from_key(key), None, "{key:?}");
+        }
+    }
+}

@@ -77,3 +77,99 @@ pub fn is_desired_on(state: &LifecycleState) -> bool {
         LifecycleState::Starting | LifecycleState::Running | LifecycleState::Failed(_)
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FAILURE: &str = "the token was revoked";
+
+    fn failed() -> LifecycleState {
+        LifecycleState::Failed(FAILURE.to_owned())
+    }
+
+    #[test]
+    fn a_running_integration_reports_its_connection_only_when_it_has_one() {
+        for (connection, connected, expected) in [
+            (
+                ConnectionAffordance::Connectable,
+                true,
+                CardStatus::Connected,
+            ),
+            (
+                ConnectionAffordance::Connectable,
+                false,
+                CardStatus::NotConnected,
+            ),
+            (
+                ConnectionAffordance::Connectionless,
+                true,
+                CardStatus::Active,
+            ),
+            (
+                ConnectionAffordance::Connectionless,
+                false,
+                CardStatus::Active,
+            ),
+        ] {
+            assert_eq!(
+                CardStatus::resolve(&LifecycleState::Running, connection, connected),
+                expected,
+                "{connection:?} connected={connected}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_lifecycle_state_other_than_running_hides_a_live_connection() {
+        for (state, expected) in [
+            (LifecycleState::Disabled, CardStatus::Disabled),
+            (LifecycleState::Starting, CardStatus::Starting),
+            (LifecycleState::Stopping, CardStatus::Stopping),
+            (failed(), CardStatus::Failed(FAILURE.to_owned())),
+        ] {
+            assert_eq!(
+                CardStatus::resolve(&state, ConnectionAffordance::Connectable, true),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn the_switch_stays_on_while_the_user_still_wants_the_integration() {
+        for (state, on) in [
+            (LifecycleState::Disabled, false),
+            (LifecycleState::Starting, true),
+            (LifecycleState::Running, true),
+            (LifecycleState::Stopping, false),
+            (failed(), true),
+        ] {
+            assert_eq!(is_desired_on(&state), on, "{state:?}");
+        }
+    }
+
+    #[test]
+    fn an_integration_absent_from_the_lifecycle_counts_as_off() {
+        let twitch = IntegrationId::new("twitch");
+        let kick = IntegrationId::new("kick");
+        let obs = IntegrationId::new("obs");
+        let lifecycle = IntegrationLifecycle::new(LifecycleStates::from([
+            (twitch.clone(), LifecycleState::Running),
+            (kick.clone(), LifecycleState::Disabled),
+        ]));
+
+        assert_eq!(lifecycle.on_count([&twitch, &kick, &obs].into_iter()), 1);
+        assert_eq!(lifecycle.state_of(&obs), LifecycleState::Disabled);
+    }
+
+    #[test]
+    fn replacing_the_states_reports_a_change_only_when_they_differ() {
+        let twitch = IntegrationId::new("twitch");
+        let running = LifecycleStates::from([(twitch.clone(), LifecycleState::Running)]);
+        let mut lifecycle = IntegrationLifecycle::new(running.clone());
+
+        assert!(!lifecycle.replace(running));
+        assert!(lifecycle.replace(LifecycleStates::from([(twitch.clone(), failed())])));
+        assert_eq!(lifecycle.state_of(&twitch), failed());
+    }
+}

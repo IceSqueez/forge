@@ -80,3 +80,196 @@ impl ScreenActionsView {
         .into_any_element()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::ThemeId;
+    use forge_runtime::{ActionCancelRegistry, QueueScheduler, spawn_action_engine};
+    use forge_storage::MockTriggerInstanceRepo;
+    use forge_storage::queue::MockQueueRepo;
+    use forge_storage::soundboard::MockSoundboardClipsRepo;
+
+    use super::*;
+    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+    use crate::presentation::Presentation;
+    use crate::test_support::{
+        StubActions, StubEventLog, StubHistory, StubOverlays, action_running, lifecycle_switch,
+        owned_sub_actions, owned_triggers, runtime, step, stub_catalog, switch_lifecycle,
+        test_backend,
+    };
+
+    const OBS_SCENE: &str = "obs.scene.set";
+    const OBS_SCENE_CHANGED: &str = "obs.scene.changed";
+    const CORE_LOG: &str = "core.log";
+
+    fn obs() -> IntegrationId {
+        IntegrationId::new("obs")
+    }
+
+    fn obs_in(state: LifecycleState) -> LifecycleStates {
+        LifecycleStates::from([(obs(), state)])
+    }
+
+    fn detail(steps: Vec<SubActionStep>) -> ActionDetail {
+        ActionDetail {
+            action: action_running("Scene", steps),
+            trigger_instances: Vec::new(),
+            sub_action_avg_ms: Vec::new(),
+            last_step_outcomes: Vec::new(),
+        }
+    }
+
+    struct Rig {
+        view: Entity<ScreenActionsView>,
+        lifecycle: Entity<crate::integration_lifecycle::IntegrationLifecycle>,
+        _rt: tokio::runtime::Runtime,
+    }
+
+    impl Rig {
+        fn open(
+            cx: &mut gpui::TestAppContext,
+            initial: LifecycleState,
+            open: Option<ActionDetail>,
+        ) -> Self {
+            cx.update(|cx| {
+                cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            });
+            let rt = runtime();
+            let (lifecycle, switch) = lifecycle_switch(cx, &rt, obs_in(initial));
+            let action_repo: Arc<dyn ActionRepo> = Arc::new(StubActions);
+            let queue_repo: Arc<dyn QueueRepo> = Arc::new(MockQueueRepo::new());
+            let trigger_repo: Arc<dyn TriggerInstanceRepo> =
+                Arc::new(MockTriggerInstanceRepo::new());
+            let clips: Arc<dyn SoundboardClipsRepo> = Arc::new(MockSoundboardClipsRepo::new());
+            let service = Arc::new(ActionsService::new(
+                Arc::clone(&action_repo),
+                Arc::clone(&queue_repo),
+                Arc::new(StubHistory),
+                Arc::clone(&trigger_repo),
+                Arc::clone(&clips),
+            ));
+            let (backend, _writes) = test_backend();
+            let (bus, scheduler) = rt.block_on(async {
+                let bus = EventBus::new(Arc::new(StubEventLog));
+                let engine = spawn_action_engine(
+                    Arc::clone(&bus),
+                    stub_catalog(),
+                    Arc::new(StubActions),
+                    Arc::new(StubHistory),
+                    Arc::new(SubActionRegistry::new()),
+                    Arc::new(ActionCancelRegistry::new()),
+                );
+                let scheduler = QueueScheduler::spawn(engine, Arc::clone(&bus), Vec::new());
+                (bus, scheduler)
+            });
+            let handle = rt.handle().clone();
+            let view = cx.update(|cx| {
+                cx.new(|cx| {
+                    let mut view = ScreenActionsView::new(
+                        action_repo,
+                        queue_repo,
+                        service,
+                        trigger_repo,
+                        Arc::clone(&backend) as Arc<dyn ScriptRepo>,
+                        clips,
+                        Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+                        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+                        Arc::new(StubOverlays),
+                        Arc::new(OverlayKindRegistry::new()),
+                        None,
+                        None,
+                        Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
+                        Arc::new(owned_triggers(&[(OBS_SCENE_CHANGED, "obs")])),
+                        handle,
+                        bus,
+                        scheduler,
+                        None,
+                        cx,
+                    );
+                    view.detail = open;
+                    view.with_integration_switch(switch, cx)
+                })
+            });
+            Self {
+                view,
+                lifecycle,
+                _rt: rt,
+            }
+        }
+
+        fn flagged(&self, cx: &mut gpui::TestAppContext) -> Vec<Option<IntegrationId>> {
+            self.view.read_with(cx, |view, _| {
+                view.step_health
+                    .iter()
+                    .map(|health| health.disabled_integration().cloned())
+                    .collect()
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn attaching_the_switch_flags_an_open_action_at_once(cx: &mut gpui::TestAppContext) {
+        let rig = Rig::open(
+            cx,
+            LifecycleState::Disabled,
+            Some(detail(vec![step(CORE_LOG, true), step(OBS_SCENE, true)])),
+        );
+
+        assert_eq!(rig.flagged(cx), vec![None, Some(obs())]);
+    }
+
+    #[gpui::test]
+    fn step_health_follows_the_integration_switching_off_and_back_on(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = Rig::open(
+            cx,
+            LifecycleState::Running,
+            Some(detail(vec![step(OBS_SCENE, true)])),
+        );
+
+        let before = rig.flagged(cx);
+        switch_lifecycle(cx, &rig.lifecycle, obs_in(LifecycleState::Stopping));
+        let off = rig.flagged(cx);
+        switch_lifecycle(cx, &rig.lifecycle, obs_in(LifecycleState::Running));
+        let back_on = rig.flagged(cx);
+
+        assert_eq!(
+            (before, off, back_on),
+            (vec![None], vec![Some(obs())], vec![None])
+        );
+    }
+
+    #[gpui::test]
+    fn only_an_enabled_step_owned_by_a_switched_off_integration_gets_the_inline_notice(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = Rig::open(cx, LifecycleState::Disabled, None);
+
+        let owners = rig.view.read_with(cx, |view, _| {
+            [
+                step(OBS_SCENE, true),
+                step(OBS_SCENE, false),
+                step(CORE_LOG, true),
+            ]
+            .iter()
+            .map(|step| view.switched_off_step_owner(step))
+            .collect::<Vec<_>>()
+        });
+
+        assert_eq!(owners, vec![Some(obs()), None, None]);
+    }
+
+    #[gpui::test]
+    fn a_linked_trigger_owned_by_a_switched_off_integration_is_marked(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let rig = Rig::open(cx, LifecycleState::Disabled, None);
+
+        let owners = rig.view.read_with(cx, |view, _| {
+            [OBS_SCENE_CHANGED, "core.timer"].map(|kind| view.switched_off_trigger_owner(kind))
+        });
+
+        assert_eq!(owners, [Some(obs()), None]);
+    }
+}

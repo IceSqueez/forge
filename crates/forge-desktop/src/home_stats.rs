@@ -311,3 +311,61 @@ fn source_label(source: EventSource) -> &'static str {
         EventSource::Audio => "audio",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stats_with(connections: Vec<(Integration, bool)>) -> HomeStats {
+        HomeStats {
+            connections,
+            ..HomeStats::new()
+        }
+    }
+
+    #[test]
+    fn the_tally_counts_only_enabled_integrations() {
+        let stats = stats_with(vec![
+            (Integration::Twitch, true),
+            (Integration::Kick, false),
+            (Integration::Obs, true),
+            (Integration::VTube, false),
+        ]);
+
+        let tally = stats.enabled_connections(|integ| integ != Integration::Obs);
+
+        assert_eq!(
+            tally,
+            ConnectionsTally {
+                connections: vec![
+                    (Integration::Twitch, true),
+                    (Integration::Kick, false),
+                    (Integration::VTube, false),
+                ],
+                connected: 1,
+                total: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn the_tally_warns_only_while_an_enabled_integration_is_down() {
+        for (connections, warn, case) in [
+            (
+                vec![(Integration::Twitch, true), (Integration::Obs, false)],
+                true,
+                "one enabled integration down",
+            ),
+            (
+                vec![(Integration::Twitch, true), (Integration::Obs, true)],
+                false,
+                "every enabled integration connected",
+            ),
+            (Vec::new(), false, "nothing enabled"),
+        ] {
+            let tally = stats_with(connections).enabled_connections(|_| true);
+
+            assert_eq!(tally.warn(), warn, "{case}");
+        }
+    }
+}

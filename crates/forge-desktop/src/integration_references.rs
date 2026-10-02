@@ -75,12 +75,9 @@ fn collect_owners(
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
-    use forge_types::{SubActionConfig, Variant};
-
     use super::*;
     use crate::test_support::{
-        NESTED_CHAIN_KEY, NESTING_KIND, action_running, owned_sub_actions, owned_triggers, step,
-        trigger_of,
+        action_running, container, owned_sub_actions, owned_triggers, step, trigger_of,
     };
 
     const TWITCH_SEND: &str = "twitch.chat.send";
@@ -103,25 +100,15 @@ mod tests {
         owned_triggers(&[(TWITCH_CHAT, "twitch"), (OBS_SCENE_CHANGED, "obs")])
     }
 
-    fn container(body: Vec<SubActionStep>, enabled: bool) -> SubActionStep {
-        let encoded = body
-            .into_iter()
-            .map(|nested| {
-                Variant::Object(SubActionConfig::from([
-                    ("kind_id".to_owned(), Variant::String(nested.kind_id)),
-                    ("config".to_owned(), Variant::Object(nested.config)),
-                    ("enabled".to_owned(), Variant::Bool(nested.enabled)),
-                ]))
-            })
-            .collect();
-        SubActionStep {
-            config: SubActionConfig::from([(NESTED_CHAIN_KEY.to_owned(), Variant::Array(encoded))]),
-            ..step(NESTING_KIND, enabled)
-        }
-    }
-
     fn tally_actions(actions: &[Action]) -> HashMap<IntegrationId, IntegrationReferences> {
         tally_references(actions, &[], &sub_actions(), &trigger_kinds())
+    }
+
+    fn referencing(action: &Action) -> ReferencingAction {
+        ReferencingAction {
+            id: action.id,
+            name: action.name.clone(),
+        }
     }
 
     fn twitch() -> IntegrationId {
@@ -142,9 +129,9 @@ mod tests {
             )],
         );
 
-        let tally = tally_actions(&[raid]);
+        let tally = tally_actions(std::slice::from_ref(&raid));
 
-        assert_eq!(tally[&twitch()].actions, vec!["Raid".to_owned()]);
+        assert_eq!(tally[&twitch()].actions, vec![referencing(&raid)]);
     }
 
     #[test]
@@ -177,9 +164,9 @@ mod tests {
             ],
         );
 
-        let tally = tally_actions(&[action]);
+        let tally = tally_actions(std::slice::from_ref(&action));
 
-        assert_eq!(tally[&twitch()].actions, vec!["Welcome".to_owned()]);
+        assert_eq!(tally[&twitch()].actions, vec![referencing(&action)]);
     }
 
     #[test]
@@ -192,11 +179,24 @@ mod tests {
             ],
         );
 
-        let tally = tally_actions(&[action]);
+        let tally = tally_actions(std::slice::from_ref(&action));
 
         for id in [twitch(), obs()] {
-            assert_eq!(tally[&id].actions, vec!["Go live".to_owned()], "{id}");
+            assert_eq!(tally[&id].actions, vec![referencing(&action)], "{id}");
         }
+    }
+
+    #[test]
+    fn same_named_actions_on_one_integration_each_carry_their_own_id_in_order() {
+        let first = action_running("Shoutout", vec![step(TWITCH_SEND, true)]);
+        let second = action_running("Shoutout", vec![step(TWITCH_SHOUTOUT, true)]);
+
+        let tally = tally_actions(&[first.clone(), second.clone()]);
+
+        assert_eq!(
+            tally[&twitch()].actions,
+            vec![referencing(&first), referencing(&second)]
+        );
     }
 
     #[test]

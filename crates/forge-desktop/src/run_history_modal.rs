@@ -672,3 +672,71 @@ impl Render for RunHistoryModal {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_types::{ActionId, EventId};
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    fn run(outcomes: Vec<SubActionOutcome>) -> ExecutionContext {
+        ExecutionContext {
+            action_id: ActionId::new(),
+            metadata: ExecutionMetadata::Trigger {
+                event_id: EventId::new(),
+                trigger_kind: None,
+            },
+            arg_stack_snapshot: BTreeMap::new(),
+            started_at: OffsetDateTime::UNIX_EPOCH,
+            completed_at: None,
+            telemetry: outcomes
+                .into_iter()
+                .enumerate()
+                .map(|(index, outcome)| SubActionTelemetry {
+                    index,
+                    kind: "stub.step".to_owned(),
+                    started_at: OffsetDateTime::UNIX_EPOCH,
+                    duration_ms: 0,
+                    outcome,
+                    args_in: BTreeMap::new(),
+                    produced: BTreeMap::new(),
+                })
+                .collect(),
+            outcome: ExecutionOutcome::Success,
+        }
+    }
+
+    #[test]
+    fn a_run_names_the_first_integration_that_was_switched_off() {
+        let ctx = run(vec![
+            SubActionOutcome::Success,
+            SubActionOutcome::IntegrationDisabled(IntegrationId::new("obs")),
+            SubActionOutcome::IntegrationDisabled(IntegrationId::new("twitch")),
+        ]);
+
+        assert_eq!(
+            disabled_integration_of(&ctx),
+            Some(&IntegrationId::new("obs"))
+        );
+    }
+
+    #[test]
+    fn a_run_no_switched_off_integration_touched_names_none() {
+        for (outcomes, case) in [
+            (
+                vec![
+                    SubActionOutcome::Success,
+                    SubActionOutcome::Failed("integration disabled: obs".to_owned()),
+                    SubActionOutcome::Skipped("condition false".to_owned()),
+                ],
+                "failed, skipped and successful steps",
+            ),
+            (Vec::new(), "a run with no step telemetry"),
+        ] {
+            assert_eq!(disabled_integration_of(&run(outcomes)), None, "{case}");
+        }
+    }
+}

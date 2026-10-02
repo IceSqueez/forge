@@ -1027,6 +1027,29 @@ pub(crate) fn step(kind_id: &str, enabled: bool) -> forge_types::SubActionStep {
     }
 }
 
+pub(crate) fn container(
+    body: Vec<forge_types::SubActionStep>,
+    enabled: bool,
+) -> forge_types::SubActionStep {
+    let encoded = body
+        .into_iter()
+        .map(|nested| {
+            Variant::Object(forge_types::SubActionConfig::from([
+                ("kind_id".to_owned(), Variant::String(nested.kind_id)),
+                ("config".to_owned(), Variant::Object(nested.config)),
+                ("enabled".to_owned(), Variant::Bool(nested.enabled)),
+            ]))
+        })
+        .collect();
+    forge_types::SubActionStep {
+        config: forge_types::SubActionConfig::from([(
+            NESTED_CHAIN_KEY.to_owned(),
+            Variant::Array(encoded),
+        )]),
+        ..step(NESTING_KIND, enabled)
+    }
+}
+
 pub(crate) fn action_running(name: &str, steps: Vec<forge_types::SubActionStep>) -> Action {
     Action {
         id: ActionId::new(),
@@ -1148,4 +1171,36 @@ pub(crate) async fn link(
         .link_action(action, trigger, 0)
         .await
         .unwrap();
+}
+
+pub(crate) fn lifecycle_switch(
+    cx: &mut gpui::TestAppContext,
+    rt: &tokio::runtime::Runtime,
+    initial: crate::integration_supervisor::LifecycleStates,
+) -> (
+    gpui::Entity<crate::integration_lifecycle::IntegrationLifecycle>,
+    crate::integration_switch::IntegrationSwitch,
+) {
+    let (settings, _writes) = test_backend();
+    let supervisor = idle_supervisor(rt, settings as Arc<dyn SettingsRepo>, &[]);
+    cx.update(|cx| {
+        let lifecycle = gpui::AppContext::new(cx, |_| {
+            crate::integration_lifecycle::IntegrationLifecycle::new(initial)
+        });
+        let switch =
+            crate::integration_switch::IntegrationSwitch::new(lifecycle.clone(), supervisor);
+        (lifecycle, switch)
+    })
+}
+
+pub(crate) fn switch_lifecycle(
+    cx: &mut gpui::TestAppContext,
+    lifecycle: &gpui::Entity<crate::integration_lifecycle::IntegrationLifecycle>,
+    states: crate::integration_supervisor::LifecycleStates,
+) {
+    lifecycle.update(cx, |lifecycle, cx| {
+        lifecycle.replace(states);
+        cx.notify();
+    });
+    cx.run_until_parked();
 }

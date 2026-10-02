@@ -1008,4 +1008,117 @@ mod tests {
 
         assert_eq!(health[0].severity(), HealthSeverity::Yellow);
     }
+
+    const OBS_SCENE: &str = "obs.scene.set";
+    const TWITCH_SEND: &str = "twitch.chat.send";
+    const CORE_LOG: &str = "core.log";
+
+    fn obs() -> IntegrationId {
+        IntegrationId::new("obs")
+    }
+
+    fn flagged_owners(steps: &[SubActionStep], off: &[IntegrationId]) -> Vec<Vec<IntegrationId>> {
+        use crate::test_support::owned_sub_actions;
+
+        let registry = owned_sub_actions(&[(OBS_SCENE, "obs"), (TWITCH_SEND, "twitch")]);
+        let mut health = vec![StepHealth::default(); steps.len()];
+        flag_switched_off(
+            steps,
+            &registry,
+            &off.iter().cloned().collect(),
+            &mut health,
+        );
+        health
+            .iter()
+            .map(|step| {
+                step.findings
+                    .iter()
+                    .filter_map(|finding| match finding {
+                        Finding::IntegrationDisabled(id) => Some(id.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn only_an_enabled_step_reaching_a_switched_off_integration_is_flagged() {
+        use crate::test_support::{container, step as owned};
+
+        for (steps, expected, case) in [
+            (
+                vec![owned(CORE_LOG, true), owned(OBS_SCENE, true)],
+                vec![vec![], vec![obs()]],
+                "an enabled step the switched-off integration owns",
+            ),
+            (
+                vec![owned(OBS_SCENE, false)],
+                vec![vec![]],
+                "a disabled step",
+            ),
+            (
+                vec![container(vec![owned(OBS_SCENE, true)], true)],
+                vec![vec![obs()]],
+                "a step nested under an enabled container flags the top step",
+            ),
+            (
+                vec![container(vec![owned(OBS_SCENE, true)], false)],
+                vec![vec![]],
+                "a step nested under a disabled container",
+            ),
+            (
+                vec![container(vec![owned(OBS_SCENE, false)], true)],
+                vec![vec![]],
+                "a disabled step nested under an enabled container",
+            ),
+            (
+                vec![owned(TWITCH_SEND, true)],
+                vec![vec![]],
+                "a step owned by an integration that is still on",
+            ),
+            (
+                vec![
+                    owned(CORE_LOG, true),
+                    container(vec![owned(CORE_LOG, true)], true),
+                ],
+                vec![vec![], vec![]],
+                "steps no integration owns",
+            ),
+        ] {
+            assert_eq!(flagged_owners(&steps, &[obs()]), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_step_hit_by_a_switched_off_integration_warns_and_names_it() {
+        use crate::test_support::{owned_sub_actions, step as owned};
+
+        let registry = owned_sub_actions(&[(OBS_SCENE, "obs")]);
+        let mut health = vec![StepHealth::default()];
+
+        flag_switched_off(
+            &[owned(OBS_SCENE, true)],
+            &registry,
+            &HashSet::from([obs()]),
+            &mut health,
+        );
+
+        assert_eq!(
+            (health[0].severity(), health[0].disabled_integration()),
+            (HealthSeverity::Yellow, Some(&obs()))
+        );
+    }
+
+    #[test]
+    fn a_step_without_a_disabled_integration_finding_names_no_integration() {
+        let health = StepHealth {
+            findings: vec![
+                Finding::LastRunFailed("boom".to_owned()),
+                Finding::ControlFlowInConcurrentAction,
+            ],
+        };
+
+        assert_eq!(health.disabled_integration(), None);
+    }
 }

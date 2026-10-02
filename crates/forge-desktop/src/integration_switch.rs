@@ -95,3 +95,161 @@ pub fn inactive_badge(owner: &IntegrationId, palette: &ForgePalette) -> impl Int
         palette,
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_storage::{SettingsRepo, integration_enabled_key};
+    use gpui::{AppContext, TestAppContext};
+
+    use super::*;
+    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+    use crate::test_support::{
+        SettingWrite, idle_supervisor, lifecycle_switch, pump, runtime, switch_lifecycle,
+        test_backend,
+    };
+
+    fn obs() -> IntegrationId {
+        IntegrationId::new("obs")
+    }
+
+    fn twitch() -> IntegrationId {
+        IntegrationId::new("twitch")
+    }
+
+    fn states(entries: &[(IntegrationId, LifecycleState)]) -> LifecycleStates {
+        entries.iter().cloned().collect()
+    }
+
+    fn drain(writes: &mut tokio::sync::mpsc::UnboundedReceiver<SettingWrite>) -> Vec<SettingWrite> {
+        std::iter::from_fn(|| writes.try_recv().ok()).collect()
+    }
+
+    struct Host {
+        watch: Option<SwitchWatch>,
+        applied: Vec<HashSet<IntegrationId>>,
+    }
+
+    fn watching(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        initial: LifecycleStates,
+    ) -> (Entity<IntegrationLifecycle>, Entity<Host>) {
+        let (lifecycle, switch) = lifecycle_switch(cx, rt, initial);
+        let host = cx.update(|cx| {
+            cx.new(|cx| Host {
+                watch: Some(switch.watch(cx, |host: &mut Host, off, _cx| host.applied.push(off))),
+                applied: Vec::new(),
+            })
+        });
+        (lifecycle, host)
+    }
+
+    #[gpui::test]
+    fn a_watch_starts_from_the_integrations_already_switched_off(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (_lifecycle, host) = watching(
+            cx,
+            &rt,
+            states(&[
+                (obs(), LifecycleState::Disabled),
+                (twitch(), LifecycleState::Running),
+            ]),
+        );
+
+        host.read_with(cx, |host, _| {
+            assert_eq!(
+                host.watch.as_ref().map(SwitchWatch::off),
+                Some(&HashSet::from([obs()]))
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn a_lifecycle_change_hands_the_watcher_the_new_switched_off_set(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (lifecycle, host) = watching(cx, &rt, states(&[(twitch(), LifecycleState::Running)]));
+
+        switch_lifecycle(
+            cx,
+            &lifecycle,
+            states(&[
+                (twitch(), LifecycleState::Stopping),
+                (obs(), LifecycleState::Starting),
+            ]),
+        );
+
+        host.read_with(cx, |host, _| {
+            assert_eq!(host.applied, vec![HashSet::from([twitch()])]);
+        });
+    }
+
+    #[gpui::test]
+    fn an_owner_counts_as_switched_off_only_when_it_is_in_the_off_set(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (_lifecycle, host) = watching(
+            cx,
+            &rt,
+            states(&[
+                (obs(), LifecycleState::Disabled),
+                (twitch(), LifecycleState::Running),
+            ]),
+        );
+
+        host.read_with(cx, |host, _| {
+            let watch = host.watch.as_ref().expect("the host keeps its watch");
+            let (obs, twitch) = (obs(), twitch());
+            assert_eq!(
+                [
+                    watch.off_owner(Some(&obs)),
+                    watch.off_owner(Some(&twitch)),
+                    watch.off_owner(None),
+                ],
+                [Some(&obs), None, None]
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn enabling_through_the_switch_persists_the_integration_as_enabled(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (settings, mut writes) = test_backend();
+        let supervisor = idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[obs()]);
+        pump(&rt);
+        drain(&mut writes);
+        let switch = cx.update(|cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
+            IntegrationSwitch::new(lifecycle, supervisor)
+        });
+
+        switch.enable(&obs());
+        pump(&rt);
+
+        assert_eq!(
+            drain(&mut writes),
+            vec![(integration_enabled_key(&obs()), "true".to_owned())]
+        );
+    }
+
+    #[gpui::test]
+    fn enabling_an_integration_the_supervisor_does_not_manage_writes_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (settings, mut writes) = test_backend();
+        let supervisor = idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[obs()]);
+        pump(&rt);
+        drain(&mut writes);
+        let switch = cx.update(|cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
+            IntegrationSwitch::new(lifecycle, supervisor)
+        });
+
+        switch.enable(&twitch());
+        pump(&rt);
+
+        assert_eq!(drain(&mut writes), Vec::<SettingWrite>::new());
+    }
+}

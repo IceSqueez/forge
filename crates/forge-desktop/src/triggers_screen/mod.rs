@@ -545,3 +545,62 @@ async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstance
     }
     Ok(rows)
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_components::{Density, ThemeId};
+    use forge_storage::MockTriggerInstanceRepo;
+    use forge_types::IntegrationId;
+
+    use super::*;
+    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+    use crate::presentation::Presentation;
+    use crate::test_support::{
+        StubActions, lifecycle_switch, owned_triggers, runtime, switch_lifecycle, test_backend,
+    };
+
+    const TWITCH_CHAT: &str = "twitch.chat";
+
+    fn twitch() -> IntegrationId {
+        IntegrationId::new("twitch")
+    }
+
+    fn twitch_in(state: LifecycleState) -> LifecycleStates {
+        LifecycleStates::from([(twitch(), state)])
+    }
+
+    #[gpui::test]
+    fn a_trigger_tracks_its_integration_switching_off_and_back_on(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));
+        let rt = runtime();
+        let (lifecycle, switch) = lifecycle_switch(cx, &rt, twitch_in(LifecycleState::Running));
+        let mut repo = MockTriggerInstanceRepo::new();
+        repo.expect_list_all().returning(|| Ok(Vec::new()));
+        let (settings, _writes) = test_backend();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                TriggersRegistryView::new(
+                    Arc::new(repo),
+                    Arc::new(StubActions),
+                    Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
+                    settings as Arc<dyn SettingsRepo>,
+                    rt.handle().clone(),
+                    None,
+                    cx,
+                )
+                .with_integration_switch(switch, cx)
+            })
+        });
+        let owner = |cx: &mut gpui::TestAppContext| {
+            view.read_with(cx, |view, _| view.switched_off_owner(TWITCH_CHAT))
+        };
+
+        let before = owner(cx);
+        switch_lifecycle(cx, &lifecycle, twitch_in(LifecycleState::Disabled));
+        let off = owner(cx);
+        switch_lifecycle(cx, &lifecycle, twitch_in(LifecycleState::Starting));
+        let back_on = owner(cx);
+
+        assert_eq!((before, off, back_on), (None, Some(twitch()), None));
+    }
+}

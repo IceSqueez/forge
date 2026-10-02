@@ -177,6 +177,36 @@ mod tests {
     }
 
     #[test]
+    fn only_an_integration_the_user_turned_off_reads_as_switched_off() {
+        let ids: Vec<IntegrationId> = ["disabled", "stopping", "starting", "running", "failed"]
+            .into_iter()
+            .map(IntegrationId::new)
+            .collect();
+        let states = [
+            LifecycleState::Disabled,
+            LifecycleState::Stopping,
+            LifecycleState::Starting,
+            LifecycleState::Running,
+            failed(),
+        ];
+        let lifecycle =
+            IntegrationLifecycle::new(ids.iter().cloned().zip(states).collect::<LifecycleStates>());
+        let unknown = IntegrationId::new("unknown");
+
+        let flagged: Vec<bool> = ids
+            .iter()
+            .chain([&unknown])
+            .map(|id| lifecycle.is_switched_off(id))
+            .collect();
+
+        assert_eq!(flagged, vec![true, true, false, false, false, false]);
+        assert_eq!(
+            lifecycle.switched_off(),
+            HashSet::from([ids[0].clone(), ids[1].clone()])
+        );
+    }
+
+    #[test]
     fn replacing_the_states_reports_a_change_only_when_they_differ() {
         let twitch = IntegrationId::new("twitch");
         let running = LifecycleStates::from([(twitch.clone(), LifecycleState::Running)]);

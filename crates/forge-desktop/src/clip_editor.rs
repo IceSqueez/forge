@@ -958,4 +958,47 @@ mod tests {
 
         assert_eq!(rig.save(cx), [(Some("F5".to_owned()), None)]);
     }
+
+    #[gpui::test]
+    fn the_key_notice_follows_the_hotkeys_integration_switching_off_and_on(
+        cx: &mut TestAppContext,
+    ) {
+        use crate::integration_supervisor::{LifecycleState, LifecycleStates};
+        use crate::soundboard::hotkeys_notice::hotkeys_integration;
+        use crate::test_support::{lifecycle_switch, runtime, switch_lifecycle};
+
+        crate::i18n::install_language(Language::En);
+        cx.update(|cx| cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy)));
+        let rt = runtime();
+        let hotkeys_in =
+            |state: LifecycleState| LifecycleStates::from([(hotkeys_integration(), state)]);
+        let (lifecycle, switch) = lifecycle_switch(cx, &rt, hotkeys_in(LifecycleState::Running));
+        let editor = cx.update(|cx| {
+            let launch = ClipEditorLaunch {
+                edit_id: None,
+                name: "airhorn".to_owned(),
+                category: CATEGORY_ORDER[0].to_owned(),
+                file_path: None,
+                loop_playback: false,
+                hotkey: None,
+            };
+            let handle = rt.handle().clone();
+            cx.new(|cx| {
+                ClipEditor::new(launch, None, handle, cx).with_integration_switch(switch, cx)
+            })
+        });
+        let notice_shown = |cx: &mut TestAppContext| {
+            cx.update(|cx| {
+                editor.update(cx, |editor, cx| editor.render_hotkeys_notice(cx).is_some())
+            })
+        };
+
+        let before = notice_shown(cx);
+        switch_lifecycle(cx, &lifecycle, hotkeys_in(LifecycleState::Disabled));
+        let off = notice_shown(cx);
+        switch_lifecycle(cx, &lifecycle, hotkeys_in(LifecycleState::Running));
+        let back_on = notice_shown(cx);
+
+        assert_eq!((before, off, back_on), (false, true, false));
+    }
 }

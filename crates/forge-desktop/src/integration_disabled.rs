@@ -520,10 +520,13 @@ mod tests {
     use std::time::Duration;
 
     use forge_storage::{CredentialId, SettingsRepo, integration_enabled_key};
-    use gpui::TestAppContext;
+    use forge_types::ActionId;
+    use gpui::{Modifiers, TestAppContext, VisualTestContext, point, size};
 
     use super::*;
+    use crate::integration_references::ReferencingAction;
     use crate::integration_supervisor::LifecycleStates;
+    use crate::presentation::Presentation;
     use crate::test_support::{
         Sandboxed, idle_supervisor, link, owned_sub_actions, owned_triggers, pump, runtime,
         sandboxed_provider, seed_action, seed_trigger, step, test_backend,
@@ -532,6 +535,10 @@ mod tests {
     const OBS_SCENE: &str = "obs.scene.set";
     const TWITCH_CHAT: &str = "twitch.chat";
     const SETTLE_ROUNDS: usize = 500;
+    const WINDOW_W: f32 = 1000.0;
+    const WINDOW_H: f32 = 800.0;
+    const SCAN_X: f32 = 120.0;
+    const SCAN_STEP: f32 = 4.0;
 
     fn obs() -> IntegrationId {
         IntegrationId::new("obs")
@@ -541,7 +548,9 @@ mod tests {
         IntegrationId::new("kick")
     }
 
-    fn seeded_storage(rt: &tokio::runtime::Runtime) -> Sandboxed<Arc<dyn DataProvider>> {
+    fn seeded_storage(
+        rt: &tokio::runtime::Runtime,
+    ) -> (Sandboxed<Arc<dyn DataProvider>>, ActionId) {
         rt.block_on(async {
             let storage = sandboxed_provider().await;
             let scene = seed_action(&storage, "Scene", vec![step(OBS_SCENE, true)]).await;
@@ -551,7 +560,7 @@ mod tests {
                 .store(&CredentialId::new("obs:password"), "hunter2")
                 .await
                 .unwrap();
-            storage
+            (storage, scene)
         })
     }
 
@@ -591,14 +600,20 @@ mod tests {
     #[gpui::test]
     fn the_page_lists_what_the_integration_breaks_and_keeps_its_sign_in(cx: &mut TestAppContext) {
         let rt = runtime();
-        let storage = seeded_storage(&rt);
+        let (storage, scene) = seeded_storage(&rt);
         let view = open(cx, &rt, &storage, obs(), None);
 
         let loaded = settle_until(cx, &rt, &view, |view| !view.kept.is_empty());
 
         assert!(loaded, "the page never loaded what is kept");
         view.read_with(cx, |view, _| {
-            assert_eq!(view.references.actions, vec!["Scene".to_owned()]);
+            assert_eq!(
+                view.references.actions,
+                vec![ReferencingAction {
+                    id: scene,
+                    name: "Scene".to_owned(),
+                }]
+            );
             assert_eq!(view.references.triggers, 0);
             assert_eq!(view.kept, vec![Kept::Credentials]);
         });
@@ -607,12 +622,15 @@ mod tests {
     #[gpui::test]
     fn the_page_of_an_unused_integration_with_no_sign_in_lists_nothing(cx: &mut TestAppContext) {
         let rt = runtime();
-        let storage = seeded_storage(&rt);
+        let (storage, _) = seeded_storage(&rt);
         let view = open(cx, &rt, &storage, kick(), None);
         view.update(cx, |view, _| {
             view.apply_loaded(
                 IntegrationReferences {
-                    actions: vec!["stale".to_owned()],
+                    actions: vec![ReferencingAction {
+                        id: ActionId::new(),
+                        name: "stale".to_owned(),
+                    }],
                     triggers: 1,
                 },
                 true,
@@ -628,7 +646,7 @@ mod tests {
     #[gpui::test]
     fn enabling_from_the_page_switches_the_integration_on(cx: &mut TestAppContext) {
         let rt = runtime();
-        let storage = seeded_storage(&rt);
+        let (storage, _) = seeded_storage(&rt);
         let (settings, mut writes) = test_backend();
         let supervisor = idle_supervisor(&rt, settings as Arc<dyn SettingsRepo>, &[obs()]);
         pump(&rt);
@@ -643,5 +661,74 @@ mod tests {
             written,
             vec![(integration_enabled_key(&obs()), "true".to_owned())]
         );
+    }
+
+    struct Heard {
+        screens: Vec<Screen>,
+        _sub: gpui::Subscription,
+    }
+
+    #[gpui::test]
+    fn clicking_an_affected_action_opens_that_action(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(
+                forge_components::ThemeId::ForgeDefault,
+                forge_components::Density::Cozy,
+            ))
+        });
+        let rt = runtime();
+        let (storage, scene) = seeded_storage(&rt);
+        let launch = DisabledLaunch {
+            slot: None,
+            backend: Arc::clone(&storage),
+            sub_actions: Arc::new(owned_sub_actions(&[(OBS_SCENE, "obs")])),
+            triggers: Arc::new(owned_triggers(&[(TWITCH_CHAT, "twitch")])),
+            rt_handle: rt.handle().clone(),
+        };
+        let (view, vcx) = cx.add_window_view(|_window, cx| {
+            let lifecycle = cx.new(|_| IntegrationLifecycle::new(LifecycleStates::new()));
+            IntegrationDisabledView::new(obs(), lifecycle, launch, cx)
+        });
+        let heard = vcx.update(|_window, cx| {
+            cx.new(|cx| Heard {
+                screens: Vec::new(),
+                _sub: cx.subscribe(&view, |heard: &mut Heard, _, event: &NavRequested, _| {
+                    heard.screens.push(event.0.clone());
+                }),
+            })
+        });
+        vcx.simulate_resize(size(px(WINDOW_W), px(WINDOW_H)));
+        let loaded = (0..SETTLE_ROUNDS).any(|_| {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            vcx.run_until_parked();
+            view.read_with(vcx, |view, _| !view.references.actions.is_empty())
+        });
+        assert!(loaded, "the page never listed the affected action");
+
+        scan_column(vcx);
+
+        let opened: Vec<Screen> = heard.read_with(vcx, |heard, _| {
+            heard
+                .screens
+                .iter()
+                .filter(|screen| matches!(screen, Screen::Actions(_)))
+                .cloned()
+                .collect()
+        });
+        assert!(!opened.is_empty(), "no click on the page opened an action");
+        assert!(
+            opened
+                .iter()
+                .all(|screen| *screen == Screen::Actions(Some(scene))),
+            "{opened:?}"
+        );
+    }
+
+    fn scan_column(vcx: &mut VisualTestContext) {
+        let mut y = 0.0;
+        while y < WINDOW_H {
+            vcx.simulate_click(point(px(SCAN_X), px(y)), Modifiers::none());
+            y += SCAN_STEP;
+        }
     }
 }

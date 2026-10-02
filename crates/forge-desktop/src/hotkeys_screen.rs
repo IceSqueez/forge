@@ -10,7 +10,7 @@ use forge_events::Event;
 use forge_hotkey::HotkeyClient;
 use forge_runtime::EventBus;
 use forge_storage::settings::reserved_keys::KEYBOARD_SHORTCUTS;
-use forge_storage::{DataProvider, SettingsRepo, StorageError, set_bool_setting};
+use forge_storage::{DataProvider, SettingsRepo, StorageError};
 use forge_types::{ActionId, TriggerInstanceId};
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, Keystroke, Pixels, Point, SharedString, Subscription,
@@ -30,11 +30,12 @@ use crate::hotkey_action_modal::{
     ActionModalLaunch, BindingDraft, HotkeyActionModal, HotkeyActionModalEvent, keycaps,
 };
 use crate::hotkey_bindings::{
-    BindingRow, HOTKEY_ENABLED_KEY, HOTKEY_EVENT_PREFIX, HOTKEY_PRESSED_KIND, HotkeyEdge,
-    conflict_count, delete_binding, delete_binding_half, do_bind, load_bindings, rebind_combo,
-    registered_combos, relink_action, set_binding_edge, set_binding_enabled,
+    BindingRow, HOTKEY_EVENT_PREFIX, HOTKEY_PRESSED_KIND, HotkeyEdge, conflict_count,
+    delete_binding, delete_binding_half, do_bind, load_bindings, rebind_combo, registered_combos,
+    relink_action, set_binding_edge, set_binding_enabled,
 };
 use crate::hotkey_sync::HotkeyReconciler;
+use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::presentation::ActivePresentation;
 use crate::shortcut_overrides::{ChordVerdict, ShortcutOverrides, save_overrides};
 use crate::toasts::PushToast;
@@ -188,6 +189,7 @@ struct OpenAppModal {
 pub struct HotkeysScreenView {
     client: Arc<HotkeyClient>,
     reconciler: Arc<HotkeyReconciler>,
+    engine: Option<IntegrationSlot>,
     backend: Arc<dyn DataProvider>,
     settings_repo: Arc<dyn SettingsRepo>,
     rt_handle: tokio::runtime::Handle,
@@ -212,6 +214,7 @@ pub struct HotkeysScreenView {
 impl HotkeysScreenView {
     pub fn new(
         reconciler: Arc<HotkeyReconciler>,
+        engine: Option<IntegrationSlot>,
         backend: Arc<dyn DataProvider>,
         settings_repo: Arc<dyn SettingsRepo>,
         bus: Arc<EventBus>,
@@ -225,6 +228,7 @@ impl HotkeysScreenView {
             conflicts: conflict_count(&client),
             client,
             reconciler,
+            engine,
             backend,
             settings_repo,
             rt_handle,
@@ -426,20 +430,16 @@ impl HotkeysScreenView {
         let previous = self.enabled;
         self.enabled = !previous;
         let enabled = self.enabled;
-        let client = Arc::clone(&self.client);
-        let repo = Arc::clone(&self.settings_repo);
+        let engine = self.engine.clone();
         async_bridge::optimistic(
             &self.rt_handle,
             previous,
             async move {
-                if enabled {
-                    client.enable().await.map_err(|e| e.to_string())?;
-                } else {
-                    client.disable().await.map_err(|e| e.to_string())?;
+                let engine = engine.ok_or_else(|| "hotkey integration unavailable".to_owned())?;
+                match engine.set_enabled(enabled).await? {
+                    LifecycleState::Failed(reason) => Err(reason),
+                    _ => Ok(()),
                 }
-                set_bool_setting(repo.as_ref(), HOTKEY_ENABLED_KEY, enabled)
-                    .await
-                    .map_err(|e| e.to_string())
             },
             |this, previous, _message, cx| {
                 this.enabled = previous;

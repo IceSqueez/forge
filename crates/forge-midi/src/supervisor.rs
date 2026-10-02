@@ -23,6 +23,7 @@ pub(crate) enum SupervisorCommand {
     Enable,
     Disable,
     Rescan,
+    Shutdown,
 }
 
 pub(crate) async fn run_supervisor(
@@ -54,6 +55,9 @@ pub(crate) async fn run_supervisor(
             }
             maybe_cmd = control_rx.recv() => {
                 let Some(cmd) = maybe_cmd else { break };
+                if matches!(cmd, SupervisorCommand::Shutdown) {
+                    break;
+                }
                 handle_supervisor_command(
                     &client,
                     cmd,
@@ -88,6 +92,7 @@ fn handle_supervisor_command(
         SupervisorCommand::Rescan => {
             do_port_discovery(client, merged_tx, input_snap, output_snap, handles);
         }
+        SupervisorCommand::Shutdown => handles.clear(),
         SupervisorCommand::Disable => {
             handles.clear();
             client.enabled.store(false, Ordering::Relaxed);

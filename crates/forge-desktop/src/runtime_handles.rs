@@ -9,10 +9,8 @@ use forge_runtime::{
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
 use crate::audio_router::AudioRouter;
-use crate::integrations::{
-    BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed, VTubeInstallSeed,
-    YoutubeInstallSeed,
-};
+use crate::integration_supervisor::IntegrationSupervisor;
+use crate::integrations::{BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
 use crate::log_tail::LogTail;
 use crate::voice_gate::VoiceGateOwner;
 
@@ -35,13 +33,11 @@ pub struct RuntimeHandles {
     pub live_viewers: LiveViewerAggregatorHandle,
     pub stream_live: StreamLiveHandle,
     pub builtins: BuiltinRegistry,
-    pub twitch_install_seed: Option<TwitchInstallSeed>,
-    pub kick_install_seed: Option<KickInstallSeed>,
-    pub youtube_install_seed: Option<YoutubeInstallSeed>,
+    pub integrations: IntegrationSupervisor,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Arc<forge_discord::DiscordClient>,
-    pub midi_client: Option<Arc<forge_midi::MidiClient>>,
+    pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
     pub pipeline_config: Option<forge_speak_queue::PipelineConfigHandle>,

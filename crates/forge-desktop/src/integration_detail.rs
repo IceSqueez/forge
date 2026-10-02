@@ -32,15 +32,12 @@ use crate::builtin_sections::{
     SectionHooks, SectionRefresh, SectionStepRun, StepClick, content_sections, health_grid,
 };
 use crate::collection_manager::{CollectionManager, CollectionManagerEvent};
-use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch, ConnectedBundle};
+use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch};
 use crate::in_flight_steps::InFlightSteps;
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integration_quick_actions::accent_color;
-use crate::integrations::{
-    BuiltinObject, BuiltinRegistry, KickInstallSeed, ObsInstallSeed, TwitchInstallSeed,
-    VTubeInstallSeed, YoutubeInstallSeed, kick_builtin_object, twitch_builtin_object,
-    youtube_builtin_object,
-};
+use crate::integration_supervisor::IntegrationSlot;
+use crate::integrations::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
 use crate::obs_credentials_form::ObsConnected;
 use crate::obs_settings_modal::{ObsSettingsModal, ObsSettingsModalEvent};
 use crate::platforms::PlatformConnectivity;
@@ -71,12 +68,9 @@ pub struct IntegrationDetail {
     history: Arc<dyn HistoryRepo>,
     trigger_registry: Arc<TriggerRegistry>,
     bus: Arc<dyn EventPublisher>,
-    event_bus: Arc<EventBus>,
-    live_viewers: LiveViewerAggregatorHandle,
-    builtins: BuiltinRegistry,
-    twitch_install_seed: Option<TwitchInstallSeed>,
-    kick_install_seed: Option<KickInstallSeed>,
-    youtube_install_seed: Option<YoutubeInstallSeed>,
+    twitch_slot: Option<IntegrationSlot>,
+    kick_slot: Option<IntegrationSlot>,
+    youtube_slot: Option<IntegrationSlot>,
     obs_install_seed: ObsInstallSeed,
     vtube_install_seed: VTubeInstallSeed,
     connect: Option<ActiveConnect>,
@@ -165,10 +159,9 @@ impl IntegrationDetail {
         bus: Arc<dyn EventPublisher>,
         event_bus: Arc<EventBus>,
         live_viewers: LiveViewerAggregatorHandle,
-        builtins: BuiltinRegistry,
-        twitch_install_seed: Option<TwitchInstallSeed>,
-        kick_install_seed: Option<KickInstallSeed>,
-        youtube_install_seed: Option<YoutubeInstallSeed>,
+        twitch_slot: Option<IntegrationSlot>,
+        kick_slot: Option<IntegrationSlot>,
+        youtube_slot: Option<IntegrationSlot>,
         obs_install_seed: ObsInstallSeed,
         vtube_install_seed: VTubeInstallSeed,
         connectivity: Entity<PlatformConnectivity>,
@@ -240,12 +233,9 @@ impl IntegrationDetail {
             history,
             trigger_registry,
             bus,
-            event_bus,
-            live_viewers,
-            builtins,
-            twitch_install_seed,
-            kick_install_seed,
-            youtube_install_seed,
+            twitch_slot,
+            kick_slot,
+            youtube_slot,
             obs_install_seed,
             vtube_install_seed,
             connect: None,
@@ -294,12 +284,9 @@ impl IntegrationDetail {
             display_name: self.display_name.clone(),
             rt_handle: self.rt_handle.clone(),
             credentials: Arc::clone(&self.credentials),
-            bus: Arc::clone(&self.bus),
-            event_bus: Arc::clone(&self.event_bus),
-            live_viewers: self.live_viewers.clone(),
-            twitch_install_seed: self.twitch_install_seed.clone(),
-            kick_install_seed: self.kick_install_seed.clone(),
-            youtube_install_seed: self.youtube_install_seed.clone(),
+            twitch_slot: self.twitch_slot.clone(),
+            kick_slot: self.kick_slot.clone(),
+            youtube_slot: self.youtube_slot.clone(),
         };
         let view = cx.new(|cx| ConnectFlow::new(launch, cx));
         let subs = vec![
@@ -317,18 +304,13 @@ impl IntegrationDetail {
         cx: &mut Context<Self>,
     ) {
         match event {
-            ConnectFlowEvent::Connected(bundle) => self.adopt_connected(bundle, cx),
+            ConnectFlowEvent::Connected(object) => self.adopt_connected(object, cx),
             ConnectFlowEvent::Leave => self.navigate_to(Screen::Platforms, cx),
         }
     }
 
-    fn adopt_connected(&mut self, bundle: &ConnectedBundle, cx: &mut Context<Self>) {
-        let object = match bundle {
-            ConnectedBundle::Twitch(b) => twitch_builtin_object(Arc::clone(b)),
-            ConnectedBundle::Youtube(b) => youtube_builtin_object(Arc::clone(b)),
-            ConnectedBundle::Kick(b) => kick_builtin_object(Arc::clone(b)),
-        };
-        self.adopt_builtin(object, cx);
+    fn adopt_connected(&mut self, object: &BuiltinObject, cx: &mut Context<Self>) {
+        self.adopt_builtin(object.clone(), cx);
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
@@ -869,7 +851,6 @@ impl IntegrationDetail {
     }
 
     fn adopt_builtin(&mut self, object: BuiltinObject, cx: &mut Context<Self>) {
-        self.builtins.install(object.clone());
         self.icon = object.icon;
         self.status = object.status;
         self.health = object.health;
@@ -886,24 +867,31 @@ impl IntegrationDetail {
     }
 
     fn reset_to_connect(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
-        self.builtins.remove(self.status.id());
-        self.live_viewers.unregister(platform);
         let credentials = Arc::clone(&self.credentials);
-        let control = self.control.take();
+        self.control = None;
         let key = credential_key(platform);
+        let slot = self.slot_of(platform);
         self.rt_handle.spawn(async move {
-            if let Some(ctrl) = control {
-                let _ = ctrl.disconnect().await;
-            }
             let _ = credentials
                 .delete(&forge_storage::CredentialId::new(key))
                 .await;
+            if let Some(slot) = slot {
+                slot.rebuild().await;
+            }
         });
         self.close_collection_manager();
         self.twitch_reauth_required = false;
         self.eventsub_tally.clear();
         self.viewer_samples.clear();
         self.open_connect_flow(platform, cx);
+    }
+
+    fn slot_of(&self, platform: PlatformId) -> Option<IntegrationSlot> {
+        match platform {
+            PlatformId::Twitch => self.twitch_slot.clone(),
+            PlatformId::YouTube => self.youtube_slot.clone(),
+            PlatformId::Kick => self.kick_slot.clone(),
+        }
     }
 
     fn sign_out_obs(&mut self, cx: &mut Context<Self>) {

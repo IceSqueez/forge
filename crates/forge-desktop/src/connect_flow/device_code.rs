@@ -5,11 +5,7 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     icon, mono_family, pulse_dot, radius, spacing, spinner, tr, with_alpha,
 };
-use forge_platform_core::{RateLimiter, TokenBucketRateLimiter};
-use forge_platform_twitch::{
-    DeviceCodeInfo, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TWITCH_BROADCASTER_SCOPES,
-    TwitchAuthFlow, UserInfo,
-};
+use forge_platform_twitch::{DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TwitchAuthFlow, UserInfo};
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
@@ -18,8 +14,9 @@ use gpui::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{ConnectFlow, ConnectedBundle, status_dot};
+use super::{ConnectFlow, status_dot};
 use crate::async_bridge;
+use crate::integrations::BuiltinObject;
 
 pub(super) type TwitchFlowHandle = Arc<tokio::sync::Mutex<Option<TwitchAuthFlow>>>;
 
@@ -28,7 +25,6 @@ const COPY_FLIP: Duration = Duration::from_millis(1400);
 
 struct TwitchAuthOutcome {
     user_info: UserInfo,
-    client_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +127,6 @@ async fn wait_for_auth(
         .map_err(|e| TwitchWaitError::Other(e.to_string()))?;
     Ok(TwitchAuthOutcome {
         user_info: bundle.user_info,
-        client_id: bundle.client_id,
     })
 }
 
@@ -269,11 +264,8 @@ impl ConnectFlow {
             id = %outcome.user_info.id,
             "twitch authorization complete",
         );
-        let bus = Arc::clone(&self.bus);
-        let credentials = Arc::clone(&self.credentials);
-        let live_viewers = self.live_viewers.clone();
-        let Some(seed) = self.twitch_install_seed.clone() else {
-            tracing::error!("twitch install seed absent at sign-in; client id was missing at boot");
+        let Some(slot) = self.twitch_slot.clone() else {
+            tracing::error!("twitch integration absent at sign-in; client id was missing at boot");
             if let Some(dev) = &mut self.twitch_device {
                 dev.phase = TwitchDevicePhase::Failed;
                 dev.error = Some(tr!("auth_error_credentials_missing_twitch").to_string());
@@ -281,40 +273,30 @@ impl ConnectFlow {
             cx.notify();
             return;
         };
-        let lifecycle = seed.lifecycle;
-        let endpoints = seed.endpoints;
-        let manager = seed.manager;
         async_bridge::run_async(
             &self.rt_handle,
-            async move {
-                let login = Some(outcome.user_info.login.clone());
-                let tracker = forge_platform_twitch::SubscriptionTracker::default();
-                let config = forge_platform_twitch::ChatSessionConfig {
-                    client_id: outcome.client_id,
-                    broadcaster_id: outcome.user_info.id.clone(),
-                    user_id: outcome.user_info.id,
-                    endpoints,
-                };
-                let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-                    HELIX_BUDGET_CAPACITY,
-                    HELIX_BUDGET_WINDOW,
-                ));
-                let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
-                    login,
-                    config,
-                    bus,
-                    credentials,
-                    manager,
-                    tracker,
-                    rate_limiter,
-                    lifecycle,
-                );
-                live_viewers.register(PlatformId::Twitch, bundle.viewer_source());
-                bundle
-            },
-            |this, bundle, cx| this.finish(ConnectedBundle::Twitch(bundle), cx),
+            async move { slot.activate().await },
+            |this, result, cx| this.apply_twitch_activation(result, cx),
             cx,
         );
+    }
+
+    fn apply_twitch_activation(
+        &mut self,
+        result: Result<BuiltinObject, String>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(object) => self.finish(object, cx),
+            Err(message) => {
+                tracing::warn!(error = %message, "twitch in-session connect failed");
+                if let Some(dev) = &mut self.twitch_device {
+                    dev.phase = TwitchDevicePhase::Failed;
+                    dev.error = Some(message);
+                }
+                cx.notify();
+            }
+        }
     }
 
     fn on_twitch_copy(&mut self, cx: &mut Context<Self>) {
@@ -993,7 +975,6 @@ fn step_card(n: u8, circle_bg: Rgba, circle_fg: Rgba, palette: &ForgePalette) ->
 mod tests {
     use super::*;
     use crate::connect_flow::ConnectFlowLaunch;
-    use forge_runtime::{EventBus, NullEventLogRepo, spawn_live_viewer_aggregator};
     use forge_storage::{CredentialId, StorageError};
     use forge_types::PlatformId;
 
@@ -1038,18 +1019,14 @@ mod tests {
             .build()
             .unwrap();
         let _runtime_context = runtime.enter();
-        let event_bus = EventBus::new(Arc::new(NullEventLogRepo));
         let launch = ConnectFlowLaunch {
             platform: PlatformId::YouTube,
             display_name: "YouTube".to_owned(),
             rt_handle: runtime.handle().clone(),
             credentials: Arc::new(NoCredentials),
-            bus: event_bus.clone(),
-            event_bus,
-            live_viewers: spawn_live_viewer_aggregator(),
-            twitch_install_seed: None,
-            kick_install_seed: None,
-            youtube_install_seed: None,
+            twitch_slot: None,
+            kick_slot: None,
+            youtube_slot: None,
         };
         let flow = cx.new(|cx| ConnectFlow::new(launch, cx));
         let outcome = TwitchAuthOutcome {
@@ -1059,7 +1036,6 @@ mod tests {
                 display_name: "Streamer".to_owned(),
                 broadcaster_type: forge_platform_twitch::BroadcasterTier::Standard,
             },
-            client_id: "client".to_owned(),
         };
 
         let (phase, error) = flow.update(cx, |this, cx| {

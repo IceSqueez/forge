@@ -15,6 +15,7 @@ use forge_types::{SubActionStep, Variant};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_util::sync::CancellationToken;
 
 use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::chat_platform::KickPlatform;
@@ -56,6 +57,7 @@ pub struct KickIntegrationBundle {
     rate_limiter: Arc<dyn RateLimiter>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
     state_rx: watch::Receiver<ConnectionState>,
+    retired: CancellationToken,
 }
 
 impl KickIntegrationBundle {
@@ -81,6 +83,7 @@ impl KickIntegrationBundle {
             rate_limiter,
             viewer_report_rx,
             state_rx,
+            retired: CancellationToken::new(),
         });
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_health_bridge(&bundle);
@@ -126,7 +129,12 @@ impl KickIntegrationBundle {
         let mut state_rx = bundle.state_rx.clone();
         handle.spawn(async move {
             let mut previous = *state_rx.borrow();
-            while state_rx.changed().await.is_ok() {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = state_rx.changed() => if changed.is_err() { break },
+                }
                 let current = *state_rx.borrow();
 
                 let ws_delta = HealthDelta {
@@ -156,7 +164,12 @@ impl KickIntegrationBundle {
         let bundle = Arc::clone(bundle);
         let mut reports_rx = bundle.viewer_report_rx.clone();
         handle.spawn(async move {
-            while reports_rx.changed().await.is_ok() {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = reports_rx.changed() => if changed.is_err() { break },
+                }
                 let viewers_delta = HealthDelta {
                     index: 2,
                     new_value: viewers_health_value(*reports_rx.borrow()),
@@ -189,6 +202,11 @@ impl KickIntegrationBundle {
         if let Ok(mut guard) = self.token_expires_at.write() {
             *guard = Some(SystemTime::from(stored.expires_at));
         }
+    }
+
+    pub async fn shutdown(&self) {
+        self.retired.cancel();
+        let _ = self.platform.disconnect().await;
     }
 
     pub(crate) fn credentials_manager(&self) -> &Arc<KickCredentialsManager> {

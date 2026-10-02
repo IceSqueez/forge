@@ -8,9 +8,7 @@ use forge_components::{
 };
 use forge_midi::{MidiClient, MidiMonitorEvent};
 use forge_runtime::EventBus;
-use forge_storage::{
-    ActionRepo, SettingsRepo, TriggerInstanceRepo, set_bool_setting, set_json_setting,
-};
+use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, set_json_setting};
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
 use futures_util::StreamExt;
 use gpui::{
@@ -20,6 +18,7 @@ use gpui::{
 
 use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
 use crate::builtin_sections::grow_cell;
+use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
 use crate::midi_mapping_modal::{
     MappingDraft, MappingModalLaunch, MidiMappingModal, MidiMappingModalEvent,
 };
@@ -27,7 +26,6 @@ use crate::midi_signal::{MIDI_INPUT_PREFIX, MidiSignal, kind_color, note_name};
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
-pub const MIDI_ENABLED_KEY: &str = "midi.enabled";
 pub const MIDI_KNOWN_DEVICES_KEY: &str = "midi.known_devices";
 
 const MIDI_PORT_PREFIX: &str = "midi.port.";
@@ -302,7 +300,8 @@ struct OpenModal {
 }
 
 pub struct MidiScreenView {
-    client: Arc<MidiClient>,
+    client: Option<Arc<MidiClient>>,
+    integration: Option<IntegrationSlot>,
     trigger_repo: Arc<dyn TriggerInstanceRepo>,
     action_repo: Arc<dyn ActionRepo>,
     settings_repo: Arc<dyn SettingsRepo>,
@@ -319,13 +318,15 @@ pub struct MidiScreenView {
     modal: Option<OpenModal>,
     menu_open: Option<TriggerInstanceId>,
     menu_click_pos: Option<Point<Pixels>>,
-    _monitor_bridge: Task<()>,
+    _monitor_bridge: Option<Task<()>>,
     _port_bridge: Task<()>,
 }
 
 impl MidiScreenView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        client: Arc<MidiClient>,
+        client: Option<Arc<MidiClient>>,
+        integration: Option<IntegrationSlot>,
         trigger_repo: Arc<dyn TriggerInstanceRepo>,
         action_repo: Arc<dyn ActionRepo>,
         settings_repo: Arc<dyn SettingsRepo>,
@@ -333,12 +334,18 @@ impl MidiScreenView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
-        let monitor_bridge = Self::spawn_monitor_bridge(&client, &rt_handle, cx);
+        let monitor_bridge = client
+            .as_ref()
+            .map(|client| Self::spawn_monitor_bridge(client, &rt_handle, cx));
         let port_bridge = Self::spawn_port_bridge(bus, cx);
         let mut view = Self {
-            enabled: client.is_enabled(),
-            live_ports: client.connected_input_ports(),
+            enabled: client.is_some(),
+            live_ports: client
+                .as_ref()
+                .map(|client| client.connected_input_ports())
+                .unwrap_or_default(),
             client,
+            integration,
             trigger_repo,
             action_repo,
             settings_repo,
@@ -629,7 +636,11 @@ impl MidiScreenView {
     }
 
     fn refresh_ports(&mut self, cx: &mut Context<Self>) {
-        let ports = self.client.connected_input_ports();
+        let ports = self
+            .client
+            .as_ref()
+            .map(|client| client.connected_input_ports())
+            .unwrap_or_default();
         if ports == self.live_ports {
             return;
         }
@@ -669,20 +680,17 @@ impl MidiScreenView {
         let previous = self.enabled;
         self.enabled = !previous;
         let enabled = self.enabled;
-        let client = Arc::clone(&self.client);
-        let repo = Arc::clone(&self.settings_repo);
+        let integration = self.integration.clone();
         async_bridge::optimistic(
             &self.rt_handle,
             previous,
             async move {
-                if enabled {
-                    client.enable_input().await.map_err(|e| e.to_string())?;
-                } else {
-                    client.disable_input().await.map_err(|e| e.to_string())?;
+                let integration =
+                    integration.ok_or_else(|| "MIDI integration unavailable".to_owned())?;
+                match integration.set_enabled(enabled).await? {
+                    LifecycleState::Failed(reason) => Err(reason),
+                    _ => Ok(()),
                 }
-                set_bool_setting(repo.as_ref(), MIDI_ENABLED_KEY, enabled)
-                    .await
-                    .map_err(|e| e.to_string())
             },
             |this, previous, _message, cx| {
                 this.enabled = previous;
@@ -697,7 +705,9 @@ impl MidiScreenView {
         if !self.known_devices_loaded {
             self.load_known_devices(cx);
         }
-        let client = Arc::clone(&self.client);
+        let Some(client) = self.client.clone() else {
+            return;
+        };
         async_bridge::run_async(
             &self.rt_handle,
             async move { client.rescan_ports().await.map_err(|e| e.to_string()) },

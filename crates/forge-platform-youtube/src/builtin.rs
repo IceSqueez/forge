@@ -15,6 +15,7 @@ use forge_types::{SubActionStep, Variant};
 use tokio::sync::{broadcast, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_util::sync::CancellationToken;
 
 use crate::chat_platform::YoutubePlatform;
 use crate::credentials_manager::YoutubeCredentialsManager;
@@ -66,6 +67,7 @@ pub struct YoutubeIntegrationBundle {
     viewer_report_tx: watch::Sender<ViewerReport>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
     state_rx: watch::Receiver<ConnectionState>,
+    retired: CancellationToken,
 }
 
 impl YoutubeIntegrationBundle {
@@ -88,15 +90,21 @@ impl YoutubeIntegrationBundle {
                     as futures::future::BoxFuture<'static, _>
             })
         };
-        tokio::spawn(
-            YoutubeViewerPoll::new(
-                token_source,
-                platform.active_broadcast_id(),
-                Arc::clone(&quota),
-                viewer_report_tx.clone(),
-            )
-            .run(),
+        let retired = CancellationToken::new();
+        let viewer_poll = YoutubeViewerPoll::new(
+            token_source,
+            platform.active_broadcast_id(),
+            Arc::clone(&quota),
+            viewer_report_tx.clone(),
         );
+        let poll_retired = retired.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                biased;
+                () = poll_retired.cancelled() => {}
+                () = viewer_poll.run() => {}
+            }
+        });
 
         let bundle = Arc::new(Self {
             id: crate::YOUTUBE_INTEGRATION.id,
@@ -110,6 +118,7 @@ impl YoutubeIntegrationBundle {
             viewer_report_tx,
             viewer_report_rx,
             state_rx,
+            retired,
         });
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_health_bridge(&bundle);
@@ -119,6 +128,11 @@ impl YoutubeIntegrationBundle {
 
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
         Box::new(YoutubeViewerSource::new(self.viewer_report_tx.subscribe()))
+    }
+
+    pub async fn shutdown(&self) {
+        self.retired.cancel();
+        let _ = self.platform.disconnect().await;
     }
 
     fn current_state(&self) -> ConnectionState {
@@ -133,7 +147,12 @@ impl YoutubeIntegrationBundle {
         let mut state_rx = bundle.state_rx.clone();
         handle.spawn(async move {
             let mut previous = *state_rx.borrow();
-            while state_rx.changed().await.is_ok() {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = state_rx.changed() => if changed.is_err() { break },
+                }
                 let current = *state_rx.borrow();
 
                 let chat_delta = HealthDelta {
@@ -163,7 +182,12 @@ impl YoutubeIntegrationBundle {
         let bundle = Arc::clone(bundle);
         let mut reports_rx = bundle.viewer_report_tx.subscribe();
         handle.spawn(async move {
-            while reports_rx.changed().await.is_ok() {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = reports_rx.changed() => if changed.is_err() { break },
+                }
                 let delta = HealthDelta {
                     index: 2,
                     new_value: viewers_health_value(*reports_rx.borrow()),

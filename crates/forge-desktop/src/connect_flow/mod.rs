@@ -6,31 +6,21 @@ use std::sync::Arc;
 use forge_components::{
     Density, ForgePalette, PlatformKind, Spacing, platform_color, platform_hero, spacing, tr,
 };
-use forge_events::EventPublisher;
-use forge_platform_kick::KickIntegrationBundle;
-use forge_platform_twitch::TwitchIntegrationBundle;
-use forge_platform_youtube::YoutubeIntegrationBundle;
-use forge_runtime::{EventBus, LiveViewerAggregatorHandle};
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px};
 use tokio_util::sync::CancellationToken;
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::integrations::{KickInstallSeed, TwitchInstallSeed, YoutubeInstallSeed};
+use crate::integration_supervisor::IntegrationSlot;
+use crate::integrations::BuiltinObject;
 use crate::presentation::ActivePresentation;
 
 use device_code::{TwitchDeviceState, TwitchFlowHandle};
 use local_callback::{KickFlowHandle, LocalCallbackFlowPhase, YoutubeFlowHandle};
 
-pub enum ConnectedBundle {
-    Twitch(Arc<TwitchIntegrationBundle>),
-    Youtube(Arc<YoutubeIntegrationBundle>),
-    Kick(Arc<KickIntegrationBundle>),
-}
-
 pub enum ConnectFlowEvent {
-    Connected(ConnectedBundle),
+    Connected(BuiltinObject),
     Leave,
 }
 
@@ -39,12 +29,9 @@ pub struct ConnectFlowLaunch {
     pub display_name: String,
     pub rt_handle: tokio::runtime::Handle,
     pub credentials: Arc<dyn CredentialsRepo>,
-    pub bus: Arc<dyn EventPublisher>,
-    pub event_bus: Arc<EventBus>,
-    pub live_viewers: LiveViewerAggregatorHandle,
-    pub twitch_install_seed: Option<TwitchInstallSeed>,
-    pub kick_install_seed: Option<KickInstallSeed>,
-    pub youtube_install_seed: Option<YoutubeInstallSeed>,
+    pub twitch_slot: Option<IntegrationSlot>,
+    pub kick_slot: Option<IntegrationSlot>,
+    pub youtube_slot: Option<IntegrationSlot>,
 }
 
 pub struct ConnectFlow {
@@ -52,12 +39,9 @@ pub struct ConnectFlow {
     display_name: String,
     rt_handle: tokio::runtime::Handle,
     credentials: Arc<dyn CredentialsRepo>,
-    bus: Arc<dyn EventPublisher>,
-    event_bus: Arc<EventBus>,
-    live_viewers: LiveViewerAggregatorHandle,
-    twitch_install_seed: Option<TwitchInstallSeed>,
-    kick_install_seed: Option<KickInstallSeed>,
-    youtube_install_seed: Option<YoutubeInstallSeed>,
+    twitch_slot: Option<IntegrationSlot>,
+    kick_slot: Option<IntegrationSlot>,
+    youtube_slot: Option<IntegrationSlot>,
     phase: LocalCallbackFlowPhase,
     auth_url: Option<String>,
     error: Option<String>,
@@ -86,12 +70,9 @@ impl ConnectFlow {
             display_name,
             rt_handle,
             credentials,
-            bus,
-            event_bus,
-            live_viewers,
-            twitch_install_seed,
-            kick_install_seed,
-            youtube_install_seed,
+            twitch_slot,
+            kick_slot,
+            youtube_slot,
         } = launch;
 
         if platform == PlatformId::Twitch {
@@ -106,12 +87,9 @@ impl ConnectFlow {
             display_name,
             rt_handle,
             credentials,
-            bus,
-            event_bus,
-            live_viewers,
-            twitch_install_seed,
-            kick_install_seed,
-            youtube_install_seed,
+            twitch_slot,
+            kick_slot,
+            youtube_slot,
             phase: LocalCallbackFlowPhase::Idle,
             auth_url: None,
             error: None,
@@ -140,8 +118,8 @@ impl ConnectFlow {
         );
     }
 
-    fn finish(&mut self, bundle: ConnectedBundle, cx: &mut Context<Self>) {
-        cx.emit(ConnectFlowEvent::Connected(bundle));
+    fn finish(&mut self, object: BuiltinObject, cx: &mut Context<Self>) {
+        cx.emit(ConnectFlowEvent::Connected(object));
     }
 
     fn leave(&mut self, cx: &mut Context<Self>) {

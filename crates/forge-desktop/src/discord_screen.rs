@@ -23,6 +23,7 @@ use crate::discord_webhook_modal::{
 use crate::discord_webhooks::{
     DISCORD_EVENT_PREFIX, WebhookRow, distinct_linked_actions, load_webhooks, name_is_taken,
 };
+use crate::integration_supervisor::IntegrationSlot;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
@@ -105,6 +106,7 @@ struct DeletePrompt {
 
 pub struct DiscordScreenView {
     client: Arc<DiscordClient>,
+    integration: Option<IntegrationSlot>,
     action_repo: Arc<dyn ActionRepo>,
     rt_handle: tokio::runtime::Handle,
     webhooks: Vec<WebhookRow>,
@@ -120,6 +122,7 @@ pub struct DiscordScreenView {
 impl DiscordScreenView {
     pub fn new(
         client: Arc<DiscordClient>,
+        integration: Option<IntegrationSlot>,
         action_repo: Arc<dyn ActionRepo>,
         bus: Arc<EventBus>,
         rt_handle: tokio::runtime::Handle,
@@ -130,6 +133,7 @@ impl DiscordScreenView {
             posts: client.recent_posts(),
             health: client.send_health(),
             client,
+            integration,
             action_repo,
             rt_handle,
             webhooks: Vec::new(),
@@ -316,6 +320,9 @@ impl DiscordScreenView {
             |this, result, cx| match result {
                 Ok(()) => {
                     cx.push_toast(ToastKind::Success, tr!("discord_toast_saved"));
+                    if let Some(integration) = &this.integration {
+                        integration.request_enable();
+                    }
                     this.load(cx);
                 }
                 Err(message) => this.on_error(&message, cx),

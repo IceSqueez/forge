@@ -89,6 +89,10 @@ impl MidiClient {
         self.send_command(SupervisorCommand::Enable).await
     }
 
+    pub async fn shutdown(&self) -> Result<(), MidiError> {
+        self.send_command(SupervisorCommand::Shutdown).await
+    }
+
     pub async fn rescan_ports(&self) -> Result<(), MidiError> {
         self.send_command(SupervisorCommand::Rescan).await
     }

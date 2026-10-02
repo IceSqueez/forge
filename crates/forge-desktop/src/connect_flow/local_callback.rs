@@ -6,7 +6,6 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     icon, mono_family, pulse_dot, radius, spacing, spinner, tr, with_alpha,
 };
-use forge_events::EventPublisher;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
@@ -15,8 +14,9 @@ use gpui::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::{ConnectFlow, ConnectedBundle, status_dot};
-use crate::integrations::{KickInstallSeed, YoutubeInstallSeed};
+use super::{ConnectFlow, status_dot};
+use crate::integration_supervisor::IntegrationSlot;
+use crate::integrations::BuiltinObject;
 
 pub(super) type YoutubeFlowHandle =
     Arc<tokio::sync::Mutex<Option<forge_platform_youtube::GoogleAuthFlow>>>;
@@ -198,54 +198,37 @@ impl ConnectFlow {
     }
 
     fn install_youtube(&mut self, cx: &mut Context<Self>) {
-        let seed = self.youtube_install_seed.clone();
-        let bus = Arc::clone(&self.event_bus);
-        let live_viewers = self.live_viewers.clone();
-        async_bridge::run_async(
-            &self.rt_handle,
-            async move { assemble_youtube_install(seed, bus, live_viewers).await },
-            |this, result, cx| this.apply_youtube_install(result, cx),
-            cx,
-        );
-    }
-
-    fn apply_youtube_install(
-        &mut self,
-        result: Result<Arc<forge_platform_youtube::YoutubeIntegrationBundle>, String>,
-        cx: &mut Context<Self>,
-    ) {
-        match result {
-            Ok(bundle) => self.finish(ConnectedBundle::Youtube(bundle), cx),
-            Err(e) => {
-                tracing::warn!(error = %e, "youtube in-session connect failed");
-                self.phase = LocalCallbackFlowPhase::Failed;
-                self.error = Some(e);
-                cx.notify();
-            }
-        }
+        self.activate(self.youtube_slot.clone(), "YouTube", cx);
     }
 
     fn install_kick(&mut self, cx: &mut Context<Self>) {
-        let seed = self.kick_install_seed.clone();
-        let bus = Arc::clone(&self.bus);
-        let live_viewers = self.live_viewers.clone();
+        self.activate(self.kick_slot.clone(), "Kick", cx);
+    }
+
+    fn activate(
+        &mut self,
+        slot: Option<IntegrationSlot>,
+        platform_name: &'static str,
+        cx: &mut Context<Self>,
+    ) {
         async_bridge::run_async(
             &self.rt_handle,
-            async move { assemble_kick_install(seed, bus, live_viewers).await },
-            |this, result, cx| this.apply_kick_install(result, cx),
+            async move {
+                let slot = slot.ok_or_else(|| {
+                    format!("{platform_name} OAuth client credentials are not configured")
+                })?;
+                slot.activate().await
+            },
+            |this, result, cx| this.apply_activation(result, cx),
             cx,
         );
     }
 
-    fn apply_kick_install(
-        &mut self,
-        result: Result<Arc<forge_platform_kick::KickIntegrationBundle>, String>,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_activation(&mut self, result: Result<BuiltinObject, String>, cx: &mut Context<Self>) {
         match result {
-            Ok(bundle) => self.finish(ConnectedBundle::Kick(bundle), cx),
+            Ok(object) => self.finish(object, cx),
             Err(e) => {
-                tracing::warn!(error = %e, "kick in-session connect failed");
+                tracing::warn!(error = %e, "in-session connect failed");
                 self.phase = LocalCallbackFlowPhase::Failed;
                 self.error = Some(e);
                 cx.notify();
@@ -1054,53 +1037,4 @@ async fn wait_for_kick_authorization(
         .save_from_bundle(bundle)
         .await
         .map_err(|e| e.to_string())
-}
-
-async fn assemble_youtube_install(
-    seed: Option<YoutubeInstallSeed>,
-    bus: Arc<forge_runtime::EventBus>,
-    live_viewers: forge_runtime::LiveViewerAggregatorHandle,
-) -> Result<Arc<forge_platform_youtube::YoutubeIntegrationBundle>, String> {
-    let seed =
-        seed.ok_or_else(|| "YouTube OAuth client credentials are not configured".to_owned())?;
-    let creds = seed
-        .manager
-        .load()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no YouTube credentials found right after authorization".to_owned())?;
-
-    let stack = crate::integrations::assemble_youtube_stack(seed, bus, creds.channel_id).await;
-
-    live_viewers.register(PlatformId::YouTube, stack.viewer_source);
-    Ok(stack.bundle)
-}
-
-async fn assemble_kick_install(
-    seed: Option<KickInstallSeed>,
-    bus: Arc<dyn EventPublisher>,
-    live_viewers: forge_runtime::LiveViewerAggregatorHandle,
-) -> Result<Arc<forge_platform_kick::KickIntegrationBundle>, String> {
-    let seed = seed.ok_or_else(|| "Kick OAuth client credentials are not configured".to_owned())?;
-    let creds = seed
-        .manager
-        .load()
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no Kick credentials found right after authorization".to_owned())?;
-
-    let stack = crate::integrations::assemble_kick_stack(
-        seed.manager,
-        seed.platform,
-        seed.rate_limiter,
-        seed.channel,
-        seed.rewards,
-        bus,
-        creds.username,
-        creds.user_id,
-    )
-    .await;
-
-    live_viewers.register(PlatformId::Kick, stack.viewer_source);
-    Ok(stack.bundle)
 }

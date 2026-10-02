@@ -29,6 +29,7 @@ use forge_storage_sqlite::SqliteBackend;
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
 use crate::clip_hotkeys::{HotkeySyncedClipsRepo, spawn_clip_hotkey_dispatcher};
+use crate::integration_supervisor::IntegrationSupervisor;
 use crate::integrations::build_integrations;
 use crate::log_tail::LogTail;
 use crate::overlay_frame_sink::ServerOverlayFrameSink;
@@ -329,8 +330,19 @@ pub async fn build_runtime(
         Config::default(),
     );
     let live_viewers = spawn_live_viewer_aggregator();
-    for (platform, source) in integrations.viewer_sources {
-        live_viewers.register(platform, source);
+    let supervisor = IntegrationSupervisor::launch(
+        integrations.factories,
+        Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+        action_engine.integration_gate().clone(),
+        integrations.builtins.clone(),
+        live_viewers.clone(),
+    );
+    supervisor.boot().await;
+    if let (Some(reconciler), Some(engine)) = (
+        &integrations.hotkey_reconciler,
+        supervisor.slot(&forge_hotkey::HOTKEY_INTEGRATION.id),
+    ) {
+        reconciler.enable_engine_on_new_bindings(engine);
     }
     let stream_live =
         spawn_stream_live_signal(&live_viewers, integrations.obs_install_seed.stream_output());
@@ -423,13 +435,11 @@ pub async fn build_runtime(
         live_viewers,
         stream_live,
         builtins: integrations.builtins,
-        twitch_install_seed: integrations.twitch_install_seed,
-        kick_install_seed: integrations.kick_install_seed,
-        youtube_install_seed: integrations.youtube_install_seed,
+        integrations: supervisor,
         obs_install_seed: integrations.obs_install_seed,
         vtube_install_seed: integrations.vtube_install_seed,
         discord_client: integrations.discord_client,
-        midi_client: integrations.midi_client,
+        midi_sink: integrations.midi_sink,
         hotkey_client: integrations.hotkey_client,
         hotkey_reconciler: integrations.hotkey_reconciler,
         server,

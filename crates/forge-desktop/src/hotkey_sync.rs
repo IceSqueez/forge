@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use forge_hotkey::{HotkeyClient, HotkeyCombo, HotkeyError};
@@ -9,6 +9,7 @@ use tokio::sync::{Mutex, watch};
 
 use crate::clip_hotkeys::{ClipBindings, clip_bindings_of};
 use crate::hotkey_bindings::{COMBO_FIELD, HotkeyEdge, persisted_hotkey_combos};
+use crate::integration_supervisor::IntegrationSlot;
 
 pub struct HotkeyReconciler {
     client: Arc<HotkeyClient>,
@@ -16,6 +17,8 @@ pub struct HotkeyReconciler {
     clips: Arc<dyn SoundboardClipsRepo>,
     serial: Mutex<()>,
     clip_bindings: watch::Sender<Arc<ClipBindings>>,
+    known_combos: std::sync::Mutex<Option<BTreeSet<String>>>,
+    engine: OnceLock<IntegrationSlot>,
 }
 
 impl HotkeyReconciler {
@@ -31,7 +34,22 @@ impl HotkeyReconciler {
             clips,
             serial: Mutex::new(()),
             clip_bindings,
+            known_combos: std::sync::Mutex::new(None),
+            engine: OnceLock::new(),
         })
+    }
+
+    pub fn enable_engine_on_new_bindings(&self, engine: IntegrationSlot) {
+        let _ = self.engine.set(engine);
+    }
+
+    fn note_wanted(&self, wanted: &BTreeSet<String>) -> bool {
+        let mut known = self.known_combos.lock().unwrap_or_else(|p| p.into_inner());
+        let grew = known
+            .as_ref()
+            .is_some_and(|previous| wanted.iter().any(|combo| !previous.contains(combo)));
+        *known = Some(wanted.clone());
+        grew
     }
 
     pub fn client(&self) -> &Arc<HotkeyClient> {
@@ -62,6 +80,11 @@ impl HotkeyReconciler {
         let mut wanted = persisted_hotkey_combos(&instances);
         wanted.extend(bindings.keys().cloned());
         self.clip_bindings.send_replace(Arc::new(bindings));
+        if self.note_wanted(&wanted)
+            && let Some(engine) = self.engine.get()
+        {
+            engine.request_enable();
+        }
         apply_wanted(&self.client, &wanted).await;
     }
 

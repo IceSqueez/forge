@@ -5,23 +5,22 @@ use std::time::Duration;
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, ChatPlatform,
-    LiveViewerSource, PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome,
-    RateLimiter, SectionIcon, TokenBucketRateLimiter,
+    PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome, RateLimiter, SectionIcon,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
-use forge_storage::{CredentialsRepo, DataProvider, SettingsRepo, get_bool_setting};
-use forge_types::IntegrationId;
-use forge_types::{EventId, PlatformId};
+use forge_storage::{CredentialsRepo, DataProvider};
+use forge_types::{EventId, IntegrationId};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
-use crate::hotkey_bindings::{HOTKEY_ENABLED_KEY, load_hold_ceiling};
 use crate::hotkey_sync::HotkeyReconciler;
-use crate::midi_screen::MIDI_ENABLED_KEY;
-use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
-use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
+use crate::integration_factories::{
+    wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
+    wire_youtube,
+};
+use crate::integration_supervisor::{IntegrationFactory, TaskGroup};
 
-const CONNECT_GUARD: Duration = Duration::from_secs(5);
 const CHAT_SEND_QUEUE_CAPACITY: usize = 64;
 
 #[derive(Clone)]
@@ -44,12 +43,6 @@ pub struct BuiltinRegistry {
 }
 
 impl BuiltinRegistry {
-    fn seeded(entries: HashMap<IntegrationId, BuiltinObject>) -> Self {
-        Self {
-            entries: Arc::new(std::sync::RwLock::new(entries)),
-        }
-    }
-
     pub fn get(&self, id: &IntegrationId) -> Option<BuiltinObject> {
         let guard = self.entries.read().unwrap_or_else(|e| e.into_inner());
         guard.get(id).cloned()
@@ -74,14 +67,11 @@ impl BuiltinRegistry {
 
 pub struct Integrations {
     pub builtins: BuiltinRegistry,
-    pub viewer_sources: Vec<(PlatformId, Box<dyn LiveViewerSource>)>,
-    pub twitch_install_seed: Option<TwitchInstallSeed>,
-    pub kick_install_seed: Option<KickInstallSeed>,
-    pub youtube_install_seed: Option<YoutubeInstallSeed>,
+    pub factories: Vec<Arc<dyn IntegrationFactory>>,
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Arc<forge_discord::DiscordClient>,
-    pub midi_client: Option<Arc<forge_midi::MidiClient>>,
+    pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
 }
@@ -93,7 +83,7 @@ pub struct ObsInstallSeed {
 }
 
 impl ObsInstallSeed {
-    fn new(sink: Arc<forge_obs::SwitchableObsSink>) -> Self {
+    pub(crate) fn new(sink: Arc<forge_obs::SwitchableObsSink>) -> Self {
         Self {
             sink,
             live: Arc::new(std::sync::RwLock::new(None)),
@@ -138,7 +128,7 @@ pub struct VTubeInstallSeed {
 }
 
 impl VTubeInstallSeed {
-    fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>) -> Self {
+    pub(crate) fn new(sink: Arc<forge_vtube::SwitchableVTubeSink>) -> Self {
         Self {
             sink,
             live: Arc::new(std::sync::RwLock::new(None)),
@@ -154,6 +144,16 @@ impl VTubeInstallSeed {
     pub fn clear(&self) {
         let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
         *guard = None;
+    }
+
+    pub async fn disconnect_live(&self) {
+        let previous = {
+            let mut guard = self.live.write().unwrap_or_else(|e| e.into_inner());
+            guard.take()
+        };
+        if let Some(client) = previous {
+            let _ = client.disconnect().await;
+        }
     }
 
     pub fn live(&self) -> Option<Arc<forge_vtube::VTubeClient>> {
@@ -188,30 +188,6 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         obs_client: Some(client),
         vtube_client: None,
     }
-}
-
-#[derive(Clone)]
-pub struct KickInstallSeed {
-    pub manager: Arc<forge_platform_kick::KickCredentialsManager>,
-    pub rate_limiter: Arc<dyn RateLimiter>,
-    pub platform: Arc<forge_platform_kick::KickPlatform>,
-    pub channel: Arc<forge_platform_kick::KickChannel>,
-    pub rewards: Arc<forge_platform_kick::KickRewards>,
-}
-
-#[derive(Clone)]
-pub struct TwitchInstallSeed {
-    pub lifecycle: forge_platform_twitch::TwitchLifecycle,
-    pub endpoints: PlatformEndpoints,
-    pub manager: Arc<forge_platform_twitch::TwitchCredentialsManager>,
-}
-
-#[derive(Clone)]
-pub struct YoutubeInstallSeed {
-    pub manager: Arc<forge_platform_youtube::YoutubeCredentialsManager>,
-    pub live_chat_id: forge_platform_youtube::LiveChatIdHandle,
-    pub active_broadcast: forge_platform_youtube::ActiveBroadcastIdHandle,
-    pub quota: Arc<tokio::sync::Mutex<forge_platform_youtube::QuotaState>>,
 }
 
 pub fn twitch_builtin_object(
@@ -262,7 +238,7 @@ pub fn kick_builtin_object(
     }
 }
 
-struct NoopRateLimiter;
+pub(crate) struct NoopRateLimiter;
 
 #[async_trait::async_trait]
 impl RateLimiter for NoopRateLimiter {
@@ -286,58 +262,53 @@ pub async fn build_integrations(
     hotkey_main_thread: forge_hotkey::MainThreadLink,
 ) -> Integrations {
     register_platform_triggers(triggers);
+    let midi_kinds = kinds_owned_by(triggers, &forge_midi::MIDI_INTEGRATION.id);
 
-    let mut builtins: HashMap<IntegrationId, BuiltinObject> = HashMap::new();
-    let mut viewer_sources: Vec<(PlatformId, Box<dyn LiveViewerSource>)> = Vec::new();
-
-    let mut insert = |id: &str, object: Option<BuiltinObject>| {
-        if let Some(object) = object {
-            builtins.insert(IntegrationId::new(id), object);
-        }
-    };
-
-    let (twitch, twitch_viewers, twitch_install_seed) =
-        build_twitch(sub_actions, backend, bus, endpoints).await;
-    if let Some(source) = twitch_viewers {
-        viewer_sources.push((PlatformId::Twitch, source));
+    let mut factories: Vec<Arc<dyn IntegrationFactory>> = Vec::new();
+    if let Some(twitch) = wire_twitch(sub_actions, backend, bus, endpoints) {
+        factories.push(Arc::new(twitch));
     }
-    insert("twitch", twitch);
-    let obs_install_seed = build_obs(sub_actions, backend, bus).await;
-    let vtube_install_seed = build_vtube(sub_actions, backend, bus).await;
-    let (discord, discord_client) = build_discord(sub_actions, backend, bus);
-    insert("discord", discord);
-    let (midi, midi_client) = build_midi(sub_actions, backend, bus).await;
-    insert("midi", midi);
-    let (hotkey, hotkey_client, hotkey_reconciler) =
-        build_hotkey(backend, bus, hotkey_main_thread).await;
-    insert("hotkey", hotkey);
-
-    let (youtube, youtube_viewers, youtube_install_seed) =
-        build_youtube(sub_actions, backend, bus).await;
-    if let Some(source) = youtube_viewers {
-        viewer_sources.push((PlatformId::YouTube, source));
+    let obs = wire_obs(sub_actions, backend, bus);
+    let obs_install_seed = obs.seed();
+    factories.push(Arc::new(obs));
+    let vtube = wire_vtube(sub_actions, backend, bus);
+    let vtube_install_seed = vtube.seed();
+    factories.push(Arc::new(vtube));
+    let discord = wire_discord(sub_actions, backend, bus);
+    let discord_client = discord.client();
+    factories.push(Arc::new(discord));
+    let midi = wire_midi(sub_actions, backend, bus, midi_kinds);
+    let midi_sink = midi.sink();
+    factories.push(Arc::new(midi));
+    let (hotkey, hotkey_reconciler) = wire_hotkey(backend, bus, hotkey_main_thread).await;
+    let hotkey_client = hotkey.client();
+    factories.push(Arc::new(hotkey));
+    if let Some(youtube) = wire_youtube(sub_actions, backend, bus) {
+        factories.push(Arc::new(youtube));
     }
-    insert("youtube", youtube);
-
-    let (kick, kick_viewers, kick_install_seed) = build_kick(sub_actions, backend, bus).await;
-    if let Some(source) = kick_viewers {
-        viewer_sources.push((PlatformId::Kick, source));
+    if let Some(kick) = wire_kick(sub_actions, backend, bus) {
+        factories.push(Arc::new(kick));
     }
-    insert("kick", kick);
 
     Integrations {
-        builtins: BuiltinRegistry::seeded(builtins),
-        viewer_sources,
-        twitch_install_seed,
-        kick_install_seed,
-        youtube_install_seed,
+        builtins: BuiltinRegistry::default(),
+        factories,
         obs_install_seed,
         vtube_install_seed,
         discord_client,
-        midi_client,
-        hotkey_client,
-        hotkey_reconciler,
+        midi_sink,
+        hotkey_client: Some(hotkey_client),
+        hotkey_reconciler: Some(hotkey_reconciler),
     }
+}
+
+fn kinds_owned_by(triggers: &TriggerRegistry, owner: &IntegrationId) -> Vec<String> {
+    triggers
+        .all()
+        .map(|descriptor| descriptor.id())
+        .filter(|kind| triggers.owning_integration(kind) == Some(owner))
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn register_platform_triggers(triggers: &mut TriggerRegistry) {
@@ -364,15 +335,19 @@ fn register_platform_triggers(triggers: &mut TriggerRegistry) {
     }
 }
 
-fn publisher(bus: &Arc<EventBus>) -> Arc<dyn EventPublisher> {
+pub(crate) fn publisher(bus: &Arc<EventBus>) -> Arc<dyn EventPublisher> {
     Arc::clone(bus) as Arc<dyn EventPublisher>
 }
 
-fn creds_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn CredentialsRepo> {
+pub(crate) fn creds_of(backend: &Arc<dyn DataProvider>) -> Arc<dyn CredentialsRepo> {
     Arc::clone(backend) as Arc<dyn CredentialsRepo>
 }
 
-fn spawn_event_bridge(bus: Arc<dyn EventPublisher>, mut events: EventStream, label: &'static str) {
+pub(crate) fn spawn_event_bridge(
+    bus: Arc<dyn EventPublisher>,
+    mut events: EventStream,
+    label: &'static str,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             match events.recv().await {
@@ -385,7 +360,7 @@ fn spawn_event_bridge(bus: Arc<dyn EventPublisher>, mut events: EventStream, lab
                 Err(_) => continue,
             }
         }
-    });
+    })
 }
 
 struct ChatSendRequest {
@@ -399,7 +374,7 @@ fn spawn_chat_send_worker(
     target: &'static str,
     source: EventSource,
     mut requests: mpsc::Receiver<ChatSendRequest>,
-) {
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(request) = requests.recv().await {
             match platform.send_message(target, &request.message).await {
@@ -417,19 +392,26 @@ fn spawn_chat_send_worker(
                 )),
             }
         }
-    });
+    })
 }
 
-fn spawn_chat_send_bridge(
+pub(crate) fn spawn_chat_send_bridge(
     bus: Arc<EventBus>,
     platform: Arc<dyn ChatPlatform>,
     target: &'static str,
     source: EventSource,
-) {
+) -> TaskGroup {
     let (tx, rx) = mpsc::channel(CHAT_SEND_QUEUE_CAPACITY);
-    spawn_chat_send_worker(Arc::clone(&bus), platform, target, source, rx);
+    let mut tasks = TaskGroup::default();
+    tasks.track(spawn_chat_send_worker(
+        Arc::clone(&bus),
+        platform,
+        target,
+        source,
+        rx,
+    ));
 
-    tokio::spawn(async move {
+    tasks.track(tokio::spawn(async move {
         let mut sub = bus.subscribe();
         let mut lag_count: u64 = 0;
         let mut lagging = false;
@@ -493,626 +475,19 @@ fn spawn_chat_send_bridge(
                 ));
             }
         }
-    });
+    }));
+    tasks
 }
 
-fn spawn_connect(platform: Arc<dyn ChatPlatform>, label: &'static str) {
+pub(crate) fn spawn_connect(
+    platform: Arc<dyn ChatPlatform>,
+    label: &'static str,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         if let Err(e) = platform.connect().await {
             eprintln!("forge-desktop: {label} connect failed: {e}");
         }
-    });
-}
-
-async fn build_twitch(
-    sub_actions: &mut SubActionRegistry,
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-    endpoints: &PlatformEndpoints,
-) -> (
-    Option<BuiltinObject>,
-    Option<Box<dyn LiveViewerSource>>,
-    Option<TwitchInstallSeed>,
-) {
-    let Some(client_id) = forge_platform_twitch::client_id() else {
-        return (None, None, None);
-    };
-    let creds = creds_of(backend);
-    let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
-    let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
-        Arc::clone(&creds),
-        client_id.clone(),
-    ));
-    let seed = TwitchInstallSeed {
-        lifecycle: lifecycle.clone(),
-        endpoints: endpoints.clone(),
-        manager: Arc::clone(&manager),
-    };
-
-    let rate_limiter: Arc<dyn RateLimiter> = Arc::new(TokenBucketRateLimiter::new(
-        forge_platform_twitch::HELIX_BUDGET_CAPACITY,
-        forge_platform_twitch::HELIX_BUDGET_WINDOW,
-    ));
-    let transport: Arc<dyn forge_platform_twitch::HelixTransport> =
-        Arc::new(
-            forge_platform_twitch::HelixHttpTransport::new(
-                endpoints,
-                Arc::clone(&rate_limiter),
-                publisher(bus),
-                client_id.clone(),
-                Arc::clone(&manager) as Arc<dyn forge_platform_twitch::HelixTokenSource>,
-            )
-            .with_refresher(
-                Arc::clone(&manager) as Arc<dyn forge_platform_twitch::HelixTokenRefresher>
-            ),
-        );
-    if let Err(e) = forge_platform_twitch::register_twitch_sub_actions(
-        sub_actions,
-        transport,
-        Arc::clone(&creds),
-        lifecycle.clone(),
-    ) {
-        eprintln!("forge-desktop: twitch sub-action registration failed: {e}");
-    }
-
-    let send_platform: Arc<dyn ChatPlatform> =
-        Arc::new(forge_platform_twitch::TwitchPlatform::new(
-            forge_platform_twitch::ChatSessionConfig {
-                client_id: client_id.clone(),
-                broadcaster_id: String::new(),
-                user_id: String::new(),
-                endpoints: endpoints.clone(),
-            },
-            Arc::clone(&creds),
-            Arc::clone(&manager),
-            forge_platform_twitch::SubscriptionTracker::default(),
-            Arc::clone(&rate_limiter),
-            lifecycle.clone(),
-        ));
-    spawn_chat_send_bridge(
-        Arc::clone(bus),
-        send_platform,
-        "twitch",
-        EventSource::Twitch,
-    );
-
-    let Some(stored) = forge_platform_twitch::credentials::load(&*creds)
-        .await
-        .ok()
-        .flatten()
-    else {
-        return (None, None, Some(seed));
-    };
-
-    let login = (!stored.login.is_empty()).then(|| stored.login.clone());
-    let tracker = forge_platform_twitch::SubscriptionTracker::default();
-    let config = forge_platform_twitch::ChatSessionConfig {
-        client_id,
-        broadcaster_id: stored.user_id.clone(),
-        user_id: stored.user_id,
-        endpoints: endpoints.clone(),
-    };
-    let bundle = forge_platform_twitch::TwitchIntegrationBundle::new(
-        login,
-        config,
-        publisher(bus),
-        creds,
-        manager,
-        tracker,
-        rate_limiter,
-        lifecycle,
-    );
-
-    let viewer_source = bundle.viewer_source();
-    (
-        Some(twitch_builtin_object(bundle)),
-        Some(viewer_source),
-        Some(seed),
-    )
-}
-
-async fn build_obs(
-    sub_actions: &mut SubActionRegistry,
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-) -> ObsInstallSeed {
-    let sink = forge_obs::SwitchableObsSink::new();
-    if let Err(e) = forge_obs::register_obs_sub_actions(
-        sub_actions,
-        Arc::clone(&sink) as Arc<dyn forge_obs::ObsSink>,
-    ) {
-        eprintln!("forge-desktop: obs sub-action registration failed: {e}");
-    }
-    let seed = ObsInstallSeed::new(sink);
-
-    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
-    if !get_bool_setting(&*settings, OBS_CONNECT_ON_LAUNCH_KEY, true).await {
-        return seed;
-    }
-
-    let creds = creds_of(backend);
-    let connect = forge_obs::credentials::load_and_connect(&*creds, publisher(bus));
-    let client = match tokio::time::timeout(CONNECT_GUARD, connect).await {
-        Ok(Ok(client)) => client,
-        Ok(Err(_)) => return seed,
-        Err(_) => {
-            eprintln!("forge-desktop: obs connect timed out");
-            return seed;
-        }
-    };
-    client.set_auto_reconnect(get_bool_setting(&*settings, OBS_AUTO_RECONNECT_KEY, true).await);
-    seed.install(client);
-
-    seed
-}
-
-async fn build_vtube(
-    sub_actions: &mut SubActionRegistry,
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-) -> VTubeInstallSeed {
-    let sink = forge_vtube::SwitchableVTubeSink::new();
-    if let Err(e) = forge_vtube::register_vtube_sub_actions(
-        sub_actions,
-        Arc::clone(&sink) as Arc<dyn forge_vtube::VTubeSink>,
-    ) {
-        eprintln!("forge-desktop: vtube sub-action registration failed: {e}");
-    }
-    let seed = VTubeInstallSeed::new(sink);
-
-    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
-    if !get_bool_setting(&*settings, VTUBE_CONNECT_ON_LAUNCH_KEY, true).await {
-        return seed;
-    }
-
-    let creds = creds_of(backend);
-    let connect =
-        forge_vtube::credentials::load_and_connect(&*creds, publisher(bus), Arc::clone(&creds));
-    let client = match tokio::time::timeout(CONNECT_GUARD, connect).await {
-        Ok(Ok(client)) => client,
-        Ok(Err(_)) => return seed,
-        Err(_) => {
-            eprintln!("forge-desktop: vtube connect timed out");
-            return seed;
-        }
-    };
-    client.set_auto_reconnect(get_bool_setting(&*settings, VTUBE_AUTO_RECONNECT_KEY, true).await);
-    seed.install(client);
-
-    seed
-}
-
-fn build_discord(
-    sub_actions: &mut SubActionRegistry,
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-) -> (Option<BuiltinObject>, Arc<forge_discord::DiscordClient>) {
-    let client = forge_discord::DiscordClient::new(
-        forge_discord::DiscordConfig::default(),
-        publisher(bus),
-        creds_of(backend),
-    );
-    if let Err(e) = forge_discord::register_discord_sub_actions(sub_actions, Arc::clone(&client)) {
-        eprintln!("forge-desktop: discord sub-action registration failed: {e}");
-    }
-    let object = BuiltinObject {
-        icon: SectionIcon::new("brand-discord"),
-        status: client.clone(),
-        health: client.clone(),
-        content: client.clone(),
-        quick: client.clone(),
-        control: None,
-        collections: None,
-        obs_client: None,
-        vtube_client: None,
-    };
-    (Some(object), client)
-}
-
-async fn build_midi(
-    sub_actions: &mut SubActionRegistry,
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-) -> (Option<BuiltinObject>, Option<Arc<forge_midi::MidiClient>>) {
-    let client = match forge_midi::MidiClient::start_with_midir(
-        forge_midi::MidiConfig::default(),
-        publisher(bus),
-    ) {
-        Ok(client) => client,
-        Err(e) => {
-            eprintln!("forge-desktop: MIDI init failed; integration unavailable: {e}");
-            return (None, None);
-        }
-    };
-    if let Err(e) = forge_midi::register_midi_sub_actions(sub_actions, Arc::clone(&client)) {
-        eprintln!("forge-desktop: midi sub-action registration failed: {e}");
-    }
-
-    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
-    if !get_bool_setting(&*settings, MIDI_ENABLED_KEY, true).await
-        && let Err(e) = client.disable_input().await
-    {
-        eprintln!("forge-desktop: midi input could not be disabled at boot: {e}");
-    }
-
-    let object = BuiltinObject {
-        icon: SectionIcon::new("piano"),
-        status: client.clone(),
-        health: client.clone(),
-        content: client.clone(),
-        quick: client.clone(),
-        control: Some(client.clone()),
-        collections: None,
-        obs_client: None,
-        vtube_client: None,
-    };
-    (Some(object), Some(client))
-}
-
-async fn build_hotkey(
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-    main_thread: forge_hotkey::MainThreadLink,
-) -> (
-    Option<BuiltinObject>,
-    Option<Arc<forge_hotkey::HotkeyClient>>,
-    Option<Arc<HotkeyReconciler>>,
-) {
-    let settings = Arc::clone(backend) as Arc<dyn SettingsRepo>;
-    let config = forge_hotkey::HotkeyConfig {
-        hold_ceiling_secs: load_hold_ceiling(&*settings).await,
-        ..forge_hotkey::HotkeyConfig::default()
-    };
-    let client = forge_hotkey::HotkeyClient::new(config, publisher(bus), main_thread).await;
-    let reconciler = HotkeyReconciler::new(
-        Arc::clone(&client),
-        backend.trigger_instance_repo(),
-        backend.soundboard_clips_repo(),
-    );
-    reconciler.reconcile().await;
-
-    if !get_bool_setting(&*settings, HOTKEY_ENABLED_KEY, true).await
-        && let Err(e) = client.disable().await
-    {
-        eprintln!("forge-desktop: hotkey engine could not be disabled at boot: {e}");
-    }
-
-    let object = BuiltinObject {
-        icon: SectionIcon::new("keyboard"),
-        status: client.clone(),
-        health: client.clone(),
-        content: client.clone(),
-        quick: client.clone(),
-        control: Some(client.clone()),
-        collections: None,
-        obs_client: None,
-        vtube_client: None,
-    };
-    (Some(object), Some(client), Some(reconciler))
-}
-
-async fn build_youtube(
-    sub_actions: &mut SubActionRegistry,
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-) -> (
-    Option<BuiltinObject>,
-    Option<Box<dyn LiveViewerSource>>,
-    Option<YoutubeInstallSeed>,
-) {
-    let Some((client_id, client_secret)) = forge_platform_youtube::client_credentials() else {
-        return (None, None, None);
-    };
-    let google = forge_platform_youtube::GoogleAuthFlow::new(client_id, client_secret);
-    let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
-        creds_of(backend),
-        google,
-    ));
-
-    let live_chat_id = forge_platform_youtube::LiveChatIdHandle::new();
-    let active_broadcast = forge_platform_youtube::ActiveBroadcastIdHandle::new();
-    let quota = Arc::new(tokio::sync::Mutex::new(
-        forge_platform_youtube::QuotaState::default(),
-    ));
-
-    let send_manager = Arc::clone(&manager);
-    let send = Arc::new(forge_platform_youtube::YoutubeSendChat::new(
-        Arc::new(move || {
-            let manager = Arc::clone(&send_manager);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        live_chat_id.clone(),
-        Arc::clone(&quota),
-    ));
-    let mod_manager = Arc::clone(&manager);
-    let moderation = Arc::new(forge_platform_youtube::YoutubeModeration::new(
-        Arc::new(move || {
-            let manager = Arc::clone(&mod_manager);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        live_chat_id.clone(),
-        Arc::clone(&quota),
-    ));
-    let meta_manager = Arc::clone(&manager);
-    let metadata = Arc::new(forge_platform_youtube::YoutubeStreamMetadata::new(
-        Arc::new(move || {
-            let manager = Arc::clone(&meta_manager);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        active_broadcast.clone(),
-        Arc::clone(&quota),
-    ));
-    let stats_manager = Arc::clone(&manager);
-    let stream_stats = Arc::new(forge_platform_youtube::YoutubeStreamStats::new(
-        Arc::new(move || {
-            let manager = Arc::clone(&stats_manager);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        active_broadcast.clone(),
-        Arc::clone(&quota),
-    ));
-    let ad_break_manager = Arc::clone(&manager);
-    let ad_break = Arc::new(forge_platform_youtube::YoutubeAdBreak::new(
-        Arc::new(move || {
-            let manager = Arc::clone(&ad_break_manager);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        active_broadcast.clone(),
-        Arc::clone(&quota),
-    ));
-    let thumbnail_manager = Arc::clone(&manager);
-    let thumbnail = Arc::new(forge_platform_youtube::YoutubeThumbnail::new(
-        Arc::new(move || {
-            let manager = Arc::clone(&thumbnail_manager);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        active_broadcast.clone(),
-        Arc::clone(&quota),
-    ));
-    let lookup_manager = Arc::clone(&manager);
-    let channel_lookup = Arc::new(forge_platform_youtube::YoutubeChannelLookup::new(
-        Arc::new(move || {
-            let manager = Arc::clone(&lookup_manager);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        Arc::clone(&quota),
-    ));
-    if let Err(e) = forge_platform_youtube::register_youtube_sub_actions(
-        sub_actions,
-        send,
-        moderation,
-        metadata,
-        stream_stats,
-        ad_break,
-        thumbnail,
-        channel_lookup,
-    ) {
-        eprintln!("forge-desktop: youtube sub-action registration failed: {e}");
-    }
-
-    let install_seed = YoutubeInstallSeed {
-        manager: Arc::clone(&manager),
-        live_chat_id,
-        active_broadcast,
-        quota,
-    };
-
-    let creds = match manager.load().await {
-        Ok(Some(creds)) => creds,
-        Ok(None) => return (None, None, Some(install_seed)),
-        Err(e) => {
-            eprintln!("forge-desktop: failed to load youtube credentials: {e}");
-            return (None, None, Some(install_seed));
-        }
-    };
-
-    let stack =
-        assemble_youtube_stack(install_seed.clone(), Arc::clone(bus), creds.channel_id).await;
-    (
-        Some(youtube_builtin_object(Arc::clone(&stack.bundle))),
-        Some(stack.viewer_source),
-        Some(install_seed),
-    )
-}
-
-pub(crate) struct YoutubeStack {
-    pub(crate) bundle: Arc<forge_platform_youtube::YoutubeIntegrationBundle>,
-    pub(crate) viewer_source: Box<dyn LiveViewerSource>,
-}
-
-pub(crate) async fn assemble_youtube_stack(
-    seed: YoutubeInstallSeed,
-    bus: Arc<EventBus>,
-    channel_id: String,
-) -> YoutubeStack {
-    let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
-        channel_id.clone(),
-        Arc::clone(&seed.manager),
-        seed.live_chat_id,
-        seed.active_broadcast,
-        Arc::clone(&seed.quota),
-    ));
-    let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
-
-    let (bundle, _health_tx) = forge_platform_youtube::YoutubeIntegrationBundle::new(
-        channel_id,
-        Arc::clone(&platform),
-        seed.manager,
-        seed.quota,
-    );
-
-    spawn_event_bridge(publisher(&bus), chat_platform.events(), "youtube");
-    spawn_connect(Arc::clone(&chat_platform), "youtube");
-    spawn_chat_send_bridge(bus, chat_platform, "youtube", EventSource::YouTube);
-
-    let viewer_source = bundle.viewer_source();
-    YoutubeStack {
-        bundle,
-        viewer_source,
-    }
-}
-
-async fn build_kick(
-    sub_actions: &mut SubActionRegistry,
-    backend: &Arc<dyn DataProvider>,
-    bus: &Arc<EventBus>,
-) -> (
-    Option<BuiltinObject>,
-    Option<Box<dyn LiveViewerSource>>,
-    Option<KickInstallSeed>,
-) {
-    let Some((client_id, client_secret)) = forge_platform_kick::client_credentials() else {
-        return (None, None, None);
-    };
-    let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
-        creds_of(backend),
-        client_id,
-        client_secret,
-    ));
-
-    let rate_limiter: Arc<dyn RateLimiter> =
-        Arc::new(TokenBucketRateLimiter::new(60, Duration::from_secs(60)));
-    let platform = Arc::new(forge_platform_kick::KickPlatform::new(
-        Arc::clone(&manager),
-        Arc::clone(&rate_limiter),
-    ));
-    let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
-
-    let sender = Arc::new(forge_platform_kick::KickSendChat::new(Arc::new(
-        NoopRateLimiter,
-    )));
-    let moderation = Arc::new(forge_platform_kick::KickModeration::new(Arc::clone(
-        &rate_limiter,
-    )));
-    let channel = Arc::new(forge_platform_kick::KickChannel::new(Arc::clone(
-        &rate_limiter,
-    )));
-    let rewards = Arc::new(forge_platform_kick::KickRewards::new(Arc::clone(
-        &rate_limiter,
-    )));
-    let categories = Arc::new(forge_platform_kick::KickCategories::new(Arc::clone(
-        &rate_limiter,
-    )));
-
-    let install_seed = KickInstallSeed {
-        manager: Arc::clone(&manager),
-        rate_limiter: Arc::clone(&rate_limiter),
-        platform: Arc::clone(&platform),
-        channel: Arc::clone(&channel),
-        rewards: Arc::clone(&rewards),
-    };
-
-    let manager_for_sub_actions = Arc::clone(&manager);
-    let manager_for_broadcaster = Arc::clone(&manager);
-    if let Err(e) = forge_platform_kick::register_kick_sub_actions(
-        sub_actions,
-        forge_platform_kick::KickSubActionDeps {
-            client: Arc::clone(&sender),
-            token_source: Arc::new(move || {
-                let manager = Arc::clone(&manager_for_sub_actions);
-                Box::pin(async move { manager.get_valid_access_token().await })
-            }),
-            broadcaster_id_source: Arc::new(move || {
-                let manager = Arc::clone(&manager_for_broadcaster);
-                Box::pin(async move { manager.user_id().await })
-            }),
-            moderation,
-            channel: Arc::clone(&channel),
-            rewards: Arc::clone(&rewards),
-            categories,
-        },
-    ) {
-        eprintln!("forge-desktop: kick sub-action registration failed: {e}");
-    }
-
-    spawn_chat_send_bridge(
-        Arc::clone(bus),
-        Arc::clone(&chat_platform),
-        "kick",
-        EventSource::Kick,
-    );
-
-    let creds = match manager.load().await {
-        Ok(Some(creds)) => creds,
-        Ok(None) => return (None, None, Some(install_seed)),
-        Err(e) => {
-            eprintln!("forge-desktop: failed to load kick credentials: {e}");
-            return (None, None, Some(install_seed));
-        }
-    };
-
-    let stack = assemble_kick_stack(
-        manager,
-        platform,
-        rate_limiter,
-        channel,
-        rewards,
-        publisher(bus),
-        creds.username,
-        creds.user_id,
-    )
-    .await;
-
-    (
-        Some(kick_builtin_object(stack.bundle)),
-        Some(stack.viewer_source),
-        Some(install_seed),
-    )
-}
-
-pub(crate) struct KickStack {
-    pub(crate) bundle: Arc<forge_platform_kick::KickIntegrationBundle>,
-    pub(crate) viewer_source: Box<dyn LiveViewerSource>,
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn assemble_kick_stack(
-    manager: Arc<forge_platform_kick::KickCredentialsManager>,
-    platform: Arc<forge_platform_kick::KickPlatform>,
-    rate_limiter: Arc<dyn RateLimiter>,
-    channel: Arc<forge_platform_kick::KickChannel>,
-    rewards: Arc<forge_platform_kick::KickRewards>,
-    bus: Arc<dyn EventPublisher>,
-    slug: String,
-    user_id: u64,
-) -> KickStack {
-    let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
-    spawn_event_bridge(Arc::clone(&bus), chat_platform.events(), "kick");
-    spawn_connect(chat_platform, "kick");
-
-    let (poller_tx, mut poller_rx) = tokio::sync::mpsc::channel::<Event>(256);
-    let bus_poller = Arc::clone(&bus);
-    tokio::spawn(async move {
-        while let Some(event) = poller_rx.recv().await {
-            bus_poller.publish(event);
-        }
-    });
-
-    let manager_for_poller = Arc::clone(&manager);
-    let viewer_source = forge_platform_kick::spawn_kick_poller(
-        channel,
-        rewards,
-        Arc::new(move || {
-            let manager = Arc::clone(&manager_for_poller);
-            Box::pin(async move { manager.get_valid_access_token().await })
-        }),
-        poller_tx,
-    );
-    let viewer_report_rx = viewer_source.subscribe();
-
-    let (bundle, _health_tx) = forge_platform_kick::KickIntegrationBundle::new(
-        slug,
-        user_id,
-        platform,
-        manager,
-        rate_limiter,
-        viewer_report_rx,
-    );
-
-    KickStack {
-        bundle,
-        viewer_source: Box::new(viewer_source),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -1545,7 +920,7 @@ mod tests {
         use forge_types::IntegrationId;
         use gpui::{AppContext as _, TestAppContext};
 
-        use super::super::{BuiltinObject, BuiltinRegistry, ObsInstallSeed, VTubeInstallSeed};
+        use super::super::{BuiltinObject, ObsInstallSeed, VTubeInstallSeed};
         use crate::integration_detail::IntegrationDetail;
         use crate::platforms::PlatformConnectivity;
         use crate::presentation::Presentation;
@@ -1670,7 +1045,6 @@ mod tests {
                     Arc::clone(&bus) as Arc<dyn forge_events::EventPublisher>,
                     Arc::clone(&bus),
                     spawn_live_viewer_aggregator(),
-                    BuiltinRegistry::default(),
                     None,
                     None,
                     None,

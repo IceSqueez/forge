@@ -6,6 +6,7 @@ use tokio::sync::broadcast;
 use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::{BroadcastStream, WatchStream};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(test)]
 use forge_platform_core::TokenBucketRateLimiter;
@@ -97,6 +98,7 @@ pub struct TwitchIntegrationBundle {
     token_expires_at: std::sync::RwLock<Option<SystemTime>>,
     connected_at: std::sync::RwLock<Option<OffsetDateTime>>,
     lifecycle: TwitchLifecycle,
+    retired: CancellationToken,
 }
 
 impl TwitchIntegrationBundle {
@@ -148,6 +150,7 @@ impl TwitchIntegrationBundle {
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
             lifecycle,
+            retired: CancellationToken::new(),
         });
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_poll(&bundle, transport);
@@ -178,7 +181,12 @@ impl TwitchIntegrationBundle {
         let bundle = Arc::clone(bundle);
         let mut state_rx = bundle.state_rx.clone();
         tokio::spawn(async move {
-            while state_rx.changed().await.is_ok() {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = state_rx.changed() => if changed.is_err() { break },
+                }
                 let state = *state_rx.borrow();
                 bundle.on_chat_state_changed(state);
 
@@ -268,7 +276,11 @@ impl TwitchIntegrationBundle {
             let mut ticker = tokio::time::interval(VIEWER_POLL_INTERVAL);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
-                ticker.tick().await;
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    _ = ticker.tick() => {}
+                }
 
                 let api_calls_delta = HealthDelta {
                     index: 3,
@@ -331,6 +343,14 @@ impl TwitchIntegrationBundle {
 
     pub(crate) fn handle_slot(&self) -> &Mutex<Option<TwitchChatHandle>> {
         &self.handle
+    }
+
+    pub async fn shutdown(&self) {
+        self.retired.cancel();
+        let handle = self.handle.lock().await.take();
+        if let Some(handle) = handle {
+            handle.shutdown().await;
+        }
     }
 
     pub fn viewer_source(&self) -> Box<dyn LiveViewerSource> {
@@ -404,6 +424,7 @@ impl TwitchIntegrationBundle {
             token_expires_at: std::sync::RwLock::new(None),
             connected_at: std::sync::RwLock::new(None),
             lifecycle: TwitchLifecycle::new(),
+            retired: CancellationToken::new(),
         })
     }
 

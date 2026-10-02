@@ -6,15 +6,13 @@ use forge_registry::{RegistryError, SubActionRegistry};
 
 pub use send::MidiSendRunner;
 
-use crate::client::MidiClient;
 use crate::sink::MidiSink;
 
 pub fn register_midi_sub_actions(
     reg: &mut SubActionRegistry,
-    client: Arc<MidiClient>,
+    sink: Arc<dyn MidiSink>,
 ) -> Result<(), RegistryError> {
     let mut reg = reg.owned_by(crate::MIDI_INTEGRATION.id);
-    let sink: Arc<dyn MidiSink> = client;
     reg.register(Box::new(MidiSendRunner::new(sink)))?;
     Ok(())
 }

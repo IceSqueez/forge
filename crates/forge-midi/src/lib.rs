@@ -24,5 +24,5 @@ pub use events::{MidiEvent, MidiMonitorEvent, MidiOutMessage, MidiPortInfo, Port
 pub use integration::MIDI_INTEGRATION;
 pub use monitor::MidiMonitorStream;
 pub use runners::register_midi_sub_actions;
-pub use sink::MidiSink;
+pub use sink::{MidiSink, SwitchableMidiSink};
 pub use triggers::register_midi_triggers;

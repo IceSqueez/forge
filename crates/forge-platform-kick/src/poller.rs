@@ -7,6 +7,7 @@ use forge_platform_core::{
 };
 use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
+use tokio::task::AbortHandle;
 use tokio_stream::wrappers::WatchStream;
 use tracing::warn;
 
@@ -40,21 +41,32 @@ impl KickViewerSource {
     }
 }
 
+pub struct KickPollerHandle(AbortHandle);
+
+impl KickPollerHandle {
+    pub fn stop(&self) {
+        self.0.abort();
+    }
+}
+
 pub fn spawn_kick_poller(
     channel: Arc<KickChannel>,
     rewards: Arc<KickRewards>,
     token_source: TokenSource,
     event_tx: mpsc::Sender<Event>,
-) -> KickViewerSource {
+) -> (KickViewerSource, KickPollerHandle) {
     let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
-    tokio::spawn(run_loop(
+    let task = tokio::spawn(run_loop(
         channel,
         rewards,
         token_source,
         event_tx,
         viewer_tx,
     ));
-    KickViewerSource { reports: viewer_rx }
+    (
+        KickViewerSource { reports: viewer_rx },
+        KickPollerHandle(task.abort_handle()),
+    )
 }
 
 struct ChannelDelta {

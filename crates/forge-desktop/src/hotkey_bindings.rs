@@ -11,7 +11,6 @@ use gpui::Keystroke;
 
 use crate::hotkey_sync::HotkeyReconciler;
 
-pub const HOTKEY_ENABLED_KEY: &str = "hotkey.enabled";
 pub const HOTKEY_HOLD_CEILING_KEY: &str = "hotkey.hold_ceiling_secs";
 pub const HOTKEY_PRESSED_KIND: &str = "hotkey.global.pressed";
 pub const HOTKEY_RELEASED_KIND: &str = "hotkey.global.released";

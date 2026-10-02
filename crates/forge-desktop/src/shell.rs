@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::mem::Discriminant;
 use std::sync::Arc;
 
 use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
@@ -25,6 +27,7 @@ use crate::home::HomeView;
 use crate::hotkey_sync::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
+use crate::integration_supervisor::{LifecycleState, LifecycleStates};
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::midi_screen::MidiScreenView;
 use crate::obs_connect::ObsConnectView;
@@ -51,6 +54,14 @@ use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
 
 const TOAST_PRIORITY: usize = 2;
+
+fn settled_kinds(states: &LifecycleStates) -> HashMap<IntegrationId, Discriminant<LifecycleState>> {
+    states
+        .iter()
+        .filter(|(_, state)| state.is_settled())
+        .map(|(id, state)| (id.clone(), std::mem::discriminant(state)))
+        .collect()
+}
 const OBS_BUILTIN_ID: &str = "obs";
 const VTUBE_BUILTIN_ID: &str = "vtube";
 const MIDI_BUILTIN_ID: &str = "midi";
@@ -103,6 +114,8 @@ impl AppShell {
             .detach();
 
         cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
+
+        Self::spawn_lifecycle_bridge(&handles, cx);
 
         window.focus(&focus, cx);
         cx.on_focus_lost(window, Self::restore_focus).detach();
@@ -222,10 +235,7 @@ impl AppShell {
                         Some(client) => Some(vtube_builtin_object(client)),
                         None => return Self::vtube_connect_screen(handles, cx),
                     },
-                    MIDI_BUILTIN_ID => match handles.midi_client.clone() {
-                        Some(client) => return Self::midi_screen(handles, client, cx),
-                        None => handles.builtins.get(id),
-                    },
+                    MIDI_BUILTIN_ID => return Self::midi_screen(handles, cx),
                     HOTKEY_BUILTIN_ID => match handles.hotkey_reconciler.clone() {
                         Some(reconciler) => return Self::hotkeys_screen(handles, reconciler, cx),
                         None => handles.builtins.get(id),
@@ -245,10 +255,15 @@ impl AppShell {
                 let rt_handle = handles.rt_handle.clone();
                 let action_engine = handles.action_engine.clone();
                 let live_viewers = handles.live_viewers.clone();
-                let builtins = handles.builtins.clone();
-                let twitch_install_seed = handles.twitch_install_seed.clone();
-                let kick_install_seed = handles.kick_install_seed.clone();
-                let youtube_install_seed = handles.youtube_install_seed.clone();
+                let twitch_slot = handles
+                    .integrations
+                    .slot(&forge_platform_twitch::TWITCH_INTEGRATION.id);
+                let kick_slot = handles
+                    .integrations
+                    .slot(&forge_platform_kick::KICK_INTEGRATION.id);
+                let youtube_slot = handles
+                    .integrations
+                    .slot(&forge_platform_youtube::YOUTUBE_INTEGRATION.id);
                 let obs_install_seed = handles.obs_install_seed.clone();
                 let vtube_install_seed = handles.vtube_install_seed.clone();
                 let detail = cx.new(|cx| {
@@ -263,10 +278,9 @@ impl AppShell {
                         bus,
                         event_bus,
                         live_viewers,
-                        builtins,
-                        twitch_install_seed,
-                        kick_install_seed,
-                        youtube_install_seed,
+                        twitch_slot,
+                        kick_slot,
+                        youtube_slot,
                         obs_install_seed,
                         vtube_install_seed,
                         connectivity,
@@ -278,6 +292,7 @@ impl AppShell {
                 })
                 .detach();
                 cx.subscribe(&detail, |this, _view, _: &ObsConnected, cx| {
+                    this.enable_integration(&forge_obs::OBS_INTEGRATION.id);
                     this.rebuild_current(cx);
                 })
                 .detach();
@@ -516,6 +531,7 @@ impl AppShell {
         })
         .detach();
         cx.subscribe(&connect, |this, _view, _: &ObsConnected, cx| {
+            this.enable_integration(&forge_obs::OBS_INTEGRATION.id);
             this.rebuild_current(cx);
         })
         .detach();
@@ -531,8 +547,13 @@ impl AppShell {
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
         let bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();
-        cx.new(|cx| HotkeysScreenView::new(reconciler, backend, settings, bus, rt_handle, cx))
-            .into()
+        let engine = handles
+            .integrations
+            .slot(&forge_hotkey::HOTKEY_INTEGRATION.id);
+        cx.new(|cx| {
+            HotkeysScreenView::new(reconciler, engine, backend, settings, bus, rt_handle, cx)
+        })
+        .into()
     }
 
     fn discord_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
@@ -540,15 +561,16 @@ impl AppShell {
         let action_repo = handles.backend.action_repo();
         let bus = Arc::clone(&handles.bus);
         let rt_handle = handles.rt_handle.clone();
-        cx.new(|cx| DiscordScreenView::new(client, action_repo, bus, rt_handle, cx))
+        let integration = handles
+            .integrations
+            .slot(&forge_discord::DISCORD_INTEGRATION.id);
+        cx.new(|cx| DiscordScreenView::new(client, integration, action_repo, bus, rt_handle, cx))
             .into()
     }
 
-    fn midi_screen(
-        handles: &Arc<RuntimeHandles>,
-        client: Arc<forge_midi::MidiClient>,
-        cx: &mut Context<Self>,
-    ) -> AnyView {
+    fn midi_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
+        let client = handles.midi_sink.live();
+        let integration = handles.integrations.slot(&forge_midi::MIDI_INTEGRATION.id);
         let trigger_repo = handles.backend.trigger_instance_repo();
         let action_repo = handles.backend.action_repo();
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
@@ -557,6 +579,7 @@ impl AppShell {
         cx.new(|cx| {
             MidiScreenView::new(
                 client,
+                integration,
                 trigger_repo,
                 action_repo,
                 settings,
@@ -583,10 +606,51 @@ impl AppShell {
         })
         .detach();
         cx.subscribe(&connect, |this, _view, _: &VTubeConnected, cx| {
+            this.enable_integration(&forge_vtube::VTUBE_INTEGRATION.id);
             this.rebuild_current(cx);
         })
         .detach();
         connect.into()
+    }
+
+    fn enable_integration(&self, id: &IntegrationId) {
+        if let Some(slot) = self.handles.integrations.slot(id) {
+            slot.request_enable();
+        }
+    }
+
+    fn spawn_lifecycle_bridge(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) {
+        let mut lifecycle = handles.integrations.watch();
+        let mut settled = settled_kinds(&lifecycle.current());
+        cx.spawn(async move |this, cx| {
+            while let Some(states) = lifecycle.changed().await {
+                let next = settled_kinds(&states);
+                let changed: Vec<IntegrationId> = next
+                    .iter()
+                    .filter(|(id, kind)| settled.get(*id) != Some(*kind))
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                settled.extend(next);
+                if changed.is_empty() {
+                    continue;
+                }
+                if this
+                    .update(cx, |shell, cx| shell.on_lifecycle_settled(&changed, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn on_lifecycle_settled(&mut self, changed: &[IntegrationId], cx: &mut Context<Self>) {
+        if let Screen::BuiltinDetail(id) = &self.router.screen
+            && changed.contains(id)
+        {
+            self.rebuild_current(cx);
+        }
     }
 
     fn rebuild_current(&mut self, cx: &mut Context<Self>) {

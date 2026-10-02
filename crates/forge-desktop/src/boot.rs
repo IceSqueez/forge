@@ -338,6 +338,11 @@ pub async fn build_runtime(
         live_viewers.clone(),
     );
     supervisor.boot().await;
+    let first_run = crate::first_run::resolve_first_run(
+        backend.as_ref() as &dyn SettingsRepo,
+        &supervisor.watch().current(),
+    )
+    .await;
     if let (Some(reconciler), Some(engine)) = (
         &integrations.hotkey_reconciler,
         supervisor.slot(&forge_hotkey::HOTKEY_INTEGRATION.id),
@@ -456,6 +461,7 @@ pub async fn build_runtime(
         soundboard_player,
         voice_gate,
         stay_awake,
+        first_run,
     })
 }
 

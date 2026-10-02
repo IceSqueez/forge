@@ -52,4 +52,5 @@ pub struct RuntimeHandles {
     pub soundboard_player: Arc<forge_soundboard::SoundboardPlayer>,
     pub voice_gate: Arc<VoiceGateOwner>,
     pub stay_awake: forge_awake::StayAwake,
+    pub first_run: crate::first_run::FirstRun,
 }

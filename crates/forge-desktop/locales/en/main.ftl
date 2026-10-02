@@ -2795,3 +2795,31 @@ integration_disable_used_by = Used by
 integration_disable_more = +{ $count } more
 integration_disable_confirm = Disable { $name }
 integration_disable_esc_hint = Esc to cancel
+integration_welcome_title = Welcome to Forge
+integration_welcome_lead = Turn on what you stream with. Everything you leave off stays off - no connections, no background work.
+integration_welcome_lead_later = You can change this any time in Integrations.
+integration_welcome_nothing_on = Nothing turned on yet
+integration_welcome_some_on = { $count } on - { $names }
+integration_welcome_progress = { $on } / { $total }
+integration_welcome_built_in = Text-to-Speech, Soundboard, Overlays and the WebSocket server are built in - always available.
+integration_welcome_off = Off - turn on to set up
+integration_welcome_on = On
+integration_welcome_skip = Skip for now
+integration_welcome_enter = Enter Forge
+integration_welcome_turn_one_on = Turn one on to continue
+integration_disabled_title = { $name } is disabled
+integration_disabled_lead = It is not running - no connection, no background work. Sign-in and settings are kept.
+integration_disabled_all = All integrations
+integration_disabled_enable = Enable { $name }
+integration_disabled_affected = Affected while disabled
+integration_disabled_unused = Nothing uses { $name } yet.
+integration_disabled_steps_fail = { $name } steps will fail
+integration_disabled_triggers_idle = { $count ->
+    [one] { $count } trigger will not fire
+   *[other] { $count } triggers will not fire
+}
+integration_disabled_kept = Kept for when you turn it back on
+integration_disabled_nothing_kept = Nothing set up yet.
+integration_kept_sign_in = Sign-in saved
+integration_kept_credentials = Credentials saved
+integration_inactive_short = inactive

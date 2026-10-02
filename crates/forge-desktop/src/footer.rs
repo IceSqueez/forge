@@ -3,6 +3,7 @@ use gpui::{AnyElement, Context, Entity, SharedString, Window, div, prelude::*};
 
 use crate::awake_state::{AwakeState, AwakeTone};
 use crate::event_loss::{EventLoss, breakdown, consumer_label, tier_label};
+use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::runtime_status::RuntimeStatus;
@@ -14,6 +15,7 @@ pub struct Footer {
     connectivity: Entity<PlatformConnectivity>,
     event_loss: Entity<EventLoss>,
     awake: Entity<AwakeState>,
+    lifecycle: Entity<IntegrationLifecycle>,
 }
 
 impl Footer {
@@ -22,12 +24,14 @@ impl Footer {
         connectivity: Entity<PlatformConnectivity>,
         event_loss: Entity<EventLoss>,
         awake: Entity<AwakeState>,
+        lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe(&status, |_, _, cx| cx.notify()).detach();
         cx.observe(&connectivity, |_, _, cx| cx.notify()).detach();
         cx.observe(&event_loss, |_, _, cx| cx.notify()).detach();
         cx.observe(&awake, |_, _, cx| cx.notify()).detach();
+        cx.observe(&lifecycle, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
         Self {
@@ -35,6 +39,7 @@ impl Footer {
             connectivity,
             event_loss,
             awake,
+            lifecycle,
         }
     }
 
@@ -96,9 +101,11 @@ impl Render for Footer {
         let palette = cx.palette();
         let uptime = self.status.read(cx).uptime_human();
 
-        let connectivity = self.connectivity.read(cx);
-        let connected = connectivity.connected_count();
-        let total = connectivity.total_count();
+        let lifecycle = self.lifecycle.read(cx);
+        let (connected, total) = self
+            .connectivity
+            .read(cx)
+            .tally_enabled(|integ| lifecycle.is_on(&integ.builtin_id()));
         let connected_label = format!("{connected}/{total} connected");
         let uptime_label = format!("{uptime} uptime");
         let trailing: Vec<AnyElement> = [

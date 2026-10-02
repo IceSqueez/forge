@@ -30,6 +30,8 @@ use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
+mod welcome;
+
 const BODY_PAD_V: Pixels = px(22.0);
 const BODY_PAD_H: Pixels = px(28.0);
 const INTRO_MB: Pixels = px(20.0);
@@ -63,6 +65,7 @@ pub struct IntegrationsHubView {
     references: HashMap<IntegrationId, IntegrationReferences>,
     activity: HashMap<IntegrationId, usize>,
     pending_disable: Option<IntegrationId>,
+    welcome: bool,
     _observers: [Subscription; 2],
 }
 
@@ -89,10 +92,16 @@ impl IntegrationsHubView {
             references: HashMap::new(),
             activity: HashMap::new(),
             pending_disable: None,
+            welcome: false,
             _observers: [lifecycle_obs, connectivity_obs],
         };
         view.refresh(cx);
         view
+    }
+
+    pub fn welcome(mut self) -> Self {
+        self.welcome = true;
+        self
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
@@ -102,10 +111,9 @@ impl IntegrationsHubView {
         let builtins = self.launch.builtins.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.launch.rt_handle.spawn(async move {
-            let references = match wired_triggers(backend.as_ref()).await {
-                Ok((actions, wired)) => {
-                    Some(tally_references(&actions, &wired, &sub_actions, &triggers))
-                }
+            let references = match load_references(backend.as_ref(), &sub_actions, &triggers).await
+            {
+                Ok(references) => Some(references),
                 Err(e) => {
                     tracing::warn!(error = %e, "could not count integration references");
                     None
@@ -149,7 +157,7 @@ impl IntegrationsHubView {
     }
 
     pub fn request_enabled(&mut self, id: IntegrationId, enabled: bool, cx: &mut Context<Self>) {
-        if !enabled && self.references_of(&id).total() > 0 {
+        if !enabled && !self.welcome && self.references_of(&id).total() > 0 {
             self.pending_disable = Some(id);
             cx.notify();
             return;
@@ -231,53 +239,6 @@ impl IntegrationsHubView {
     fn is_connected(&self, id: &IntegrationId, cx: &Context<Self>) -> bool {
         Integration::from_id(id.as_str())
             .is_some_and(|integ| self.connectivity.read(cx).is_connected(integ))
-    }
-
-    fn status_badge(
-        &self,
-        id: &IntegrationId,
-        status: &CardStatus,
-        palette: &ForgePalette,
-    ) -> AnyElement {
-        let spinner_id = ElementId::Name(format!("hub-badge-spin-{id}").into());
-        let (marker, label, color) = match status {
-            CardStatus::Disabled => (
-                BadgeMarker::Dot(palette.text_extreme_faint),
-                tr!("integration_status_disabled"),
-                palette.text_faint,
-            ),
-            CardStatus::Starting => (
-                BadgeMarker::Spinner(spinner_id),
-                tr!("integration_status_starting"),
-                palette.brand,
-            ),
-            CardStatus::Stopping => (
-                BadgeMarker::Spinner(spinner_id),
-                tr!("integration_status_stopping"),
-                palette.text_muted,
-            ),
-            CardStatus::Failed(_) => (
-                BadgeMarker::Glyph(Icon::AlertCircle),
-                tr!("integration_status_failed"),
-                palette.random,
-            ),
-            CardStatus::Active => (
-                BadgeMarker::Dot(palette.success),
-                tr!("integration_status_active"),
-                palette.success,
-            ),
-            CardStatus::Connected => (
-                BadgeMarker::Dot(palette.success),
-                tr!("integration_status_connected"),
-                palette.success,
-            ),
-            CardStatus::NotConnected => (
-                BadgeMarker::Dot(palette.warning),
-                tr!("integration_status_not_connected"),
-                palette.warning,
-            ),
-        };
-        lifecycle_badge(marker, label, color, palette).into_any_element()
     }
 
     fn reference_chip(
@@ -402,13 +363,18 @@ impl IntegrationsHubView {
             HUB_TILE_SIZE,
             palette,
         ))
-        .badge(self.status_badge(&id, &status, palette))
+        .badge(card_status_badge(&id, &status, palette))
         .trailing(switch)
-        .note(note)
-        .footer_left(self.reference_chip(&id, &references, !on, palette, cx));
+        .note(note);
+        card = if self.welcome {
+            card.footer_left(welcome_footer_note(&status, palette))
+        } else {
+            card.footer_left(self.reference_chip(&id, &references, !on, palette, cx))
+        };
 
         let running = state == LifecycleState::Running;
-        if running && declaration.connection == ConnectionAffordance::Connectable {
+        let connectable = running && declaration.connection == ConnectionAffordance::Connectable;
+        if connectable && !(self.welcome && connected) {
             let connect_id = id.clone();
             let button = if connected {
                 compact_button(
@@ -436,6 +402,9 @@ impl IntegrationsHubView {
             card = card.footer_action(button);
         }
 
+        if self.welcome {
+            return card.into_any_element();
+        }
         let settings_target = Screen::BuiltinDetail(id.clone());
         card =
             card.footer_action(
@@ -517,7 +486,7 @@ impl IntegrationsHubView {
             .collect();
         let cores: Vec<CoreFeature> = core_features()
             .into_iter()
-            .filter(|feature| feature.category == category)
+            .filter(|feature| !self.welcome && feature.category == category)
             .collect();
         if members.is_empty() && cores.is_empty() {
             return None;
@@ -610,6 +579,61 @@ impl IntegrationsHubView {
     }
 }
 
+pub(crate) async fn load_references(
+    backend: &dyn DataProvider,
+    sub_actions: &SubActionRegistry,
+    triggers: &TriggerRegistry,
+) -> Result<HashMap<IntegrationId, IntegrationReferences>, StorageError> {
+    let (actions, wired) = wired_triggers(backend).await?;
+    Ok(tally_references(&actions, &wired, sub_actions, triggers))
+}
+
+pub(crate) fn card_status_badge(
+    id: &IntegrationId,
+    status: &CardStatus,
+    palette: &ForgePalette,
+) -> AnyElement {
+    let spinner_id = ElementId::Name(format!("hub-badge-spin-{id}").into());
+    let (marker, label, color) = match status {
+        CardStatus::Disabled => (
+            BadgeMarker::Dot(palette.text_extreme_faint),
+            tr!("integration_status_disabled"),
+            palette.text_faint,
+        ),
+        CardStatus::Starting => (
+            BadgeMarker::Spinner(spinner_id),
+            tr!("integration_status_starting"),
+            palette.brand,
+        ),
+        CardStatus::Stopping => (
+            BadgeMarker::Spinner(spinner_id),
+            tr!("integration_status_stopping"),
+            palette.text_muted,
+        ),
+        CardStatus::Failed(_) => (
+            BadgeMarker::Glyph(Icon::AlertCircle),
+            tr!("integration_status_failed"),
+            palette.random,
+        ),
+        CardStatus::Active => (
+            BadgeMarker::Dot(palette.success),
+            tr!("integration_status_active"),
+            palette.success,
+        ),
+        CardStatus::Connected => (
+            BadgeMarker::Dot(palette.success),
+            tr!("integration_status_connected"),
+            palette.success,
+        ),
+        CardStatus::NotConnected => (
+            BadgeMarker::Dot(palette.warning),
+            tr!("integration_status_not_connected"),
+            palette.warning,
+        ),
+    };
+    lifecycle_badge(marker, label, color, palette).into_any_element()
+}
+
 async fn wired_triggers(
     backend: &dyn DataProvider,
 ) -> Result<(Vec<Action>, Vec<TriggerInstance>), StorageError> {
@@ -622,6 +646,24 @@ async fn wired_triggers(
         }
     }
     Ok((actions, wired.into_values().collect()))
+}
+
+fn welcome_footer_note(status: &CardStatus, palette: &ForgePalette) -> AnyElement {
+    let label = match status {
+        CardStatus::Disabled => tr!("integration_welcome_off"),
+        CardStatus::Active | CardStatus::Connected | CardStatus::NotConnected => {
+            tr!("integration_welcome_on")
+        }
+        CardStatus::Starting => tr!("integration_status_starting"),
+        CardStatus::Stopping => tr!("integration_status_stopping"),
+        CardStatus::Failed(_) => tr!("integration_status_failed"),
+    };
+    div()
+        .font_family(body_family())
+        .text_size(FOOTER_TEXT)
+        .text_color(palette.text_faint)
+        .child(label)
+        .into_any_element()
 }
 
 fn reference_summary(references: &IntegrationReferences) -> String {
@@ -662,6 +704,9 @@ impl Render for IntegrationsHubView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
         let hub = self.hub_declarations(cx);
+        if self.welcome {
+            return self.render_welcome(&hub, &palette, cx);
+        }
 
         let intro = div()
             .mb(INTRO_MB)
@@ -717,6 +762,7 @@ impl Render for IntegrationsHubView {
                     .body(scroll),
             )
             .children(modal)
+            .into_any_element()
     }
 }
 

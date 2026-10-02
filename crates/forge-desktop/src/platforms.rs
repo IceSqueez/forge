@@ -46,12 +46,13 @@ impl PlatformConnectivity {
         false
     }
 
-    pub fn connected_count(&self) -> usize {
-        self.connections.iter().filter(|(_, ok)| *ok).count()
-    }
-
-    pub fn total_count(&self) -> usize {
-        self.connections.len()
+    pub fn tally_enabled(&self, is_enabled: impl Fn(Integration) -> bool) -> (usize, usize) {
+        self.connections
+            .iter()
+            .filter(|(integ, _)| is_enabled(*integ))
+            .fold((0, 0), |(connected, total), (_, ok)| {
+                (connected + usize::from(*ok), total + 1)
+            })
     }
 
     pub fn seed_from_builtins(&mut self, builtins: &BuiltinRegistry) {

@@ -1,0 +1,554 @@
+use std::sync::Arc;
+
+use forge_components::{
+    BORDER_THIN, BreadcrumbCrumb, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, body_family,
+    ghost_button_with_icon, hub_tile, icon, mono_family, page_frame, primary_button_with_icon,
+    radius, tr, with_alpha,
+};
+use forge_platform_core::{ConnectionAffordance, IntegrationDeclaration};
+use forge_registry::{SubActionRegistry, TriggerRegistry};
+use forge_storage::{CredentialsRepo, DataProvider, has_credentials_for};
+use forge_types::IntegrationId;
+use gpui::{
+    AnyElement, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
+    SharedString, Subscription, Window, div, prelude::*, px, relative,
+};
+
+use crate::builtin_sections::grow_cell;
+use crate::integration_catalog::{declaration_of, disclaimer_of, look_of};
+use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
+use crate::integration_references::IntegrationReferences;
+use crate::integration_supervisor::{IntegrationSlot, LifecycleState};
+use crate::integrations_hub::{card_status_badge, load_references};
+use crate::presentation::ActivePresentation;
+use crate::screen::Screen;
+use crate::sidebar::NavRequested;
+
+const BODY_PAD_V: Pixels = px(18.0);
+const BODY_PAD_H: Pixels = px(22.0);
+const HERO_PAD_V: Pixels = px(16.0);
+const HERO_PAD_H: Pixels = px(18.0);
+const HERO_MB: Pixels = px(14.0);
+const HERO_GAP: Pixels = px(16.0);
+const HERO_TILE: Pixels = px(48.0);
+const HERO_TITLE: Pixels = px(16.0);
+const HERO_TITLE_MB: Pixels = px(2.0);
+const DISCLAIMER_GAP: Pixels = px(6.0);
+const DISCLAIMER_ICON: Pixels = px(11.0);
+const DISCLAIMER_ICON_MT: Pixels = px(2.0);
+const DISCLAIMER_LINE_HEIGHT: f32 = 1.45;
+const DISCLAIMER_MB: Pixels = px(14.0);
+const PANEL_GAP: Pixels = px(12.0);
+const AFFECTED_WEIGHT: f32 = 1.4;
+const KEPT_WEIGHT: f32 = 1.0;
+const PANEL_HEAD_PAD_V: Pixels = px(10.0);
+const PANEL_HEAD_PAD_H: Pixels = px(14.0);
+const PANEL_TITLE: Pixels = px(12.5);
+const PANEL_TITLE_GAP: Pixels = px(7.0);
+const PANEL_TITLE_ICON: Pixels = px(14.0);
+const EMPTY_PAD_V: Pixels = px(18.0);
+const ROWS_PAD_V: Pixels = px(6.0);
+const ROW_PAD_V: Pixels = px(7.0);
+const ROW_GAP: Pixels = px(10.0);
+const ROW_HINT: Pixels = px(11.0);
+const ROW_CHEVRON: Pixels = px(13.0);
+const HEALTH_TILE: Pixels = px(18.0);
+const HEALTH_CORNER: Pixels = px(5.0);
+const HEALTH_GLYPH: Pixels = px(12.0);
+const HEALTH_TILE_ALPHA: f32 = 0.14;
+const INACTIVE_SIZE: Pixels = px(9.5);
+const INACTIVE_GLYPH: Pixels = px(10.0);
+const INACTIVE_GAP: Pixels = px(4.0);
+const INACTIVE_PAD_V: Pixels = px(1.0);
+const INACTIVE_PAD_H: Pixels = px(6.0);
+const INACTIVE_FILL_ALPHA: f32 = 0.06;
+const INACTIVE_BORDER_ALPHA: f32 = 0.2;
+const KEPT_PAD_TOP: Pixels = px(8.0);
+const KEPT_PAD_BOTTOM: Pixels = px(12.0);
+const KEPT_GAP: Pixels = px(6.0);
+const KEPT_ROW_GAP: Pixels = px(8.0);
+const KEPT_ICON: Pixels = px(12.0);
+
+pub struct DisabledLaunch {
+    pub slot: Option<IntegrationSlot>,
+    pub backend: Arc<dyn DataProvider>,
+    pub sub_actions: Arc<SubActionRegistry>,
+    pub triggers: Arc<TriggerRegistry>,
+    pub rt_handle: tokio::runtime::Handle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    Credentials,
+}
+
+pub struct IntegrationDisabledView {
+    id: IntegrationId,
+    declaration: Option<IntegrationDeclaration>,
+    lifecycle: Entity<IntegrationLifecycle>,
+    launch: DisabledLaunch,
+    references: IntegrationReferences,
+    kept: Vec<Kept>,
+    _lifecycle_observer: Subscription,
+}
+
+impl EventEmitter<NavRequested> for IntegrationDisabledView {}
+
+impl IntegrationDisabledView {
+    pub fn new(
+        id: IntegrationId,
+        lifecycle: Entity<IntegrationLifecycle>,
+        launch: DisabledLaunch,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let observer = cx.observe(&lifecycle, |_, _, cx| cx.notify());
+        let mut view = Self {
+            declaration: declaration_of(&id),
+            id,
+            lifecycle,
+            launch,
+            references: IntegrationReferences::default(),
+            kept: Vec::new(),
+            _lifecycle_observer: observer,
+        };
+        view.load(cx);
+        view
+    }
+
+    fn load(&mut self, cx: &mut Context<Self>) {
+        let backend = Arc::clone(&self.launch.backend);
+        let sub_actions = Arc::clone(&self.launch.sub_actions);
+        let triggers = Arc::clone(&self.launch.triggers);
+        let id = self.id.clone();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.launch.rt_handle.spawn(async move {
+            let references =
+                match load_references(backend.as_ref(), &sub_actions, &triggers).await {
+                    Ok(mut all) => all.remove(&id).unwrap_or_default(),
+                    Err(e) => {
+                        tracing::warn!(integration = %id, error = %e, "could not count integration references");
+                        IntegrationReferences::default()
+                    }
+                };
+            let credentials = Arc::clone(&backend) as Arc<dyn CredentialsRepo>;
+            let has_credentials = match has_credentials_for(credentials.as_ref(), &id).await {
+                Ok(present) => present,
+                Err(e) => {
+                    tracing::warn!(integration = %id, error = %e, "could not check stored credentials");
+                    false
+                }
+            };
+            let _ = tx.send((references, has_credentials));
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok((references, has_credentials)) = rx.await else {
+                return;
+            };
+            let _ = this.update(cx, |view, cx| {
+                view.apply_loaded(references, has_credentials);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub fn apply_loaded(&mut self, references: IntegrationReferences, has_credentials: bool) {
+        self.references = references;
+        self.kept = if has_credentials {
+            vec![Kept::Credentials]
+        } else {
+            Vec::new()
+        };
+    }
+
+    pub fn enable(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.launch.slot.clone() else {
+            return;
+        };
+        self.launch.rt_handle.spawn(async move {
+            if let Err(e) = slot.set_enabled(true).await {
+                tracing::warn!(integration = %slot.id(), error = %e, "could not enable the integration");
+            }
+        });
+        cx.notify();
+    }
+
+    fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
+        cx.emit(NavRequested(screen));
+    }
+
+    fn name(&self) -> SharedString {
+        match &self.declaration {
+            Some(declaration) => SharedString::new_static(declaration.brand_name),
+            None => SharedString::from(self.id.as_str().to_owned()),
+        }
+    }
+
+    fn state(&self, cx: &Context<Self>) -> LifecycleState {
+        self.lifecycle.read(cx).state_of(&self.id)
+    }
+
+    fn crumbs(&self, cx: &mut Context<Self>) -> Vec<BreadcrumbCrumb> {
+        vec![
+            BreadcrumbCrumb::link(
+                tr!("integrations_breadcrumb"),
+                "integration-disabled-crumb-hub",
+                cx.listener(|this, _: &ClickEvent, _, cx| this.go(Screen::Integrations(None), cx)),
+            ),
+            BreadcrumbCrumb::leaf(self.name()),
+        ]
+    }
+
+    fn hero(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let name = self.name();
+        let look = look_of(&self.id, palette);
+        let starting = matches!(
+            self.state(cx),
+            LifecycleState::Starting | LifecycleState::Stopping
+        );
+        let all =
+            ghost_button_with_icon(Icon::LayoutGrid, tr!("integration_disabled_all"), palette)
+                .on_click(
+                    "integration-disabled-all",
+                    cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.go(Screen::Integrations(None), cx)
+                    }),
+                );
+        let enable = primary_button_with_icon(
+            Icon::Power,
+            tr!("integration_disabled_enable", name = name.to_string()),
+            palette,
+        )
+        .busy(starting)
+        .on_click(
+            "integration-disabled-enable",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.enable(cx)),
+        );
+        div()
+            .mb(HERO_MB)
+            .flex()
+            .items_center()
+            .gap(HERO_GAP)
+            .py(HERO_PAD_V)
+            .px(HERO_PAD_H)
+            .bg(palette.shell)
+            .border(BORDER_THIN)
+            .border_color(palette.border_regular)
+            .rounded(radius(Radius::Md))
+            .child(hub_tile(
+                look.tile_glyph(),
+                look.tint,
+                true,
+                HERO_TILE,
+                palette,
+            ))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .font_family(body_family())
+                    .child(
+                        div()
+                            .mb(HERO_TITLE_MB)
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_size(HERO_TITLE)
+                            .text_color(palette.text_primary)
+                            .child(tr!("integration_disabled_title", name = name.to_string())),
+                    )
+                    .child(
+                        div()
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_muted)
+                            .child(tr!("integration_disabled_lead")),
+                    ),
+            )
+            .child(all)
+            .child(enable)
+            .into_any_element()
+    }
+
+    fn disclaimer(&self, palette: &ForgePalette) -> Option<AnyElement> {
+        let disclaimer = disclaimer_of(&self.id)?;
+        Some(
+            div()
+                .mb(DISCLAIMER_MB)
+                .flex()
+                .items_start()
+                .gap(DISCLAIMER_GAP)
+                .font_family(body_family())
+                .text_size(FONT_XXS)
+                .line_height(relative(DISCLAIMER_LINE_HEIGHT))
+                .text_color(palette.text_muted)
+                .child(div().mt(DISCLAIMER_ICON_MT).child(icon(
+                    Icon::AlertTriangle,
+                    DISCLAIMER_ICON,
+                    palette.warning,
+                )))
+                .child(div().flex_1().min_w_0().child(tr!(disclaimer.full_key)))
+                .into_any_element(),
+        )
+    }
+
+    fn affected(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+        let name = self.name();
+        let total = self.references.total();
+        let head = panel_head(palette)
+            .justify_between()
+            .child(panel_title(
+                Icon::AlertTriangle,
+                palette.warning,
+                tr!("integration_disabled_affected"),
+                palette,
+            ))
+            .child(
+                div()
+                    .font_family(mono_family())
+                    .text_size(FONT_XXS)
+                    .text_color(palette.text_faint)
+                    .child(SharedString::from(total.to_string())),
+            );
+        let body = if total == 0 {
+            empty_line(
+                tr!("integration_disabled_unused", name = name.to_string()),
+                palette,
+            )
+            .py(EMPTY_PAD_V)
+            .into_any_element()
+        } else {
+            let mut rows = div().py(ROWS_PAD_V).flex().flex_col();
+            for (index, action) in self.references.actions.iter().enumerate() {
+                rows = rows.child(
+                    affected_row(
+                        ElementId::NamedInteger("integration-disabled-action".into(), index as u64),
+                        palette,
+                    )
+                    .child(health_tile(palette))
+                    .child(
+                        div()
+                            .flex_none()
+                            .font_family(mono_family())
+                            .text_size(FONT_XS)
+                            .text_color(palette.text_primary)
+                            .child(SharedString::from(action.clone())),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .font_family(body_family())
+                            .text_size(ROW_HINT)
+                            .text_color(palette.text_faint)
+                            .child(tr!(
+                                "integration_disabled_steps_fail",
+                                name = name.to_string()
+                            )),
+                    )
+                    .child(icon(Icon::ChevronRight, ROW_CHEVRON, palette.text_faint))
+                    .on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.go(Screen::Actions(None), cx)
+                        }),
+                    ),
+                );
+            }
+            if self.references.triggers > 0 {
+                rows = rows.child(
+                    affected_row("integration-disabled-triggers".into(), palette)
+                        .child(inactive_badge(palette))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .font_family(body_family())
+                                .text_size(FONT_XS)
+                                .text_color(palette.text_secondary)
+                                .child(tr!(
+                                    "integration_disabled_triggers_idle",
+                                    count = self.references.triggers as i64
+                                )),
+                        )
+                        .child(icon(Icon::ChevronRight, ROW_CHEVRON, palette.text_faint))
+                        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.go(Screen::Triggers(None), cx)
+                        })),
+                );
+            }
+            rows.into_any_element()
+        };
+        panel(palette).child(head).child(body).into_any_element()
+    }
+
+    fn kept_panel(&self, palette: &ForgePalette) -> AnyElement {
+        let head = panel_head(palette).child(panel_title(
+            Icon::Lock,
+            palette.success,
+            tr!("integration_disabled_kept"),
+            palette,
+        ));
+        let mut body = div()
+            .pt(KEPT_PAD_TOP)
+            .pb(KEPT_PAD_BOTTOM)
+            .px(PANEL_HEAD_PAD_H)
+            .flex()
+            .flex_col()
+            .gap(KEPT_GAP);
+        if self.kept.is_empty() {
+            body = body.child(empty_line(
+                tr!("integration_disabled_nothing_kept"),
+                palette,
+            ));
+        }
+        for kept in &self.kept {
+            let label = match kept {
+                Kept::Credentials => match self.declaration.as_ref().map(|d| d.connection) {
+                    Some(ConnectionAffordance::Connectable) => tr!("integration_kept_sign_in"),
+                    _ => tr!("integration_kept_credentials"),
+                },
+            };
+            body = body.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(KEPT_ROW_GAP)
+                    .font_family(body_family())
+                    .text_size(FONT_XS)
+                    .text_color(palette.text_secondary)
+                    .child(icon(Icon::Check, KEPT_ICON, palette.success))
+                    .child(label),
+            );
+        }
+        panel(palette).child(head).child(body).into_any_element()
+    }
+}
+
+fn panel(palette: &ForgePalette) -> gpui::Div {
+    div()
+        .w_full()
+        .flex()
+        .h_full()
+        .flex_col()
+        .bg(palette.elevated)
+        .border(BORDER_THIN)
+        .border_color(palette.border_regular)
+        .rounded(radius(Radius::Md))
+        .overflow_hidden()
+}
+
+fn panel_head(palette: &ForgePalette) -> gpui::Div {
+    div()
+        .flex()
+        .items_center()
+        .py(PANEL_HEAD_PAD_V)
+        .px(PANEL_HEAD_PAD_H)
+        .border_b(BORDER_THIN)
+        .border_color(palette.border_regular)
+}
+
+fn panel_title(
+    glyph: Icon,
+    tint: gpui::Rgba,
+    label: String,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(PANEL_TITLE_GAP)
+        .font_family(body_family())
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(PANEL_TITLE)
+        .text_color(palette.text_primary)
+        .child(icon(glyph, PANEL_TITLE_ICON, tint))
+        .child(label)
+}
+
+fn empty_line(text: String, palette: &ForgePalette) -> gpui::Div {
+    div()
+        .px(PANEL_HEAD_PAD_H)
+        .font_family(body_family())
+        .text_size(FONT_XS)
+        .italic()
+        .text_color(palette.text_faint)
+        .child(text)
+}
+
+fn affected_row(id: ElementId, palette: &ForgePalette) -> gpui::Stateful<gpui::Div> {
+    let hover = palette.surface_overlay;
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(ROW_GAP)
+        .py(ROW_PAD_V)
+        .px(PANEL_HEAD_PAD_H)
+        .cursor_pointer()
+        .hover(move |style| style.bg(hover))
+}
+
+fn health_tile(palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(HEALTH_TILE)
+        .rounded(HEALTH_CORNER)
+        .bg(with_alpha(palette.warning, HEALTH_TILE_ALPHA))
+        .child(icon(Icon::PlugOff, HEALTH_GLYPH, palette.warning))
+}
+
+fn inactive_badge(palette: &ForgePalette) -> impl IntoElement {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(INACTIVE_GAP)
+        .py(INACTIVE_PAD_V)
+        .px(INACTIVE_PAD_H)
+        .rounded(radius(Radius::Sm))
+        .bg(with_alpha(palette.warning, INACTIVE_FILL_ALPHA))
+        .border(BORDER_THIN)
+        .border_color(with_alpha(palette.warning, INACTIVE_BORDER_ALPHA))
+        .font_family(mono_family())
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(INACTIVE_SIZE)
+        .text_color(palette.warning)
+        .child(icon(Icon::PlugOff, INACTIVE_GLYPH, palette.warning))
+        .child(tr!("integration_inactive_short"))
+}
+
+impl Render for IntegrationDisabledView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let palette = cx.palette();
+        let status =
+            CardStatus::resolve(&self.state(cx), ConnectionAffordance::Connectionless, false);
+        let badge = card_status_badge(&self.id, &status, &palette);
+
+        let panels = div()
+            .w_full()
+            .flex()
+            .gap(PANEL_GAP)
+            .child(grow_cell(self.affected(&palette, cx), AFFECTED_WEIGHT))
+            .child(grow_cell(self.kept_panel(&palette), KEPT_WEIGHT));
+
+        let body = div()
+            .id("integration-disabled-scroll")
+            .flex_1()
+            .overflow_y_scroll()
+            .bg(palette.base)
+            .child(
+                div()
+                    .w_full()
+                    .py(BODY_PAD_V)
+                    .px(BODY_PAD_H)
+                    .child(self.hero(&palette, cx))
+                    .children(self.disclaimer(&palette))
+                    .child(panels),
+            );
+
+        let crumbs = self.crumbs(cx);
+        page_frame(crumbs, &palette).header_right(badge).body(body)
+    }
+}

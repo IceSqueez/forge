@@ -145,6 +145,7 @@ pub fn run_boot(
         match outcome {
             Ok(mut handles) => {
                 let speak_events = handles.speak_events.take();
+                let initial_screen = handles.first_run.opening_screen(initial_screen);
                 let handles = Arc::new(handles);
                 let bridge_sub = handles.bus.subscribe_observer(UI_EVENTS);
                 let chat_feed_bridge = ChatFeedBridge::subscribe(&handles.bus, &handles.rt_handle);

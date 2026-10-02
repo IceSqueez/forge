@@ -22,11 +22,13 @@ use crate::chrome::Chrome;
 use crate::clip_key_state::ClipKeyState;
 use crate::discord_screen::DiscordScreenView;
 use crate::event_feed::EventFeedView;
+use crate::first_run;
 use crate::globals_view::GlobalsView;
 use crate::home::HomeView;
 use crate::hotkey_sync::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
+use crate::integration_disabled::{DisabledLaunch, IntegrationDisabledView};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_supervisor::{LifecycleState, LifecycleStates};
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
@@ -210,15 +212,21 @@ impl AppShell {
                 cx.new(|cx| GlobalsView::new(globals, backend, rt_handle, cx))
                     .into()
             }
+            Screen::Welcome => {
+                let lifecycle = topics.integration_lifecycle.clone();
+                let connectivity = topics.platforms.clone();
+                let launch = Self::hub_launch(handles);
+                let hub = cx.new(|cx| {
+                    IntegrationsHubView::new(None, lifecycle, connectivity, launch, cx).welcome()
+                });
+                cx.subscribe(&hub, |this, _view, event: &NavRequested, cx| {
+                    this.navigate(event.0.clone(), cx);
+                })
+                .detach();
+                hub.into()
+            }
             Screen::Integrations(focus) => {
-                let launch = HubLaunch {
-                    supervisor: handles.integrations.clone(),
-                    builtins: handles.builtins.clone(),
-                    backend: Arc::clone(&handles.backend),
-                    sub_actions: Arc::clone(&handles.sub_action_registry),
-                    triggers: Arc::clone(&handles.trigger_registry),
-                    rt_handle: handles.rt_handle.clone(),
-                };
+                let launch = Self::hub_launch(handles);
                 let lifecycle = topics.integration_lifecycle.clone();
                 let connectivity = topics.platforms.clone();
                 let focus = *focus;
@@ -229,6 +237,9 @@ impl AppShell {
                 })
                 .detach();
                 hub.into()
+            }
+            Screen::BuiltinDetail(id) if Self::is_switched_off(id, topics, cx) => {
+                Self::disabled_screen(id, topics, handles, cx)
             }
             Screen::BuiltinDetail(id) => {
                 let builtin = match id.as_str() {
@@ -533,6 +544,45 @@ impl AppShell {
         }
     }
 
+    fn hub_launch(handles: &Arc<RuntimeHandles>) -> HubLaunch {
+        HubLaunch {
+            supervisor: handles.integrations.clone(),
+            builtins: handles.builtins.clone(),
+            backend: Arc::clone(&handles.backend),
+            sub_actions: Arc::clone(&handles.sub_action_registry),
+            triggers: Arc::clone(&handles.trigger_registry),
+            rt_handle: handles.rt_handle.clone(),
+        }
+    }
+
+    fn is_switched_off(id: &IntegrationId, topics: &Topics, cx: &Context<Self>) -> bool {
+        let lifecycle = topics.integration_lifecycle.read(cx);
+        lifecycle.is_known(id) && !lifecycle.is_on(id)
+    }
+
+    fn disabled_screen(
+        id: &IntegrationId,
+        topics: &Topics,
+        handles: &Arc<RuntimeHandles>,
+        cx: &mut Context<Self>,
+    ) -> AnyView {
+        let launch = DisabledLaunch {
+            slot: handles.integrations.slot(id),
+            backend: Arc::clone(&handles.backend),
+            sub_actions: Arc::clone(&handles.sub_action_registry),
+            triggers: Arc::clone(&handles.trigger_registry),
+            rt_handle: handles.rt_handle.clone(),
+        };
+        let lifecycle = topics.integration_lifecycle.clone();
+        let id = id.clone();
+        let view = cx.new(|cx| IntegrationDisabledView::new(id, lifecycle, launch, cx));
+        cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
+            this.navigate(event.0.clone(), cx);
+        })
+        .detach();
+        view.into()
+    }
+
     fn obs_connect_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
         let credentials = Arc::clone(&handles.backend) as Arc<dyn CredentialsRepo>;
         let settings = Arc::clone(&handles.backend) as Arc<dyn SettingsRepo>;
@@ -687,6 +737,12 @@ impl AppShell {
         if self.router.screen == screen {
             return;
         }
+        if self.router.screen == Screen::Welcome {
+            first_run::spawn_record_completed(
+                Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>,
+                &self.handles.rt_handle,
+            );
+        }
         self.router.content = Self::content_for(&screen, &self.topics, &self.handles, cx);
         self.chrome.sidebar.update(cx, |sidebar, cx| {
             sidebar.set_current(screen.clone());
@@ -820,13 +876,14 @@ impl Render for AppShell {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
 
+        let welcome = self.router.screen == Screen::Welcome;
         let body = div()
             .w_full()
             .flex_1()
             .flex()
             .flex_row()
             .overflow_hidden()
-            .child(self.chrome.sidebar.clone())
+            .when(!welcome, |body| body.child(self.chrome.sidebar.clone()))
             .child(
                 div()
                     .flex_1()
@@ -851,7 +908,7 @@ impl Render for AppShell {
             .bg(palette.base)
             .child(self.chrome.titlebar.clone())
             .child(body)
-            .child(self.chrome.footer.clone());
+            .when(!welcome, |root| root.child(self.chrome.footer.clone()));
 
         root.children(self.toast_host(cx))
     }

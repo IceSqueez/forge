@@ -11,6 +11,7 @@ const TITLEBAR_PAD_H: Pixels = px(14.0);
 const LOGO_SIZE: Pixels = px(16.0);
 const CLUSTER_GAP: Pixels = px(8.0);
 const DOUBLE_CLICK_COUNT: usize = 2;
+const BRAND_INITIAL: &str = "F";
 
 pub struct TitleBar {
     should_move: bool,
@@ -22,25 +23,30 @@ impl TitleBar {
             .detach();
         Self { should_move: false }
     }
+}
 
-    fn logo(palette: &ForgePalette) -> impl IntoElement {
-        div()
-            .flex_none()
-            .size(LOGO_SIZE)
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(radius(Radius::Sm))
-            .bg(palette.brand)
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(FONT_XS)
-                    .text_color(palette.shell)
-                    .child("F"),
-            )
-    }
+pub(crate) fn brand_mark(
+    size: Pixels,
+    corner: Pixels,
+    glyph: Pixels,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    div()
+        .flex_none()
+        .size(size)
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(corner)
+        .bg(palette.brand)
+        .child(
+            div()
+                .font_family(body_family())
+                .font_weight(FontWeight::BOLD)
+                .text_size(glyph)
+                .text_color(palette.shell)
+                .child(BRAND_INITIAL),
+        )
 }
 
 impl Render for TitleBar {
@@ -51,7 +57,7 @@ impl Render for TitleBar {
             .flex()
             .items_center()
             .gap(CLUSTER_GAP)
-            .child(Self::logo(&palette))
+            .child(brand_mark(LOGO_SIZE, radius(Radius::Sm), FONT_XS, &palette))
             .child(
                 div()
                     .font_family(body_family())

@@ -193,6 +193,7 @@ tabler_icons! {
     Coffee => "coffee.svg",
     Apps => "apps.svg",
     PlugOff => "plug-off.svg",
+    Power => "power.svg",
 }
 
 impl Icon {
@@ -304,6 +305,7 @@ impl Icon {
             "search" | "magnifier" | "find" => Icon::Search,
             "plug" | "outlet" => Icon::Plug,
             "plug-off" => Icon::PlugOff,
+            "power" => Icon::Power,
             "plug-connected" => Icon::PlugConnected,
             "chart-line" | "chart" | "graph" | "line-chart" => Icon::ChartLine,
             "arrow-right" => Icon::ArrowRight,

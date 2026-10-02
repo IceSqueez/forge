@@ -28,8 +28,10 @@ impl Chrome {
         cx: &mut Context<AppShell>,
     ) -> Self {
         let titlebar = cx.new(TitleBar::new);
-        let sidebar = cx.new(|cx| SidebarNav::new(current, connectivity.clone(), lifecycle, cx));
-        let footer = cx.new(|cx| Footer::new(status, connectivity, event_loss, awake, cx));
+        let sidebar =
+            cx.new(|cx| SidebarNav::new(current, connectivity.clone(), lifecycle.clone(), cx));
+        let footer =
+            cx.new(|cx| Footer::new(status, connectivity, event_loss, awake, lifecycle, cx));
         Self {
             titlebar,
             sidebar,

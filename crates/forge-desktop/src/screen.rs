@@ -9,6 +9,7 @@ use crate::tts::TtsSection;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Screen {
+    Welcome,
     Home,
     Chat,
     Actions(Option<ActionId>),
@@ -40,6 +41,7 @@ impl Screen {
 }
 
 const SCREEN_CLI_NAMES: &[&str] = &[
+    "welcome",
     "home",
     "chat",
     "actions",
@@ -106,6 +108,7 @@ impl Screen {
             None => (arg, None),
         };
         match name {
+            "welcome" => Ok(Screen::Welcome),
             "home" => Ok(Screen::Home),
             "chat" => Ok(Screen::Chat),
             "actions" => Ok(Screen::Actions(None)),

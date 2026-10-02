@@ -2875,3 +2875,33 @@ integration_disable_used_by = Використовують
 integration_disable_more = +{ $count } ще
 integration_disable_confirm = Вимкнути { $name }
 integration_disable_esc_hint = Esc - скасувати
+integration_welcome_title = Ласкаво просимо до Forge
+integration_welcome_lead = Увімкніть те, з чим ви стрімите. Усе вимкнене лишається вимкненим - без з'єднань і фонової роботи.
+integration_welcome_lead_later = Змінити це можна будь-коли в Інтеграціях.
+integration_welcome_nothing_on = Ще нічого не увімкнено
+integration_welcome_some_on = Увімкнено { $count } - { $names }
+integration_welcome_progress = { $on } / { $total }
+integration_welcome_built_in = Синтез мовлення, Звукова панель, Оверлеї та WebSocket-сервер вбудовані - завжди доступні.
+integration_welcome_off = Вимкнено - увімкніть, щоб налаштувати
+integration_welcome_on = Увімкнено
+integration_welcome_skip = Пропустити
+integration_welcome_enter = Увійти до Forge
+integration_welcome_turn_one_on = Увімкніть щось, щоб продовжити
+integration_disabled_title = { $name } вимкнено
+integration_disabled_lead = Не працює - без з'єднання і фонової роботи. Вхід і налаштування зберігаються.
+integration_disabled_all = Усі інтеграції
+integration_disabled_enable = Увімкнути { $name }
+integration_disabled_affected = Зачеплено, поки вимкнено
+integration_disabled_unused = { $name } ще ніде не використовується.
+integration_disabled_steps_fail = Кроки { $name } завершаться помилкою
+integration_disabled_triggers_idle = { $count ->
+    [one] { $count } тригер не спрацює
+    [few] { $count } тригери не спрацюють
+    [many] { $count } тригерів не спрацюють
+   *[other] { $count } тригера не спрацюють
+}
+integration_disabled_kept = Збережено до повторного увімкнення
+integration_disabled_nothing_kept = Ще нічого не налаштовано.
+integration_kept_sign_in = Вхід збережено
+integration_kept_credentials = Облікові дані збережено
+integration_inactive_short = неактивний

@@ -27,13 +27,14 @@ use crate::home::HomeView;
 use crate::hotkey_sync::{HotkeyReconciler, HotkeySyncedTriggerRepo};
 use crate::hotkeys_screen::HotkeysScreenView;
 use crate::integration_detail::{IntegrationDetail, ObsSignedOut, VTubeSignedOut};
+use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_supervisor::{LifecycleState, LifecycleStates};
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
+use crate::integrations_hub::{HubLaunch, IntegrationsHubView};
 use crate::midi_screen::MidiScreenView;
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::overlays_screen::{OverlaysLaunch, OverlaysView};
-use crate::platforms::PlatformsView;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
 use crate::runtime_handles::RuntimeHandles;
@@ -44,7 +45,6 @@ use crate::server_console::ServerConsoleView;
 use crate::settings::SettingsView;
 use crate::sidebar::NavRequested;
 use crate::soundboard::SoundboardView;
-use crate::stream_apps::StreamAppsView;
 use crate::toasts::Toasts;
 use crate::topics::Topics;
 use crate::triggers_screen::TriggersRegistryView;
@@ -98,6 +98,7 @@ impl AppShell {
             topics.platforms.clone(),
             topics.event_loss.clone(),
             topics.awake.clone(),
+            topics.integration_lifecycle.clone(),
             screen.clone(),
             cx,
         );
@@ -115,7 +116,7 @@ impl AppShell {
 
         cx.observe_global::<Toasts>(|_, cx| cx.notify()).detach();
 
-        Self::spawn_lifecycle_bridge(&handles, cx);
+        Self::spawn_lifecycle_bridge(&handles, topics.integration_lifecycle.clone(), cx);
 
         window.focus(&focus, cx);
         cx.on_focus_lost(window, Self::restore_focus).detach();
@@ -209,21 +210,25 @@ impl AppShell {
                 cx.new(|cx| GlobalsView::new(globals, backend, rt_handle, cx))
                     .into()
             }
-            Screen::Platforms => {
-                let platforms = cx.new(|cx| PlatformsView::new(topics.platforms.clone(), cx));
-                cx.subscribe(&platforms, |this, _view, event: &NavRequested, cx| {
+            Screen::Integrations(focus) => {
+                let launch = HubLaunch {
+                    supervisor: handles.integrations.clone(),
+                    builtins: handles.builtins.clone(),
+                    backend: Arc::clone(&handles.backend),
+                    sub_actions: Arc::clone(&handles.sub_action_registry),
+                    triggers: Arc::clone(&handles.trigger_registry),
+                    rt_handle: handles.rt_handle.clone(),
+                };
+                let lifecycle = topics.integration_lifecycle.clone();
+                let connectivity = topics.platforms.clone();
+                let focus = *focus;
+                let hub = cx
+                    .new(|cx| IntegrationsHubView::new(focus, lifecycle, connectivity, launch, cx));
+                cx.subscribe(&hub, |this, _view, event: &NavRequested, cx| {
                     this.navigate(event.0.clone(), cx);
                 })
                 .detach();
-                platforms.into()
-            }
-            Screen::StreamApps => {
-                let apps = cx.new(|cx| StreamAppsView::new(topics.platforms.clone(), cx));
-                cx.subscribe(&apps, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
-                apps.into()
+                hub.into()
             }
             Screen::BuiltinDetail(id) => {
                 let builtin = match id.as_str() {
@@ -629,11 +634,20 @@ impl AppShell {
         }
     }
 
-    fn spawn_lifecycle_bridge(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) {
+    fn spawn_lifecycle_bridge(
+        handles: &Arc<RuntimeHandles>,
+        topic: Entity<IntegrationLifecycle>,
+        cx: &mut Context<Self>,
+    ) {
         let mut lifecycle = handles.integrations.watch();
         let mut settled = settled_kinds(&lifecycle.current());
         cx.spawn(async move |this, cx| {
             while let Some(states) = lifecycle.changed().await {
+                topic.update(cx, |topic, cx| {
+                    if topic.replace(states.clone()) {
+                        cx.notify();
+                    }
+                });
                 let next = settled_kinds(&states);
                 let changed: Vec<IntegrationId> = next
                     .iter()

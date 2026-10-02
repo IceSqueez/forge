@@ -24,7 +24,6 @@ nav_script_editor = Скрипти
 
 nav_section_audience = АУДИТОРІЯ
 nav_section_automation = АВТОМАТИЗАЦІЯ
-nav_section_builtin = Вбудовані
 
 ## Навігація - підписи пунктів бічної панелі
 
@@ -35,8 +34,6 @@ nav_item_triggers = Тригери
 nav_item_queues = Черги
 nav_item_event_feed = Стрічка подій
 nav_item_globals = Глобальні змінні
-nav_item_platforms = Платформи
-nav_item_stream_apps = Стрім-застосунки
 nav_item_soundboard = Звукова панель
 nav_item_tts = Синтез мовлення
 nav_item_overlays = Оверлеї
@@ -1362,28 +1359,11 @@ soundboard_file_filter_audio = Аудіо
 
 ## Огляд платформ
 
-platforms_title = Стримінгові платформи
-platforms_subtitle = Підключіть один раз - Forge слухатиме всі чати й події в одному місці.
-platforms_breadcrumb = Платформи
 
-platforms_status_connected = Підключено
-platforms_status_not_connected = Не підключено
 
-platforms_twitch_desc = Чат, підписки EventSub, нагороди каналу, біти, рейди
-platforms_youtube_desc = Живий чат, супер-чати, членство в каналі, підписники
-platforms_kick_desc = Чат, події каналу, підписники - нова стримінгова платформа
 
 ## Платформи - чіпи можливостей
 
-platforms_feature_irc_chat = IRC-чат
-platforms_feature_channel_points = Нагороди каналу
-platforms_feature_bits_subs = Бітси та підписки
-platforms_feature_live_chat = Живий чат
-platforms_feature_super_chat = Супер-чат
-platforms_feature_memberships = Членства
-platforms_feature_chat = Чат
-platforms_feature_subs = Підписки
-platforms_feature_channel_events = Події каналу
 
 ## Панель Twitch
 
@@ -1532,11 +1512,6 @@ kick_description = Чат, підписки, хости - гібрид: офіц
 
 ## Огляд стрим-додатків
 
-stream_apps_title = Стрим-додатки
-stream_apps_subtitle = Локальні додатки, з якими Forge спілкується через WebSocket. Підключіть для керування з дій.
-stream_apps_breadcrumb = Стрим-додатки
-stream_apps_obs_desc = Сцени, джерела, керування записом, буфери реплею - повний obs-websocket API
-stream_apps_vtube_desc = Керування аватаром Vtuber: гарячі клавіші, вирази, тригери предметів
 
 ## Живий чат - заголовок / фільтри
 
@@ -2808,3 +2783,95 @@ overlays_confirm_delete_feeds = { $count ->
     [many] До нього надсилають { $count } дій.
    *[other] До нього надсилають { $count } дій.
 }
+nav_item_integrations = Інтеграції
+integrations_breadcrumb = Інтеграції
+integrations_title = Інтеграції
+integrations_subtitle = Увімкніть те, чим користуєтеся. Вимкнена інтеграція не запускається взагалі - жодних з'єднань, жодної фонової роботи. Входи й налаштування зберігаються.
+integration_enabled_of_total = {" "}з { $total } увімкнено
+integration_category_streaming = Стрімінг
+integration_category_streaming_blurb = Чат і події з платформ, на яких ви стрімите
+integration_category_apps = Застосунки
+integration_category_apps_blurb = Настільні застосунки, якими Forge керує через локальний WebSocket
+integration_category_community = Спільнота
+integration_category_community_blurb = Публікації для вашої спільноти поза стрімом
+integration_category_audio = Аудіо
+integration_category_audio_blurb = Мовлення і звук, вбудовані у Forge
+integration_category_controls = Керування
+integration_category_controls_blurb = Фізичні та системні входи, що запускають тригери
+integration_category_tools = Інструменти
+integration_category_tools_blurb = Браузерні джерела та локальний API, вбудовані у Forge
+integration_category_on_count = { $on } з { $total } увімкнено
+integration_twitch_description = Чат, EventSub, бали каналу, біти, рейди
+integration_youtube_description = Живий чат, суперчати, спонсорства
+integration_kick_description = Чат, підписки, події каналу
+integration_obs_description = Сцени, джерела, аудіо, запис
+integration_vtube_description = Гарячі клавіші моделі, вирази, предмети
+integration_discord_description = Анонси початку стріму та дзеркала подій через вебхуки
+integration_midi_description = Ноти, CC і фейдери з контролерів
+integration_hotkey_description = Загальносистемні комбінації, навіть коли Forge приховано
+integration_core_tts_description = Голоси, псевдоніми, черга мовлення
+integration_core_soundboard_description = Кліпи з падів, гарячих клавіш, дій
+integration_core_overlays_description = Браузерні джерела для сповіщень і віджетів
+integration_core_server_description = Локальний API для оверлеїв та інструментів
+integration_core_open = Відкрити
+integration_core_always_on = Завжди увімкнено - частина Forge
+integration_status_disabled = Вимкнено
+integration_status_starting = Запуск
+integration_status_stopping = Зупинка
+integration_status_failed = Не вдалося запустити
+integration_status_active = Активно
+integration_status_connected = Підключено
+integration_status_not_connected = Не підключено
+integration_status_built_in = Вбудовано
+integration_refs_none = Ще не використовується
+integration_refs_actions = { $count ->
+    [one] { $count } дія
+    [few] { $count } дії
+    [many] { $count } дій
+   *[other] { $count } дії
+}
+integration_refs_triggers = { $count ->
+    [one] { $count } тригер
+    [few] { $count } тригери
+    [many] { $count } тригерів
+   *[other] { $count } тригера
+}
+integration_refs_used_by = використовують { $parts }
+integration_retry = Повторити
+integration_connect = Підключити
+integration_disconnect = Відключити
+integration_settings_tooltip = Налаштування { $name }
+integration_kick_disclaimer_short = Чат через неофіційний WebSocket - може зламатися
+integration_kick_disclaimer = Чат читається через неофіційний WebSocket Kick і може перестати працювати без попередження.
+integration_activity_discord = { $count ->
+    [one] { $count } вебхук готовий
+    [few] { $count } вебхуки готові
+    [many] { $count } вебхуків готово
+   *[other] { $count } вебхука готово
+}
+integration_activity_midi = { $count ->
+    [one] { $count } пристрій
+    [few] { $count } пристрої
+    [many] { $count } пристроїв
+   *[other] { $count } пристрою
+}
+integration_activity_hotkey = { $count ->
+    [one] { $count } прив'язка
+    [few] { $count } прив'язки
+    [many] { $count } прив'язок
+   *[other] { $count } прив'язки
+}
+integration_disable_title = Вимкнути { $name }?
+integration_disable_subtitle = Зупиняє зараз. Вхід і налаштування зберігаються.
+integration_disable_lead_prefix = { $name } використовують{" "}
+integration_disable_lead_and = {" "}і{" "}
+integration_disable_lead_suffix = . Поки інтеграцію вимкнено:
+integration_disable_fails_prefix = Кроки { $name } завершуються помилкою{" "}
+integration_disable_reason = інтеграцію вимкнено
+integration_disable_fails_suffix = {" "}в історії запусків
+integration_disable_triggers_inactive = Її тригери неактивні й не спрацюють
+integration_disable_kept = Ваш вхід і налаштування залишаються - увімкніть знову будь-коли
+integration_disable_used_by = Використовують
+integration_disable_more = +{ $count } ще
+integration_disable_confirm = Вимкнути { $name }
+integration_disable_esc_hint = Esc - скасувати

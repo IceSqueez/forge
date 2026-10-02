@@ -305,7 +305,7 @@ impl IntegrationDetail {
     ) {
         match event {
             ConnectFlowEvent::Connected(object) => self.adopt_connected(object, cx),
-            ConnectFlowEvent::Leave => self.navigate_to(Screen::Platforms, cx),
+            ConnectFlowEvent::Leave => self.navigate_to(Screen::Integrations(None), cx),
         }
     }
 
@@ -1376,19 +1376,13 @@ impl Render for IntegrationDetail {
             .is_pending()
             .then(|| self.disconnect_overlay(&palette, cx));
 
-        let ancestor_crumb = match self.status.id().as_str() {
-            "twitch" | "youtube" | "kick" => BreadcrumbCrumb::link(
-                tr!("platforms_breadcrumb"),
-                "integration-crumb-ancestor",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.navigate_to(Screen::Platforms, cx)),
-            ),
-            "obs" | "vtube" => BreadcrumbCrumb::link(
-                tr!("stream_apps_breadcrumb"),
-                "integration-crumb-ancestor",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.navigate_to(Screen::StreamApps, cx)),
-            ),
-            _ => BreadcrumbCrumb::leaf(tr!("server_breadcrumb_builtin")),
-        };
+        let ancestor_crumb = BreadcrumbCrumb::link(
+            tr!("integrations_breadcrumb"),
+            "integration-crumb-ancestor",
+            cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.navigate_to(Screen::Integrations(None), cx)
+            }),
+        );
 
         let is_oauth_platform = self.is_oauth_platform();
         let header_right = match &self.connect {

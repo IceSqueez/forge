@@ -284,7 +284,10 @@ fn collect_produced(
     }
 }
 
-fn nested_chains(step: &SubActionStep, registry: &SubActionRegistry) -> Vec<Vec<SubActionStep>> {
+pub(crate) fn nested_chains(
+    step: &SubActionStep,
+    registry: &SubActionRegistry,
+) -> Vec<Vec<SubActionStep>> {
     let Some(runner) = registry.get(&step.kind_id) else {
         return Vec::new();
     };

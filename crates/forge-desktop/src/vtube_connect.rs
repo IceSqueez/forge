@@ -84,8 +84,8 @@ impl VTubeConnectView {
         }
     }
 
-    fn go_stream_apps(&mut self, cx: &mut Context<Self>) {
-        cx.emit(NavRequested(Screen::StreamApps));
+    fn go_integrations(&mut self, cx: &mut Context<Self>) {
+        cx.emit(NavRequested(Screen::Integrations(None)));
     }
 
     fn hero(&self, palette: &ForgePalette) -> AnyElement {
@@ -288,9 +288,9 @@ impl Render for VTubeConnectView {
         page_frame(
             vec![
                 BreadcrumbCrumb::link(
-                    tr!("stream_apps_breadcrumb"),
+                    tr!("integrations_breadcrumb"),
                     "vtube-connect-crumb-apps",
-                    cx.listener(|this, _: &ClickEvent, _, cx| this.go_stream_apps(cx)),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.go_integrations(cx)),
                 ),
                 BreadcrumbCrumb::leaf(tr!("vtube_connect_title")),
             ],

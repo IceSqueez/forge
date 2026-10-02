@@ -191,6 +191,8 @@ tabler_icons! {
     Link => "link.svg",
     Bug => "bug.svg",
     Coffee => "coffee.svg",
+    Apps => "apps.svg",
+    PlugOff => "plug-off.svg",
 }
 
 impl Icon {
@@ -210,7 +212,8 @@ impl Icon {
             "antenna" => Icon::Antenna,
             "brand-discord" | "discord" => Icon::BrandDiscord,
             "network" => Icon::Network,
-            "layout-grid" | "grid" | "apps" => Icon::LayoutGrid,
+            "layout-grid" | "grid" => Icon::LayoutGrid,
+            "apps" => Icon::Apps,
             "volume" | "speaker" => Icon::Volume,
             "music" => Icon::Music,
             "speakerphone" => Icon::Speakerphone,
@@ -300,6 +303,7 @@ impl Icon {
             | "layout-sidebar-right-collapse" => Icon::LayoutSidebar,
             "search" | "magnifier" | "find" => Icon::Search,
             "plug" | "outlet" => Icon::Plug,
+            "plug-off" => Icon::PlugOff,
             "plug-connected" => Icon::PlugConnected,
             "chart-line" | "chart" | "graph" | "line-chart" => Icon::ChartLine,
             "arrow-right" => Icon::ArrowRight,

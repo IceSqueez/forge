@@ -6,6 +6,7 @@ use crate::event_log::EventLog;
 use crate::event_loss::EventLoss;
 use crate::globals::Globals;
 use crate::home_stats::HomeStats;
+use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::platforms::PlatformConnectivity;
 use crate::queue_health::QueueHealth;
 use crate::speak_state::SpeakState;
@@ -20,6 +21,7 @@ pub struct Topics {
     pub queue_health: Entity<QueueHealth>,
     pub event_loss: Entity<EventLoss>,
     pub awake: Entity<AwakeState>,
+    pub integration_lifecycle: Entity<IntegrationLifecycle>,
 }
 
 impl Topics {
@@ -34,6 +36,7 @@ impl Topics {
         queue_health: Entity<QueueHealth>,
         event_loss: Entity<EventLoss>,
         awake: Entity<AwakeState>,
+        integration_lifecycle: Entity<IntegrationLifecycle>,
     ) -> Self {
         Self {
             chat_feed,
@@ -45,6 +48,7 @@ impl Topics {
             queue_health,
             event_loss,
             awake,
+            integration_lifecycle,
         }
     }
 }

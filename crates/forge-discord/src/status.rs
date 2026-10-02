@@ -42,6 +42,11 @@ impl BuiltinStatus for DiscordClient {
         }
     }
 
+    fn activity_count(&self) -> Option<usize> {
+        let snap = self.content_state.lock().unwrap_or_else(|p| p.into_inner());
+        Some(snap.webhook_names.len())
+    }
+
     fn header_actions(&self) -> Vec<HeaderAction> {
         vec![HeaderAction::Settings]
     }

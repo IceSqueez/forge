@@ -23,6 +23,7 @@ use crate::event_log::EventLog;
 use crate::event_loss::{EventLoss, UI_EVENTS};
 use crate::globals::Globals;
 use crate::home_stats::{HomeStats, Integration};
+use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::log_tail::LogTail;
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
@@ -182,6 +183,8 @@ pub fn run_boot(
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();
                     });
+                    let integration_lifecycle = cx
+                        .new(|_| IntegrationLifecycle::new(handles.integrations.watch().current()));
                     let topics = Topics::new(
                         chat_feed,
                         home_stats,
@@ -192,6 +195,7 @@ pub fn run_boot(
                         queue_health,
                         event_loss,
                         awake,
+                        integration_lifecycle,
                     );
                     let shell = cx.new(|cx| {
                         AppShell::new(

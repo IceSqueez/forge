@@ -24,7 +24,6 @@ nav_script_editor = Scripts
 
 nav_section_audience = AUDIENCE
 nav_section_automation = AUTOMATION
-nav_section_builtin = Builtin
 
 ## Navigation - sidebar item labels
 
@@ -35,8 +34,6 @@ nav_item_triggers = Triggers
 nav_item_queues = Queues
 nav_item_event_feed = Event feed
 nav_item_globals = Globals
-nav_item_platforms = Platforms
-nav_item_stream_apps = Stream apps
 nav_item_soundboard = Soundboard
 nav_item_tts = Text-to-Speech
 nav_item_overlays = Overlays
@@ -1339,28 +1336,11 @@ soundboard_file_filter_audio = Audio
 
 ## Platforms overview
 
-platforms_title = Streaming platforms
-platforms_subtitle = Connect once, Forge listens to all chats and events in one place.
-platforms_breadcrumb = Platforms
 
-platforms_status_connected = Connected
-platforms_status_not_connected = Not connected
 
-platforms_twitch_desc = Chat, EventSub subscriptions, channel points, bits, raids
-platforms_youtube_desc = Live chat, super chats, channel memberships, subscribers
-platforms_kick_desc = Chat, channel events, subscribers - newer streaming platform
 
 ## Platforms - feature chips
 
-platforms_feature_irc_chat = IRC chat
-platforms_feature_channel_points = Channel points
-platforms_feature_bits_subs = Bits & subs
-platforms_feature_live_chat = Live chat
-platforms_feature_super_chat = Super chat
-platforms_feature_memberships = Memberships
-platforms_feature_chat = Chat
-platforms_feature_subs = Subs
-platforms_feature_channel_events = Channel events
 
 ## Twitch panel
 
@@ -1505,11 +1485,6 @@ kick_description = Chat, subs, hosts - hybrid: official OAuth API for send, comm
 
 ## Stream apps overview
 
-stream_apps_title = Stream apps
-stream_apps_subtitle = Local apps Forge talks to over WebSocket. Connect to control them from actions.
-stream_apps_breadcrumb = Stream apps
-stream_apps_obs_desc = Scenes, sources, recording control, replay buffers - full obs-websocket API
-stream_apps_vtube_desc = Vtuber avatar control: hotkeys, expressions, item triggers
 
 ## Live Chat - page header / filters
 
@@ -2738,3 +2713,85 @@ overlays_confirm_delete_feeds = { $count ->
     [one] { $count } action sends to it.
    *[other] { $count } actions send to it.
 }
+nav_item_integrations = Integrations
+integrations_breadcrumb = Integrations
+integrations_title = Integrations
+integrations_subtitle = Turn on what you use. A disabled integration does not start at all - no connections, no background work. Sign-ins and settings are kept.
+integration_enabled_of_total = {" "}of { $total } enabled
+integration_category_streaming = Streaming
+integration_category_streaming_blurb = Chat and events from the platforms you stream on
+integration_category_apps = Apps
+integration_category_apps_blurb = Desktop apps Forge controls over a local WebSocket
+integration_category_community = Community
+integration_category_community_blurb = Post to your community outside the stream
+integration_category_audio = Audio
+integration_category_audio_blurb = Speech and sound, built into Forge
+integration_category_controls = Controls
+integration_category_controls_blurb = Physical and system inputs that fire triggers
+integration_category_tools = Tools
+integration_category_tools_blurb = Browser sources and the local API, built into Forge
+integration_category_on_count = { $on } of { $total } on
+integration_twitch_description = Chat, EventSub, channel points, bits, raids
+integration_youtube_description = Live chat, super chats, memberships
+integration_kick_description = Chat, subs, channel events
+integration_obs_description = Scenes, sources, audio, recording
+integration_vtube_description = Model hotkeys, expressions, items
+integration_discord_description = Go-live posts and event mirrors via webhooks
+integration_midi_description = Notes, CC and faders from controllers
+integration_hotkey_description = OS-wide shortcuts, even when Forge is hidden
+integration_core_tts_description = Voices, aliases, speak queue
+integration_core_soundboard_description = Clips from pads, hotkeys, actions
+integration_core_overlays_description = Browser sources for alerts and widgets
+integration_core_server_description = Local API for overlays and tools
+integration_core_open = Open
+integration_core_always_on = Always on - part of Forge
+integration_status_disabled = Disabled
+integration_status_starting = Starting
+integration_status_stopping = Stopping
+integration_status_failed = Failed to start
+integration_status_active = Active
+integration_status_connected = Connected
+integration_status_not_connected = Not connected
+integration_status_built_in = Built in
+integration_refs_none = Not used yet
+integration_refs_actions = { $count ->
+    [one] { $count } action
+   *[other] { $count } actions
+}
+integration_refs_triggers = { $count ->
+    [one] { $count } trigger
+   *[other] { $count } triggers
+}
+integration_refs_used_by = used by { $parts }
+integration_retry = Retry
+integration_connect = Connect
+integration_disconnect = Disconnect
+integration_settings_tooltip = { $name } settings
+integration_kick_disclaimer_short = Chat via unofficial WebSocket - may break
+integration_kick_disclaimer = Chat is read through Kick's unofficial WebSocket and may break without notice.
+integration_activity_discord = { $count ->
+    [one] { $count } webhook ready
+   *[other] { $count } webhooks ready
+}
+integration_activity_midi = { $count ->
+    [one] { $count } device
+   *[other] { $count } devices
+}
+integration_activity_hotkey = { $count ->
+    [one] { $count } binding
+   *[other] { $count } bindings
+}
+integration_disable_title = Disable { $name }?
+integration_disable_subtitle = Stops it now. Sign-in and settings are kept.
+integration_disable_lead_prefix = { $name } is used by{" "}
+integration_disable_lead_and = {" "}and{" "}
+integration_disable_lead_suffix = . While it is disabled:
+integration_disable_fails_prefix = { $name } steps fail with{" "}
+integration_disable_reason = integration disabled
+integration_disable_fails_suffix = {" "}in run history
+integration_disable_triggers_inactive = Its triggers are inactive and will not fire
+integration_disable_kept = Your sign-in and settings stay - turn it back on any time
+integration_disable_used_by = Used by
+integration_disable_more = +{ $count } more
+integration_disable_confirm = Disable { $name }
+integration_disable_esc_hint = Esc to cancel

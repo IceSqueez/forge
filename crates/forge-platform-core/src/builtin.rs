@@ -466,6 +466,9 @@ pub trait BuiltinStatus: Send + Sync {
     fn hero_name(&self) -> Option<&str> {
         None
     }
+    fn activity_count(&self) -> Option<usize> {
+        None
+    }
 }
 
 pub trait BuiltinHealth: Send + Sync {

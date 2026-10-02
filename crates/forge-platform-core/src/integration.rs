@@ -4,37 +4,56 @@ use forge_types::IntegrationId;
 pub struct IntegrationCategory {
     key: &'static str,
     label_key: &'static str,
+    blurb_key: &'static str,
 }
 
 impl IntegrationCategory {
-    pub const STREAMING_PLATFORMS: Self = Self {
-        key: "streaming_platforms",
-        label_key: "integration_category_streaming_platforms",
+    pub const STREAMING: Self = Self {
+        key: "streaming",
+        label_key: "integration_category_streaming",
+        blurb_key: "integration_category_streaming_blurb",
     };
-    pub const STREAM_APPS: Self = Self {
-        key: "stream_apps",
-        label_key: "integration_category_stream_apps",
+    pub const APPS: Self = Self {
+        key: "apps",
+        label_key: "integration_category_apps",
+        blurb_key: "integration_category_apps_blurb",
     };
     pub const COMMUNITY: Self = Self {
         key: "community",
         label_key: "integration_category_community",
+        blurb_key: "integration_category_community_blurb",
     };
-    pub const DEVICES_AND_INPUT: Self = Self {
-        key: "devices_and_input",
-        label_key: "integration_category_devices_and_input",
+    pub const AUDIO: Self = Self {
+        key: "audio",
+        label_key: "integration_category_audio",
+        blurb_key: "integration_category_audio_blurb",
     };
-    pub const MUSIC: Self = Self {
-        key: "music",
-        label_key: "integration_category_music",
+    pub const CONTROLS: Self = Self {
+        key: "controls",
+        label_key: "integration_category_controls",
+        blurb_key: "integration_category_controls_blurb",
+    };
+    pub const TOOLS: Self = Self {
+        key: "tools",
+        label_key: "integration_category_tools",
+        blurb_key: "integration_category_tools_blurb",
     };
 
     pub const DISPLAY_ORDER: &'static [Self] = &[
-        Self::STREAMING_PLATFORMS,
-        Self::STREAM_APPS,
+        Self::STREAMING,
+        Self::APPS,
         Self::COMMUNITY,
-        Self::DEVICES_AND_INPUT,
-        Self::MUSIC,
+        Self::AUDIO,
+        Self::CONTROLS,
+        Self::TOOLS,
     ];
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::DISPLAY_ORDER
+            .iter()
+            .copied()
+            .find(|category| category.key == key)
+    }
 
     pub const fn key(self) -> &'static str {
         self.key
@@ -42,6 +61,10 @@ impl IntegrationCategory {
 
     pub const fn label_key(self) -> &'static str {
         self.label_key
+    }
+
+    pub const fn blurb_key(self) -> &'static str {
+        self.blurb_key
     }
 }
 

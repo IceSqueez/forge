@@ -4,7 +4,7 @@ use forge_types::IntegrationId;
 pub const YOUTUBE_INTEGRATION: IntegrationDeclaration = IntegrationDeclaration {
     id: IntegrationId::from_static("youtube"),
     brand_name: "YouTube",
-    category: IntegrationCategory::STREAMING_PLATFORMS,
+    category: IntegrationCategory::STREAMING,
     description_key: "integration_youtube_description",
     connection: ConnectionAffordance::Connectable,
 };

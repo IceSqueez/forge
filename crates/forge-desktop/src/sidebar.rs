@@ -1,15 +1,16 @@
 use forge_components::{
-    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, PlatformKind, Radius, ResizeEdge,
-    ResizeRange, body_family, icon, install_resize, mono_family, platform_color, radius,
-    status_dot, tr,
+    BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, ResizeEdge, ResizeRange,
+    body_family, icon, install_resize, mono_family, pulse_dot, radius, status_dot, tr,
 };
-use forge_types::IntegrationId;
+use forge_platform_core::{ConnectionAffordance, IntegrationCategory};
 use gpui::{
-    AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba, SharedString,
-    Window, div, prelude::*, px,
+    AnyElement, App, ClickEvent, Context, ElementId, Entity, EventEmitter, FontWeight, Pixels,
+    Rgba, SharedString, Window, div, prelude::*, px,
 };
 
 use crate::home_stats::Integration;
+use crate::integration_catalog::{core_features, declarations, look_of};
+use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::platforms::PlatformConnectivity;
 use crate::presentation::{ActivePresentation, Presentation};
 use crate::screen::Screen;
@@ -39,6 +40,8 @@ const SECTION_LABEL_PAD_TOP: Pixels = px(14.0);
 const SECTION_LABEL_PAD_BOTTOM: Pixels = px(6.0);
 const MINI_LABEL_PAD_TOP: Pixels = px(8.0);
 const MINI_LABEL_PAD_BOTTOM: Pixels = px(3.0);
+const INTEGRATIONS_GAP: Pixels = px(8.0);
+const SECTION_BADGE: Pixels = px(10.0);
 
 pub struct NavRequested(pub Screen);
 
@@ -65,28 +68,33 @@ impl NavText {
     }
 }
 
+#[derive(Clone, Copy)]
+struct NavStatus {
+    color: Rgba,
+    pulse: bool,
+}
+
 enum NavEntry {
     SectionLabel(NavText),
     MiniLabel(NavText),
-    MiniLabelLink {
-        label: NavText,
-        screen: Screen,
-    },
+    Gap(Pixels),
     SectionLeaf {
         icon: Icon,
         label: NavText,
         screen: Screen,
+        badge: Option<SharedString>,
     },
     FlatIconLeaf {
         icon: Icon,
         label: NavText,
         screen: Screen,
+        status: Option<NavStatus>,
     },
     FlatLink {
         dot: Rgba,
         label: NavText,
         screen: Screen,
-        integ: Integration,
+        status: Option<NavStatus>,
     },
 }
 
@@ -94,6 +102,7 @@ pub struct SidebarNav {
     current: Screen,
     width: Pixels,
     connectivity: Entity<PlatformConnectivity>,
+    lifecycle: Entity<IntegrationLifecycle>,
 }
 
 impl EventEmitter<NavRequested> for SidebarNav {}
@@ -102,15 +111,18 @@ impl SidebarNav {
     pub fn new(
         current: Screen,
         connectivity: Entity<PlatformConnectivity>,
+        lifecycle: Entity<IntegrationLifecycle>,
         cx: &mut Context<Self>,
     ) -> Self {
         cx.observe_global::<Presentation>(|_, cx| cx.notify())
             .detach();
         cx.observe(&connectivity, |_, _, cx| cx.notify()).detach();
+        cx.observe(&lifecycle, |_, _, cx| cx.notify()).detach();
         Self {
             current,
             width: SIDEBAR_WIDTH,
             connectivity,
+            lifecycle,
         }
     }
 
@@ -129,125 +141,113 @@ impl SidebarNav {
         cx.emit(NavRequested(screen));
     }
 
-    fn roster(palette: &ForgePalette) -> Vec<NavEntry> {
-        vec![
+    fn roster(&self, palette: &ForgePalette, cx: &App) -> Vec<NavEntry> {
+        let mut entries = vec![
             NavEntry::SectionLeaf {
                 icon: Icon::Home,
                 label: NavText::Key("nav_item_home"),
                 screen: Screen::Home,
+                badge: None,
             },
             NavEntry::SectionLabel(NavText::Key("nav_section_audience")),
             NavEntry::SectionLeaf {
                 icon: Icon::MessageCircle,
                 label: NavText::Key("nav_item_chat"),
                 screen: Screen::Chat,
+                badge: None,
             },
             NavEntry::SectionLabel(NavText::Key("nav_section_automation")),
+        ];
+        for (glyph, key, screen) in [
+            (Icon::Bolt, "nav_item_actions", Screen::Actions(None)),
+            (
+                Icon::TargetArrow,
+                "nav_item_triggers",
+                Screen::Triggers(None),
+            ),
+            (Icon::Stack2, "nav_item_queues", Screen::Queues),
+            (Icon::Activity, "nav_item_event_feed", Screen::EventFeed),
+            (Icon::Variable, "nav_item_globals", Screen::Globals),
+            (Icon::Code, "nav_script_editor", Screen::Scripts),
+        ] {
+            entries.push(NavEntry::SectionLeaf {
+                icon: glyph,
+                label: NavText::Key(key),
+                screen,
+                badge: None,
+            });
+        }
+        entries.extend(self.integration_entries(palette, cx));
+        entries
+    }
+
+    fn integration_entries(&self, palette: &ForgePalette, cx: &App) -> Vec<NavEntry> {
+        let lifecycle = self.lifecycle.read(cx);
+        let connectivity = self.connectivity.read(cx);
+        let available: Vec<_> = declarations()
+            .into_iter()
+            .filter(|declaration| lifecycle.is_known(&declaration.id))
+            .collect();
+        let enabled = lifecycle.on_count(available.iter().map(|declaration| &declaration.id));
+        let mut entries = vec![
+            NavEntry::Gap(INTEGRATIONS_GAP),
             NavEntry::SectionLeaf {
-                icon: Icon::Bolt,
-                label: NavText::Key("nav_item_actions"),
-                screen: Screen::Actions(None),
+                icon: Icon::Apps,
+                label: NavText::Key("nav_item_integrations"),
+                screen: Screen::Integrations(None),
+                badge: Some(format!("{enabled}/{}", available.len()).into()),
             },
-            NavEntry::SectionLeaf {
-                icon: Icon::TargetArrow,
-                label: NavText::Key("nav_item_triggers"),
-                screen: Screen::Triggers(None),
-            },
-            NavEntry::SectionLeaf {
-                icon: Icon::Stack2,
-                label: NavText::Key("nav_item_queues"),
-                screen: Screen::Queues,
-            },
-            NavEntry::SectionLeaf {
-                icon: Icon::Activity,
-                label: NavText::Key("nav_item_event_feed"),
-                screen: Screen::EventFeed,
-            },
-            NavEntry::SectionLeaf {
-                icon: Icon::Variable,
-                label: NavText::Key("nav_item_globals"),
-                screen: Screen::Globals,
-            },
-            NavEntry::SectionLeaf {
-                icon: Icon::Code,
-                label: NavText::Key("nav_script_editor"),
-                screen: Screen::Scripts,
-            },
-            NavEntry::MiniLabelLink {
-                label: NavText::Key("nav_item_platforms"),
-                screen: Screen::Platforms,
-            },
-            NavEntry::FlatLink {
-                dot: platform_color(PlatformKind::Twitch, palette),
-                label: NavText::Brand("Twitch"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("twitch")),
-                integ: Integration::Twitch,
-            },
-            NavEntry::FlatLink {
-                dot: platform_color(PlatformKind::YouTube, palette),
-                label: NavText::Brand("YouTube"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("youtube")),
-                integ: Integration::YouTube,
-            },
-            NavEntry::FlatLink {
-                dot: platform_color(PlatformKind::Kick, palette),
-                label: NavText::Brand("Kick"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("kick")),
-                integ: Integration::Kick,
-            },
-            NavEntry::MiniLabelLink {
-                label: NavText::Key("nav_item_stream_apps"),
-                screen: Screen::StreamApps,
-            },
-            NavEntry::FlatLink {
-                dot: palette.success,
-                label: NavText::Brand("OBS Studio"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("obs")),
-                integ: Integration::Obs,
-            },
-            NavEntry::FlatLink {
-                dot: palette.warning,
-                label: NavText::Brand("VTube Studio"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("vtube")),
-                integ: Integration::VTube,
-            },
-            NavEntry::MiniLabel(NavText::Key("nav_section_builtin")),
-            NavEntry::FlatIconLeaf {
-                icon: Icon::Message2Share,
-                label: NavText::Key("nav_item_tts"),
-                screen: Screen::Tts(None),
-            },
-            NavEntry::FlatIconLeaf {
-                icon: Icon::Music,
-                label: NavText::Key("nav_item_soundboard"),
-                screen: Screen::Soundboard,
-            },
-            NavEntry::FlatIconLeaf {
-                icon: Icon::Piano,
-                label: NavText::Brand("MIDI"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("midi")),
-            },
-            NavEntry::FlatIconLeaf {
-                icon: Icon::Keyboard,
-                label: NavText::Key("nav_item_hotkey"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("hotkey")),
-            },
-            NavEntry::FlatIconLeaf {
-                icon: Icon::BrandDiscord,
-                label: NavText::Brand("Discord"),
-                screen: Screen::BuiltinDetail(IntegrationId::new("discord")),
-            },
-            NavEntry::FlatIconLeaf {
-                icon: Icon::Browser,
-                label: NavText::Key("nav_item_overlays"),
-                screen: Screen::Overlays,
-            },
-            NavEntry::FlatIconLeaf {
-                icon: Icon::Network,
-                label: NavText::Key("nav_item_ws_server"),
-                screen: Screen::Server,
-            },
-        ]
+        ];
+        for category in IntegrationCategory::DISPLAY_ORDER {
+            let mut items: Vec<NavEntry> = Vec::new();
+            for declaration in available
+                .iter()
+                .filter(|declaration| declaration.category == *category)
+                .filter(|declaration| lifecycle.is_on(&declaration.id))
+            {
+                let state = lifecycle.state_of(&declaration.id);
+                let connected = Integration::from_id(declaration.id.as_str())
+                    .is_some_and(|integ| connectivity.is_connected(integ));
+                let status = Some(nav_status(
+                    &CardStatus::resolve(&state, declaration.connection, connected),
+                    declaration.connection,
+                    palette,
+                ));
+                let look = look_of(&declaration.id, palette);
+                let label = NavText::Brand(declaration.brand_name);
+                let screen = Screen::BuiltinDetail(declaration.id.clone());
+                items.push(match look.letter {
+                    Some(_) => NavEntry::FlatLink {
+                        dot: look.tint,
+                        label,
+                        screen,
+                        status,
+                    },
+                    None => NavEntry::FlatIconLeaf {
+                        icon: look.glyph,
+                        label,
+                        screen,
+                        status,
+                    },
+                });
+            }
+            for feature in core_features()
+                .into_iter()
+                .filter(|feature| feature.category == *category)
+            {
+                items.push(NavEntry::FlatIconLeaf {
+                    icon: feature.glyph,
+                    label: NavText::Key(feature.name_key),
+                    screen: feature.screen,
+                    status: None,
+                });
+            }
+            if !items.is_empty() {
+                entries.push(NavEntry::MiniLabel(NavText::Key(category.label_key())));
+                entries.extend(items);
+            }
+        }
+        entries
     }
 
     fn text_label(label: SharedString) -> AnyElement {
@@ -280,32 +280,6 @@ impl SidebarNav {
             .pt(MINI_LABEL_PAD_TOP)
             .pb(MINI_LABEL_PAD_BOTTOM)
             .px(ITEM_PAD_H)
-            .child(SharedString::from(text.resolve().to_uppercase()))
-            .into_any_element()
-    }
-
-    fn mini_label_link(
-        &self,
-        text: NavText,
-        screen: Screen,
-        palette: &ForgePalette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let hover_ink = palette.text_muted;
-        div()
-            .id(text.id())
-            .font_family(mono_family())
-            .font_weight(FontWeight::MEDIUM)
-            .text_size(FONT_XXS)
-            .text_color(palette.text_faint)
-            .pt(MINI_LABEL_PAD_TOP)
-            .pb(MINI_LABEL_PAD_BOTTOM)
-            .px(ITEM_PAD_H)
-            .cursor_pointer()
-            .hover(move |s| s.text_color(hover_ink))
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, _, cx| this.request(screen.clone(), cx)),
-            )
             .child(SharedString::from(text.resolve().to_uppercase()))
             .into_any_element()
     }
@@ -351,6 +325,7 @@ impl SidebarNav {
         ic: Icon,
         label: NavText,
         screen: Screen,
+        badge: Option<SharedString>,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -366,6 +341,18 @@ impl SidebarNav {
                 icon(ic, SECTION_ICON, palette.text_secondary).into_any_element(),
             )
         };
+        let mut children = vec![glyph, Self::text_label(label.resolve())];
+        if let Some(badge) = badge {
+            children.push(
+                div()
+                    .flex_none()
+                    .font_family(mono_family())
+                    .text_size(SECTION_BADGE)
+                    .text_color(palette.text_faint)
+                    .child(badge)
+                    .into_any_element(),
+            );
+        }
         Self::nav_frame(
             label.id(),
             screen,
@@ -373,10 +360,23 @@ impl SidebarNav {
             SECTION_ITEM_PAD_V,
             SECTION_ITEM_MB,
             fg,
-            vec![glyph, Self::text_label(label.resolve())],
+            children,
             palette,
             cx,
         )
+    }
+
+    fn status_marker(label: NavText, status: NavStatus) -> AnyElement {
+        if status.pulse {
+            pulse_dot(
+                ElementId::Name(format!("nav-pulse-{}", label.id()).into()),
+                status.color,
+                STATUS_DOT,
+            )
+            .into_any_element()
+        } else {
+            status_dot(status.color, STATUS_DOT).into_any_element()
+        }
     }
 
     fn render_entry(
@@ -388,18 +388,18 @@ impl SidebarNav {
         match entry {
             NavEntry::SectionLabel(text) => Self::section_label(text, palette),
             NavEntry::MiniLabel(text) => Self::mini_label(text, palette),
-            NavEntry::MiniLabelLink { label, screen } => {
-                self.mini_label_link(label, screen, palette, cx)
-            }
+            NavEntry::Gap(height) => div().flex_none().h(height).into_any_element(),
             NavEntry::SectionLeaf {
                 icon: ic,
                 label,
                 screen,
-            } => self.section_leaf(ic, label, screen, palette, cx),
+                badge,
+            } => self.section_leaf(ic, label, screen, badge, palette, cx),
             NavEntry::FlatIconLeaf {
                 icon: ic,
                 label,
                 screen,
+                status,
             } => {
                 let active = self.current.same_nav(&screen);
                 let fg = if active {
@@ -407,6 +407,11 @@ impl SidebarNav {
                 } else {
                     palette.text_secondary
                 };
+                let mut children = vec![
+                    icon(ic, FLAT_ICON, fg).into_any_element(),
+                    Self::text_label(label.resolve()),
+                ];
+                children.extend(status.map(|status| Self::status_marker(label, status)));
                 Self::nav_frame(
                     label.id(),
                     screen,
@@ -414,10 +419,7 @@ impl SidebarNav {
                     FLAT_ITEM_PAD_V,
                     FLAT_ITEM_MB,
                     fg,
-                    vec![
-                        icon(ic, FLAT_ICON, fg).into_any_element(),
-                        Self::text_label(label.resolve()),
-                    ],
+                    children,
                     palette,
                     cx,
                 )
@@ -426,9 +428,8 @@ impl SidebarNav {
                 dot,
                 label,
                 screen,
-                integ,
+                status,
             } => {
-                let connected = self.connectivity.read(cx).is_connected(integ);
                 let active = self.current.same_nav(&screen);
                 let fg = if active {
                     palette.text_primary
@@ -441,11 +442,8 @@ impl SidebarNav {
                     .rounded(BRAND_DOT_RADIUS)
                     .bg(dot)
                     .into_any_element();
-                let status_color = if connected {
-                    palette.success
-                } else {
-                    palette.text_extreme_faint
-                };
+                let mut children = vec![square, Self::text_label(label.resolve())];
+                children.extend(status.map(|status| Self::status_marker(label, status)));
                 Self::nav_frame(
                     label.id(),
                     screen,
@@ -453,11 +451,7 @@ impl SidebarNav {
                     FLAT_ITEM_PAD_V,
                     FLAT_ITEM_MB,
                     fg,
-                    vec![
-                        square,
-                        Self::text_label(label.resolve()),
-                        status_dot(status_color, STATUS_DOT).into_any_element(),
-                    ],
+                    children,
                     palette,
                     cx,
                 )
@@ -466,12 +460,29 @@ impl SidebarNav {
     }
 }
 
+fn nav_status(
+    status: &CardStatus,
+    connection: ConnectionAffordance,
+    palette: &ForgePalette,
+) -> NavStatus {
+    let (color, pulse) = match status {
+        CardStatus::Starting | CardStatus::Stopping => (palette.brand, true),
+        CardStatus::Failed(_) => (palette.random, false),
+        CardStatus::Active | CardStatus::Connected => (palette.success, false),
+        CardStatus::NotConnected | CardStatus::Disabled => match connection {
+            ConnectionAffordance::Connectable => (palette.text_extreme_faint, false),
+            ConnectionAffordance::Connectionless => (palette.success, false),
+        },
+    };
+    NavStatus { color, pulse }
+}
+
 impl Render for SidebarNav {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette();
 
         let mut items: Vec<AnyElement> = Vec::new();
-        for entry in Self::roster(&palette) {
+        for entry in self.roster(&palette, cx) {
             items.push(self.render_entry(entry, &palette, cx));
         }
 
@@ -479,6 +490,7 @@ impl Render for SidebarNav {
             Icon::Settings,
             NavText::Key("nav_item_settings"),
             Screen::Settings(None),
+            None,
             &palette,
             cx,
         );

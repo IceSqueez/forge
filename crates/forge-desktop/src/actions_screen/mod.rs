@@ -45,6 +45,7 @@ mod sub_action_modal;
 mod test_run;
 mod test_trigger;
 
+pub(crate) use analyzer::nested_chains;
 pub(crate) use editor::parse_variable_segments;
 
 const LEFT_PANEL_W: Pixels = px(290.0);

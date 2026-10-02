@@ -1,5 +1,6 @@
 use std::fmt;
 
+use forge_platform_core::IntegrationCategory;
 use forge_types::IntegrationId;
 use forge_types::{ActionId, TriggerInstanceId};
 
@@ -16,8 +17,7 @@ pub enum Screen {
     EventFeed,
     Globals,
     Scripts,
-    Platforms,
-    StreamApps,
+    Integrations(Option<IntegrationCategory>),
     BuiltinDetail(IntegrationId),
     Tts(Option<TtsSection>),
     Soundboard,
@@ -34,6 +34,7 @@ impl Screen {
                 | (Screen::Actions(_), Screen::Actions(_))
                 | (Screen::Settings(_), Screen::Settings(_))
                 | (Screen::Tts(_), Screen::Tts(_))
+                | (Screen::Integrations(_), Screen::Integrations(_))
         ) || self == other
     }
 }
@@ -47,8 +48,7 @@ const SCREEN_CLI_NAMES: &[&str] = &[
     "event-feed",
     "globals",
     "scripts",
-    "platforms",
-    "stream-apps",
+    "integrations",
     "builtin-detail",
     "tts",
     "soundboard",
@@ -114,8 +114,15 @@ impl Screen {
             "event-feed" => Ok(Screen::EventFeed),
             "globals" => Ok(Screen::Globals),
             "scripts" => Ok(Screen::Scripts),
-            "platforms" => Ok(Screen::Platforms),
-            "stream-apps" => Ok(Screen::StreamApps),
+            "integrations" => match param {
+                None => Ok(Screen::Integrations(None)),
+                Some(key) => IntegrationCategory::from_key(key)
+                    .map(|category| Screen::Integrations(Some(category)))
+                    .ok_or(ScreenArgError::UnknownSection {
+                        screen: "integrations",
+                        section: key.to_owned(),
+                    }),
+            },
             "builtin-detail" => param
                 .map(|id| Screen::BuiltinDetail(IntegrationId::new(id)))
                 .ok_or(ScreenArgError::MissingBuiltinId),

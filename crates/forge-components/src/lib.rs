@@ -16,6 +16,7 @@ pub mod fonts;
 pub mod footer;
 pub mod glyph;
 pub mod grid_picker;
+pub mod hub_card;
 pub mod icons;
 pub mod inline_edit;
 pub mod input_bar;
@@ -78,6 +79,11 @@ pub use glyph::{GlyphArt, glyph_art};
 pub use grid_picker::{
     GridItemQuery, GridPicker, GridPickerArt, GridPickerConfig, GridPickerEvent, GridPickerGroup,
     GridPickerItem, GridPickerItemState, GridPickerSubtitle,
+};
+pub use hub_card::{
+    BadgeMarker, CompactButton, CompactTone, HUB_CARD_HEIGHT, HUB_TILE_SIZE, HubCard, HubNote,
+    HubTileGlyph, compact_button, hub_card, hub_note, hub_section_header, hub_tile,
+    lifecycle_badge,
 };
 pub use icons::{Icon, IconAssets, icon, spinner};
 pub use inline_edit::{InlineEdit, InlineEditEvent, inline_edit};

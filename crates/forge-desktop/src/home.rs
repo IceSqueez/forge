@@ -1037,7 +1037,7 @@ impl Render for HomeView {
                 stat_label: tr!("home_card_connections_stat_label"),
                 hint: tr!("home_card_connections_hint"),
                 warn,
-                target: Screen::Platforms,
+                target: Screen::Integrations(None),
             },
         ];
         let jump_cards = self.render_jump_cards(cards, &palette, density, cx);

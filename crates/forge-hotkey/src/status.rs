@@ -46,6 +46,11 @@ impl BuiltinStatus for HotkeyClient {
         }
     }
 
+    fn activity_count(&self) -> Option<usize> {
+        let snap = self.health_state.lock().unwrap_or_else(|p| p.into_inner());
+        Some(snap.registered_count)
+    }
+
     fn header_actions(&self) -> Vec<HeaderAction> {
         if self.is_enabled() {
             vec![HeaderAction::Disconnect]

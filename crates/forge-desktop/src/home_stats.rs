@@ -357,6 +357,35 @@ mod tests {
     }
 
     #[test]
+    fn set_connections_reports_a_change_only_when_the_slice_differs() {
+        let mut stats = stats_with(vec![
+            (Integration::Twitch, false),
+            (Integration::Obs, false),
+        ]);
+        let live = [(Integration::Twitch, false), (Integration::Obs, true)];
+
+        let unchanged =
+            stats.set_connections(&[(Integration::Twitch, false), (Integration::Obs, false)]);
+        let changed = stats.set_connections(&live);
+        let repeated = stats.set_connections(&live);
+
+        assert_eq!((unchanged, changed, repeated), (false, true, false));
+    }
+
+    #[test]
+    fn set_connections_feeds_the_enabled_tally() {
+        let mut stats = stats_with(vec![
+            (Integration::Twitch, false),
+            (Integration::Obs, false),
+        ]);
+
+        stats.set_connections(&[(Integration::Twitch, true), (Integration::Obs, false)]);
+
+        let tally = stats.enabled_connections(|_| true);
+        assert_eq!((tally.connected, tally.total), (1, 2));
+    }
+
+    #[test]
     fn the_tally_warns_only_while_an_enabled_integration_is_down() {
         for (connections, warn, case) in [
             (

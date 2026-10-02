@@ -722,6 +722,65 @@ mod tests {
         health.read_with(cx, |health, _| health.depth(id).map(|depth| depth.pending))
     }
 
+    fn mirrored(cx: &mut TestAppContext) -> (Entity<PlatformConnectivity>, Entity<HomeStats>) {
+        let platforms = cx.new(|_| PlatformConnectivity::new());
+        let home = cx.new(|_| HomeStats::new());
+        cx.update(|cx| mirror_connections_into_home(&platforms, home.clone(), cx));
+        (platforms, home)
+    }
+
+    fn home_connections(
+        home: &Entity<HomeStats>,
+        cx: &mut TestAppContext,
+    ) -> Vec<(Integration, bool)> {
+        home.read_with(cx, |home, _| home.enabled_connections(|_| true).connections)
+    }
+
+    #[gpui::test]
+    fn a_platform_connection_change_reaches_the_home_strip_in_roster_order(
+        cx: &mut TestAppContext,
+    ) {
+        let (platforms, home) = mirrored(cx);
+
+        platforms.update(cx, |connectivity, cx| {
+            connectivity.set_connected(Integration::Obs, true);
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        assert_eq!(
+            home_connections(&home, cx),
+            vec![
+                (Integration::Twitch, false),
+                (Integration::YouTube, false),
+                (Integration::Kick, false),
+                (Integration::Obs, true),
+                (Integration::VTube, false),
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn a_builtin_seed_reaches_the_home_strip(cx: &mut TestAppContext) {
+        let (platforms, home) = mirrored(cx);
+        platforms.update(cx, |connectivity, cx| {
+            connectivity.set_connected(Integration::Twitch, true);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let before_seed =
+            home.read_with(cx, |home, _| home.enabled_connections(|_| true).connected);
+
+        platforms.update(cx, |connectivity, cx| {
+            connectivity.seed_from_builtins(&crate::integrations::BuiltinRegistry::default());
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let after_seed = home.read_with(cx, |home, _| home.enabled_connections(|_| true).connected);
+
+        assert_eq!((before_seed, after_seed), (1, 0));
+    }
+
     #[gpui::test]
     fn the_depth_bridge_carries_every_later_depth_into_queue_health(cx: &mut TestAppContext) {
         let rt = runtime();

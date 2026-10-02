@@ -11,6 +11,7 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
+use super::mention_fields::{mention_default_entries, mention_form_fields, mention_policy};
 use crate::sink::DiscordSink;
 
 pub struct SendFileRunner {
@@ -55,15 +56,17 @@ impl SubActionRunner for SendFileRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([
+        let mut config = BTreeMap::from([
             ("webhook_name".to_owned(), Variant::String(String::new())),
             ("content".to_owned(), Variant::String(String::new())),
             ("file_path".to_owned(), Variant::String(String::new())),
-        ])
+        ]);
+        config.extend(mention_default_entries());
+        config
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![
+        let mut fields = vec![
             FormField::Text {
                 key: "webhook_name",
                 label: "Webhook",
@@ -78,7 +81,9 @@ impl SubActionRunner for SendFileRunner {
                 label: "File Path",
                 placeholder: "/home/user/clip.png",
             },
-        ]
+        ];
+        fields.extend(mention_form_fields());
+        fields
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
@@ -145,7 +150,13 @@ impl SubActionRunner for SendFileRunner {
         let outcome = SubActionOutcome::from_result(
             &self
                 .sink
-                .send_file(&webhook_name, caption.as_deref(), &file_name, &file_bytes)
+                .send_file(
+                    &webhook_name,
+                    caption.as_deref(),
+                    &file_name,
+                    &file_bytes,
+                    mention_policy(config),
+                )
                 .await,
         );
 

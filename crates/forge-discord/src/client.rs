@@ -209,10 +209,12 @@ impl DiscordClient {
         content: Option<&str>,
         file_name: &str,
         file_bytes: &[u8],
+        mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
         let cred = self.load_webhook_checked(webhook_name).await?;
 
         let mut payload = serde_json::Map::new();
+        payload.insert("allowed_mentions".to_owned(), mentions.to_wire());
         if let Some(c) = content {
             payload.insert(
                 "content".to_owned(),
@@ -798,8 +800,9 @@ impl DiscordSink for DiscordClient {
         content: Option<&str>,
         file_name: &str,
         file_bytes: &[u8],
+        mentions: MentionPolicy,
     ) -> Result<String, DiscordError> {
-        self.send_file(webhook_name, content, file_name, file_bytes)
+        self.send_file(webhook_name, content, file_name, file_bytes, mentions)
             .await
     }
 

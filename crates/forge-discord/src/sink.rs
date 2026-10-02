@@ -34,6 +34,7 @@ pub trait DiscordSink: Send + Sync {
         content: Option<&str>,
         file_name: &str,
         file_bytes: &[u8],
+        mentions: MentionPolicy,
     ) -> Result<String, DiscordError>;
 
     async fn delete_message(

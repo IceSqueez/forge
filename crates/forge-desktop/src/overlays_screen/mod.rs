@@ -7,11 +7,13 @@ mod hide_timing;
 mod icon_choice;
 mod kind_visuals;
 mod look_change;
+mod obs_card;
 mod preview_shapes;
 mod preview_stage;
 mod property_panel;
 mod receiver;
 mod registry_pane;
+mod sizing_section;
 mod sound_choice;
 
 use std::collections::{HashMap, HashSet};

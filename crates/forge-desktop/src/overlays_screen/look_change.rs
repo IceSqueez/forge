@@ -8,6 +8,7 @@ use forge_storage::OverlayId;
 use gpui::Context;
 
 use super::base_sections::{BaseLaunch, LookSummary};
+use super::sizing_section::keep_sizing_notice;
 use super::{OverlaysView, Regenerated, regenerate};
 use crate::async_bridge;
 
@@ -70,7 +71,8 @@ impl OverlaysView {
             self.report(&forge_components::tr!("overlays_toast_unknown_type"), cx);
             return;
         };
-        let carried = carried_config(descriptor, &config);
+        let mut carried = carried_config(descriptor, &config);
+        keep_sizing_notice(&config, &mut carried);
         let schema_version = descriptor.config_schema_version();
         let repo = Arc::clone(&self.repo);
         let service = self.service.clone();

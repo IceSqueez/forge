@@ -6,8 +6,8 @@ use forge_components::{
 };
 use forge_overlay::config::{DURATION, DURATION_MAX_SECS, DURATION_MIN_SECS};
 use forge_overlay::{
-    OverlayConfig, PreviewCanvas, PreviewComposition, PreviewPosition, effective_overlay_config,
-    preview_page_url,
+    ContentMargins, OverlayConfig, PreviewCanvas, PreviewComposition, PreviewPosition,
+    effective_overlay_config, preview_page_url,
 };
 use forge_runtime::{OverlayDelivery, TestFire};
 use forge_storage::{OverlayDefinition, OverlayId};
@@ -42,6 +42,7 @@ pub(super) const HINT_FS: Pixels = px(10.5);
 pub(super) const HINT_GLYPH: Pixels = px(12.0);
 
 const ZOOM_FACTOR: f32 = 1.0;
+const PERCENT: f32 = 100.0;
 
 const UNTIMED_DECAY: Duration = Duration::from_secs(5);
 
@@ -254,7 +255,7 @@ impl OverlaysView {
         }
     }
 
-    fn effective_config(&self, definition: &OverlayDefinition) -> Option<OverlayConfig> {
+    pub(super) fn effective_config(&self, definition: &OverlayDefinition) -> Option<OverlayConfig> {
         let descriptor = self.kinds.get(&definition.kind_id)?;
         Some(effective_overlay_config(descriptor, &definition.config))
     }
@@ -356,6 +357,7 @@ impl OverlaysView {
                 palette,
                 cx,
             ))
+            .child(self.render_obs_card(definition, preview.composition.canvas, palette, cx))
             .child(self.render_hints(definition, served, palette))
             .children(event_wiring::render_readout(&self.wiring.view, palette, cx))
             .into_any_element()
@@ -536,12 +538,6 @@ impl OverlaysView {
             .gap(HINT_GAP)
             .pt(HINT_TOP)
             .child(hint_row(
-                Icon::InfoCircle,
-                palette.text_faint,
-                tr!("overlays_preview_approximate"),
-                palette.text_faint,
-            ))
-            .child(hint_row(
                 Icon::Browser,
                 palette.text_faint,
                 tr!("overlays_preview_browser_counts"),
@@ -612,7 +608,7 @@ fn render_canvas(
     let shape = composition.shape;
     let tint = palette.base;
 
-    let mut stage = div()
+    let stage = div()
         .flex_none()
         .w(fit.width)
         .h(fit.height)
@@ -622,8 +618,6 @@ fn render_canvas(
         .border(BORDER_THIN)
         .border_color(palette.border_regular)
         .bg(palette.shell)
-        .flex()
-        .flex_row()
         .child(
             canvas(
                 |_, _, _| {},
@@ -646,28 +640,77 @@ fn render_canvas(
                 .child(tr!("overlays_preview_canvas_note")),
         );
 
+    let inset = MarginInset::of(composition.margins, fit);
+    let mut content = div()
+        .absolute()
+        .top(inset.top)
+        .right(inset.right)
+        .bottom(inset.bottom)
+        .left(inset.left)
+        .flex()
+        .flex_row();
+
     if !fills_canvas(shape) {
-        stage = match composition.position {
-            PreviewPosition::Top => stage.items_start(),
-            PreviewPosition::Center => stage.items_center(),
-            PreviewPosition::Bottom => stage.items_end(),
+        content = match composition.position {
+            PreviewPosition::Top => content.items_start(),
+            PreviewPosition::Center => content.items_center(),
+            PreviewPosition::Bottom => content.items_end(),
         };
-        stage = if centers_horizontally(shape) {
-            stage.justify_center()
+        content = if centers_horizontally(shape) {
+            content.justify_center()
         } else {
-            stage.justify_start()
+            content.justify_start()
         };
     }
 
+    let guide = inset.visible().then(|| {
+        div()
+            .absolute()
+            .top(inset.top)
+            .right(inset.right)
+            .bottom(inset.bottom)
+            .left(inset.left)
+            .border(BORDER_THIN)
+            .border_dashed()
+            .border_color(palette.border_regular)
+    });
+
     stage
-        .child(render_composition(
+        .children(guide)
+        .child(content.child(render_composition(
             composition,
             plan,
             scale,
             glyphs,
             palette,
-        ))
+        )))
         .into_any_element()
+}
+
+#[derive(Clone, Copy)]
+struct MarginInset {
+    top: Pixels,
+    right: Pixels,
+    bottom: Pixels,
+    left: Pixels,
+}
+
+impl MarginInset {
+    fn of(margins: ContentMargins, fit: CanvasFit) -> Self {
+        let share = |extent: Pixels, percent: u32| extent * (percent as f32 / PERCENT);
+        Self {
+            top: share(fit.height, margins.top),
+            right: share(fit.width, margins.right),
+            bottom: share(fit.height, margins.bottom),
+            left: share(fit.width, margins.left),
+        }
+    }
+
+    fn visible(self) -> bool {
+        [self.top, self.right, self.bottom, self.left]
+            .iter()
+            .any(|side| *side > px(0.0))
+    }
 }
 
 fn paint_checkerboard(bounds: Bounds<Pixels>, tint: Rgba, window: &mut Window) {

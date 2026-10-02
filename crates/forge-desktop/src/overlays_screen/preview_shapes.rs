@@ -333,6 +333,10 @@ fn message_feed(
         .w_full()
         .flex()
         .flex_col()
+        .map(|rows| match composition.position {
+            PreviewPosition::Top => rows.justify_start(),
+            PreviewPosition::Center | PreviewPosition::Bottom => rows.justify_end(),
+        })
         .gap(scale.text_at(CHAT.row_gap))
         .overflow_hidden()
         .font_family(family)

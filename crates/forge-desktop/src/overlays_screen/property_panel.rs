@@ -92,11 +92,11 @@ struct ChoicePicker {
 
 pub(super) struct OverlayPropertyPanel {
     pub(super) overlay_id: OverlayId,
-    defaults: OverlayConfig,
+    pub(super) defaults: OverlayConfig,
     pub(super) stored: OverlayConfig,
     labels: HashMap<String, String>,
     sections: HashMap<String, PanelSection>,
-    fields: Vec<ConfigField>,
+    pub(super) fields: Vec<ConfigField>,
     choices: HashMap<String, Vec<(String, String)>>,
     icon_images: Vec<IconImage>,
     overridden_files: Vec<String>,
@@ -334,6 +334,7 @@ impl OverlayPropertyPanel {
             event,
             forge_components::InputEvent::Submitted(_) | forge_components::InputEvent::Blurred(_)
         ) {
+            self.bound_design_inputs(cx);
             self.emit_save(cx);
             cx.notify();
         }
@@ -511,7 +512,7 @@ impl OverlayPropertyPanel {
         cx.notify();
     }
 
-    fn label_of(&self, key: &str) -> String {
+    pub(super) fn label_of(&self, key: &str) -> String {
         if let Some(label) = base_label(key) {
             return label;
         }
@@ -541,7 +542,7 @@ impl OverlayPropertyPanel {
         field_notes(&self.media_issues, key, adopting, refusal)
     }
 
-    fn handlers(&self) -> ConfigFieldHandlers<Self> {
+    pub(super) fn handlers(&self) -> ConfigFieldHandlers<Self> {
         ConfigFieldHandlers {
             toggle: Self::toggle_field,
             slide: Self::slide_field,
@@ -731,11 +732,15 @@ impl Render for OverlayPropertyPanel {
             .flex_col();
 
         body = body
+            .children(self.render_sizing_notice(&palette, cx))
             .children(override_notice(&self.overridden_files, &palette))
             .child(self.render_look_section(&palette, cx));
 
         for section in FIELD_SECTIONS {
-            body = body.children(self.render_section(section, &palette, cx));
+            body = body.children(match section {
+                PanelSection::Source => self.render_source_section(&palette, cx),
+                _ => self.render_section(section, &palette, cx),
+            });
         }
         body = body
             .children(self.render_section(PanelSection::Display, &palette, cx))

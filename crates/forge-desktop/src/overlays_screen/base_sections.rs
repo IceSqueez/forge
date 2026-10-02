@@ -3,7 +3,10 @@ use forge_components::{
     PickerLabels, body_family, field_label, ghost_button_with_icon, icon, section_label, toggle,
     tr,
 };
-use forge_overlay::config::{DURATION, SOUND, SPEECH, SPEECH_VOICE};
+use forge_overlay::config::{
+    DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
+    SOUND, SPEECH, SPEECH_VOICE,
+};
 use forge_overlay::{ConfigSection, DeliveryDisposition, OverlayConfig};
 use forge_runtime::{OverlayDelivery, OverlayDispatch, ShowEnd, ShowTicket};
 use gpui::{
@@ -15,6 +18,7 @@ use super::property_panel::{
     FIELD_GAP, NOTICE_LINE_H, NOTICE_PAD, NOTICE_RADIUS, OverlayPropertyPanel, SECTION_GAP,
     SECTION_TOP_GAP,
 };
+use super::sizing_section::{is_source_box_key, with_source_box};
 use crate::async_bridge;
 use crate::config_form::{ChoiceDropdown, ConfigField, ConfigFieldHandlers, render_config_control};
 use crate::presentation::ActivePresentation;
@@ -28,14 +32,16 @@ const FLAG_GLYPH: Pixels = px(12.0);
 pub(super) enum PanelSection {
     Content,
     Style,
+    Source,
     Behavior,
     Audio,
     Display,
 }
 
-pub(super) const FIELD_SECTIONS: [PanelSection; 4] = [
+pub(super) const FIELD_SECTIONS: [PanelSection; 5] = [
     PanelSection::Content,
     PanelSection::Style,
+    PanelSection::Source,
     PanelSection::Behavior,
     PanelSection::Audio,
 ];
@@ -45,6 +51,7 @@ impl PanelSection {
         match key {
             SOUND | SPEECH | SPEECH_VOICE => Self::Audio,
             DURATION => Self::Display,
+            _ if is_source_box_key(key) => Self::Source,
             _ => match declared {
                 ConfigSection::Content => Self::Content,
                 ConfigSection::Style => Self::Style,
@@ -57,6 +64,7 @@ impl PanelSection {
         match self {
             Self::Content => tr!("overlays_panel_section_content"),
             Self::Style => tr!("overlays_panel_section_style"),
+            Self::Source => tr!("overlays_panel_section_source"),
             Self::Behavior => tr!("overlays_panel_section_behavior"),
             Self::Audio => tr!("overlays_panel_section_audio"),
             Self::Display => tr!("overlays_panel_section_display"),
@@ -70,6 +78,12 @@ pub(super) fn base_label(key: &str) -> Option<String> {
         SPEECH => Some(tr!("overlays_base_speech")),
         SPEECH_VOICE => Some(tr!("overlays_base_voice")),
         DURATION => Some(tr!("overlays_base_duration")),
+        DESIGN_WIDTH => Some(tr!("overlays_source_width")),
+        DESIGN_HEIGHT => Some(tr!("overlays_source_height")),
+        MARGIN_TOP => Some(tr!("overlays_source_margin_top")),
+        MARGIN_RIGHT => Some(tr!("overlays_source_margin_right")),
+        MARGIN_BOTTOM => Some(tr!("overlays_source_margin_bottom")),
+        MARGIN_LEFT => Some(tr!("overlays_source_margin_left")),
         _ => None,
     }
 }
@@ -350,7 +364,7 @@ impl OverlayPropertyPanel {
             self.stored = config.clone();
             cx.emit(BaseEvent::ChangeLook {
                 kind_id: kind_id.to_string(),
-                config,
+                config: with_source_box(&self.defaults, config),
             });
         }
         cx.notify();

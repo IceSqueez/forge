@@ -530,10 +530,10 @@ mod tests {
         assert_eq!(
             parts,
             vec![
-                ("Entrance".to_owned(), "slide-up 600 ms".to_owned()),
-                ("Text".to_owned(), "wave by word".to_owned()),
+                ("Entrance".to_owned(), "Slide up 600 ms".to_owned()),
+                ("Text".to_owned(), "Wave by word".to_owned()),
                 ("On screen".to_owned(), "7 s".to_owned()),
-                ("Exit".to_owned(), "dust 800 ms".to_owned()),
+                ("Exit".to_owned(), "Dust 800 ms".to_owned()),
                 ("Total show".to_owned(), "7.8 s".to_owned()),
             ]
         );

@@ -476,6 +476,7 @@ mod tests {
         hold_start: Option<oneshot::Receiver<()>>,
         fail_once: Option<String>,
         teardown_hangs: bool,
+        teardown_delay: Option<Duration>,
         installs_object: bool,
     }
 
@@ -484,10 +485,13 @@ mod tests {
         behaviour: Mutex<Behaviour>,
         configured: bool,
         teardown_hangs: bool,
+        teardown_delay: Option<Duration>,
         installs_object: bool,
         starts: AtomicUsize,
         teardowns: Arc<AtomicUsize>,
+        finished_teardowns: Arc<AtomicUsize>,
         held_by_tasks: Arc<()>,
+        held_by_teardown: Arc<()>,
     }
 
     impl FakeFactory {
@@ -496,11 +500,14 @@ mod tests {
                 id: IntegrationId::from_static(id),
                 configured: behaviour.configured,
                 teardown_hangs: behaviour.teardown_hangs,
+                teardown_delay: behaviour.teardown_delay,
                 installs_object: behaviour.installs_object,
                 behaviour: Mutex::new(behaviour),
                 starts: AtomicUsize::new(0),
                 teardowns: Arc::new(AtomicUsize::new(0)),
+                finished_teardowns: Arc::new(AtomicUsize::new(0)),
                 held_by_tasks: Arc::new(()),
+                held_by_teardown: Arc::new(()),
             })
         }
 
@@ -514,6 +521,14 @@ mod tests {
 
         fn live_tasks(&self) -> usize {
             Arc::strong_count(&self.held_by_tasks) - 1
+        }
+
+        fn finished_teardowns(&self) -> usize {
+            self.finished_teardowns.load(Ordering::SeqCst)
+        }
+
+        fn live_teardowns(&self) -> usize {
+            Arc::strong_count(&self.held_by_teardown) - 1
         }
     }
 
@@ -546,13 +561,21 @@ mod tests {
                 std::future::pending::<()>().await;
             }));
             let teardowns = Arc::clone(&self.teardowns);
+            let finished = Arc::clone(&self.finished_teardowns);
+            let held_by_teardown = Arc::clone(&self.held_by_teardown);
             let hangs = self.teardown_hangs;
+            let delay = self.teardown_delay;
             let mut running = RunningIntegration::idle().with_teardown(Box::pin(async move {
+                let _held = held_by_teardown;
                 tasks.abort_all();
                 teardowns.fetch_add(1, Ordering::SeqCst);
                 if hangs {
                     std::future::pending::<()>().await;
                 }
+                if let Some(delay) = delay {
+                    tokio::time::sleep(delay).await;
+                }
+                finished.fetch_add(1, Ordering::SeqCst);
             }));
             if self.installs_object {
                 let client = forge_discord::DiscordClient::new(
@@ -831,6 +854,94 @@ mod tests {
         assert_eq!(state, LifecycleState::Disabled);
         assert_eq!(began.elapsed(), TEARDOWN_BOUND);
         assert!(harness.gate.is_disabled(&factory.id));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_overrunning_teardown_is_aborted_and_releases_what_it_held() {
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                teardown_hangs: true,
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        slot.set_enabled(true).await.unwrap();
+
+        slot.set_enabled(false).await.unwrap();
+
+        assert!(
+            settle_tasks(|| factory.live_teardowns() == 0).await,
+            "the overrunning teardown is still alive after the bound"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_teardown_using_the_full_chat_shutdown_grace_is_allowed_to_finish() {
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                teardown_delay: Some(
+                    forge_platform_twitch::chat::SHUTDOWN_GRACE + Duration::from_millis(1),
+                ),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        slot.set_enabled(true).await.unwrap();
+
+        slot.set_enabled(false).await.unwrap();
+
+        assert_eq!(factory.finished_teardowns(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_start_that_never_completes_fails_at_the_start_bound_with_the_gate_closed() {
+        let (_never_released, hold) = oneshot::channel();
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                hold_start: Some(hold),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let began = tokio::time::Instant::now();
+
+        let state = harness.slot(&factory).set_enabled(true).await.unwrap();
+
+        assert!(matches!(state, LifecycleState::Failed(_)), "{state:?}");
+        assert_eq!(began.elapsed(), START_BOUND);
+        assert!(harness.gate.is_disabled(&factory.id));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_disable_requested_during_a_hung_start_applies_once_the_start_bound_passes() {
+        let (_never_released, hold) = oneshot::channel();
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                hold_start: Some(hold),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        let enabling = tokio::spawn({
+            let slot = slot.clone();
+            async move { slot.set_enabled(true).await }
+        });
+        assert!(
+            settle_tasks(|| factory.starts() == 1).await,
+            "start never began"
+        );
+
+        let state = slot.set_enabled(false).await.unwrap();
+
+        assert_eq!(state, LifecycleState::Disabled);
+        enabling.await.unwrap().unwrap();
     }
 
     #[tokio::test]

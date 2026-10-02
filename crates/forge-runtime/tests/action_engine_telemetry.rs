@@ -641,3 +641,30 @@ async fn a_chat_send_targeted_at_a_disabled_platform_fails_the_run_visibly() {
         history.saved()[0].1,
     );
 }
+
+#[tokio::test]
+async fn a_quick_chat_send_targeted_at_a_disabled_platform_reports_integration_disabled() {
+    let repo = Arc::new(SpyActionRepo::new());
+    let mut reg = SubActionRegistry::new();
+    reg.register(Box::new(TwitchChatSendMessageRunner)).unwrap();
+    let engine = spawn_with(&repo, &Arc::new(SpyHistoryRepo::new()), reg);
+    let kick = IntegrationId::from_static("kick");
+    engine.integration_gate().disable(kick.clone());
+    let mut step = action_with(vec!["twitch.chat.send_message"])
+        .sub_actions
+        .remove(0);
+    step.config = SubActionConfig::from([
+        ("message".to_owned(), Variant::String("hello".to_owned())),
+        ("target".to_owned(), Variant::String("kick".to_owned())),
+    ]);
+
+    let outcome = engine
+        .execute_quick_action(step, "kick".to_owned(), "Quick".to_owned(), None)
+        .await
+        .unwrap()
+        .outcome()
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, SubActionOutcome::IntegrationDisabled(kick));
+}

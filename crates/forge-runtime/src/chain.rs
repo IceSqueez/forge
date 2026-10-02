@@ -1548,4 +1548,74 @@ mod tests {
         assert_eq!(twitch_runs.load(Ordering::Relaxed), 0);
         assert_eq!(core_runs.load(Ordering::Relaxed), 1);
     }
+
+    fn chat_send_registry() -> Arc<SubActionRegistry> {
+        let mut reg = SubActionRegistry::new();
+        reg.register(Box::new(
+            crate::sub_action_runners::TwitchChatSendMessageRunner,
+        ))
+        .unwrap();
+        Arc::new(reg)
+    }
+
+    fn chat_send_to(target: &str) -> SubActionStep {
+        SubActionStep {
+            config: BTreeMap::from([
+                ("message".to_owned(), Variant::String("hello".to_owned())),
+                ("target".to_owned(), Variant::String(target.to_owned())),
+            ]),
+            ..step("twitch.chat.send_message")
+        }
+    }
+
+    fn send_requests(events: &Arc<Mutex<Vec<Event>>>) -> usize {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "chat.send.request")
+            .count()
+    }
+
+    #[tokio::test]
+    async fn a_concurrent_chat_send_aimed_by_argument_at_a_disabled_platform_fails_unsent() {
+        let (eng, events) = capturing_engine(chat_send_registry(), 8);
+        eng.integration_gate()
+            .disable(IntegrationId::from_static("kick"));
+        let args = ArgStack::new().set("platform".to_owned(), Variant::String("kick".to_owned()));
+
+        let run = eng
+            .run_concurrent(
+                &[chat_send_to("%platform%")],
+                &args,
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(
+            run.telemetry[0].outcome,
+            SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("kick"))
+        );
+        assert_eq!(send_requests(&events), 0);
+    }
+
+    #[tokio::test]
+    async fn a_chat_send_to_an_enabled_platform_is_published_while_another_is_disabled() {
+        let (eng, events) = capturing_engine(chat_send_registry(), 8);
+        eng.integration_gate()
+            .disable(IntegrationId::from_static("twitch"));
+
+        let run = eng
+            .run_sequential(
+                &[chat_send_to("kick")],
+                &ArgStack::new(),
+                EventId::new(),
+                &CancelSignal::new(),
+            )
+            .await;
+
+        assert_eq!(run.signal, ChainSignal::Completed);
+        assert_eq!(send_requests(&events), 1);
+    }
 }

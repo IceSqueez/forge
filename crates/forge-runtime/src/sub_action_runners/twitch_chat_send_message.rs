@@ -103,3 +103,38 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         (timer.success(), None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_target(target: Option<&str>) -> SubActionConfig {
+        let mut cfg = SubActionConfig::new();
+        cfg.insert("message".to_owned(), Variant::String("hi".to_owned()));
+        if let Some(target) = target {
+            cfg.insert("target".to_owned(), Variant::String(target.to_owned()));
+        }
+        cfg
+    }
+
+    #[test]
+    fn the_gated_integration_is_the_resolved_send_target() {
+        let args = ArgStack::new().set("platform".to_owned(), Variant::String("kick".to_owned()));
+        for (target, expected) in [
+            (Some("youtube"), Some("youtube")),
+            (Some("%platform%"), Some("kick")),
+            (Some("  kick \t"), Some("kick")),
+            (None, Some("twitch")),
+            (Some(""), None),
+            (Some("   "), None),
+        ] {
+            let resolved = TwitchChatSendMessageRunner
+                .targeted_integration(&config_with_target(target), &args);
+            assert_eq!(
+                resolved,
+                expected.map(IntegrationId::new),
+                "target {target:?}"
+            );
+        }
+    }
+}

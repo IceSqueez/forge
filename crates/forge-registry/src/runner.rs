@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use forge_types::{ArgStack, SubActionTelemetry};
+use forge_types::{ArgStack, IntegrationId, SubActionTelemetry};
 
 pub use forge_types::SubActionConfig;
 
@@ -31,5 +31,12 @@ pub trait SubActionRunner: Send + Sync {
     ) -> (SubActionTelemetry, Option<ArgStack>);
     fn scope_io(&self) -> SubActionIo {
         SubActionIo::default()
+    }
+    fn targeted_integration(
+        &self,
+        _config: &SubActionConfig,
+        _arg_stack: &ArgStack,
+    ) -> Option<IntegrationId> {
+        None
     }
 }

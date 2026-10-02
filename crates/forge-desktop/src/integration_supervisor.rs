@@ -15,7 +15,10 @@ use tokio::task::{AbortHandle, JoinHandle};
 
 use crate::integrations::{BuiltinObject, BuiltinRegistry};
 
-const TEARDOWN_BOUND: Duration = Duration::from_secs(5);
+const TEARDOWN_MARGIN: Duration = Duration::from_secs(5);
+const TEARDOWN_BOUND: Duration =
+    forge_platform_twitch::chat::SHUTDOWN_GRACE.saturating_add(TEARDOWN_MARGIN);
+const START_BOUND: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LifecycleState {
@@ -137,12 +140,15 @@ impl SlotHost {
         if let Some(platform) = retained.viewer_platform {
             self.live_viewers.unregister(platform);
         }
-        if let Some(teardown) = retained.teardown
-            && tokio::time::timeout(TEARDOWN_BOUND, teardown)
+        if let Some(teardown) = retained.teardown {
+            let mut teardown = tokio::spawn(teardown);
+            if tokio::time::timeout(TEARDOWN_BOUND, &mut teardown)
                 .await
                 .is_err()
-        {
-            tracing::warn!(integration = %id, "integration shutdown overran its bound");
+            {
+                teardown.abort();
+                tracing::warn!(integration = %id, "integration shutdown overran its bound; aborted it");
+            }
         }
     }
 }
@@ -184,7 +190,15 @@ async fn run_slot(
                 host.retire(&id, live).await;
             }
             host.publish(&id, LifecycleState::Starting);
-            current = match factory.start().await {
+            let started = tokio::time::timeout(START_BOUND, factory.start())
+                .await
+                .unwrap_or_else(|_| {
+                    Err(format!(
+                        "did not start within {} seconds",
+                        START_BOUND.as_secs()
+                    ))
+                });
+            current = match started {
                 Ok(running) => {
                     retained = Some(host.install(&id, running));
                     LifecycleState::Running
@@ -353,6 +367,14 @@ pub struct IntegrationSlot {
 impl IntegrationSlot {
     pub fn state(&self) -> LifecycleState {
         self.supervisor.state_of(&self.id)
+    }
+
+    pub fn id(&self) -> &IntegrationId {
+        &self.id
+    }
+
+    pub fn watch(&self) -> LifecycleWatch {
+        self.supervisor.watch()
     }
 
     pub async fn set_enabled(&self, enabled: bool) -> Result<LifecycleState, String> {

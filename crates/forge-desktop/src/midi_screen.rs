@@ -6,7 +6,7 @@ use forge_components::{
     ToastKind, badge, body_family, card, ghost_button_with_icon, header_status, icon, menu_button,
     menu_divider, menu_item, mono_family, pad_tile, page_frame, radius, status_dot, toggle, tr,
 };
-use forge_midi::{MidiClient, MidiMonitorEvent};
+use forge_midi::{MidiClient, MidiMonitorEvent, SwitchableMidiSink};
 use forge_runtime::EventBus;
 use forge_storage::{ActionRepo, SettingsRepo, TriggerInstanceRepo, set_json_setting};
 use forge_types::{ActionId, PermissionRung, PlatformScope, TriggerInstance, TriggerInstanceId};
@@ -300,6 +300,7 @@ struct OpenModal {
 }
 
 pub struct MidiScreenView {
+    sink: Arc<SwitchableMidiSink>,
     client: Option<Arc<MidiClient>>,
     integration: Option<IntegrationSlot>,
     trigger_repo: Arc<dyn TriggerInstanceRepo>,
@@ -320,12 +321,13 @@ pub struct MidiScreenView {
     menu_click_pos: Option<Point<Pixels>>,
     _monitor_bridge: Option<Task<()>>,
     _port_bridge: Task<()>,
+    _lifecycle_bridge: Option<Task<()>>,
 }
 
 impl MidiScreenView {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        client: Option<Arc<MidiClient>>,
+        sink: Arc<SwitchableMidiSink>,
         integration: Option<IntegrationSlot>,
         trigger_repo: Arc<dyn TriggerInstanceRepo>,
         action_repo: Arc<dyn ActionRepo>,
@@ -334,11 +336,16 @@ impl MidiScreenView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
+        let client = sink.live();
         let monitor_bridge = client
             .as_ref()
             .map(|client| Self::spawn_monitor_bridge(client, &rt_handle, cx));
         let port_bridge = Self::spawn_port_bridge(bus, cx);
+        let lifecycle_bridge = integration
+            .as_ref()
+            .map(|integration| Self::spawn_lifecycle_bridge(integration, cx));
         let mut view = Self {
+            sink,
             enabled: client.is_some(),
             live_ports: client
                 .as_ref()
@@ -362,6 +369,7 @@ impl MidiScreenView {
             menu_click_pos: None,
             _monitor_bridge: monitor_bridge,
             _port_bridge: port_bridge,
+            _lifecycle_bridge: lifecycle_bridge,
         };
         view.load(cx);
         view
@@ -391,6 +399,46 @@ impl MidiScreenView {
                 }
             }
         })
+    }
+
+    fn spawn_lifecycle_bridge(integration: &IntegrationSlot, cx: &mut Context<Self>) -> Task<()> {
+        let id = integration.id().clone();
+        let mut lifecycle = integration.watch();
+        let mut last = lifecycle.current().remove(&id);
+        cx.spawn(async move |this, cx| {
+            while let Some(mut states) = lifecycle.changed().await {
+                let state = states.remove(&id);
+                if state == last {
+                    continue;
+                }
+                last = state;
+                if this.update(cx, |this, cx| this.follow_engine(cx)).is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    fn follow_engine(&mut self, cx: &mut Context<Self>) {
+        match self.integration.as_ref().map(IntegrationSlot::state) {
+            Some(LifecycleState::Running) => self.enabled = true,
+            Some(LifecycleState::Disabled | LifecycleState::Failed(_)) => self.enabled = false,
+            Some(LifecycleState::Starting | LifecycleState::Stopping) | None => {}
+        }
+        let live = self.sink.live();
+        let unchanged = match (&self.client, &live) {
+            (Some(current), Some(live)) => Arc::ptr_eq(current, live),
+            (None, None) => true,
+            _ => false,
+        };
+        if !unchanged {
+            self._monitor_bridge = live
+                .as_ref()
+                .map(|client| Self::spawn_monitor_bridge(client, &self.rt_handle, cx));
+            self.client = live;
+            self.refresh_ports(cx);
+        }
+        cx.notify();
     }
 
     fn spawn_port_bridge(bus: Arc<EventBus>, cx: &mut Context<Self>) -> Task<()> {

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -55,17 +56,18 @@ pub(crate) async fn run_supervisor(
             }
             maybe_cmd = control_rx.recv() => {
                 let Some(cmd) = maybe_cmd else { break };
-                if matches!(cmd, SupervisorCommand::Shutdown) {
-                    break;
-                }
-                handle_supervisor_command(
+                if handle_supervisor_command(
                     &client,
                     cmd,
                     &merged_tx,
                     &mut input_snap,
                     &mut output_snap,
                     &mut handles,
-                );
+                )
+                .is_break()
+                {
+                    break;
+                }
             }
             _ = poll.tick() => {
                 do_port_discovery(
@@ -87,12 +89,15 @@ fn handle_supervisor_command(
     input_snap: &mut Vec<MidiPortInfo>,
     output_snap: &mut Vec<MidiPortInfo>,
     handles: &mut HashMap<String, Box<dyn InputHandle>>,
-) {
+) -> ControlFlow<()> {
     match cmd {
         SupervisorCommand::Rescan => {
             do_port_discovery(client, merged_tx, input_snap, output_snap, handles);
         }
-        SupervisorCommand::Shutdown => handles.clear(),
+        SupervisorCommand::Shutdown => {
+            handles.clear();
+            return ControlFlow::Break(());
+        }
         SupervisorCommand::Disable => {
             handles.clear();
             client.enabled.store(false, Ordering::Relaxed);
@@ -108,6 +113,7 @@ fn handle_supervisor_command(
             emit_engine_state_change(client, true);
         }
     }
+    ControlFlow::Continue(())
 }
 
 fn emit_engine_state_change(client: &Arc<MidiClient>, enabled: bool) {

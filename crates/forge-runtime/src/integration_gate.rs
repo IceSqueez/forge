@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use forge_registry::{RunContext, StepTimer};
-use forge_types::{ArgStack, IntegrationId, SubActionOutcome, SubActionTelemetry};
+use forge_registry::{RunContext, StepTimer, SubActionRegistry, SubActionRunner};
+use forge_types::{ArgStack, IntegrationId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
 use tokio::sync::Notify;
 
 #[derive(Clone, Default)]
@@ -90,6 +90,19 @@ impl Drop for AdmittedStep {
     fn drop(&mut self) {
         self.gate.release(&self.integration, self.step_id);
     }
+}
+
+pub(crate) fn step_owner(
+    registry: &SubActionRegistry,
+    runner: &dyn SubActionRunner,
+    kind_id: &str,
+    config: &SubActionConfig,
+    arg_stack: &ArgStack,
+) -> Option<IntegrationId> {
+    registry
+        .owning_integration(kind_id)
+        .cloned()
+        .or_else(|| runner.targeted_integration(config, arg_stack))
 }
 
 pub(crate) async fn run_gated_step<F>(

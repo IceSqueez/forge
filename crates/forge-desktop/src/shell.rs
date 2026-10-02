@@ -569,7 +569,7 @@ impl AppShell {
     }
 
     fn midi_screen(handles: &Arc<RuntimeHandles>, cx: &mut Context<Self>) -> AnyView {
-        let client = handles.midi_sink.live();
+        let sink = Arc::clone(&handles.midi_sink);
         let integration = handles.integrations.slot(&forge_midi::MIDI_INTEGRATION.id);
         let trigger_repo = handles.backend.trigger_instance_repo();
         let action_repo = handles.backend.action_repo();
@@ -578,7 +578,7 @@ impl AppShell {
         let rt_handle = handles.rt_handle.clone();
         cx.new(|cx| {
             MidiScreenView::new(
-                client,
+                sink,
                 integration,
                 trigger_repo,
                 action_repo,

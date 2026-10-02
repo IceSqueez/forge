@@ -19,7 +19,7 @@ use crate::action_engine::{
     condition_failed_telemetry, condition_skipped_telemetry, disabled_telemetry, skipped_telemetry,
 };
 use crate::condition::ConditionGate;
-use crate::integration_gate::{IntegrationGate, run_gated_step};
+use crate::integration_gate::{IntegrationGate, run_gated_step, step_owner};
 
 pub(crate) fn capture_args_in(
     registry: &SubActionRegistry,
@@ -268,7 +268,14 @@ impl ChainEngine {
                     let resolved = effective_config(&runner.default_config(), &step.config);
                     run_gated_step(
                         &self.integrations,
-                        self.registry.owning_integration(&step.kind_id),
+                        step_owner(
+                            self.registry.as_ref(),
+                            runner,
+                            &step.kind_id,
+                            &resolved,
+                            run_ctx.arg_stack,
+                        )
+                        .as_ref(),
                         &run_ctx,
                         &step.kind_id,
                         runner.execute(&resolved, &run_ctx),
@@ -412,7 +419,14 @@ impl ChainEngine {
                             let resolved = effective_config(&runner.default_config(), &step.config);
                             run_gated_step(
                                 &self.integrations,
-                                self.registry.owning_integration(&step.kind_id),
+                                step_owner(
+                                    self.registry.as_ref(),
+                                    runner,
+                                    &step.kind_id,
+                                    &resolved,
+                                    run_ctx.arg_stack,
+                                )
+                                .as_ref(),
                                 &run_ctx,
                                 &step.kind_id,
                                 runner.execute(&resolved, &run_ctx),

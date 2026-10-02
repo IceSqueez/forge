@@ -19,7 +19,7 @@ use tokio::sync::{oneshot, watch};
 use tokio::task::JoinHandle;
 use tracing::warn;
 
-const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
+pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
 pub struct TwitchChat {
     manager: Arc<TwitchCredentialsManager>,

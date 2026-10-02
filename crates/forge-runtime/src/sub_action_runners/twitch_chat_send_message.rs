@@ -4,7 +4,13 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant};
+use forge_types::{ArgStack, IntegrationId, SubActionConfig, SubActionTelemetry, Variant};
+
+const DEFAULT_TARGET: &str = "twitch";
+
+fn resolved_target(config: &SubActionConfig, arg_stack: &ArgStack) -> String {
+    arg_stack.interpolate(config.str("target").unwrap_or(DEFAULT_TARGET))
+}
 
 pub struct TwitchChatSendMessageRunner;
 
@@ -37,7 +43,10 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
     fn default_config(&self) -> SubActionConfig {
         let mut cfg = SubActionConfig::new();
         cfg.insert("message".to_owned(), Variant::String(String::new()));
-        cfg.insert("target".to_owned(), Variant::String("twitch".to_owned()));
+        cfg.insert(
+            "target".to_owned(),
+            Variant::String(DEFAULT_TARGET.to_owned()),
+        );
         cfg
     }
 
@@ -50,13 +59,23 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             FormField::Text {
                 key: "target",
                 label: "Target Platform",
-                placeholder: "twitch",
+                placeholder: DEFAULT_TARGET,
             },
         ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         config.require_str("message").map(|_| ())
+    }
+
+    fn targeted_integration(
+        &self,
+        config: &SubActionConfig,
+        arg_stack: &ArgStack,
+    ) -> Option<IntegrationId> {
+        let target = resolved_target(config, arg_stack);
+        let target = target.trim();
+        (!target.is_empty()).then(|| IntegrationId::new(target))
     }
 
     async fn execute(
@@ -66,11 +85,10 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
     ) -> (SubActionTelemetry, Option<ArgStack>) {
         let timer = StepTimer::start(ctx, "twitch.chat.send_message");
 
-        let message_template = config.str("message").unwrap_or_default();
-        let target_template = config.str("target").unwrap_or("twitch");
-
-        let message = ctx.arg_stack.interpolate(message_template);
-        let target = ctx.arg_stack.interpolate(target_template);
+        let message = ctx
+            .arg_stack
+            .interpolate(config.str("message").unwrap_or_default());
+        let target = resolved_target(config, ctx.arg_stack);
 
         ctx.publisher.publish(Event::caused_by(
             EventSource::Core,

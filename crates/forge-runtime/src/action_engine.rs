@@ -15,7 +15,7 @@ use tracing::{info, warn};
 use crate::action_cancel::ActionCancelRegistry;
 use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
-use crate::integration_gate::{IntegrationGate, run_gated_step};
+use crate::integration_gate::{IntegrationGate, run_gated_step, step_owner};
 use crate::run_history::RunHistoryWriter;
 use crate::{Config, EventBus};
 
@@ -476,7 +476,14 @@ async fn run_quick_action(
             let resolved = effective_config(&runner.default_config(), &req.step.config);
             run_gated_step(
                 &integrations,
-                sub_action_registry.owning_integration(&req.step.kind_id),
+                step_owner(
+                    sub_action_registry.as_ref(),
+                    runner,
+                    &req.step.kind_id,
+                    &resolved,
+                    run_ctx.arg_stack,
+                )
+                .as_ref(),
                 &run_ctx,
                 &req.step.kind_id,
                 runner.execute(&resolved, &run_ctx),

@@ -10,8 +10,8 @@ use forge_overlay::metrics::{
     TEXT_SCALE_PROPERTY, TEXT_SIZE_PROPERTY,
 };
 use forge_overlay::{
-    OverlayKindRegistry, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE, RUNTIME_SOURCE,
-    SAMPLE_FILE, register_builtin_kinds,
+    MOTION_ASSET, OverlayKindRegistry, PREVIEW_CONNECTION_FIELD, PREVIEW_PARAM, PREVIEW_VALUE,
+    RUNTIME_SOURCE, SAMPLE_FILE, register_builtin_kinds,
 };
 
 fn registry() -> OverlayKindRegistry {
@@ -219,12 +219,28 @@ fn the_checkerboard_backdrop_is_painted_only_while_previewing() {
 }
 
 #[test]
-fn a_transient_overlay_is_never_hidden_on_a_timer_while_previewing() {
+fn only_a_previewed_overlay_replays_its_show_once_the_exit_has_played() {
+    let replay = function_body("replayPreview");
     let show = function_body("show");
 
     assert!(
-        at(show, "previewing ||") < at(show, "window.setTimeout("),
-        "a previewed overlay disappears before it can be looked at"
+        at(replay, "if (!previewing") < at(replay, "window.setTimeout("),
+        "a browser source on a live stream would replay its last show on its own"
+    );
+    assert!(
+        show.contains("conceal(nodes, replayPreview)"),
+        "a previewed overlay is not replayed after its exit, so its motion cannot be looked at twice"
+    );
+}
+
+#[test]
+fn the_runtime_loads_the_motion_engine_under_the_name_this_build_writes_beside_it() {
+    let declaration = format!("var MOTION_ASSET = \"{MOTION_ASSET}\";");
+
+    assert!(
+        RUNTIME_SOURCE.contains(&declaration),
+        "the runtime does not state '{declaration}', so every page loads a file nothing writes \
+         and shows without motion"
     );
 }
 

@@ -6,6 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
 use forge_overlay::config::{SHOW, SPEECH, SPEECH_VOICE};
+use forge_overlay::motion::{EXIT, EXIT_MS, NO_MOTION};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{CancelSignal, RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::OverlaySendRunner;
@@ -185,14 +186,23 @@ impl ScriptedSpeaker {
     }
 }
 
-fn definition(kind_id: &str, voice: &str) -> OverlayDefinition {
+fn exit(name: &str, ms: i64) -> OverlayConfig {
+    OverlayConfig::from([
+        (EXIT.to_owned(), Variant::String(name.to_owned())),
+        (EXIT_MS.to_owned(), Variant::Int(ms)),
+    ])
+}
+
+fn definition(kind_id: &str, voice: &str, motion: OverlayConfig) -> OverlayDefinition {
+    let mut config = motion;
+    config.insert(SPEECH_VOICE.to_owned(), Variant::String(voice.to_owned()));
     OverlayDefinition {
         id: OverlayId::new(STAGE),
         display_name: STAGE.to_owned(),
         kind_id: kind_id.to_owned(),
         enabled: true,
         position: 0,
-        config: OverlayConfig::from([(SPEECH_VOICE.to_owned(), Variant::String(voice.to_owned()))]),
+        config,
         config_schema_version: 1,
         generator_version: 0,
         source_overrides: Vec::new(),
@@ -209,7 +219,11 @@ struct Harness {
 }
 
 fn harness(kind_id: &str, speaks: Speaks) -> Harness {
-    let stored = definition(kind_id, "  amy  ");
+    harness_leaving_by(kind_id, speaks, exit(NO_MOTION, 0))
+}
+
+fn harness_leaving_by(kind_id: &str, speaks: Speaks, motion: OverlayConfig) -> Harness {
+    let stored = definition(kind_id, "  amy  ", motion);
     let mut repo = MockOverlayRepo::new();
     repo.expect_get()
         .returning(move |id| Ok((id == &stored.id).then(|| stored.clone())));
@@ -345,6 +359,33 @@ async fn a_started_show_is_held_for_its_window_or_speech_counted_from_the_speech
             (next_show_at, 0),
             "speech starting after {starts_after:?} and lasting {lasts:?} ended the show at the \
              wrong moment, or the show was also revealed silently"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_exit_tail_follows_whichever_of_window_or_speech_ends_the_show() {
+    let secs = Duration::from_secs;
+    let tail = Duration::from_millis(800);
+    for (lasts, next_show_at) in [(secs(2), ALERT_WINDOW + tail), (secs(9), secs(9) + tail)] {
+        let harness = harness_leaving_by(
+            ALERT_KIND,
+            Speaks::Starts {
+                after: Duration::ZERO,
+                lasts,
+            },
+            exit("shatter", 800),
+        );
+
+        let head = harness.queue("head").await;
+        let next = harness.queue("next").await;
+        finished(head).await;
+        finished(next).await;
+
+        assert_eq!(
+            harness.page.arrivals()[1],
+            next_show_at,
+            "speech lasting {lasts:?} released the lane without, or before, the exit tail"
         );
     }
 }

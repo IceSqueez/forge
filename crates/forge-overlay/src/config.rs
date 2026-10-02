@@ -464,6 +464,7 @@ mod tests {
     use crate::descriptor::DeliveryDisposition;
     use crate::kinds::alert::AlertOverlayKind;
     use crate::kinds::chat::ChatOverlayKind;
+    use crate::motion;
     use crate::preview::{PreviewComposition, PreviewShape, compose};
 
     const PROBE_TOGGLE: &str = "probe.toggle";
@@ -609,7 +610,11 @@ mod tests {
         for (descriptor, key, value) in [
             (&alert as &dyn OverlayKindDescriptor, ACCENT, "teal"),
             (&alert, FONT, "Comic Sans"),
-            (&alert, ANIMATION, "explode"),
+            (&alert, motion::ENTRANCE, "shatter"),
+            (&alert, motion::EXIT, "typewriter"),
+            (&alert, motion::TEXT_EFFECT, "burst"),
+            (&alert, motion::INTENSITY, "extreme"),
+            (&chat, motion::ENTRANCE, "explode"),
             (&alert, ACCENT, ""),
             (&chat, POSITION, "diagonal"),
             (&chat, POSITION, "center"),

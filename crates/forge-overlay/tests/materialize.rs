@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use forge_overlay::config::SOUND;
 use forge_overlay::{
-    BEHAVIOR_FILE, CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MARKUP_FILE, OverlayConfig,
-    OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia, RESERVED_DIRECTORY,
-    RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE, STYLE_FILE, SampleContext, ensure_shared_directory,
-    materialize_overlay, register_builtin_kinds, remove_overlay_directory,
+    BEHAVIOR_FILE, CONFIG_FILE, GENERATED_MEDIA_DIRECTORY, MARKUP_FILE, MOTION_ASSET,
+    OverlayConfig, OverlayError, OverlayInstance, OverlayKindRegistry, OverlayMedia,
+    RESERVED_DIRECTORY, RUNTIME_ASSET, ResolvedMedia, SAMPLE_FILE, STYLE_FILE, SampleContext,
+    ensure_shared_directory, materialize_overlay, register_builtin_kinds, remove_overlay_directory,
 };
 use forge_types::Variant;
 use tempfile::TempDir;
@@ -330,27 +330,33 @@ fn an_identity_at_the_length_limit_is_accepted_and_one_byte_past_it_is_not() {
 }
 
 #[test]
-fn ensuring_the_shared_directory_reclaims_the_runtime_from_hand_edits() {
-    let home = TempDir::new().unwrap();
-    let root = unborn_root(&home);
+fn ensuring_the_shared_directory_reclaims_the_runtime_and_motion_engine_from_hand_edits() {
+    for (asset, shipped) in [
+        (RUNTIME_ASSET, forge_overlay::RUNTIME_SOURCE),
+        (MOTION_ASSET, forge_overlay::MOTION_SOURCE),
+    ] {
+        let home = TempDir::new().unwrap();
+        let root = unborn_root(&home);
 
-    let first = ensure_shared_directory(&root).expect("the shared subtree is created on demand");
-    assert_eq!(
-        fs::read_to_string(first.join(RUNTIME_ASSET)).unwrap(),
-        forge_overlay::RUNTIME_SOURCE,
-        "the shipped runtime lands on the first ensure"
-    );
+        let first =
+            ensure_shared_directory(&root).expect("the shared subtree is created on demand");
+        assert_eq!(
+            fs::read_to_string(first.join(asset)).unwrap(),
+            shipped,
+            "the shipped {asset} lands on the first ensure"
+        );
 
-    fs::write(first.join(RUNTIME_ASSET), "hand-edited runtime").unwrap();
-    let second = ensure_shared_directory(&root).expect("a second call succeeds");
+        fs::write(first.join(asset), "hand-edited").unwrap();
+        let second = ensure_shared_directory(&root).expect("a second call succeeds");
 
-    assert_eq!(second, first);
-    assert_eq!(first, root.canonicalize().unwrap().join(RESERVED_DIRECTORY));
-    assert_eq!(
-        fs::read_to_string(first.join(RUNTIME_ASSET)).unwrap(),
-        forge_overlay::RUNTIME_SOURCE,
-        "the reserved subtree is generator territory - hand edits are reclaimed"
-    );
+        assert_eq!(second, first);
+        assert_eq!(first, root.canonicalize().unwrap().join(RESERVED_DIRECTORY));
+        assert_eq!(
+            fs::read_to_string(first.join(asset)).unwrap(),
+            shipped,
+            "the reserved subtree is generator territory - a hand-edited {asset} is reclaimed"
+        );
+    }
 }
 
 #[test]

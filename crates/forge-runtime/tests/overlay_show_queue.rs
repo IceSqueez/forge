@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher};
+use forge_overlay::motion::{DEFAULT_EXIT_MS, EXIT, EXIT_MS, NO_MOTION};
 use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_registry::{RunContext, SubActionRunner};
 use forge_runtime::sub_action_runners::OverlaySendRunner;
@@ -35,6 +36,8 @@ const WAIT_KEY: &str = "wait_for_show";
 const DURATION_KEY: &str = "duration_secs";
 
 const ALERT_WINDOW: Duration = Duration::from_secs(5);
+const ALERT_EXIT_TAIL: Duration = Duration::from_millis(DEFAULT_EXIT_MS.unsigned_abs());
+const ALERT_SPAN: Duration = ALERT_WINDOW.saturating_add(ALERT_EXIT_TAIL);
 const NEVER: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Clone)]
@@ -111,13 +114,17 @@ impl EventPublisher for NullPublisher {
 }
 
 fn definition(id: &str, kind_id: &str) -> OverlayDefinition {
+    definition_with(id, kind_id, OverlayConfig::new())
+}
+
+fn definition_with(id: &str, kind_id: &str, config: OverlayConfig) -> OverlayDefinition {
     OverlayDefinition {
         id: OverlayId::new(id),
         display_name: id.to_owned(),
         kind_id: kind_id.to_owned(),
         enabled: true,
         position: 0,
-        config: OverlayConfig::new(),
+        config,
         config_schema_version: 1,
         generator_version: 0,
         source_overrides: Vec::new(),
@@ -225,10 +232,58 @@ async fn shows_on_one_overlay_reach_the_page_in_arrival_order_each_after_the_pre
         harness.sink.arrivals(STAGE),
         vec![
             ("first".to_owned(), Duration::ZERO),
-            ("second".to_owned(), ALERT_WINDOW),
-            ("third".to_owned(), ALERT_WINDOW * 2),
+            ("second".to_owned(), ALERT_SPAN),
+            ("third".to_owned(), ALERT_SPAN * 2),
         ],
-        "a burst on one overlay was not shown one at a time, oldest first, each for its window"
+        "a burst on one overlay was not shown one at a time, oldest first, each for its window \
+         and exit"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_next_show_waits_out_the_window_and_then_the_overlays_own_exit_tail() {
+    for (exit, exit_ms, next_at) in [
+        (NO_MOTION, 2_000, ALERT_WINDOW),
+        ("burst", 1_200, ALERT_WINDOW + Duration::from_millis(1_200)),
+        ("fade", 100, ALERT_WINDOW + Duration::from_millis(100)),
+    ] {
+        let config = OverlayConfig::from([
+            (EXIT.to_owned(), Variant::String(exit.to_owned())),
+            (EXIT_MS.to_owned(), Variant::Int(exit_ms)),
+        ]);
+        let harness = harness(vec![definition_with(STAGE, ALERT_KIND, config)]);
+
+        let head = harness.queue(STAGE, "head", None).await;
+        let next = harness.queue(STAGE, "next", None).await;
+        finished(head).await;
+        finished(next).await;
+
+        assert_eq!(
+            harness.sink.arrivals(STAGE)[1].1,
+            next_at,
+            "exit '{exit}' over {exit_ms} ms released the lane at the wrong moment"
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_show_cut_at_the_ceiling_releases_the_lane_there_without_its_exit_tail() {
+    let config = OverlayConfig::from([
+        (EXIT.to_owned(), Variant::String("smoke".to_owned())),
+        (EXIT_MS.to_owned(), Variant::Int(3_000)),
+    ]);
+    let harness = harness(vec![definition_with(STAGE, ALERT_KIND, config)]);
+    let past_ceiling = u64::try_from((SHOW_CEILING - Duration::from_secs(1)).as_millis()).unwrap();
+
+    let head = harness.queue(STAGE, "head", Some(past_ceiling)).await;
+    let next = harness.queue(STAGE, "next", None).await;
+    finished(head).await;
+    finished(next).await;
+
+    assert_eq!(
+        harness.sink.arrivals(STAGE)[1].1,
+        SHOW_CEILING,
+        "the exit tail pushed a show past the ceiling that bounds the whole show"
     );
 }
 
@@ -262,7 +317,7 @@ async fn a_show_holds_its_overlay_for_the_step_duration_but_never_past_the_ceili
     for (override_ms, held, timed_ms, label) in [
         (
             2_000,
-            Duration::from_secs(2),
+            Duration::from_secs(2) + ALERT_EXIT_TAIL,
             2_000,
             "a step duration below the ceiling",
         ),
@@ -270,7 +325,7 @@ async fn a_show_holds_its_overlay_for_the_step_duration_but_never_past_the_ceili
             ceiling_ms * 5,
             SHOW_CEILING,
             ceiling_ms,
-            "a step duration far past the ceiling",
+            "a step duration far past the ceiling, whose exit tail the ceiling also swallows",
         ),
     ] {
         let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
@@ -454,7 +509,7 @@ async fn an_overlay_whose_queue_ran_dry_presents_the_next_show_at_once() {
 
     assert_eq!(
         harness.sink.arrivals(STAGE).last(),
-        Some(&("after".to_owned(), ALERT_WINDOW + Duration::from_secs(60))),
+        Some(&("after".to_owned(), ALERT_SPAN + Duration::from_secs(60))),
         "a show sent to an idle overlay was not presented the moment it arrived"
     );
 }
@@ -536,7 +591,10 @@ fn runner_for(harness: &Harness) -> OverlaySendRunner {
 
 #[tokio::test(start_paused = true)]
 async fn a_waiting_step_returns_when_its_show_leaves_the_screen_and_a_plain_one_at_once() {
-    for (wait, returns_after) in [(true, Duration::from_secs(3)), (false, Duration::ZERO)] {
+    for (wait, returns_after) in [
+        (true, Duration::from_secs(3) + ALERT_EXIT_TAIL),
+        (false, Duration::ZERO),
+    ] {
         let harness = harness(vec![definition(STAGE, ALERT_KIND)]);
         let runner = runner_for(&harness);
         let stack = ArgStack::new();

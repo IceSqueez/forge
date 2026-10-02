@@ -1,9 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use forge_overlay::config::{
-    ACCENT, ANIMATION, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, ELEMENT_HEIGHT,
-    ELEMENT_WIDTH, FONT, HEADLINE, ICON, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
+    ACCENT, DEFAULT_ICON, DESIGN_HEIGHT, DESIGN_WIDTH, DURATION, ELEMENT_HEIGHT, ELEMENT_WIDTH,
+    FONT, HEADLINE, ICON, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP,
     MIGRATION_ACKNOWLEDGED, SOUND, SUBLINE, TEXT_SIZE,
+};
+use forge_overlay::motion::{
+    ENTRANCE, ENTRANCE_MS, EXIT, EXIT_MS, INTENSITY, TEXT_EFFECT, TEXT_STAGGER_CUSTOM, TEXT_UNIT,
 };
 use forge_overlay::{
     GENERATED_MEDIA_DIRECTORY, ICON_FILE_FIELD, ICON_TINTABLE_FIELD, OverlayConfig,
@@ -95,7 +98,14 @@ fn config_keys_reach_the_page_exactly_as_they_are_stored() {
         SUBLINE,
         ACCENT,
         FONT,
-        ANIMATION,
+        ENTRANCE,
+        ENTRANCE_MS,
+        TEXT_EFFECT,
+        TEXT_UNIT,
+        TEXT_STAGGER_CUSTOM,
+        EXIT,
+        EXIT_MS,
+        INTENSITY,
         DURATION,
         SOUND,
         TEXT_SIZE,

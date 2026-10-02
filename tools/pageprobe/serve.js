@@ -20,18 +20,22 @@ const TYPES = {
   ".json": "application/json; charset=utf-8",
 };
 
-function start({ kind, config, content }) {
+function start({ kind, config, content, overrides = {} }) {
   const files = new Map();
   for (const name of ["index.html", "overlay.css", "overlay.js"]) {
     files.set(
       `/${kind}/${name}`,
-      fs.readFileSync(path.join(ASSETS, kind, name)),
+      name in overrides
+        ? Buffer.from(overrides[name])
+        : fs.readFileSync(path.join(ASSETS, kind, name)),
     );
   }
-  files.set(
-    "/forge-shared/runtime-v1.js",
-    fs.readFileSync(path.join(ASSETS, "shared", "runtime-v1.js")),
-  );
+  for (const name of ["runtime-v1.js", "motion-v1.js"]) {
+    files.set(
+      `/forge-shared/${name}`,
+      fs.readFileSync(path.join(ASSETS, "shared", name)),
+    );
+  }
   files.set(
     `/${kind}/config.json`,
     Buffer.from(
@@ -73,7 +77,10 @@ function start({ kind, config, content }) {
   });
 
   const sockets = new WebSocketServer({ server, path: "/ws/v1/" });
+  const open = new Set();
   sockets.on("connection", (socket) => {
+    open.add(socket);
+    socket.on("close", () => open.delete(socket));
     socket.on("message", (raw) => {
       const frame = JSON.parse(String(raw));
       if (frame.request !== "auth") {
@@ -88,6 +95,9 @@ function start({ kind, config, content }) {
     server.listen(0, "127.0.0.1", () => {
       resolve({
         url: `http://127.0.0.1:${server.address().port}/${kind}/index.html`,
+        push: (frame) => {
+          for (const socket of open) socket.send(JSON.stringify(frame));
+        },
         close: () =>
           new Promise((done) => {
             sockets.close();

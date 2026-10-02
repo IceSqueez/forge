@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
-use forge_types::{ArgStack, EventId, SubActionStep, SubActionTelemetry};
+use forge_types::{ArgStack, EventId, IntegrationAvailability, SubActionStep, SubActionTelemetry};
 
 use crate::error::RegistryError;
 
@@ -108,4 +108,8 @@ pub trait ChainExecutor: Send + Sync {
     ) -> Result<ChildChainOutcome, RegistryError>;
 
     fn cancel_signal(&self) -> CancelSignal;
+
+    fn integration_availability(&self) -> Option<Arc<dyn IntegrationAvailability>> {
+        None
+    }
 }

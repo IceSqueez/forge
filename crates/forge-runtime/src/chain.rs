@@ -7,8 +7,8 @@ use forge_registry::{
     RegistryError, RunContext, SubActionRegistry, TelemetrySink, effective_config,
 };
 use forge_types::{
-    ArgStack, EventId, SubActionOutcome, SubActionStep, SubActionTelemetry, Variant,
-    variant_preview,
+    ArgStack, EventId, IntegrationAvailability, SubActionOutcome, SubActionStep,
+    SubActionTelemetry, Variant, variant_preview,
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -522,6 +522,10 @@ impl ChainExecutor for ChainScope {
 
     fn cancel_signal(&self) -> CancelSignal {
         self.cancel.clone()
+    }
+
+    fn integration_availability(&self) -> Option<Arc<dyn IntegrationAvailability>> {
+        Some(Arc::new(self.engine.integrations.clone()))
     }
 }
 

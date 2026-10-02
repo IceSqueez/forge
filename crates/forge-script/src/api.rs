@@ -4,7 +4,10 @@ use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
-use forge_types::{EventId, SCRIPT_LOG_TARGET, ScriptId, Variant};
+use forge_types::{
+    EventId, IntegrationAvailability, IntegrationId, SCRIPT_LOG_TARGET, ScriptId, Variant,
+    integration_disabled_reason,
+};
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
 
@@ -34,6 +37,7 @@ pub struct ForgeApi {
     error_count: Arc<AtomicU32>,
     speak: Option<Arc<dyn SpeakRequester>>,
     http: Option<Arc<ScriptHttpClient>>,
+    integrations: Option<Arc<dyn IntegrationAvailability>>,
     pub deadline: Instant,
 }
 
@@ -52,6 +56,7 @@ impl ForgeApi {
             error_count: Arc::new(AtomicU32::new(0)),
             speak: None,
             http: None,
+            integrations: None,
             deadline,
         }
     }
@@ -72,6 +77,14 @@ impl ForgeApi {
 
     pub fn with_http(mut self, client: Arc<ScriptHttpClient>) -> Self {
         self.http = Some(client);
+        self
+    }
+
+    pub fn with_integration_availability(
+        mut self,
+        integrations: Arc<dyn IntegrationAvailability>,
+    ) -> Self {
+        self.integrations = Some(integrations);
         self
     }
 
@@ -141,7 +154,11 @@ impl ForgeApi {
             Ok(())
         });
 
-        let chat = build_chat_module(Arc::clone(&self.publisher), self.caused_by);
+        let chat = build_chat_module(
+            Arc::clone(&self.publisher),
+            self.caused_by,
+            self.integrations,
+        );
         root.set_sub_module("chat", chat);
 
         let http = match self.http {
@@ -339,7 +356,26 @@ fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {
     m
 }
 
-fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> Module {
+fn refuse_disabled_target(
+    integrations: Option<&dyn IntegrationAvailability>,
+    target: &str,
+) -> Result<(), Box<EvalAltResult>> {
+    let target = target.trim();
+    let Some(integrations) = integrations.filter(|_| !target.is_empty()) else {
+        return Ok(());
+    };
+    let integration = IntegrationId::new(target);
+    if integrations.is_disabled(&integration) {
+        return Err(integration_disabled_reason(&integration).into());
+    }
+    Ok(())
+}
+
+fn build_chat_module(
+    publisher: Arc<dyn EventPublisher>,
+    caused_by: EventId,
+    integrations: Option<Arc<dyn IntegrationAvailability>>,
+) -> Module {
     let mut m = Module::new();
 
     let pub_send = Arc::clone(&publisher);
@@ -357,9 +393,11 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
     );
 
     let pub_send_targeted = Arc::clone(&publisher);
+    let send_integrations = integrations.clone();
     m.set_native_fn(
         "send",
         move |target: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            refuse_disabled_target(send_integrations.as_deref(), target.as_str())?;
             pub_send_targeted.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
@@ -385,12 +423,14 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
     );
 
     let pub_reply_targeted = Arc::clone(&publisher);
+    let reply_integrations = integrations.clone();
     m.set_native_fn(
         "reply",
         move |target: ImmutableString,
               to: ImmutableString,
               text: ImmutableString|
               -> Result<(), Box<EvalAltResult>> {
+            refuse_disabled_target(reply_integrations.as_deref(), target.as_str())?;
             pub_reply_targeted.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
@@ -422,6 +462,7 @@ fn build_chat_module(publisher: Arc<dyn EventPublisher>, caused_by: EventId) -> 
               user: ImmutableString,
               text: ImmutableString|
               -> Result<(), Box<EvalAltResult>> {
+            refuse_disabled_target(integrations.as_deref(), target.as_str())?;
             pub_whisper_targeted.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",

@@ -30,7 +30,7 @@ pub use execution::{
     variant_preview,
 };
 pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
-pub use integration::IntegrationId;
+pub use integration::{IntegrationAvailability, IntegrationId};
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::PlatformId;

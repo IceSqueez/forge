@@ -3,7 +3,10 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use forge_registry::{RunContext, StepTimer, SubActionRegistry, SubActionRunner};
-use forge_types::{ArgStack, IntegrationId, SubActionConfig, SubActionOutcome, SubActionTelemetry};
+use forge_types::{
+    ArgStack, IntegrationAvailability, IntegrationId, SubActionConfig, SubActionOutcome,
+    SubActionTelemetry,
+};
 use tokio::sync::Notify;
 
 #[derive(Clone, Default)]
@@ -76,6 +79,12 @@ impl IntegrationGate {
 
     fn lock(&self) -> MutexGuard<'_, GateState> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+impl IntegrationAvailability for IntegrationGate {
+    fn is_disabled(&self, integration: &IntegrationId) -> bool {
+        IntegrationGate::is_disabled(self, integration)
     }
 }
 

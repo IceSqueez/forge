@@ -21,6 +21,10 @@ impl IntegrationId {
     }
 }
 
+pub trait IntegrationAvailability: Send + Sync {
+    fn is_disabled(&self, integration: &IntegrationId) -> bool;
+}
+
 impl fmt::Display for IntegrationId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)

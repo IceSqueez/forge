@@ -99,6 +99,7 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let globals_arc = Arc::clone(&self.globals);
         let speak_requester = self.registry.speak_requester();
         let parent_event_id = ctx.parent_event_id;
+        let integrations = ctx.executor.integration_availability();
         let arg_stack_clone = ctx.arg_stack.clone();
         let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
         let engine_cfg = load_script_engine_config(self.settings.as_ref()).await;
@@ -135,6 +136,9 @@ impl SubActionRunner for ScriptRunInlineRunner {
                 .with_http(Arc::new(http_client));
             if let Some(req) = speak_requester {
                 api = api.with_speak_requester(req);
+            }
+            if let Some(integrations) = integrations {
+                api = api.with_integration_availability(integrations);
             }
             let engine = Engine::with_api(cfg, api);
             let mut scope = scope;

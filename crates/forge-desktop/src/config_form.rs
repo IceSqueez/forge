@@ -776,7 +776,8 @@ fn render_slide<V: 'static>(
         .child(
             div()
                 .flex_none()
-                .w(SLIDER_READOUT_W)
+                .min_w(SLIDER_READOUT_W)
+                .whitespace_nowrap()
                 .font_family(mono_family())
                 .text_size(FILL_VAL_FS)
                 .text_color(palette.text_secondary)

@@ -298,7 +298,7 @@ impl OverlaysView {
         Some(preview_page_url(&self.overlay_url(id)?))
     }
 
-    fn open_preview_page(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn open_preview_page(&mut self, cx: &mut Context<Self>) {
         let Some(address) = self.preview_address() else {
             return;
         };
@@ -357,6 +357,7 @@ impl OverlaysView {
                 palette,
                 cx,
             ))
+            .children(self.render_motion_timing(definition, served, palette, cx))
             .child(self.render_obs_card(definition, preview.composition.canvas, palette, cx))
             .child(self.render_hints(definition, served, palette))
             .children(event_wiring::render_readout(&self.wiring.view, palette, cx))

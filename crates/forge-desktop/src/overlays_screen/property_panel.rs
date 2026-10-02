@@ -21,6 +21,8 @@ use super::base_sections::{
     BaseEvent, BaseState, FIELD_SECTIONS, PanelSection, base_hint, base_label, hinted,
 };
 use super::icon_choice::{IconImage, icon_field_row};
+use super::motion_notices::MotionNotices;
+use super::motion_timing::{motion_hint, motion_label};
 use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
 use super::store_config;
 use crate::async_bridge;
@@ -102,6 +104,7 @@ pub(super) struct OverlayPropertyPanel {
     overridden_files: Vec<String>,
     picker: Option<ChoicePicker>,
     media_issues: Vec<MediaIssue>,
+    pub(super) motion_notices: MotionNotices,
     pending_pick: Option<PendingPick>,
     pick_refusal: Option<(String, String)>,
     settle_epoch: u64,
@@ -149,6 +152,7 @@ impl OverlayPropertyPanel {
             overridden_files: launch.overridden_files,
             picker: None,
             media_issues: Vec::new(),
+            motion_notices: MotionNotices::default(),
             pending_pick: None,
             pick_refusal: None,
             settle_epoch: 0,
@@ -513,7 +517,7 @@ impl OverlayPropertyPanel {
     }
 
     pub(super) fn label_of(&self, key: &str) -> String {
-        if let Some(label) = base_label(key) {
+        if let Some(label) = base_label(key).or_else(|| motion_label(key)) {
             return label;
         }
         self.labels
@@ -539,7 +543,9 @@ impl OverlayPropertyPanel {
             .as_ref()
             .filter(|(refused_key, _)| refused_key == key)
             .map(|(_, message)| message.as_str());
-        field_notes(&self.media_issues, key, adopting, refusal)
+        let mut notes = field_notes(&self.media_issues, key, adopting, refusal);
+        notes.extend(self.motion_notices.notes_for(key));
+        notes
     }
 
     pub(super) fn handlers(&self) -> ConfigFieldHandlers<Self> {
@@ -629,7 +635,7 @@ impl OverlayPropertyPanel {
                     .into_any_element(),
                 None => control,
             };
-            let body = match base_hint(field.key()) {
+            let body = match base_hint(field.key()).or_else(|| motion_hint(field.key())) {
                 Some(hint) => hinted(body, hint, palette),
                 None => body,
             };

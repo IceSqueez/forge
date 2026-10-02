@@ -7,6 +7,8 @@ mod hide_timing;
 mod icon_choice;
 mod kind_visuals;
 mod look_change;
+mod motion_notices;
+mod motion_timing;
 mod obs_card;
 mod preview_shapes;
 mod preview_stage;
@@ -163,6 +165,7 @@ pub struct OverlaysView {
     wiring: WiringLink,
     receiver: Option<OverlayId>,
     hide_probe_gen: async_bridge::Generation,
+    motion_probe_gen: async_bridge::Generation,
 }
 
 pub struct OverlaysLaunch {
@@ -244,6 +247,7 @@ impl OverlaysView {
             },
             receiver: None,
             hide_probe_gen: async_bridge::Generation::default(),
+            motion_probe_gen: async_bridge::Generation::default(),
         };
         view.load(cx);
         view.load_receiver(cx);
@@ -561,6 +565,7 @@ impl OverlaysView {
             panel.overlay_id() == &definition.id && panel.look_kind() == definition.kind_id
         }) {
             self.probe_hide_timing(&definition, cx);
+            self.probe_motion_notices(&definition, cx);
             return;
         }
         let Some(descriptor) = self.kinds.get(&definition.kind_id) else {
@@ -605,6 +610,7 @@ impl OverlaysView {
         });
         self.load_clips(cx);
         self.probe_hide_timing(&definition, cx);
+        self.probe_motion_notices(&definition, cx);
     }
 
     fn on_base_event(

@@ -4,7 +4,10 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_types::{ArgStack, IntegrationId, SubActionConfig, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON, SubActionConfig, SubActionTelemetry,
+    Variant, requested_chat_target,
+};
 
 const DEFAULT_TARGET: &str = "twitch";
 
@@ -73,9 +76,7 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         config: &SubActionConfig,
         arg_stack: &ArgStack,
     ) -> Option<IntegrationId> {
-        let target = resolved_target(config, arg_stack);
-        let target = target.trim();
-        (!target.is_empty()).then(|| IntegrationId::new(target))
+        requested_chat_target(&resolved_target(config, arg_stack)).map(IntegrationId::new)
     }
 
     async fn execute(
@@ -88,15 +89,28 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         let message = ctx
             .arg_stack
             .interpolate(config.str("message").unwrap_or_default());
-        let target = resolved_target(config, ctx.arg_stack);
+        let resolved = resolved_target(config, ctx.arg_stack);
+        let payload = match requested_chat_target(&resolved) {
+            Some(target) => serde_json::json!({
+                "target": target,
+                "message": message,
+            }),
+            None => {
+                let none_enabled = ctx
+                    .executor
+                    .integration_availability()
+                    .is_some_and(|integrations| !integrations.any_chat_platform_enabled());
+                if none_enabled {
+                    return (timer.failed(NO_CHAT_PLATFORM_ENABLED_REASON), None);
+                }
+                serde_json::json!({ "message": message })
+            }
+        };
 
         ctx.publisher.publish(Event::caused_by(
             EventSource::Core,
             "chat.send.request",
-            serde_json::json!({
-                "target": target,
-                "message": message,
-            }),
+            payload,
             ctx.parent_event_id,
         ));
 

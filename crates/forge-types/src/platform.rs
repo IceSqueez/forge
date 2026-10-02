@@ -10,6 +10,8 @@ pub enum PlatformId {
 }
 
 impl PlatformId {
+    pub const ALL: [PlatformId; 3] = [PlatformId::Twitch, PlatformId::YouTube, PlatformId::Kick];
+
     pub const fn as_str(self) -> &'static str {
         match self {
             PlatformId::Twitch => "twitch",
@@ -17,6 +19,11 @@ impl PlatformId {
             PlatformId::Kick => "kick",
         }
     }
+}
+
+pub fn requested_chat_target(raw: &str) -> Option<&str> {
+    let target = raw.trim();
+    (!target.is_empty()).then_some(target)
 }
 
 #[cfg(test)]

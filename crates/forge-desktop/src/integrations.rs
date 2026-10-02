@@ -10,7 +10,7 @@ use forge_platform_core::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider};
-use forge_types::{EventId, IntegrationId};
+use forge_types::{EventId, IntegrationId, requested_chat_target};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -449,7 +449,11 @@ pub(crate) fn spawn_chat_send_bridge(
             if !matches!(event.source, EventSource::Core | EventSource::Rhai) {
                 continue;
             }
-            if let Some(requested) = event.payload.get("target").and_then(|v| v.as_str())
+            if let Some(requested) = event
+                .payload
+                .get("target")
+                .and_then(|v| v.as_str())
+                .and_then(requested_chat_target)
                 && requested != target
             {
                 continue;

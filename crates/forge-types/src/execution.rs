@@ -25,6 +25,8 @@ pub enum SubActionOutcome {
 
 const INTEGRATION_DISABLED_REASON: &str = "integration disabled";
 
+pub const NO_CHAT_PLATFORM_ENABLED_REASON: &str = "no chat platform enabled";
+
 pub fn integration_disabled_reason(integration: &IntegrationId) -> String {
     format!("{INTEGRATION_DISABLED_REASON}: {integration}")
 }

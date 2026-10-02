@@ -248,6 +248,7 @@ mod tests {
             content: Option<&str>,
             file_name: &str,
             file_bytes: &[u8],
+            _: MentionPolicy,
         ) -> Result<String, DiscordError> {
             *self.captured.lock().unwrap() = Some(Captured {
                 webhook_name: webhook_name.to_owned(),

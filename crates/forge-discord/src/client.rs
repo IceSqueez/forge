@@ -1351,7 +1351,7 @@ pub(crate) mod tests {
                     .await
                     .unwrap_err(),
                 client
-                    .send_file("leaky", Some("hi"), "a.png", &[1])
+                    .send_file("leaky", Some("hi"), "a.png", &[1], MentionPolicy::default())
                     .await
                     .unwrap_err(),
                 client.delete_message("leaky", "1").await.unwrap_err(),
@@ -1522,13 +1522,19 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn send_file_caption_payload_carries_no_allowed_mentions() {
+    async fn send_file_caption_payload_carries_default_allowed_mentions() {
         let server = MockServer::start().await;
         let client = make_client(&server, MockPublisher::new(), MockCreds::new()).await;
         mount_accepting(&server, "POST").await;
 
         client
-            .send_file("alerts", Some("@everyone clip"), "clip.png", &[1, 2])
+            .send_file(
+                "alerts",
+                Some("@everyone clip"),
+                "clip.png",
+                &[1, 2],
+                MentionPolicy::default(),
+            )
             .await
             .unwrap();
 
@@ -1536,7 +1542,13 @@ pub(crate) mod tests {
         let body = String::from_utf8_lossy(&requests[0].body).into_owned();
         let payload: serde_json::Value =
             serde_json::from_str(multipart_field(&body, "payload_json")).unwrap();
-        assert_eq!(payload, serde_json::json!({ "content": "@everyone clip" }));
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "content": "@everyone clip",
+                "allowed_mentions": { "parse": ["users", "roles"] }
+            })
+        );
     }
 
     #[tokio::test]

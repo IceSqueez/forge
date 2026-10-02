@@ -71,6 +71,7 @@ mod tests {
             _: Option<&str>,
             _: &str,
             _: &[u8],
+            _: MentionPolicy,
         ) -> Result<String, DiscordError> {
             Ok(String::new())
         }

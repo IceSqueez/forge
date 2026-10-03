@@ -1,0 +1,231 @@
+{
+  "name": "only a viewer's first message passes the first-time chatter filter",
+  "purpose": "A chat message trigger limited to first-time chatters runs its action for the first message of each viewer and never for a later one.",
+  "fixture": {
+    "twitch": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.chat.message",
+        "action_name": "Greet First Chatter",
+        "config": {
+          "first_chatters_only": {
+            "type": "bool",
+            "value": true
+          }
+        },
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "first %user_login% %first_message%"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    {
+      "do": {
+        "forge_ready": {
+          "within_ms": 60000
+        }
+      }
+    },
+    {
+      "do": {
+        "twitch_subscribed": {
+          "types": [
+            "channel.chat.message"
+          ],
+          "within_ms": 30000
+        }
+      }
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": {
+            "user_id": "200000042",
+            "login": "alice"
+          },
+          "text": "hello there"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat0",
+            "source": "twitch",
+            "kind": "twitch.channel.chat.message",
+            "payload": {
+              "/user/login": {
+                "equals": "alice"
+              },
+              "/message": {
+                "equals": "hello there"
+              },
+              "/_chat_viewer/first_message": {
+                "equals": true
+              }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started0",
+            "source": "core",
+            "kind": "action.start",
+            "payload": {
+              "/action_name": {
+                "equals": "Greet First Chatter"
+              }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "caused_by": {
+            "effect": "started0",
+            "cause": "chat0"
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": {
+            "user_id": "200000042",
+            "login": "alice"
+          },
+          "text": "second line"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat1",
+            "source": "twitch",
+            "kind": "twitch.channel.chat.message",
+            "payload": {
+              "/user/login": {
+                "equals": "alice"
+              },
+              "/message": {
+                "equals": "second line"
+              },
+              "/_chat_viewer/first_message": {
+                "equals": false
+              }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event_absent": {
+            "kind": "action.start",
+            "window_ms": 1500
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": {
+            "user_id": "200000043",
+            "login": "bob"
+          },
+          "text": "hi all"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat2",
+            "source": "twitch",
+            "kind": "twitch.channel.chat.message",
+            "payload": {
+              "/user/login": {
+                "equals": "bob"
+              },
+              "/message": {
+                "equals": "hi all"
+              },
+              "/_chat_viewer/first_message": {
+                "equals": true
+              }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started2",
+            "source": "core",
+            "kind": "action.start",
+            "payload": {
+              "/action_name": {
+                "equals": "Greet First Chatter"
+              }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "caused_by": {
+            "effect": "started2",
+            "cause": "chat2"
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": {
+            "user_id": "200000043",
+            "login": "bob"
+          },
+          "text": "still here"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat3",
+            "source": "twitch",
+            "kind": "twitch.channel.chat.message",
+            "payload": {
+              "/user/login": {
+                "equals": "bob"
+              },
+              "/message": {
+                "equals": "still here"
+              },
+              "/_chat_viewer/first_message": {
+                "equals": false
+              }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event_absent": {
+            "kind": "action.start",
+            "window_ms": 1500
+          }
+        }
+      ]
+    }
+  ]
+}

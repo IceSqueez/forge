@@ -2267,6 +2267,45 @@ mod tests {
         }
     }
 
+    fn fixture_line(edit: impl FnOnce(&mut serde_json::Value)) -> Event {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        let mut raw = fixture["raw"].clone();
+        edit(&mut raw);
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let poller = YoutubeChatPoller::new(
+            token_source(),
+            tx,
+            "UCtest".to_owned(),
+            LiveChatIdHandle::new(),
+            ActiveBroadcastIdHandle::new(),
+            make_quota(),
+        );
+        poller
+            .build_event(&raw, &mut DedupSet::bounded(DEDUP_WINDOW_SIZE))
+            .unwrap()
+    }
+
+    #[test]
+    fn a_chat_command_carries_the_same_viewer_identity_as_a_plain_message() {
+        let ev = fixture_line(|raw| raw["snippet"]["displayMessage"] = json!("!hello"));
+        assert_eq!(ev.kind, "youtube.chat.command");
+        assert_eq!(
+            ChatViewer::read(&ev.payload),
+            Some(ChatViewer::new("UCviewer", "Глядач Ютубу"))
+        );
+    }
+
+    #[test]
+    fn a_message_whose_author_has_no_channel_id_carries_no_viewer_identity() {
+        for channel_id in [json!(null), json!("")] {
+            let ev = fixture_line(|raw| raw["authorDetails"]["channelId"] = channel_id.clone());
+            assert!(ChatViewer::read(&ev.payload).is_none(), "{channel_id}");
+        }
+    }
+
     #[test]
     fn a_text_message_publishes_exactly_the_shared_fixture_payload() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(

@@ -879,4 +879,70 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn a_chat_viewer_attached_to_a_payload_reads_back_unchanged_beside_the_other_fields() {
+        let mut payload = serde_json::json!({ "message": "hi" });
+        let viewer = ChatViewer {
+            first_message: true,
+            ..ChatViewer::new("4145994", "viewer32")
+        };
+        viewer.attach(&mut payload);
+        assert_eq!(ChatViewer::read(&payload), Some(viewer));
+        assert_eq!(payload["message"], "hi");
+    }
+
+    #[test]
+    fn attaching_a_chat_viewer_replaces_the_envelope_already_on_the_payload() {
+        let mut payload = serde_json::json!({});
+        ChatViewer::new("1", "old").attach(&mut payload);
+        let restamped = ChatViewer {
+            first_message: true,
+            ..ChatViewer::new("1", "old")
+        };
+        restamped.attach(&mut payload);
+        assert_eq!(ChatViewer::read(&payload), Some(restamped));
+    }
+
+    #[test]
+    fn attaching_a_chat_viewer_to_a_payload_that_is_not_an_object_leaves_it_untouched() {
+        for original in [
+            serde_json::Value::Null,
+            serde_json::json!("text"),
+            serde_json::json!([1, 2]),
+        ] {
+            let mut payload = original.clone();
+            ChatViewer::new("1", "viewer").attach(&mut payload);
+            assert_eq!(payload, original);
+        }
+    }
+
+    #[test]
+    fn reading_a_chat_viewer_rejects_a_missing_malformed_or_anonymous_envelope() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({ "user": { "id": "1", "login": "viewer" } }),
+            serde_json::json!({ ChatViewer::KEY: "1" }),
+            serde_json::json!({ ChatViewer::KEY: { "name": "viewer" } }),
+            serde_json::json!({ ChatViewer::KEY: { "id": 7, "name": "viewer" } }),
+            serde_json::json!({ ChatViewer::KEY: { "id": "", "name": "viewer" } }),
+        ] {
+            assert_eq!(ChatViewer::read(&payload), None, "{payload}");
+        }
+    }
+
+    #[test]
+    fn an_envelope_without_the_first_message_flag_reads_as_not_first() {
+        let payload = serde_json::json!({ ChatViewer::KEY: { "id": "1", "name": "viewer" } });
+        assert_eq!(
+            ChatViewer::read(&payload).map(|v| v.first_message),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn a_chat_viewer_debug_line_never_carries_the_viewer_name() {
+        let rendered = format!("{:?}", ChatViewer::new("4145994", "SecretName"));
+        assert!(!rendered.contains("SecretName"), "{rendered}");
+    }
 }

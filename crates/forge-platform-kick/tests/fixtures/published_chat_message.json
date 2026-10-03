@@ -51,6 +51,11 @@
         }
       ]
     },
+    "_chat_viewer": {
+      "first_message": false,
+      "id": "99",
+      "name": "Kick_Viewer"
+    },
     "content": "gg kick chat",
     "message_id": "3f2b8c1e-5d4a-4f6b-9c7e-1a2b3c4d5e6f",
     "reply_to_message_id": null,

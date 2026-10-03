@@ -116,6 +116,7 @@ fn author_identity(event: &Event) -> ActorIdentity {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use forge_types::ChatViewer;
 
     fn chat_event() -> Event {
         Event::new(
@@ -153,5 +154,27 @@ mod tests {
             stack.get("user_display_name"),
             Some(&Variant::String("Viewer One".to_owned()))
         );
+    }
+
+    #[test]
+    fn the_first_time_chatter_filter_admits_only_a_viewers_first_message() {
+        let filtered = TriggerConfig::from([(FIRST_CHATTERS_ONLY.to_owned(), Variant::Bool(true))]);
+        for (config, first_message, admitted) in [
+            (ChatMessageDescriptor.default_config(), false, true),
+            (filtered.clone(), true, true),
+            (filtered, false, false),
+        ] {
+            let mut event = chat_event();
+            ChatViewer {
+                first_message,
+                ..ChatViewer::new("42", "viewer")
+            }
+            .attach(&mut event.payload);
+            assert_eq!(
+                ChatMessageDescriptor.matches_trigger(&config, &event),
+                admitted,
+                "config {config:?} first {first_message}"
+            );
+        }
     }
 }

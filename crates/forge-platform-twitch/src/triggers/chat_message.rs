@@ -83,6 +83,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use forge_types::ChatViewer;
     use forge_types::Variant;
 
     fn chat_event(msg: &str) -> Event {
@@ -100,18 +101,33 @@ mod tests {
     }
 
     #[test]
-    fn always_matches() {
-        let cfg = TriggerConfig::new();
-        assert!(ChatMessageDescriptor.matches_trigger(&cfg, &chat_event("hello")));
-        assert!(ChatMessageDescriptor.matches_trigger(&cfg, &chat_event("")));
-    }
-
-    #[test]
     fn build_arg_stack_includes_base_chat_args() {
         let stack = ChatMessageDescriptor.build_arg_stack(&chat_event("hi there"));
         assert_eq!(
             stack.get("message_text"),
             Some(&Variant::String("hi there".to_owned()))
         );
+    }
+
+    #[test]
+    fn the_first_time_chatter_filter_admits_only_a_viewers_first_message() {
+        let filtered = TriggerConfig::from([(FIRST_CHATTERS_ONLY.to_owned(), Variant::Bool(true))]);
+        for (config, first_message, admitted) in [
+            (ChatMessageDescriptor.default_config(), false, true),
+            (filtered.clone(), true, true),
+            (filtered, false, false),
+        ] {
+            let mut event = chat_event("hello");
+            ChatViewer {
+                first_message,
+                ..ChatViewer::new("42", "viewer")
+            }
+            .attach(&mut event.payload);
+            assert_eq!(
+                ChatMessageDescriptor.matches_trigger(&config, &event),
+                admitted,
+                "config {config:?} first {first_message}"
+            );
+        }
     }
 }

@@ -89,6 +89,7 @@ mod tests {
                 "message": "!quote hello there",
                 "badges": [],
                 "color": "#FF0000",
+                "_chat_viewer": { "id": "222", "name": "loyalfan", "first_message": true },
             }),
         )
     }
@@ -98,7 +99,8 @@ mod tests {
     }
 
     #[test]
-    fn the_shared_chat_block_publishes_the_chatter_identity_the_channel_and_the_line() {
+    fn the_shared_chat_block_publishes_the_chatter_identity_the_channel_the_line_and_the_first_message_flag()
+     {
         let stack = chat_args(serde_json::json!("LoyalFan"));
         let expected = [
             ("user_id", "222"),
@@ -116,11 +118,13 @@ mod tests {
                 "'{name}'"
             );
         }
-        assert_eq!(stack.snapshot().len(), expected.len());
+        assert_eq!(stack.get("first_message"), Some(&Variant::Bool(true)));
+        assert_eq!(stack.snapshot().len(), expected.len() + 1);
     }
 
     #[test]
-    fn the_shared_chat_block_declares_the_canonical_names_before_the_channel_and_the_color() {
+    fn the_shared_chat_block_declares_the_canonical_names_then_the_channel_the_color_and_the_first_message_flag()
+     {
         let declared: Vec<String> = base_chat_variables()
             .schema()
             .variables
@@ -137,6 +141,7 @@ mod tests {
                 "message_text",
                 "channel",
                 "user_color",
+                "first_message",
             ]
         );
     }

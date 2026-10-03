@@ -108,6 +108,11 @@
         }
       ]
     },
+    "_chat_viewer": {
+      "first_message": false,
+      "id": "4145994",
+      "name": "viewer32"
+    },
     "badges": [
       "moderator"
     ],

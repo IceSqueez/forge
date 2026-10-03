@@ -167,6 +167,7 @@ pub(super) fn sender_color(event: &Event) -> String {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use forge_types::ChatViewer;
 
     use serde_json::json;
 
@@ -264,6 +265,28 @@ mod tests {
             assert_eq!(
                 stack.get("color"),
                 Some(&Variant::String("#00FF00".to_owned()))
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_time_chatter_filter_admits_only_a_viewers_first_message() {
+        let filtered = TriggerConfig::from([(FIRST_CHATTERS_ONLY.to_owned(), Variant::Bool(true))]);
+        for (config, first_message, admitted) in [
+            (ChatDescriptor.default_config(), false, true),
+            (filtered.clone(), true, true),
+            (filtered, false, false),
+        ] {
+            let mut event = a_message_from_a_named_viewer();
+            ChatViewer {
+                first_message,
+                ..ChatViewer::new("42", "viewer")
+            }
+            .attach(&mut event.payload);
+            assert_eq!(
+                ChatDescriptor.matches_trigger(&config, &event),
+                admitted,
+                "config {config:?} first {first_message}"
             );
         }
     }

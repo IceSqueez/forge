@@ -25,8 +25,13 @@ fn user_message(source: EventSource, kind: &str, id: &str, login: &str) -> Event
     chat_event(
         source,
         kind,
-        serde_json::json!({ "user": { "id": id, "login": login } }),
+        serde_json::json!({ "_chat_viewer": { "id": id, "name": login } }),
     )
+}
+
+fn replayed(mut event: Event) -> Event {
+    event.replay = true;
+    event
 }
 
 async fn wait_until_subscribed() {
@@ -111,11 +116,10 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
             "c1",
             "core-user",
         ),
-        user_message(EventSource::Twitch, "twitch.chat.whisper", "w1", "whisper"),
         chat_event(
             EventSource::Twitch,
             "twitch.channel.chat.message",
-            serde_json::json!({ "text": "hi" }),
+            serde_json::json!({ "user": { "id": "legacy", "login": "legacy" } }),
         ),
         user_message(
             EventSource::Twitch,
@@ -123,22 +127,17 @@ async fn skips_events_that_are_not_recordable_chat_messages() {
             "",
             "loginonly",
         ),
-        user_message(
-            EventSource::Twitch,
-            "twitch.channel.chat.message",
-            "idonly",
-            "",
-        ),
         chat_event(
             EventSource::Twitch,
             "twitch.channel.chat.message",
-            serde_json::json!({ "user": { "login": "no-id" } }),
+            serde_json::json!({ "_chat_viewer": { "name": "no-id" } }),
         ),
-        chat_event(
-            EventSource::Twitch,
-            "twitch.channel.chat.message",
-            serde_json::json!({ "user": { "id": "no-login" } }),
-        ),
+        replayed(user_message(
+            EventSource::YouTube,
+            "youtube.chat.message",
+            "r1",
+            "replayed",
+        )),
     ];
     for event in skipped {
         bus.publish(event);

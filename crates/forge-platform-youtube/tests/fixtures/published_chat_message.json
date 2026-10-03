@@ -52,6 +52,11 @@
         }
       ]
     },
+    "_chat_viewer": {
+      "first_message": false,
+      "id": "UCviewer",
+      "name": "Глядач Ютубу"
+    },
     "author": {
       "channel_id": "UCviewer",
       "display_name": "Глядач Ютубу"

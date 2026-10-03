@@ -767,4 +767,21 @@ mod tests {
             forge_types::PermissionRung::Broadcaster
         );
     }
+
+    #[test]
+    fn a_chat_message_from_a_sender_without_a_numeric_id_carries_no_viewer_identity() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/published_chat_message.json"
+        ))
+        .unwrap();
+        for id in [serde_json::Value::Null, serde_json::json!("99")] {
+            let mut raw = fixture["raw"].clone();
+            raw["sender"]["id"] = id.clone();
+            let ev = build_event("App\\Events\\ChatMessageEvent", raw).unwrap();
+            assert!(
+                forge_types::ChatViewer::read(&ev.payload).is_none(),
+                "sender id {id}"
+            );
+        }
+    }
 }

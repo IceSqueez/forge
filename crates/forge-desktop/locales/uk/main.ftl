@@ -2734,6 +2734,7 @@ config_field_label_min_donation_cents = Мін. донат (центи)
 config_field_label_min_level = Мін. рівень (1-5)
 config_field_label_note = Нота
 config_field_label_note_filter = Фільтр за нотою
+config_field_label_only_first_time_chatters = Лише ті, хто пише вперше
 config_field_label_only_while_live = Лише в ефірі
 config_field_label_program = Програма
 config_field_label_program_filter = Фільтр за програмою

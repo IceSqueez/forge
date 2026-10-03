@@ -9,10 +9,10 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, EventBus, OverlayConnectListener,
-    OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell, OverlayServiceHandle,
-    QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer, SpeakDispatcher,
-    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, EventBus, FirstChatLedger,
+    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
+    OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer,
+    SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
     spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
     spawn_live_viewer_aggregator, spawn_stream_live_signal, spawn_timer_scheduler,
     spawn_trigger_evaluator, spawn_viewer_tracker,
@@ -176,7 +176,14 @@ pub async fn build_runtime(
         backend.chat_history_repo(),
         Arc::clone(&settings_repo),
     );
-    spawn_viewer_tracker(Arc::clone(&bus), backend.viewer_repo());
+    let viewer_repo = backend.viewer_repo();
+    match FirstChatLedger::load(viewer_repo.as_ref()).await {
+        Ok(ledger) => bus.track_first_chats(ledger),
+        Err(e) => {
+            tracing::warn!(error = %e, "viewer history unreadable; first-time chatters are not detected")
+        }
+    }
+    spawn_viewer_tracker(Arc::clone(&bus), viewer_repo);
 
     let speech_output = build_speech_output(&backend).await;
     let speech_sink = Arc::new(RoutedSink::new(

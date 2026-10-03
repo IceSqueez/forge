@@ -2668,6 +2668,7 @@ config_field_label_min_donation_cents = Min donation (cents)
 config_field_label_min_level = Min level (1-5)
 config_field_label_note = Note
 config_field_label_note_filter = Filter by note
+config_field_label_only_first_time_chatters = Only first-time chatters
 config_field_label_only_while_live = Only while live
 config_field_label_program = Program
 config_field_label_program_filter = Filter by program

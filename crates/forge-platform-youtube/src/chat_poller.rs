@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_platform_core::{DedupSet, PlatformError};
-use forge_types::{ChatEventDetail, ChatPayload, ChatSegment, ModerationMarks, UserBadge};
+use forge_types::{
+    ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,
+};
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
 use tokio::sync::Mutex;
@@ -482,6 +484,9 @@ impl YoutubeChatPoller {
                 }
 
                 payload[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+                if let Some(channel_id) = extract_author_channel_id(author_details) {
+                    ChatViewer::new(channel_id, author).attach(&mut payload);
+                }
                 Some(Event::new(EventSource::YouTube, kind, payload))
             }
 

@@ -1,7 +1,8 @@
 use forge_events::{DeliveryLane, Event, EventSource};
 use forge_registry::{
-    ActorDeclaration, ActorIdentity, ChatTriggerFamily, EventFilter, FormField,
-    KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    ActorDeclaration, ActorIdentity, ChatTriggerFamily, EventFilter, FIRST_CHATTERS_ONLY,
+    FormField, KindPlatformContract, TriggerCategory, TriggerKindDescriptor, TriggerVariables,
+    admits_chatter, chat_message_condition, first_chatters_only_field,
 };
 use forge_types::{
     ActorRole, ActorSlot, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
@@ -43,15 +44,15 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
     }
 
     fn default_config(&self) -> TriggerConfig {
-        TriggerConfig::new()
+        TriggerConfig::from([(FIRST_CHATTERS_ONLY.to_owned(), Variant::Bool(false))])
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![]
+        vec![first_chatters_only_field()]
     }
 
-    fn condition_display(&self, _config: &TriggerConfig) -> String {
-        "any".to_owned()
+    fn condition_display(&self, config: &TriggerConfig) -> String {
+        chat_message_condition(config)
     }
 
     fn event_filter(&self) -> EventFilter {
@@ -61,8 +62,8 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
         }
     }
 
-    fn matches_trigger(&self, _config: &TriggerConfig, _event: &Event) -> bool {
-        true
+    fn matches_trigger(&self, config: &TriggerConfig, event: &Event) -> bool {
+        admits_chatter(config, event)
     }
 
     fn variables(&self) -> Option<TriggerVariables> {
@@ -70,6 +71,7 @@ impl TriggerKindDescriptor for ChatMessageDescriptor {
             TriggerVariables::new()
                 .actor(youtube_actor(ActorRole::Principal), author_identity)
                 .message_text(|event| payload_read::text(event, fields::MESSAGE_TEXT))
+                .first_chat_message()
                 .legacy(
                     DeclaredVariable {
                         name: "user_display_name".to_owned(),

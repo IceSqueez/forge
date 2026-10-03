@@ -11,7 +11,7 @@ use forge_platform_core::{
     connection_state_changed_event,
 };
 use forge_types::{
-    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, OAuthToken,
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply, ChatViewer, OAuthToken,
 };
 use futures_util::{FutureExt, StreamExt};
 use serde::Deserialize;
@@ -622,6 +622,7 @@ impl ChatSession {
             });
         }
 
+        ChatViewer::new(user_id, user_login).attach(&mut forge_payload);
         attach_chat_payload(&mut forge_payload, chat_payload);
 
         if let Some(reply) = event_data.get("reply").filter(|v| !v.is_null())

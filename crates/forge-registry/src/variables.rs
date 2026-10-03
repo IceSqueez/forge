@@ -7,6 +7,7 @@ use forge_types::{
 };
 
 use crate::descriptor::TriggerKindDescriptor;
+use crate::first_chatter::{first_message_declaration, is_first_chat_message};
 
 const CANONICAL_CLASS: u8 = 0;
 const EVENT_SPECIFIC_CLASS: u8 = 1;
@@ -178,6 +179,12 @@ impl TriggerVariables {
     {
         self.canonical(CanonicalVariable::MessageText, move |event| {
             Variant::String(read(event))
+        })
+    }
+
+    pub fn first_chat_message(self) -> Self {
+        self.event_specific(first_message_declaration(), |event| {
+            Variant::Bool(is_first_chat_message(event))
         })
     }
 

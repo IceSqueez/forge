@@ -4,6 +4,7 @@ pub mod config_ext;
 pub mod descriptor;
 pub mod error;
 pub mod evaluator;
+pub mod first_chatter;
 pub mod form;
 pub mod io;
 pub mod kind_platform_contract;
@@ -25,6 +26,10 @@ pub use config_ext::SubActionConfigExt;
 pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};
 pub use error::RegistryError;
 pub use evaluator::{EventFilter, kind_matches_prefix};
+pub use first_chatter::{
+    FIRST_CHATTERS_ONLY, FIRST_MESSAGE_VARIABLE, admits_chatter, chat_message_condition,
+    first_chatters_only_field, is_first_chat_message,
+};
 pub use form::{CodeLanguage, FormField};
 pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;

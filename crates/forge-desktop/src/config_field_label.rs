@@ -75,6 +75,7 @@ pub(crate) fn localized_label(english: &'static str) -> String {
         "Minimum level (1-5)" => tr!("config_field_label_min_level"),
         "Note" => tr!("config_field_label_note"),
         "Note (leave empty for any)" => tr!("config_field_label_note_filter"),
+        "Only first-time chatters" => tr!("config_field_label_only_first_time_chatters"),
         "Only while live" => tr!("config_field_label_only_while_live"),
         "Program" => tr!("config_field_label_program"),
         "Program (leave empty for any)" => tr!("config_field_label_program_filter"),

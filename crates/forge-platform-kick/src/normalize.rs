@@ -1,4 +1,4 @@
-use forge_types::{ChatPayload, ChatSegment, ModerationMarks, UserBadge};
+use forge_types::{ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge};
 use serde_json::Value;
 use tracing::debug;
 
@@ -99,6 +99,13 @@ pub(crate) fn chat_message_chat_payload(raw: &Value) -> ChatPayload {
         event_detail: None,
         moderation: ModerationMarks::default(),
     }
+}
+
+pub(crate) fn chat_message_viewer(raw: &Value) -> Option<ChatViewer> {
+    let sender = raw.get("sender")?;
+    let id = u64_field(sender, "id")?;
+    let username = str_field(sender, "username").unwrap_or_default();
+    Some(ChatViewer::new(id.to_string(), username))
 }
 
 pub(crate) fn chat_message_deleted(raw: &Value) -> Value {

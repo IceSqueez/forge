@@ -7,8 +7,9 @@ use crate::delivery_loss::{
 };
 use crate::event_log_writer::EventLogSink;
 use crate::event_ring::EventRing;
+use crate::first_chat_ledger::FirstChatLedger;
 use crate::persist_batch::{BatchPolicy, FlushTicket, run_batched};
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use async_trait::async_trait;
 use forge_events::{DeliveryLane, Event, EventPublisher, EventsError};
 use forge_registry::TriggerRegistry;
@@ -76,6 +77,7 @@ pub struct EventBus {
     flush_abandon: watch::Sender<bool>,
     abandoned_rows: Arc<AtomicU64>,
     flushes: Mutex<Vec<Shared<oneshot::Receiver<()>>>>,
+    first_chats: ArcSwapOption<FirstChatLedger>,
 }
 
 pub enum Delivery {
@@ -145,10 +147,14 @@ impl EventBus {
             flush_abandon: watch::channel(false).0,
             abandoned_rows: Arc::new(AtomicU64::new(0)),
             flushes: Mutex::new(Vec::new()),
+            first_chats: ArcSwapOption::empty(),
         })
     }
 
-    pub fn publish(&self, event: Event) {
+    pub fn publish(&self, mut event: Event) {
+        if let Some(ledger) = self.first_chats.load().as_deref() {
+            ledger.stamp(&mut event);
+        }
         let event = Arc::new(event);
         let lanes = self.lanes.load();
         let transient = {
@@ -161,6 +167,10 @@ impl EventBus {
         self.critical.deliver(&event, lane, transient);
         let _ = self.sender.send(event);
         self.total_published.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn track_first_chats(&self, ledger: FirstChatLedger) {
+        self.first_chats.store(Some(Arc::new(ledger)));
     }
 
     pub fn record(&self, event: Event) {

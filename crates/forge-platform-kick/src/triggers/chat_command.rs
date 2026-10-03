@@ -127,6 +127,7 @@ impl TriggerKindDescriptor for ChatCommandDescriptor {
             TriggerVariables::new()
                 .actor(kick_actor(ActorRole::Principal), sender_identity)
                 .message_text(|event| payload_read::text(event, fields::CONTENT))
+                .first_chat_message()
                 .event_specific(
                     DeclaredVariable {
                         name: "message_id".to_owned(),

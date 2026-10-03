@@ -389,6 +389,9 @@ pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Optio
             let mut normalized = normalize::chat_message_sent(&payload);
             let chat_payload = normalize::chat_message_chat_payload(&payload);
             normalized[ChatPayload::KEY] = serde_json::to_value(&chat_payload).ok()?;
+            if let Some(viewer) = normalize::chat_message_viewer(&payload) {
+                viewer.attach(&mut normalized);
+            }
             ("kick.chat.message.sent", normalized)
         }
         "App\\Events\\MessageDeletedEvent" => (

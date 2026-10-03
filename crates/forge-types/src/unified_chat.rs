@@ -101,6 +101,48 @@ impl ChatReply {
     pub const KEY: &'static str = "_chat_reply";
 }
 
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatViewer {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub first_message: bool,
+}
+
+impl fmt::Debug for ChatViewer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChatViewer")
+            .field("id", &self.id)
+            .field("name", &Redacted)
+            .field("first_message", &self.first_message)
+            .finish()
+    }
+}
+
+impl ChatViewer {
+    pub const KEY: &'static str = "_chat_viewer";
+
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            first_message: false,
+        }
+    }
+
+    pub fn read(payload: &serde_json::Value) -> Option<Self> {
+        let viewer: Self = serde_json::from_value(payload.get(Self::KEY)?.clone()).ok()?;
+        (!viewer.id.is_empty()).then_some(viewer)
+    }
+
+    pub fn attach(&self, payload: &mut serde_json::Value) {
+        if let (Some(fields), Ok(envelope)) = (payload.as_object_mut(), serde_json::to_value(self))
+        {
+            fields.insert(Self::KEY.to_owned(), envelope);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatSource {

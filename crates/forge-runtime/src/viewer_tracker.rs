@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
 use forge_storage::{ViewerMessage, ViewerPlatform, ViewerRepo};
+use forge_types::ChatViewer;
 
 use crate::bus::EventBus;
 use crate::delivery::VIEWER_TRACKER;
@@ -53,30 +54,19 @@ impl BatchSink for ViewerSink {
 }
 
 fn viewer_message(event: &Event) -> Option<ViewerMessage> {
-    if !matches!(
-        event.kind.as_str(),
-        "twitch.channel.chat.message" | "youtube.chat.message" | "kick.chat.message.sent"
-    ) {
+    if event.replay {
         return None;
     }
-    let platform = map_source_to_platform(event.source)?;
-    let user = event.payload.get("user")?;
-    let viewer_id = user.get("id").and_then(|v| v.as_str()).unwrap_or_default();
-    let username = user
-        .get("login")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    if viewer_id.is_empty() || username.is_empty() {
-        return None;
-    }
+    let platform = viewer_platform(event.source)?;
+    let viewer = ChatViewer::read(&event.payload)?;
     Some(ViewerMessage {
         platform,
-        viewer_id: viewer_id.to_owned(),
-        username: username.to_owned(),
+        viewer_id: viewer.id,
+        username: viewer.name,
     })
 }
 
-fn map_source_to_platform(source: EventSource) -> Option<ViewerPlatform> {
+pub(crate) fn viewer_platform(source: EventSource) -> Option<ViewerPlatform> {
     match source {
         EventSource::Twitch => Some(ViewerPlatform::Twitch),
         EventSource::YouTube => Some(ViewerPlatform::YouTube),

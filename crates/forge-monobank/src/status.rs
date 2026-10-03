@@ -225,3 +225,109 @@ impl StatusBoard {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{PollFailure, PollPhase, StatusBoard};
+    use crate::error::MonobankError;
+
+    #[test]
+    fn failures_needing_the_user_stop_while_transient_ones_retry() {
+        for (error, phase, failure) in [
+            (
+                MonobankError::MissingToken,
+                PollPhase::AwaitingToken,
+                PollFailure::MissingToken,
+            ),
+            (
+                MonobankError::MalformedToken,
+                PollPhase::ActionRequired,
+                PollFailure::TokenRejected,
+            ),
+            (
+                MonobankError::Unauthorized,
+                PollPhase::ActionRequired,
+                PollFailure::TokenRejected,
+            ),
+            (
+                MonobankError::MissingJar,
+                PollPhase::ActionRequired,
+                PollFailure::JarNotSelected,
+            ),
+            (
+                MonobankError::InvalidJarId,
+                PollPhase::ActionRequired,
+                PollFailure::JarNotSelected,
+            ),
+            (
+                MonobankError::JarNotFound,
+                PollPhase::ActionRequired,
+                PollFailure::JarMissing,
+            ),
+            (
+                MonobankError::RateLimited {
+                    retry_after_secs: 60,
+                },
+                PollPhase::Retrying,
+                PollFailure::RateLimited,
+            ),
+            (
+                MonobankError::Http { status: 503 },
+                PollPhase::Retrying,
+                PollFailure::ServerError,
+            ),
+            (
+                MonobankError::Network {
+                    reason: String::new(),
+                },
+                PollPhase::Retrying,
+                PollFailure::Network,
+            ),
+            (
+                MonobankError::MalformedResponse {
+                    reason: String::new(),
+                },
+                PollPhase::Retrying,
+                PollFailure::MalformedResponse,
+            ),
+        ] {
+            let board = StatusBoard::new();
+            board.record_failure(&error);
+            let status = board.snapshot();
+            assert_eq!(
+                (status.phase, status.last_error),
+                (phase, Some(failure)),
+                "{error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn uptime_survives_a_retry_but_resets_when_the_user_must_act() {
+        let board = StatusBoard::new();
+        board.record_poll(None);
+        board.record_failure(&MonobankError::Http { status: 503 });
+        let retrying = board.snapshot().uptime();
+        board.record_failure(&MonobankError::Unauthorized);
+        let stopped = board.snapshot().uptime();
+
+        assert!(retrying.is_some());
+        assert_eq!(stopped, None);
+    }
+
+    #[test]
+    fn rejected_donation_records_the_failure_without_leaving_polling() {
+        let board = StatusBoard::new();
+        board.record_poll(None);
+        board.record_rejected_donation(&MonobankError::InvalidDonation {
+            donation_id: "TX-1".to_owned(),
+            reason: String::new(),
+        });
+        let status = board.snapshot();
+
+        assert_eq!(
+            (status.phase, status.last_error),
+            (PollPhase::Polling, Some(PollFailure::InvalidDonation))
+        );
+    }
+}

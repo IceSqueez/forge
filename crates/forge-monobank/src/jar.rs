@@ -124,3 +124,107 @@ impl JarDirectory {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::{JarId, MonobankJar};
+    use crate::error::MonobankError;
+    use crate::wire::JarWire;
+
+    fn jar(overrides: Value) -> Option<MonobankJar> {
+        let mut raw = json!({
+            "id": "jar-AbC_123",
+            "sendId": "jar/abc",
+            "title": "На стрім",
+            "currencyCode": 980,
+            "goal": 1_000_000,
+            "balance": 2_500,
+        });
+        for (key, value) in overrides.as_object().unwrap() {
+            raw[key] = value.clone();
+        }
+        MonobankJar::from_wire(serde_json::from_value::<JarWire>(raw).unwrap())
+    }
+
+    #[test]
+    fn jar_id_accepts_path_safe_identifiers_and_trims_them() {
+        for (raw, id) in [
+            ("jar-AbC_123", "jar-AbC_123"),
+            ("  abc123 \n", "abc123"),
+            ("A", "A"),
+        ] {
+            assert_eq!(
+                JarId::parse(raw).ok().as_ref().map(JarId::as_str),
+                Some(id),
+                "raw {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn jar_id_rejects_anything_that_could_escape_the_statement_path() {
+        for raw in [
+            "",
+            "   ",
+            "a/b",
+            "/",
+            "..",
+            "../x",
+            "a b",
+            "a%2Fb",
+            "a?b",
+            "a#b",
+            "a.b",
+            "банка",
+            "a\\b",
+        ] {
+            assert!(
+                matches!(JarId::parse(raw), Err(MonobankError::InvalidJarId)),
+                "raw {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn jar_with_an_unsafe_id_is_dropped_from_the_listing() {
+        assert_eq!(jar(json!({ "id": "../personal" })), None);
+    }
+
+    #[test]
+    fn jar_goal_is_read_in_minor_units_of_the_jar_currency() {
+        let jar = jar(json!({})).unwrap();
+        assert_eq!(
+            jar.goal
+                .map(|goal| (goal.micros(), goal.currency().as_str().to_owned())),
+            Some((10_000_000_000, "UAH".to_owned()))
+        );
+    }
+
+    #[test]
+    fn jar_without_a_positive_goal_or_known_currency_has_no_goal() {
+        for overrides in [
+            json!({ "goal": 0 }),
+            json!({ "goal": -5 }),
+            json!({ "goal": null }),
+            json!({ "currencyCode": 643 }),
+            json!({ "currencyCode": null }),
+        ] {
+            assert_eq!(jar(overrides.clone()).unwrap().goal, None, "{overrides}");
+        }
+    }
+
+    #[test]
+    fn jar_with_an_unknown_currency_is_listed_without_a_currency() {
+        let jar = jar(json!({ "currencyCode": 643 })).unwrap();
+        assert_eq!((jar.id.as_str(), jar.currency), ("jar-AbC_123", None));
+    }
+
+    #[test]
+    fn blank_title_and_send_id_are_absent() {
+        let jar = jar(json!({ "title": "   ", "sendId": " " })).unwrap();
+        assert_eq!((jar.title, jar.send_id), (None, None));
+    }
+}

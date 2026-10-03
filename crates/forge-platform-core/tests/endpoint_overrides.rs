@@ -72,6 +72,7 @@ fn unconfigured_endpoints_reach_the_production_services_over_tls() {
             "https://www.googleapis.com/upload/youtube/v3",
         ),
         (EndpointSurface::DonatelloApi, "https://donatello.to/api/v1"),
+        (EndpointSurface::MonobankApi, "https://api.monobank.ua"),
     ];
     let pinned: BTreeSet<EndpointSurface> = production.iter().map(|(s, _)| *s).collect();
     assert_eq!(

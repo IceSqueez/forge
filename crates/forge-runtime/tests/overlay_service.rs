@@ -13,8 +13,9 @@ use forge_overlay::{
 use forge_platform_core::paths;
 use forge_runtime::overlay_service::OVERLAY_TEST_FIRE_KIND;
 use forge_runtime::{
-    EventBus, MaterializePass, NullEventLogRepo, OverlayConnectListener, OverlayDelivery,
-    OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceError, OverlayServiceHandle,
+    EventBus, MaterializePass, NullEventLogRepo, OverlayConnectFanout, OverlayConnectListener,
+    OverlayDefinitionChanges, OverlayDelivery, OverlayDispatch, OverlayFrameSink, OverlayReceivers,
+    OverlayServiceError, OverlayServiceHandle,
 };
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
@@ -22,6 +23,7 @@ use forge_storage::{
     SettingsRepo, StorageError, reserved_keys,
 };
 use forge_types::{ArgStack, Variant};
+use futures_util::FutureExt;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
@@ -1146,4 +1148,98 @@ async fn content_kept_under_an_earlier_look_replays_only_while_the_current_look_
             "a page of look {kind_id} connecting over a row kept by an earlier look"
         );
     }
+}
+
+fn fired(changes: &mut OverlayDefinitionChanges) -> bool {
+    changes.changed().now_or_never() == Some(true)
+}
+
+fn service_whose_repo_answers(removed: bool, enabled_changed: bool) -> OverlayServiceHandle {
+    let mut repo = MockOverlayRepo::new();
+    repo.expect_delete().returning(move |_| Ok(removed));
+    repo.expect_set_enabled()
+        .returning(move |_, _| Ok(enabled_changed));
+    OverlayServiceHandle::new(
+        Arc::new(repo) as Arc<dyn OverlayRepo>,
+        Arc::new(MockSettingsRepo::new()) as Arc<dyn SettingsRepo>,
+        registry(),
+        EventBus::new(Arc::new(NullEventLogRepo)),
+        None,
+    )
+}
+
+#[tokio::test]
+async fn a_delete_or_toggle_signals_a_definition_change_only_when_the_store_changed() {
+    let id = OverlayId::new("donation-alert");
+    for (store_changed, expected) in [(true, true), (false, false)] {
+        let service = service_whose_repo_answers(store_changed, store_changed);
+        let mut after_delete = service.definition_changes();
+        service.delete(&id).await.expect("the delete is answered");
+        let mut after_toggle = service.definition_changes();
+        service
+            .set_enabled(&id, false)
+            .await
+            .expect("the toggle is answered");
+
+        assert_eq!(
+            (fired(&mut after_delete), fired(&mut after_toggle)),
+            (expected, expected),
+            "the store reported a change: {store_changed}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn materializing_signals_a_definition_change_only_for_an_overlay_it_rebuilt() {
+    let stored = definition("sub-alert");
+    let harness = harness(vec![stored.clone()], true);
+    for (id, expected) in [
+        (OverlayId::new("no-such-overlay"), false),
+        (stored.id, true),
+    ] {
+        let mut changes = harness.service.definition_changes();
+
+        let outcome = harness.service.materialize(&id).await;
+
+        assert_eq!(
+            (outcome.is_ok(), fired(&mut changes)),
+            (expected, expected),
+            "{id}"
+        );
+    }
+}
+
+struct NamedListener {
+    name: &'static str,
+    heard: Arc<Mutex<Vec<(&'static str, OverlayId)>>>,
+}
+
+#[async_trait]
+impl OverlayConnectListener for NamedListener {
+    async fn overlay_connected(&self, identity: &OverlayId) {
+        self.heard
+            .lock()
+            .unwrap()
+            .push((self.name, identity.clone()));
+    }
+}
+
+#[tokio::test]
+async fn a_connect_fanout_tells_every_listener_in_the_order_given() {
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let listener = |name| {
+        Arc::new(NamedListener {
+            name,
+            heard: Arc::clone(&heard),
+        }) as Arc<dyn OverlayConnectListener>
+    };
+    let fanout = OverlayConnectFanout::new(vec![listener("replay"), listener("catch-up")]);
+    let id = OverlayId::new("donation-alert");
+
+    fanout.overlay_connected(&id).await;
+
+    assert_eq!(
+        heard.lock().unwrap().clone(),
+        vec![("replay", id.clone()), ("catch-up", id)]
+    );
 }

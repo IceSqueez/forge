@@ -1,0 +1,104 @@
+{
+  "name": "a donation missed while forge was closed waits for a donation overlay page",
+  "purpose": "Once forge has announced a live Donatello donation, a Latest overlay bound to the donation slot makes forge hold the donations it catches up on after a restart until a page of that overlay connects. A Donatello donation made while forge is down is therefore not announced while no page is open, a live donation made after the restart is announced at once regardless, and the held donation is announced exactly once as soon as the overlay page connects.",
+  "fixture": {
+    "donatello": {},
+    "overlays": [
+      { "display_name": "Last Donation", "kind_id": "overlay.latest", "config": {} }
+    ]
+  },
+  "fakes": {
+    "donatello": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "donations_polled": { "within_ms": 120000 } } },
+    {
+      "do": {
+        "donatello_donation": {
+          "id": "dl-before-restart-1",
+          "donor": "Olena",
+          "amount": "50"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": { "/donation_id": { "equals": "dl-before-restart-1" } },
+            "count": { "exactly": 1 },
+            "within_ms": 40000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "forge_restart": {
+          "within_ms": 60000,
+          "offline": [
+            {
+              "donatello": {
+                "id": "do-held-1",
+                "donor": "Mykola",
+                "amount": "200",
+                "message": "while you were away"
+              }
+            }
+          ]
+        }
+      }
+    },
+    { "do": { "donations_polled": { "within_ms": 120000 } } },
+    {
+      "do": {
+        "donatello_donation": {
+          "id": "dl-after-restart-1",
+          "donor": "Iryna",
+          "amount": "75"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/donation_id": { "equals": "dl-after-restart-1" },
+              "/test": { "equals": false }
+            },
+            "count": { "exactly": 1 },
+            "within_ms": 40000
+          }
+        },
+        {
+          "event_absent": {
+            "source": "donation",
+            "kind": "donation.received",
+            "window_ms": 40000,
+            "payload": { "/donation_id": { "equals": "do-held-1" } }
+          }
+        }
+      ]
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Last Donation", "within_ms": 30000 } },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/donation_id": { "equals": "do-held-1" },
+              "/test": { "equals": false },
+              "/provider": { "equals": "donatello" }
+            },
+            "count": { "exactly": 1 },
+            "within_ms": 10000
+          }
+        }
+      ]
+    }
+  ]
+}

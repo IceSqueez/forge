@@ -196,15 +196,17 @@ fn verdict(donation: &Donation, baseline: bool, now: OffsetDateTime) -> Verdict 
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use async_trait::async_trait;
     use forge_events::Event;
     use forge_platform_core::PlatformError;
     use forge_storage::{StorageError, StoredDonation};
     use forge_types::{CurrencyCode, Donor, MoneyAmount};
+    use tokio::sync::{oneshot, watch};
 
     use super::*;
 
@@ -648,5 +650,234 @@ mod tests {
             ["fresh", "stale", "done"].map(|id| rig.ledger.announced(id)),
             [Some(true); 3]
         );
+    }
+
+    const RELEASE_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
+
+    struct ScriptedAudience {
+        listening: AtomicBool,
+        asked: watch::Sender<usize>,
+        first_answer_gate: tokio::sync::Mutex<Option<oneshot::Receiver<()>>>,
+    }
+
+    impl ScriptedAudience {
+        fn new(listening: bool) -> Arc<Self> {
+            Arc::new(Self {
+                listening: AtomicBool::new(listening),
+                asked: watch::Sender::new(0),
+                first_answer_gate: tokio::sync::Mutex::new(None),
+            })
+        }
+
+        fn gated(listening: bool) -> (Arc<Self>, oneshot::Sender<()>) {
+            let (open, gate) = oneshot::channel();
+            let audience = Arc::new(Self {
+                listening: AtomicBool::new(listening),
+                asked: watch::Sender::new(0),
+                first_answer_gate: tokio::sync::Mutex::new(Some(gate)),
+            });
+            (audience, open)
+        }
+
+        fn start_listening(&self) {
+            self.listening.store(true, Ordering::SeqCst);
+        }
+
+        async fn asked_at_least(&self, times: usize) {
+            let mut asked = self.asked.subscribe();
+            tokio::time::timeout(RELEASE_BOUND, asked.wait_for(|count| *count >= times))
+                .await
+                .expect("the release task consults the audience within the bound")
+                .expect("the audience stays alive");
+        }
+    }
+
+    #[async_trait]
+    impl DonationAudience for ScriptedAudience {
+        async fn is_listening(&self) -> bool {
+            let gate = self.first_answer_gate.lock().await.take();
+            let answer = self.listening.load(Ordering::SeqCst);
+            self.asked.send_modify(|count| *count += 1);
+            if let Some(gate) = gate {
+                gate.await.unwrap();
+            }
+            answer
+        }
+    }
+
+    struct HeldRig {
+        ledger: Arc<Ledger>,
+        recorder: Arc<Recorder>,
+        ingest: Arc<DonationIngest>,
+        waker: CatchUpWaker,
+    }
+
+    fn held_rig(ledger: Ledger, audience: Arc<ScriptedAudience>) -> HeldRig {
+        let ledger = Arc::new(ledger);
+        let recorder = Arc::new(Recorder::default());
+        let ingest = Arc::new(
+            DonationIngest::new(
+                Arc::clone(&ledger) as Arc<dyn DonationRepo>,
+                Arc::clone(&recorder) as Arc<dyn EventPublisher>,
+                Shared::new(PLACEHOLDER.to_owned()),
+            )
+            .holding_catch_up(),
+        );
+        let waker = ingest
+            .catch_up_waker()
+            .expect("a holding ingest hands out a waker");
+        ingest.spawn_catch_up_release(audience);
+        HeldRig {
+            ledger,
+            recorder,
+            ingest,
+            waker,
+        }
+    }
+
+    async fn until_marked(ledger: &Ledger, ids: &[&str]) {
+        tokio::time::timeout(RELEASE_BOUND, async {
+            while !ids.iter().all(|id| ledger.announced(id) == Some(true)) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the held donations are released within the bound");
+    }
+
+    fn missed(id: &str, age: Duration) -> StoredDonation {
+        stored(donation(id, DonationOrigin::History, age))
+    }
+
+    #[tokio::test]
+    async fn a_caught_up_donation_stays_unpublished_and_unannounced_while_no_donation_overlay_listens()
+     {
+        let audience = ScriptedAudience::new(false);
+        let rig = held_rig(
+            Ledger::holding(vec![missed("missed", Duration::minutes(5))]),
+            Arc::clone(&audience),
+        );
+
+        rig.ingest.recover_unannounced().await;
+        audience.asked_at_least(1).await;
+
+        assert_eq!(
+            (rig.recorder.announced_ids(), rig.ledger.announced("missed")),
+            (Vec::<String>::new(), Some(false))
+        );
+    }
+
+    #[tokio::test]
+    async fn held_donations_are_released_oldest_first_once_a_donation_overlay_listens() {
+        let audience = ScriptedAudience::new(false);
+        let rig = held_rig(
+            Ledger::holding(vec![
+                missed("newer", Duration::minutes(2)),
+                missed("older", Duration::minutes(10)),
+            ]),
+            Arc::clone(&audience),
+        );
+        rig.ingest.recover_unannounced().await;
+        audience.asked_at_least(1).await;
+
+        audience.start_listening();
+        rig.waker.wake();
+        until_marked(&rig.ledger, &["newer", "older"]).await;
+
+        assert_eq!(rig.recorder.announced_ids(), ["older", "newer"]);
+    }
+
+    type ArrivalCase = (
+        &'static str,
+        fn() -> Donation,
+        &'static [&'static str],
+        Option<bool>,
+    );
+
+    #[tokio::test]
+    async fn only_a_donation_that_predates_startup_is_held_back() {
+        let cases: [ArrivalCase; 3] = [
+            (
+                "history from before startup",
+                || fresh("arrived", DonationOrigin::History),
+                &[],
+                Some(false),
+            ),
+            (
+                "a live donation after startup",
+                || donation("arrived", DonationOrigin::Live, Duration::ZERO),
+                &["arrived"],
+                Some(true),
+            ),
+            (
+                "a test donation",
+                || fresh("arrived", DonationOrigin::Test),
+                &["arrived"],
+                None,
+            ),
+        ];
+        for (label, arriving, published, marked) in cases {
+            let rig = held_rig(seen_provider(), ScriptedAudience::new(false));
+
+            rig.ingest
+                .drain(provider(), stream_of(vec![Ok(arriving())]))
+                .await;
+
+            assert_eq!(
+                (
+                    rig.recorder.announced_ids(),
+                    rig.ledger.announced("arrived")
+                ),
+                (
+                    published.iter().map(|id| (*id).to_owned()).collect(),
+                    marked
+                ),
+                "{label}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_held_donation_the_provider_lists_again_is_announced_once() {
+        let audience = ScriptedAudience::new(false);
+        let rig = held_rig(
+            Ledger::holding(vec![missed("missed", Duration::minutes(5))]),
+            Arc::clone(&audience),
+        );
+        rig.ingest.recover_unannounced().await;
+        rig.ingest
+            .drain(
+                provider(),
+                stream_of(vec![Ok(donation(
+                    "missed",
+                    DonationOrigin::History,
+                    Duration::minutes(5),
+                ))]),
+            )
+            .await;
+
+        audience.start_listening();
+        rig.waker.wake();
+        until_marked(&rig.ledger, &["missed"]).await;
+
+        assert_eq!(rig.recorder.announced_ids(), ["missed"]);
+    }
+
+    #[tokio::test]
+    async fn a_wake_that_arrives_while_the_audience_is_being_asked_is_not_lost() {
+        let (audience, open_gate) = ScriptedAudience::gated(false);
+        let rig = held_rig(
+            Ledger::holding(vec![missed("missed", Duration::minutes(5))]),
+            Arc::clone(&audience),
+        );
+        rig.ingest.recover_unannounced().await;
+        audience.asked_at_least(1).await;
+
+        audience.start_listening();
+        rig.waker.wake();
+        open_gate.send(()).unwrap();
+        until_marked(&rig.ledger, &["missed"]).await;
+
+        assert_eq!(rig.recorder.announced_ids(), ["missed"]);
     }
 }

@@ -3,10 +3,10 @@
 use std::collections::BTreeSet;
 
 use forge_events::{Event, EventSource};
-use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables};
+use forge_registry::{ActorBlock, ActorIdentity, LoginSlot, TriggerVariables, money_value};
 use forge_types::{
-    ActorRole, CanonicalCount, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    Variant, VariantKind,
+    ActorRole, CanonicalCount, CanonicalVariable, CurrencyCode, DeclaredVariable, MoneyAmount,
+    MoneySlot, PlatformId, SynthesisHint, Variant, VariantKind,
 };
 
 const CANONICAL_ROSTER: &[(&str, VariantKind)] = &[
@@ -33,6 +33,10 @@ const CANONICAL_ROSTER: &[(&str, VariantKind)] = &[
     ("sub_cumulative_months", VariantKind::Int),
     ("sub_streak_months", VariantKind::Int),
     ("sub_tier", VariantKind::String),
+    ("amount_micros", VariantKind::Int),
+    ("amount", VariantKind::Float),
+    ("currency", VariantKind::String),
+    ("amount_formatted", VariantKind::String),
 ];
 
 fn no_payload() -> Event {
@@ -257,5 +261,14 @@ fn a_legacy_entry_carries_its_canonical_twins_value_and_names_the_twin_it_defers
             .filter(|(name, _)| name != "sub_message")
             .all(|(_, superseded_by)| superseded_by.is_none()),
         "only a legacy entry names a canonical replacement: {standings:?}"
+    );
+}
+
+#[test]
+fn an_amount_beyond_the_int_range_saturates_the_micros_slot_instead_of_wrapping() {
+    let huge = MoneyAmount::from_micros(u64::MAX, CurrencyCode::parse("UAH").unwrap());
+    assert_eq!(
+        money_value(MoneySlot::AmountMicros, Some(&huge)),
+        Variant::Int(i64::MAX)
     );
 }

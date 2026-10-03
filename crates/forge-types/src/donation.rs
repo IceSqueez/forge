@@ -115,3 +115,46 @@ impl fmt::Debug for Donation {
             .finish()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use crate::money::CurrencyCode;
+
+    use super::*;
+
+    const DONOR_NAME: &str = "SecretDonorName";
+    const MESSAGE: &str = "private message body";
+
+    fn donation(donor: Donor) -> Donation {
+        Donation {
+            provider: IntegrationId::from_static("donatello"),
+            donation_id: "d-1".to_owned(),
+            donor,
+            message: Some(MESSAGE.to_owned()),
+            amount: MoneyAmount::from_micros(100_000_000, CurrencyCode::parse("UAH").unwrap()),
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            origin: DonationOrigin::Live,
+        }
+    }
+
+    #[test]
+    fn named_trims_the_name_and_maps_a_blank_name_to_anonymous() {
+        for (raw, expected) in [
+            ("  Alice ", Donor::Named("Alice".to_owned())),
+            ("", Donor::Anonymous),
+            (" \t ", Donor::Anonymous),
+        ] {
+            assert_eq!(Donor::named(raw), expected, "raw {raw:?}");
+        }
+    }
+
+    #[test]
+    fn debug_of_a_donation_never_prints_the_donor_name_or_message() {
+        let rendered = format!("{:?}", donation(Donor::Named(DONOR_NAME.to_owned())));
+        assert!(
+            !rendered.contains(DONOR_NAME) && !rendered.contains(MESSAGE),
+            "{rendered}"
+        );
+    }
+}

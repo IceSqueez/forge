@@ -8,9 +8,10 @@ use forge_storage::{
     CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
     ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, LatestValueRepo,
     MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
-    RevisingTriggerInstanceRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
+    RevisingScheduledRunRepo, RevisingTriggerInstanceRepo, ScheduledRunRepo, ScriptRecord,
+    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo, reserved_keys,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -23,8 +24,8 @@ use crate::retention_task::{RetentionSignals, RetentionTargets, spawn_retention_
 use crate::{
     SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteDonationRepo,
     SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo, SqliteLatestValueRepo,
-    SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo,
-    SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
+    SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo, SqliteScheduledRunRepo, SqliteScriptRepo,
+    SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
     SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect_pools,
 };
 
@@ -60,6 +61,8 @@ pub struct SqliteBackend {
     trigger_instance: Arc<dyn TriggerInstanceRepo>,
     queue: Arc<dyn QueueRepo>,
     catalog_revision: CatalogRevision,
+    scheduled_run: Arc<dyn ScheduledRunRepo>,
+    scheduled_run_revision: CatalogRevision,
     script: SqliteScriptRepo,
     credentials: SqliteCredentialsRepo,
     history: Arc<SqliteHistoryRepo>,
@@ -156,6 +159,11 @@ impl SqliteBackend {
         let shutdown = Arc::new(Notify::new());
         let retention_window_changed = Arc::new(Notify::new());
         let catalog_revision = CatalogRevision::new();
+        let scheduled_run_revision = CatalogRevision::new();
+        let scheduled_run = RevisingScheduledRunRepo::wrap(
+            Arc::new(SqliteScheduledRunRepo::new(pool.clone())),
+            scheduled_run_revision.clone(),
+        );
 
         if let Some(checkpointer) = pool.checkpointer() {
             spawn_checkpoint_task(checkpointer.clone(), pool.writer().clone());
@@ -166,6 +174,7 @@ impl SqliteBackend {
                 history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
                 action: Arc::new(SqliteActionRepo::new(pool.clone())),
                 settings: Arc::new(SqliteSettingsRepo::new(pool.clone())),
+                scheduled_run: Arc::clone(&scheduled_run),
             },
             prune_interval,
             RetentionSignals {
@@ -178,9 +187,10 @@ impl SqliteBackend {
             globals: SqliteGlobalsRepo::new(pool.clone()),
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
             settings: SqliteSettingsRepo::new(pool.clone()),
-            action: RevisingActionRepo::wrap(
+            action: RevisingActionRepo::wrap_cascading_scheduled_runs(
                 Arc::new(SqliteActionRepo::new(pool.clone())),
                 catalog_revision.clone(),
+                scheduled_run_revision.clone(),
             ),
             trigger_instance: RevisingTriggerInstanceRepo::wrap(
                 Arc::new(SqliteTriggerInstanceRepo::new(pool.clone())),
@@ -191,6 +201,8 @@ impl SqliteBackend {
                 catalog_revision.clone(),
             ),
             catalog_revision,
+            scheduled_run,
+            scheduled_run_revision,
             script: SqliteScriptRepo::new(pool.clone()),
             history: Arc::new(SqliteHistoryRepo::new(pool.clone())),
             event_log: Arc::new(SqliteEventLogRepo::new(pool.clone())),
@@ -555,8 +567,16 @@ impl DataProvider for SqliteBackend {
         Arc::clone(&self.latest_value) as Arc<dyn LatestValueRepo>
     }
 
+    fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {
+        Arc::clone(&self.scheduled_run)
+    }
+
     fn catalog_revision(&self) -> CatalogRevision {
         self.catalog_revision.clone()
+    }
+
+    fn scheduled_run_revision(&self) -> CatalogRevision {
+        self.scheduled_run_revision.clone()
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

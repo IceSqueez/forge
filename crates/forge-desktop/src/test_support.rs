@@ -17,9 +17,10 @@ use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ChatHistoryRepo, CredentialId,
     CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry,
     GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayConfig, OverlayCredential,
-    OverlayDefinition, OverlayId, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo,
-    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    OverlayDefinition, OverlayId, OverlayRepo, QueueRepo, ScheduledRunRepo, ScriptRecord,
+    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo,
 };
 use forge_types::{
     Action, ActionId, ActorRole, EventId, ExecutionContext, PlatformId, ScriptId, TriggerConfig,
@@ -270,6 +271,14 @@ impl DataProvider for TestBackend {
 
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo> {
         unreachable!("the settings pane reaches no sub-repo")
+    }
+
+    fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {
+        unreachable!("the settings pane reaches no sub-repo")
+    }
+
+    fn scheduled_run_revision(&self) -> CatalogRevision {
+        unreachable!("the settings pane reaches no catalog")
     }
 
     fn catalog_revision(&self) -> CatalogRevision {

@@ -17,6 +17,7 @@ use forge_storage::latest_value::MockLatestValueRepo;
 use forge_storage::media::MockMediaRepo;
 use forge_storage::overlay::{MockOverlayRepo, OverlayRepo};
 use forge_storage::queue::MockQueueRepo;
+use forge_storage::scheduled_run::MockScheduledRunRepo;
 use forge_storage::script::MockScriptRepo;
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::soundboard::MockSoundboardClipsRepo;
@@ -28,9 +29,9 @@ use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider, DonationRepo,
     EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo,
-    MediaRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
-    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    MediaRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
+    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
+    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -50,6 +51,8 @@ pub struct TestDataProvider {
     pub media_repo: Arc<MockMediaRepo>,
     pub donation_repo: Arc<MockDonationRepo>,
     pub latest_value_repo: Arc<MockLatestValueRepo>,
+    pub scheduled_run_repo: Arc<MockScheduledRunRepo>,
+    pub scheduled_run_revision: CatalogRevision,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
     pub settings_repo: Arc<MockSettingsRepo>,
@@ -75,6 +78,8 @@ impl TestDataProvider {
             media_repo: Arc::new(MockMediaRepo::new()),
             donation_repo: Arc::new(MockDonationRepo::new()),
             latest_value_repo: Arc::new(MockLatestValueRepo::new()),
+            scheduled_run_repo: Arc::new(MockScheduledRunRepo::new()),
+            scheduled_run_revision: CatalogRevision::new(),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
             viewer_repo: Arc::new(MockViewerRepo::new()),
             tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
@@ -391,8 +396,16 @@ impl DataProvider for TestDataProvider {
         Arc::clone(&self.latest_value_repo) as Arc<dyn LatestValueRepo>
     }
 
+    fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {
+        Arc::clone(&self.scheduled_run_repo) as Arc<dyn ScheduledRunRepo>
+    }
+
     fn catalog_revision(&self) -> CatalogRevision {
         self.catalog_revision.clone()
+    }
+
+    fn scheduled_run_revision(&self) -> CatalogRevision {
+        self.scheduled_run_revision.clone()
     }
 
     async fn schema_version(&self) -> Result<u32, StorageError> {

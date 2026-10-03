@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_storage::{
-    ActionRepo, DEFAULT_EVENT_LOG_RETENTION_DAYS, HistoryRepo, SettingsRepo,
+    ActionRepo, DEFAULT_EVENT_LOG_RETENTION_DAYS, HistoryRepo, ScheduledRunRepo, SettingsRepo,
     event_log_retention_days,
 };
 use time::OffsetDateTime;
@@ -25,6 +25,7 @@ pub(crate) struct RetentionTargets {
     pub(crate) history: Arc<dyn HistoryRepo>,
     pub(crate) action: Arc<dyn ActionRepo>,
     pub(crate) settings: Arc<dyn SettingsRepo>,
+    pub(crate) scheduled_run: Arc<dyn ScheduledRunRepo>,
 }
 
 enum Interrupt {
@@ -108,6 +109,18 @@ async fn sweep(
         Err(e) => tracing::warn!(
             error = %e,
             "action_executions pruning failed; will retry on next cycle"
+        ),
+    }
+
+    match targets.scheduled_run.prune_resolved_before(cutoff).await {
+        Ok(pruned) => tracing::info!(
+            pruned_rows = pruned,
+            ?cutoff,
+            "scheduled_runs pruning complete"
+        ),
+        Err(e) => tracing::warn!(
+            error = %e,
+            "scheduled_runs pruning failed; will retry on next cycle"
         ),
     }
     Ok(())

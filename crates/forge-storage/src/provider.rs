@@ -4,12 +4,12 @@ use async_trait::async_trait;
 
 use crate::{
     ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, DonationRepo, EventLogRepo,
-    GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo, ScriptRepo,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo, ScheduledRunRepo,
+    ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
+    TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 49;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 50;
 
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 
@@ -32,7 +32,11 @@ pub trait DataProvider:
     fn donation_repo(&self) -> Arc<dyn DonationRepo>;
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo>;
 
+    fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo>;
+
     fn catalog_revision(&self) -> CatalogRevision;
+
+    fn scheduled_run_revision(&self) -> CatalogRevision;
 
     async fn schema_version(&self) -> Result<u32, StorageError>;
 

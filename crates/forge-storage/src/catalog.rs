@@ -36,7 +36,7 @@ impl CatalogRevision {
         CatalogChanges(self.0.subscribe())
     }
 
-    async fn after<T, W>(&self, write: W) -> Result<T, StorageError>
+    pub(crate) async fn after<T, W>(&self, write: W) -> Result<T, StorageError>
     where
         T: Send + 'static,
         W: Future<Output = Result<T, StorageError>> + Send + 'static,
@@ -77,11 +77,28 @@ impl Drop for AdvanceOnDrop {
 pub struct RevisingActionRepo {
     inner: Arc<dyn ActionRepo>,
     revision: CatalogRevision,
+    scheduled_run_revision: Option<CatalogRevision>,
 }
 
 impl RevisingActionRepo {
     pub fn wrap(inner: Arc<dyn ActionRepo>, revision: CatalogRevision) -> Arc<dyn ActionRepo> {
-        Arc::new(Self { inner, revision })
+        Arc::new(Self {
+            inner,
+            revision,
+            scheduled_run_revision: None,
+        })
+    }
+
+    pub fn wrap_cascading_scheduled_runs(
+        inner: Arc<dyn ActionRepo>,
+        revision: CatalogRevision,
+        scheduled_run_revision: CatalogRevision,
+    ) -> Arc<dyn ActionRepo> {
+        Arc::new(Self {
+            inner,
+            revision,
+            scheduled_run_revision: Some(scheduled_run_revision),
+        })
     }
 }
 
@@ -105,8 +122,15 @@ impl ActionRepo for RevisingActionRepo {
 
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);
+        let scheduled_run_revision = self.scheduled_run_revision.clone();
         self.revision
-            .after(async move { inner.delete(id).await })
+            .after(async move {
+                let deleted = inner.delete(id).await?;
+                if deleted && let Some(revision) = scheduled_run_revision {
+                    revision.advance();
+                }
+                Ok(deleted)
+            })
             .await
     }
 

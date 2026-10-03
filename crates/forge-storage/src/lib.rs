@@ -15,6 +15,7 @@ pub mod media;
 pub mod overlay;
 pub mod provider;
 pub mod queue;
+pub mod scheduled_run;
 pub mod script;
 pub mod settings;
 pub mod soundboard;
@@ -54,6 +55,10 @@ pub use media::{
 pub use overlay::{OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo};
 pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE};
 pub use queue::QueueRepo;
+pub use scheduled_run::{
+    MissedRunPolicy, RevisingScheduledRunRepo, ScheduledRun, ScheduledRunId, ScheduledRunOutcome,
+    ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
+};
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{
     CredentialsKeyLoss, DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_DIAGNOSTIC_LOG_LEVEL,
@@ -88,5 +93,7 @@ pub use latest_value::MockLatestValueRepo;
 pub use media::MockMediaRepo;
 #[cfg(feature = "test-mocks")]
 pub use overlay::MockOverlayRepo;
+#[cfg(feature = "test-mocks")]
+pub use scheduled_run::MockScheduledRunRepo;
 #[cfg(feature = "test-mocks")]
 pub use trigger_instance::MockTriggerInstanceRepo;

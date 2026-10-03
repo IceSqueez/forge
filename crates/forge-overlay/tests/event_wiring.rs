@@ -23,6 +23,7 @@ const CURATED_IN_PICKER_ORDER: &[&str] = &[
     "twitch.support.resubscriber",
     "twitch.support.gift_sub",
     "twitch.support.cheer",
+    "donation.received",
     "twitch.channel.raid_received",
     "twitch.channel.follow",
     "twitch.channel_points.redemption",
@@ -100,6 +101,7 @@ fn every_platform_trigger() -> TriggerRegistry {
     forge_platform_kick::register_kick_triggers(&mut reg).expect("the kick triggers register");
     forge_platform_youtube::register_youtube_triggers(&mut reg)
         .expect("the youtube triggers register");
+    forge_runtime::triggers::register_core_triggers(&mut reg).expect("the core triggers register");
     reg
 }
 
@@ -368,7 +370,7 @@ fn ordering_lifts_the_curated_rows_into_table_order_and_leaves_the_rest_as_offer
         .map(|id| (*id).to_owned())
         .collect();
 
-    for shuffle in [[6, 0, 5, 1, 4, 2, 3], [3, 2, 4, 1, 5, 0, 6]] {
+    for shuffle in [[7, 0, 6, 1, 5, 2, 4, 3], [3, 2, 4, 1, 5, 0, 6, 7]] {
         let mut offered: Vec<String> = shuffle
             .iter()
             .map(|index| CURATED_IN_PICKER_ORDER[*index].to_owned())

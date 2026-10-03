@@ -2751,6 +2751,7 @@ dependencies = [
  "forge-platform-twitch",
  "forge-platform-youtube",
  "forge-registry",
+ "forge-runtime",
  "forge-types",
  "serde",
  "serde_json",

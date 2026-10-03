@@ -1359,4 +1359,28 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn the_donation_service_choice_offers_any_then_every_shipped_service() {
+        use forge_registry::TriggerKindDescriptor as _;
+
+        let specs = forge_runtime::triggers::DonationReceivedDescriptor.config_fields();
+        let choices = CollectionChoices::for_specs(&specs);
+        let mut fields = vec![choice("provider", "", None)];
+
+        choices.refresh(&mut fields, &ChoiceOptions::new(), Some("Any"));
+
+        let offered = match &fields[0] {
+            ConfigField::Choice { options, .. } => options.clone(),
+            _ => panic!("expected a choice field"),
+        };
+        assert_eq!(
+            offered,
+            [
+                (String::new(), "Any".to_owned()),
+                ("donatello".to_owned(), "Donatello".to_owned()),
+                ("monobank".to_owned(), "monobank".to_owned()),
+            ]
+        );
+    }
 }

@@ -127,3 +127,76 @@ fn apply_connection(
         }
     });
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_donatello::{
+        DEFAULT_POLL_INTERVAL, DonatelloConfig, MAX_POLL_INTERVAL, MIN_POLL_INTERVAL,
+    };
+    use forge_platform_core::{DonationProvider, PlatformEndpoints};
+    use forge_storage::CredentialsRepo;
+
+    use super::*;
+    use crate::test_support::test_backend;
+
+    async fn interval_after_restoring(stored: Option<&str>) -> Duration {
+        let (backend, _writes) = test_backend();
+        if let Some(stored) = stored {
+            backend
+                .set_string(DONATELLO_POLL_INTERVAL_KEY, stored)
+                .await
+                .expect("the test backend stores");
+        }
+        let provider = DonatelloProvider::new(
+            DonatelloConfig::new(&PlatformEndpoints::default()),
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+            forge_donatello::default_rate_limiter(),
+        )
+        .expect("the provider builds offline");
+
+        restore_donatello_poll_interval(&provider, backend.as_ref()).await;
+
+        let mut feed = provider.donations();
+        let first = feed.next().await;
+        assert!(
+            matches!(first, Some(Err(_))),
+            "without a token the first poll reports the missing token"
+        );
+        provider.poll_status().poll_interval
+    }
+
+    #[tokio::test]
+    async fn a_stored_interval_is_applied_and_held_inside_the_allowed_range() {
+        for (stored, expected) in [
+            ("60", Duration::from_secs(60)),
+            (" 45 ", Duration::from_secs(45)),
+            ("3", MIN_POLL_INTERVAL),
+            ("100000", MAX_POLL_INTERVAL),
+        ] {
+            assert_eq!(
+                interval_after_restoring(Some(stored)).await,
+                expected,
+                "{stored:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_or_missing_interval_leaves_the_default_polling_pace() {
+        for stored in [
+            None,
+            Some(""),
+            Some("abc"),
+            Some("-5"),
+            Some("1.5"),
+            Some("99999999999999999999"),
+        ] {
+            assert_eq!(
+                interval_after_restoring(stored).await,
+                DEFAULT_POLL_INTERVAL,
+                "{stored:?}"
+            );
+        }
+    }
+}

@@ -267,4 +267,57 @@ mod tests {
 
         assert_eq!(tally[&twitch()].total(), 2);
     }
+
+    fn donation_trigger(filter: Option<&str>) -> TriggerInstance {
+        let mut trigger = trigger_of(forge_events::DONATION_RECEIVED_KIND);
+        if let Some(service) = filter {
+            trigger.overrides.insert(
+                SERVICE_FILTER_KEY.to_owned(),
+                Variant::String(service.to_owned()),
+            );
+        }
+        trigger
+    }
+
+    #[test]
+    fn a_donation_trigger_counts_toward_the_services_it_can_fire_for() {
+        let donatello = IntegrationId::new("donatello");
+        let monobank = IntegrationId::new("monobank");
+        let both = HashMap::from([(donatello.clone(), 1), (monobank.clone(), 1)]);
+
+        let cases = [
+            (None, both.clone(), "no filter means any donation service"),
+            (Some(""), both.clone(), "an empty filter means any service"),
+            (Some("   "), both, "a blank filter means any service"),
+            (
+                Some("monobank"),
+                HashMap::from([(monobank, 1)]),
+                "a filter names exactly one service",
+            ),
+            (
+                Some(" donatello "),
+                HashMap::from([(donatello, 1)]),
+                "the filter is read trimmed",
+            ),
+            (
+                Some("streamlabs"),
+                HashMap::new(),
+                "a filter naming no shipped service counts nowhere",
+            ),
+        ];
+
+        for (filter, expected, case) in cases {
+            let tally = tally_references(
+                &[],
+                &[donation_trigger(filter)],
+                &sub_actions(),
+                &trigger_kinds(),
+            );
+            let counts: HashMap<IntegrationId, usize> = tally
+                .into_iter()
+                .map(|(id, references)| (id, references.triggers))
+                .collect();
+            assert_eq!(counts, expected, "{case}");
+        }
+    }
 }

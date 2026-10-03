@@ -485,3 +485,432 @@ fn account_line(plain_key: &str, named_key: &str, nickname: Option<String>) -> S
         None => tr!(plain_key),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use forge_donatello::{DONATELLO_CREDENTIAL_ID, DonatelloConfig, DonatelloProvider};
+    use forge_monobank::{MonobankConfig, MonobankProvider, MonobankRateLimits};
+    use forge_platform_core::PlatformEndpoints;
+    use forge_storage::{CredentialId, StorageError};
+    use gpui::TestAppContext;
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::test_support::{install_presentation, runtime, test_backend};
+
+    const SETTLE_ROUNDS: usize = 200;
+    const SAVED_JAR: &str = "jar-saved";
+    const OTHER_JAR: &str = "jar-other";
+    const PASTED: &str = "pasted-token";
+
+    type Build = fn(&Arc<Vault>) -> DonationService;
+
+    #[derive(Default)]
+    struct Vault {
+        bundles: Mutex<HashMap<String, String>>,
+    }
+
+    impl Vault {
+        fn holding(id: &str, bundle: &str) -> Self {
+            let vault = Self::default();
+            vault
+                .bundles
+                .lock()
+                .unwrap()
+                .insert(id.to_owned(), bundle.to_owned());
+            vault
+        }
+
+        fn is_empty(&self) -> bool {
+            self.bundles.lock().unwrap().is_empty()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CredentialsRepo for Vault {
+        async fn store(&self, id: &CredentialId, bundle: &str) -> Result<(), StorageError> {
+            self.bundles
+                .lock()
+                .unwrap()
+                .insert(id.as_str().to_owned(), bundle.to_owned());
+            Ok(())
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            Ok(self.bundles.lock().unwrap().get(id.as_str()).cloned())
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            Ok(self.bundles.lock().unwrap().remove(id.as_str()).is_some())
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            Ok(self
+                .bundles
+                .lock()
+                .unwrap()
+                .keys()
+                .map(CredentialId::new)
+                .collect())
+        }
+
+        async fn last_refresh(
+            &self,
+            _: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            Ok(None)
+        }
+
+        async fn mark_refreshed(&self, _: &CredentialId) -> Result<(), StorageError> {
+            Ok(())
+        }
+    }
+
+    fn saved_monobank() -> Vault {
+        Vault::holding(
+            forge_monobank::MONOBANK_CREDENTIAL_ID,
+            &format!(r#"{{"token":"stored-token","jar_id":"{SAVED_JAR}"}}"#),
+        )
+    }
+
+    fn saved_donatello() -> Vault {
+        Vault::holding(DONATELLO_CREDENTIAL_ID, "stored-token")
+    }
+
+    fn monobank(vault: &Arc<Vault>) -> DonationService {
+        DonationService::Monobank(Arc::new(
+            MonobankProvider::new(
+                MonobankConfig::new(&PlatformEndpoints::default()),
+                Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+                MonobankRateLimits::official(),
+            )
+            .expect("the provider builds offline"),
+        ))
+    }
+
+    fn donatello(vault: &Arc<Vault>) -> DonationService {
+        DonationService::Donatello(Arc::new(
+            DonatelloProvider::new(
+                DonatelloConfig::new(&PlatformEndpoints::default()),
+                Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+                forge_donatello::default_rate_limiter(),
+            )
+            .expect("the provider builds offline"),
+        ))
+    }
+
+    fn settle_until(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        view: &Entity<DonationSettingsView>,
+        done: impl Fn(&DonationSettingsView) -> bool,
+    ) -> bool {
+        (0..SETTLE_ROUNDS).any(|_| {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            view.read_with(cx, |view, _| done(view))
+        })
+    }
+
+    fn open(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        build: Build,
+        vault: &Arc<Vault>,
+    ) -> Entity<DonationSettingsView> {
+        install_presentation(cx);
+        let (settings, _writes) = test_backend();
+        let launch = DonationSettingsLaunch {
+            service: build(vault),
+            credentials: Arc::clone(vault) as Arc<dyn CredentialsRepo>,
+            settings: settings as Arc<dyn SettingsRepo>,
+            rt_handle: rt.handle().clone(),
+        };
+        let view = cx.new(|cx| DonationSettingsView::new(launch, cx));
+        let loaded = settle_until(cx, rt, &view, |view| view.has_token.is_some());
+        assert!(loaded, "the stored token state never loaded");
+        view
+    }
+
+    fn type_token(cx: &mut TestAppContext, view: &Entity<DonationSettingsView>, text: &str) {
+        let token = view.read_with(cx, |view, _| view.token.clone());
+        token.update(cx, |input, cx| {
+            input.set_content(text.to_owned(), cx);
+            cx.emit(InputEvent::Changed(text.to_owned().into()));
+        });
+        cx.run_until_parked();
+    }
+
+    fn jar(id: &str) -> MonobankJar {
+        MonobankJar {
+            id: id.to_owned(),
+            send_id: None,
+            title: None,
+            currency: None,
+            goal: None,
+        }
+    }
+
+    fn jars(ids: &[&str]) -> Vec<MonobankJar> {
+        ids.iter().map(|id| jar(id)).collect()
+    }
+
+    #[gpui::test]
+    fn the_check_button_needs_a_pasted_token_unless_monobank_already_holds_one(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let cases: [(Build, Vault, &str, bool, &str); 5] = [
+            (
+                monobank,
+                saved_monobank(),
+                "",
+                true,
+                "monobank lists the jars of the saved token",
+            ),
+            (
+                monobank,
+                Vault::default(),
+                "",
+                false,
+                "monobank with nothing saved or pasted",
+            ),
+            (
+                monobank,
+                Vault::default(),
+                PASTED,
+                true,
+                "monobank with a pasted token",
+            ),
+            (
+                donatello,
+                saved_donatello(),
+                "",
+                false,
+                "donatello only checks a pasted token",
+            ),
+            (
+                donatello,
+                Vault::default(),
+                "  ",
+                false,
+                "whitespace is not a token",
+            ),
+        ];
+
+        for (build, vault, field, expected, case) in cases {
+            let vault = Arc::new(vault);
+            let view = open(cx, &rt, build, &vault);
+            type_token(cx, &view, field);
+
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.can_check(cx)),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn nothing_can_be_checked_or_saved_while_a_request_runs(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, donatello, &Arc::new(Vault::default()));
+        type_token(cx, &view, PASTED);
+
+        view.update(cx, |view, _| view.busy = Some(Busy::Checking));
+
+        assert_eq!(
+            view.read_with(cx, |view, cx| (view.can_check(cx), view.can_save(cx))),
+            (false, false)
+        );
+    }
+
+    #[gpui::test]
+    fn donatello_can_be_saved_only_with_a_pasted_token(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, donatello, &Arc::new(saved_donatello()));
+
+        for (field, expected) in [("", false), ("   ", false), (PASTED, true)] {
+            type_token(cx, &view, field);
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.can_save(cx)),
+                expected,
+                "{field:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn monobank_can_be_saved_only_when_it_would_change_the_stored_choice(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let cases = [
+            (
+                JarSource::Stored,
+                "",
+                Some(SAVED_JAR),
+                false,
+                "the saved jar again",
+            ),
+            (
+                JarSource::Stored,
+                "",
+                Some(OTHER_JAR),
+                true,
+                "another jar of the saved token",
+            ),
+            (JarSource::Stored, "", None, false, "no jar picked"),
+            (
+                JarSource::Pasted,
+                PASTED,
+                Some(SAVED_JAR),
+                true,
+                "a new token for the same jar",
+            ),
+            (
+                JarSource::Pasted,
+                "",
+                Some(OTHER_JAR),
+                false,
+                "pasted jars after the field was emptied",
+            ),
+        ];
+
+        for (source, field, picked, expected, case) in cases {
+            let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+            type_token(cx, &view, field);
+            view.update(cx, |view, cx| {
+                view.apply_jars(source, jars(&[SAVED_JAR, OTHER_JAR]), cx);
+                view.picked_jar = picked.map(str::to_owned);
+            });
+
+            assert_eq!(
+                view.read_with(cx, |view, cx| view.can_save(cx)),
+                expected,
+                "{case}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn monobank_without_a_saved_token_cannot_save_a_stored_listing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, monobank, &Arc::new(Vault::default()));
+
+        view.update(cx, |view, cx| {
+            view.apply_jars(JarSource::Stored, jars(&[OTHER_JAR]), cx);
+        });
+
+        assert!(!view.read_with(cx, |view, cx| view.can_save(cx)));
+    }
+
+    #[gpui::test]
+    fn loading_jars_preselects_the_saved_jar_or_the_only_one(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let cases = [
+            (
+                &[OTHER_JAR, SAVED_JAR][..],
+                Some(SAVED_JAR),
+                "the saved jar stays selected",
+            ),
+            (
+                &[OTHER_JAR][..],
+                Some(OTHER_JAR),
+                "a single jar is selected for the user",
+            ),
+            (
+                &[OTHER_JAR, "jar-third"][..],
+                None,
+                "a choice between unsaved jars is left open",
+            ),
+        ];
+
+        for (listed, expected, case) in cases {
+            let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+
+            view.update(cx, |view, cx| {
+                view.apply_jars(JarSource::Stored, jars(listed), cx)
+            });
+
+            view.read_with(cx, |view, _| {
+                assert_eq!(view.picked_jar.as_deref(), expected, "{case}");
+                assert_eq!(view.outcome, None, "{case}");
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn an_account_without_jars_is_reported_and_leaves_nothing_selected(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+        view.update(cx, |view, _| view.busy = Some(Busy::LoadingJars));
+
+        view.update(cx, |view, cx| {
+            view.apply_jars(JarSource::Stored, Vec::new(), cx)
+        });
+
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.picked_jar, None);
+            assert_eq!(view.busy, None);
+            assert_eq!(
+                view.outcome,
+                Some(Outcome::Problem(tr!("donation_jar_none")))
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn editing_the_token_drops_jars_loaded_from_the_pasted_one_only(cx: &mut TestAppContext) {
+        let rt = runtime();
+        for (source, kept) in [(JarSource::Pasted, false), (JarSource::Stored, true)] {
+            let view = open(cx, &rt, monobank, &Arc::new(saved_monobank()));
+            type_token(cx, &view, PASTED);
+            view.update(cx, |view, cx| {
+                view.apply_jars(source, jars(&[OTHER_JAR]), cx);
+            });
+
+            type_token(cx, &view, "pasted-token-edited");
+
+            view.read_with(cx, |view, _| {
+                assert_eq!(!view.jars.is_empty(), kept, "{source:?}");
+                assert_eq!(view.picked_jar.is_some(), kept, "{source:?}");
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn confirming_a_removal_nobody_asked_for_removes_nothing(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let vault = Arc::new(saved_donatello());
+        let view = open(cx, &rt, donatello, &vault);
+
+        view.update(cx, |view, cx| view.confirm_remove(cx));
+        settle_until(cx, &rt, &view, |_| false);
+
+        assert!(!vault.is_empty(), "the stored token was deleted");
+        view.read_with(cx, |view, _| {
+            assert_eq!(view.has_token, Some(true));
+            assert_eq!(view.busy, None);
+        });
+    }
+
+    #[gpui::test]
+    fn a_requested_removal_once_confirmed_forgets_the_token_and_the_jar(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let vault = Arc::new(saved_monobank());
+        let view = open(cx, &rt, monobank, &vault);
+
+        view.update(cx, |view, cx| {
+            view.request_remove(cx);
+            view.confirm_remove(cx);
+        });
+        let removed = settle_until(cx, &rt, &view, |view| view.has_token == Some(false));
+
+        assert!(removed, "the removal never finished");
+        assert!(vault.is_empty());
+        view.read_with(cx, |view, _| assert_eq!(view.shown_jar(), None));
+    }
+}

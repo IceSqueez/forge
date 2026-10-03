@@ -21,4 +21,5 @@ thiserror = { workspace = true }
 forge-platform-twitch = { path = "../forge-platform-twitch" }
 forge-platform-kick = { path = "../forge-platform-kick" }
 forge-platform-youtube = { path = "../forge-platform-youtube" }
+forge-runtime = { path = "../forge-runtime" }
 tempfile = { workspace = true }

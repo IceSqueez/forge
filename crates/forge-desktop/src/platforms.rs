@@ -123,4 +123,68 @@ mod tests {
             assert_eq!(connectivity.tally_enabled(enabled(on)), expected, "{case}");
         }
     }
+
+    fn donatello() -> IntegrationId {
+        IntegrationId::new("donatello")
+    }
+
+    #[test]
+    fn a_service_reports_a_change_only_when_its_connection_flips() {
+        let mut connectivity = PlatformConnectivity::new();
+
+        let steps = [
+            (
+                false,
+                false,
+                "first sighting while offline changes nothing visible",
+            ),
+            (true, true, "coming online is a change"),
+            (true, false, "repeating the same state is not a change"),
+            (false, true, "dropping offline is a change"),
+            (false, false, "staying offline is not a change"),
+        ];
+
+        for (connected, changed, case) in steps {
+            assert_eq!(
+                connectivity.set_service_connected(&donatello(), connected),
+                changed,
+                "{case}"
+            );
+            assert_eq!(
+                connectivity.is_integration_connected(&donatello()),
+                connected,
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_first_sighting_while_online_is_reported_as_a_change() {
+        let mut connectivity = PlatformConnectivity::new();
+
+        assert!(connectivity.set_service_connected(&donatello(), true));
+    }
+
+    #[test]
+    fn a_service_never_reported_counts_as_offline() {
+        let mut connectivity = PlatformConnectivity::new();
+        connectivity.set_service_connected(&IntegrationId::new("monobank"), true);
+
+        assert!(!connectivity.is_integration_connected(&donatello()));
+    }
+
+    #[test]
+    fn a_roster_integration_answers_from_the_roster_not_from_service_reports() {
+        let twitch = IntegrationId::new("twitch");
+        let mut connectivity = PlatformConnectivity::new();
+
+        connectivity.set_service_connected(&twitch, true);
+        assert!(
+            !connectivity.is_integration_connected(&twitch),
+            "a service report must not override the roster"
+        );
+
+        connectivity.set_connected(Integration::Twitch, true);
+        assert!(connectivity.is_integration_connected(&twitch));
+    }
 }

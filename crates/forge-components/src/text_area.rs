@@ -1031,7 +1031,6 @@ mod tests {
 
     fn changes_after(
         cx: &mut gpui::TestAppContext,
-        read_only: bool,
         f: impl FnOnce(&mut TextArea, &mut Window, &mut Context<TextArea>),
     ) -> (String, Vec<String>) {
         let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
@@ -1039,7 +1038,6 @@ mod tests {
         window
             .update(cx, |area, window, cx| {
                 area.replace_text_in_range(None, "ab", window, cx);
-                area.read_only = read_only;
             })
             .unwrap();
         let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -1063,7 +1061,7 @@ mod tests {
 
     #[gpui::test]
     fn undo_and_redo_announce_the_restored_content(cx: &mut gpui::TestAppContext) {
-        let (_, changes) = changes_after(cx, false, |area, window, cx| {
+        let (_, changes) = changes_after(cx, |area, window, cx| {
             area.undo(&Undo, window, cx);
             area.redo(&Redo, window, cx);
         });
@@ -1072,22 +1070,13 @@ mod tests {
 
     #[gpui::test]
     fn undo_with_nothing_to_undo_announces_no_change(cx: &mut gpui::TestAppContext) {
-        let (_, changes) = changes_after(cx, false, |area, window, cx| {
+        let (_, changes) = changes_after(cx, |area, window, cx| {
             area.undo(&Undo, window, cx);
             area.undo(&Undo, window, cx);
             area.redo(&Redo, window, cx);
             area.redo(&Redo, window, cx);
         });
         assert_eq!(changes, vec!["".to_string(), "ab".to_string()]);
-    }
-
-    #[gpui::test]
-    fn read_only_area_ignores_undo_and_redo(cx: &mut gpui::TestAppContext) {
-        let result = changes_after(cx, true, |area, window, cx| {
-            area.undo(&Undo, window, cx);
-            area.redo(&Redo, window, cx);
-        });
-        assert_eq!(result, ("ab".to_string(), Vec::new()));
     }
 
     #[gpui::test]

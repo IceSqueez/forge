@@ -1538,10 +1538,14 @@ mod tests {
             .map(|id| (REWARD_FIELD.to_owned(), Variant::String(id.to_owned())))
             .into_iter()
             .collect();
+        launch_with(specs(), config)
+    }
+
+    fn launch_with(specs: Vec<FormField>, config: SubActionConfig) -> SubFormLaunch {
         SubFormLaunch {
             kind_id: "twitch.channel_points.enable_reward".to_owned(),
             target: SubFormTarget::Add,
-            specs: specs(),
+            specs,
             config,
             name_value: String::new(),
             condition_value: String::new(),
@@ -1566,6 +1570,17 @@ mod tests {
         &'a mut VisualTestContext,
         tokio::runtime::Runtime,
     ) {
+        open_launch(cx, launch(stored_reward))
+    }
+
+    fn open_launch(
+        cx: &mut TestAppContext,
+        launch: SubFormLaunch,
+    ) -> (
+        Entity<EditSubActionForm>,
+        &mut VisualTestContext,
+        tokio::runtime::Runtime,
+    ) {
         cx.update(|cx| {
             cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
             bind_picker_keys(cx);
@@ -1573,7 +1588,6 @@ mod tests {
         });
         let rt = runtime();
         let handle = rt.handle().clone();
-        let launch = launch(stored_reward);
         let (form, vcx) =
             cx.add_window_view(move |_window, cx| EditSubActionForm::new(launch, handle, cx));
         vcx.run_until_parked();
@@ -1665,5 +1679,88 @@ mod tests {
         type_into_picker(&form, vcx, MODE_FIELD, "sideways");
 
         assert_ne!(select(&form, vcx, MODE_FIELD).0, "sideways");
+    }
+
+    const CODE_FIELD: &str = "body";
+    const GATE_FIELD: &str = "use_body";
+    const RHAI_BODY: &str = "let n = 1;\r\nif n > 0 {\n\tprint(\"привіт 🚀\");\n}\n";
+    const JSON_BODY: &str = "{\n  \"items\": [1, 2.5, null],\n  \"name\": \"ü\"\n}";
+
+    fn code_spec(language: CodeLanguage) -> FormField {
+        FormField::Code {
+            key: CODE_FIELD,
+            label: "Body",
+            language,
+        }
+    }
+
+    fn committed_overrides(
+        specs: Vec<FormField>,
+        config: SubActionConfig,
+        cx: &mut TestAppContext,
+    ) -> Vec<(String, Variant)> {
+        let (form, vcx, _rt) = open_launch(cx, launch_with(specs, config));
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = vcx.update(|_window, cx| {
+            cx.subscribe(&form, move |_, event: &SubFormEvent, _| {
+                if let SubFormEvent::Commit(commit) = event {
+                    *sink.borrow_mut() = Some(commit.overrides.clone());
+                }
+            })
+        });
+        vcx.update(|_window, cx| form.update(cx, |form, cx| form.submit(cx)));
+        heard.borrow_mut().take().unwrap()
+    }
+
+    fn override_for<'a>(overrides: &'a [(String, Variant)], key: &str) -> Option<&'a Variant> {
+        overrides.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+    }
+
+    #[gpui::test]
+    fn code_field_commits_the_stored_body_verbatim(cx: &mut TestAppContext) {
+        for (language, stored, expected) in [
+            (CodeLanguage::Rhai, Some(RHAI_BODY), RHAI_BODY),
+            (CodeLanguage::Json, Some(JSON_BODY), JSON_BODY),
+            (CodeLanguage::Rhai, None, ""),
+            (CodeLanguage::Json, Some(""), ""),
+        ] {
+            let config: SubActionConfig = stored
+                .map(|body| (CODE_FIELD.to_owned(), Variant::String(body.to_owned())))
+                .into_iter()
+                .collect();
+            let overrides = committed_overrides(vec![code_spec(language)], config, cx);
+            assert_eq!(
+                override_for(&overrides, CODE_FIELD),
+                Some(&Variant::String(expected.to_owned())),
+                "{language:?} stored {stored:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn gated_code_field_commits_only_while_its_toggle_is_on(cx: &mut TestAppContext) {
+        for (toggle, expected) in [
+            (true, Some(Variant::String(RHAI_BODY.to_owned()))),
+            (false, None),
+        ] {
+            let spec = FormField::Optional {
+                key: GATE_FIELD,
+                label: "Use body",
+                inner: Box::new(code_spec(CodeLanguage::Rhai)),
+            };
+            let config: SubActionConfig = [
+                (GATE_FIELD.to_owned(), Variant::Bool(toggle)),
+                (CODE_FIELD.to_owned(), Variant::String(RHAI_BODY.to_owned())),
+            ]
+            .into_iter()
+            .collect();
+            let overrides = committed_overrides(vec![spec], config, cx);
+            assert_eq!(
+                override_for(&overrides, CODE_FIELD),
+                expected.as_ref(),
+                "toggle {toggle}"
+            );
+        }
     }
 }

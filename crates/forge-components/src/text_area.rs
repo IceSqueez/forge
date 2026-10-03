@@ -9,9 +9,7 @@ use gpui::{
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
-use crate::highlight::Language;
 use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
-use crate::syntax_color::syntax_runs;
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
 use crate::text_input::InputEvent;
@@ -22,11 +20,6 @@ use crate::tokens::{
 const KEY_CONTEXT: &str = "ForgeTextArea";
 
 const DEFAULT_AREA_HEIGHT: Pixels = px(130.0);
-
-const GUTTER_W: Pixels = px(48.0);
-const GUTTER_PAD_R: Pixels = px(8.0);
-const GUTTER_ACCENT_W: Pixels = px(2.0);
-const GUTTER_MARK: &str = "\u{25cf}";
 
 actions!(
     forge_text_area,
@@ -136,13 +129,8 @@ pub struct TextArea {
     density: Density,
     font_size: Pixels,
     font_family: SharedString,
-    read_only: bool,
     height: Pixels,
     on_surface: bool,
-    syntax: Option<Language>,
-    gutter: bool,
-    gutter_marks: Vec<usize>,
-    fill: bool,
     follow_caret: bool,
     caret: CaretBlink,
     invalid: bool,
@@ -171,13 +159,8 @@ impl TextArea {
             density: Density::Cozy,
             font_size: FONT_XS,
             font_family: body_family(),
-            read_only: false,
             height: DEFAULT_AREA_HEIGHT,
             on_surface: false,
-            syntax: None,
-            gutter: false,
-            gutter_marks: Vec::new(),
-            fill: false,
             follow_caret: true,
             caret: CaretBlink::new(),
             invalid: false,
@@ -204,38 +187,9 @@ impl TextArea {
         self
     }
 
-    pub fn json_highlight(mut self) -> Self {
-        self.syntax = Some(Language::Json);
-        self
-    }
-
-    pub fn rhai_highlight(mut self) -> Self {
-        self.syntax = Some(Language::Rhai);
-        self
-    }
-
     pub fn on_surface(mut self) -> Self {
         self.on_surface = true;
         self
-    }
-
-    pub fn with_gutter(mut self) -> Self {
-        self.gutter = true;
-        self
-    }
-
-    pub fn fill(mut self) -> Self {
-        self.fill = true;
-        self
-    }
-
-    pub fn set_gutter_marks(&mut self, lines: Vec<usize>, cx: &mut Context<Self>) {
-        self.gutter_marks = lines;
-        cx.notify();
-    }
-
-    fn gutter_width(&self) -> Pixels {
-        if self.gutter { GUTTER_W } else { px(0.0) }
     }
 
     pub fn content(&self) -> &str {
@@ -332,27 +286,18 @@ impl TextArea {
     }
 
     fn insert_newline(&mut self, _: &InsertNewline, _: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only {
-            return;
-        }
         self.preferred_x = None;
         self.buffer.insert("\n", EditKind::Standalone);
         self.edited(cx);
     }
 
     fn backspace(&mut self, _: &Backspace, _: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only {
-            return;
-        }
         self.preferred_x = None;
         self.buffer.delete_backward();
         self.edited(cx);
     }
 
     fn delete(&mut self, _: &Delete, _: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only {
-            return;
-        }
         self.preferred_x = None;
         self.buffer.delete_forward();
         self.edited(cx);
@@ -365,9 +310,6 @@ impl TextArea {
     }
 
     fn cut(&mut self, _: &Cut, _: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only {
-            return;
-        }
         let Some(text) = self.buffer.selected_text() else {
             return;
         };
@@ -378,9 +320,6 @@ impl TextArea {
     }
 
     fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only {
-            return;
-        }
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             self.preferred_x = None;
             self.buffer.insert(&text, EditKind::Standalone);
@@ -389,9 +328,6 @@ impl TextArea {
     }
 
     fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only {
-            return;
-        }
         if self.buffer.undo() {
             self.preferred_x = None;
             self.edited(cx);
@@ -399,9 +335,6 @@ impl TextArea {
     }
 
     fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.read_only {
-            return;
-        }
         if self.buffer.redo() {
             self.preferred_x = None;
             self.edited(cx);
@@ -514,7 +447,7 @@ impl TextArea {
         else {
             return 0;
         };
-        let x = position.x - bounds.left() - self.gutter_width();
+        let x = position.x - bounds.left();
         let mut y = position.y - bounds.top() + self.scroll_offset;
         if y < px(0.0) {
             y = px(0.0);
@@ -575,9 +508,6 @@ impl EntityInputHandler for TextArea {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.read_only {
-            return;
-        }
         self.buffer.replace_in_utf16_range(range_utf16, new_text);
         self.edited(cx);
     }
@@ -590,9 +520,6 @@ impl EntityInputHandler for TextArea {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.read_only {
-            return;
-        }
         self.buffer.replace_and_mark_in_utf16_range(
             range_utf16,
             new_text,
@@ -612,14 +539,13 @@ impl EntityInputHandler for TextArea {
         let range = range_from_utf16(self.buffer.as_str(), &range_utf16);
         let start = layout.point_for_offset(range.start)?;
         let lh = layout.line_height;
-        let gutter_w = self.gutter_width();
         Some(Bounds::from_corners(
             point(
-                bounds.left() + gutter_w + start.x,
+                bounds.left() + start.x,
                 bounds.top() + start.y - self.scroll_offset,
             ),
             point(
-                bounds.left() + gutter_w + start.x,
+                bounds.left() + start.x,
                 bounds.top() + start.y - self.scroll_offset + lh,
             ),
         ))
@@ -678,24 +604,15 @@ fn build_runs(
     selection: &Range<usize>,
     selection_bg: Hsla,
     marked_range: Option<&Range<usize>>,
-    syntax: Option<&[(usize, Hsla)]>,
 ) -> Vec<TextRun> {
-    let make = |len: usize, color: Hsla| TextRun {
-        len,
-        font: font.clone(),
-        color,
+    let mut runs = vec![TextRun {
+        len: text.len(),
+        font,
+        color: base_color,
         background_color: None,
         underline: None,
         strikethrough: None,
-    };
-
-    let mut runs: Vec<TextRun> = match syntax {
-        Some(spans) if !spans.is_empty() => spans
-            .iter()
-            .map(|(len, color)| make(*len, *color))
-            .collect(),
-        _ => vec![make(text.len(), base_color)],
-    };
+    }];
 
     if let Some(marked) = marked_range {
         apply_range(&mut runs, marked.start, marked.end, |run| {
@@ -786,13 +703,6 @@ impl Element for AreaElement {
         } else {
             selected_range.clone()
         };
-        let syntax_runs = if content.is_empty() {
-            None
-        } else {
-            input
-                .syntax
-                .map(|language| syntax_runs(language, &content, &palette))
-        };
         let runs = build_runs(
             &display_text,
             base_color,
@@ -800,14 +710,11 @@ impl Element for AreaElement {
             &selection,
             with_alpha(palette.brand, 0.25).into(),
             marked_range.as_ref(),
-            syntax_runs.as_deref(),
         );
 
-        let gutter_w = if input.gutter { GUTTER_W } else { px(0.0) };
         let font_size = style.font_size.to_pixels(window.rem_size());
-        let text_width = bounds.size.width - gutter_w;
-        let wrap_width = if text_width > px(0.0) {
-            Some(text_width)
+        let wrap_width = if bounds.size.width > px(0.0) {
+            Some(bounds.size.width)
         } else {
             None
         };
@@ -867,7 +774,7 @@ impl Element for AreaElement {
             fill(
                 Bounds::new(
                     point(
-                        bounds.left() + gutter_w + caret.x,
+                        bounds.left() + caret.x,
                         bounds.top() + caret.y - scroll_offset,
                     ),
                     size(px(1.5), line_height),
@@ -905,20 +812,9 @@ impl Element for AreaElement {
             return;
         };
 
-        let (gutter, gutter_marks, faint, warning) = {
-            let input = self.input.read(cx);
-            (
-                input.gutter,
-                input.gutter_marks.clone(),
-                input.palette.text_faint,
-                input.palette.warning,
-            )
-        };
-        let gutter_w = if gutter { GUTTER_W } else { px(0.0) };
-
         for (i, line) in layout.lines.iter().enumerate() {
             let origin = point(
-                bounds.left() + gutter_w,
+                bounds.left(),
                 bounds.top() + layout.para_tops[i] - scroll_offset,
             );
             let _ = line.paint_background(
@@ -937,51 +833,6 @@ impl Element for AreaElement {
                 window,
                 cx,
             );
-        }
-
-        if gutter {
-            let style = window.text_style();
-            let font = style.font();
-            let font_size = style.font_size.to_pixels(window.rem_size());
-            for i in 0..layout.para_tops.len() {
-                let y = bounds.top() + layout.para_tops[i] - scroll_offset;
-                let marked = gutter_marks.contains(&i);
-                let (label, color): (SharedString, Hsla) = if marked {
-                    window.paint_quad(fill(
-                        Bounds::new(
-                            point(bounds.left(), y),
-                            size(GUTTER_ACCENT_W, layout.line_height),
-                        ),
-                        warning,
-                    ));
-                    (GUTTER_MARK.into(), warning.into())
-                } else {
-                    ((i + 1).to_string().into(), faint.into())
-                };
-                let run = TextRun {
-                    len: label.len(),
-                    font: font.clone(),
-                    color,
-                    background_color: None,
-                    underline: None,
-                    strikethrough: None,
-                };
-                let shaped = window.text_system().shape_line(
-                    label,
-                    font_size,
-                    std::slice::from_ref(&run),
-                    None,
-                );
-                let x = bounds.left() + GUTTER_W - GUTTER_PAD_R - shaped.width();
-                let _ = shaped.paint(
-                    point(x, y),
-                    layout.line_height,
-                    TextAlign::Left,
-                    None,
-                    window,
-                    cx,
-                );
-            }
         }
 
         if focus_handle.is_focused(window)
@@ -1011,9 +862,7 @@ impl Render for TextArea {
         self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);
         set_caret_blinking(self, focused && window.is_visible(), cx);
-        let border_color = if self.read_only {
-            self.palette.disabled
-        } else if focused {
+        let border_color = if focused {
             self.palette.border_active
         } else {
             self.palette.border_input
@@ -1022,11 +871,6 @@ impl Render for TextArea {
             self.palette.random
         } else {
             border_color
-        };
-        let text_color = if self.read_only {
-            self.palette.text_muted
-        } else {
-            self.palette.text_primary
         };
         let surface = if self.on_surface {
             self.palette.elevated
@@ -1066,23 +910,15 @@ impl Render for TextArea {
             .overflow_hidden()
             .font_family(self.font_family.clone())
             .text_size(self.font_size)
-            .text_color(text_color)
-            .line_height(self.font_size * 1.5);
-        let field = if self.fill {
-            field
-                .flex_1()
-                .min_h_0()
-                .py(spacing(Spacing::Xs, self.density))
-        } else {
-            field
-                .h(self.height)
-                .px(spacing(Spacing::Sm, self.density))
-                .py(spacing(Spacing::Xs, self.density))
-                .bg(surface)
-                .border(BORDER_THIN)
-                .border_color(border_color)
-                .rounded(radius(Radius::Md))
-        };
+            .text_color(self.palette.text_primary)
+            .line_height(self.font_size * 1.5)
+            .h(self.height)
+            .px(spacing(Spacing::Sm, self.density))
+            .py(spacing(Spacing::Xs, self.density))
+            .bg(surface)
+            .border(BORDER_THIN)
+            .border_color(border_color)
+            .rounded(radius(Radius::Md));
         field.child(AreaElement { input: cx.entity() })
     }
 }

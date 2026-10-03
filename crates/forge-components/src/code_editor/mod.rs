@@ -21,7 +21,7 @@ use crate::text_area::{
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
 use crate::text_input::InputEvent;
-use crate::tokens::{FONT_XS, mono_family};
+use crate::tokens::{BORDER_THIN, FONT_XS, Radius, mono_family, radius};
 
 use element::{CodeEditorElement, PAD_Y};
 use layout::{Geometry, Lines};
@@ -51,6 +51,7 @@ pub struct CodeEditor {
     font_size: Pixels,
     line_height: Pixels,
     gutter_marks: Vec<usize>,
+    field_height: Option<Pixels>,
     last_bounds: Option<Bounds<Pixels>>,
     text_left: Pixels,
     scroll_offset: Pixels,
@@ -84,6 +85,7 @@ impl CodeEditor {
             font_size: FONT_XS,
             line_height: FONT_XS * LINE_HEIGHT_RATIO,
             gutter_marks: Vec::new(),
+            field_height: None,
             last_bounds: None,
             text_left: px(0.0),
             scroll_offset: px(0.0),
@@ -107,6 +109,11 @@ impl CodeEditor {
 
     pub fn with_line_height(mut self, line_height: Pixels) -> Self {
         self.line_height = line_height;
+        self
+    }
+
+    pub fn with_field_height(mut self, height: Pixels) -> Self {
+        self.field_height = Some(height);
         self
     }
 
@@ -158,6 +165,13 @@ impl CodeEditor {
 
     pub fn focus(&self, window: &mut Window, cx: &mut App) {
         window.focus(&self.focus_handle, cx);
+    }
+
+    fn gutter_corner_radius(&self) -> Pixels {
+        match self.field_height {
+            Some(_) => radius(Radius::Md) - BORDER_THIN,
+            None => px(0.0),
+        }
     }
 
     fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
@@ -509,9 +523,10 @@ impl Render for CodeEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focus = self.focus_handle.clone();
         self.caret.watch(&focus, window, cx);
-        set_caret_blinking(self, focus.is_focused(window) && window.is_visible(), cx);
+        let focused = focus.is_focused(window);
+        set_caret_blinking(self, focused && window.is_visible(), cx);
 
-        div()
+        let editor = div()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
@@ -541,15 +556,26 @@ impl Render for CodeEditor {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_scroll_wheel(cx.listener(Self::on_scroll_wheel))
-            .flex_1()
-            .min_h(px(0.0))
             .w_full()
             .overflow_hidden()
-            .bg(self.palette.base)
             .font_family(mono_family())
             .text_size(self.font_size)
             .text_color(self.palette.text_primary)
-            .line_height(self.line_height)
-            .child(CodeEditorElement::new(cx.entity()))
+            .line_height(self.line_height);
+        let editor = match self.field_height {
+            Some(height) => editor
+                .h(height)
+                .flex_none()
+                .bg(self.palette.shell)
+                .border(BORDER_THIN)
+                .border_color(if focused {
+                    self.palette.border_active
+                } else {
+                    self.palette.border_input
+                })
+                .rounded(radius(Radius::Md)),
+            None => editor.flex_1().min_h(px(0.0)).bg(self.palette.base),
+        };
+        editor.child(CodeEditorElement::new(cx.entity()))
     }
 }

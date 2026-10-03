@@ -2,12 +2,13 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
+use forge_components::highlight::Language;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, MenuItem, ModalSize,
-    OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextArea, TextInput,
-    badge, body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
-    inline_edit, install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
+    BORDER_THIN, BreadcrumbCrumb, CodeEditor, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS,
+    FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, MenuItem, ModalSize,
+    OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextInput, badge,
+    body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon, inline_edit,
+    install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
@@ -39,6 +40,7 @@ use crate::screen::Screen;
 use crate::sidebar::NavRequested;
 
 const LEFT_PANE_W: Pixels = px(200.0);
+const CODE_LINE_HEIGHT: Pixels = px(19.8);
 const LIST_MIN_W: Pixels = px(180.0);
 const LIST_MAX_W: Pixels = px(360.0);
 const STRIPE_W: Pixels = px(2.0);
@@ -519,7 +521,7 @@ pub struct ScriptEditorView {
     kind_menu: Option<KindMenu>,
     contract_error: Option<SharedString>,
 
-    code_input: Entity<TextArea>,
+    code_input: Entity<CodeEditor>,
     _code_sub: Subscription,
 
     console: VecDeque<ConsoleLine>,
@@ -553,13 +555,10 @@ impl ScriptEditorView {
         let palette = cx.palette();
 
         let code_input = cx.new(|cx| {
-            TextArea::new("// write your rhai script", cx)
+            CodeEditor::new(Language::Rhai, "// write your rhai script", cx)
                 .with_palette(palette)
-                .mono()
-                .rhai_highlight()
-                .with_gutter()
                 .with_font_size(FONT_XS)
-                .fill()
+                .with_line_height(CODE_LINE_HEIGHT)
         });
         let code_sub = cx.subscribe(&code_input, |this, _area, event: &InputEvent, cx| {
             if let InputEvent::Changed(_) = event {

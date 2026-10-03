@@ -2,9 +2,9 @@ use std::ops::{Range, RangeInclusive};
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, Element, ElementId, ElementInputHandler, Entity, Font, GlobalElementId, Hsla,
-    IntoElement, LayoutId, Pixels, Point, ShapedLine, SharedString, Style, TextAlign, TextRun,
-    Window, fill, point, px, relative, size,
+    App, Bounds, Corners, Element, ElementId, ElementInputHandler, Entity, Font, GlobalElementId,
+    Hsla, IntoElement, LayoutId, Pixels, Point, ShapedLine, SharedString, Style, TextAlign,
+    TextRun, Window, fill, point, px, relative, size,
 };
 
 use super::CodeEditor;
@@ -41,6 +41,7 @@ pub(super) struct Frame {
     palette: ForgePalette,
     line_height: Pixels,
     gutter: Bounds<Pixels>,
+    gutter_corner_radius: Pixels,
     band: Option<Bounds<Pixels>>,
     selection: Vec<Bounds<Pixels>>,
     underlines: Vec<Bounds<Pixels>>,
@@ -173,6 +174,7 @@ impl CodeEditor {
             palette: self.palette,
             line_height,
             gutter: Bounds::new(bounds.origin, size(gutter_width, view_height)),
+            gutter_corner_radius: self.gutter_corner_radius(),
             band,
             selection: self.range_rows(&painted, self.buffer.selected_range(), &viewport, true),
             underlines: self
@@ -443,7 +445,12 @@ impl Element for CodeEditorElement {
 
         let palette = frame.palette;
         let line_height = frame.line_height;
-        window.paint_quad(fill(frame.gutter, palette.elevated));
+        window.paint_quad(fill(frame.gutter, palette.elevated).corner_radii(Corners {
+            top_left: frame.gutter_corner_radius,
+            top_right: px(0.0),
+            bottom_right: px(0.0),
+            bottom_left: frame.gutter_corner_radius,
+        }));
         window.paint_quad(fill(
             Bounds::new(
                 point(frame.gutter.right() - BORDER_THIN, frame.gutter.top()),

@@ -4,9 +4,10 @@ use crate::async_bridge;
 use crate::config_field_label::localized_label;
 use crate::config_form::dependent_options;
 use crate::presentation::ActivePresentation;
+use forge_components::highlight::Language;
 use forge_components::{
-    BORDER_THIN, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, FONT_SM, FONT_XS,
-    FONT_XXS, InputEvent, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing,
+    BORDER_THIN, CodeEditor, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, FONT_SM,
+    FONT_XS, FONT_XXS, InputEvent, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing,
     anchored_popover, body_family, drive_overlay_focus, dropdown, field_label,
     ghost_button_with_icon, modal, mono_family, primary_button, radius, secondary_button, spacing,
     toggle,
@@ -51,8 +52,14 @@ enum SubFormField {
         key: String,
         label: String,
         gate: Option<String>,
-        syntax: Option<CodeLanguage>,
         area: Entity<TextArea>,
+    },
+    Code {
+        key: String,
+        label: String,
+        gate: Option<String>,
+        language: CodeLanguage,
+        editor: Entity<CodeEditor>,
     },
     Bool {
         key: String,
@@ -696,48 +703,38 @@ impl EditSubActionForm {
                     ));
                 }
                 SubFormField::Area {
+                    label, gate, area, ..
+                } => {
+                    if !gate_on(gate) {
+                        continue;
+                    }
+                    grid_items.push((
+                        false,
+                        multiline_field(label, None, area.clone().into_any_element(), palette),
+                    ));
+                }
+                SubFormField::Code {
                     label,
                     gate,
-                    syntax,
-                    area,
+                    language,
+                    editor,
                     ..
                 } => {
                     if !gate_on(gate) {
                         continue;
                     }
-                    let lang_tag = syntax.map(|lang| match lang {
+                    let tag = match language {
                         CodeLanguage::Rhai => "rhai",
                         CodeLanguage::Json => "json",
-                    });
-                    let mut header = div()
-                        .flex()
-                        .items_center()
-                        .gap(spacing(Spacing::Xs, Density::Cozy))
-                        .child(
-                            div()
-                                .font_family(mono_family())
-                                .text_size(FONT_XXS)
-                                .text_color(palette.text_muted)
-                                .child(label.clone()),
-                        );
-                    if let Some(tag) = lang_tag {
-                        header = header.child(
-                            div()
-                                .font_family(mono_family())
-                                .text_size(FONT_XXS)
-                                .text_color(palette.text_muted)
-                                .child(tag),
-                        );
-                    }
+                    };
                     grid_items.push((
                         false,
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(spacing(Spacing::Xxs, Density::Cozy))
-                            .child(header)
-                            .child(area.clone())
-                            .into_any_element(),
+                        multiline_field(
+                            label,
+                            Some(tag),
+                            editor.clone().into_any_element(),
+                            palette,
+                        ),
                     ));
                 }
                 SubFormField::Bool {
@@ -1064,6 +1061,7 @@ fn field_gate(field: &SubFormField) -> Option<&String> {
     match field {
         SubFormField::Input { gate, .. }
         | SubFormField::Area { gate, .. }
+        | SubFormField::Code { gate, .. }
         | SubFormField::Bool { gate, .. }
         | SubFormField::Select { gate, .. } => gate.as_ref(),
         SubFormField::Hint { .. } => None,
@@ -1092,6 +1090,10 @@ fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
         SubFormField::Area { key, area, .. } => Some((
             key.clone(),
             Variant::String(area.read(cx).content().to_owned()),
+        )),
+        SubFormField::Code { key, editor, .. } => Some((
+            key.clone(),
+            Variant::String(editor.read(cx).content().to_owned()),
         )),
         SubFormField::Bool { key, value, .. } => Some((key.clone(), Variant::Bool(*value))),
         SubFormField::Select { key, selected, .. } => {
@@ -1252,24 +1254,15 @@ fn build_area_field(
     key: &str,
     label: &str,
     gate: Option<String>,
-    syntax: Option<CodeLanguage>,
     config: &SubActionConfig,
     palette: ForgePalette,
     cx: &mut Context<EditSubActionForm>,
 ) -> SubFormField {
-    let seed = config
-        .get(key)
-        .map(forge_types::display_scalar)
-        .unwrap_or_default();
+    let seed = config_seed(config, key);
     let area = cx.new(|cx| {
         let mut area = TextArea::new("", cx)
             .with_palette(palette)
             .with_height(SUB_AREA_FIELD_H);
-        area = match syntax {
-            Some(CodeLanguage::Rhai) => area.rhai_highlight().with_gutter().mono(),
-            Some(CodeLanguage::Json) => area.json_highlight().with_gutter().mono(),
-            None => area,
-        };
         if !seed.is_empty() {
             area.set_content(seed, cx);
         }
@@ -1279,9 +1272,78 @@ fn build_area_field(
         key: key.to_owned(),
         label: label.to_owned(),
         gate,
-        syntax,
         area,
     }
+}
+
+fn build_code_field(
+    key: &str,
+    label: &str,
+    gate: Option<String>,
+    language: CodeLanguage,
+    config: &SubActionConfig,
+    palette: ForgePalette,
+    cx: &mut Context<EditSubActionForm>,
+) -> SubFormField {
+    let seed = config_seed(config, key);
+    let editor = cx.new(|cx| {
+        let mut editor = CodeEditor::new(highlight_language(language), "", cx)
+            .with_palette(palette)
+            .with_field_height(SUB_AREA_FIELD_H);
+        if !seed.is_empty() {
+            editor.set_content(seed, cx);
+        }
+        editor
+    });
+    SubFormField::Code {
+        key: key.to_owned(),
+        label: label.to_owned(),
+        gate,
+        language,
+        editor,
+    }
+}
+
+fn config_seed(config: &SubActionConfig, key: &str) -> String {
+    config
+        .get(key)
+        .map(forge_types::display_scalar)
+        .unwrap_or_default()
+}
+
+fn highlight_language(language: CodeLanguage) -> Language {
+    match language {
+        CodeLanguage::Rhai => Language::Rhai,
+        CodeLanguage::Json => Language::Json,
+    }
+}
+
+fn multiline_field(
+    label: &str,
+    tag: Option<&'static str>,
+    control: AnyElement,
+    palette: &ForgePalette,
+) -> AnyElement {
+    let caption = |text: SharedString| {
+        div()
+            .font_family(mono_family())
+            .text_size(FONT_XXS)
+            .text_color(palette.text_muted)
+            .child(text)
+    };
+    let header = div()
+        .flex()
+        .items_center()
+        .gap(spacing(Spacing::Xs, Density::Cozy))
+        .child(caption(label.to_owned().into()))
+        .children(tag.map(|tag| caption(tag.into())));
+    div()
+        .flex()
+        .flex_col()
+        .gap(spacing(Spacing::Xxs, Density::Cozy))
+        .child(header)
+        .child(control)
+        .into_any_element()
 }
 
 fn push_form_field(
@@ -1310,21 +1372,15 @@ fn push_form_field(
             palette,
             cx,
         )),
-        FormField::TextArea { key, label } => out.push(build_area_field(
-            key, label, gate, None, config, palette, cx,
-        )),
+        FormField::TextArea { key, label } => {
+            out.push(build_area_field(key, label, gate, config, palette, cx))
+        }
         FormField::Code {
             key,
             label,
             language,
-        } => out.push(build_area_field(
-            key,
-            label,
-            gate,
-            Some(*language),
-            config,
-            palette,
-            cx,
+        } => out.push(build_code_field(
+            key, label, gate, *language, config, palette, cx,
         )),
         FormField::Integer { key, label, .. } | FormField::Slider { key, label, .. } => {
             out.push(build_input_field(

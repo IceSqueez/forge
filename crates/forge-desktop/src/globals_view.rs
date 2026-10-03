@@ -4,10 +4,11 @@ use std::time::Duration;
 
 use forge_components::chip::ChipGlyph;
 use forge_components::confirm::ConfirmTone;
+use forge_components::highlight::Language;
 use forge_components::tokens::ModalSize;
 use forge_components::{
-    BORDER_THIN, BreadcrumbCrumb, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS, ForgePalette,
-    Icon, InlineEdit, InlineEditEvent, InputEvent, OverlayPosition, Radius, Spacing, TextArea,
+    BORDER_THIN, BreadcrumbCrumb, CodeEditor, ColumnWidth, DataRow, Density, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, OverlayPosition, Radius, Spacing,
     TextInput, ToastAction, ToastKind, badge, body_family, chip, column, confirm_modal,
     context_menu, empty_state, fmt_relative_time, header_stat, header_stats, hover_reveal, icon,
     inline_edit, menu_divider, menu_item, modal, mono_family, overlay, page_frame, primary_button,
@@ -40,6 +41,7 @@ const EDITOR_KINDS: [VariantKind; 7] = [
 ];
 
 const NAME_LIMIT: usize = 64;
+const VALUE_AREA_H: gpui::Pixels = px(130.0);
 
 const ROW_DOT: gpui::Pixels = px(6.0);
 const VALUE_ICON: gpui::Pixels = px(11.0);
@@ -70,7 +72,7 @@ struct GlobalEditor {
     bool_value: bool,
     name_input: Entity<TextInput>,
     value_input: Entity<TextInput>,
-    value_area: Entity<TextArea>,
+    value_area: Entity<CodeEditor>,
     error: Option<SharedString>,
     saving: bool,
     globals: Entity<Globals>,
@@ -110,10 +112,9 @@ impl GlobalEditor {
 
         let area_seed = prefill.and_then(|g| json_seed(&g.value));
         let value_area = cx.new(|cx| {
-            let mut ta = TextArea::new("[1, 2, 3]", cx)
+            let mut ta = CodeEditor::new(Language::Json, "[1, 2, 3]", cx)
                 .with_palette(palette)
-                .mono()
-                .json_highlight();
+                .with_field_height(VALUE_AREA_H);
             if let Some(seed) = area_seed {
                 ta.set_content(seed, cx);
             }

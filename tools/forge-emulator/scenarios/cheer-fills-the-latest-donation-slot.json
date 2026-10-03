@@ -1,0 +1,110 @@
+{
+  "name": "a cheer fills the last-donation slot as a bits amount",
+  "purpose": "One channel.cheer notification produces exactly one latest.changed event for the donation slot on the twitch record, caused by the cheer, and the Get Latest Value step reads the cheerer's display name, the bits amount formatted as a count of BITS, the cheer kind and twitch back. The cheer message never reaches the step output.",
+  "fixture": {
+    "twitch": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "script.event.custom",
+        "action_name": "Read Last Donation",
+        "config": {
+          "event_name": { "type": "string", "value": "never-fired" }
+        },
+        "steps": [
+          {
+            "kind_id": "core.latest.get",
+            "config": {
+              "slot": { "type": "string", "value": "donation" },
+              "platform": { "type": "string", "value": "twitch" },
+              "into_var": { "type": "string", "value": "latest" }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "read=cheer user=%latest.user_name% amount=\"%latest.amount_formatted%\" platform=%latest.platform% kind=%latest.donation_kind% note=\"%latest.message%\""
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.cheer"], "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "twitch_event": {
+          "subscription_type": "channel.cheer",
+          "event": {
+            "is_anonymous": false,
+            "user_id": "200000304",
+            "user_login": "generous_one",
+            "user_name": "GenerousOne",
+            "broadcaster_user_id": "100000001",
+            "broadcaster_user_login": "forge_emulator",
+            "broadcaster_user_name": "forge_emulator",
+            "message": "cheer500 a private note",
+            "bits": 500
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "cheered",
+            "source": "twitch",
+            "kind": "twitch.channel.cheer",
+            "payload": { "/bits": { "equals": 500 } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "slot changed",
+            "source": "core",
+            "kind": "latest.changed",
+            "payload": {
+              "/slot": { "equals": "donation" },
+              "/platform": { "equals": "twitch" },
+              "/cleared": { "equals": false }
+            },
+            "count": { "exactly": 1 },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "slot changed", "cause": "cheered" } }
+      ]
+    },
+    {
+      "do": { "run_action": { "action": "Read Last Donation" } },
+      "expect": [
+        {
+          "log_line": {
+            "target": "forge::action",
+            "fields": {
+              "read": "cheer",
+              "user": "GenerousOne",
+              "amount": "500 BITS",
+              "platform": "twitch",
+              "kind": "cheer",
+              "note": "%latest.message%"
+            },
+            "within_ms": 10000
+          }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,185 @@
+{
+  "name": "a live donation fills the last-donation slot, a test donation does not, and the slot survives a restart",
+  "purpose": "A Donatello donation produces exactly one latest.changed event for the donation slot, caused by nothing else than that donation, and the Get Latest Value step then reads the donor, the formatted amount and the service back. A test donation sent afterwards announces itself but changes nothing: no latest.changed follows and the step still reads the live donor. After a restart the same value is read again, so the slot was written through to storage. The step output carries no donor message.",
+  "fixture": {
+    "donatello": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "script.event.custom",
+        "action_name": "Read Last Donation",
+        "config": {
+          "event_name": { "type": "string", "value": "never-fired" }
+        },
+        "steps": [
+          {
+            "kind_id": "core.latest.get",
+            "config": {
+              "slot": { "type": "string", "value": "donation" },
+              "platform": { "type": "string", "value": "" },
+              "into_var": { "type": "string", "value": "latest" }
+            },
+            "enabled": true
+          },
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "read=%reading% user=%latest.user_name% amount=\"%latest.amount_formatted%\" platform=%latest.platform% kind=%latest.donation_kind% note=\"%latest.message%\""
+              }
+            },
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "trigger_kind": "script.event.custom",
+        "action_name": "Send Test Donation",
+        "config": {
+          "event_name": { "type": "string", "value": "never-fired-either" }
+        },
+        "steps": [
+          {
+            "kind_id": "donations.test_donation",
+            "config": {
+              "provider": { "type": "string", "value": "donatello" },
+              "donor_name": { "type": "string", "value": "Tester" },
+              "amount": { "type": "string", "value": "999" },
+              "currency": { "type": "string", "value": "UAH" },
+              "message": { "type": "string", "value": "just a test" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "donatello": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "donations_polled": { "within_ms": 60000 } } },
+    {
+      "do": {
+        "donatello_donation": {
+          "id": "dl-latest-1",
+          "donor": "Olena",
+          "amount": "150",
+          "message": "a private note"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "donated",
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": { "/donation_id": { "equals": "dl-latest-1" } },
+            "within_ms": 40000
+          }
+        },
+        {
+          "event": {
+            "name": "slot changed",
+            "source": "core",
+            "kind": "latest.changed",
+            "payload": {
+              "/slot": { "equals": "donation" },
+              "/platform": { "equals": "donatello" },
+              "/merged_changed": { "equals": true },
+              "/cleared": { "equals": false }
+            },
+            "count": { "exactly": 1 },
+            "within_ms": 40000
+          }
+        },
+        { "caused_by": { "effect": "slot changed", "cause": "donated" } }
+      ]
+    },
+    {
+      "do": {
+        "run_action": {
+          "action": "Read Last Donation",
+          "args": { "reading": "live" }
+        }
+      },
+      "expect": [
+        {
+          "log_line": {
+            "target": "forge::action",
+            "fields": {
+              "read": "live",
+              "user": "Olena",
+              "amount": "150 UAH",
+              "platform": "donatello",
+              "kind": "donation",
+              "note": "%latest.message%"
+            },
+            "within_ms": 10000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "run_action": { "action": "Send Test Donation" } },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": { "/test": { "equals": true } },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event_absent": {
+            "source": "core",
+            "kind": "latest.changed",
+            "window_ms": 3000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "run_action": {
+          "action": "Read Last Donation",
+          "args": { "reading": "after_test" }
+        }
+      },
+      "expect": [
+        {
+          "log_line": {
+            "target": "forge::action",
+            "fields": { "read": "after_test", "user": "Olena", "amount": "150 UAH" },
+            "within_ms": 10000
+          }
+        }
+      ]
+    },
+    { "do": { "forge_restart": { "within_ms": 60000 } } },
+    {
+      "do": {
+        "run_action": {
+          "action": "Read Last Donation",
+          "args": { "reading": "after_restart" }
+        }
+      },
+      "expect": [
+        {
+          "log_line": {
+            "target": "forge::action",
+            "fields": {
+              "read": "after_restart",
+              "user": "Olena",
+              "amount": "150 UAH",
+              "platform": "donatello"
+            },
+            "within_ms": 10000
+          }
+        }
+      ]
+    }
+  ]
+}

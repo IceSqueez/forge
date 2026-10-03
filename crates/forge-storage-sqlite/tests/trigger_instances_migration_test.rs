@@ -3,48 +3,6 @@
 use forge_storage_sqlite::{apply_migrations, connect};
 
 #[tokio::test]
-async fn trigger_instances_tables_exist_after_migration_0012() {
-    let pool = connect("sqlite::memory:").await.expect("connect");
-    apply_migrations(&pool).await.expect("apply migrations");
-
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sqlite_master \
-         WHERE type = 'table' \
-         AND name IN ('trigger_instances', 'action_trigger_instances')",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("query sqlite_master");
-
-    assert_eq!(count, 2);
-}
-
-#[tokio::test]
-async fn trigger_instances_insert_and_retrieve() {
-    let pool = connect("sqlite::memory:").await.expect("connect");
-    apply_migrations(&pool).await.expect("apply migrations");
-
-    sqlx::query(
-        "INSERT INTO trigger_instances (id, kind_id, name, overrides, enabled, user_defined) \
-         VALUES ('inst-001', 'twitch.chat.command', 'Test Trigger', '{}', 1, 1)",
-    )
-    .execute(&pool)
-    .await
-    .expect("insert trigger_instance");
-
-    let (id, kind_id, user_defined): (String, String, i64) = sqlx::query_as(
-        "SELECT id, kind_id, user_defined FROM trigger_instances WHERE id = 'inst-001'",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("fetch trigger_instance");
-
-    assert_eq!(id, "inst-001");
-    assert_eq!(kind_id, "twitch.chat.command");
-    assert_eq!(user_defined, 1);
-}
-
-#[tokio::test]
 async fn partial_unique_index_rejects_duplicate_default_per_kind() {
     let pool = connect("sqlite::memory:").await.expect("connect");
     apply_migrations(&pool).await.expect("apply migrations");

@@ -1,3 +1,4 @@
+use forge_events::{Event, EventSource};
 use forge_platform_core::ConnectionState;
 use forge_types::IntegrationId;
 
@@ -15,6 +16,7 @@ const ROSTER: [Integration; 5] = [
 pub struct PlatformConnectivity {
     connections: Vec<(Integration, bool)>,
     services: Vec<(IntegrationId, bool)>,
+    obs_password_rejected: bool,
 }
 
 impl Default for PlatformConnectivity {
@@ -28,7 +30,24 @@ impl PlatformConnectivity {
         Self {
             connections: ROSTER.iter().map(|integ| (*integ, false)).collect(),
             services: Vec::new(),
+            obs_password_rejected: false,
         }
+    }
+
+    pub fn obs_password_rejected(&self) -> bool {
+        self.obs_password_rejected
+    }
+
+    pub fn apply_obs_event(&mut self, event: &Event) -> bool {
+        if event.source != EventSource::Obs {
+            return false;
+        }
+        let rejected = match event.kind.as_str() {
+            "obs.connection.auth_failed" => true,
+            "obs.connection.connected" => false,
+            _ => return false,
+        };
+        std::mem::replace(&mut self.obs_password_rejected, rejected) != rejected
     }
 
     pub fn connections(&self) -> &[(Integration, bool)] {

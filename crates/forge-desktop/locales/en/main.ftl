@@ -1803,6 +1803,8 @@ integration_state_connecting_detail = Establishing a session with this integrati
 integration_state_reconnecting_title = Reconnecting...
 integration_state_reconnecting_detail = The session dropped; forge is re-establishing it.
 integration_state_disconnected_detail = Use Reconnect above to link this integration.
+obs_state_password_rejected_title = OBS rejected the saved password
+obs_state_password_rejected_detail = Enter the current WebSocket password in the OBS connection settings, then reconnect.
 
 ## OAuth / authentication errors
 

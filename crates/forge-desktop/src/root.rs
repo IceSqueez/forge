@@ -350,6 +350,7 @@ fn start_bridge(
             platforms.update(cx, |connectivity, cx| {
                 let mut changed = false;
                 for event in batch {
+                    changed |= connectivity.apply_obs_event(event);
                     if event.kind == CONNECTION_STATE_CHANGED_KIND
                         && let Some(integ) = event
                             .payload

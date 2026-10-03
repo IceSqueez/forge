@@ -88,6 +88,7 @@ pub struct IntegrationDetail {
     is_obs: bool,
     is_vtube: bool,
     twitch_reauth_required: bool,
+    obs_password_rejected: bool,
     icon: SectionIcon,
     display_name: String,
     version: Option<String>,
@@ -188,7 +189,13 @@ impl IntegrationDetail {
             obs_client: obs_source,
             vtube_client: _,
         } = object;
-        let conn_obs = cx.observe(&connectivity, |this, _, cx| this.reload(cx));
+        let is_obs_detail = status.id().as_str() == "obs";
+        let obs_password_rejected = is_obs_detail && connectivity.read(cx).obs_password_rejected();
+        let conn_obs = cx.observe(&connectivity, move |this, connectivity, cx| {
+            this.obs_password_rejected =
+                this.is_obs && connectivity.read(cx).obs_password_rejected();
+            this.reload(cx)
+        });
 
         let is_twitch = status.id().as_str() == "twitch";
         let is_obs = status.id().as_str() == "obs";
@@ -254,6 +261,7 @@ impl IntegrationDetail {
             is_obs,
             is_vtube,
             twitch_reauth_required: false,
+            obs_password_rejected,
             icon,
             display_name,
             version,
@@ -1326,6 +1334,12 @@ impl IntegrationDetail {
                 Icon::Refresh,
                 tr!("integration_state_reconnecting_title"),
                 tr!("integration_state_reconnecting_detail"),
+            ),
+            ConnectionState::Disconnected if self.obs_password_rejected => (
+                palette.warning,
+                Icon::AlertTriangle,
+                tr!("obs_state_password_rejected_title"),
+                tr!("obs_state_password_rejected_detail"),
             ),
             ConnectionState::Disconnected => (
                 palette.text_muted,

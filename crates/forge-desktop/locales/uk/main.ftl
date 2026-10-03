@@ -1839,6 +1839,8 @@ integration_state_connecting_detail = Встановлення сеансу з �
 integration_state_reconnecting_title = Повторне підключення...
 integration_state_reconnecting_detail = Сеанс розірвано; forge відновлює його.
 integration_state_disconnected_detail = Натисніть «Підключитися» вгорі, щоб зв'язати цю інтеграцію.
+obs_state_password_rejected_title = OBS відхилив збережений пароль
+obs_state_password_rejected_detail = Введіть актуальний пароль WebSocket у налаштуваннях підключення OBS і підключіться знову.
 
 ## OAuth / authentication errors
 

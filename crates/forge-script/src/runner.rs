@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use forge_events::EventPublisher;
 use forge_storage::{GlobalsRepo, SettingsRepo};
-use forge_types::{ArgStack, EventId, IntegrationAvailability, ScriptContract, ScriptId};
+use forge_types::{
+    ArgStack, EventId, IntegrationAvailability, LatestValueReader, ScriptContract, ScriptId,
+};
 
 use crate::error::ScriptError;
 use crate::{Engine, ForgeApi, build_scope_for_contract, load_script_engine_config};
@@ -28,6 +30,7 @@ pub struct ScriptHost {
     pub settings: Arc<dyn SettingsRepo>,
     pub bus: Arc<dyn EventPublisher>,
     pub integrations: Arc<dyn IntegrationAvailability>,
+    pub latest_values: Option<Arc<dyn LatestValueReader>>,
 }
 
 pub async fn run_inline(
@@ -42,6 +45,7 @@ pub async fn run_inline(
         settings,
         bus,
         integrations,
+        latest_values,
     } = host;
     let mut scope =
         build_scope_for_contract(&contract, &arg_stack).map_err(|e| ScriptError::Runtime {
@@ -50,9 +54,12 @@ pub async fn run_inline(
         })?;
     let cfg = load_script_engine_config(settings.as_ref()).await;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(cfg.wall_time_ms);
-    let api = ForgeApi::new(bus, globals, EventId::new(), deadline)
+    let mut api = ForgeApi::new(bus, globals, EventId::new(), deadline)
         .with_script_id(script_id)
         .with_integration_availability(integrations);
+    if let Some(reader) = latest_values {
+        api = api.with_latest_values(reader);
+    }
     let error_count = api.error_count_handle();
     let engine = Engine::with_api(cfg, api);
     let start = std::time::Instant::now();

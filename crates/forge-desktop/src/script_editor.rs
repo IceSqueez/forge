@@ -1229,6 +1229,7 @@ impl ScriptEditorView {
             settings: Arc::clone(&self.backend) as Arc<dyn SettingsRepo>,
             bus: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
             integrations: Arc::clone(&self.integrations),
+            latest_values: self.script_registry.latest_values(),
         };
         let scripts = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(

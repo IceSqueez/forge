@@ -43,7 +43,7 @@ pub(super) fn bindings_reference(
     palette: &ForgePalette,
 ) -> Vec<AnyElement> {
     let contract = &PAGE_CONTRACT;
-    vec![
+    let mut sections = vec![
         div()
             .pb(HEADING_GAP)
             .child(section_label(
@@ -60,16 +60,29 @@ pub(super) fn bindings_reference(
                     .map(|function| function_entry(function, palette)),
             )
             .into_any_element(),
-        group(tr!("overlays_bindings_content_heading"), palette)
-            .child(content_fields(look, palette))
-            .into_any_element(),
-        group(tr!("overlays_bindings_runtime_heading"), palette)
-            .children(runtime_entries(contract, palette))
-            .into_any_element(),
-        group(tr!("overlays_bindings_config_heading"), palette)
-            .child(config_keys(look, palette))
-            .into_any_element(),
-    ]
+    ];
+    let runtime = group(tr!("overlays_bindings_runtime_heading"), palette)
+        .children(runtime_entries(contract, palette))
+        .into_any_element();
+    match look {
+        Some(look) => sections.extend([
+            group(tr!("overlays_bindings_content_heading"), palette)
+                .child(content_fields(look, palette))
+                .into_any_element(),
+            runtime,
+            group(tr!("overlays_bindings_config_heading"), palette)
+                .child(config_keys(look, palette))
+                .into_any_element(),
+        ]),
+        None => sections.extend([
+            runtime,
+            div()
+                .pt(GROUP_TOP_GAP)
+                .child(summary(tr!("overlays_bindings_look_unavailable"), palette))
+                .into_any_element(),
+        ]),
+    }
+    sections
 }
 
 fn group(heading: String, palette: &ForgePalette) -> Div {
@@ -151,10 +164,7 @@ fn runtime_entries(contract: &PageContract, palette: &ForgePalette) -> Vec<AnyEl
         .collect()
 }
 
-fn content_fields(look: Option<&LookContract>, palette: &ForgePalette) -> AnyElement {
-    let Some(look) = look else {
-        return summary(tr!("overlays_bindings_look_unavailable"), palette);
-    };
+fn content_fields(look: &LookContract, palette: &ForgePalette) -> AnyElement {
     if look.content_keys.is_empty() {
         return summary(tr!("overlays_bindings_content_empty"), palette);
     }
@@ -174,10 +184,7 @@ fn content_fields(look: Option<&LookContract>, palette: &ForgePalette) -> AnyEle
         .into_any_element()
 }
 
-fn config_keys(look: Option<&LookContract>, palette: &ForgePalette) -> AnyElement {
-    let Some(look) = look else {
-        return summary(tr!("overlays_bindings_look_unavailable"), palette);
-    };
+fn config_keys(look: &LookContract, palette: &ForgePalette) -> AnyElement {
     if look.config_keys.is_empty() {
         return summary(tr!("overlays_bindings_config_empty"), palette);
     }

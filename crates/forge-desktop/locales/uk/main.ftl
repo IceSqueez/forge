@@ -830,7 +830,7 @@ tts_dash_last_drop = Останній запит відхилено: { $reason }
 
 ## TTS Dashboard - черга
 
-tts_dash_queue_header = Наступний
+tts_dash_queue_header = НАСТУПНИЙ
 tts_dash_queue_total = ~{ $secs }с усього
 tts_dash_queue_empty = Черга порожня
 tts_dash_play_now = Відтворити зараз

@@ -24,6 +24,9 @@ use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 
 const STAGE_CIRCLE: Pixels = px(22.0);
+const PIPELINE_PAD_Y: Pixels = px(18.0);
+const PIPELINE_PAD_X: Pixels = px(22.0);
+const PIPELINE_GAP: Pixels = px(14.0);
 const PREVIEW_W: Pixels = px(320.0);
 const MODAL_W: Pixels = px(480.0);
 const MAX_DURATION_MIN: u32 = 1;
@@ -958,8 +961,9 @@ impl TtsFiltersView {
         let mut col = div()
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .p(spacing(Spacing::Md, density))
+            .gap(PIPELINE_GAP)
+            .py(PIPELINE_PAD_Y)
+            .px(PIPELINE_PAD_X)
             .child(intro);
 
         if let Some(err) = &self.save_error {

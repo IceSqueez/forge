@@ -1,8 +1,9 @@
 use forge_components::{
-    BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    BORDER_THIN, ChipGlyph, ConfirmTone, Density, FONT_SM, FONT_XXS, ForgePalette, Icon,
     InputEvent, OverlayPosition, Radius, ResizeEdge, ResizeRange, Spacing, TextInput, badge,
-    body_family, chip, confirm_modal, empty_state, fmt_clock, hash_accent, icon, install_resize,
-    mono_family, overlay, radius, slider, spacing, status_dot, tooltip_builder, tr, with_alpha,
+    body_family, card, chip, confirm_modal, empty_state, fmt_clock, hash_accent, icon,
+    install_resize, mono_family, overlay, radius, section_label, slider, spacing, status_dot,
+    tooltip_builder, tr, with_alpha,
 };
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -40,7 +41,12 @@ const VOLUME_GLYPH: Pixels = px(14.0);
 const STRIP_DIVIDER_H: Pixels = px(16.0);
 const STRIP_DIVIDER_MX: Pixels = px(4.0);
 
-const NOW_HEADER_MB: Pixels = px(8.0);
+const BODY_PAD_Y: Pixels = px(18.0);
+const BODY_PAD_X: Pixels = px(22.0);
+const SECTION_GAP: Pixels = px(18.0);
+const SECTION_LABEL_MB: Pixels = px(10.0);
+const NOW_LABEL_GAP: Pixels = px(7.0);
+const NOW_CARD_PAD: Pixels = px(14.0);
 const NOW_ROW_GAP: Pixels = px(10.0);
 const NOW_TILE: Pixels = px(32.0);
 const NOW_TILE_RADIUS: Pixels = px(8.0);
@@ -57,7 +63,10 @@ const PROGRESS_FONT: Pixels = px(10.0);
 const PROGRESS_BAR_H: Pixels = px(3.0);
 const PROGRESS_BAR_RADIUS: Pixels = px(2.0);
 
+const QUEUE_LABEL_GAP: Pixels = px(6.0);
 const QUEUE_ROW_PAD_V: Pixels = px(9.0);
+const QUEUE_ROW_PAD_H: Pixels = px(14.0);
+const QUEUE_BITS_FONT: Pixels = px(9.0);
 const QUEUE_ROW_GAP: Pixels = px(10.0);
 const QUEUE_INDEX_FONT: Pixels = px(11.0);
 const QUEUE_GRIP_GLYPH: Pixels = px(13.0);
@@ -86,15 +95,12 @@ const TEST_GAP: Pixels = px(6.0);
 const TEST_ICON: Pixels = px(12.0);
 const TEST_FONT: Pixels = px(11.5);
 const BTN_FONT: Pixels = px(12.0);
-const NOW_PAD_V: Pixels = px(14.0);
-const NOW_LABEL_FONT: Pixels = px(10.0);
-const HEADER_PAD_V: Pixels = px(9.0);
 const COUNT_BADGE_FONT: Pixels = px(10.0);
-const RAIL_PAD: Pixels = px(14.0);
-const RAIL_LABEL_FONT: Pixels = px(10.0);
-const RAIL_LABEL_MB: Pixels = px(8.0);
-const RAIL_SECTION_MT: Pixels = px(16.0);
-const STAT_PAD_V: Pixels = px(5.0);
+const RAIL_PAD_Y: Pixels = px(18.0);
+const RAIL_PAD_X: Pixels = px(14.0);
+const STAT_CARD_PAD_V: Pixels = px(2.0);
+const STAT_CARD_PAD_H: Pixels = px(11.0);
+const STAT_PAD_V: Pixels = px(6.0);
 const STAT_LABEL_FONT: Pixels = px(11.5);
 const STAT_VALUE_FONT: Pixels = px(13.0);
 const ENGINE_PAD_V: Pixels = px(9.0);
@@ -102,6 +108,7 @@ const ENGINE_PAD_H: Pixels = px(11.0);
 const ENGINE_NAME_FONT: Pixels = px(11.5);
 const ENGINE_META_FONT: Pixels = px(10.0);
 const ENGINE_NAME_MB: Pixels = px(3.0);
+const ENGINE_CARD_MB: Pixels = px(6.0);
 
 struct TtsRailResizeDrag;
 
@@ -536,14 +543,9 @@ impl TtsDashboardView {
             .map(|ms| format!("{ms}ms"))
             .unwrap_or_else(|| "-".to_owned());
 
-        let mut content = div()
+        let stat_rows = div()
             .flex()
             .flex_col()
-            .child(rail_header(
-                tr!("tts_dash_session_header"),
-                px(0.0),
-                palette,
-            ))
             .child(stat_row(
                 tr!("tts_dash_stat_spoken"),
                 stats.spoken.to_string(),
@@ -571,11 +573,25 @@ impl TtsDashboardView {
                 palette.success,
                 palette,
                 false,
+            ));
+
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .child(section_heading(
+                section_label(tr!("tts_dash_session_header"), palette),
+                None,
             ))
-            .child(rail_header(
-                tr!("tts_dash_engines_header"),
-                RAIL_SECTION_MT,
-                palette,
+            .child(
+                div().mb(SECTION_GAP).child(
+                    card(stat_rows, palette)
+                        .padding_xy(STAT_CARD_PAD_V, STAT_CARD_PAD_H)
+                        .full_width(),
+                ),
+            )
+            .child(section_heading(
+                section_label(tr!("tts_dash_engines_header"), palette),
+                None,
             ));
 
         if self.engines.is_empty() {
@@ -623,7 +639,8 @@ impl TtsDashboardView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
-                    .p(RAIL_PAD)
+                    .py(RAIL_PAD_Y)
+                    .px(RAIL_PAD_X)
                     .child(content),
             );
 
@@ -691,66 +708,45 @@ impl TtsDashboardView {
         let title = div()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Xs, density))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_size(FONT_XS)
-                    .text_color(palette.text_primary)
-                    .child(tr!("tts_dash_queue_header")),
-            )
+            .gap(QUEUE_LABEL_GAP)
+            .child(section_label(tr!("tts_dash_queue_header"), palette))
             .child(count_badge);
-        let mut header = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .py(HEADER_PAD_V)
-            .px(spacing(Spacing::Md, density))
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(title);
-        if !queue.is_empty() {
+        let total = (!queue.is_empty()).then(|| {
             let total: u32 = queue.iter().map(|item| item.duration_secs).sum();
-            header = header.child(
-                div()
-                    .font_family(mono_family())
-                    .text_size(FONT_XXS)
-                    .text_color(palette.text_faint)
-                    .child(tr!("tts_dash_queue_total", secs = total as i64)),
-            );
-        }
+            div()
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(tr!("tts_dash_queue_total", secs = total as i64))
+                .into_any_element()
+        });
 
         let list: AnyElement = if queue.is_empty() {
             empty_state(tr!("tts_dash_queue_empty"), palette)
                 .density(density)
                 .into_any_element()
         } else {
+            let last = count - 1;
             let mut col = div().w_full().flex().flex_col();
             for (index, item) in queue.iter().enumerate() {
-                col = col.child(self.queue_item_row(index, item, palette, density, cx));
+                col = col.child(self.queue_item_row(index, index == last, item, palette, cx));
             }
             col.into_any_element()
         };
 
         div()
             .w_full()
-            .flex_1()
-            .min_h(px(0.0))
             .flex()
             .flex_col()
-            .child(header)
+            .child(section_heading(title, total))
             .child(
                 div()
-                    .id("tts-queue-scroll")
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .overflow_y_scroll()
+                    .id("tts-queue-drop")
+                    .w_full()
                     .on_drop(cx.listener(|this, drag: &QueueRowDrag, _window, cx| {
                         this.reorder_queued(drag.request_id.clone(), None, cx)
                     }))
-                    .child(list),
+                    .child(card(list, palette).padding(px(0.0)).full_width()),
             )
             .into_any_element()
     }
@@ -758,9 +754,9 @@ impl TtsDashboardView {
     fn queue_item_row(
         &self,
         index: usize,
+        is_last: bool,
         item: &QueueItem,
         palette: &ForgePalette,
-        density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let pos = div()
@@ -791,7 +787,13 @@ impl TtsDashboardView {
                 .bits_amount
                 .map(|b| tr!("tts_dash_priority_bits", amount = b as i64))
                 .unwrap_or_else(|| tr!("tts_dash_priority_high"));
-            name_row = name_row.child(badge(palette.warning, palette.shell, label, true, FONT_XS));
+            name_row = name_row.child(badge(
+                palette.warning,
+                palette.shell,
+                label,
+                false,
+                QUEUE_BITS_FONT,
+            ));
         }
         if !item.engine_voice.is_empty() {
             name_row = name_row.child(
@@ -808,7 +810,6 @@ impl TtsDashboardView {
             .min_w(px(0.0))
             .flex()
             .flex_col()
-            .gap(spacing(Spacing::Xxs, density))
             .child(name_row)
             .child(
                 div()
@@ -862,16 +863,14 @@ impl TtsDashboardView {
         let hovered_id = item.request_id.clone();
         let dropped_on_id = item.request_id.clone();
 
-        let row = div()
+        let mut row = div()
             .id(("tts-q-row", index))
             .w_full()
             .flex()
             .items_center()
             .gap(QUEUE_ROW_GAP)
             .py(QUEUE_ROW_PAD_V)
-            .px(spacing(Spacing::Md, density))
-            .border_b(BORDER_THIN)
-            .border_color(palette.border_regular)
+            .px(QUEUE_ROW_PAD_H)
             .cursor(CursorStyle::OpenHand)
             .on_drag(
                 QueueRowDrag {
@@ -903,6 +902,9 @@ impl TtsDashboardView {
             .child(duration)
             .child(play_btn)
             .child(remove_btn);
+        if !is_last {
+            row = row.border_b(BORDER_THIN).border_color(palette.elevated);
+        }
 
         if self.dragged_row.as_ref() == Some(&item.request_id) {
             row.opacity(QUEUE_DRAG_OPACITY).into_any_element()
@@ -951,13 +953,22 @@ impl Render for TtsDashboardView {
         let right_pane = self.right_pane(&stats, &palette, cx);
 
         let left_col = div()
+            .id("tts-dash-body")
             .flex_1()
             .min_w(px(0.0))
-            .flex()
-            .flex_col()
-            .min_h(px(0.0))
-            .child(now_speaking)
-            .child(queue_section);
+            .h_full()
+            .overflow_y_scroll()
+            .bg(palette.base)
+            .py(BODY_PAD_Y)
+            .px(BODY_PAD_X)
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .child(now_speaking)
+                    .child(queue_section),
+            );
 
         let main_row = div()
             .w_full()
@@ -1040,18 +1051,11 @@ fn now_speaking_panel(
     } else {
         palette.text_faint
     };
-    let header = div()
+    let label = div()
         .flex()
         .items_center()
-        .gap(spacing(Spacing::Xs, density))
-        .mb(NOW_HEADER_MB)
-        .child(
-            div()
-                .font_family(mono_family())
-                .text_size(NOW_LABEL_FONT)
-                .text_color(palette.text_muted)
-                .child(tr!("tts_dash_now_speaking_header")),
-        )
+        .gap(NOW_LABEL_GAP)
+        .child(section_label(tr!("tts_dash_now_speaking_header"), palette))
         .child(eq_bars(animate, bar_color));
 
     let body = match now {
@@ -1145,21 +1149,18 @@ fn now_speaking_panel(
                 .child(message)
                 .child(progress);
 
-            div().flex().flex_col().child(header).child(
-                div()
-                    .flex()
-                    .items_start()
-                    .gap(NOW_ROW_GAP)
-                    .child(tile)
-                    .child(info),
-            )
+            div()
+                .flex()
+                .items_start()
+                .gap(NOW_ROW_GAP)
+                .child(tile)
+                .child(info)
         }
         None => {
             let mut idle = div()
                 .flex()
                 .flex_col()
                 .gap(spacing(Spacing::Xs, density))
-                .child(header)
                 .child(
                     div()
                         .font_family(body_family())
@@ -1182,27 +1183,26 @@ fn now_speaking_panel(
 
     div()
         .w_full()
-        .py(NOW_PAD_V)
-        .px(spacing(Spacing::Md, density))
-        .bg(palette.elevated)
-        .border_b(BORDER_THIN)
-        .border_color(palette.border_regular)
-        .child(body)
+        .flex()
+        .flex_col()
+        .child(section_heading(label, None))
+        .child(
+            div()
+                .mb(SECTION_GAP)
+                .child(card(body, palette).padding(NOW_CARD_PAD).full_width()),
+        )
         .into_any_element()
 }
 
-fn rail_header(
-    label: impl Into<SharedString>,
-    margin_top: Pixels,
-    palette: &ForgePalette,
-) -> impl IntoElement {
+fn section_heading(label: impl IntoElement, right: Option<AnyElement>) -> impl IntoElement {
     div()
-        .mt(margin_top)
-        .mb(RAIL_LABEL_MB)
-        .font_family(mono_family())
-        .text_size(RAIL_LABEL_FONT)
-        .text_color(palette.text_muted)
-        .child(label.into())
+        .w_full()
+        .flex()
+        .items_center()
+        .justify_between()
+        .mb(SECTION_LABEL_MB)
+        .child(label)
+        .children(right)
 }
 
 fn stat_row(
@@ -1276,15 +1276,10 @@ fn engine_card(
                 .text_color(palette.text_faint)
                 .child(meta),
         );
-    div().mb(px(6.0)).child(
-        div()
-            .py(ENGINE_PAD_V)
-            .px(ENGINE_PAD_H)
-            .rounded(radius(Radius::Md))
-            .bg(palette.elevated)
-            .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .child(body),
+    div().mb(ENGINE_CARD_MB).child(
+        card(body, palette)
+            .padding_xy(ENGINE_PAD_V, ENGINE_PAD_H)
+            .full_width(),
     )
 }
 

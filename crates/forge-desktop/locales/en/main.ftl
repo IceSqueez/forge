@@ -816,7 +816,7 @@ tts_dash_last_drop = Last request dropped: { $reason }
 
 ## TTS Dashboard - queue
 
-tts_dash_queue_header = Up next
+tts_dash_queue_header = UP NEXT
 tts_dash_queue_total = ~{ $secs }s total
 tts_dash_queue_empty = Queue is empty
 tts_dash_play_now = Play now

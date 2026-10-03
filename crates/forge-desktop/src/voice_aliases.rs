@@ -34,6 +34,13 @@ const ROW_PAD_H: Pixels = px(12.0);
 const VOICE_FS: Pixels = px(11.5);
 const META_FS: Pixels = px(11.0);
 const PAGE_PAD_H: Pixels = px(18.0);
+const PAGE_GAP_V: Pixels = px(12.0);
+const PAGE_PAD_BOTTOM: Pixels = px(16.0);
+const BANNER_PAD_V: Pixels = px(12.0);
+const BANNER_PAD_H: Pixels = px(14.0);
+const BANNER_GAP: Pixels = px(14.0);
+const BANNER_TITLE_FS: Pixels = px(12.5);
+const BANNER_TITLE_MB: Pixels = px(1.0);
 const PLATFORM_DOT: Pixels = px(6.0);
 const PLATFORM_BADGE_PAD_V: Pixels = px(1.0);
 const PLATFORM_BADGE_PAD_H: Pixels = px(6.0);
@@ -833,12 +840,7 @@ impl VoiceAliasesView {
         );
     }
 
-    fn strategy_banner(
-        &self,
-        palette: &ForgePalette,
-        density: Density,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn strategy_banner(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let segments = StrategyChoice::ALL
             .into_iter()
             .map(|choice| {
@@ -861,7 +863,8 @@ impl VoiceAliasesView {
                 div()
                     .font_family(body_family())
                     .font_weight(FontWeight::MEDIUM)
-                    .text_size(px(12.5))
+                    .text_size(BANNER_TITLE_FS)
+                    .mb(BANNER_TITLE_MB)
                     .text_color(palette.text_primary)
                     .child(tr!("tts_aliases_strategy_label")),
             )
@@ -877,7 +880,7 @@ impl VoiceAliasesView {
             .w_full()
             .flex()
             .items_center()
-            .gap(spacing(Spacing::Sm, density))
+            .gap(BANNER_GAP)
             .child(icon(Icon::Wand, BANNER_ICON, palette.brand))
             .child(heading)
             .child(strategy_segments);
@@ -885,11 +888,10 @@ impl VoiceAliasesView {
         div()
             .w_full()
             .px(PAGE_PAD_H)
-            .pt(px(12.0))
-            .pb(px(12.0))
+            .py(PAGE_GAP_V)
             .child(
                 card(row, palette)
-                    .padding_xy(px(12.0), px(14.0))
+                    .padding_xy(BANNER_PAD_V, BANNER_PAD_H)
                     .full_width(),
             )
             .into_any_element()
@@ -923,7 +925,7 @@ impl VoiceAliasesView {
         toolbar_row(div().w(SEARCH_W).child(self.search.field().clone()), right)
             .density(density)
             .px(PAGE_PAD_H)
-            .pb(px(12.0))
+            .pb(PAGE_GAP_V)
             .into_any_element()
     }
 
@@ -1026,7 +1028,7 @@ impl VoiceAliasesView {
             .flex()
             .flex_col()
             .px(PAGE_PAD_H)
-            .pb(px(16.0))
+            .pb(PAGE_PAD_BOTTOM)
             .child(frame)
             .child(footer)
             .into_any_element()
@@ -1243,7 +1245,7 @@ impl Render for VoiceAliasesView {
         let palette = cx.palette();
         let density = cx.density();
 
-        let banner = self.strategy_banner(&palette, density, cx);
+        let banner = self.strategy_banner(&palette, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let table = self.table(&palette, density, cx);
         let overlay = self.active_overlay(&palette, cx);

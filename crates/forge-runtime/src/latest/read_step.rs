@@ -144,3 +144,186 @@ pub fn register_latest_sub_actions(
 ) -> Result<(), RegistryError> {
     registry.register(Box::new(LatestGetRunner::new(values)))
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::sync::Mutex;
+
+    use forge_events::{Event, EventPublisher};
+    use forge_types::{EventId, LatestValue, NOW_PLAYING_SLOT, SubActionOutcome};
+    use time::OffsetDateTime;
+
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Asked {
+        Merged(String),
+        Platform(String, String),
+    }
+
+    #[derive(Default)]
+    struct Reader {
+        filled: bool,
+        asked: Mutex<Vec<Asked>>,
+    }
+
+    impl LatestValueReader for Reader {
+        fn latest(&self, slot: &str, scope: LatestScope<'_>) -> Option<LatestValue> {
+            let (asked, platform) = match scope {
+                LatestScope::MostRecentAcrossPlatforms => {
+                    (Asked::Merged(slot.to_owned()), "merged")
+                }
+                LatestScope::Platform(platform) => (
+                    Asked::Platform(slot.to_owned(), platform.to_owned()),
+                    platform,
+                ),
+            };
+            self.asked.lock().unwrap().push(asked);
+            self.filled.then(|| {
+                LatestValue::new(
+                    platform,
+                    OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+                    BTreeMap::from([("user_name".to_owned(), Variant::String("Olena".to_owned()))]),
+                )
+            })
+        }
+    }
+
+    struct NullPublisher;
+
+    impl EventPublisher for NullPublisher {
+        fn publish(&self, _event: Event) {}
+    }
+
+    fn config(slot: &str, platform: &str, into_var: &str) -> SubActionConfig {
+        SubActionConfig::from([
+            (SLOT_KEY.to_owned(), Variant::String(slot.to_owned())),
+            (
+                PLATFORM_KEY.to_owned(),
+                Variant::String(platform.to_owned()),
+            ),
+            (
+                INTO_VAR_KEY.to_owned(),
+                Variant::String(into_var.to_owned()),
+            ),
+        ])
+    }
+
+    async fn run(
+        reader: Arc<Reader>,
+        config: &SubActionConfig,
+        stack: ArgStack,
+    ) -> (SubActionOutcome, Option<ArgStack>) {
+        let runner = LatestGetRunner::new(reader);
+        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
+        let (telemetry, stack) = runner.execute(config, &ctx).await;
+        (telemetry.outcome, stack)
+    }
+
+    fn user_name_in(stack: &ArgStack, var: &str) -> Option<Variant> {
+        match stack.get(var) {
+            Some(Variant::Object(fields)) => fields.get("user_name").cloned(),
+            _ => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn platform_filter_is_interpolated_and_blank_means_merged() {
+        let stack = ArgStack::new().set("svc".to_owned(), Variant::String("monobank".to_owned()));
+        for (platform, expected) in [
+            ("", Asked::Merged(LATEST_DONATION_SLOT.to_owned())),
+            ("  ", Asked::Merged(LATEST_DONATION_SLOT.to_owned())),
+            (
+                "%svc%",
+                Asked::Platform(LATEST_DONATION_SLOT.to_owned(), "monobank".to_owned()),
+            ),
+        ] {
+            let reader = Arc::new(Reader::default());
+
+            run(
+                Arc::clone(&reader),
+                &config(LATEST_DONATION_SLOT, platform, "latest"),
+                stack.clone(),
+            )
+            .await;
+
+            assert_eq!(*reader.asked.lock().unwrap(), [expected], "{platform:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn recorded_value_lands_in_the_output_variable_as_an_object() {
+        let reader = Arc::new(Reader {
+            filled: true,
+            ..Reader::default()
+        });
+
+        let (outcome, stack) = run(
+            reader,
+            &config(LATEST_DONATION_SLOT, "", "%last_tip%"),
+            ArgStack::new(),
+        )
+        .await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            user_name_in(&stack.unwrap(), "last_tip"),
+            Some(Variant::String("Olena".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_slot_yields_an_empty_object() {
+        let (outcome, stack) = run(
+            Arc::new(Reader::default()),
+            &config(NOW_PLAYING_SLOT, "", "latest"),
+            ArgStack::new(),
+        )
+        .await;
+
+        assert!(matches!(outcome, SubActionOutcome::Success));
+        assert_eq!(
+            stack.unwrap().get("latest"),
+            Some(&Variant::Object(BTreeMap::new()))
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_slot_fails_the_step_without_reading() {
+        let reader = Arc::new(Reader::default());
+
+        let (outcome, stack) = run(
+            Arc::clone(&reader),
+            &config("no_such_slot", "", "latest"),
+            ArgStack::new(),
+        )
+        .await;
+
+        assert!(
+            matches!(outcome, SubActionOutcome::Failed(reason) if reason.contains("no_such_slot"))
+        );
+        assert!(stack.is_none());
+        assert!(reader.asked.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn validate_config_accepts_every_declared_slot_and_rejects_others() {
+        let runner = LatestGetRunner::new(Arc::new(Reader::default()));
+        for slot in latest_slot_ids() {
+            assert!(
+                runner.validate_config(&config(slot, "", "latest")).is_ok(),
+                "{slot}"
+            );
+        }
+        for slot in ["", "no_such_slot", "Donation"] {
+            assert!(
+                matches!(
+                    runner.validate_config(&config(slot, "", "latest")),
+                    Err(RegistryError::InvalidConfig(_))
+                ),
+                "{slot:?}"
+            );
+        }
+    }
+}

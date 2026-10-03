@@ -88,3 +88,67 @@ impl<'a> LatestScope<'a> {
 pub trait LatestValueReader: Send + Sync {
     fn latest(&self, slot: &str, scope: LatestScope<'_>) -> Option<LatestValue>;
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    fn value_at(occurred_at: OffsetDateTime) -> LatestValue {
+        LatestValue::new(
+            "donatello",
+            occurred_at,
+            BTreeMap::from([(
+                latest_fields::USER_NAME.to_owned(),
+                Variant::String("SecretDonorName".to_owned()),
+            )]),
+        )
+    }
+
+    #[test]
+    fn occurred_at_is_truncated_to_milliseconds_in_the_record_and_its_fields() {
+        let precise = OffsetDateTime::from_unix_timestamp_nanos(1_790_000_000_123_456_789).unwrap();
+        let truncated =
+            OffsetDateTime::from_unix_timestamp_nanos(1_790_000_000_123_000_000).unwrap();
+
+        let value = value_at(precise);
+
+        assert_eq!(value.occurred_at, truncated);
+        assert_eq!(
+            value.fields.get(latest_fields::OCCURRED_AT),
+            Some(&Variant::Datetime(truncated))
+        );
+    }
+
+    #[test]
+    fn platform_and_occurred_at_fields_override_caller_supplied_ones() {
+        let at = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+        let fields = BTreeMap::from([(
+            latest_fields::PLATFORM.to_owned(),
+            Variant::String("spoofed".to_owned()),
+        )]);
+
+        let value = LatestValue::new("donatello", at, fields);
+
+        assert_eq!(
+            value.fields.get(latest_fields::PLATFORM),
+            Some(&Variant::String("donatello".to_owned()))
+        );
+    }
+
+    #[test]
+    fn blank_platform_filter_means_most_recent_across_platforms() {
+        for (filter, expected) in [
+            ("", LatestScope::MostRecentAcrossPlatforms),
+            ("   ", LatestScope::MostRecentAcrossPlatforms),
+            ("twitch", LatestScope::Platform("twitch")),
+            (" twitch ", LatestScope::Platform("twitch")),
+        ] {
+            assert_eq!(
+                LatestScope::from_platform_filter(filter),
+                expected,
+                "{filter:?}"
+            );
+        }
+    }
+}

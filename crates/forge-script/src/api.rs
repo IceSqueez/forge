@@ -1500,4 +1500,93 @@ mod tests {
         }
         assert!(sent.is_empty(), "published {sent:?}");
     }
+
+    #[derive(Default)]
+    struct LatestReader {
+        filled: bool,
+        asked: Mutex<Vec<Option<String>>>,
+    }
+
+    impl LatestValueReader for LatestReader {
+        fn latest(&self, slot: &str, scope: LatestScope<'_>) -> Option<forge_types::LatestValue> {
+            let platform = match scope {
+                LatestScope::MostRecentAcrossPlatforms => None,
+                LatestScope::Platform(platform) => Some(platform.to_owned()),
+            };
+            self.asked.lock().unwrap().push(platform.clone());
+            self.filled.then(|| {
+                forge_types::LatestValue::new(
+                    platform.unwrap_or_else(|| "merged".to_owned()),
+                    time::OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+                    std::collections::BTreeMap::from([(
+                        "slot_asked".to_owned(),
+                        Variant::String(slot.to_owned()),
+                    )]),
+                )
+            })
+        }
+    }
+
+    async fn eval_latest(reader: Arc<LatestReader>, script: &'static str) -> rhai::Dynamic {
+        let dp = open_dp().await;
+        let (api, _) = make_api_with_publisher(Arc::clone(&dp), Arc::new(Mutex::new(Vec::new())));
+        let engine = Engine::with_api(
+            EngineConfig::default(),
+            api.with_latest_values(reader as Arc<dyn LatestValueReader>),
+        );
+        tokio::task::spawn_blocking(move || engine.eval_script(script).unwrap())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn latest_get_reads_merged_or_one_platform_by_arity() {
+        for (script, asked, platform) in [
+            (r#"forge::latest::get("donation").platform"#, None, "merged"),
+            (
+                r#"forge::latest::get("donation", "monobank").platform"#,
+                Some("monobank".to_owned()),
+                "monobank",
+            ),
+            (
+                r#"forge::latest::get("donation", "").platform"#,
+                None,
+                "merged",
+            ),
+        ] {
+            let reader = Arc::new(LatestReader {
+                filled: true,
+                ..LatestReader::default()
+            });
+
+            let read = eval_latest(Arc::clone(&reader), script).await;
+
+            assert_eq!(*reader.asked.lock().unwrap(), [asked], "{script}");
+            assert_eq!(read.into_string().unwrap(), platform, "{script}");
+        }
+    }
+
+    #[tokio::test]
+    async fn latest_get_hands_the_script_the_whole_value_as_a_map() {
+        let reader = Arc::new(LatestReader {
+            filled: true,
+            ..LatestReader::default()
+        });
+
+        let read = eval_latest(reader, r#"forge::latest::get("now_playing").slot_asked"#).await;
+
+        assert_eq!(read.into_string().unwrap(), "now_playing");
+    }
+
+    #[tokio::test]
+    async fn latest_get_on_an_empty_slot_returns_unit_for_both_arities() {
+        for script in [
+            r#"forge::latest::get("donation")"#,
+            r#"forge::latest::get("donation", "twitch")"#,
+        ] {
+            let read = eval_latest(Arc::new(LatestReader::default()), script).await;
+
+            assert!(read.is_unit(), "{script}");
+        }
+    }
 }

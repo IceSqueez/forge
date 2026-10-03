@@ -71,3 +71,73 @@ impl NowPlaying {
         serde_json::from_value(event.payload.clone()).ok()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn change() -> LatestChanged {
+        LatestChanged {
+            slot: "donation".to_owned(),
+            platform: Some("twitch".to_owned()),
+            merged_changed: true,
+            cleared: false,
+        }
+    }
+
+    #[test]
+    fn latest_changed_event_carries_its_cause_and_decodes_back() {
+        let cause = EventId::new();
+
+        let event = change().into_event(Some(cause)).unwrap();
+
+        assert_eq!(
+            (
+                event.source,
+                event.caused_by,
+                LatestChanged::from_event(&event)
+            ),
+            (EventSource::Core, Some(cause), Some(change()))
+        );
+    }
+
+    #[test]
+    fn decoders_ignore_events_of_another_kind() {
+        let foreign = Event::new(
+            EventSource::Core,
+            "global.set",
+            serde_json::to_value(change()).unwrap(),
+        );
+
+        assert_eq!(LatestChanged::from_event(&foreign), None);
+        assert_eq!(NowPlaying::from_event(&foreign), None);
+    }
+
+    #[test]
+    fn producer_now_playing_payload_decodes_with_optional_fields_absent() {
+        let event = Event::new(
+            EventSource::Server,
+            NOW_PLAYING_KIND,
+            json!({
+                "producer": "companion",
+                "state": "stopped",
+                "occurred_at": "2026-10-03T12:00:00Z",
+            }),
+        );
+
+        let decoded = NowPlaying::from_event(&event).unwrap();
+
+        assert_eq!(
+            (
+                decoded.producer.as_str(),
+                decoded.state,
+                decoded.title.as_str(),
+                decoded.album
+            ),
+            ("companion", PlaybackState::Stopped, "", None)
+        );
+    }
+}

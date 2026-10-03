@@ -40,6 +40,7 @@ pub mod slider;
 pub mod sparkline;
 pub mod status;
 pub mod text_area;
+pub(crate) mod text_buffer;
 pub(crate) mod text_edit;
 pub mod text_input;
 pub mod toast;

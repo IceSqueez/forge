@@ -7,7 +7,9 @@ use forge_storage::{CredentialsRepo, SettingsRepo, has_credentials_for};
 use gpui::{AppContext as _, Context, Entity, Subscription, Window, px};
 
 use crate::async_bridge::{self, ErrorSink};
-use crate::donation_services::{DONATELLO_POLL_INTERVAL_KEY, DonationService};
+use crate::donation_services::{
+    DONATELLO_POLL_INTERVAL_KEY, DonationService, stored_donatello_poll_interval,
+};
 use crate::presentation::ActivePresentation;
 
 mod problem;
@@ -79,10 +81,6 @@ impl DonationSettingsView {
                 this.on_token_edited(cx);
             }
         });
-        let poll_interval = match &launch.service {
-            DonationService::Donatello(provider) => Some(provider.poll_status().poll_interval),
-            DonationService::Monobank(_) => None,
-        };
         let mut view = Self {
             launch,
             token,
@@ -94,7 +92,7 @@ impl DonationSettingsView {
             jar_source: None,
             picked_jar: None,
             saved_jar: None,
-            poll_interval,
+            poll_interval: None,
             remove_pending: false,
             _token_sub: token_sub,
         };
@@ -120,6 +118,7 @@ impl DonationSettingsView {
     fn load_stored(&mut self, cx: &mut Context<Self>) {
         let credentials = Arc::clone(&self.launch.credentials);
         let service = self.launch.service.clone();
+        let settings = Arc::clone(&self.launch.settings);
         async_bridge::run_async(
             &self.launch.rt_handle,
             async move {
@@ -130,9 +129,22 @@ impl DonationSettingsView {
                     }
                     DonationService::Donatello(_) => None,
                 };
-                (present, jar)
+                let interval = match &service {
+                    DonationService::Donatello(_) => Some(
+                        stored_donatello_poll_interval(settings.as_ref())
+                            .await
+                            .map_or(forge_donatello::DEFAULT_POLL_INTERVAL, |stored| {
+                                stored.clamp(
+                                    forge_donatello::MIN_POLL_INTERVAL,
+                                    forge_donatello::MAX_POLL_INTERVAL,
+                                )
+                            }),
+                    ),
+                    DonationService::Monobank(_) => None,
+                };
+                (present, jar, interval)
             },
-            |this, (present, jar), cx| {
+            |this, (present, jar, interval), cx| {
                 match present {
                     Ok(present) => this.has_token = Some(present),
                     Err(error) => {
@@ -140,6 +152,7 @@ impl DonationSettingsView {
                     }
                 }
                 this.saved_jar = jar;
+                this.poll_interval = interval;
                 cx.notify();
             },
             cx,
@@ -451,9 +464,6 @@ impl DonationSettingsView {
             return;
         };
         let applied = provider.set_poll_interval(requested);
-        if self.poll_interval == Some(applied) {
-            return;
-        }
         self.poll_interval = Some(applied);
         let settings = Arc::clone(&self.launch.settings);
         let secs = applied.as_secs().to_string();

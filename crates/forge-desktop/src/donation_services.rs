@@ -61,23 +61,29 @@ impl DonationServices {
     }
 }
 
+pub async fn stored_donatello_poll_interval(settings: &dyn SettingsRepo) -> Option<Duration> {
+    match settings.get_string(DONATELLO_POLL_INTERVAL_KEY).await {
+        Ok(Some(stored)) => match stored.trim().parse::<u64>() {
+            Ok(secs) => Some(Duration::from_secs(secs)),
+            Err(_) => {
+                tracing::warn!(stored = %stored, "ignoring an unreadable Donatello poll interval");
+                None
+            }
+        },
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(error = %error, "could not read the Donatello poll interval");
+            None
+        }
+    }
+}
+
 pub async fn restore_donatello_poll_interval(
     provider: &DonatelloProvider,
     settings: &dyn SettingsRepo,
 ) {
-    match settings.get_string(DONATELLO_POLL_INTERVAL_KEY).await {
-        Ok(Some(stored)) => match stored.trim().parse::<u64>() {
-            Ok(secs) => {
-                provider.set_poll_interval(Duration::from_secs(secs));
-            }
-            Err(_) => {
-                tracing::warn!(stored = %stored, "ignoring an unreadable Donatello poll interval");
-            }
-        },
-        Ok(None) => {}
-        Err(error) => {
-            tracing::warn!(error = %error, "could not read the Donatello poll interval");
-        }
+    if let Some(interval) = stored_donatello_poll_interval(settings).await {
+        provider.set_poll_interval(interval);
     }
 }
 

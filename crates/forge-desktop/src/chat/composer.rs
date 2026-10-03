@@ -13,6 +13,7 @@ use super::send_plan::{
 };
 use crate::home_stats::HomeStats;
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::integration_supervisor::LifecycleState;
 use crate::toasts::PushToast;
 
 pub struct ChatComposer {
@@ -87,7 +88,13 @@ impl ChatComposer {
         let connected = enabled
             .iter()
             .copied()
-            .filter(|platform| stats.is_connected(platform_integration(*platform)))
+            .filter(|platform| {
+                let running = lifecycle.is_none_or(|lifecycle| {
+                    lifecycle.state_of(&platform_integration(*platform).builtin_id())
+                        == LifecycleState::Running
+                });
+                running && stats.is_connected(platform_integration(*platform))
+            })
             .collect();
         PlatformReach { enabled, connected }
     }

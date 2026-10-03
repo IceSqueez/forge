@@ -67,7 +67,7 @@ impl PlatformReach {
 
     pub(crate) fn recipients(&self, route: &SendRoute) -> Vec<Platform> {
         match route {
-            SendRoute::Broadcast => self.enabled.clone(),
+            SendRoute::Broadcast => self.selectable(),
             SendRoute::Targeted(platforms) => platforms.clone(),
         }
     }

@@ -125,6 +125,17 @@ pub enum ActionDetail {
         event_type: String,
         delivered: usize,
     },
+    DonationListed {
+        provider: String,
+        donation_id: String,
+    },
+    DonationsPolled {
+        services: Vec<String>,
+    },
+    ForgeRestarted {
+        offline: Vec<String>,
+        pid: u32,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

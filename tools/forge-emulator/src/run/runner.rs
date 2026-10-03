@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
+use super::forge_host::{ForgeHost, LiveForge, Relaunch};
 use super::journal::Journal;
 use super::log_tail::newest_lines;
 use super::outcome::{
@@ -11,14 +12,16 @@ use super::outcome::{
     StepStatus,
 };
 use super::session::{Session, execute_steps, interrupted, not_run};
-use super::steps::ActionIndex;
+use super::steps::{ActionIndex, DonationFakes};
 use crate::EmulatorError;
 use crate::control::EventFilter;
 use crate::discord::FakeDiscord;
-use crate::fixture::Redactions;
+use crate::donatello::{FakeDonatello, FakeDonatelloConfig};
+use crate::fixture::{Fixture, Redactions};
 use crate::launch::{
     ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
+use crate::monobank::{FakeJar, FakeMonobank, FakeMonobankConfig};
 use crate::obs::FakeObs;
 use crate::overlay::OverlayPages;
 use crate::scenario::{Expectation, Scenario, StepAction};
@@ -62,58 +65,17 @@ pub async fn run_scenario(
     let clock = RunClock::starting_now();
     tokio::pin!(stop);
 
-    let fake = match (&scenario.fixture.twitch, &scenario.fakes.twitch) {
-        (Some(account), Some(setup)) => Some(FakeTwitch::start(setup.config_for(account)).await?),
-        _ => None,
-    };
-    let discord = match &scenario.fakes.discord {
-        Some(_) => {
-            let names: Vec<String> = scenario
-                .fixture
-                .discord_webhooks
-                .iter()
-                .map(|webhook| webhook.name.clone())
-                .collect();
-            match FakeDiscord::start(&names).await {
-                Ok(discord) => Some(discord),
-                Err(e) => {
-                    shut_down_fakes(fake, None, None).await;
-                    return Err(e);
-                }
-            }
-        }
-        None => None,
-    };
-    let obs = match &scenario.fakes.obs {
-        Some(config) => match FakeObs::start(config.clone()).await {
-            Ok(obs) => Some(obs),
-            Err(e) => {
-                shut_down_fakes(fake, discord, None).await;
-                return Err(e);
-            }
-        },
-        None => None,
-    };
-    let fixture = match &discord {
-        Some(discord) => discord.addressed(&scenario.fixture),
-        None => scenario.fixture.clone(),
-    };
-    let fixture = match &obs {
-        Some(obs) => obs.addressed(&fixture),
-        None => fixture,
-    };
+    let fakes = RunFakes::start(scenario).await?;
+    let fixture = fakes.addressed(&scenario.fixture);
     let launch = LaunchOptions {
         emulator: options.emulator,
         forge: options.forge,
         run_root: options.run_root.clone(),
         fixture,
-        endpoint_overrides: fake
-            .as_ref()
-            .map(|fake| fake.endpoint_overrides().to_vec())
-            .unwrap_or_default(),
+        endpoint_overrides: fakes.endpoint_overrides(),
         log_directives: options.log_directives,
-        guard: options.guard,
-        live: options.live,
+        guard: options.guard.clone(),
+        live: options.live.clone(),
         ready_timeout: Duration::from_millis(*within_ms),
         max_attempts: options.max_attempts,
         shutdown_grace: options.shutdown_grace,
@@ -122,20 +84,21 @@ pub async fn run_scenario(
     let launched = tokio::select! {
         launched = launch_forge(&launch) => launched,
         () = &mut stop => {
-            shut_down_fakes(fake, discord, obs).await;
+            fakes.shutdown().await;
             return Ok(interrupted_before_ready(scenario));
         }
     };
     let LaunchedForge {
-        mut process,
+        process,
         client,
         events,
         seed,
         attempts,
+        spec,
     } = match launched {
         Ok(launched) => launched,
         Err(e) => {
-            shut_down_fakes(fake, discord, obs).await;
+            fakes.shutdown().await;
             return Err(e);
         }
     };
@@ -146,7 +109,7 @@ pub async fn run_scenario(
     {
         drop(client);
         let _ = process.shutdown(options.shutdown_grace).await;
-        shut_down_fakes(fake, discord, obs).await;
+        fakes.shutdown().await;
         return Err(e);
     }
     let version = client.forge_version().await.ok();
@@ -157,17 +120,34 @@ pub async fn run_scenario(
         Err(e) => {
             drop(client);
             let _ = process.shutdown(options.shutdown_grace).await;
-            shut_down_fakes(fake, discord, obs).await;
+            fakes.shutdown().await;
             return Err(e);
         }
     };
     let log_dir = process.log_dir();
+    let data_dir = process.data_dir().to_owned();
+    let forge = ForgeHost::new(
+        process,
+        client,
+        feeder,
+        journal.clone(),
+        Relaunch {
+            spec,
+            guard: options.guard,
+            live: options.live,
+            server_port: seed.server.port,
+            bearer_token: seed.server.bearer_token.clone(),
+            filters,
+            shutdown_grace: options.shutdown_grace,
+        },
+    );
     let session = Session {
-        client: &client,
+        forge: &forge,
         journal: &journal,
-        twitch: fake.as_ref(),
-        discord: discord.as_ref(),
-        obs: obs.as_ref(),
+        twitch: fakes.twitch.as_ref(),
+        discord: fakes.discord.as_ref(),
+        obs: fakes.obs.as_ref(),
+        donations: fakes.donations(&scenario.fixture),
         actions: &actions,
         pages: &pages,
         log_dir: log_dir.clone(),
@@ -182,17 +162,30 @@ pub async fn run_scenario(
     drop(session);
     pages.close();
 
-    let exited_during_run = !process.is_running();
-    let pid = process.pid();
-    let data_dir = process.data_dir().to_owned();
-    let output = process.output().clone();
-    drop(client);
-    let (exit, teardown_error) = match process.shutdown(options.shutdown_grace).await {
-        Ok(exit) => (Some(exit), None),
-        Err(e) => (None, Some(e.to_string())),
-    };
-    feeder.abort();
-    shut_down_fakes(fake, discord, obs).await;
+    let pid = forge.last_pid();
+    let (exited_during_run, output, exit, teardown_error) =
+        match forge.into_live().map(LiveForge::into_parts) {
+            Some((Some(mut process), client, feeder)) => {
+                let exited_during_run = !process.is_running();
+                let output = process.output().clone();
+                drop(client);
+                let (exit, teardown_error) = match process.shutdown(options.shutdown_grace).await {
+                    Ok(exit) => (Some(exit), None),
+                    Err(e) => (None, Some(e.to_string())),
+                };
+                if let Some(feeder) = feeder {
+                    feeder.abort();
+                }
+                (exited_during_run, Some(output), exit, teardown_error)
+            }
+            _ => (
+                true,
+                None,
+                None,
+                Some("forge was not running at the end of the run".to_owned()),
+            ),
+        };
+    fakes.shutdown().await;
 
     let forge = ForgeEvidence {
         run_root: options.run_root,
@@ -205,8 +198,14 @@ pub async fn run_scenario(
         exited_during_run,
         exit,
         teardown_error,
-        stderr_tail: output.tail(OutputStream::Stderr, EVIDENCE_TAIL_LINES),
-        stdout_tail: output.tail(OutputStream::Stdout, EVIDENCE_TAIL_LINES),
+        stderr_tail: output
+            .as_ref()
+            .map(|output| output.tail(OutputStream::Stderr, EVIDENCE_TAIL_LINES))
+            .unwrap_or_default(),
+        stdout_tail: output
+            .as_ref()
+            .map(|output| output.tail(OutputStream::Stdout, EVIDENCE_TAIL_LINES))
+            .unwrap_or_default(),
     };
     Ok(ScenarioOutcome {
         name: scenario.name.clone(),
@@ -215,6 +214,136 @@ pub async fn run_scenario(
         forge: Some(forge),
         redactions: Redactions::for_run(&scenario.fixture, Some(&seed)),
     })
+}
+
+struct RunFakes {
+    twitch: Option<FakeTwitch>,
+    discord: Option<FakeDiscord>,
+    obs: Option<FakeObs>,
+    donatello: Option<FakeDonatello>,
+    monobank: Option<FakeMonobank>,
+}
+
+impl RunFakes {
+    async fn start(scenario: &Scenario) -> Result<Self, EmulatorError> {
+        let mut fakes = Self {
+            twitch: None,
+            discord: None,
+            obs: None,
+            donatello: None,
+            monobank: None,
+        };
+        if let Err(e) = fakes.start_each(scenario).await {
+            fakes.shutdown().await;
+            return Err(e);
+        }
+        Ok(fakes)
+    }
+
+    async fn start_each(&mut self, scenario: &Scenario) -> Result<(), EmulatorError> {
+        if let (Some(account), Some(setup)) = (&scenario.fixture.twitch, &scenario.fakes.twitch) {
+            self.twitch = Some(FakeTwitch::start(setup.config_for(account)).await?);
+        }
+        if scenario.fakes.discord.is_some() {
+            let names: Vec<String> = scenario
+                .fixture
+                .discord_webhooks
+                .iter()
+                .map(|webhook| webhook.name.clone())
+                .collect();
+            self.discord = Some(FakeDiscord::start(&names).await?);
+        }
+        if let Some(config) = &scenario.fakes.obs {
+            self.obs = Some(FakeObs::start(config.clone()).await?);
+        }
+        let now = time::OffsetDateTime::now_utc();
+        if let Some(setup) = &scenario.fakes.donatello {
+            let donations = setup
+                .history
+                .iter()
+                .map(|gift| gift.to_fake(now))
+                .collect::<Result<Vec<_>, _>>()?;
+            self.donatello = Some(
+                FakeDonatello::start(FakeDonatelloConfig {
+                    donations,
+                    ..FakeDonatelloConfig::default()
+                })
+                .await?,
+            );
+        }
+        if let (Some(account), Some(setup)) = (&scenario.fixture.monobank, &scenario.fakes.monobank)
+        {
+            let transactions = setup
+                .history
+                .iter()
+                .map(|gift| (account.jar_id.clone(), gift.to_fake(now)))
+                .collect();
+            self.monobank = Some(
+                FakeMonobank::start(FakeMonobankConfig {
+                    jars: vec![FakeJar::new(&account.jar_id, &account.jar_id)],
+                    transactions,
+                    ..FakeMonobankConfig::default()
+                })
+                .await?,
+            );
+        }
+        Ok(())
+    }
+
+    fn addressed(&self, fixture: &Fixture) -> Fixture {
+        let fixture = match &self.discord {
+            Some(discord) => discord.addressed(fixture),
+            None => fixture.clone(),
+        };
+        match &self.obs {
+            Some(obs) => obs.addressed(&fixture),
+            None => fixture,
+        }
+    }
+
+    fn endpoint_overrides(&self) -> Vec<(&'static str, String)> {
+        let mut overrides = self
+            .twitch
+            .as_ref()
+            .map(|twitch| twitch.endpoint_overrides().to_vec())
+            .unwrap_or_default();
+        overrides.extend(
+            self.donatello
+                .as_ref()
+                .map(FakeDonatello::endpoint_override),
+        );
+        overrides.extend(self.monobank.as_ref().map(FakeMonobank::endpoint_override));
+        overrides
+    }
+
+    fn donations<'a>(&'a self, fixture: &'a Fixture) -> DonationFakes<'a> {
+        DonationFakes {
+            donatello: self.donatello.as_ref(),
+            monobank: self
+                .monobank
+                .as_ref()
+                .zip(fixture.monobank.as_ref())
+                .map(|(fake, account)| (fake, account.jar_id.as_str())),
+        }
+    }
+
+    async fn shutdown(self) {
+        if let Some(obs) = self.obs {
+            obs.shutdown().await;
+        }
+        if let Some(twitch) = self.twitch {
+            twitch.shutdown().await;
+        }
+        if let Some(discord) = self.discord {
+            discord.shutdown().await;
+        }
+        if let Some(donatello) = self.donatello {
+            donatello.shutdown().await;
+        }
+        if let Some(monobank) = self.monobank {
+            monobank.shutdown().await;
+        }
+    }
 }
 
 pub fn subscription_filters(scenario: &Scenario) -> Vec<EventFilter> {
@@ -251,22 +380,6 @@ pub fn verdict(steps: &[StepOutcome], forge_exited_during_run: bool) -> Scenario
         ScenarioVerdict::Passed
     } else {
         ScenarioVerdict::Failed
-    }
-}
-
-async fn shut_down_fakes(
-    fake: Option<FakeTwitch>,
-    discord: Option<FakeDiscord>,
-    obs: Option<FakeObs>,
-) {
-    if let Some(obs) = obs {
-        obs.shutdown().await;
-    }
-    if let Some(fake) = fake {
-        fake.shutdown().await;
-    }
-    if let Some(discord) = discord {
-        discord.shutdown().await;
     }
 }
 

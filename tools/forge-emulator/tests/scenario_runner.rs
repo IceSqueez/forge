@@ -5,20 +5,24 @@ use std::time::Duration;
 
 use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint};
 use forge_emulator::discord::FakeDiscord;
+use forge_emulator::donatello::{FAKE_DONATELLO_TOKEN, FakeDonatello, FakeDonatelloConfig};
 use forge_emulator::fixture::{SeedReport, SeededCommand, SeededServer, TwitchAccount};
+use forge_emulator::monobank::{FAKE_MONOBANK_TOKEN, FakeJar, FakeMonobank, FakeMonobankConfig};
 use forge_emulator::obs::{FakeObs, FakeObsConfig};
 use forge_emulator::overlay::OverlayPages;
 use forge_emulator::run::{
-    ActionDetail, ActionIndex, ActionReport, FailureCause, Journal, RunClock, Session, StepOutcome,
-    StepStatus, Verdict, execute_steps,
+    ActionDetail, ActionIndex, ActionReport, DonationFakes, FailureCause, ForgeHost, Journal,
+    RunClock, Session, StepOutcome, StepStatus, Verdict, execute_steps,
 };
 use forge_emulator::scenario::{Scenario, parse_scenario};
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
 use forge_events::{Event, EventSource};
 use forge_types::{ActionId, EventId, TriggerInstanceId};
 use futures_util::{SinkExt, StreamExt};
+use reqwest::Response;
 use serde_json::{Value, json};
 use tempfile::TempDir;
+use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -285,7 +289,9 @@ struct Harness {
     fake: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
     obs: Option<FakeObs>,
-    client: ControlClient,
+    donatello: Option<FakeDonatello>,
+    monobank: Option<FakeMonobank>,
+    host: ForgeHost,
     journal: Journal,
     actions: ActionIndex,
     pages: OverlayPages,
@@ -337,7 +343,9 @@ impl Harness {
             fake,
             discord: None,
             obs: None,
-            client,
+            donatello: None,
+            monobank: None,
+            host: ForgeHost::attached(client, journal.clone()),
             journal,
             actions,
             pages,
@@ -348,11 +356,15 @@ impl Harness {
 
     fn session(&self) -> Session<'_> {
         Session {
-            client: &self.client,
+            forge: &self.host,
             journal: &self.journal,
             twitch: self.fake.as_ref(),
             discord: self.discord.as_ref(),
             obs: self.obs.as_ref(),
+            donations: DonationFakes {
+                donatello: self.donatello.as_ref(),
+                monobank: self.monobank.as_ref().map(|fake| (fake, JAR)),
+            },
             actions: &self.actions,
             pages: &self.pages,
             log_dir: self.logs.path().to_owned(),
@@ -1095,5 +1107,154 @@ async fn obs_checks_without_a_fake_obs_fail_as_unrunnable() {
     assert_eq!(
         verdicts(&steps[0]),
         [Verdict::Failed(FailureCause::NoFakeObs)]
+    );
+}
+
+const JAR: &str = "jar-stream";
+
+async fn harness_with_donations() -> Harness {
+    let mut harness = Harness::start(COOPERATIVE, false).await;
+    harness.donatello = Some(
+        FakeDonatello::start(FakeDonatelloConfig::default())
+            .await
+            .unwrap(),
+    );
+    harness.monobank = Some(
+        FakeMonobank::start(FakeMonobankConfig {
+            jars: vec![FakeJar::new(JAR, "Stream jar")],
+            ..FakeMonobankConfig::default()
+        })
+        .await
+        .unwrap(),
+    );
+    harness
+}
+
+fn donation_scenario(steps: Value) -> Scenario {
+    scenario(
+        json!({ "donatello": {}, "monobank": { "jar_id": JAR } }),
+        json!({ "donatello": {}, "monobank": {} }),
+        steps,
+    )
+}
+
+async fn donatello_list(harness: &Harness) -> Response {
+    let fake = harness.donatello.as_ref().unwrap();
+    reqwest::Client::new()
+        .get(format!("{}/donates?page=0&size=20", fake.base_url()))
+        .header("X-Token", FAKE_DONATELLO_TOKEN)
+        .send()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_donatello_donation_step_lists_the_gift_on_the_next_read() {
+    let harness = harness_with_donations().await;
+    let scenario = donation_scenario(json!([
+        ready(),
+        { "do": { "donatello_donation": { "id": "dl-1", "donor": "Olena", "amount": "150" } } }
+    ]));
+
+    harness.run(&scenario).await;
+
+    let page: Value = donatello_list(&harness).await.json().await.unwrap();
+    assert_eq!(page["content"][0]["pubId"], json!("dl-1"), "{page}");
+}
+
+#[tokio::test]
+async fn a_monobank_top_up_step_lands_in_the_seeded_jar() {
+    let harness = harness_with_donations().await;
+    let scenario = donation_scenario(json!([
+        ready(),
+        { "do": { "monobank_top_up": { "id": "ml-1", "sender": "Taras", "amount_minor": 2500 } } }
+    ]));
+    let from = OffsetDateTime::now_utc().unix_timestamp() - 60;
+
+    harness.run(&scenario).await;
+
+    let fake = harness.monobank.as_ref().unwrap();
+    let to = OffsetDateTime::now_utc().unix_timestamp() + 60;
+    let items: Value = reqwest::Client::new()
+        .get(format!(
+            "{}/personal/statement/{JAR}/{from}/{to}",
+            fake.base_url()
+        ))
+        .header("X-Token", FAKE_MONOBANK_TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(items[0]["id"], json!("ml-1"), "{items}");
+}
+
+fn donatello_only_scenario(steps: Value) -> Scenario {
+    scenario(
+        json!({ "donatello": {} }),
+        json!({ "donatello": {} }),
+        steps,
+    )
+}
+
+#[tokio::test]
+async fn donations_polled_fails_when_no_list_is_read_after_the_step_begins() {
+    let mut harness = harness_with_donations().await;
+    harness.monobank = None;
+    donatello_list(&harness).await;
+    let scenario = donatello_only_scenario(json!([
+        ready(),
+        { "do": { "donations_polled": { "within_ms": 200 } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(statuses(&steps), [StepStatus::Passed, StepStatus::Failed]);
+}
+
+#[tokio::test]
+async fn donations_polled_passes_once_every_service_serves_a_list() {
+    let mut harness = harness_with_donations().await;
+    harness.monobank = None;
+    let base_url = harness.donatello.as_ref().unwrap().base_url().to_owned();
+    let poller = tokio::spawn(async move {
+        loop {
+            let _ = reqwest::Client::new()
+                .get(format!("{base_url}/donates?page=0&size=20"))
+                .header("X-Token", FAKE_DONATELLO_TOKEN)
+                .send()
+                .await;
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    });
+    let scenario = donatello_only_scenario(json!([
+        ready(),
+        { "do": { "donations_polled": { "within_ms": 5000 } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+    poller.abort();
+
+    assert_eq!(statuses(&steps), [StepStatus::Passed, StepStatus::Passed]);
+}
+
+#[tokio::test]
+async fn forge_restart_fails_on_a_forge_the_emulator_did_not_launch() {
+    let harness = harness_with_donations().await;
+    let scenario = donation_scenario(json!([
+        ready(),
+        { "do": { "forge_restart": { "within_ms": 1000 } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(
+            &steps[1].action,
+            Some(ActionReport::Failed { reason, .. }) if reason.contains("cannot be restarted")
+        ),
+        "{:?}",
+        steps[1].action
     );
 }

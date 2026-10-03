@@ -1373,3 +1373,141 @@ fn an_obs_started_from_a_step_may_then_be_restarted() {
 
     assert_eq!(problems(scenario), []);
 }
+
+fn donations(fixture: Value, fakes: Value, steps: Vec<Value>) -> Value {
+    let mut all = vec![step(json!({ "forge_ready": { "within_ms": 60000 } }))];
+    all.extend(steps);
+    json!({
+        "name": "donations",
+        "purpose": "donation setup",
+        "fixture": fixture,
+        "fakes": fakes,
+        "steps": all
+    })
+}
+
+fn donatello_gift(id: &str) -> Value {
+    json!({ "id": id, "amount": "10" })
+}
+
+fn monobank_gift(amount_minor: i64) -> Value {
+    json!({ "id": "m-1", "sender": "Taras", "amount_minor": amount_minor })
+}
+
+#[test]
+fn donation_service_setup_and_step_problems_are_located() {
+    let both_fixture = json!({ "donatello": {}, "monobank": { "jar_id": "jar" } });
+    let both_fakes = json!({ "donatello": {}, "monobank": {} });
+    assert_cases(vec![
+        (
+            "a seeded Donatello token without a fake would poll the real service",
+            donations(json!({ "donatello": {} }), json!({}), vec![]),
+            vec![(
+                "fakes.donatello",
+                "is required because the fixture seeds a Donatello token; without it forge would poll the real Donatello",
+            )],
+        ),
+        (
+            "a fake monobank without a seeded jar is never polled",
+            donations(json!({}), json!({ "monobank": {} }), vec![]),
+            vec![(
+                "fakes.monobank",
+                "needs fixture.monobank: the fake jar is the one the fixture seeds",
+            )],
+        ),
+        (
+            "a blank jar id fails the fixture",
+            donations(
+                json!({ "monobank": { "jar_id": " " } }),
+                json!({ "monobank": {} }),
+                vec![],
+            ),
+            vec![(
+                "fixture",
+                "monobank.jar_id is blank, so forge would have no jar to watch",
+            )],
+        ),
+        (
+            "a donation step needs its fake",
+            donations(
+                json!({}),
+                json!({}),
+                vec![step(json!({ "donatello_donation": donatello_gift("d-1") }))],
+            ),
+            vec![(
+                "steps[1].do.donatello_donation",
+                "needs a fake Donatello: add fixture.donatello and fakes.donatello",
+            )],
+        ),
+        (
+            "a top-up must bring money in, at zero and below",
+            donations(
+                both_fixture.clone(),
+                both_fakes.clone(),
+                vec![
+                    step(json!({ "monobank_top_up": monobank_gift(0) })),
+                    step(json!({ "monobank_top_up": monobank_gift(-1) })),
+                ],
+            ),
+            vec![
+                (
+                    "steps[1].do.monobank_top_up.amount_minor",
+                    "must be positive: a jar top-up is money coming in",
+                ),
+                (
+                    "steps[2].do.monobank_top_up.amount_minor",
+                    "must be positive: a jar top-up is money coming in",
+                ),
+            ],
+        ),
+        (
+            "waiting for polls needs a donation fake",
+            donations(
+                json!({}),
+                json!({}),
+                vec![step(json!({ "donations_polled": { "within_ms": 1000 } }))],
+            ),
+            vec![(
+                "steps[1].do.donations_polled",
+                "needs a fake donation service: add fakes.donatello or fakes.monobank",
+            )],
+        ),
+        (
+            "a restart checks its window and every offline gift",
+            donations(
+                json!({ "donatello": {} }),
+                json!({ "donatello": {} }),
+                vec![step(json!({ "forge_restart": {
+                    "within_ms": 0,
+                    "offline": [
+                        { "donatello": donatello_gift(" ") },
+                        { "monobank": monobank_gift(100) }
+                    ]
+                } }))],
+            ),
+            vec![
+                (
+                    "steps[1].do.forge_restart.within_ms",
+                    "must be between 1 and 300000, got 0",
+                ),
+                (
+                    "steps[1].do.forge_restart.offline[0].id",
+                    "must not be blank",
+                ),
+                (
+                    "steps[1].do.forge_restart.offline[1]",
+                    "needs a fake monobank: add fixture.monobank and fakes.monobank",
+                ),
+            ],
+        ),
+        (
+            "history gifts are checked where the fake declares them",
+            donations(
+                both_fixture,
+                json!({ "donatello": { "history": [donatello_gift("")] }, "monobank": {} }),
+                vec![],
+            ),
+            vec![("fakes.donatello.history[0].id", "must not be blank")],
+        ),
+    ]);
+}

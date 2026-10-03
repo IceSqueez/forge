@@ -1,20 +1,27 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use axum::http::StatusCode;
+use forge_donatello::DONATELLO_INTEGRATION;
+use forge_monobank::MONOBANK_INTEGRATION;
 use forge_types::ActionId;
+use time::OffsetDateTime;
 
+use super::forge_host::ForgeHost;
 use super::ledger_checks::{
     holds_live_subscription, live_subscription_types, subscription_excerpt,
 };
 use super::outcome::{ActionDetail, LedgerExcerpt};
 use crate::EmulatorError;
 use crate::control::ControlClient;
+use crate::donatello::{DONATES_PATH, FakeDonatello};
 use crate::fixture::SeedReport;
+use crate::monobank::{FakeMonobank, MonobankEndpoint};
 use crate::obs::{
     CURRENT_PROGRAM_SCENE_CHANGED, FakeObs, INPUT_MUTE_STATE_CHANGED, STREAM_STATE_CHANGED,
 };
 use crate::overlay::OverlayPages;
-use crate::scenario::{Crowd, StepAction};
+use crate::scenario::{Crowd, DonatelloGift, MonobankGift, OfflineGift, StepAction};
 use crate::twitch::FakeTwitch;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -52,8 +59,112 @@ pub(crate) struct Stimuli<'a> {
     pub(crate) client: &'a ControlClient,
     pub(crate) twitch: Option<&'a FakeTwitch>,
     pub(crate) obs: Option<&'a FakeObs>,
+    pub(crate) donations: DonationFakes<'a>,
     pub(crate) actions: &'a ActionIndex,
     pub(crate) pages: &'a OverlayPages,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct DonationFakes<'a> {
+    pub donatello: Option<&'a FakeDonatello>,
+    pub monobank: Option<(&'a FakeMonobank, &'a str)>,
+}
+
+impl DonationFakes<'_> {
+    pub(crate) fn donate_on_donatello(
+        &self,
+        gift: &DonatelloGift,
+    ) -> Result<ActionDetail, ActionFailure> {
+        let donatello = self
+            .donatello
+            .ok_or_else(|| plain("the run has no fake Donatello".to_owned()))?;
+        donatello.donate(gift.to_fake(OffsetDateTime::now_utc()).map_err(refused)?);
+        Ok(ActionDetail::DonationListed {
+            provider: DONATELLO_INTEGRATION.id.as_str().to_owned(),
+            donation_id: gift.id.clone(),
+        })
+    }
+
+    pub(crate) fn top_up_on_monobank(
+        &self,
+        gift: &MonobankGift,
+    ) -> Result<ActionDetail, ActionFailure> {
+        let (monobank, jar) = self
+            .monobank
+            .ok_or_else(|| plain("the run has no fake monobank".to_owned()))?;
+        monobank.top_up(jar, gift.to_fake(OffsetDateTime::now_utc()));
+        Ok(ActionDetail::DonationListed {
+            provider: MONOBANK_INTEGRATION.id.as_str().to_owned(),
+            donation_id: gift.id.clone(),
+        })
+    }
+
+    pub(crate) fn deliver(&self, gift: &OfflineGift) -> Result<ActionDetail, ActionFailure> {
+        match gift {
+            OfflineGift::Donatello(gift) => self.donate_on_donatello(gift),
+            OfflineGift::Monobank(gift) => self.top_up_on_monobank(gift),
+        }
+    }
+
+    pub(crate) async fn await_lists(
+        &self,
+        within: Duration,
+    ) -> Result<ActionDetail, ActionFailure> {
+        let mut services = Vec::new();
+        if let Some(donatello) = self.donatello {
+            let from = donatello.requests().len();
+            donatello
+                .wait_for("a Donatello donation list request", within, |requests| {
+                    requests[from..]
+                        .iter()
+                        .any(|request| {
+                            request.path == DONATES_PATH
+                                && request.status == StatusCode::OK.as_u16()
+                        })
+                        .then_some(())
+                })
+                .await
+                .map_err(refused)?;
+            services.push(DONATELLO_INTEGRATION.id.as_str().to_owned());
+        }
+        if let Some((monobank, _)) = self.monobank {
+            let from = monobank.requests().len();
+            monobank
+                .wait_for("a monobank statement request", within, |requests| {
+                    requests[from..]
+                        .iter()
+                        .any(|request| {
+                            request.endpoint == Some(MonobankEndpoint::Statement)
+                                && request.status == StatusCode::OK.as_u16()
+                        })
+                        .then_some(())
+                })
+                .await
+                .map_err(refused)?;
+            services.push(MONOBANK_INTEGRATION.id.as_str().to_owned());
+        }
+        Ok(ActionDetail::DonationsPolled { services })
+    }
+}
+
+pub(crate) async fn restart_forge(
+    forge: &ForgeHost,
+    donations: DonationFakes<'_>,
+    within_ms: u64,
+    offline: &[OfflineGift],
+) -> Result<ActionDetail, ActionFailure> {
+    forge.stop().await.map_err(refused)?;
+    for gift in offline {
+        donations.deliver(gift)?;
+    }
+    let pid = forge
+        .start(Duration::from_millis(within_ms))
+        .await
+        .map_err(refused)?;
+    Ok(ActionDetail::ForgeRestarted {
+        offline: offline.iter().map(|gift| gift.id().to_owned()).collect(),
+        pid,
+    })
 }
 
 impl Stimuli<'_> {
@@ -149,6 +260,16 @@ impl Stimuli<'_> {
                 let delivered = self.obs()?.set_input_mute(input, *muted).map_err(refused)?;
                 pushed(INPUT_MUTE_STATE_CHANGED, delivered)
             }
+            StepAction::DonatelloDonation(gift) => self.donations.donate_on_donatello(gift),
+            StepAction::MonobankTopUp(gift) => self.donations.top_up_on_monobank(gift),
+            StepAction::DonationsPolled { within_ms } => {
+                self.donations
+                    .await_lists(Duration::from_millis(*within_ms))
+                    .await
+            }
+            StepAction::ForgeRestart { .. } => Err(plain(
+                "forge_restart replaces the running forge, so the session performs it".to_owned(),
+            )),
         }
     }
 

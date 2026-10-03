@@ -28,7 +28,9 @@ rust-version.workspace = true
 workspace = true
 
 [dependencies]
+forge-donatello = { path = "../../crates/forge-donatello" }
 forge-events = { path = "../../crates/forge-events" }
+forge-monobank = { path = "../../crates/forge-monobank" }
 forge-obs = { path = "../../crates/forge-obs" }
 forge-overlay = { path = "../../crates/forge-overlay" }
 forge-platform-core = { path = "../../crates/forge-platform-core" }
@@ -42,6 +44,7 @@ base64 = { version = "0.22" }
 clap = { version = "4.6", features = ["derive"] }
 directories = { version = "6.0" }
 futures-util = { version = "0.3" }
+jiff = { version = "0.2", default-features = false, features = ["std", "tzdb-bundle-always"] }
 rand = { version = "0.10" }
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -59,8 +62,6 @@ rustix = { version = "1.1", features = ["process"] }
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["ws"] }
 forge-discord = { path = "../../crates/forge-discord" }
-forge-donatello = { path = "../../crates/forge-donatello" }
-forge-monobank = { path = "../../crates/forge-monobank" }
 forge-registry = { path = "../../crates/forge-registry" }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }

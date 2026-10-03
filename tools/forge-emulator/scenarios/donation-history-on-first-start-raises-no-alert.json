@@ -1,0 +1,119 @@
+{
+  "name": "donation history found on the first start raises no alert",
+  "purpose": "A fresh install connected to Donatello and a monobank jar that both already hold donations, some only minutes old. Those donations predate forge, so the first poll of each service records them as a baseline and raises no donation alert, not even for the ones inside the catch-up window. The absence is watched from launch through the end of the first poll that starts after forge is ready, two back-to-back windows with no gap between them.",
+  "fixture": {
+    "donatello": {},
+    "monobank": {
+      "jar_id": "jar-stream"
+    },
+    "event_triggers": [
+      {
+        "trigger_kind": "donation.received",
+        "action_name": "Donatello Alert",
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "donation %donation_id%"
+              }
+            },
+            "enabled": true
+          }
+        ],
+        "config": {
+          "provider": {
+            "type": "string",
+            "value": "donatello"
+          }
+        }
+      },
+      {
+        "trigger_kind": "donation.received",
+        "action_name": "Monobank Alert",
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "donation %donation_id%"
+              }
+            },
+            "enabled": true
+          }
+        ],
+        "config": {
+          "provider": {
+            "type": "string",
+            "value": "monobank"
+          }
+        }
+      }
+    ]
+  },
+  "fakes": {
+    "donatello": {
+      "history": [
+        {
+          "id": "dh-recent",
+          "donor": "Olena",
+          "amount": "100",
+          "message": "before the stream",
+          "minutes_ago": 5
+        },
+        {
+          "id": "dh-old",
+          "donor": "Petro",
+          "amount": "20",
+          "minutes_ago": 120
+        }
+      ]
+    },
+    "monobank": {
+      "history": [
+        {
+          "id": "mh-recent",
+          "sender": "Taras",
+          "amount_minor": 5000,
+          "minutes_ago": 10
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "do": {
+        "forge_ready": {
+          "within_ms": 60000
+        }
+      },
+      "expect": [
+        {
+          "event_absent": {
+            "source": "donation",
+            "kind": "donation.received",
+            "window_ms": 30000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "donations_polled": {
+          "within_ms": 120000
+        }
+      },
+      "expect": [
+        {
+          "event_absent": {
+            "source": "donation",
+            "kind": "donation.received",
+            "window_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

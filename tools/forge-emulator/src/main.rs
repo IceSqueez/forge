@@ -351,6 +351,7 @@ async fn launch(args: LaunchArgs) -> Result<(), EmulatorError> {
         mut events,
         seed,
         attempts,
+        ..
     } = launched;
     eprintln!(
         "forge-emulator: forge ready (pid {}, attempt {attempts}, server port {}, logs {})",

@@ -1,0 +1,196 @@
+{
+  "name": "a live donation raises exactly one alert on each donation service",
+  "purpose": "After both donation services have been polled once, a Donatello donation and then a monobank jar top-up each produce exactly one donation.received event that names its service and is not a test, and each runs only the action bound to its own service, once. Counts are exact over the whole window, so a donation announced twice, or announced again on a later poll, fails here.",
+  "fixture": {
+    "donatello": {},
+    "monobank": {
+      "jar_id": "jar-stream"
+    },
+    "event_triggers": [
+      {
+        "trigger_kind": "donation.received",
+        "action_name": "Donatello Alert",
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "donation %donation_id%"
+              }
+            },
+            "enabled": true
+          }
+        ],
+        "config": {
+          "provider": {
+            "type": "string",
+            "value": "donatello"
+          }
+        }
+      },
+      {
+        "trigger_kind": "donation.received",
+        "action_name": "Monobank Alert",
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "donation %donation_id%"
+              }
+            },
+            "enabled": true
+          }
+        ],
+        "config": {
+          "provider": {
+            "type": "string",
+            "value": "monobank"
+          }
+        }
+      }
+    ]
+  },
+  "fakes": {
+    "donatello": {},
+    "monobank": {}
+  },
+  "steps": [
+    {
+      "do": {
+        "forge_ready": {
+          "within_ms": 60000
+        }
+      }
+    },
+    {
+      "do": {
+        "donations_polled": {
+          "within_ms": 120000
+        }
+      }
+    },
+    {
+      "do": {
+        "donatello_donation": {
+          "id": "dl-1",
+          "donor": "Olena",
+          "amount": "150",
+          "message": "Слава!"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/donation_id": {
+                "equals": "dl-1"
+              },
+              "/test": {
+                "equals": false
+              },
+              "/provider": {
+                "equals": "donatello"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 40000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": {
+              "/action_name": {
+                "equals": "Donatello Alert"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 40000
+          }
+        },
+        {
+          "event_absent": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": {
+              "/action_name": {
+                "equals": "Monobank Alert"
+              }
+            },
+            "window_ms": 1000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "monobank_top_up": {
+          "id": "ml-1",
+          "sender": "Taras",
+          "amount_minor": 25000,
+          "comment": "на дрон"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/donation_id": {
+                "equals": "ml-1"
+              },
+              "/test": {
+                "equals": false
+              },
+              "/provider": {
+                "equals": "monobank"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 100000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": {
+              "/action_name": {
+                "equals": "Monobank Alert"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 100000
+          }
+        },
+        {
+          "event_absent": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": {
+              "/action_name": {
+                "equals": "Donatello Alert"
+              }
+            },
+            "window_ms": 1000
+          }
+        }
+      ]
+    }
+  ]
+}

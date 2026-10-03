@@ -1,0 +1,230 @@
+{
+  "name": "a donation made while forge was closed is announced once after a restart",
+  "purpose": "forge records the history of both services silently, announces one live Donatello donation, and is then quit. While it is down a Donatello donation and a monobank top-up arrive. On the next start both services list everything again; the two donations made while forge was closed are each announced exactly once, while the live donation already announced and the history recorded on the first start are never announced again.",
+  "fixture": {
+    "donatello": {},
+    "monobank": {
+      "jar_id": "jar-stream"
+    },
+    "event_triggers": [
+      {
+        "trigger_kind": "donation.received",
+        "action_name": "Donatello Alert",
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "donation %donation_id%"
+              }
+            },
+            "enabled": true
+          }
+        ],
+        "config": {
+          "provider": {
+            "type": "string",
+            "value": "donatello"
+          }
+        }
+      },
+      {
+        "trigger_kind": "donation.received",
+        "action_name": "Monobank Alert",
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "donation %donation_id%"
+              }
+            },
+            "enabled": true
+          }
+        ],
+        "config": {
+          "provider": {
+            "type": "string",
+            "value": "monobank"
+          }
+        }
+      }
+    ]
+  },
+  "fakes": {
+    "donatello": {
+      "history": [
+        {
+          "id": "dh-1",
+          "donor": "Olena",
+          "amount": "100",
+          "minutes_ago": 3
+        }
+      ]
+    },
+    "monobank": {
+      "history": [
+        {
+          "id": "mh-1",
+          "sender": "Taras",
+          "amount_minor": 5000,
+          "minutes_ago": 4
+        }
+      ]
+    }
+  },
+  "steps": [
+    {
+      "do": {
+        "forge_ready": {
+          "within_ms": 60000
+        }
+      }
+    },
+    {
+      "do": {
+        "donations_polled": {
+          "within_ms": 120000
+        }
+      }
+    },
+    {
+      "do": {
+        "donatello_donation": {
+          "id": "dl-1",
+          "donor": "Iryna",
+          "amount": "75"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/donation_id": {
+                "equals": "dl-1"
+              },
+              "/test": {
+                "equals": false
+              },
+              "/provider": {
+                "equals": "donatello"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 40000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "forge_restart": {
+          "within_ms": 60000,
+          "offline": [
+            {
+              "donatello": {
+                "id": "do-1",
+                "donor": "Mykola",
+                "amount": "200",
+                "message": "while you were away"
+              }
+            },
+            {
+              "monobank": {
+                "id": "mo-1",
+                "sender": "Oksana",
+                "amount_minor": 12000
+              }
+            }
+          ]
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/donation_id": {
+                "equals": "do-1"
+              },
+              "/test": {
+                "equals": false
+              },
+              "/provider": {
+                "equals": "donatello"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 40000
+          }
+        },
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/donation_id": {
+                "equals": "mo-1"
+              },
+              "/test": {
+                "equals": false
+              },
+              "/provider": {
+                "equals": "monobank"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 110000
+          }
+        },
+        {
+          "event_absent": {
+            "source": "donation",
+            "kind": "donation.received",
+            "window_ms": 110000,
+            "payload": {
+              "/donation_id": {
+                "equals": "dl-1"
+              }
+            }
+          }
+        },
+        {
+          "event_absent": {
+            "source": "donation",
+            "kind": "donation.received",
+            "window_ms": 110000,
+            "payload": {
+              "/donation_id": {
+                "equals": "dh-1"
+              }
+            }
+          }
+        },
+        {
+          "event_absent": {
+            "source": "donation",
+            "kind": "donation.received",
+            "window_ms": 110000,
+            "payload": {
+              "/donation_id": {
+                "equals": "mh-1"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+use crate::EmulatorError;
+
 use serde_json::{Value, json};
 
 pub const FAKE_DONATELLO_TOKEN: &str = "fake-donatello-token";
@@ -70,4 +72,16 @@ impl Default for FakeDonatelloConfig {
             donations: Vec::new(),
         }
     }
+}
+
+pub fn donatello_wall_clock(at: time::OffsetDateTime) -> Result<String, EmulatorError> {
+    let invalid = |reason: String| EmulatorError::InvalidFakeConfig { reason };
+    let instant = jiff::Timestamp::from_second(at.unix_timestamp())
+        .map_err(|e| invalid(format!("instant {at} is out of range: {e}")))?;
+    let zone = jiff::tz::TimeZone::get(forge_donatello::DONATELLO_ASSUMED_TIME_ZONE)
+        .map_err(|e| invalid(format!("time zone is unknown: {e}")))?;
+    Ok(instant
+        .to_zoned(zone)
+        .strftime("%Y-%m-%d %H:%M:%S")
+        .to_string())
 }

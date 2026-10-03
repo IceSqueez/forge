@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::crowd::Crowd;
+use super::donation::{DonatelloGift, MonobankGift, OfflineGift};
 use super::expectation::Expectation;
 use crate::twitch::{Viewer, ViewerBadge};
 
@@ -69,6 +70,16 @@ pub enum StepAction {
         input: String,
         muted: bool,
     },
+    DonatelloDonation(DonatelloGift),
+    MonobankTopUp(MonobankGift),
+    DonationsPolled {
+        within_ms: u64,
+    },
+    ForgeRestart {
+        within_ms: u64,
+        #[serde(default)]
+        offline: Vec<OfflineGift>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -119,6 +130,10 @@ impl StepAction {
             Self::ObsSceneSwitch { .. } => "obs_scene_switch",
             Self::ObsStream { .. } => "obs_stream",
             Self::ObsInputMute { .. } => "obs_input_mute",
+            Self::DonatelloDonation(_) => "donatello_donation",
+            Self::MonobankTopUp(_) => "monobank_top_up",
+            Self::DonationsPolled { .. } => "donations_polled",
+            Self::ForgeRestart { .. } => "forge_restart",
         }
     }
 

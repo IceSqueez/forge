@@ -23,7 +23,7 @@ pub const MAX_PAGE_SIZE: u64 = 100;
 
 const TOKEN_HEADER: &str = "x-token";
 const ME_PATH: &str = "/api/v1/me";
-const DONATES_PATH: &str = "/api/v1/donates";
+pub const DONATES_PATH: &str = "/api/v1/donates";
 const API_PREFIX: &str = "/api/v1";
 const PAGE_PARAMETER: &str = "page";
 const SIZE_PARAMETER: &str = "size";

@@ -8,6 +8,7 @@ use super::discord_checks::observe_discord_post;
 use super::event_checks::{
     Assessment, NamedEvents, Window, assess_causation, observe_absence, observe_event,
 };
+use super::forge_host::ForgeHost;
 use super::journal::Journal;
 use super::ledger_checks::{
     assess_no_unexpected_requests, assess_request_count, observe_subscription,
@@ -20,8 +21,7 @@ use super::outcome::{
     StepStatus, Verdict,
 };
 use super::overlay_checks::observe_overlay_content;
-use super::steps::{ActionIndex, Stimuli};
-use crate::control::ControlClient;
+use super::steps::{ActionFailure, ActionIndex, DonationFakes, Stimuli, restart_forge};
 use crate::discord::FakeDiscord;
 use crate::obs::FakeObs;
 use crate::overlay::{OverlayMarks, OverlayPages};
@@ -29,11 +29,12 @@ use crate::scenario::{Expectation, Scenario, Step, StepAction};
 use crate::twitch::FakeTwitch;
 
 pub struct Session<'a> {
-    pub client: &'a ControlClient,
+    pub forge: &'a ForgeHost,
     pub journal: &'a Journal,
     pub twitch: Option<&'a FakeTwitch>,
     pub discord: Option<&'a FakeDiscord>,
     pub obs: Option<&'a FakeObs>,
+    pub donations: DonationFakes<'a>,
     pub actions: &'a ActionIndex,
     pub pages: &'a OverlayPages,
     pub log_dir: PathBuf,
@@ -96,15 +97,24 @@ async fn run_step(
     };
     let performed = if is_ready_step {
         Ok(session.ready.clone())
+    } else if let StepAction::ForgeRestart { within_ms, offline } = &step.action {
+        restart_forge(session.forge, session.donations, *within_ms, offline).await
     } else {
-        let stimuli = Stimuli {
-            client: session.client,
-            twitch: session.twitch,
-            obs: session.obs,
-            actions: session.actions,
-            pages: session.pages,
-        };
-        stimuli.perform(&step.action).await
+        let live = session.forge.live().await;
+        match live.as_ref() {
+            Some(live) => {
+                let stimuli = Stimuli {
+                    client: &live.client,
+                    twitch: session.twitch,
+                    obs: session.obs,
+                    donations: session.donations,
+                    actions: session.actions,
+                    pages: session.pages,
+                };
+                stimuli.perform(&step.action).await
+            }
+            None => Err(forge_down()),
+        }
     };
     let acted = if is_ready_step {
         session.ready_at
@@ -303,6 +313,13 @@ fn split(
     deadline: Option<Instant>,
 ) -> (Verdict, Evidence, Option<Instant>) {
     (assessment.verdict, assessment.evidence, deadline)
+}
+
+fn forge_down() -> ActionFailure {
+    ActionFailure {
+        reason: "forge is not running: an earlier restart did not bring it back".to_owned(),
+        ledger: None,
+    }
 }
 
 fn no_fake_twitch() -> (Verdict, Evidence) {

@@ -4,6 +4,7 @@ use std::fmt;
 use forge_types::Variant;
 
 use super::crowd::{Crowd, CrowdLine, template_problem};
+use super::donation::{DonatelloGift, MonobankGift, OfflineGift};
 use super::expectation::{
     AbsentEvent, Causation, DiscordPost, Expectation, LogLine, ObservedEvent, OverlayContent,
     RequestCount, TwitchSubscription,
@@ -200,6 +201,7 @@ impl<'a> Validator<'a> {
             (None, None) => {}
         }
         self.check_fake_obs();
+        self.check_fake_donations();
         let seeds_webhooks = !scenario.fixture.discord_webhooks.is_empty();
         match (seeds_webhooks, &scenario.fakes.discord) {
             (true, None) => self.report(
@@ -210,6 +212,97 @@ impl<'a> Validator<'a> {
                 "fakes.discord",
                 "needs fixture.discord_webhooks: the fake answers only the webhooks the fixture seeds",
             ),
+            _ => {}
+        }
+    }
+
+    fn check_fake_donations(&mut self) {
+        let scenario = self.scenario;
+        match (&scenario.fixture.donatello, &scenario.fakes.donatello) {
+            (Some(_), None) => self.report(
+                "fakes.donatello",
+                "is required because the fixture seeds a Donatello token; without it forge would poll the real Donatello",
+            ),
+            (None, Some(_)) => self.report(
+                "fakes.donatello",
+                "needs fixture.donatello: forge polls Donatello only with a seeded token",
+            ),
+            (Some(_), Some(setup)) => {
+                for (index, gift) in setup.history.iter().enumerate() {
+                    self.check_donatello_gift(&format!("fakes.donatello.history[{index}]"), gift);
+                }
+            }
+            (None, None) => {}
+        }
+        match (&scenario.fixture.monobank, &scenario.fakes.monobank) {
+            (Some(_), None) => self.report(
+                "fakes.monobank",
+                "is required because the fixture seeds a monobank token; without it forge would poll the real monobank",
+            ),
+            (None, Some(_)) => self.report(
+                "fakes.monobank",
+                "needs fixture.monobank: the fake jar is the one the fixture seeds",
+            ),
+            (Some(_), Some(setup)) => {
+                for (index, gift) in setup.history.iter().enumerate() {
+                    self.check_monobank_gift(&format!("fakes.monobank.history[{index}]"), gift);
+                }
+            }
+            (None, None) => {}
+        }
+    }
+
+    fn check_donatello_gift(&mut self, location: &str, gift: &DonatelloGift) {
+        if self.scenario.fakes.donatello.is_none() {
+            self.report(
+                location,
+                "needs a fake Donatello: add fixture.donatello and fakes.donatello",
+            );
+        }
+        self.not_blank(format!("{location}.id"), &gift.id);
+        self.not_blank(format!("{location}.amount"), &gift.amount);
+    }
+
+    fn check_monobank_gift(&mut self, location: &str, gift: &MonobankGift) {
+        if self.scenario.fakes.monobank.is_none() {
+            self.report(
+                location,
+                "needs a fake monobank: add fixture.monobank and fakes.monobank",
+            );
+        }
+        self.not_blank(format!("{location}.id"), &gift.id);
+        if gift.amount_minor <= 0 {
+            self.report(
+                format!("{location}.amount_minor"),
+                "must be positive: a jar top-up is money coming in",
+            );
+        }
+    }
+
+    fn check_donation_action(&mut self, location: &str, action: &StepAction) {
+        let scenario = self.scenario;
+        match action {
+            StepAction::DonatelloDonation(gift) => self.check_donatello_gift(location, gift),
+            StepAction::MonobankTopUp(gift) => self.check_monobank_gift(location, gift),
+            StepAction::DonationsPolled { within_ms } => {
+                if scenario.fakes.donatello.is_none() && scenario.fakes.monobank.is_none() {
+                    self.report(
+                        location,
+                        "needs a fake donation service: add fakes.donatello or fakes.monobank",
+                    );
+                }
+                self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
+            }
+            StepAction::ForgeRestart { within_ms, offline } => {
+                self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_READY_MS);
+                for (index, gift) in offline.iter().enumerate() {
+                    let at = format!("{location}.offline[{index}]");
+                    match gift {
+                        OfflineGift::Donatello(gift) => self.check_donatello_gift(&at, gift),
+                        OfflineGift::Monobank(gift) => self.check_monobank_gift(&at, gift),
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -352,6 +445,10 @@ impl<'a> Validator<'a> {
             | StepAction::ObsSceneSwitch { .. }
             | StepAction::ObsStream { .. }
             | StepAction::ObsInputMute { .. } => self.check_obs_action(location, action),
+            StepAction::DonatelloDonation(_)
+            | StepAction::MonobankTopUp(_)
+            | StepAction::DonationsPolled { .. }
+            | StepAction::ForgeRestart { .. } => self.check_donation_action(location, action),
             StepAction::SetGlobal { name, value, .. } => {
                 self.not_blank(format!("{location}.name"), name);
                 if let Err(e) = Variant::from_json(value.clone()) {

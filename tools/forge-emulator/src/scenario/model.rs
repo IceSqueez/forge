@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use super::donation::{FakeDonatelloSetup, FakeMonobankSetup};
 use super::step::Step;
 use crate::fixture::{Fixture, TwitchAccount};
 use crate::obs::FakeObsConfig;
@@ -27,6 +28,10 @@ pub struct Fakes {
     pub discord: Option<FakeDiscordSetup>,
     #[serde(default)]
     pub obs: Option<FakeObsConfig>,
+    #[serde(default)]
+    pub donatello: Option<FakeDonatelloSetup>,
+    #[serde(default)]
+    pub monobank: Option<FakeMonobankSetup>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

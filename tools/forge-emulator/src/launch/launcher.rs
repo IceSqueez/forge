@@ -29,6 +29,7 @@ pub struct LaunchedForge {
     pub events: EventStream,
     pub seed: SeedReport,
     pub attempts: u32,
+    pub spec: LaunchSpec,
 }
 
 pub async fn launch_forge(options: &LaunchOptions) -> Result<LaunchedForge, EmulatorError> {
@@ -76,6 +77,7 @@ pub async fn launch_forge(options: &LaunchOptions) -> Result<LaunchedForge, Emul
                     events,
                     seed: seed_report,
                     attempts: attempt,
+                    spec,
                 });
             }
             Err(EmulatorError::ServerPortTaken { .. }) => {

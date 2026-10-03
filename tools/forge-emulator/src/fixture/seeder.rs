@@ -22,6 +22,10 @@ use super::spec::{
     OVERLAY_TARGET_KEY, ObsConnection, OverlayFixture, QueueFixture, TwitchAccount,
 };
 use crate::EmulatorError;
+use crate::donatello::FAKE_DONATELLO_TOKEN;
+use crate::monobank::FAKE_MONOBANK_TOKEN;
+use forge_donatello::DONATELLO_CREDENTIAL_ID;
+use forge_monobank::MONOBANK_CREDENTIAL_ID;
 
 const DATABASE_FILE: &str = "forge.db";
 const SERVER_BEARER_CREDENTIAL: &str = "server:bearer";
@@ -105,6 +109,22 @@ async fn write_fixture(
     }
     if let Some(obs) = &fixture.obs {
         seed_obs_connection(provider, obs).await?;
+    }
+    if fixture.donatello.is_some() {
+        let token = serde_json::json!({ "token": FAKE_DONATELLO_TOKEN }).to_string();
+        provider
+            .store(&CredentialId::new(DONATELLO_CREDENTIAL_ID), &token)
+            .await
+            .map_err(storage_error)?;
+    }
+    if let Some(monobank) = &fixture.monobank {
+        let credential =
+            serde_json::json!({ "token": FAKE_MONOBANK_TOKEN, "jar_id": monobank.jar_id })
+                .to_string();
+        provider
+            .store(&CredentialId::new(MONOBANK_CREDENTIAL_ID), &credential)
+            .await
+            .map_err(storage_error)?;
     }
     let kinds = builtin_overlay_kinds()?;
     let mut overlays = Vec::with_capacity(fixture.overlays.len());

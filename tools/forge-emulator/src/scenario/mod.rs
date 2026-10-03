@@ -1,4 +1,5 @@
 mod crowd;
+mod donation;
 mod expectation;
 mod load;
 mod matcher;
@@ -7,6 +8,9 @@ mod step;
 mod validate;
 
 pub use crowd::{Crowd, CrowdLine, CrowdMessage};
+pub use donation::{
+    DonatelloGift, FakeDonatelloSetup, FakeMonobankSetup, MonobankGift, OfflineGift,
+};
 pub use expectation::{
     AbsentEvent, Causation, DiscordPost, Expectation, LogLine, ObsAuthOutcome, ObsRequestSeen,
     ObservedCount, ObservedEvent, OverlayContent, RequestCount, TwitchSubscription,

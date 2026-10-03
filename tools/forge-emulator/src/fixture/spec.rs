@@ -25,6 +25,20 @@ pub struct Fixture {
     pub discord_webhooks: Vec<DiscordWebhook>,
     #[serde(default)]
     pub obs: Option<ObsConnection>,
+    #[serde(default)]
+    pub donatello: Option<DonatelloAccount>,
+    #[serde(default)]
+    pub monobank: Option<MonobankAccount>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DonatelloAccount {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MonobankAccount {
+    pub jar_id: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,6 +138,8 @@ impl Fixture {
             queues: Vec::new(),
             discord_webhooks: Vec::new(),
             obs: None,
+            donatello: None,
+            monobank: None,
         }
     }
 
@@ -212,6 +228,13 @@ impl Fixture {
                     webhook.name
                 )));
             }
+        }
+        if let Some(monobank) = &self.monobank
+            && monobank.jar_id.trim().is_empty()
+        {
+            return Err(invalid(
+                "monobank.jar_id is blank, so forge would have no jar to watch".to_owned(),
+            ));
         }
         for (index, queue) in self.queues.iter().enumerate() {
             if queue.name.trim().is_empty() {

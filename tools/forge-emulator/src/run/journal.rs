@@ -41,15 +41,19 @@ impl Journal {
 
     pub fn follow(stream: EventStream) -> (Self, JoinHandle<()>) {
         let journal = Self::new();
-        let feeder = journal.clone();
-        let task = tokio::spawn(async move {
+        let task = journal.attach(stream);
+        (journal, task)
+    }
+
+    pub fn attach(&self, stream: EventStream) -> JoinHandle<()> {
+        let feeder = self.clone();
+        tokio::spawn(async move {
             let mut stream = stream;
             while let Some(observation) = stream.next().await {
                 feeder.record(observation);
             }
             feeder.close();
-        });
-        (journal, task)
+        })
     }
 
     pub fn record(&self, observation: Observation) {

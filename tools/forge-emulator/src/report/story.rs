@@ -81,6 +81,26 @@ pub(crate) fn story(action: &StepAction) -> String {
             if *muted { "mute" } else { "unmute" },
             code(input)
         ),
+        StepAction::DonatelloDonation(gift) => format!(
+            "As a viewer I donate {} UAH on Donatello as donation {}",
+            gift.amount,
+            code(&gift.id)
+        ),
+        StepAction::MonobankTopUp(gift) => format!(
+            "As a viewer {} I top up the monobank jar by {} kopiyky as transaction {}",
+            code(&gift.sender),
+            gift.amount_minor,
+            code(&gift.id)
+        ),
+        StepAction::DonationsPolled { within_ms } => format!(
+            "As the donation services I wait up to {} for forge to read every donation list",
+            span_ms(*within_ms)
+        ),
+        StepAction::ForgeRestart { within_ms, offline } => format!(
+            "As the streamer I quit forge, {} arrive while it is down, and I start it again and wait up to {} for it to be ready",
+            plural(offline.len() as u64, "donation"),
+            span_ms(*within_ms)
+        ),
     }
 }
 
@@ -112,6 +132,10 @@ pub(crate) fn step_short(action: &StepAction) -> String {
             if *active { "starting" } else { "stopping" }
         ),
         StepAction::ObsInputMute { input, .. } => format!("muting {} in OBS", code(input)),
+        StepAction::DonatelloDonation(gift) => format!("Donatello donation {}", code(&gift.id)),
+        StepAction::MonobankTopUp(gift) => format!("monobank top-up {}", code(&gift.id)),
+        StepAction::DonationsPolled { .. } => "donation polling".to_owned(),
+        StepAction::ForgeRestart { .. } => "a forge restart".to_owned(),
     }
 }
 
@@ -140,6 +164,11 @@ pub(crate) fn action_title(action: &StepAction) -> String {
         StepAction::ObsSceneSwitch { .. }
         | StepAction::ObsStream { .. }
         | StepAction::ObsInputMute { .. } => "OBS event not delivered to forge".to_owned(),
+        StepAction::DonatelloDonation(_) | StepAction::MonobankTopUp(_) => {
+            "The fake donation service could not take the donation".to_owned()
+        }
+        StepAction::DonationsPolled { .. } => "forge did not read every donation list".to_owned(),
+        StepAction::ForgeRestart { .. } => "forge did not come back after a restart".to_owned(),
         StepAction::ForgeReady { .. } | StepAction::Pause { .. } => {
             format!("Step {} failed", code(action.keyword()))
         }
@@ -198,6 +227,17 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
         | StepAction::ObsInputMute { .. } => {
             "the fake OBS pushes the event to an identified session subscribed to it".to_owned()
         }
+        StepAction::DonatelloDonation(_) | StepAction::MonobankTopUp(_) => {
+            "the fake donation service lists the donation on its next poll".to_owned()
+        }
+        StepAction::DonationsPolled { within_ms } => format!(
+            "every fake donation service answers a donation list request within {}",
+            span_ms(*within_ms)
+        ),
+        StepAction::ForgeRestart { within_ms, .. } => format!(
+            "forge stops cleanly and becomes ready again on the same data within {}",
+            span_ms(*within_ms)
+        ),
     }
 }
 

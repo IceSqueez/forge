@@ -11,6 +11,7 @@ use forge_emulator::donatello::{
     DonatesFault, DonatesOrder, FAKE_DONATELLO_TOKEN, FakeDonatello, FakeDonatelloConfig,
     FakeDonation, PROFILE_INCOMPLETE_MESSAGE, UNAUTHORIZED_MESSAGE,
 };
+use forge_emulator::scenario::DonatelloGift;
 use forge_platform_core::{DonationProvider, DonationStream, PlatformEndpoints, PlatformError};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::{Donation, DonationOrigin};
@@ -351,4 +352,34 @@ async fn real_provider_surfaces_the_fake_rate_limit() {
         ),
         "{failure:?}"
     );
+}
+
+#[tokio::test]
+async fn a_scenario_gift_reaches_forge_at_the_instant_it_was_made_in_summer_and_winter() {
+    for now in [
+        time::macros::datetime!(2026-07-01 12:00:00 UTC),
+        time::macros::datetime!(2026-12-01 12:00:00 UTC),
+    ] {
+        let gift = DonatelloGift {
+            id: "gift".to_owned(),
+            donor: None,
+            amount: "10".to_owned(),
+            message: None,
+            minutes_ago: 90,
+        };
+        let fake = fake_with(FakeDonatelloConfig {
+            donations: vec![gift.to_fake(now).unwrap()],
+            ..FakeDonatelloConfig::default()
+        })
+        .await;
+        let (_provider, mut stream) = provider_against(&fake).await;
+
+        let read = next(&mut stream).await.unwrap();
+
+        assert_eq!(
+            read.occurred_at.unix_timestamp(),
+            (now - time::Duration::minutes(90)).unix_timestamp(),
+            "now {now}"
+        );
+    }
 }

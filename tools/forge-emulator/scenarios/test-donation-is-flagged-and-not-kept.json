@@ -1,0 +1,143 @@
+{
+  "name": "a test donation is announced as a test and is not kept",
+  "purpose": "Running the test-donation step announces one donation.received event flagged as a test, and the donation trigger runs its action for it exactly once. The test never enters the donation ledger, so after a restart nothing is waiting to be announced: no donation.received event of any kind follows.",
+  "fixture": {
+    "donatello": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "donation.received",
+        "action_name": "Donation Alert",
+        "steps": [
+          {
+            "kind_id": "core.log.write",
+            "config": {
+              "message": {
+                "type": "string",
+                "value": "donation %donation_id%"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "trigger_kind": "script.event.custom",
+        "action_name": "Send Test Donation",
+        "config": {
+          "event_name": {
+            "type": "string",
+            "value": "never-fired"
+          }
+        },
+        "steps": [
+          {
+            "kind_id": "donations.test_donation",
+            "config": {
+              "provider": {
+                "type": "string",
+                "value": "donatello"
+              },
+              "donor_name": {
+                "type": "string",
+                "value": "Tester"
+              },
+              "amount": {
+                "type": "string",
+                "value": "42"
+              },
+              "currency": {
+                "type": "string",
+                "value": "UAH"
+              },
+              "message": {
+                "type": "string",
+                "value": "just a test"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "donatello": {}
+  },
+  "steps": [
+    {
+      "do": {
+        "forge_ready": {
+          "within_ms": 60000
+        }
+      }
+    },
+    {
+      "do": {
+        "donations_polled": {
+          "within_ms": 60000
+        }
+      }
+    },
+    {
+      "do": {
+        "run_action": {
+          "action": "Send Test Donation"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": {
+              "/test": {
+                "equals": true
+              },
+              "/provider": {
+                "equals": "donatello"
+              },
+              "/donor_name": {
+                "equals": "Tester"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": {
+              "/action_name": {
+                "equals": "Donation Alert"
+              }
+            },
+            "count": {
+              "exactly": 1
+            },
+            "within_ms": 10000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "forge_restart": {
+          "within_ms": 60000
+        }
+      },
+      "expect": [
+        {
+          "event_absent": {
+            "source": "donation",
+            "kind": "donation.received",
+            "window_ms": 30000
+          }
+        }
+      ]
+    }
+  ]
+}

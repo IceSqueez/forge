@@ -1,5 +1,6 @@
 mod discord_checks;
 mod event_checks;
+mod forge_host;
 mod journal;
 mod ledger_checks;
 mod log_checks;
@@ -12,6 +13,7 @@ mod runner;
 mod session;
 mod steps;
 
+pub use forge_host::{ForgeHost, LiveForge, Relaunch};
 pub use journal::{Journal, JournalEntry, JournalView};
 pub use log_record::LogRecord;
 pub(crate) use log_tail::LogTail;
@@ -23,4 +25,4 @@ pub use outcome::{
 };
 pub use runner::{RunOptions, run_scenario, subscription_filters, verdict};
 pub use session::{Session, execute_steps};
-pub use steps::ActionIndex;
+pub use steps::{ActionIndex, DonationFakes};

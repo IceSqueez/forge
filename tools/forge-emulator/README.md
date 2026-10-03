@@ -56,6 +56,22 @@ running forge, and `seed` fills an empty data directory from a fixture on stdin.
 | `obs_scene_switch` | the streamer switches the OBS program scene |
 | `obs_stream` | the streamer starts or stops streaming in OBS |
 | `obs_input_mute` | the streamer mutes or unmutes an OBS input |
+| `donatello_donation` | a viewer donates on the fake Donatello |
+| `monobank_top_up` | a viewer tops up the seeded jar on the fake monobank |
+| `donations_polled` | waits until every fake donation service serves a donation list requested after the step began |
+| `forge_restart` | quits forge, hands the `offline` donations to the fakes while it is down, starts it again on the same data and waits until it is ready |
+
+## Donation services
+
+`fixture.donatello: {}` seeds the fake Donatello token and `fixture.monobank: { "jar_id": "..." }`
+seeds the fake monobank token with the jar forge watches; each needs its `fakes.donatello` /
+`fakes.monobank` entry, whose `history` lists donations the service already holds at launch.
+A gift is `{ "id", "donor"?, "amount", "message"?, "minutes_ago"? }` on Donatello and
+`{ "id", "sender", "amount_minor", "comment"?, "minutes_ago"? }` on monobank; `minutes_ago` dates
+it before the moment it is handed to the fake, and Donatello wall-clock times are written in the
+time zone forge reads them in. `forge_restart` lists its gifts as
+`{ "donatello": {...} }` / `{ "monobank": {...} }`. The journal keeps every event across the
+restart, so expectations on the restart step see only what the new process published.
 
 ## Triggers other than chat commands
 

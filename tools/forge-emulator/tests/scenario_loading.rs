@@ -39,7 +39,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p", "fixture": {},
 "steps": [{"do": {"wait_for": {}}}]}"#,
             (2, 28),
-            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `twitch_event`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`, `obs_online`, `obs_identified`, `obs_restart`, `obs_scene_switch`, `obs_stream`, `obs_input_mute`",
+            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `twitch_event`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`, `obs_online`, `obs_identified`, `obs_restart`, `obs_scene_switch`, `obs_stream`, `obs_input_mute`, `donatello_donation`, `monobank_top_up`, `donations_polled`, `forge_restart`",
         ),
         (
             "unknown field inside a step",
@@ -69,7 +69,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p",
 "fixture": {"twich": {}}, "steps": []}"#,
             (2, 19),
-            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`, `discord_webhooks`, `obs`",
+            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`, `discord_webhooks`, `obs`, `donatello`, `monobank`",
         ),
         (
             "missing deadline",

@@ -1179,6 +1179,10 @@ mod tests {
         })
     }
 
+    fn ring_shown(picker: &Entity<GridPicker>, vcx: &mut VisualTestContext) -> bool {
+        vcx.update(|_window, cx| picker.read(cx).cursor_visible)
+    }
+
     fn picks(picked: &Entity<Picked>, vcx: &mut VisualTestContext) -> Vec<String> {
         vcx.update(|_window, cx| picked.read(cx).seen.clone())
     }
@@ -1266,8 +1270,8 @@ mod tests {
     ) {
         let (picker, _picked, vcx) = open(cx, plain_roster());
 
-        let mut walked = vec![cursored(&picker, vcx)];
-        for _ in 0..3 {
+        let mut walked = Vec::new();
+        for _ in 0..4 {
             arrow(&picker, vcx, true);
             walked.push(cursored(&picker, vcx));
         }
@@ -1286,10 +1290,61 @@ mod tests {
     #[gpui::test]
     fn the_cursor_wraps_backward_from_the_first_match_to_the_last(cx: &mut gpui::TestAppContext) {
         let (picker, _picked, vcx) = open(cx, plain_roster());
+        arrow(&picker, vcx, true);
 
         arrow(&picker, vcx, false);
 
         assert_eq!(cursored(&picker, vcx), Some(GAMMA.to_owned()));
+    }
+
+    #[gpui::test]
+    fn no_keyboard_ring_is_shown_until_the_first_arrow_press(cx: &mut gpui::TestAppContext) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+
+        assert!(!ring_shown(&picker, vcx));
+    }
+
+    #[gpui::test]
+    fn the_first_down_press_reveals_the_ring_on_the_first_card_without_moving(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+
+        arrow(&picker, vcx, true);
+
+        assert!(ring_shown(&picker, vcx));
+        assert_eq!(cursored(&picker, vcx), Some(ALPHA.to_owned()));
+    }
+
+    #[gpui::test]
+    fn the_first_up_press_reveals_the_ring_on_the_last_card(cx: &mut gpui::TestAppContext) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+
+        arrow(&picker, vcx, false);
+
+        assert!(ring_shown(&picker, vcx));
+        assert_eq!(cursored(&picker, vcx), Some(GAMMA.to_owned()));
+    }
+
+    #[gpui::test]
+    fn changing_the_query_hides_the_ring_again(cx: &mut gpui::TestAppContext) {
+        let (picker, _picked, vcx) = open(cx, plain_roster());
+        arrow(&picker, vcx, true);
+        arrow(&picker, vcx, true);
+
+        type_query(&picker, vcx, SHARED_WORD);
+
+        assert!(!ring_shown(&picker, vcx));
+    }
+
+    #[gpui::test]
+    fn enter_with_the_ring_hidden_picks_the_first_match(cx: &mut gpui::TestAppContext) {
+        let (picker, picked, vcx) = open(cx, plain_roster());
+
+        press_enter(&picker, vcx);
+
+        assert_eq!(picks(&picked, vcx), vec![ALPHA.to_owned()]);
+        assert!(!ring_shown(&picker, vcx));
     }
 
     #[gpui::test]
@@ -1306,6 +1361,7 @@ mod tests {
     #[gpui::test]
     fn enter_picks_the_item_the_cursor_rests_on(cx: &mut gpui::TestAppContext) {
         let (picker, picked, vcx) = open(cx, plain_roster());
+        arrow(&picker, vcx, true);
         arrow(&picker, vcx, true);
 
         press_enter(&picker, vcx);

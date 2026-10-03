@@ -24,6 +24,7 @@ pub mod integration_gate;
 pub mod latest;
 mod latest_overlay_feed;
 pub mod live_viewers;
+mod overlay_definition_revision;
 mod overlay_lanes;
 pub mod overlay_media;
 pub mod overlay_service;
@@ -60,7 +61,8 @@ pub use config::Config;
 pub use delivery::CriticalSubscription;
 pub use delivery_loss::{ConsumerLoss, DeliveryTier, LossCount, LossWatch};
 pub use donations::{
-    DONATION_CATCH_UP, DonationIngest, TestDonationRunner, register_donation_sub_actions,
+    CatchUpWaker, DONATION_CATCH_UP, DonationAudience, DonationIngest, DonationOverlayAudience,
+    TestDonationRunner, register_donation_sub_actions,
 };
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
@@ -70,10 +72,12 @@ pub use latest::{
 };
 pub use latest_overlay_feed::spawn_latest_overlay_feed;
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
+pub use overlay_definition_revision::OverlayDefinitionChanges;
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{
-    MaterializePass, OverlayConnectListener, OverlayDelivery, OverlayDispatch, OverlayFrameSink,
-    OverlayReceivers, OverlayServiceCell, OverlayServiceError, OverlayServiceHandle, TestFire,
+    EnabledOverlay, MaterializePass, OverlayConnectFanout, OverlayConnectListener, OverlayDelivery,
+    OverlayDispatch, OverlayFrameSink, OverlayReceivers, OverlayServiceCell, OverlayServiceError,
+    OverlayServiceHandle, TestFire,
 };
 pub use overlay_shows::{
     SHOW_CEILING, SHOW_QUEUE_CAPACITY, SHOW_SPEECH_START_WAIT, ShowDepthWatch, ShowEnd, ShowTicket,

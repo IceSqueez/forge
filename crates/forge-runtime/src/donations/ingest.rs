@@ -8,6 +8,8 @@ use futures_util::StreamExt;
 use time::{Duration, OffsetDateTime};
 use tracing::{debug, warn};
 
+use crate::donations::catch_up::{CatchUpHold, CatchUpWaker, DonationAudience};
+
 pub const DONATION_CATCH_UP: Duration = Duration::minutes(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +22,8 @@ pub struct DonationIngest {
     ledger: Arc<dyn DonationRepo>,
     publisher: Arc<dyn EventPublisher>,
     anonymous_donor: Shared<String>,
+    started_at: OffsetDateTime,
+    catch_up: Option<Arc<CatchUpHold>>,
 }
 
 impl DonationIngest {
@@ -32,7 +36,39 @@ impl DonationIngest {
             ledger,
             publisher,
             anonymous_donor,
+            started_at: OffsetDateTime::now_utc(),
+            catch_up: None,
         }
+    }
+
+    pub fn holding_catch_up(self) -> Self {
+        Self {
+            catch_up: Some(Arc::default()),
+            ..self
+        }
+    }
+
+    pub fn catch_up_waker(&self) -> Option<CatchUpWaker> {
+        self.catch_up.clone().map(CatchUpWaker)
+    }
+
+    pub fn spawn_catch_up_release(self: &Arc<Self>, audience: Arc<dyn DonationAudience>) {
+        let Some(hold) = self.catch_up.clone() else {
+            return;
+        };
+        let ingest = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                if !hold.is_empty() && audience.is_listening().await {
+                    for donation in hold.take_in_order() {
+                        ingest
+                            .announce_recorded(&donation, OffsetDateTime::now_utc())
+                            .await;
+                    }
+                }
+                hold.woken().await;
+            }
+        });
     }
 
     pub async fn recover_unannounced(&self) {
@@ -41,7 +77,7 @@ impl DonationIngest {
         match self.ledger.list_unannounced_occurred_since(horizon).await {
             Ok(pending) => {
                 for stored in pending {
-                    self.announce_recorded(&stored.donation, now).await;
+                    self.announce_caught_up(stored.donation, now).await;
                 }
             }
             Err(error) => warn!(error = %error, "unannounced donations could not be read"),
@@ -95,8 +131,18 @@ impl DonationIngest {
             }
         }
         match verdict(&donation, *baseline, now) {
+            Verdict::Announce if donation.occurred_at < self.started_at => {
+                self.announce_caught_up(donation, now).await;
+            }
             Verdict::Announce => self.announce_recorded(&donation, now).await,
             Verdict::RecordOnly => self.mark_announced(&donation, now).await,
+        }
+    }
+
+    async fn announce_caught_up(&self, donation: Donation, now: OffsetDateTime) {
+        match &self.catch_up {
+            Some(hold) => hold.hold(donation),
+            None => self.announce_recorded(&donation, now).await,
         }
     }
 

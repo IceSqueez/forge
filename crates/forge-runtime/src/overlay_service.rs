@@ -26,6 +26,7 @@ use ulid::Ulid;
 
 use crate::actions::ActionsService;
 use crate::bus::EventBus;
+use crate::overlay_definition_revision::{OverlayDefinitionChanges, OverlayDefinitionRevision};
 use crate::overlay_lanes::OverlayLanes;
 use crate::overlay_media::{OverlayMediaLibrary, unresolvable};
 use crate::overlay_shows::{
@@ -117,6 +118,29 @@ pub trait OverlayConnectListener: Send + Sync {
     async fn overlay_connected(&self, identity: &OverlayId);
 }
 
+pub struct OverlayConnectFanout(Vec<Arc<dyn OverlayConnectListener>>);
+
+impl OverlayConnectFanout {
+    pub fn new(listeners: Vec<Arc<dyn OverlayConnectListener>>) -> Self {
+        Self(listeners)
+    }
+}
+
+#[async_trait]
+impl OverlayConnectListener for OverlayConnectFanout {
+    async fn overlay_connected(&self, identity: &OverlayId) {
+        for listener in &self.0 {
+            listener.overlay_connected(identity).await;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnabledOverlay {
+    pub id: OverlayId,
+    pub latest_slot: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TestFire {
     pub content: OverlayConfig,
@@ -142,6 +166,7 @@ struct OverlayService {
     shows: Arc<ShowSequencer>,
     speaker: Option<Arc<dyn SpeakDispatcher>>,
     latest: Option<Arc<dyn LatestValueReader>>,
+    definitions: OverlayDefinitionRevision,
 }
 
 #[derive(Clone)]
@@ -178,6 +203,7 @@ impl OverlayServiceHandle {
                 shows,
                 speaker: None,
                 latest: None,
+                definitions: OverlayDefinitionRevision::default(),
             }),
         }
     }
@@ -245,7 +271,32 @@ impl OverlayServiceHandle {
             shows: Arc::clone(&self.inner.shows),
             speaker: self.inner.speaker.clone(),
             latest: self.inner.latest.clone(),
+            definitions: self.inner.definitions.clone(),
         }
+    }
+
+    pub fn definition_changes(&self) -> OverlayDefinitionChanges {
+        self.inner.definitions.subscribe()
+    }
+
+    pub async fn enabled_overlays(&self) -> Result<Vec<EnabledOverlay>, OverlayServiceError> {
+        let definitions = self.inner.repo.list().await?;
+        Ok(definitions
+            .into_iter()
+            .filter(|definition| definition.enabled)
+            .map(|definition| {
+                let latest_slot = self
+                    .inner
+                    .kinds
+                    .get(&definition.kind_id)
+                    .and_then(|descriptor| latest_binding(descriptor, &definition.config))
+                    .map(|binding| binding.slot);
+                EnabledOverlay {
+                    id: definition.id,
+                    latest_slot,
+                }
+            })
+            .collect())
     }
 
     pub async fn root(&self) -> PathBuf {
@@ -306,6 +357,7 @@ impl OverlayServiceHandle {
         }
 
         let report = self.write_files(&definition).await?;
+        self.inner.definitions.advance();
         self.reload_page(id).await;
         Ok(report)
     }
@@ -349,6 +401,7 @@ impl OverlayServiceHandle {
     pub async fn delete(&self, id: &OverlayId) -> Result<bool, OverlayServiceError> {
         let removed = self.inner.repo.delete(id).await?;
         if removed {
+            self.inner.definitions.advance();
             self.withdraw_shows(id);
             if let Some(frames) = &self.inner.frames {
                 frames.revoke(id).await;
@@ -363,6 +416,9 @@ impl OverlayServiceHandle {
         enabled: bool,
     ) -> Result<bool, OverlayServiceError> {
         let changed = self.inner.repo.set_enabled(id, enabled).await?;
+        if changed {
+            self.inner.definitions.advance();
+        }
         if changed && !enabled {
             self.withdraw_shows(id);
             if let Some(frames) = &self.inner.frames {

@@ -9,14 +9,15 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, DonationIngest, EventBus,
-    FirstChatLedger, LatestValues, OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary,
-    OverlayServiceCell, OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry,
-    SoundPlayer, SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions,
-    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
-    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, DonationIngest,
+    DonationOverlayAudience, EventBus, FirstChatLedger, LatestValues, OverlayConnectFanout,
+    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
+    OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer,
+    SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    register_donation_sub_actions, register_latest_sub_actions, spawn_action_engine,
+    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
+    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_stream_live_signal,
+    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -254,11 +255,14 @@ pub async fn build_runtime(
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
 
-    let donations = Arc::new(DonationIngest::new(
-        backend.donation_repo(),
-        Arc::clone(&bus) as Arc<dyn EventPublisher>,
-        anonymous_donor.clone(),
-    ));
+    let donations = Arc::new(
+        DonationIngest::new(
+            backend.donation_repo(),
+            Arc::clone(&bus) as Arc<dyn EventPublisher>,
+            anonymous_donor.clone(),
+        )
+        .holding_catch_up(),
+    );
     if let Err(e) = register_donation_sub_actions(&mut sub_action_reg, Arc::clone(&donations)) {
         eprintln!("forge-desktop: donation sub-action registration failed: {e}");
     }
@@ -396,7 +400,7 @@ pub async fn build_runtime(
     let bot_accounts = load_bot_accounts(&backend).await;
     spawn_timer_scheduler(
         Arc::clone(&bus),
-        catalog,
+        Arc::clone(&catalog),
         stream_live.clone(),
         bot_accounts.clone(),
     );
@@ -440,13 +444,22 @@ pub async fn build_runtime(
     };
     overlay_service_cell.set(overlays.clone());
     spawn_latest_overlay_feed(&bus, overlays.clone());
+    let donation_audience = DonationOverlayAudience::new(
+        Arc::clone(&catalog),
+        overlays.clone(),
+        Arc::clone(&sub_action_registry),
+    );
+    let mut connect_listeners = vec![Arc::new(overlays.clone()) as Arc<dyn OverlayConnectListener>];
+    if let Some(waker) = donations.catch_up_waker() {
+        donation_audience.forward_changes_to(&waker);
+        connect_listeners.push(Arc::new(waker) as Arc<dyn OverlayConnectListener>);
+    }
     if let Some(handle) = server.clone() {
         handle
-            .set_overlay_connect_listener(
-                Arc::new(overlays.clone()) as Arc<dyn OverlayConnectListener>
-            )
+            .set_overlay_connect_listener(Arc::new(OverlayConnectFanout::new(connect_listeners)))
             .await;
     }
+    donations.spawn_catch_up_release(Arc::new(donation_audience));
     match overlays.materialize_all().await {
         Ok(pass) => tracing::info!(
             materialized = pass.materialized,

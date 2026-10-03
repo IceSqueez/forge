@@ -312,4 +312,25 @@ mod tests {
         let err = p.send_message("chan", "hello").await.unwrap_err();
         assert!(matches!(err, PlatformError::RateLimitExhausted));
     }
+
+    #[tokio::test]
+    async fn send_reply_posts_the_text_with_the_parent_message_id() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let mut p = platform(InMemRepo::with_valid_creds(), Arc::new(GrantLimiter));
+        p.sender = KickSendChat::new(Arc::new(GrantLimiter)).with_send_endpoint(server.uri());
+
+        p.send_reply("chan", "parent-7", "hello").await.unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+        assert_eq!(body["content"], "hello");
+        assert_eq!(body["reply_to_message_id"], "parent-7");
+    }
 }

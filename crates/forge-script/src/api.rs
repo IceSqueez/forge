@@ -1106,8 +1106,8 @@ mod tests {
                 "hello",
             ),
             (
-                r#"forge::chat::whisper("youtube", "viewer", "hello")"#,
-                "youtube",
+                r#"forge::chat::whisper("twitch", "viewer", "hello")"#,
+                "twitch",
                 Some("whisper_to_login"),
                 Some("viewer"),
                 "hello",
@@ -1325,9 +1325,32 @@ mod tests {
         }
     }
 
+    const UNTARGETED_WHISPER_CALLS: [&str; 2] = [
+        r#"forge::chat::whisper("viewer", "hello")"#,
+        r#"forge::chat::whisper("\t", "viewer", "hello")"#,
+    ];
+
+    fn assert_runtime_error_mentions(
+        call: &str,
+        result: Result<rhai::Dynamic, crate::ScriptError>,
+        expected: &str,
+    ) {
+        match result {
+            Err(crate::ScriptError::Runtime { reason, .. }) => assert!(
+                reason.contains(expected),
+                "{call} failed for the wrong reason: {reason}"
+            ),
+            other => panic!("{call} must fail as a runtime error, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
-    async fn untargeted_chat_calls_broadcast_without_a_target_while_one_chat_platform_is_enabled() {
-        for call in UNTARGETED_CHAT_CALLS {
+    async fn untargeted_public_chat_calls_broadcast_without_a_target_while_one_chat_platform_is_enabled()
+     {
+        for call in UNTARGETED_CHAT_CALLS
+            .into_iter()
+            .filter(|call| !UNTARGETED_WHISPER_CALLS.contains(call))
+        {
             let (result, sent) =
                 eval_gated(availability_disabling(&["twitch", "youtube"]), call).await;
 
@@ -1338,6 +1361,57 @@ mod tests {
                 "{call} published {}",
                 sent[0].payload
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn untargeted_whisper_fails_unsent_when_only_platforms_without_whispers_are_enabled() {
+        for call in UNTARGETED_WHISPER_CALLS {
+            let (result, sent) = eval_gated(availability_disabling(&["twitch"]), call).await;
+
+            assert_runtime_error_mentions(call, result, NO_WHISPER_PLATFORM_ENABLED_REASON);
+            assert!(sent.is_empty(), "{call} published {sent:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn untargeted_whisper_broadcasts_without_a_target_while_twitch_is_enabled() {
+        for call in UNTARGETED_WHISPER_CALLS {
+            let (result, sent) =
+                eval_gated(availability_disabling(&["youtube", "kick"]), call).await;
+
+            assert!(result.is_ok(), "{call} failed: {result:?}");
+            assert_eq!(sent.len(), 1, "{call}");
+            assert!(
+                sent[0].payload.get("target").is_none(),
+                "{call} published {}",
+                sent[0].payload
+            );
+            assert_eq!(sent[0].payload[WHISPER_RECIPIENT_FIELD], "viewer", "{call}");
+        }
+    }
+
+    #[tokio::test]
+    async fn targeted_whisper_to_a_platform_without_whispers_fails_unsent() {
+        for (call, target) in [
+            (r#"forge::chat::whisper("kick", "viewer", "hello")"#, "kick"),
+            (
+                r#"forge::chat::whisper("youtube", "viewer", "hello")"#,
+                "youtube",
+            ),
+            (
+                r#"forge::chat::whisper(" kick ", "viewer", "hello")"#,
+                "kick",
+            ),
+            (
+                r#"forge::chat::whisper("myspace", "viewer", "hello")"#,
+                "myspace",
+            ),
+        ] {
+            let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
+
+            assert_runtime_error_mentions(call, result, &whispers_unsupported_reason(target));
+            assert!(sent.is_empty(), "{call} published {sent:?}");
         }
     }
 

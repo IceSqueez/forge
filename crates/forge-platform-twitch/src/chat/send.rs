@@ -211,6 +211,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reply_parent_message_id_is_sent_only_on_replies() {
+        let plain = MockTransport::returning(Ok(sent_fixture()));
+        send_chat(&plain, "100", "200", "hello").await.unwrap();
+        let reply = MockTransport::returning(Ok(sent_fixture()));
+        send_chat_reply(&reply, "100", "200", "hello", "parent-7")
+            .await
+            .unwrap();
+
+        let plain_body = plain.last_request().body.unwrap();
+        let reply_body = reply.last_request().body.unwrap();
+        assert!(
+            plain_body.get("reply_parent_message_id").is_none(),
+            "got {plain_body}"
+        );
+        assert_eq!(reply_body["reply_parent_message_id"], "parent-7");
+        assert_eq!(reply_body["message"], "hello");
+    }
+
+    #[tokio::test]
     async fn send_chat_treats_is_sent_true_or_absent_as_delivered() {
         for payload in [
             serde_json::json!({"data": [{"message_id": "abc-123", "is_sent": true, "drop_reason": null}]}),

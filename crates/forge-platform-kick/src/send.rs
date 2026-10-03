@@ -241,6 +241,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reply_to_message_id_is_sent_only_on_replies() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let sender = grant_sender(&server);
+
+        sender.send("plain", "tok", 42, false).await.unwrap();
+        sender
+            .send_reply("reply", "tok", 42, "parent-7")
+            .await
+            .unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        let plain: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+        let reply: serde_json::Value = serde_json::from_slice(&reqs[1].body).unwrap();
+        assert!(plain.get("reply_to_message_id").is_none(), "got {plain}");
+        assert_eq!(reply["reply_to_message_id"], "parent-7");
+        assert_eq!(reply["content"], "reply");
+        assert_eq!(reply["broadcaster_user_id"], 42);
+    }
+
+    #[tokio::test]
     async fn send_returns_auth_error_on_401() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

@@ -249,8 +249,126 @@ fn map_send_error(err: ChatSendError) -> PlatformError {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::builtin::{HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW};
+    use crate::helix::HelixError;
+    use crate::sub_actions::test_support::{
+        MockCreds, MockTransport, SELF_USER_ID, TOKEN_SENTINEL, unreachable_twitch_endpoints,
+        users_fixture,
+    };
+    use forge_platform_core::TokenBucketRateLimiter;
+
+    fn platform_over(transport: &Arc<MockTransport>) -> TwitchPlatform {
+        let creds: Arc<dyn CredentialsRepo> = Arc::new(MockCreds::with_identity());
+        let platform = TwitchPlatform::new(
+            ChatSessionConfig {
+                client_id: "test-client".to_owned(),
+                broadcaster_id: String::new(),
+                user_id: String::new(),
+                endpoints: unreachable_twitch_endpoints(),
+            },
+            Arc::clone(&creds),
+            Arc::new(TwitchCredentialsManager::new(
+                creds,
+                "test-client".to_owned(),
+            )),
+            SubscriptionTracker::default(),
+            Arc::new(TokenBucketRateLimiter::new(
+                HELIX_BUDGET_CAPACITY,
+                HELIX_BUDGET_WINDOW,
+            )),
+            TwitchLifecycle::new(),
+        );
+        platform
+            .transport
+            .set(Arc::clone(transport) as Arc<dyn HelixTransport>)
+            .ok()
+            .unwrap();
+        platform
+    }
+
+    #[tokio::test]
+    async fn send_whisper_posts_only_a_helix_whisper_from_the_signed_in_user() {
+        let transport = Arc::new(MockTransport::returning_sequence(vec![
+            users_fixture("555"),
+            Ok(serde_json::Value::Null),
+        ]));
+        let platform = platform_over(&transport);
+
+        platform.send_whisper("viewer", "psst").await.unwrap();
+
+        let whisper = transport.last_request();
+        assert_eq!(whisper.path, "/helix/whispers");
+        assert!(
+            whisper
+                .query
+                .contains(&("from_user_id".to_owned(), SELF_USER_ID.to_owned())),
+            "got {:?}",
+            whisper.query
+        );
+        for index in 0..transport.call_count() {
+            assert_ne!(
+                transport.request(index).path,
+                "/helix/chat/messages",
+                "a whisper must never reach public chat"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_whisper_maps_to_a_non_http_platform_error_without_a_helix_call() {
+        let transport = Arc::new(MockTransport::returning(users_fixture("555")));
+        let platform = platform_over(&transport);
+
+        let err = platform.send_whisper("", "psst").await.unwrap_err();
+
+        assert!(
+            matches!(&err, PlatformError::Http { status: NON_HTTP_STATUS, body } if body.contains("recipient")),
+            "got {err:?}"
+        );
+        assert_eq!(transport.call_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn helix_whisper_failure_surfaces_status_without_token_or_url() {
+        let transport = Arc::new(MockTransport::returning_sequence(vec![
+            users_fixture("555"),
+            Err(HelixError::Http {
+                status: 403,
+                body: "missing user:manage:whispers".to_owned(),
+            }),
+        ]));
+        let platform = platform_over(&transport);
+
+        let text = platform
+            .send_whisper("viewer", "psst")
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(text.contains("403"), "status must surface: {text}");
+        assert!(!text.contains(TOKEN_SENTINEL), "token leaked: {text}");
+        assert!(!text.contains("api.twitch.tv"), "URL leaked: {text}");
+    }
+
+    #[tokio::test]
+    async fn send_reply_posts_the_parent_id_to_helix_chat() {
+        let transport = Arc::new(MockTransport::returning(Ok(serde_json::json!({
+            "data": [{ "message_id": "sent-1" }]
+        }))));
+        let platform = platform_over(&transport);
+
+        platform
+            .send_reply("twitch", "parent-7", "hello")
+            .await
+            .unwrap();
+
+        let request = transport.last_request();
+        assert_eq!(request.path, "/helix/chat/messages");
+        assert_eq!(request.body.unwrap()["reply_parent_message_id"], "parent-7");
+    }
 
     #[test]
     fn dropped_send_surfaces_code_and_message_in_the_platform_error() {

@@ -124,6 +124,91 @@ mod tests {
         }
     }
 
-    #[allow(dead_code)]
-    fn trait_is_dyn_safe(_: &dyn ChatPlatform) {}
+    struct PlainOnlyPlatform {
+        auth: AuthFlow,
+        caps: PlatformCapabilities,
+        sent: std::sync::Mutex<Vec<(String, String)>>,
+    }
+
+    impl PlainOnlyPlatform {
+        fn new() -> Self {
+            Self {
+                auth: AuthFlow::None {
+                    reason: String::new(),
+                },
+                caps: PlatformCapabilities {
+                    can_send_chat: true,
+                    can_moderate: false,
+                    can_subscribe_events: false,
+                    can_polls: false,
+                    can_predictions: false,
+                    can_channel_points: false,
+                    limited: false,
+                    limited_reason: None,
+                },
+                sent: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn sent(&self) -> Vec<(String, String)> {
+            self.sent.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl ChatPlatform for PlainOnlyPlatform {
+        fn platform_id(&self) -> &'static str {
+            "plain"
+        }
+        fn auth_flow(&self) -> &AuthFlow {
+            &self.auth
+        }
+        fn capabilities(&self) -> &PlatformCapabilities {
+            &self.caps
+        }
+        fn connection_state(&self) -> ConnectionState {
+            ConnectionState::Connected
+        }
+        async fn connect(&self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+        async fn disconnect(&self) -> Result<(), PlatformError> {
+            Ok(())
+        }
+        async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError> {
+            self.sent
+                .lock()
+                .unwrap()
+                .push((channel.to_owned(), text.to_owned()));
+            Ok(())
+        }
+        fn events(&self) -> EventStream {
+            EventStream::new(tokio::sync::broadcast::channel(1).1)
+        }
+    }
+
+    #[tokio::test]
+    async fn send_reply_without_override_falls_back_to_a_plain_message_on_the_same_channel() {
+        let platform = PlainOnlyPlatform::new();
+
+        platform.send_reply("chan", "msg-1", "hello").await.unwrap();
+
+        assert_eq!(
+            platform.sent(),
+            vec![("chan".to_owned(), "hello".to_owned())]
+        );
+    }
+
+    #[tokio::test]
+    async fn send_whisper_without_override_is_unsupported_and_never_posts_to_public_chat() {
+        let platform = PlainOnlyPlatform::new();
+
+        let err = platform.send_whisper("viewer", "secret").await.unwrap_err();
+
+        assert!(
+            matches!(&err, PlatformError::Unsupported { feature } if feature == "chat.whisper"),
+            "got {err:?}"
+        );
+        assert!(platform.sent().is_empty(), "whisper leaked to public chat");
+    }
 }

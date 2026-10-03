@@ -592,8 +592,22 @@ mod tests {
     use std::time::Duration;
     use tokio::sync::{Semaphore, broadcast, mpsc};
 
+    #[derive(Debug, PartialEq)]
+    enum PlatformCall {
+        Message(String, String),
+        Reply {
+            channel: String,
+            parent: String,
+            text: String,
+        },
+        Whisper {
+            recipient: String,
+            text: String,
+        },
+    }
+
     struct RecordingPlatform {
-        sends: mpsc::UnboundedSender<(String, String)>,
+        sends: mpsc::UnboundedSender<PlatformCall>,
         gate: Option<Arc<Semaphore>>,
         failure: Option<String>,
         auth: AuthFlow,
@@ -601,13 +615,13 @@ mod tests {
     }
 
     impl RecordingPlatform {
-        fn spawn() -> (Arc<Self>, mpsc::UnboundedReceiver<(String, String)>) {
+        fn spawn() -> (Arc<Self>, mpsc::UnboundedReceiver<PlatformCall>) {
             Self::build(None, None)
         }
 
         fn gated() -> (
             Arc<Self>,
-            mpsc::UnboundedReceiver<(String, String)>,
+            mpsc::UnboundedReceiver<PlatformCall>,
             Arc<Semaphore>,
         ) {
             let gate = Arc::new(Semaphore::new(0));
@@ -615,14 +629,14 @@ mod tests {
             (platform, rx, gate)
         }
 
-        fn failing(reason: &str) -> (Arc<Self>, mpsc::UnboundedReceiver<(String, String)>) {
+        fn failing(reason: &str) -> (Arc<Self>, mpsc::UnboundedReceiver<PlatformCall>) {
             Self::build(None, Some(reason.to_owned()))
         }
 
         fn build(
             gate: Option<Arc<Semaphore>>,
             failure: Option<String>,
-        ) -> (Arc<Self>, mpsc::UnboundedReceiver<(String, String)>) {
+        ) -> (Arc<Self>, mpsc::UnboundedReceiver<PlatformCall>) {
             let (tx, rx) = mpsc::unbounded_channel();
             let platform = Arc::new(Self {
                 sends: tx,
@@ -643,6 +657,17 @@ mod tests {
                 },
             });
             (platform, rx)
+        }
+    }
+
+    impl RecordingPlatform {
+        fn outcome(&self) -> Result<(), PlatformError> {
+            match &self.failure {
+                Some(reason) => Err(PlatformError::Network {
+                    reason: reason.clone(),
+                }),
+                None => Ok(()),
+            }
         }
     }
 
@@ -667,16 +692,37 @@ mod tests {
             Ok(())
         }
         async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError> {
-            let _ = self.sends.send((channel.to_string(), text.to_string()));
+            let _ = self
+                .sends
+                .send(PlatformCall::Message(channel.to_string(), text.to_string()));
             if let Some(gate) = &self.gate {
                 gate.acquire().await.unwrap().forget();
             }
-            match &self.failure {
-                Some(reason) => Err(PlatformError::Network {
-                    reason: reason.clone(),
-                }),
-                None => Ok(()),
-            }
+            self.outcome()
+        }
+        async fn send_reply(
+            &self,
+            channel: &str,
+            reply_parent_message_id: &str,
+            text: &str,
+        ) -> Result<(), PlatformError> {
+            let _ = self.sends.send(PlatformCall::Reply {
+                channel: channel.to_string(),
+                parent: reply_parent_message_id.to_string(),
+                text: text.to_string(),
+            });
+            self.outcome()
+        }
+        async fn send_whisper(
+            &self,
+            recipient_login: &str,
+            text: &str,
+        ) -> Result<(), PlatformError> {
+            let _ = self.sends.send(PlatformCall::Whisper {
+                recipient: recipient_login.to_string(),
+                text: text.to_string(),
+            });
+            self.outcome()
         }
         fn events(&self) -> EventStream {
             EventStream::new(broadcast::channel(1).1)
@@ -691,11 +737,18 @@ mod tests {
         Event::new(source, "chat.send.request", payload)
     }
 
-    async fn expect_send(rx: &mut mpsc::UnboundedReceiver<(String, String)>) -> (String, String) {
+    async fn expect_call(rx: &mut mpsc::UnboundedReceiver<PlatformCall>) -> PlatformCall {
         tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await
-            .expect("a send_message call was expected but never arrived")
+            .expect("a platform send call was expected but never arrived")
             .expect("mock send channel closed")
+    }
+
+    async fn expect_send(rx: &mut mpsc::UnboundedReceiver<PlatformCall>) -> (String, String) {
+        match expect_call(rx).await {
+            PlatformCall::Message(channel, text) => (channel, text),
+            other => panic!("expected a plain send_message call, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -1012,6 +1065,201 @@ mod tests {
             "got {}",
             failures[0].payload
         );
+    }
+
+    fn whisper_request(target: Option<&str>, recipient: &str, message: &str) -> Event {
+        let mut payload = serde_json::json!({
+            "message": message,
+            WHISPER_RECIPIENT_FIELD: recipient,
+        });
+        if let Some(target) = target {
+            payload["target"] = target.into();
+        }
+        request(EventSource::Rhai, payload)
+    }
+
+    #[tokio::test]
+    async fn whisper_request_calls_send_whisper_with_the_trimmed_recipient() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        bus.publish(whisper_request(None, " viewer ", "psst"));
+
+        assert_eq!(
+            expect_call(&mut twitch_rx).await,
+            PlatformCall::Whisper {
+                recipient: "viewer".to_owned(),
+                text: "psst".to_owned(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn whisper_request_never_reaches_public_chat() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::failing("missing whisper scope");
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        bus.publish(whisper_request(Some("twitch"), "viewer", "psst"));
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "sentinel" }),
+        ));
+
+        assert!(matches!(
+            expect_call(&mut twitch_rx).await,
+            PlatformCall::Whisper { .. }
+        ));
+        assert_eq!(
+            expect_send(&mut twitch_rx).await.1,
+            "sentinel",
+            "a failed whisper must not be retried as a public message"
+        );
+    }
+
+    #[tokio::test]
+    async fn targeted_whisper_on_a_platform_without_whispers_fails_unsent() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (kick, mut kick_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), kick, "kick", EventSource::Kick);
+        tokio::task::yield_now().await;
+        let req = whisper_request(Some("kick"), "viewer", "psst");
+        let req_id = req.id;
+
+        bus.publish(req);
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "sentinel" }),
+        ));
+
+        let failed = next_of_kind(&mut observer, "chat.send.failed").await;
+        assert_eq!(failed.caused_by, Some(req_id));
+        assert_eq!(failed.payload["error"], whispers_unsupported_reason("kick"));
+        assert_eq!(
+            expect_send(&mut kick_rx).await.1,
+            "sentinel",
+            "kick must not deliver the whisper in any form"
+        );
+    }
+
+    #[tokio::test]
+    async fn broadcast_whisper_goes_to_twitch_while_kick_stays_silent() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        let (kick, mut kick_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        spawn_chat_send_bridge(Arc::clone(&bus), kick, "kick", EventSource::Kick);
+        tokio::task::yield_now().await;
+
+        bus.publish(whisper_request(None, "viewer", "psst"));
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "target": "kick", "message": "sentinel" }),
+        ));
+
+        assert!(matches!(
+            expect_call(&mut twitch_rx).await,
+            PlatformCall::Whisper { .. }
+        ));
+        assert_eq!(expect_send(&mut kick_rx).await.1, "sentinel");
+        let failures = drain_of_kind(&mut observer, "chat.send.failed");
+        assert!(
+            failures.is_empty(),
+            "a broadcast whisper must not fail on kick: {failures:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn delivered_whisper_publishes_whisper_sent_without_the_message_text() {
+        let bus = test_bus();
+        let mut observer = bus.subscribe();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+        let req = whisper_request(None, "viewer", "WHISPER_TEXT_SENTINEL");
+        let req_id = req.id;
+
+        bus.publish(req);
+        expect_call(&mut twitch_rx).await;
+
+        let sent = next_of_kind(&mut observer, "chat.whisper.sent").await;
+        assert_eq!(sent.caused_by, Some(req_id));
+        assert_eq!(sent.payload[WHISPER_RECIPIENT_FIELD], "viewer");
+        assert!(
+            !sent.payload.to_string().contains("WHISPER_TEXT_SENTINEL"),
+            "whisper text must stay private: {}",
+            sent.payload
+        );
+    }
+
+    #[tokio::test]
+    async fn reply_request_calls_send_reply_with_the_parent_id() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "message": "hello", REPLY_PARENT_FIELD: " msg-1 " }),
+        ));
+
+        assert_eq!(
+            expect_call(&mut twitch_rx).await,
+            PlatformCall::Reply {
+                channel: "twitch".to_owned(),
+                parent: "msg-1".to_owned(),
+                text: "hello".to_owned(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn reply_request_with_a_blank_parent_is_sent_as_a_plain_message() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        for parent in ["", "  "] {
+            bus.publish(request(
+                EventSource::Rhai,
+                serde_json::json!({ "message": "hello", REPLY_PARENT_FIELD: parent }),
+            ));
+
+            assert_eq!(
+                expect_send(&mut twitch_rx).await,
+                ("twitch".to_owned(), "hello".to_owned()),
+                "parent {parent:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn request_carrying_both_keys_is_sent_as_a_whisper() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({
+                "message": "psst",
+                REPLY_PARENT_FIELD: "msg-1",
+                WHISPER_RECIPIENT_FIELD: "viewer",
+            }),
+        ));
+
+        assert!(matches!(
+            expect_call(&mut twitch_rx).await,
+            PlatformCall::Whisper { .. }
+        ));
     }
 
     struct SilentPublisher;

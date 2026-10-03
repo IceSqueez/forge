@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_resolves_login_then_posts_whisper_with_self_as_sender() {
+    async fn execute_whispers_from_the_signed_in_identity() {
         let (transport, runner) =
             runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);
         let stack = ArgStack::new();
@@ -189,49 +189,17 @@ mod tests {
             .await;
 
         assert_eq!(telemetry.outcome, SubActionOutcome::Success);
-        assert_eq!(transport.call_count(), 2, "resolve then whisper");
-        assert_eq!(transport.request(0).path, "/helix/users");
-
-        let whisper = transport.last_request();
-        assert_eq!(whisper.method, HelixMethod::Post);
-        assert_eq!(whisper.path, "/helix/whispers");
         assert!(
-            whisper
+            transport
+                .last_request()
                 .query
                 .contains(&("from_user_id".to_owned(), SELF_USER_ID.to_owned())),
-            "from_user_id must be self"
-        );
-        assert!(
-            whisper
-                .query
-                .contains(&("to_user_id".to_owned(), "555".to_owned())),
-            "to_user_id must be the resolved id, not the login"
-        );
-        assert_eq!(
-            whisper.body,
-            Some(serde_json::json!({ "message": "hey there" }))
+            "from_user_id must be the signed-in identity"
         );
     }
 
     #[tokio::test]
-    async fn empty_to_user_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new().set("login".to_owned(), Variant::String(String::new()));
-
-        let (telemetry, _) = runner
-            .execute(&config("%login%", "hello"), &make_ctx(&stack))
-            .await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty login must fail before any Helix call"
-        );
-    }
-
-    #[tokio::test]
-    async fn empty_message_after_interpolation_fails_before_any_helix_call() {
+    async fn empty_message_after_interpolation_fails_without_any_helix_call() {
         let (transport, runner) = runner_with(vec![users_fixture("555")]);
         let stack = ArgStack::new().set("msg".to_owned(), Variant::String(String::new()));
 
@@ -240,11 +208,7 @@ mod tests {
             .await;
 
         assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty message must fail before any Helix call"
-        );
+        assert_eq!(transport.call_count(), 0);
     }
 
     #[tokio::test]

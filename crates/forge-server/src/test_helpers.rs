@@ -13,6 +13,7 @@ use forge_storage::donation::MockDonationRepo;
 use forge_storage::event_log::MockEventLogRepo;
 use forge_storage::globals::MockGlobalsRepo;
 use forge_storage::history::MockHistoryRepo;
+use forge_storage::latest_value::MockLatestValueRepo;
 use forge_storage::media::MockMediaRepo;
 use forge_storage::overlay::{MockOverlayRepo, OverlayRepo};
 use forge_storage::queue::MockQueueRepo;
@@ -26,10 +27,10 @@ use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
     ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider, DonationRepo,
-    EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, MediaRepo, QueueRepo,
-    ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
-    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
-    VoiceAliasRepo,
+    EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo,
+    MediaRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
+    UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -48,6 +49,7 @@ pub struct TestDataProvider {
     pub overlay_repo: Arc<MockOverlayRepo>,
     pub media_repo: Arc<MockMediaRepo>,
     pub donation_repo: Arc<MockDonationRepo>,
+    pub latest_value_repo: Arc<MockLatestValueRepo>,
     pub globals_repo: Arc<MockGlobalsRepo>,
     pub user_globals_repo: Arc<MockUserGlobalsRepo>,
     pub settings_repo: Arc<MockSettingsRepo>,
@@ -72,6 +74,7 @@ impl TestDataProvider {
             overlay_repo: Arc::new(overlay_repo),
             media_repo: Arc::new(MockMediaRepo::new()),
             donation_repo: Arc::new(MockDonationRepo::new()),
+            latest_value_repo: Arc::new(MockLatestValueRepo::new()),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
             viewer_repo: Arc::new(MockViewerRepo::new()),
             tts_filters_repo: Arc::new(MockTtsFiltersRepo::new()),
@@ -382,6 +385,10 @@ impl DataProvider for TestDataProvider {
 
     fn donation_repo(&self) -> Arc<dyn DonationRepo> {
         Arc::clone(&self.donation_repo) as Arc<dyn DonationRepo>
+    }
+
+    fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo> {
+        Arc::clone(&self.latest_value_repo) as Arc<dyn LatestValueRepo>
     }
 
     fn catalog_revision(&self) -> CatalogRevision {

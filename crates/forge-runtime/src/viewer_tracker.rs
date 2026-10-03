@@ -91,7 +91,8 @@ fn map_source_to_platform(source: EventSource) -> Option<ViewerPlatform> {
         | EventSource::Hotkey
         | EventSource::Timer
         | EventSource::Server
-        | EventSource::Audio => None,
+        | EventSource::Audio
+        | EventSource::Donation => None,
     }
 }
 

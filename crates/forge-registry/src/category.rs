@@ -10,6 +10,7 @@ pub enum TriggerCategory {
     Predictions,
     Hype,
     Charity,
+    Donations,
     Goals,
     Clips,
     Streams,

@@ -24,6 +24,10 @@ const GIFT_COUNT: &str = "gift_count";
 const SUB_TIER: &str = "sub_tier";
 const SUB_CUMULATIVE_MONTHS: &str = "sub_cumulative_months";
 const SUB_STREAK_MONTHS: &str = "sub_streak_months";
+const AMOUNT_MICROS: &str = "amount_micros";
+const AMOUNT: &str = "amount";
+const CURRENCY: &str = "currency";
+const AMOUNT_FORMATTED: &str = "amount_formatted";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ActorRole {
@@ -56,6 +60,15 @@ pub enum CanonicalVariable {
     MessageText,
     Count(CanonicalCount),
     SubTier,
+    Money(MoneySlot),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MoneySlot {
+    AmountMicros,
+    Amount,
+    Currency,
+    AmountFormatted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +87,8 @@ pub enum VariableStanding {
 const ACTOR_SLOT_COUNT: u16 = ActorSlot::ALL.len() as u16;
 const ACTOR_SPAN: u16 = ActorRole::ALL.len() as u16 * ACTOR_SLOT_COUNT;
 const COUNT_SPAN: u16 = CanonicalCount::ALL.len() as u16;
+const SUB_TIER_ORDER: u16 = ACTOR_SPAN + 1 + COUNT_SPAN;
+const MONEY_ORDER_START: u16 = SUB_TIER_ORDER + 1;
 
 impl ActorRole {
     pub const ALL: [ActorRole; 4] = [
@@ -155,6 +170,24 @@ impl CanonicalCount {
     }
 }
 
+impl MoneySlot {
+    pub const ALL: [MoneySlot; 4] = [
+        MoneySlot::AmountMicros,
+        MoneySlot::Amount,
+        MoneySlot::Currency,
+        MoneySlot::AmountFormatted,
+    ];
+
+    const fn label(self) -> &'static str {
+        match self {
+            MoneySlot::AmountMicros => "Amount in micros",
+            MoneySlot::Amount => "Amount",
+            MoneySlot::Currency => "Currency code",
+            MoneySlot::AmountFormatted => "Formatted amount",
+        }
+    }
+}
+
 impl CanonicalVariable {
     pub const fn actor(role: ActorRole, slot: ActorSlot) -> Self {
         CanonicalVariable::Actor { role, slot }
@@ -175,6 +208,7 @@ impl CanonicalVariable {
                     .map(CanonicalVariable::Count),
             )
             .chain(std::iter::once(CanonicalVariable::SubTier))
+            .chain(MoneySlot::ALL.into_iter().map(CanonicalVariable::Money))
             .collect();
         every.sort_by_key(|canonical| canonical.order());
         every
@@ -209,6 +243,12 @@ impl CanonicalVariable {
                 CanonicalCount::SubStreakMonths => SUB_STREAK_MONTHS,
             },
             CanonicalVariable::SubTier => SUB_TIER,
+            CanonicalVariable::Money(slot) => match slot {
+                MoneySlot::AmountMicros => AMOUNT_MICROS,
+                MoneySlot::Amount => AMOUNT,
+                MoneySlot::Currency => CURRENCY,
+                MoneySlot::AmountFormatted => AMOUNT_FORMATTED,
+            },
         }
     }
 
@@ -216,8 +256,14 @@ impl CanonicalVariable {
         match self {
             CanonicalVariable::Actor { .. }
             | CanonicalVariable::MessageText
-            | CanonicalVariable::SubTier => VariantKind::String,
-            CanonicalVariable::Count(_) => VariantKind::Int,
+            | CanonicalVariable::SubTier
+            | CanonicalVariable::Money(MoneySlot::Currency | MoneySlot::AmountFormatted) => {
+                VariantKind::String
+            }
+            CanonicalVariable::Count(_) | CanonicalVariable::Money(MoneySlot::AmountMicros) => {
+                VariantKind::Int
+            }
+            CanonicalVariable::Money(MoneySlot::Amount) => VariantKind::Float,
         }
     }
 
@@ -230,7 +276,7 @@ impl CanonicalVariable {
             },
             CanonicalVariable::MessageText => Some(SynthesisHint::Message),
             CanonicalVariable::Count(count) => Some(count.synthesis()),
-            CanonicalVariable::SubTier => None,
+            CanonicalVariable::SubTier | CanonicalVariable::Money(_) => None,
         }
     }
 
@@ -242,6 +288,7 @@ impl CanonicalVariable {
             CanonicalVariable::MessageText => "Message text".to_owned(),
             CanonicalVariable::Count(count) => count.label().to_owned(),
             CanonicalVariable::SubTier => "Subscription tier".to_owned(),
+            CanonicalVariable::Money(slot) => slot.label().to_owned(),
         }
     }
 
@@ -250,7 +297,8 @@ impl CanonicalVariable {
             CanonicalVariable::Actor { role, slot } => role as u16 * ACTOR_SLOT_COUNT + slot as u16,
             CanonicalVariable::MessageText => ACTOR_SPAN,
             CanonicalVariable::Count(count) => ACTOR_SPAN + 1 + count as u16,
-            CanonicalVariable::SubTier => ACTOR_SPAN + 1 + COUNT_SPAN,
+            CanonicalVariable::SubTier => SUB_TIER_ORDER,
+            CanonicalVariable::Money(slot) => MONEY_ORDER_START + slot as u16,
         }
     }
 }

@@ -1,9 +1,11 @@
 pub mod action;
 pub mod data_flow;
+pub mod donation;
 pub mod execution;
 pub mod ids;
 pub mod integration;
 pub mod log_target;
+pub mod money;
 pub mod permission_rung;
 pub mod platform;
 pub mod platform_scope;
@@ -24,6 +26,7 @@ pub mod vocabulary;
 
 pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
+pub use donation::{Donation, DonationOrigin, Donor, DonorVisibility};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
     NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, SubActionOutcome,
@@ -33,6 +36,7 @@ pub use execution::{
 pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};
 pub use log_target::SCRIPT_LOG_TARGET;
+pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount, MoneyError};
 pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::{
     PlatformId, REPLY_PARENT_FIELD, WHISPER_RECIPIENT_FIELD, requested_chat_target,
@@ -59,5 +63,6 @@ pub use unified_chat::{
 };
 pub use variant::{Variant, VariantError, VariantKind, VariantType, display_scalar};
 pub use vocabulary::{
-    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, SlotPresence, VariableStanding,
+    ActorRole, ActorSlot, CanonicalCount, CanonicalVariable, MoneySlot, SlotPresence,
+    VariableStanding,
 };

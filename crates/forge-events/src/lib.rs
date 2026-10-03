@@ -1,9 +1,11 @@
 pub mod bus;
+pub mod donation;
 pub mod lane;
 pub mod publisher;
 pub mod source;
 
 pub use bus::{EventStream, EventsError};
+pub use donation::{DONATION_RECEIVED_KIND, DonationReceived};
 pub use lane::DeliveryLane;
 pub use publisher::EventPublisher;
 pub use source::EventSource;

@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
 use forge_types::{
-    ActorRole, ActorSlot, ArgStack, CanonicalVariable, DeclaredVariable, PlatformId, SynthesisHint,
-    VariableStanding, Variant, VariantKind,
+    ActorRole, ActorSlot, ArgStack, CanonicalVariable, CurrencyCode, DeclaredVariable,
+    MICROS_PER_MAJOR_UNIT, MoneyAmount, PlatformId, SynthesisHint, VariableStanding, Variant,
+    VariantKind,
 };
 use rand::RngExt;
 use time::OffsetDateTime;
 
 use crate::kind_platform_contract::KindPlatformContract;
-use crate::variables::TriggerVariable;
+use crate::variables::{TriggerVariable, money_value};
 
 const DISPLAY_NAME_POOL: &[&str] = &[
     "TestUser",
@@ -26,6 +27,9 @@ const MESSAGE_POOL: &[&str] = &[
     "first time here, hi!",
 ];
 const SUB_TIER_POOL: &[&str] = &["1000", "2000", "3000"];
+const SAMPLE_CURRENCY: &str = "UAH";
+const SAMPLE_MAJOR_UNITS_MIN: i64 = 10;
+const SAMPLE_MAJOR_UNITS_MAX: i64 = 1_000;
 const NO_PLATFORM: &str = "";
 const FALLBACK_TOKEN: &str = "sample";
 const GENERIC_INT_MIN: i64 = 1;
@@ -88,6 +92,15 @@ impl SynthesisSample {
         rotated(SUB_TIER_POOL, self.tier_index, 0)
     }
 
+    fn money(&self) -> Option<MoneyAmount> {
+        let major_units = self.bounded_int(SAMPLE_MAJOR_UNITS_MIN, SAMPLE_MAJOR_UNITS_MAX);
+        let micros = u64::try_from(major_units)
+            .ok()?
+            .checked_mul(MICROS_PER_MAJOR_UNIT)?;
+        let currency = CurrencyCode::parse(SAMPLE_CURRENCY).ok()?;
+        Some(MoneyAmount::from_micros(micros, currency))
+    }
+
     fn platform_name(&self) -> &'static str {
         self.platform.map_or(NO_PLATFORM, PlatformId::as_str)
     }
@@ -142,6 +155,7 @@ fn canonical_value(canonical: CanonicalVariable, sample: &SynthesisSample) -> Va
     match canonical {
         CanonicalVariable::Actor { role, slot } => Variant::String(actor_value(role, slot, sample)),
         CanonicalVariable::SubTier => Variant::String(sample.sub_tier().to_owned()),
+        CanonicalVariable::Money(slot) => money_value(slot, sample.money().as_ref()),
         CanonicalVariable::MessageText | CanonicalVariable::Count(_) => hinted_value(
             canonical.synthesis().as_ref(),
             canonical.kind(),

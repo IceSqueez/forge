@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_events::Event;
 use forge_types::{
     ActorRole, ActorSlot, ArgStack, CanonicalCount, CanonicalVariable, DeclaredVariable,
-    PlatformId, VariableSchema, VariableStanding, Variant,
+    MoneyAmount, MoneySlot, PlatformId, VariableSchema, VariableStanding, Variant,
 };
 
 use crate::descriptor::TriggerKindDescriptor;
@@ -30,6 +30,12 @@ pub struct ActorIdentity {
     pub id: String,
     pub display_name: String,
     pub login: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourcedActor {
+    pub identity: ActorIdentity,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +125,48 @@ impl TriggerVariables {
                 declared: canonical_declaration(canonical),
                 standing: VariableStanding::Canonical(canonical),
                 read: Arc::new(move |event| actor_value(slot, platform, &identity(event))),
+            });
+        }
+        self
+    }
+
+    pub fn sourced_actor<F>(mut self, role: ActorRole, login: LoginSlot, read: F) -> Self
+    where
+        F: Fn(&Event) -> SourcedActor + Send + Sync + 'static,
+    {
+        let read = Arc::new(read);
+        for slot in ActorSlot::ALL {
+            if slot == ActorSlot::Login && login == LoginSlot::PlatformHasNone {
+                continue;
+            }
+            let canonical = CanonicalVariable::actor(role, slot);
+            let actor = Arc::clone(&read);
+            self.entries.push(VariableEntry {
+                declared: canonical_declaration(canonical),
+                standing: VariableStanding::Canonical(canonical),
+                read: Arc::new(move |event| {
+                    let actor = actor(event);
+                    match slot {
+                        ActorSlot::Platform => Variant::String(actor.source),
+                        ActorSlot::Id | ActorSlot::Name | ActorSlot::Login => {
+                            Variant::String(identity_value(slot, &actor.identity))
+                        }
+                    }
+                }),
+            });
+        }
+        self
+    }
+
+    pub fn money<F>(mut self, read: F) -> Self
+    where
+        F: Fn(&Event) -> Option<MoneyAmount> + Send + Sync + 'static,
+    {
+        let read = Arc::new(read);
+        for slot in MoneySlot::ALL {
+            let amount = Arc::clone(&read);
+            self = self.canonical(CanonicalVariable::Money(slot), move |event| {
+                money_value(slot, amount(event).as_ref())
             });
         }
         self
@@ -232,11 +280,33 @@ fn canonical_declaration(canonical: CanonicalVariable) -> DeclaredVariable {
 
 fn actor_value(slot: ActorSlot, platform: PlatformId, identity: &ActorIdentity) -> Variant {
     Variant::String(match slot {
+        ActorSlot::Platform => platform.as_str().to_owned(),
+        ActorSlot::Id | ActorSlot::Name | ActorSlot::Login => identity_value(slot, identity),
+    })
+}
+
+fn identity_value(slot: ActorSlot, identity: &ActorIdentity) -> String {
+    match slot {
         ActorSlot::Id => identity.id.clone(),
         ActorSlot::Name => shown_name(identity),
         ActorSlot::Login => identity.login.clone().unwrap_or_default(),
-        ActorSlot::Platform => platform.as_str().to_owned(),
-    })
+        ActorSlot::Platform => String::new(),
+    }
+}
+
+pub fn money_value(slot: MoneySlot, amount: Option<&MoneyAmount>) -> Variant {
+    match slot {
+        MoneySlot::AmountMicros => Variant::Int(amount.map_or(0, |amount| {
+            i64::try_from(amount.micros()).unwrap_or(i64::MAX)
+        })),
+        MoneySlot::Amount => Variant::Float(amount.map_or(0.0, MoneyAmount::major_units)),
+        MoneySlot::Currency => Variant::String(
+            amount.map_or_else(String::new, |amount| amount.currency().as_str().to_owned()),
+        ),
+        MoneySlot::AmountFormatted => {
+            Variant::String(amount.map_or_else(String::new, MoneyAmount::formatted))
+        }
+    }
 }
 
 fn shown_name(identity: &ActorIdentity) -> String {

@@ -1681,6 +1681,7 @@ fn color_for_source(source: EventSource, palette: &ForgePalette) -> Rgba {
         EventSource::Timer => palette.warning,
         EventSource::Server => palette.info,
         EventSource::Audio => palette.bits,
+        EventSource::Donation => palette.success,
     }
 }
 
@@ -1857,6 +1858,7 @@ fn event_source_label(source: EventSource) -> &'static str {
         EventSource::Timer => "timer",
         EventSource::Server => "server",
         EventSource::Audio => "audio",
+        EventSource::Donation => "donation",
     }
 }
 

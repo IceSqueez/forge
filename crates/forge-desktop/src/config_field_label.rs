@@ -57,6 +57,10 @@ pub(crate) fn localized_label(english: &'static str) -> String {
         "Device" => tr!("config_field_label_device"),
         "Device (leave empty for any)" => tr!("config_field_label_device_filter"),
         "Direction" => tr!("config_field_label_direction"),
+        "Donation service" => tr!("config_field_label_donation_service"),
+        "Donation service (leave empty to match any)" => {
+            tr!("config_field_label_donation_service_filter")
+        }
         "Direction (leave empty for any)" => tr!("config_field_label_direction_filter"),
         "Event Name" => tr!("config_field_label_event_name"),
         "From user (login)" => tr!("config_field_label_from_user"),

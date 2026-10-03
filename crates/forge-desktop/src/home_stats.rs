@@ -323,6 +323,7 @@ fn source_label(source: EventSource) -> &'static str {
         EventSource::Timer => "timer",
         EventSource::Server => "server",
         EventSource::Audio => "audio",
+        EventSource::Donation => "donation",
     }
 }
 

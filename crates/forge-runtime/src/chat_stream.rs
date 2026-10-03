@@ -50,7 +50,8 @@ pub(crate) fn event_source_to_chat_source(src: EventSource) -> Option<ChatSource
         | EventSource::Hotkey
         | EventSource::Timer
         | EventSource::Server
-        | EventSource::Audio => None,
+        | EventSource::Audio
+        | EventSource::Donation => None,
     }
 }
 

@@ -542,7 +542,7 @@ pub(crate) fn build_kind_groups(
     (groups, picks)
 }
 
-const CATEGORY_ORDER: [TriggerCategory; 23] = [
+const CATEGORY_ORDER: [TriggerCategory; 24] = [
     TriggerCategory::Chat,
     TriggerCategory::Subscriptions,
     TriggerCategory::Bits,
@@ -552,6 +552,7 @@ const CATEGORY_ORDER: [TriggerCategory; 23] = [
     TriggerCategory::Predictions,
     TriggerCategory::Hype,
     TriggerCategory::Charity,
+    TriggerCategory::Donations,
     TriggerCategory::Goals,
     TriggerCategory::Clips,
     TriggerCategory::Streams,
@@ -601,6 +602,11 @@ fn category_meta(
         TriggerCategory::Charity => (
             tr!("trigger_cat_charity").into(),
             "charity",
+            palette.success,
+        ),
+        TriggerCategory::Donations => (
+            tr!("trigger_cat_donations").into(),
+            "donations",
             palette.success,
         ),
         TriggerCategory::Goals => (tr!("trigger_cat_goals").into(), "goals", palette.success),

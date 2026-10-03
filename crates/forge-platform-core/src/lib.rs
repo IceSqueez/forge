@@ -6,6 +6,7 @@ pub mod builtin;
 pub mod capabilities;
 pub mod chat;
 pub mod collections;
+pub mod donation;
 pub mod endpoints;
 pub mod error;
 pub mod integration;
@@ -35,6 +36,7 @@ pub use collections::{
     CollectionItemAccess, CollectionItemId, CollectionMetadata, CollectionOutcome,
     CollectionRevisionSignal, CollectionRevisions, CollectionToggle, RevisionWait,
 };
+pub use donation::{DonationProvider, DonationStream};
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};
 pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};

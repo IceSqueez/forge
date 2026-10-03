@@ -38,6 +38,6 @@ pub use runner::{SubActionConfig, SubActionRunner};
 pub use synthesis::{SynthesisSample, synthesize_args};
 pub use telemetry::StepTimer;
 pub use variables::{
-    ActorBlock, ActorDeclaration, ActorIdentity, LoginSlot, TriggerVariable, TriggerVariables,
-    declared_variables,
+    ActorBlock, ActorDeclaration, ActorIdentity, LoginSlot, SourcedActor, TriggerVariable,
+    TriggerVariables, declared_variables, money_value,
 };

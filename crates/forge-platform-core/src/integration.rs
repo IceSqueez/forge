@@ -13,6 +13,11 @@ impl IntegrationCategory {
         label_key: "integration_category_streaming",
         blurb_key: "integration_category_streaming_blurb",
     };
+    pub const DONATIONS: Self = Self {
+        key: "donations",
+        label_key: "integration_category_donations",
+        blurb_key: "integration_category_donations_blurb",
+    };
     pub const APPS: Self = Self {
         key: "apps",
         label_key: "integration_category_apps",
@@ -41,6 +46,7 @@ impl IntegrationCategory {
 
     pub const DISPLAY_ORDER: &'static [Self] = &[
         Self::STREAMING,
+        Self::DONATIONS,
         Self::APPS,
         Self::COMMUNITY,
         Self::AUDIO,

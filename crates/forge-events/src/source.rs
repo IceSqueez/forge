@@ -18,6 +18,7 @@ pub enum EventSource {
     Timer,
     Server,
     Audio,
+    Donation,
 }
 
 impl EventSource {

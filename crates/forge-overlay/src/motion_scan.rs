@@ -1,8 +1,8 @@
 use crate::descriptor::OverlayKindDescriptor;
+use crate::page_contract::BIND_ATTRIBUTE;
 
 const ID_ATTRIBUTE_NAME: &str = "id";
 const ATTRIBUTE_ASSIGN: char = '=';
-const BIND_ATTRIBUTE: &str = "data-bind";
 const REVEAL_CALL: &str = "forge.show(";
 const RETIRED_ANIMATION_ATTRIBUTE: &str = "data-animation";
 const ATTRIBUTE_QUOTES: [char; 2] = ['"', '\''];

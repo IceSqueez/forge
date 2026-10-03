@@ -16,6 +16,7 @@ pub mod media;
 pub mod metrics;
 pub mod motion;
 pub mod motion_scan;
+pub mod page_contract;
 pub mod preview;
 pub mod registry;
 pub mod sample;
@@ -69,6 +70,10 @@ pub use media::{
 pub use metrics::{AxisBound, ElementSizing, StyleGuard, element_sizing, style_guards};
 pub use motion::{MotionAxes, MotionProfile};
 pub use motion_scan::{MotionIssue, OverriddenSources, motion_issues};
+pub use page_contract::{
+    BindRule, LookConfigKey, LookContract, PAGE_CONTRACT, PageContract, PageFunction,
+    RuntimeAttribute, RuntimeProperty, look_contract,
+};
 pub use preview::{
     PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLine,
     PreviewLineRole, PreviewMark, PreviewPosition, PreviewShape,

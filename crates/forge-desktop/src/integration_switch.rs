@@ -270,6 +270,56 @@ mod tests {
         });
     }
 
+    #[gpui::test]
+    fn a_donation_trigger_is_uncovered_only_when_every_donation_service_is_switched_off(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (donatello, monobank) = (
+            forge_donatello::DONATELLO_INTEGRATION.id,
+            forge_monobank::MONOBANK_INTEGRATION.id,
+        );
+        let (_lifecycle, host) = watching(cx, &rt, LifecycleStates::new());
+
+        let uncovered = [
+            HashSet::new(),
+            HashSet::from([donatello.clone()]),
+            HashSet::from([monobank.clone()]),
+            HashSet::from([donatello, monobank]),
+        ]
+        .map(|off| {
+            host.update(cx, |host, _| {
+                let watch = host.watch.as_mut().expect("the host keeps its watch");
+                watch.replace(off);
+                watch.uncovered_category(DONATION_RECEIVED_KIND)
+            })
+        });
+
+        assert_eq!(
+            uncovered,
+            [None, None, None, Some(IntegrationCategory::DONATIONS)]
+        );
+    }
+
+    #[gpui::test]
+    fn a_trigger_outside_any_category_is_never_uncovered(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let off = HashSet::from([
+            forge_donatello::DONATELLO_INTEGRATION.id,
+            forge_monobank::MONOBANK_INTEGRATION.id,
+            obs(),
+        ]);
+        let (_lifecycle, host) = watching(cx, &rt, LifecycleStates::new());
+
+        let uncovered = host.update(cx, |host, _| {
+            let watch = host.watch.as_mut().expect("the host keeps its watch");
+            watch.replace(off);
+            watch.uncovered_category("obs.scene.changed")
+        });
+
+        assert_eq!(uncovered, None);
+    }
+
     fn failed() -> LifecycleState {
         LifecycleState::Failed("token revoked".to_owned())
     }

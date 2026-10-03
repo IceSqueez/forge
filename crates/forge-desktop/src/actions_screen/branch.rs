@@ -234,9 +234,16 @@ impl ScreenActionsView {
             }
             match target {
                 Some(depth) => {
+                    let leading = (idx == 0).then(|| {
+                        icon(Icon::ChevronLeft, FONT_XS, palette.text_muted).into_any_element()
+                    });
                     row = row.child(
                         div()
                             .id(SharedString::from(format!("actions-breadcrumb-{depth}")))
+                            .flex()
+                            .items_center()
+                            .gap(spacing(Spacing::Xxs, Density::Cozy))
+                            .children(leading)
                             .font_family(mono_family())
                             .text_size(FONT_XS)
                             .text_color(palette.text_muted)
@@ -265,22 +272,7 @@ impl ScreenActionsView {
             }
         }
 
-        let back_depth = self.nav_path.len() - 1;
-        let back_button = step_icon_btn(
-            SharedString::from("actions-breadcrumb-back"),
-            Icon::ChevronLeft,
-            false,
-            palette,
-            cx.listener(move |this, _: &ClickEvent, _, cx| this.breadcrumb_pop(back_depth, cx)),
-        );
-
-        div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Xxs, Density::Cozy))
-            .child(back_button)
-            .child(row)
-            .into_any_element()
+        row.into_any_element()
     }
 
     pub(super) fn render_branch_affordances(

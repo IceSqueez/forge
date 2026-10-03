@@ -288,7 +288,10 @@ impl IntegrationsHubView {
             .text_color(palette.brand)
             .child(icon(Icon::Refresh, FOOTER_ICON, palette.brand))
             .child(tr!("integration_retry"))
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, _| this.retry(&retry_id)))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                cx.stop_propagation();
+                this.retry(&retry_id)
+            }))
             .into_any_element()
     }
 
@@ -356,7 +359,10 @@ impl IntegrationsHubView {
                     .text_decoration_color(palette.border_input)
                     .child(reference_summary(references)),
             )
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.go(target.clone(), cx)))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                cx.stop_propagation();
+                this.go(target.clone(), cx)
+            }))
             .into_any_element()
     }
 
@@ -378,6 +384,7 @@ impl IntegrationsHubView {
         let switch = toggle(on, palette).on_click(
             ElementId::Name(format!("hub-toggle-{id}").into()),
             cx.listener(move |this, _: &ClickEvent, _, cx| {
+                cx.stop_propagation();
                 this.request_enabled(toggle_id.clone(), !on, cx)
             }),
         );
@@ -442,6 +449,13 @@ impl IntegrationsHubView {
         .badge(card_status_badge(&id, &status, palette))
         .trailing(switch)
         .note(note);
+        if !self.welcome {
+            let detail_target = Screen::BuiltinDetail(id.clone());
+            card =
+                card.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.go(detail_target.clone(), cx)
+                }));
+        }
         card = if self.welcome {
             card.footer_left(welcome_footer_note(&status, palette))
         } else {

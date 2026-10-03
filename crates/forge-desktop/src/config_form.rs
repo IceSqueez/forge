@@ -1260,7 +1260,7 @@ mod tests {
 
     struct Host;
 
-    fn ignore_commit(_: &mut Host, _: Entity<TextInput>, _: &InputEvent, _: &mut Context<Host>) {}
+    fn ignore_commit(_: &mut Host, _: &InputEvent, _: &mut Context<Host>) {}
 
     fn integer_spec(key: &'static str) -> FormField {
         FormField::Integer {

@@ -6,7 +6,9 @@ use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
 use forge_types::{
     EventId, IntegrationAvailability, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON,
-    SCRIPT_LOG_TARGET, ScriptId, Variant, integration_disabled_reason, requested_chat_target,
+    NO_WHISPER_PLATFORM_ENABLED_REASON, PlatformId, REPLY_PARENT_FIELD, SCRIPT_LOG_TARGET,
+    ScriptId, Variant, WHISPER_RECIPIENT_FIELD, integration_disabled_reason, requested_chat_target,
+    whispers_unsupported_reason,
 };
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
@@ -382,6 +384,32 @@ fn admit_chat_target<'a>(
     Ok(Some(target))
 }
 
+fn admit_whisper_broadcast(
+    integrations: Option<&dyn IntegrationAvailability>,
+) -> Result<(), Box<EvalAltResult>> {
+    admit_broadcast(integrations)?;
+    match integrations {
+        Some(integrations) if !integrations.any_whisper_platform_enabled() => {
+            Err(NO_WHISPER_PLATFORM_ENABLED_REASON.into())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn admit_whisper_target<'a>(
+    integrations: Option<&dyn IntegrationAvailability>,
+    raw: &'a str,
+) -> Result<Option<&'a str>, Box<EvalAltResult>> {
+    let Some(target) = requested_chat_target(raw) else {
+        admit_whisper_broadcast(integrations)?;
+        return Ok(None);
+    };
+    if !PlatformId::from_wire(target).is_some_and(PlatformId::supports_whispers) {
+        return Err(whispers_unsupported_reason(target).into());
+    }
+    admit_chat_target(integrations, target)
+}
+
 fn chat_request_payload(target: Option<&str>, mut payload: serde_json::Value) -> serde_json::Value {
     if let (Some(target), Some(fields)) = (target, payload.as_object_mut()) {
         fields.insert("target".to_owned(), target.into());
@@ -437,7 +465,7 @@ fn build_chat_module(
             pub_reply.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
-                serde_json::json!({"message": text.as_str(), "reply_to_message_id": to.as_str()}),
+                serde_json::json!({"message": text.as_str(), REPLY_PARENT_FIELD: to.as_str()}),
                 caused_by,
             ));
             Ok(())
@@ -458,7 +486,7 @@ fn build_chat_module(
                 "chat.send.request",
                 chat_request_payload(
                     target,
-                    serde_json::json!({"message": text.as_str(), "reply_to_message_id": to.as_str()}),
+                    serde_json::json!({"message": text.as_str(), REPLY_PARENT_FIELD: to.as_str()}),
                 ),
                 caused_by,
             ));
@@ -471,11 +499,11 @@ fn build_chat_module(
     m.set_native_fn(
         "whisper",
         move |user: ImmutableString, text: ImmutableString| -> Result<(), Box<EvalAltResult>> {
-            admit_broadcast(broadcast_whisper_integrations.as_deref())?;
+            admit_whisper_broadcast(broadcast_whisper_integrations.as_deref())?;
             pub_whisper.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
-                serde_json::json!({"message": text.as_str(), "whisper_to_login": user.as_str()}),
+                serde_json::json!({"message": text.as_str(), WHISPER_RECIPIENT_FIELD: user.as_str()}),
                 caused_by,
             ));
             Ok(())
@@ -489,13 +517,13 @@ fn build_chat_module(
               user: ImmutableString,
               text: ImmutableString|
               -> Result<(), Box<EvalAltResult>> {
-            let target = admit_chat_target(integrations.as_deref(), target.as_str())?;
+            let target = admit_whisper_target(integrations.as_deref(), target.as_str())?;
             pub_whisper_targeted.publish(Event::caused_by(
                 EventSource::Rhai,
                 "chat.send.request",
                 chat_request_payload(
                     target,
-                    serde_json::json!({"message": text.as_str(), "whisper_to_login": user.as_str()}),
+                    serde_json::json!({"message": text.as_str(), WHISPER_RECIPIENT_FIELD: user.as_str()}),
                 ),
                 caused_by,
             ));

@@ -73,8 +73,26 @@ pub trait ChatPlatform: Send + Sync {
     async fn connect(&self) -> Result<(), PlatformError>;
     async fn disconnect(&self) -> Result<(), PlatformError>;
     async fn send_message(&self, channel: &str, text: &str) -> Result<(), PlatformError>;
+
+    async fn send_reply(
+        &self,
+        channel: &str,
+        _reply_parent_message_id: &str,
+        text: &str,
+    ) -> Result<(), PlatformError> {
+        self.send_message(channel, text).await
+    }
+
+    async fn send_whisper(&self, _recipient_login: &str, _text: &str) -> Result<(), PlatformError> {
+        Err(PlatformError::Unsupported {
+            feature: WHISPER_FEATURE.to_owned(),
+        })
+    }
+
     fn events(&self) -> EventStream;
 }
+
+const WHISPER_FEATURE: &str = "chat.whisper";
 
 pub const CONNECTION_STATE_CHANGED_KIND: &str = "platform.connection.changed";
 

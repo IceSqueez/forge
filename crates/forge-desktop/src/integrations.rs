@@ -10,7 +10,10 @@ use forge_platform_core::{
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::EventBus;
 use forge_storage::{CredentialsRepo, DataProvider};
-use forge_types::{EventId, IntegrationId, requested_chat_target};
+use forge_types::{
+    EventId, IntegrationId, PlatformId, REPLY_PARENT_FIELD, WHISPER_RECIPIENT_FIELD,
+    requested_chat_target, whispers_unsupported_reason,
+};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -363,9 +366,46 @@ pub(crate) fn spawn_event_bridge(
     })
 }
 
+enum ChatSendIntent {
+    Plain,
+    Reply { parent_message_id: String },
+    Whisper { recipient_login: String },
+}
+
+impl ChatSendIntent {
+    fn of(payload: &serde_json::Value) -> Self {
+        if let Some(recipient) = payload.get(WHISPER_RECIPIENT_FIELD) {
+            return Self::Whisper {
+                recipient_login: recipient.as_str().unwrap_or_default().trim().to_owned(),
+            };
+        }
+        match payload
+            .get(REPLY_PARENT_FIELD)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|parent| !parent.is_empty())
+        {
+            Some(parent) => Self::Reply {
+                parent_message_id: parent.to_owned(),
+            },
+            None => Self::Plain,
+        }
+    }
+}
+
 struct ChatSendRequest {
     message: String,
+    intent: ChatSendIntent,
     caused_by: EventId,
+}
+
+fn chat_send_failed(source: EventSource, target: &str, error: String, caused_by: EventId) -> Event {
+    Event::caused_by(
+        source,
+        "chat.send.failed",
+        serde_json::json!({ "channel": target, "error": error }),
+        caused_by,
+    )
 }
 
 fn spawn_chat_send_worker(
@@ -377,19 +417,52 @@ fn spawn_chat_send_worker(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(request) = requests.recv().await {
-            match platform.send_message(target, &request.message).await {
-                Ok(()) => bus.publish(Event::caused_by(
-                    source,
-                    "chat.send",
-                    serde_json::json!({ "channel": target, "message": request.message }),
-                    request.caused_by,
-                )),
-                Err(e) => bus.publish(Event::caused_by(
-                    source,
-                    "chat.send.failed",
-                    serde_json::json!({ "channel": target, "error": e.to_string() }),
-                    request.caused_by,
-                )),
+            let ChatSendRequest {
+                message,
+                intent,
+                caused_by,
+            } = request;
+            let (outcome, delivered) = match intent {
+                ChatSendIntent::Plain => (
+                    platform.send_message(target, &message).await,
+                    Event::caused_by(
+                        source,
+                        "chat.send",
+                        serde_json::json!({ "channel": target, "message": message }),
+                        caused_by,
+                    ),
+                ),
+                ChatSendIntent::Reply { parent_message_id } => (
+                    platform
+                        .send_reply(target, &parent_message_id, &message)
+                        .await,
+                    Event::caused_by(
+                        source,
+                        "chat.send",
+                        serde_json::json!({
+                            "channel": target,
+                            "message": message,
+                            (REPLY_PARENT_FIELD): parent_message_id,
+                        }),
+                        caused_by,
+                    ),
+                ),
+                ChatSendIntent::Whisper { recipient_login } => (
+                    platform.send_whisper(&recipient_login, &message).await,
+                    Event::caused_by(
+                        source,
+                        "chat.whisper.sent",
+                        serde_json::json!({
+                            "channel": target,
+                            (WHISPER_RECIPIENT_FIELD): recipient_login,
+                        }),
+                        caused_by,
+                    ),
+                ),
+            };
+            match outcome {
+                Ok(()) => bus.publish(delivered),
+                Err(e) => bus.publish(chat_send_failed(source, target, e.to_string(), caused_by)),
             }
         }
     })
@@ -411,6 +484,8 @@ pub(crate) fn spawn_chat_send_bridge(
         rx,
     ));
 
+    let whispers_supported =
+        PlatformId::from_wire(target).is_some_and(PlatformId::supports_whispers);
     tasks.track(tokio::spawn(async move {
         let mut sub = bus.subscribe();
         let mut lag_count: u64 = 0;
@@ -449,13 +524,12 @@ pub(crate) fn spawn_chat_send_bridge(
             if !matches!(event.source, EventSource::Core | EventSource::Rhai) {
                 continue;
             }
-            if let Some(requested) = event
+            let requested = event
                 .payload
                 .get("target")
                 .and_then(|v| v.as_str())
-                .and_then(requested_chat_target)
-                && requested != target
-            {
+                .and_then(requested_chat_target);
+            if requested.is_some_and(|requested| requested != target) {
                 continue;
             }
             let Some(message) = event
@@ -467,14 +541,28 @@ pub(crate) fn spawn_chat_send_bridge(
                 continue;
             };
             let caused_by = event.id;
-            if tx.try_send(ChatSendRequest { message, caused_by }).is_err() {
-                bus.publish(Event::caused_by(
+            let intent = ChatSendIntent::of(&event.payload);
+            if matches!(intent, ChatSendIntent::Whisper { .. }) && !whispers_supported {
+                if requested.is_some() {
+                    bus.publish(chat_send_failed(
+                        source,
+                        target,
+                        whispers_unsupported_reason(target),
+                        caused_by,
+                    ));
+                }
+                continue;
+            }
+            let request = ChatSendRequest {
+                message,
+                intent,
+                caused_by,
+            };
+            if tx.try_send(request).is_err() {
+                bus.publish(chat_send_failed(
                     source,
-                    "chat.send.failed",
-                    serde_json::json!({
-                        "channel": target,
-                        "error": "chat send queue full or worker unavailable; request dropped",
-                    }),
+                    target,
+                    "chat send queue full or worker unavailable; request dropped".to_owned(),
                     caused_by,
                 ));
             }

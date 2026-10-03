@@ -4,9 +4,11 @@ pub(crate) mod payload;
 mod send;
 mod session;
 mod subscriber;
+mod whisper;
 
-pub use send::{ChatSendError, SentMessageId, send_chat};
+pub use send::{ChatSendError, SentMessageId, send_chat, send_chat_reply};
 pub use session::ChatConnectionState;
+pub(crate) use whisper::{WhisperError, send_whisper};
 
 use crate::builtin::ChatSessionConfig;
 use crate::credentials_manager::TwitchCredentialsManager;

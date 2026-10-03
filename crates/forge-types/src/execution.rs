@@ -27,6 +27,12 @@ const INTEGRATION_DISABLED_REASON: &str = "integration disabled";
 
 pub const NO_CHAT_PLATFORM_ENABLED_REASON: &str = "no chat platform enabled";
 
+pub const NO_WHISPER_PLATFORM_ENABLED_REASON: &str = "no enabled chat platform supports whispers";
+
+pub fn whispers_unsupported_reason(target: &str) -> String {
+    format!("whispers are not supported on {target}")
+}
+
 pub fn integration_disabled_reason(integration: &IntegrationId) -> String {
     format!("{INTEGRATION_DISABLED_REASON}: {integration}")
 }

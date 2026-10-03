@@ -10,11 +10,11 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::{SelfIdentity, resolve_user_id};
-use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
+use super::identity::SelfIdentity;
+use crate::chat::send_whisper;
+use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.chat.send_whisper";
-const MAX_MESSAGE_CHARS: usize = 500;
 
 pub struct SendWhisperRunner {
     transport: Arc<dyn HelixTransport>,
@@ -30,30 +30,19 @@ impl SendWhisperRunner {
     }
 
     async fn whisper(&self, to_user_login: &str, message: &str) -> SubActionOutcome {
-        if to_user_login.is_empty() {
-            return SubActionOutcome::Failed(
-                "to_user_login is empty after interpolation".to_owned(),
-            );
-        }
-        if message.is_empty() {
-            return SubActionOutcome::Failed("message is empty after interpolation".to_owned());
-        }
-        if message.chars().count() > MAX_MESSAGE_CHARS {
-            return SubActionOutcome::Failed("message exceeds 500-character limit".to_owned());
-        }
         let from_user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        let to_user_id = match resolve_user_id(self.transport.as_ref(), to_user_login).await {
-            Ok(id) => id,
-            Err(e) => return SubActionOutcome::Failed(e.to_string()),
-        };
-        let request = HelixRequest::new(HelixMethod::Post, "/helix/whispers")
-            .query("from_user_id", from_user_id)
-            .query("to_user_id", to_user_id)
-            .body(serde_json::json!({ "message": message }));
-        SubActionOutcome::from_result(&self.transport.execute(request).await)
+        SubActionOutcome::from_result(
+            &send_whisper(
+                self.transport.as_ref(),
+                &from_user_id,
+                to_user_login,
+                message,
+            )
+            .await,
+        )
     }
 }
 

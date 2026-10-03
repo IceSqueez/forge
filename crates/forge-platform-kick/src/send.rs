@@ -42,6 +42,35 @@ impl KickSendChat {
         broadcaster_user_id: u64,
         as_bot: bool,
     ) -> Result<(), PlatformError> {
+        self.post(content, token, broadcaster_user_id, as_bot, None)
+            .await
+    }
+
+    pub async fn send_reply(
+        &self,
+        content: &str,
+        token: &str,
+        broadcaster_user_id: u64,
+        reply_to_message_id: &str,
+    ) -> Result<(), PlatformError> {
+        self.post(
+            content,
+            token,
+            broadcaster_user_id,
+            false,
+            Some(reply_to_message_id),
+        )
+        .await
+    }
+
+    async fn post(
+        &self,
+        content: &str,
+        token: &str,
+        broadcaster_user_id: u64,
+        as_bot: bool,
+        reply_to_message_id: Option<&str>,
+    ) -> Result<(), PlatformError> {
         acquire_or_wait(self.limiter.as_ref(), 1).await?;
 
         let mut body = serde_json::json!({
@@ -50,6 +79,9 @@ impl KickSendChat {
         });
         if !as_bot {
             body["broadcaster_user_id"] = serde_json::json!(broadcaster_user_id);
+        }
+        if let Some(parent) = reply_to_message_id {
+            body["reply_to_message_id"] = serde_json::json!(parent);
         }
 
         let response = self

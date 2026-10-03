@@ -26,14 +26,17 @@ pub use action::{Action, ExecutionMode};
 pub use data_flow::{DeclaredVariable, SynthesisHint, VariableSchema};
 pub use execution::{
     ArgStack, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
-    NO_CHAT_PLATFORM_ENABLED_REASON, SubActionOutcome, SubActionTelemetry,
-    integration_disabled_reason, normalize_var_name, strip_var_decoration, variant_preview,
+    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, SubActionOutcome,
+    SubActionTelemetry, integration_disabled_reason, normalize_var_name, strip_var_decoration,
+    variant_preview, whispers_unsupported_reason,
 };
 pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use permission_rung::{PermissionRung, PermissionRungError};
-pub use platform::{PlatformId, requested_chat_target};
+pub use platform::{
+    PlatformId, REPLY_PARENT_FIELD, WHISPER_RECIPIENT_FIELD, requested_chat_target,
+};
 pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;
 pub use redaction::{MARKER, Redacted, RedactedText, STAMP};

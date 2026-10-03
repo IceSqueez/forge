@@ -68,6 +68,33 @@ pub async fn send_chat(
     sender_id: &str,
     message: &str,
 ) -> Result<SentMessageId, ChatSendError> {
+    post_chat_message(transport, broadcaster_id, sender_id, message, None).await
+}
+
+pub async fn send_chat_reply(
+    transport: &dyn HelixTransport,
+    broadcaster_id: &str,
+    sender_id: &str,
+    message: &str,
+    reply_parent_message_id: &str,
+) -> Result<SentMessageId, ChatSendError> {
+    post_chat_message(
+        transport,
+        broadcaster_id,
+        sender_id,
+        message,
+        Some(reply_parent_message_id),
+    )
+    .await
+}
+
+async fn post_chat_message(
+    transport: &dyn HelixTransport,
+    broadcaster_id: &str,
+    sender_id: &str,
+    message: &str,
+    reply_parent_message_id: Option<&str>,
+) -> Result<SentMessageId, ChatSendError> {
     let chars = message.chars().count();
     if chars > MAX_MESSAGE_LEN {
         return Err(ChatSendError::MessageTooLong);
@@ -78,11 +105,14 @@ pub async fn send_chat(
         sender_id, chars, "sending chat message to helix"
     );
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "broadcaster_id": broadcaster_id,
         "sender_id": sender_id,
         "message": message
     });
+    if let Some(parent) = reply_parent_message_id {
+        body["reply_parent_message_id"] = serde_json::json!(parent);
+    }
 
     let response = transport
         .execute(HelixRequest::new(HelixMethod::Post, SEND_CHAT_PATH).body(body))

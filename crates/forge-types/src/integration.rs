@@ -31,6 +31,13 @@ pub trait IntegrationAvailability: Send + Sync {
             .iter()
             .any(|platform| !self.is_disabled(&IntegrationId::from_static(platform.as_str())))
     }
+
+    fn any_whisper_platform_enabled(&self) -> bool {
+        PlatformId::ALL
+            .iter()
+            .filter(|platform| platform.supports_whispers())
+            .any(|platform| !self.is_disabled(&IntegrationId::from_static(platform.as_str())))
+    }
 }
 
 impl fmt::Display for IntegrationId {

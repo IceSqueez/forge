@@ -11,7 +11,10 @@ use tokio::sync::OnceCell;
 
 use crate::auth::twitch_auth_flow;
 use crate::builtin::ChatSessionConfig;
-use crate::chat::{ChatSendError, TwitchChat, TwitchChatHandle, send_chat};
+use crate::chat::{
+    ChatSendError, TwitchChat, TwitchChatHandle, WhisperError, send_chat, send_chat_reply,
+    send_whisper,
+};
 use crate::credentials::load;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
@@ -89,6 +92,24 @@ impl TwitchPlatform {
             .await
             .cloned()
     }
+
+    async fn sender(&self) -> Result<(String, Arc<dyn HelixTransport>), PlatformError> {
+        if !self.capabilities.can_send_chat {
+            return Err(PlatformError::Unsupported {
+                feature: "chat.send".to_owned(),
+            });
+        }
+        let cred = load(self.creds.as_ref())
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.to_string(),
+            })?
+            .ok_or_else(|| PlatformError::ReauthRequired {
+                platform: PLATFORM_ID.to_owned(),
+            })?;
+        let transport = self.helix_transport().await?;
+        Ok((cred.user_id, transport))
+    }
 }
 
 #[async_trait]
@@ -155,28 +176,51 @@ impl ChatPlatform for TwitchPlatform {
     }
 
     async fn send_message(&self, _channel: &str, text: &str) -> Result<(), PlatformError> {
-        if !self.capabilities.can_send_chat {
-            return Err(PlatformError::Unsupported {
-                feature: "chat.send".to_owned(),
-            });
-        }
-        let cred = load(self.creds.as_ref())
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.to_string(),
-            })?
-            .ok_or_else(|| PlatformError::ReauthRequired {
-                platform: PLATFORM_ID.to_owned(),
-            })?;
-        let transport = self.helix_transport().await?;
-        send_chat(transport.as_ref(), &cred.user_id, &cred.user_id, text)
+        let (user_id, transport) = self.sender().await?;
+        send_chat(transport.as_ref(), &user_id, &user_id, text)
             .await
             .map(|_| ())
             .map_err(map_send_error)
     }
 
+    async fn send_reply(
+        &self,
+        _channel: &str,
+        reply_parent_message_id: &str,
+        text: &str,
+    ) -> Result<(), PlatformError> {
+        let (user_id, transport) = self.sender().await?;
+        send_chat_reply(
+            transport.as_ref(),
+            &user_id,
+            &user_id,
+            text,
+            reply_parent_message_id,
+        )
+        .await
+        .map(|_| ())
+        .map_err(map_send_error)
+    }
+
+    async fn send_whisper(&self, recipient_login: &str, text: &str) -> Result<(), PlatformError> {
+        let (user_id, transport) = self.sender().await?;
+        send_whisper(transport.as_ref(), &user_id, recipient_login, text)
+            .await
+            .map_err(map_whisper_error)
+    }
+
     fn events(&self) -> EventStream {
         self.events.subscribe()
+    }
+}
+
+fn map_whisper_error(err: WhisperError) -> PlatformError {
+    match err {
+        WhisperError::Helix(helix) => map_send_error(ChatSendError::from(helix)),
+        rejected => PlatformError::Http {
+            status: NON_HTTP_STATUS,
+            body: rejected.to_string(),
+        },
     }
 }
 

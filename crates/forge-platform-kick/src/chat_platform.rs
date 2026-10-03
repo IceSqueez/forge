@@ -51,6 +51,21 @@ impl KickPlatform {
     pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
         self.state_tx.subscribe()
     }
+
+    async fn send_credentials(&self) -> Result<(String, u64), PlatformError> {
+        if !self.capabilities.can_send_chat {
+            return Err(PlatformError::Unsupported {
+                feature: "chat.send".to_owned(),
+            });
+        }
+        let creds = self.credentials_manager.load().await?.ok_or_else(|| {
+            PlatformError::ReauthRequired {
+                platform: PLATFORM_ID.to_owned(),
+            }
+        })?;
+        let token = self.credentials_manager.get_valid_access_token().await?;
+        Ok((token, creds.user_id))
+    }
 }
 
 #[async_trait]
@@ -128,18 +143,22 @@ impl ChatPlatform for KickPlatform {
     }
 
     async fn send_message(&self, _channel: &str, text: &str) -> Result<(), PlatformError> {
-        if !self.capabilities.can_send_chat {
-            return Err(PlatformError::Unsupported {
-                feature: "chat.send".to_owned(),
-            });
-        }
-        let creds = self.credentials_manager.load().await?.ok_or_else(|| {
-            PlatformError::ReauthRequired {
-                platform: PLATFORM_ID.to_owned(),
-            }
-        })?;
-        let token = self.credentials_manager.get_valid_access_token().await?;
-        self.sender.send(text, &token, creds.user_id, false).await
+        let (token, broadcaster_user_id) = self.send_credentials().await?;
+        self.sender
+            .send(text, &token, broadcaster_user_id, false)
+            .await
+    }
+
+    async fn send_reply(
+        &self,
+        _channel: &str,
+        reply_parent_message_id: &str,
+        text: &str,
+    ) -> Result<(), PlatformError> {
+        let (token, broadcaster_user_id) = self.send_credentials().await?;
+        self.sender
+            .send_reply(text, &token, broadcaster_user_id, reply_parent_message_id)
+            .await
     }
 
     fn events(&self) -> EventStream {

@@ -19,7 +19,21 @@ impl PlatformId {
             PlatformId::Kick => "kick",
         }
     }
+
+    pub fn from_wire(raw: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|platform| platform.as_str() == raw)
+    }
+
+    pub const fn supports_whispers(self) -> bool {
+        matches!(self, PlatformId::Twitch)
+    }
 }
+
+pub const WHISPER_RECIPIENT_FIELD: &str = "whisper_to_login";
+
+pub const REPLY_PARENT_FIELD: &str = "reply_to_message_id";
 
 pub fn requested_chat_target(raw: &str) -> Option<&str> {
     let target = raw.trim();

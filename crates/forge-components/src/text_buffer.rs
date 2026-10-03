@@ -106,6 +106,18 @@ fn outdent_width(line: &str, unit: &str) -> usize {
     spaces.min(unit.len())
 }
 
+fn line_bounds_at_index(text: &str, line_index: usize) -> Range<usize> {
+    let mut start = 0;
+    for _ in 0..line_index {
+        match text[start..].find('\n') {
+            Some(i) => start += i + 1,
+            None => break,
+        }
+    }
+    let end = text[start..].find('\n').map_or(text.len(), |i| start + i);
+    start..end
+}
+
 fn spliced(text: &str, range: Range<usize>, replacement: &str) -> Arc<str> {
     let mut out = String::with_capacity(text.len() - range.len() + replacement.len());
     out.push_str(&text[..range.start]);
@@ -256,6 +268,26 @@ impl TextBuffer {
         let range = self.target_range(None);
         self.apply(range, text, kind);
         self.marked = None;
+    }
+
+    pub(crate) fn replace_all_keeping_caret_line(&mut self, text: &str) {
+        let cursor = self.cursor();
+        let line_index = self.text[..cursor].matches('\n').count();
+        let column = cursor - self.cursor_line_bounds().start;
+        if !self.apply(0..self.text.len(), text, EditKind::Standalone) {
+            return;
+        }
+        let line = line_bounds_at_index(&self.text, line_index);
+        let mut offset = (line.start + column).min(line.end);
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        self.selection = Selection {
+            range: offset..offset,
+            reversed: false,
+        };
+        self.marked = None;
+        self.set_last_selection_after();
     }
 
     pub(crate) fn insert_newline_keeping_indent(&mut self) {

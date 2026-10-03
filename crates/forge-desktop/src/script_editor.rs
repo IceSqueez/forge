@@ -1589,13 +1589,8 @@ impl ScriptEditorView {
         }
         let source = self.code_input.read(cx).content().to_owned();
         let formatted = format_script(&source);
-        if formatted != source {
-            self.code_input.update(cx, |area, cx| {
-                area.set_content(formatted.clone(), cx);
-            });
-            self.recompute_diagnostics(&formatted, cx);
-        }
-        cx.notify();
+        self.code_input
+            .update(cx, |area, cx| area.replace_content_in_place(&formatted, cx));
     }
 
     fn toggle_api_docs(&mut self, cx: &mut Context<Self>) {

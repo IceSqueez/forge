@@ -2,9 +2,8 @@ use super::editor::{step_glyph, sub_category_color};
 use super::*;
 use crate::async_bridge;
 use crate::config_field_label::localized_label;
-use crate::config_form::dependent_options;
+use crate::config_form::{code_field_editor, dependent_options};
 use crate::presentation::ActivePresentation;
-use forge_components::highlight::Language;
 use forge_components::{
     BORDER_THIN, CodeEditor, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, FONT_SM,
     FONT_XS, FONT_XXS, InputEvent, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing,
@@ -1285,16 +1284,13 @@ fn build_code_field(
     palette: ForgePalette,
     cx: &mut Context<EditSubActionForm>,
 ) -> SubFormField {
-    let seed = config_seed(config, key);
-    let editor = cx.new(|cx| {
-        let mut editor = CodeEditor::new(highlight_language(language), "", cx)
-            .with_palette(palette)
-            .with_field_height(SUB_AREA_FIELD_H);
-        if !seed.is_empty() {
-            editor.set_content(seed, cx);
-        }
-        editor
-    });
+    let editor = code_field_editor(
+        language,
+        config_seed(config, key),
+        SUB_AREA_FIELD_H,
+        palette,
+        cx,
+    );
     SubFormField::Code {
         key: key.to_owned(),
         label: label.to_owned(),
@@ -1309,13 +1305,6 @@ fn config_seed(config: &SubActionConfig, key: &str) -> String {
         .get(key)
         .map(forge_types::display_scalar)
         .unwrap_or_default()
-}
-
-fn highlight_language(language: CodeLanguage) -> Language {
-    match language {
-        CodeLanguage::Rhai => Language::Rhai,
-        CodeLanguage::Json => Language::Json,
-    }
 }
 
 fn multiline_field(

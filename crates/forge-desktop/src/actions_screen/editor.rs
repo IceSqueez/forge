@@ -1336,12 +1336,7 @@ impl ScreenActionsView {
         }
     }
 
-    fn on_trigger_config_committed(
-        &mut self,
-        _field: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_trigger_config_committed(&mut self, event: &InputEvent, cx: &mut Context<Self>) {
         if let InputEvent::Submitted(_) = event {
             self.submit_trigger_fill(cx);
         }

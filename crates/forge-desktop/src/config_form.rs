@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 
+use forge_components::highlight::Language;
 use forge_components::{
-    BORDER_THIN, Density, ForgePalette, Icon, InputEvent, Picker, PickerEvent, PickerItem,
-    PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown, icon,
-    mono_family, radius, slider, spacing, toggle, tr,
+    BORDER_THIN, CodeEditor, Density, ForgePalette, Icon, InputEvent, Picker, PickerEvent,
+    PickerItem, PickerLabels, Radius, Spacing, TextInput, accent_swatch, body_family, dropdown,
+    icon, mono_family, radius, slider, spacing, toggle, tr,
 };
-use forge_registry::FormField;
+use forge_registry::{CodeLanguage, FormField};
 
 use crate::collection_options::{
     ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
@@ -41,6 +42,8 @@ pub(crate) const CHOICE_GLYPH: Pixels = px(12.0);
 
 const INTEGER_PLACEHOLDER: &str = "0";
 
+const CODE_FIELD_H: Pixels = px(150.0);
+
 type FieldConfig = BTreeMap<String, Variant>;
 
 pub(crate) enum ConfigField {
@@ -50,6 +53,12 @@ pub(crate) enum ConfigField {
         optional: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
+        _sub: Subscription,
+    },
+    Code {
+        key: String,
+        gate: Option<String>,
+        editor: Entity<CodeEditor>,
         _sub: Subscription,
     },
     Bool {
@@ -92,6 +101,7 @@ impl ConfigField {
     pub(crate) fn key(&self) -> &str {
         match self {
             Self::Input { key, .. }
+            | Self::Code { key, .. }
             | Self::Bool { key, .. }
             | Self::Slide { key, .. }
             | Self::Swatch { key, .. }
@@ -101,8 +111,7 @@ impl ConfigField {
     }
 }
 
-pub(crate) type ConfigCommitHandler<V> =
-    fn(&mut V, Entity<TextInput>, &InputEvent, &mut Context<V>);
+pub(crate) type ConfigCommitHandler<V> = fn(&mut V, &InputEvent, &mut Context<V>);
 
 type ChoiceOpener<V> = fn(&mut V, String, &mut Window, &mut Context<V>);
 
@@ -175,9 +184,15 @@ pub(crate) fn fold_config_field<V: 'static>(
             ctx,
             cx,
         )),
-        FormField::TextArea { key, .. } | FormField::Code { key, .. } => out.push(
-            build_config_input(free_text(key, SharedString::default()), gate, ctx, cx),
-        ),
+        FormField::TextArea { key, .. } => out.push(build_config_input(
+            free_text(key, SharedString::default()),
+            gate,
+            ctx,
+            cx,
+        )),
+        FormField::Code { key, language, .. } => {
+            out.push(build_config_code(key, *language, gate, ctx, cx))
+        }
         FormField::Integer { key, .. } => {
             let optional = !ctx.defaults.contains_key(*key);
             let placeholder = if optional {
@@ -603,7 +618,7 @@ fn build_config_input<V: 'static>(
                 field.update(cx, |input, cx| input.restore_committed(cx));
                 return;
             }
-            on_committed(view, field, event, cx);
+            on_committed(view, event, cx);
         },
     );
     ConfigField::Input {
@@ -614,6 +629,56 @@ fn build_config_input<V: 'static>(
         input,
         _sub: sub,
     }
+}
+
+fn build_config_code<V: 'static>(
+    key: &str,
+    language: CodeLanguage,
+    gate: Option<String>,
+    ctx: &FoldContext<'_, V>,
+    cx: &mut Context<V>,
+) -> ConfigField {
+    let editor = code_field_editor(
+        language,
+        read_text(ctx.config, key),
+        CODE_FIELD_H,
+        *ctx.palette,
+        cx,
+    );
+    let on_committed = ctx.on_committed;
+    let sub = cx.subscribe(&editor, move |view, _, event: &InputEvent, cx| {
+        if matches!(event, InputEvent::Blurred(_)) {
+            on_committed(view, event, cx);
+        }
+    });
+    ConfigField::Code {
+        key: key.to_owned(),
+        gate,
+        editor,
+        _sub: sub,
+    }
+}
+
+pub(crate) fn code_field_editor<V: 'static>(
+    language: CodeLanguage,
+    seed: String,
+    height: Pixels,
+    palette: ForgePalette,
+    cx: &mut Context<V>,
+) -> Entity<CodeEditor> {
+    let language = match language {
+        CodeLanguage::Rhai => Language::Rhai,
+        CodeLanguage::Json => Language::Json,
+    };
+    cx.new(|cx| {
+        let mut editor = CodeEditor::new(language, "", cx)
+            .with_palette(palette)
+            .with_field_height(height);
+        if !seed.is_empty() {
+            editor.set_content(seed, cx);
+        }
+        editor
+    })
 }
 
 pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldConfig, cx: &App) {
@@ -666,6 +731,14 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                     buffer.insert(key.clone(), Variant::String(selected.clone()));
                 }
             }
+            ConfigField::Code {
+                key, gate, editor, ..
+            } => {
+                if gate_on(gate) {
+                    let text = editor.read(cx).content().to_owned();
+                    buffer.insert(key.clone(), Variant::String(text));
+                }
+            }
             ConfigField::Input {
                 key,
                 integer,
@@ -703,6 +776,7 @@ pub(crate) fn render_config_control<V: 'static>(
 ) -> AnyElement {
     match field {
         ConfigField::Input { input, .. } => div().child(input.clone()).into_any_element(),
+        ConfigField::Code { editor, .. } => div().child(editor.clone()).into_any_element(),
         ConfigField::Bool { key, value, .. } => {
             let toggle_key = key.clone();
             let view = view.clone();

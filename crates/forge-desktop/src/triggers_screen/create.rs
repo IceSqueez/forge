@@ -173,12 +173,7 @@ impl TriggersRegistryView {
         }
     }
 
-    fn on_create_config_committed(
-        &mut self,
-        _field: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_create_config_committed(&mut self, event: &InputEvent, cx: &mut Context<Self>) {
         if let InputEvent::Submitted(_) = event {
             self.submit_create(cx);
         }

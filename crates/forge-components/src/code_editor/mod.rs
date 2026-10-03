@@ -7,8 +7,8 @@ use std::ops::Range;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, EntityInputHandler, EventEmitter,
     FocusHandle, Focusable, KeyBinding, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollWheelEvent, SharedString, UTF16Selection, Window, actions, div, point,
-    prelude::*, px,
+    Pixels, Point, ScrollWheelEvent, SharedString, Subscription, UTF16Selection, Window, actions,
+    div, point, prelude::*, px,
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
@@ -59,6 +59,8 @@ pub struct CodeEditor {
     is_selecting: bool,
     preferred_x: Option<Pixels>,
     caret: CaretBlink,
+    committed: SharedString,
+    blur_sub: Option<Subscription>,
 }
 
 impl EventEmitter<InputEvent> for CodeEditor {}
@@ -93,6 +95,8 @@ impl CodeEditor {
             is_selecting: false,
             preferred_x: None,
             caret: CaretBlink::new(),
+            committed: SharedString::default(),
+            blur_sub: None,
         }
     }
 
@@ -130,7 +134,9 @@ impl CodeEditor {
     }
 
     pub fn set_content(&mut self, text: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.buffer.reset(text.into().into());
+        let text = text.into();
+        self.committed = text.clone();
+        self.buffer.reset(text.into());
         self.buffer.move_to(0);
         self.lines.sync(self.buffer.text());
         self.geometry.invalidate();
@@ -138,6 +144,16 @@ impl CodeEditor {
         self.scroll_offset = px(0.0);
         self.follow_caret = false;
         cx.notify();
+    }
+
+    pub fn replace_content_in_place(&mut self, text: &str, cx: &mut Context<Self>) {
+        if text == self.buffer.as_str() {
+            return;
+        }
+        self.preferred_x = None;
+        self.buffer.replace_all_keeping_caret_line(text);
+        self.edited(cx);
+        self.follow_caret = false;
     }
 
     pub fn clear(&mut self, cx: &mut Context<Self>) {
@@ -314,6 +330,14 @@ impl CodeEditor {
         self.caret.wake();
         cx.emit(InputEvent::Changed(self.buffer.text().into()));
         cx.notify();
+    }
+
+    fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if self.committed.as_ref() == self.buffer.as_str() {
+            return;
+        }
+        self.committed = SharedString::from(self.buffer.text().clone());
+        cx.emit(InputEvent::Blurred(self.committed.clone()));
     }
 
     fn on_mouse_down(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -521,6 +545,10 @@ impl Focusable for CodeEditor {
 
 impl Render for CodeEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.blur_sub.is_none() {
+            let handle = self.focus_handle.clone();
+            self.blur_sub = Some(cx.on_blur(&handle, window, Self::on_blur));
+        }
         let focus = self.focus_handle.clone();
         self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);

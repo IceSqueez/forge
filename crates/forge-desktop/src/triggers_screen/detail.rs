@@ -127,12 +127,7 @@ impl TriggersRegistryView {
         cx.notify();
     }
 
-    fn on_config_committed(
-        &mut self,
-        _field: Entity<TextInput>,
-        event: &InputEvent,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_config_committed(&mut self, event: &InputEvent, cx: &mut Context<Self>) {
         if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
             self.commit_config(cx);
         }

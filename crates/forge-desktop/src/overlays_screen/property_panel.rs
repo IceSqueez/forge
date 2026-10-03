@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_components::{
-    BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels, TextInput,
+    BORDER_THIN, FONT_XXS, ForgePalette, Picker, PickerEvent, PickerItem, PickerLabels,
     accent_swatch, body_family, field_label, section_label, tr,
 };
 use forge_overlay::config::{ACCENT, RETIRED_KEYS, SOUND_OPTIONS_KEY};
@@ -332,12 +332,7 @@ impl OverlayPropertyPanel {
         .detach();
     }
 
-    fn on_field_committed(
-        &mut self,
-        _field: Entity<TextInput>,
-        event: &forge_components::InputEvent,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_field_committed(&mut self, event: &forge_components::InputEvent, cx: &mut Context<Self>) {
         if matches!(
             event,
             forge_components::InputEvent::Submitted(_) | forge_components::InputEvent::Blurred(_)

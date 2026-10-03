@@ -5,11 +5,13 @@ use gpui::Rgba;
 
 use crate::screen::Screen;
 
-pub fn declarations() -> [IntegrationDeclaration; 8] {
+pub fn declarations() -> [IntegrationDeclaration; 10] {
     [
         forge_platform_twitch::TWITCH_INTEGRATION,
         forge_platform_youtube::YOUTUBE_INTEGRATION,
         forge_platform_kick::KICK_INTEGRATION,
+        forge_donatello::DONATELLO_INTEGRATION,
+        forge_monobank::MONOBANK_INTEGRATION,
         forge_obs::OBS_INTEGRATION,
         forge_vtube::VTUBE_INTEGRATION,
         forge_discord::DISCORD_INTEGRATION,

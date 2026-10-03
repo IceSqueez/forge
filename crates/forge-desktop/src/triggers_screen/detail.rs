@@ -6,7 +6,7 @@ use crate::config_form::{
     collect_field_values, config_label_cell, fold_config_field, render_config_control,
     set_picked_value, sparse_overrides,
 };
-use crate::integration_switch::inactive_badge;
+use crate::integration_switch::{category_inactive_badge, inactive_badge};
 use crate::presentation::ActivePresentation;
 use forge_components::{
     Density, FONT_XXS, Icon, InputEvent, Picker, PickerEvent, Radius, ResizeEdge, ResizeRange,
@@ -502,7 +502,11 @@ impl TriggersRegistryView {
             )
             .when_some(self.switched_off_owner(&instance.kind_id), |line, owner| {
                 line.child(inactive_badge(&owner, palette))
-            });
+            })
+            .when_some(
+                self.uncovered_category(&instance.kind_id),
+                |line, category| line.child(category_inactive_badge(category, palette)),
+            );
         let title = div()
             .flex_1()
             .min_w(px(0.0))

@@ -324,6 +324,13 @@ impl TriggersRegistryView {
         self
     }
 
+    fn uncovered_category(
+        &self,
+        kind_id: &str,
+    ) -> Option<forge_platform_core::IntegrationCategory> {
+        self.integrations.as_ref()?.uncovered_category(kind_id)
+    }
+
     fn switched_off_owner(&self, kind_id: &str) -> Option<forge_types::IntegrationId> {
         let integrations = self.integrations.as_ref()?;
         integrations

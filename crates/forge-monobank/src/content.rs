@@ -1,5 +1,6 @@
 use forge_platform_core::{
     BannerLevel, BuiltinContent, DetailSection, InfoField, QuickAction, QuickActions,
+    test_donation_quick_action,
 };
 
 use crate::provider::MonobankProvider;
@@ -19,7 +20,7 @@ impl BuiltinContent for MonobankProvider {
 
 impl QuickActions for MonobankProvider {
     fn actions(&self) -> Vec<QuickAction> {
-        Vec::new()
+        vec![test_donation_quick_action(&self.id)]
     }
 }
 

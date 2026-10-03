@@ -7,6 +7,7 @@ pub mod capabilities;
 pub mod chat;
 pub mod collections;
 pub mod donation;
+pub mod donation_test;
 pub mod endpoints;
 pub mod error;
 pub mod integration;
@@ -37,6 +38,12 @@ pub use collections::{
     CollectionRevisionSignal, CollectionRevisions, CollectionToggle, RevisionWait,
 };
 pub use donation::{DonationProvider, DonationStream};
+pub use donation_test::{
+    TEST_DONATION_AMOUNT, TEST_DONATION_AMOUNT_KEY, TEST_DONATION_CURRENCY,
+    TEST_DONATION_CURRENCY_KEY, TEST_DONATION_DONOR, TEST_DONATION_DONOR_KEY,
+    TEST_DONATION_MESSAGE, TEST_DONATION_MESSAGE_KEY, TEST_DONATION_PROVIDER_KEY,
+    TEST_DONATION_SUB_ACTION, test_donation_quick_action, test_donation_step,
+};
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};
 pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};

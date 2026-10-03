@@ -8,7 +8,7 @@ use forge_platform_core::{
     PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome, RateLimiter, SectionIcon,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_runtime::EventBus;
+use forge_runtime::{DonationIngest, EventBus};
 use forge_storage::{CredentialsRepo, DataProvider};
 use forge_types::{
     EventId, IntegrationId, PlatformId, REPLY_PARENT_FIELD, WHISPER_RECIPIENT_FIELD,
@@ -17,6 +17,7 @@ use forge_types::{
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::donation_factories::{wire_donatello, wire_monobank};
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::integration_factories::{
     wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
@@ -262,6 +263,7 @@ pub async fn build_integrations(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     endpoints: &PlatformEndpoints,
+    donations: &Arc<DonationIngest>,
     hotkey_main_thread: forge_hotkey::MainThreadLink,
 ) -> Integrations {
     register_platform_triggers(triggers);
@@ -291,6 +293,12 @@ pub async fn build_integrations(
     }
     if let Some(kick) = wire_kick(sub_actions, backend, bus) {
         factories.push(Arc::new(kick));
+    }
+    if let Some(donatello) = wire_donatello(backend, endpoints, donations) {
+        factories.push(Arc::new(donatello));
+    }
+    if let Some(monobank) = wire_monobank(backend, endpoints, donations) {
+        factories.push(Arc::new(monobank));
     }
 
     Integrations {

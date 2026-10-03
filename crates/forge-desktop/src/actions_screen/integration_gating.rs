@@ -48,6 +48,13 @@ impl ScreenActionsView {
         self.failed_step_owner(step).map(ClosedGate::Failed)
     }
 
+    pub(super) fn uncovered_trigger_category(
+        &self,
+        kind_id: &str,
+    ) -> Option<forge_platform_core::IntegrationCategory> {
+        self.integrations.as_ref()?.uncovered_category(kind_id)
+    }
+
     pub(super) fn switched_off_trigger_owner(&self, kind_id: &str) -> Option<IntegrationId> {
         let integrations = self.integrations.as_ref()?;
         integrations

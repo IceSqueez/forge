@@ -20,6 +20,7 @@ pub struct RuntimeHandles {
     pub log_tail: LogTail,
     pub backend: Arc<dyn DataProvider>,
     pub startup_language: Language,
+    pub anonymous_donor: forge_types::Shared<String>,
     pub credentials_key_loss: Option<CredentialsKeyLoss>,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,

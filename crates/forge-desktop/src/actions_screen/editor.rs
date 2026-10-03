@@ -10,7 +10,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
-use crate::integration_switch::{inactive_badge, integration_name};
+use crate::integration_switch::{category_inactive_badge, inactive_badge, integration_name};
 use crate::obs_catalog_options::obs_catalog_fields;
 use crate::presentation::ActivePresentation;
 use crate::triggers_screen::platform_dot_color;
@@ -2203,6 +2203,7 @@ impl ScreenActionsView {
     ) -> AnyElement {
         let descriptor = self.trigger_registry.get(&instance.kind_id);
         let switched_off_owner = self.switched_off_trigger_owner(&instance.kind_id);
+        let uncovered_category = self.uncovered_trigger_category(&instance.kind_id);
         let accent = if instance.enabled {
             palette.brand
         } else {
@@ -2276,8 +2277,12 @@ impl ScreenActionsView {
                 switched_off_owner
                     .as_ref()
                     .map(|owner| inactive_badge(owner, palette)),
+            )
+            .children(
+                uncovered_category.map(|category| category_inactive_badge(category, palette)),
             );
-        let dimmed = !instance.enabled || switched_off_owner.is_some();
+        let dimmed =
+            !instance.enabled || switched_off_owner.is_some() || uncovered_category.is_some();
 
         let instance_id = instance.id;
         let unlink = trigger_unlink_btn(

@@ -9,13 +9,13 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, EventBus, FirstChatLedger,
-    OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
-    OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer,
-    SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_live_viewer_aggregator, spawn_stream_live_signal, spawn_timer_scheduler,
-    spawn_trigger_evaluator, spawn_viewer_tracker,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, DonationIngest, EventBus,
+    FirstChatLedger, OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary,
+    OverlayServiceCell, OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry,
+    SoundPlayer, SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions,
+    register_core_triggers, register_donation_sub_actions, spawn_action_engine,
+    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_live_viewer_aggregator,
+    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -26,6 +26,7 @@ use forge_storage::{
     UserGlobalsRepo, reserved_keys,
 };
 use forge_storage_sqlite::SqliteBackend;
+use forge_types::Shared;
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
 use crate::clip_hotkeys::{HotkeySyncedClipsRepo, spawn_clip_hotkey_dispatcher};
@@ -238,6 +239,19 @@ pub async fn build_runtime(
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
 
+    let anonymous_donor = Shared::new(crate::i18n::message_in(
+        startup_language,
+        crate::i18n::ANONYMOUS_DONOR_KEY,
+    ));
+    let donations = Arc::new(DonationIngest::new(
+        backend.donation_repo(),
+        Arc::clone(&bus) as Arc<dyn EventPublisher>,
+        anonymous_donor.clone(),
+    ));
+    if let Err(e) = register_donation_sub_actions(&mut sub_action_reg, Arc::clone(&donations)) {
+        eprintln!("forge-desktop: donation sub-action registration failed: {e}");
+    }
+
     let mut trigger_reg = TriggerRegistry::new();
     if let Err(e) = register_core_triggers(&mut trigger_reg) {
         eprintln!("forge-desktop: core trigger registration failed: {e}");
@@ -249,6 +263,7 @@ pub async fn build_runtime(
         &backend,
         &bus,
         &endpoints,
+        &donations,
         hotkey_main_thread,
     )
     .await;
@@ -346,6 +361,7 @@ pub async fn build_runtime(
         integrations.builtins.clone(),
         live_viewers.clone(),
     );
+    donations.recover_unannounced().await;
     supervisor.boot().await;
     let first_run = crate::first_run::resolve_first_run(
         backend.as_ref() as &dyn SettingsRepo,
@@ -438,6 +454,7 @@ pub async fn build_runtime(
         log_tail,
         backend,
         startup_language,
+        anonymous_donor,
         credentials_key_loss,
         bus,
         script_registry,

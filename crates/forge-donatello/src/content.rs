@@ -1,5 +1,6 @@
 use forge_platform_core::{
     BannerLevel, BuiltinContent, DetailSection, InfoField, QuickAction, QuickActions,
+    test_donation_quick_action,
 };
 
 use crate::provider::DonatelloProvider;
@@ -18,7 +19,7 @@ impl BuiltinContent for DonatelloProvider {
 
 impl QuickActions for DonatelloProvider {
     fn actions(&self) -> Vec<QuickAction> {
-        Vec::new()
+        vec![test_donation_quick_action(&self.id)]
     }
 }
 

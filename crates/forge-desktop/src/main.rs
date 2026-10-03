@@ -35,6 +35,7 @@ mod diagnostic_bundle;
 mod discord_screen;
 mod discord_webhook_modal;
 mod discord_webhooks;
+mod donation_factories;
 mod event_feed;
 mod event_log;
 mod event_loss;

@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
 use forge_components::{ForgePalette, integration_inactive_badge, tr};
+use forge_events::DONATION_RECEIVED_KIND;
+use forge_platform_core::IntegrationCategory;
 use forge_types::IntegrationId;
 use gpui::{App, Context, Entity, IntoElement, SharedString, Subscription};
 
-use crate::integration_catalog::declaration_of;
+use crate::integration_catalog::{declaration_of, declarations};
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_supervisor::IntegrationSupervisor;
 
@@ -99,6 +101,16 @@ impl SwitchWatch {
         owner.filter(|id| self.off.contains(*id))
     }
 
+    pub fn uncovered_category(&self, kind_id: &str) -> Option<IntegrationCategory> {
+        let category = required_category(kind_id)?;
+        let mut providers = declarations()
+            .into_iter()
+            .filter(|declaration| declaration.category == category);
+        providers
+            .all(|declaration| self.off.contains(&declaration.id))
+            .then_some(category)
+    }
+
     pub fn is_off(&self, id: &IntegrationId) -> bool {
         self.off.contains(id)
     }
@@ -120,6 +132,23 @@ pub fn inactive_badge(owner: &IntegrationId, palette: &ForgePalette) -> impl Int
         tr!(
             "integration_inactive_badge",
             name = integration_name(owner).to_string()
+        ),
+        palette,
+    )
+}
+
+pub fn required_category(kind_id: &str) -> Option<IntegrationCategory> {
+    (kind_id == DONATION_RECEIVED_KIND).then_some(IntegrationCategory::DONATIONS)
+}
+
+pub fn category_inactive_badge(
+    category: IntegrationCategory,
+    palette: &ForgePalette,
+) -> impl IntoElement {
+    integration_inactive_badge(
+        tr!(
+            "integration_inactive_category_badge",
+            category = tr!(category.label_key())
         ),
         palette,
     )

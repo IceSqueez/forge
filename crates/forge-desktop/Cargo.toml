@@ -16,9 +16,11 @@ forge-audio = { path = "../forge-audio" }
 forge-awake = { path = "../forge-awake" }
 forge-components = { path = "../forge-components" }
 forge-discord = { path = "../forge-discord" }
+forge-donatello = { path = "../forge-donatello" }
 forge-events = { path = "../forge-events" }
 forge-hotkey = { path = "../forge-hotkey" }
 forge-midi = { path = "../forge-midi" }
+forge-monobank = { path = "../forge-monobank" }
 forge-obs = { path = "../forge-obs" }
 forge-overlay = { path = "../forge-overlay" }
 forge-platform-core = { path = "../forge-platform-core" }

@@ -508,6 +508,9 @@ impl SettingsView {
         }
         self.language = lang;
         crate::i18n::install_language(lang);
+        self.handles
+            .anonymous_donor
+            .store(tr!(crate::i18n::ANONYMOUS_DONOR_KEY));
         cx.set_global(ActiveLanguage(lang));
 
         let backend = Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>;

@@ -14,6 +14,7 @@ mod cooldown;
 pub mod dashboard;
 pub mod delivery;
 mod delivery_loss;
+mod donations;
 mod egress;
 pub mod event_log_bridge;
 mod event_log_writer;
@@ -56,6 +57,9 @@ pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use delivery::CriticalSubscription;
 pub use delivery_loss::{ConsumerLoss, DeliveryTier, LossCount, LossWatch};
+pub use donations::{
+    DONATION_CATCH_UP, DonationIngest, TestDonationRunner, register_donation_sub_actions,
+};
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
 pub use integration_gate::IntegrationGate;

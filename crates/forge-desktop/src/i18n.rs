@@ -84,6 +84,19 @@ pub async fn resolve_startup_language(
     }
 }
 
+pub const ANONYMOUS_DONOR_KEY: &str = "donation_anonymous_donor";
+
+pub fn message_in(lang: Language, key: &str) -> String {
+    let bundle = build_bundle(lang);
+    let Some(pattern) = bundle.get_message(key).and_then(|message| message.value()) else {
+        return key.to_owned();
+    };
+    let mut errors = Vec::new();
+    bundle
+        .format_pattern(pattern, None, &mut errors)
+        .into_owned()
+}
+
 pub fn install_os_default() {
     install_language(negotiate_os_locale().unwrap_or(Language::En));
 }

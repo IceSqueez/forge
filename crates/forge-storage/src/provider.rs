@@ -3,12 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::{
-    ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, EventLogRepo, GlobalsRepo,
-    HistoryRepo, MediaRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo,
-    StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, DonationRepo, EventLogRepo,
+    GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo, QueueRepo, ScriptRepo, SettingsRepo,
+    SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo,
+    ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 47;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 48;
 
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 
@@ -28,6 +29,7 @@ pub trait DataProvider:
     fn chat_history_repo(&self) -> Arc<dyn ChatHistoryRepo>;
     fn overlay_repo(&self) -> Arc<dyn OverlayRepo>;
     fn media_repo(&self) -> Arc<dyn MediaRepo>;
+    fn donation_repo(&self) -> Arc<dyn DonationRepo>;
 
     fn catalog_revision(&self) -> CatalogRevision;
 

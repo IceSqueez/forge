@@ -4,6 +4,7 @@ pub mod action;
 pub mod catalog;
 pub mod chat_history;
 pub mod credentials;
+pub mod donation;
 pub mod error;
 pub mod event_log;
 pub mod globals;
@@ -30,6 +31,7 @@ pub use catalog::{
 };
 pub use chat_history::ChatHistoryRepo;
 pub use credentials::{CredentialId, CredentialsRepo, SERVER_BEARER_CREDENTIAL_ID};
+pub use donation::{DonationRepo, StoredDonation};
 pub use error::StorageError;
 pub use event_log::{
     DEFAULT_EVENT_LOG_RETENTION_DAYS, EventLogRepo, MAX_EVENT_LOG_RETENTION_DAYS,
@@ -76,6 +78,8 @@ pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerMessage, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};
 
+#[cfg(feature = "test-mocks")]
+pub use donation::MockDonationRepo;
 #[cfg(feature = "test-mocks")]
 pub use media::MockMediaRepo;
 #[cfg(feature = "test-mocks")]

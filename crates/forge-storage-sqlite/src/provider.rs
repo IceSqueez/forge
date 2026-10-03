@@ -5,11 +5,12 @@ use std::time::Duration;
 use async_trait::async_trait;
 use forge_storage::{
     ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialId, CredentialsKeyLoss,
-    CredentialsRepo, DataProvider, EXPECTED_SCHEMA_VERSION, EventLogRepo, ExecutionStatus,
-    GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo, QueueRepo,
-    RevisingActionRepo, RevisingQueueRepo, RevisingTriggerInstanceRepo, ScriptRecord, ScriptRepo,
-    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo, reserved_keys,
+    CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
+    ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, MediaRepo, OverlayRepo,
+    QueueRepo, RevisingActionRepo, RevisingQueueRepo, RevisingTriggerInstanceRepo, ScriptRecord,
+    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
+    VoiceAliasRepo, reserved_keys,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -20,11 +21,11 @@ use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::retention_task::{RetentionSignals, RetentionTargets, spawn_retention_task};
 use crate::{
-    SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteEventLogRepo,
-    SqliteGlobalsRepo, SqliteHistoryRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
-    SqliteScriptRepo, SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo,
-    SqliteTtsFiltersRepo, SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo,
-    apply_migrations, connect_pools,
+    SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteDonationRepo,
+    SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo, SqliteMediaRepo, SqliteOverlayRepo,
+    SqliteQueueRepo, SqliteScriptRepo, SqliteSettingsRepo, SqliteSoundboardClipsRepo,
+    SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
+    SqliteVoiceAliasRepo, apply_migrations, connect_pools,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -70,6 +71,7 @@ pub struct SqliteBackend {
     chat_history: Arc<SqliteChatHistoryRepo>,
     overlay: Arc<SqliteOverlayRepo>,
     media: Arc<SqliteMediaRepo>,
+    donation: Arc<SqliteDonationRepo>,
     retention_window_changed: Arc<Notify>,
     shutdown: Arc<Notify>,
 }
@@ -198,6 +200,7 @@ impl SqliteBackend {
             chat_history: Arc::new(SqliteChatHistoryRepo::new(pool.clone())),
             overlay: Arc::new(SqliteOverlayRepo::new(pool.clone())),
             media: Arc::new(SqliteMediaRepo::new(pool.clone(), media_root)),
+            donation: Arc::new(SqliteDonationRepo::new(pool.clone())),
             credentials,
             retention_window_changed,
             shutdown,
@@ -540,6 +543,10 @@ impl DataProvider for SqliteBackend {
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {
         Arc::clone(&self.media) as Arc<dyn MediaRepo>
+    }
+
+    fn donation_repo(&self) -> Arc<dyn DonationRepo> {
+        Arc::clone(&self.donation) as Arc<dyn DonationRepo>
     }
 
     fn catalog_revision(&self) -> CatalogRevision {

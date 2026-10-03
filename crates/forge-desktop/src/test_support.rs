@@ -15,9 +15,9 @@ use forge_server::{ServerConfig, ServerHandle, stopped_server};
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ChatHistoryRepo, CredentialId,
-    CredentialsRepo, DataProvider, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo,
-    HistoryRepo, MediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId,
-    OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
+    CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry,
+    GlobalsRepo, HistoryRepo, MediaRepo, OverlayConfig, OverlayCredential, OverlayDefinition,
+    OverlayId, OverlayRepo, QueueRepo, ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo,
     SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry,
     UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
@@ -261,6 +261,10 @@ impl DataProvider for TestBackend {
     }
 
     fn media_repo(&self) -> Arc<dyn MediaRepo> {
+        unreachable!("the settings pane reaches no sub-repo")
+    }
+
+    fn donation_repo(&self) -> Arc<dyn DonationRepo> {
         unreachable!("the settings pane reaches no sub-repo")
     }
 

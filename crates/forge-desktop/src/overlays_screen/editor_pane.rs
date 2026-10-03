@@ -2,9 +2,13 @@ use forge_components::{
     BORDER_THIN, FONT_XS, FONT_XXS, ForgePalette, Icon, body_family, empty_state, icon,
     mono_family, segment, segmented, tr,
 };
+use forge_overlay::look_contract;
 use forge_storage::OverlayDefinition;
-use gpui::{AnyElement, ClickEvent, Context, FontWeight, Pixels, div, prelude::*, px};
+use gpui::{
+    AnyElement, ClickEvent, Context, Div, FontWeight, Pixels, SharedString, div, prelude::*, px,
+};
 
+use super::bindings_panel::bindings_reference;
 use super::property_panel::override_notice;
 use super::{EditorMode, OverlaysView};
 
@@ -31,6 +35,20 @@ const STAGE_PAD: Pixels = px(20.0);
 
 const PROPERTY_PANE_W: Pixels = px(246.0);
 const PROPERTY_PANE_PAD: Pixels = px(14.0);
+
+fn property_pane_frame(palette: &ForgePalette) -> Div {
+    div()
+        .flex_none()
+        .w(PROPERTY_PANE_W)
+        .min_w(PROPERTY_PANE_W)
+        .max_w(PROPERTY_PANE_W)
+        .h_full()
+        .flex()
+        .flex_col()
+        .bg(palette.shell)
+        .border_l(BORDER_THIN)
+        .border_color(palette.border_regular)
+}
 
 impl OverlaysView {
     pub(super) fn render_editor_pane(
@@ -147,46 +165,39 @@ impl OverlaysView {
     }
 
     pub(super) fn render_property_pane(&self, palette: &ForgePalette) -> Option<AnyElement> {
-        self.selected_definition()?;
+        let definition = self.selected_definition()?;
 
-        let (body, notice): (AnyElement, Option<AnyElement>) =
-            match (self.mode(), self.panel_view()) {
-                (EditorMode::Design, Some(panel)) => return Some(panel.into_any_element()),
-                (EditorMode::Design, None) => (
-                    empty_state(tr!("overlays_panel_unavailable"), palette)
-                        .glyph(Icon::AlertTriangle)
-                        .into_any_element(),
-                    None,
-                ),
-                (EditorMode::Code, _) => (
-                    empty_state(tr!("overlays_bindings_pending"), palette)
-                        .glyph(Icon::Code)
-                        .into_any_element(),
-                    self.selected_definition().and_then(|definition| {
-                        override_notice(&definition.source_overrides, palette)
-                    }),
-                ),
-            };
-
-        Some(
-            div()
-                .flex_none()
-                .w(PROPERTY_PANE_W)
-                .min_w(PROPERTY_PANE_W)
-                .max_w(PROPERTY_PANE_W)
-                .h_full()
-                .flex()
-                .flex_col()
+        let body = match (self.mode(), self.panel_view()) {
+            (EditorMode::Design, Some(panel)) => return Some(panel.into_any_element()),
+            (EditorMode::Design, None) => property_pane_frame(palette)
                 .items_center()
                 .justify_center()
                 .p(PROPERTY_PANE_PAD)
-                .bg(palette.shell)
-                .border_l(BORDER_THIN)
-                .border_color(palette.border_regular)
-                .children(notice)
-                .child(body)
-                .into_any_element(),
-        )
+                .child(
+                    empty_state(tr!("overlays_panel_unavailable"), palette)
+                        .glyph(Icon::AlertTriangle),
+                ),
+            (EditorMode::Code, _) => {
+                let look = self.kinds.get(&definition.kind_id).map(look_contract);
+                property_pane_frame(palette).child(
+                    div()
+                        .id(SharedString::from(format!(
+                            "overlays-bindings-{}",
+                            definition.id.as_str()
+                        )))
+                        .flex_1()
+                        .min_h(px(0.0))
+                        .overflow_y_scroll()
+                        .p(PROPERTY_PANE_PAD)
+                        .flex()
+                        .flex_col()
+                        .children(override_notice(&definition.source_overrides, palette))
+                        .children(bindings_reference(look.as_ref(), palette)),
+                )
+            }
+        };
+
+        Some(body.into_any_element())
     }
 
     fn render_url_box(

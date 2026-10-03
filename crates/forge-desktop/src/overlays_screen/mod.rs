@@ -1,4 +1,5 @@
 mod base_sections;
+mod bindings_panel;
 mod code_pane;
 mod editor_pane;
 mod event_wiring;

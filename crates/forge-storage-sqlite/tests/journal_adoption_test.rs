@@ -88,6 +88,14 @@ async fn classify_pool(pool: &SqlitePool) -> Result<JournalState, SqliteStorageE
     classify(&mut conn).await
 }
 
+fn post_baseline_versions() -> Vec<i64> {
+    MIGRATIONS
+        .iter()
+        .map(|migration| migration.version)
+        .filter(|version| *version > BASELINE_VERSION)
+        .collect()
+}
+
 async fn execute(pool: &SqlitePool, sql: &'static str) {
     sqlx::query(sql)
         .execute(pool)
@@ -285,14 +293,13 @@ async fn opening_a_new_database_records_only_the_baseline_and_takes_no_snapshot(
 
     let pool = workspace.reconnect().await;
     let versions: Vec<i64> = journal(&pool).await.into_iter().map(|row| row.0).collect();
-    assert_eq!(
-        (versions, workspace.backups().exists()),
-        (vec![BASELINE_VERSION], false)
-    );
+    let mut expected = vec![BASELINE_VERSION];
+    expected.extend(post_baseline_versions());
+    assert_eq!((versions, workspace.backups().exists()), (expected, false));
 }
 
 #[tokio::test]
-async fn adopting_a_legacy_database_appends_a_baseline_row_and_keeps_rows_one_to_forty_six() {
+async fn adopting_a_legacy_database_appends_a_baseline_row_after_the_kept_legacy_rows() {
     let workspace = legacy_workspace(LEGACY_HEAD).await;
     let pool = workspace.reconnect().await;
     let legacy_rows = journal(&pool).await;
@@ -302,7 +309,8 @@ async fn adopting_a_legacy_database_appends_a_baseline_row_and_keeps_rows_one_to
 
     let pool = workspace.reconnect().await;
     let mut rows = journal(&pool).await;
-    let baseline = rows.pop().expect("a baseline row");
+    let mut after_legacy = rows.split_off(legacy_rows.len()).into_iter();
+    let baseline = after_legacy.next().expect("a baseline row");
     let embedded = MIGRATIONS
         .iter()
         .find(|m| m.version == BASELINE_VERSION)
@@ -317,6 +325,29 @@ async fn adopting_a_legacy_database_appends_a_baseline_row_and_keeps_rows_one_to
             embedded.checksum.to_vec(),
             -1
         )
+    );
+}
+
+#[tokio::test]
+async fn adopting_a_legacy_database_applies_every_post_baseline_migration_after_the_baseline() {
+    let workspace = legacy_workspace(LEGACY_HEAD).await;
+
+    drop(workspace.open().await.expect("adoption"));
+
+    let pool = workspace.reconnect().await;
+    let after_baseline: Vec<(i64, bool, i64)> = journal(&pool)
+        .await
+        .into_iter()
+        .filter(|row| row.0 > BASELINE_VERSION)
+        .map(|row| (row.0, row.3, row.5))
+        .collect();
+    let applied_versions: Vec<i64> = after_baseline.iter().map(|row| row.0).collect();
+    assert_eq!(applied_versions, post_baseline_versions());
+    assert!(
+        after_baseline
+            .iter()
+            .all(|(_, success, elapsed)| *success && *elapsed >= 0),
+        "{after_baseline:?}"
     );
 }
 
@@ -346,7 +377,12 @@ async fn adoption_leaves_the_existing_data_untouched() {
     drop(workspace.open().await.expect("adoption"));
 
     let pool = workspace.reconnect().await;
-    assert_eq!(data_fingerprint(&pool).await, before);
+    let after: Vec<_> = data_fingerprint(&pool)
+        .await
+        .into_iter()
+        .filter(|(table, _)| before.iter().any(|(kept, _)| kept == table))
+        .collect();
+    assert_eq!(after, before);
 }
 
 #[tokio::test]

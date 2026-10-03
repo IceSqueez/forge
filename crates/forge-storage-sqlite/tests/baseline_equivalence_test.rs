@@ -2,8 +2,8 @@
 
 mod legacy_fixture;
 
-use forge_storage_sqlite::apply_migrations;
 use forge_storage_sqlite::legacy_chain::LEGACY_CHAIN;
+use forge_storage_sqlite::{BASELINE_VERSION, MIGRATIONS};
 use legacy_fixture::{LEGACY_HEAD, fixture_texts, legacy_db, sha384_hex, table_rows, user_tables};
 use sqlx::SqlitePool;
 use tempfile::TempDir;
@@ -24,7 +24,8 @@ async fn built_pair() -> Pair {
         forge_storage_sqlite::connect(&legacy_fixture::db_url(&dir.path().join("baseline.db")))
             .await
             .expect("a baseline database");
-    apply_migrations(&baseline)
+    MIGRATIONS
+        .run_to(BASELINE_VERSION, &baseline)
         .await
         .expect("the baseline applies");
     Pair {

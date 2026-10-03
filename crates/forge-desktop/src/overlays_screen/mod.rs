@@ -321,6 +321,7 @@ impl OverlaysView {
     ) {
         self.note_missing_overrides(regenerated.missing);
         self.set_media_issues(id, regenerated.media_issues, cx);
+        self.invalidate_source(cx);
         if let Some(message) = regenerated.failure {
             self.report(&message, cx);
         }
@@ -560,6 +561,9 @@ impl OverlaysView {
             return;
         }
         self.mode = mode;
+        if mode == EditorMode::Code {
+            self.invalidate_source(cx);
+        }
         self.sync_source(cx);
         cx.notify();
     }

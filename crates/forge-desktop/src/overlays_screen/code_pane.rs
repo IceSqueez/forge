@@ -62,6 +62,7 @@ pub(super) struct CodeState {
     file: &'static str,
     open: Option<OpenSource>,
     loading: bool,
+    revision: u64,
     saving: bool,
     missing: Vec<String>,
     pending_revert: Confirm<&'static str>,
@@ -93,6 +94,7 @@ impl CodeState {
             file: first_file(),
             open: None,
             loading: false,
+            revision: 0,
             saving: false,
             missing: Vec::new(),
             pending_revert: Confirm::default(),
@@ -163,6 +165,14 @@ impl OverlaysView {
         self.code.missing = missing;
     }
 
+    pub(super) fn invalidate_source(&mut self, cx: &App) {
+        if self.code_dirty(cx) {
+            return;
+        }
+        self.code.open = None;
+        self.code.revision += 1;
+    }
+
     pub(super) fn sync_source(&mut self, cx: &mut Context<Self>) {
         if self.mode() != EditorMode::Code {
             return;
@@ -184,6 +194,7 @@ impl OverlaysView {
         }
 
         self.code.loading = true;
+        let revision = self.code.revision;
         let service = self.service.clone();
         let target = id.clone();
         async_bridge::run_async(
@@ -194,7 +205,7 @@ impl OverlaysView {
                     .await
                     .map_err(|e| e.to_string())
             },
-            move |this, result, cx| this.apply_source(id, file, result, cx),
+            move |this, result, cx| this.apply_source(id, file, revision, result, cx),
             cx,
         );
         cx.notify();
@@ -204,10 +215,16 @@ impl OverlaysView {
         &mut self,
         id: OverlayId,
         file: &'static str,
+        revision: u64,
         result: Result<Option<String>, String>,
         cx: &mut Context<Self>,
     ) {
         self.code.loading = false;
+        if revision != self.code.revision {
+            self.sync_source(cx);
+            cx.notify();
+            return;
+        }
         match result {
             Ok(body) => {
                 self.mark_missing(file, body.is_none() && self.is_overridden(file));
@@ -337,6 +354,7 @@ impl OverlaysView {
                         this.note_missing_overrides(missing);
                         this.set_media_issues(&target, issues, cx);
                         this.code.open = None;
+                        this.code.revision += 1;
                         this.load(cx);
                         this.sync_source(cx);
                     }

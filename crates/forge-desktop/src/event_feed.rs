@@ -26,13 +26,16 @@ const INSPECTOR_MAX: f32 = 540.0;
 const SEARCH_W: Pixels = px(240.0);
 
 const TS_COL_W: Pixels = px(88.0);
-const TYPE_COL_W: Pixels = px(104.0);
+const KIND_COL_MIN_W: Pixels = px(104.0);
+const KIND_COL_MAX_W: Pixels = px(280.0);
+const KIND_COL_SLACK: Pixels = px(2.0);
 const ROW_FS: Pixels = px(11.0);
 const BADGE_FS: Pixels = px(9.0);
 const SUFFIX_FS: Pixels = px(10.0);
 const STATUS_DOT: Pixels = px(6.0);
 const ROW_RAIL_W: Pixels = px(2.0);
 const ERROR_ROW_ALPHA: f32 = 0.06;
+const ROW_HOVER_ALPHA: f32 = 0.06;
 
 const FILTER_TABS: [(&str, EventFilter); 7] = [
     ("event-tab-all", EventFilter::All),
@@ -62,6 +65,8 @@ pub struct EventFeedView {
     search: SearchState,
     selected: Option<gpui::SharedString>,
     visible: Vec<EventItem>,
+    measured_kinds: HashSet<gpui::SharedString>,
+    kind_col_w: Pixels,
     downstream: HashMap<gpui::SharedString, u32>,
     matched: HashSet<gpui::SharedString>,
     auto_scroll: bool,
@@ -132,12 +137,14 @@ impl EventFeedView {
         list_scroll.scroll_to_bottom();
         let (visible, downstream, matched) =
             compute_projection(log.read(cx), EventFilter::default(), "");
-        Self {
+        let mut view = Self {
             log,
             active_filter: EventFilter::default(),
             search,
             selected: None,
             visible,
+            measured_kinds: HashSet::new(),
+            kind_col_w: KIND_COL_MIN_W,
             downstream,
             matched,
             auto_scroll: true,
@@ -148,7 +155,28 @@ impl EventFeedView {
             rt_handle,
             _log_obs: log_obs,
             _search_sub: search_sub,
+        };
+        view.widen_kind_column(cx);
+        view
+    }
+
+    fn widen_kind_column(&mut self, cx: &mut Context<Self>) {
+        let text_system = cx.text_system().clone();
+        let font_id = text_system.resolve_font(&gpui::font(mono_family()));
+        let mut widest = self.kind_col_w;
+        for item in self.log.read(cx).items() {
+            if !self.measured_kinds.insert(item.kind.clone()) {
+                continue;
+            }
+            let width = item
+                .kind
+                .chars()
+                .filter_map(|ch| text_system.advance(font_id, ROW_FS, ch).ok())
+                .fold(px(0.0), |acc, size| acc + size.width)
+                + KIND_COL_SLACK;
+            widest = widest.max(width.min(KIND_COL_MAX_W));
         }
+        self.kind_col_w = widest;
     }
 
     fn move_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -182,6 +210,7 @@ impl EventFeedView {
     }
 
     fn on_log_changed(&mut self, _log: Entity<EventLog>, cx: &mut Context<Self>) {
+        self.widen_kind_column(cx);
         self.rebuild_projection(cx);
         if self.auto_scroll {
             self.list_scroll.scroll_to_bottom();
@@ -492,9 +521,8 @@ impl EventFeedView {
 
         let type_cell = div()
             .flex_none()
-            .w(TYPE_COL_W)
-            .whitespace_nowrap()
-            .overflow_hidden()
+            .w(self.kind_col_w)
+            .truncate()
             .font_family(mono_family())
             .text_size(ROW_FS)
             .text_color(type_color(&item.kind, item.is_error, palette))
@@ -557,6 +585,10 @@ impl EventFeedView {
             .child(content);
         if let Some(bg) = row_bg {
             row = row.bg(bg);
+        }
+        if !selected {
+            let hover_bg = with_alpha(palette.text_primary, ROW_HOVER_ALPHA);
+            row = row.hover(move |s| s.bg(hover_bg));
         }
         row
     }

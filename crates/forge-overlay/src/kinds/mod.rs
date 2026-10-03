@@ -28,8 +28,10 @@ mod tests {
     use forge_registry::FormField;
 
     use super::*;
-    use crate::config::{ELEMENT_HEIGHT, ELEMENT_WIDTH, validate_overlay_config};
-    use crate::preview::PreviewShape;
+    use crate::config::{
+        ELEMENT_HEIGHT, ELEMENT_WIDTH, effective_overlay_config, validate_overlay_config,
+    };
+    use crate::descriptor::OverlayConfig;
 
     const BUILTIN_IDS: &[&str] = &[
         "overlay.alert",
@@ -115,24 +117,22 @@ mod tests {
     }
 
     #[test]
-    fn every_builtin_kind_previews_a_distinct_shape() {
+    fn every_look_that_draws_a_page_previews_in_a_shape_no_other_look_draws() {
         let reg = registry();
-        let shapes: Vec<PreviewShape> = BUILTIN_IDS
-            .iter()
-            .map(|id| {
-                let descriptor = reg.get(id).expect("registered kind");
-                descriptor.preview(&descriptor.default_config()).shape
-            })
-            .collect();
+        let mut shapes = Vec::new();
 
-        for (index, shape) in shapes.iter().enumerate() {
-            for (other_index, other) in shapes.iter().enumerate().skip(index + 1) {
-                assert_ne!(
-                    shape, other,
-                    "{} and {} preview as the same shape",
-                    BUILTIN_IDS[index], BUILTIN_IDS[other_index]
+        for descriptor in reg.all().filter(|descriptor| descriptor.has_visual_page()) {
+            let shape = descriptor
+                .preview(&effective_overlay_config(descriptor, &OverlayConfig::new()))
+                .shape;
+            if let Some((other, _)) = shapes.iter().find(|(_, drawn)| *drawn == shape) {
+                panic!(
+                    "{} previews as the same {shape:?} as {other}, so the editor draws it with the \
+                     other look's geometry instead of its own page",
+                    descriptor.id()
                 );
             }
+            shapes.push((descriptor.id().to_owned(), shape));
         }
     }
 }

@@ -58,3 +58,30 @@ impl FormSchemaSource for OverlayContentSchema {
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_overlay::register_builtin_kinds;
+
+    use super::*;
+
+    fn schema() -> OverlayContentSchema {
+        let mut kinds = OverlayKindRegistry::new();
+        register_builtin_kinds(&mut kinds).expect("register the builtin overlay kinds");
+        OverlayContentSchema::new(Arc::new(kinds))
+    }
+
+    #[test]
+    fn a_slot_fed_look_takes_no_sends_while_a_delivery_fed_or_unknown_one_does() {
+        let schema = schema();
+
+        for (kind_id, expected) in [
+            ("overlay.latest", false),
+            ("overlay.alert", true),
+            ("overlay.removed_in_a_later_build", true),
+        ] {
+            assert_eq!(schema.takes_sends(kind_id), expected, "{kind_id}");
+        }
+    }
+}

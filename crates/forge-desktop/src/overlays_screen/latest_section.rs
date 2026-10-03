@@ -439,3 +439,226 @@ impl OverlaysView {
         )
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::collections::HashMap;
+
+    use forge_events::EventSource;
+    use forge_overlay::config::LABEL;
+    use forge_types::LATEST_DONATION_SLOT;
+    use serde_json::json;
+
+    use super::super::property_panel::tests::{defaults, launch, specs};
+    use super::*;
+
+    fn changed(slot: &str) -> Event {
+        LatestChanged {
+            slot: slot.to_owned(),
+            platform: None,
+            merged_changed: true,
+            cleared: false,
+        }
+        .into_event(None)
+        .unwrap()
+    }
+
+    fn content(entries: &[(&str, &str)]) -> OverlayConfig {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), Variant::String((*value).to_owned())))
+            .collect()
+    }
+
+    fn filled(headline: &str) -> CurrentValue {
+        CurrentValue::Filled {
+            headline: headline.to_owned(),
+            subline: String::new(),
+            platform: "donatello".to_owned(),
+        }
+    }
+
+    #[test]
+    fn only_latest_changed_events_name_a_slot_and_foreign_kinds_are_skipped() {
+        let foreign = Event::new(
+            EventSource::Core,
+            "global.set",
+            json!({ "slot": LATEST_DONATION_SLOT }),
+        );
+
+        let slots = changed_slots(&[changed("donation"), foreign, changed("now_playing")]);
+
+        assert_eq!(slots, vec!["donation".to_owned(), "now_playing".to_owned()]);
+    }
+
+    #[test]
+    fn a_record_shows_its_expanded_lines_and_platform_and_no_record_shows_the_placeholder() {
+        let shown = content(&[
+            (HEADLINE, "Olena"),
+            (SUBLINE, "150 UAH"),
+            (PLACEHOLDER, "No donations yet"),
+        ]);
+
+        assert_eq!(
+            current_value(&shown, Some("donatello".to_owned())),
+            CurrentValue::Filled {
+                headline: "Olena".to_owned(),
+                subline: "150 UAH".to_owned(),
+                platform: "donatello".to_owned(),
+            }
+        );
+        assert_eq!(
+            current_value(&shown, None),
+            CurrentValue::Empty {
+                placeholder: "No donations yet".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn a_filled_value_missing_its_text_keys_degrades_to_empty_lines() {
+        let shown = content(&[(LABEL, "Last donation")]);
+
+        assert_eq!(
+            current_value(&shown, Some("donatello".to_owned())),
+            CurrentValue::Filled {
+                headline: String::new(),
+                subline: String::new(),
+                platform: "donatello".to_owned(),
+            }
+        );
+    }
+
+    struct Fixture {
+        panel: gpui::Entity<OverlayPropertyPanel>,
+        _rt: tokio::runtime::Runtime,
+    }
+
+    impl Fixture {
+        fn new(cx: &mut gpui::TestAppContext) -> Self {
+            let (launch, _repo, rt) = launch(
+                cx,
+                OverlayConfig::new(),
+                specs(),
+                defaults(),
+                HashMap::new(),
+            );
+            let panel = cx.update(|cx| cx.new(|cx| OverlayPropertyPanel::new(launch, cx)));
+            Self { panel, _rt: rt }
+        }
+
+        fn with_state(
+            &self,
+            cx: &mut gpui::TestAppContext,
+            current: Option<CurrentValue>,
+            reset: ResetStage,
+        ) {
+            self.panel.update(cx, |panel, _| {
+                panel.latest.current = current;
+                panel.latest.reset = reset;
+            });
+        }
+
+        fn stage(&self, cx: &mut gpui::TestAppContext) -> ResetStage {
+            self.panel
+                .read_with(cx, |panel, _| panel.latest.reset_stage().clone())
+        }
+    }
+
+    #[gpui::test]
+    fn a_reset_is_refused_while_the_slot_is_empty_or_unread(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx);
+
+        for current in [
+            None,
+            Some(CurrentValue::Empty {
+                placeholder: String::new(),
+            }),
+        ] {
+            fixture.with_state(cx, current, ResetStage::Idle);
+            fixture
+                .panel
+                .update(cx, |panel, cx| panel.request_reset(cx));
+
+            assert_eq!(fixture.stage(cx), ResetStage::Idle);
+        }
+    }
+
+    #[gpui::test]
+    fn a_reset_over_a_filled_slot_asks_for_confirmation_once_and_not_again_mid_flight(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx);
+        fixture.with_state(cx, Some(filled("Olena")), ResetStage::Idle);
+
+        fixture
+            .panel
+            .update(cx, |panel, cx| panel.request_reset(cx));
+        assert_eq!(fixture.stage(cx), ResetStage::Confirming);
+
+        fixture.with_state(cx, Some(filled("Olena")), ResetStage::Resetting);
+        fixture
+            .panel
+            .update(cx, |panel, cx| panel.request_reset(cx));
+        assert_eq!(fixture.stage(cx), ResetStage::Resetting);
+    }
+
+    #[gpui::test]
+    fn cancelling_leaves_confirmation_and_only_confirmation(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx);
+
+        fixture.with_state(cx, Some(filled("Olena")), ResetStage::Confirming);
+        fixture.panel.update(cx, |panel, cx| panel.cancel_reset(cx));
+        assert_eq!(fixture.stage(cx), ResetStage::Idle);
+
+        let failed = ResetStage::Failed("disk full".to_owned());
+        fixture.with_state(cx, Some(filled("Olena")), failed.clone());
+        fixture.panel.update(cx, |panel, cx| panel.cancel_reset(cx));
+        assert_eq!(fixture.stage(cx), failed);
+    }
+
+    #[gpui::test]
+    fn confirming_outside_the_confirmation_does_nothing(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx);
+
+        for stage in [
+            ResetStage::Idle,
+            ResetStage::Resetting,
+            ResetStage::Failed("disk full".to_owned()),
+        ] {
+            fixture.with_state(cx, Some(filled("Olena")), stage.clone());
+            fixture
+                .panel
+                .update(cx, |panel, cx| panel.confirm_reset(cx));
+
+            assert_eq!(fixture.stage(cx), stage);
+        }
+    }
+
+    #[gpui::test]
+    fn a_read_that_finishes_after_a_newer_one_started_is_dropped(cx: &mut gpui::TestAppContext) {
+        let fixture = Fixture::new(cx);
+        fixture.with_state(cx, Some(filled("fresh")), ResetStage::Idle);
+        fixture
+            .panel
+            .update(cx, |panel, _| panel.latest.read_epoch = 2);
+
+        fixture.panel.update(cx, |panel, cx| {
+            panel.on_latest_read(1, Some(filled("stale")), cx);
+        });
+        let after_stale = fixture
+            .panel
+            .read_with(cx, |panel, _| panel.latest.current().cloned());
+
+        fixture.panel.update(cx, |panel, cx| {
+            panel.on_latest_read(2, Some(filled("newest")), cx);
+        });
+        let after_current = fixture
+            .panel
+            .read_with(cx, |panel, _| panel.latest.current().cloned());
+
+        assert_eq!(after_stale, Some(filled("fresh")));
+        assert_eq!(after_current, Some(filled("newest")));
+    }
+}

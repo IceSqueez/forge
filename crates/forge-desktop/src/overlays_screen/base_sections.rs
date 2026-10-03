@@ -684,3 +684,16 @@ fn own_hide_flag(palette: &ForgePalette) -> AnyElement {
         )
         .into_any_element()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_idle_show_button_explains_the_return_to_the_current_value_only_for_slot_bound_looks() {
+        let hint = |queues, slot_bound| fire_status(&ShowFire::Idle, queues, slot_bound);
+
+        assert_ne!(hint(true, true), hint(true, false));
+        assert_eq!(hint(true, true), hint(false, true));
+    }
+}

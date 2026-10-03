@@ -774,7 +774,7 @@ impl Render for OverlayPropertyPanel {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::Mutex;
 
     use forge_components::{Density, ThemeId};
@@ -809,7 +809,7 @@ mod tests {
     const CANVAS_WIDTH: &str = "canvas_width";
     const CANVAS_HEIGHT: &str = "canvas_height";
 
-    struct RecordingOverlays {
+    pub(crate) struct RecordingOverlays {
         definition: Mutex<OverlayDefinition>,
         saved: Mutex<Vec<OverlayConfig>>,
     }
@@ -908,14 +908,14 @@ mod tests {
             .collect()
     }
 
-    fn defaults() -> OverlayConfig {
+    pub(crate) fn defaults() -> OverlayConfig {
         config(&[
             (HEADLINE, Variant::String(DEFAULT_HEADLINE.into())),
             (ACCENT, Variant::String("mauve".into())),
         ])
     }
 
-    fn specs() -> Vec<SectionedField> {
+    pub(crate) fn specs() -> Vec<SectionedField> {
         vec![
             SectionedField {
                 section: ConfigSection::Content,
@@ -945,7 +945,7 @@ mod tests {
         ]
     }
 
-    fn launch(
+    pub(crate) fn launch(
         cx: &mut gpui::TestAppContext,
         stored: OverlayConfig,
         specs: Vec<SectionedField>,

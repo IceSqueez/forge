@@ -587,7 +587,7 @@ impl OverlaysView {
         };
 
         let effective = effective_overlay_config(descriptor, &definition.config);
-        let specs: Vec<SectionedField> = descriptor.config_fields();
+        let specs: Vec<SectionedField> = look_change::panel_specs(descriptor);
 
         let launch = PanelLaunch {
             overlay_id: definition.id.clone(),

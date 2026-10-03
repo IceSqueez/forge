@@ -2,7 +2,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::Icon;
-use forge_overlay::{ContentFeed, OverlayConfig, OverlayKindDescriptor};
+use forge_overlay::config::SOUND;
+use forge_overlay::{ContentFeed, OverlayConfig, OverlayKindDescriptor, SectionedField};
 use forge_registry::FormField;
 use forge_storage::OverlayId;
 use gpui::Context;
@@ -22,6 +23,15 @@ pub(super) fn look_summary(descriptor: &dyn OverlayKindDescriptor) -> LookSummar
         draws: descriptor.has_visual_page(),
         slot_bound: descriptor.content_feed() == ContentFeed::LatestSlot,
     }
+}
+
+pub(super) fn panel_specs(descriptor: &dyn OverlayKindDescriptor) -> Vec<SectionedField> {
+    let slot_bound = descriptor.content_feed() == ContentFeed::LatestSlot;
+    descriptor
+        .config_fields()
+        .into_iter()
+        .filter(|sectioned| !(slot_bound && sectioned.field.key() == SOUND))
+        .collect()
 }
 
 pub(super) fn carried_config(

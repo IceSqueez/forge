@@ -178,6 +178,7 @@ pub struct GridPicker {
     rows: Vec<PickerRow>,
     matched: Vec<MatchedItem>,
     cursor: usize,
+    cursor_visible: bool,
     match_total: usize,
     list_state: ListState,
     _search_sub: Subscription,
@@ -220,6 +221,7 @@ impl GridPicker {
             rows: Vec::new(),
             matched: Vec::new(),
             cursor: 0,
+            cursor_visible: false,
             match_total: 0,
             list_state: ListState::new(0, ListAlignment::Top, px(320.0)),
             _search_sub: search_sub,
@@ -258,6 +260,7 @@ impl GridPicker {
 
         let total: usize = shown.iter().map(|(_, items)| items.len()).sum();
         let cursor = if reset_scroll {
+            self.cursor_visible = false;
             0
         } else {
             self.cursor.min(total.saturating_sub(1))
@@ -275,7 +278,8 @@ impl GridPicker {
                 let row = rows.len();
                 let mut cards: [Option<CardData>; 2] = [None, None];
                 for (slot, item) in chunk.iter().enumerate() {
-                    cards[slot] = Some(self.card_data(item, matched.len() == cursor));
+                    cards[slot] =
+                        Some(self.card_data(item, self.cursor_visible && matched.len() == cursor));
                     matched.push(MatchedItem {
                         id: item.id.clone(),
                         row,
@@ -301,7 +305,10 @@ impl GridPicker {
             return;
         }
         let last = self.matched.len() - 1;
+        let first_press = !self.cursor_visible;
+        self.cursor_visible = true;
         self.cursor = match (forward, self.cursor) {
+            (true, position) if first_press => position,
             (true, position) if position >= last => 0,
             (true, position) => position + 1,
             (false, 0) => last,
@@ -956,10 +963,9 @@ fn render_card_el(
     }
 
     let base = if dim { base.opacity(0.5) } else { base };
-    let border_input = p.border_input;
     base.id(card.id.clone())
         .cursor_pointer()
-        .hover(move |s| s.border_color(border_input))
+        .hover(move |s| s.border_color(accent))
         .on_click(cx.listener({
             let id = card.id.clone();
             move |this, _: &ClickEvent, _, cx| this.emit_picked(id.clone(), cx)

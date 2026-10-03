@@ -1,0 +1,3 @@
+ALTER TABLE scripts RENAME COLUMN source_code TO body;
+ALTER TABLE scripts ADD COLUMN contract_json TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE scripts ADD COLUMN body_hash TEXT NOT NULL DEFAULT '';

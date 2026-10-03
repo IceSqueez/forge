@@ -1,0 +1,10 @@
+ALTER TABLE tts_pipeline_settings ADD COLUMN skip_contains_url INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tts_pipeline_settings ADD COLUMN skip_starts_with_bang INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tts_pipeline_settings ADD COLUMN skip_from_bot_accounts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tts_pipeline_settings ADD COLUMN bot_accounts TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE tts_pipeline_settings ADD COLUMN skip_longer_than INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tts_pipeline_settings ADD COLUMN longer_than_max_chars INTEGER NOT NULL DEFAULT 200;
+ALTER TABLE tts_pipeline_settings ADD COLUMN skip_repeat_of_recent INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tts_pipeline_settings ADD COLUMN repeat_of_recent_window INTEGER NOT NULL DEFAULT 3;
+ALTER TABLE tts_pipeline_settings ADD COLUMN output_read_display_name_first INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE tts_pipeline_settings ADD COLUMN output_emote_to_word INTEGER NOT NULL DEFAULT 0;

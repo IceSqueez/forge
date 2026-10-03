@@ -251,3 +251,117 @@ pub(super) fn line_end_point(shape: &LineShape, line_height: Pixels) -> Point<Pi
         .position_for_index(shape.line.len(), line_height)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use gpui::font;
+
+    use super::*;
+    use crate::highlight::Language;
+
+    const LINE_HEIGHT: f32 = 20.0;
+    const ADVANCE: f32 = 10.0;
+
+    fn metrics(wrap_width: f32) -> TextMetrics {
+        TextMetrics {
+            font: font("Mono"),
+            font_size: px(12.0),
+            line_height: px(LINE_HEIGHT),
+            advance: px(ADVANCE),
+            wrap_width: px(wrap_width),
+        }
+    }
+
+    fn lines_of(text: &str) -> Lines {
+        let mut lines = Lines::new(Language::JavaScript);
+        lines.sync(&Arc::from(text));
+        lines
+    }
+
+    fn geometry_for(lines: &mut Lines, wrap_width: f32) -> Geometry {
+        let mut geometry = Geometry::default();
+        geometry.configure(metrics(wrap_width), lines);
+        geometry.refresh(lines);
+        geometry
+    }
+
+    fn sample() -> Lines {
+        lines_of(&format!(
+            "\n{}\n{}\n{}\n{}\n{}",
+            "a".repeat(5),
+            "a".repeat(10),
+            "a".repeat(11),
+            "a".repeat(25),
+            "\u{439}".repeat(10)
+        ))
+    }
+
+    #[test]
+    fn unshaped_line_heights_estimate_wrapped_rows_from_char_count() {
+        let mut lines = sample();
+        let geometry = geometry_for(&mut lines, 100.0);
+        let tops: Vec<f32> = (0..=lines.len())
+            .map(|index| f32::from(geometry.top(index)))
+            .collect();
+        assert_eq!(tops, vec![0.0, 20.0, 40.0, 60.0, 100.0, 160.0, 180.0]);
+    }
+
+    #[test]
+    fn line_at_y_maps_row_edges_and_clamps_outside_the_document() {
+        let mut lines = sample();
+        let geometry = geometry_for(&mut lines, 100.0);
+        for (y, expected) in [
+            (-5.0, 0),
+            (0.0, 0),
+            (19.9, 0),
+            (20.0, 1),
+            (99.9, 3),
+            (100.0, 4),
+            (179.9, 5),
+            (180.0, 5),
+            (1000.0, 5),
+        ] {
+            assert_eq!(geometry.line_at_y(px(y)), expected, "y {y}");
+        }
+    }
+
+    #[test]
+    fn wrap_width_change_re_estimates_heights_on_refresh() {
+        let mut lines = sample();
+        let mut geometry = geometry_for(&mut lines, 100.0);
+        geometry.configure(metrics(50.0), &mut lines);
+        geometry.refresh(&lines);
+        assert_eq!(f32::from(geometry.total()), 280.0);
+    }
+
+    #[test]
+    fn non_positive_wrap_width_gives_every_line_one_row() {
+        for wrap_width in [0.0, -10.0] {
+            let mut lines = sample();
+            let geometry = geometry_for(&mut lines, wrap_width);
+            assert_eq!(f32::from(geometry.total()), 120.0, "wrap {wrap_width}");
+        }
+    }
+
+    #[test]
+    fn invalidated_geometry_picks_up_edited_line_lengths() {
+        let mut lines = lines_of("a\nb");
+        let mut geometry = geometry_for(&mut lines, 100.0);
+        lines.sync(&Arc::from(format!("a\n{}", "b".repeat(30)).as_str()));
+        geometry.invalidate();
+        geometry.refresh(&lines);
+        assert_eq!(f32::from(geometry.total()), 80.0);
+    }
+
+    #[test]
+    fn unconfigured_geometry_maps_every_point_to_the_document_start() {
+        let lines = lines_of("abc\ndef");
+        let geometry = Geometry::default();
+        assert_eq!(
+            geometry.offset_for_point(&lines, point(px(50.0), px(30.0))),
+            0
+        );
+    }
+}

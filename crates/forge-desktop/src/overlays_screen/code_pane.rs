@@ -759,3 +759,22 @@ impl OverlaysView {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_overlay::{BEHAVIOR_FILE, MARKUP_FILE, STYLE_FILE};
+
+    use super::*;
+
+    #[test]
+    fn each_overridable_file_opens_in_the_language_of_its_extension() {
+        for (file, expected) in [
+            (MARKUP_FILE, Language::Html),
+            (STYLE_FILE, Language::Css),
+            (BEHAVIOR_FILE, Language::JavaScript),
+        ] {
+            assert!(OVERRIDABLE_FILES.contains(&file), "{file} not overridable");
+            assert_eq!(file_language(file), expected, "{file}");
+        }
+    }
+}

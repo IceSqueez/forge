@@ -646,4 +646,64 @@ mod tests {
             assert_eq!(buffer.as_str(), expected, "range {range:?}");
         }
     }
+
+    #[test]
+    fn newline_copies_the_space_and_tab_indent_before_the_caret() {
+        for (text, caret, expected, cursor) in [
+            ("  ab", 4, "  ab\n  ", 7),
+            ("  ab", 1, " \n  ab", 3),
+            ("  ab", 0, "\n  ab", 1),
+            ("ab", 2, "ab\n", 3),
+            ("\t\tx", 3, "\t\tx\n\t\t", 6),
+            (" \tx", 3, " \tx\n \t", 6),
+            ("a\n    b", 7, "a\n    b\n    ", 12),
+            ("  ab", 3, "  a\n  b", 6),
+            ("    ", 4, "    \n    ", 9),
+            (
+                "  \u{43f}\u{440}\u{438}",
+                8,
+                "  \u{43f}\u{440}\u{438}\n  ",
+                11,
+            ),
+            ("\u{3000}x", 4, "\u{3000}x\n", 5),
+        ] {
+            let mut buffer = loaded(text);
+            buffer.move_to(caret);
+            buffer.insert_newline_keeping_indent();
+            assert_eq!(
+                (buffer.as_str(), buffer.cursor()),
+                (expected, cursor),
+                "{text:?} at {caret}"
+            );
+        }
+    }
+
+    #[test]
+    fn newline_replaces_the_selection_and_takes_the_indent_from_its_start_line() {
+        for (text, select, reversed, expected) in [
+            ("  ab cd", 4..7, false, "  ab\n  "),
+            ("  ab cd", 4..7, true, "  ab\n  "),
+            ("  a\n    b", 2..8, false, "  \n  b"),
+            ("\tx\n  y", 5..6, false, "\tx\n  \n  "),
+        ] {
+            let mut buffer = loaded(text);
+            if reversed {
+                buffer.move_to(select.end);
+                buffer.select_to(select.start);
+            } else {
+                buffer.move_to(select.start);
+                buffer.select_to(select.end);
+            }
+            buffer.insert_newline_keeping_indent();
+            assert_eq!(buffer.as_str(), expected, "{text:?} {select:?}");
+        }
+    }
+
+    #[test]
+    fn newline_with_indent_undoes_as_its_own_single_step() {
+        let mut buffer = typed("  ab");
+        buffer.insert_newline_keeping_indent();
+        type_chars(&mut buffer, "cd");
+        assert_eq!(undo_trail(&mut buffer), vec!["  ab\n  ", "  ab", ""]);
+    }
 }

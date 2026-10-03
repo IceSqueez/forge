@@ -5,14 +5,20 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use forge_emulator::EmulatorError;
+use forge_emulator::console::{
+    ConsoleRefusal, DonatelloConsole, MonobankConsole, parse_donatello_command, parse_jar,
+    parse_monobank_command,
+};
 use forge_emulator::control::{
     ClientTimeouts, ControlClient, ControlEndpoint, EventFilter, Observation,
 };
+use forge_emulator::donatello::{FakeDonatello, FakeDonatelloConfig};
 use forge_emulator::fixture::{Fixture, seed_forge_environment};
 use forge_emulator::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, GameGuard, LaunchOptions, LaunchedForge,
     LivePaths, OutputStream, launch_forge,
 };
+use forge_emulator::monobank::{FakeMonobank, FakeMonobankConfig};
 use forge_emulator::obs::{FakeObs, FakeObsConfig};
 use forge_emulator::report::{RunContext, RunReport, write_report};
 use forge_emulator::run::{RunOptions, ScenarioVerdict, run_scenario};
@@ -21,7 +27,7 @@ use forge_emulator::stress::{StressOptions, load_profile, run_stress, write_stre
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
 use forge_events::Event;
 use time::OffsetDateTime;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
 const TOKEN_VARIABLE: &str = "FORGE_EMULATOR_TOKEN";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
@@ -101,6 +107,32 @@ enum Command {
         /// A scene the fake offers, in order; repeatable. Main and BRB when omitted.
         #[arg(long = "scene", value_name = "NAME")]
         scenes: Vec<String>,
+    },
+    /// Run only a fake Donatello API and print the environment a forge started elsewhere needs
+    /// to reach it, one KEY=VALUE per line, until interrupted. Reads commands from stdin, one per
+    /// line: `donate <donor> <amount> [message...]`, `fail 429 [retry_after_secs]`,
+    /// `fail <status>`, `fail malformed`, `profile complete|incomplete`.
+    FakeDonatello {
+        /// The token the fake accepts.
+        #[arg(long, default_value = forge_emulator::donatello::FAKE_DONATELLO_TOKEN)]
+        token: String,
+        /// The account nickname the fake reports.
+        #[arg(long, default_value = "fake-streamer")]
+        nickname: String,
+        /// Start with an unfinished profile, so token checks report it.
+        #[arg(long)]
+        profile_incomplete: bool,
+    },
+    /// Run only a fake monobank API and print the environment a forge started elsewhere needs to
+    /// reach it, one KEY=VALUE per line, until interrupted. Reads commands from stdin, one per
+    /// line: `top-up <jar> <amount_minor> <sender> [comment...]`.
+    FakeMonobank {
+        /// The token the fake accepts.
+        #[arg(long, default_value = forge_emulator::monobank::FAKE_MONOBANK_TOKEN)]
+        token: String,
+        /// A jar the token owns, as ID or ID=TITLE; repeatable. One `fake-jar` when omitted.
+        #[arg(long = "jar", value_name = "ID=TITLE")]
+        jars: Vec<String>,
     },
     /// Work with scenario files.
     Scenario {
@@ -206,6 +238,21 @@ async fn main() -> ExitCode {
             .map(|()| ExitCode::SUCCESS),
         Command::FakeObs { password, scenes } => {
             fake_obs(password, scenes).await.map(|()| ExitCode::SUCCESS)
+        }
+        Command::FakeDonatello {
+            token,
+            nickname,
+            profile_incomplete,
+        } => fake_donatello(FakeDonatelloConfig {
+            token,
+            nickname,
+            profile_complete: !profile_incomplete,
+            ..FakeDonatelloConfig::default()
+        })
+        .await
+        .map(|()| ExitCode::SUCCESS),
+        Command::FakeMonobank { token, jars } => {
+            fake_monobank(token, jars).await.map(|()| ExitCode::SUCCESS)
         }
         Command::Scenario {
             command: ScenarioCommand::Check { file },
@@ -427,6 +474,106 @@ async fn fake_obs(password: Option<String>, scenes: Vec<String>) -> Result<(), E
     stop_requested().await;
     fake.shutdown().await;
     Ok(())
+}
+
+const DEFAULT_JAR: &str = "fake-jar=Stream jar";
+
+async fn fake_donatello(config: FakeDonatelloConfig) -> Result<(), EmulatorError> {
+    let token = config.token.clone();
+    let fake = FakeDonatello::start(config).await?;
+    let (variable, url) = fake.endpoint_override();
+    print_lines(&[
+        format!("{variable}={url}"),
+        format!("DONATELLO_TOKEN={token}"),
+    ])?;
+    let mut console = DonatelloConsole::new(&fake);
+    serve_console(|line| match parse_donatello_command(line) {
+        Ok(None) => Ok(None),
+        Ok(Some(command)) => console
+            .apply(command)
+            .map(Some)
+            .map_err(|e| ConsoleRefusal {
+                reason: e.to_string(),
+            }),
+        Err(refusal) => Err(refusal),
+    })
+    .await?;
+    fake.shutdown().await;
+    Ok(())
+}
+
+async fn fake_monobank(token: String, jar_specs: Vec<String>) -> Result<(), EmulatorError> {
+    let specs = if jar_specs.is_empty() {
+        vec![DEFAULT_JAR.to_owned()]
+    } else {
+        jar_specs
+    };
+    let jars = specs
+        .iter()
+        .map(|spec| parse_jar(spec))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|refusal| EmulatorError::InvalidFakeConfig {
+            reason: refusal.reason,
+        })?;
+    let fake = FakeMonobank::start(FakeMonobankConfig {
+        token: token.clone(),
+        jars: jars.clone(),
+        ..FakeMonobankConfig::default()
+    })
+    .await?;
+    let (variable, url) = fake.endpoint_override();
+    let mut lines = vec![
+        format!("{variable}={url}"),
+        format!("MONOBANK_TOKEN={token}"),
+    ];
+    lines.extend(jars.iter().map(|jar| format!("MONOBANK_JAR={}", jar.id)));
+    print_lines(&lines)?;
+    let mut console = MonobankConsole::new(&fake, &jars);
+    serve_console(|line| match parse_monobank_command(line) {
+        Ok(None) => Ok(None),
+        Ok(Some(command)) => console.apply(command).map(Some),
+        Err(refusal) => Err(refusal),
+    })
+    .await?;
+    fake.shutdown().await;
+    Ok(())
+}
+
+fn print_lines(lines: &[String]) -> Result<(), EmulatorError> {
+    let mut out = std::io::stdout();
+    lines
+        .iter()
+        .try_for_each(|line| writeln!(out, "{line}"))
+        .and_then(|()| out.flush())
+        .map_err(|e| EmulatorError::Output {
+            reason: e.to_string(),
+        })
+}
+
+async fn serve_console(
+    mut handle: impl FnMut(&str) -> Result<Option<String>, ConsoleRefusal>,
+) -> Result<(), EmulatorError> {
+    let stop = stop_requested();
+    tokio::pin!(stop);
+    let mut input = BufReader::new(tokio::io::stdin()).lines();
+    let mut reading = true;
+    loop {
+        tokio::select! {
+            () = &mut stop => return Ok(()),
+            line = input.next_line(), if reading => match line {
+                Ok(Some(line)) => match handle(&line) {
+                    Ok(Some(ack)) => print_lines(&[ack])?,
+                    Ok(None) => {}
+                    Err(refusal) => eprintln!("forge-emulator: {}", refusal.reason),
+                },
+                Ok(None) => reading = false,
+                Err(e) => {
+                    eprintln!("forge-emulator: stdin closed ({e}); still serving until interrupted");
+                    reading = false;
+                }
+            },
+        }
+    }
 }
 
 fn prepare_run_root(requested: Option<PathBuf>) -> Result<PathBuf, EmulatorError> {

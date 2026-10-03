@@ -73,6 +73,20 @@ time zone forge reads them in. `forge_restart` lists its gifts as
 `{ "donatello": {...} }` / `{ "monobank": {...} }`. The journal keeps every event across the
 restart, so expectations on the restart step see only what the new process published.
 
+`fake-donatello [--token T] [--nickname N] [--profile-incomplete]` and
+`fake-monobank [--token T] [--jar ID=TITLE]...` run one fake alone for a forge started elsewhere.
+Each prints the endpoint override, its token (and, for monobank, every jar id), one `KEY=VALUE` per
+line, then reads commands from stdin and answers each with an `ok ...` line:
+
+```text
+donate <donor> <amount> [message...]        # Donatello: a new donation, dated now
+fail 429 [retry_after_secs] | fail <status> | fail malformed   # Donatello: next list fails
+profile complete | profile incomplete       # Donatello: token checks see the profile state
+top-up <jar> <amount_minor> <sender> [comment...]   # monobank: a top-up into a served jar
+```
+
+A refused command is reported on stderr and the fake keeps serving until interrupted.
+
 ## Triggers other than chat commands
 
 A fixture declares chat commands and event triggers side by side; both seed an action, a

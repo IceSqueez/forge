@@ -15,6 +15,7 @@ pub const EVENT_LOG: &str = "event_log";
 pub const CHAT_HISTORY: &str = "chat_history";
 pub const VIEWER_TRACKER: &str = "viewer_tracker";
 pub const LATEST_VALUES: &str = "latest_values";
+pub const LATEST_OVERLAYS: &str = "latest_overlays";
 pub const RUN_HISTORY: &str = "run_history";
 pub const EVENT_TRAIL: &str = "event_trail";
 pub const TIMER_SCHEDULER: &str = "timer_scheduler";

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Latest overlay</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <div id="stage" class="hidden">
+      <div class="icon" aria-hidden="true">
+        <svg class="glyph glyph-donation" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M8.5 10.5h7M8.5 13.5h7M14.5 8.2a3 3 0 0 0-5 1.3c0 2.8 5 2.2 5 5a3 3 0 0 1-5 1.3" />
+        </svg>
+        <svg class="glyph glyph-now_playing" viewBox="0 0 24 24">
+          <circle cx="6" cy="17" r="3" />
+          <circle cx="16" cy="15" r="3" />
+          <path d="M9 17V4h10v11M9 8h10" />
+        </svg>
+      </div>
+      <div class="body">
+        <div class="label" data-bind="label"></div>
+        <div class="value"><span class="headline" data-bind="headline"></span><span class="subline" data-bind="subline"></span></div>
+      </div>
+    </div>
+    <script src="../forge-shared/runtime-v1.js"></script>
+    <script src="overlay.js"></script>
+  </body>
+</html>

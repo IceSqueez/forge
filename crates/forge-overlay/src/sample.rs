@@ -6,6 +6,7 @@ use forge_types::{ArgStack, CanonicalVariable, Variant};
 use crate::config::SPEECH;
 use crate::content::delivered_content;
 use crate::descriptor::{OverlayConfig, OverlayKindDescriptor};
+use crate::latest::{latest_binding, latest_content, sample_latest_value};
 
 pub struct SampleTrigger {
     pub kind_id: String,
@@ -56,6 +57,10 @@ pub fn sample_content(
     stored: &OverlayConfig,
     context: &SampleContext,
 ) -> OverlayConfig {
+    if let Some(binding) = latest_binding(descriptor, stored) {
+        let sample = sample_latest_value(&binding.slot);
+        return latest_content(descriptor, stored, Some(&sample));
+    }
     let mut content = delivered_content(descriptor, stored, &OverlayConfig::new(), &context.args());
     content.remove(SPEECH);
     content

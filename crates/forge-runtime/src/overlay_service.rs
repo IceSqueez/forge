@@ -1,15 +1,16 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use arc_swap::ArcSwapOption;
 use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_overlay::{
-    DeliveryDisposition, GENERATOR_VERSION, MaterializeReport, OverlayInstance,
-    OverlayKindRegistry, OverlayMedia, SampleContext, SampleTrigger, delivered_content,
-    ensure_shared_directory, joined_to_show, materialize_overlay, read_overlay_source,
-    remove_overlay_directory, sample_content, sample_context, show_timing, take_speech,
-    upgrade_config, write_overlay_source,
+    DEFAULT_DISPLAY_SECS, DeliveryDisposition, GENERATOR_VERSION, MaterializeReport,
+    OverlayInstance, OverlayKindDescriptor, OverlayKindRegistry, OverlayMedia, SampleContext,
+    SampleTrigger, delivered_content, ensure_shared_directory, joined_to_show, latest_binding,
+    latest_content, materialize_overlay, read_overlay_source, remove_overlay_directory,
+    sample_content, sample_context, show_timing, take_speech, upgrade_config, write_overlay_source,
 };
 use forge_platform_core::paths;
 use forge_registry::{
@@ -19,7 +20,7 @@ use forge_storage::{
     OverlayConfig, OverlayDefinition, OverlayId, OverlayRepo, SettingsRepo, StorageError,
     reserved_keys,
 };
-use forge_types::{ArgStack, EventId};
+use forge_types::{ArgStack, EventId, LatestValueReader};
 use serde_json::json;
 use ulid::Ulid;
 
@@ -36,6 +37,8 @@ use crate::speak_dispatcher::{ShowSpeech, SpeakDispatcher, SpeechOrigin, SpeechS
 pub const OVERLAY_TEST_FIRE_KIND: &str = "overlay.test_fire";
 
 const OVERLAY_ID_KEY: &str = "overlayId";
+
+const LATEST_PREVIEW_HOLD: Duration = Duration::from_secs(DEFAULT_DISPLAY_SECS.unsigned_abs());
 
 #[derive(Debug, thiserror::Error)]
 pub enum OverlayServiceError {
@@ -56,6 +59,9 @@ pub enum OverlayServiceError {
 
     #[error("overlay '{id}' already has {capacity} shows waiting, so this one was not queued")]
     ShowQueueFull { id: OverlayId, capacity: usize },
+
+    #[error("overlay '{0}' shows a latest value and takes no content from actions")]
+    SlotBound(OverlayId),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -135,6 +141,7 @@ struct OverlayService {
     lanes: Arc<OverlayLanes>,
     shows: Arc<ShowSequencer>,
     speaker: Option<Arc<dyn SpeakDispatcher>>,
+    latest: Option<Arc<dyn LatestValueReader>>,
 }
 
 #[derive(Clone)]
@@ -170,6 +177,16 @@ impl OverlayServiceHandle {
                 lanes: Arc::default(),
                 shows,
                 speaker: None,
+                latest: None,
+            }),
+        }
+    }
+
+    pub fn with_latest_values(self, latest: Arc<dyn LatestValueReader>) -> Self {
+        Self {
+            inner: Arc::new(OverlayService {
+                latest: Some(latest),
+                ..self.parts()
             }),
         }
     }
@@ -227,6 +244,7 @@ impl OverlayServiceHandle {
             lanes: Arc::clone(&self.inner.lanes),
             shows: Arc::clone(&self.inner.shows),
             speaker: self.inner.speaker.clone(),
+            latest: self.inner.latest.clone(),
         }
     }
 
@@ -391,6 +409,9 @@ impl OverlayServiceHandle {
                 kind_id: definition.kind_id,
             });
         };
+        if latest_binding(descriptor, &definition.config).is_some() {
+            return Err(OverlayServiceError::SlotBound(definition.id));
+        }
         let mut content = delivered_content(descriptor, &definition.config, supplied, args);
         let speech = take_speech(descriptor, &definition.config, &mut content)
             .filter(|_| self.inner.speaker.is_some())
@@ -488,6 +509,15 @@ impl OverlayServiceHandle {
             json!({ OVERLAY_ID_KEY: definition.id.as_str() }),
         ));
 
+        if latest_binding(descriptor, &definition.config).is_some() {
+            let delivery = {
+                let _lane = self.inner.lanes.enter(&definition.id).await;
+                self.send(&definition.id, &content, None).await
+            };
+            self.restore_after_preview(definition.id);
+            return Ok(TestFire { content, delivery });
+        }
+
         let delivery = self
             .push(&definition.id, disposition, &content, None)
             .await?;
@@ -495,20 +525,75 @@ impl OverlayServiceHandle {
         Ok(TestFire { content, delivery })
     }
 
+    fn restore_after_preview(&self, id: OverlayId) {
+        let handle = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(LATEST_PREVIEW_HOLD).await;
+            if let Err(error) = handle.replay_retained(&id).await {
+                tracing::warn!(overlay = %id, %error, "latest value did not return after a preview");
+            }
+        });
+    }
+
+    pub async fn refresh_latest(&self, slot: Option<&str>) {
+        let definitions = match self.inner.repo.list().await {
+            Ok(definitions) => definitions,
+            Err(error) => {
+                tracing::warn!(%error, "overlays unreadable; latest values not pushed");
+                return;
+            }
+        };
+        for definition in definitions.iter().filter(|definition| definition.enabled) {
+            let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
+                continue;
+            };
+            let Some(binding) = latest_binding(descriptor, &definition.config) else {
+                continue;
+            };
+            if slot.is_some_and(|changed| changed != binding.slot) {
+                continue;
+            }
+            let _lane = self.inner.lanes.enter(&definition.id).await;
+            if let Some(content) = self.live_latest_content(definition, descriptor) {
+                self.send(&definition.id, &content, None).await;
+            }
+        }
+    }
+
+    fn live_latest_content(
+        &self,
+        definition: &OverlayDefinition,
+        descriptor: &dyn OverlayKindDescriptor,
+    ) -> Option<OverlayConfig> {
+        let binding = latest_binding(descriptor, &definition.config)?;
+        let value = self
+            .inner
+            .latest
+            .as_ref()
+            .and_then(|reader| reader.latest(&binding.slot, binding.scope()));
+        Some(latest_content(
+            descriptor,
+            &definition.config,
+            value.as_ref(),
+        ))
+    }
+
     async fn replay_retained(&self, id: &OverlayId) -> Result<(), OverlayServiceError> {
         let _lane = self.inner.lanes.enter(id).await;
+        let definition = self.load(id).await?;
+        let Some(descriptor) = self.inner.kinds.get(&definition.kind_id) else {
+            return Ok(());
+        };
+        if let Some(content) = self.live_latest_content(&definition, descriptor) {
+            self.send(id, &content, None).await;
+            return Ok(());
+        }
+        if !descriptor.delivery_disposition().retains_last_content() {
+            return Ok(());
+        }
         let Some(content) = self.inner.repo.get_retained_content(id).await? else {
             return Ok(());
         };
-        let definition = self.load(id).await?;
-        let retains = self
-            .inner
-            .kinds
-            .get(&definition.kind_id)
-            .is_some_and(|descriptor| descriptor.delivery_disposition().retains_last_content());
-        if !retains {
-            return Ok(());
-        }
         self.send(id, &content, None).await;
         Ok(())
     }

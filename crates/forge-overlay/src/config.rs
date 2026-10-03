@@ -37,6 +37,10 @@ pub const LABEL: &str = "label";
 pub const VALUE: &str = "value";
 pub const TARGET: &str = "target";
 
+pub const SLOT: &str = "slot";
+pub const PLATFORM: &str = "platform";
+pub const PLACEHOLDER: &str = "placeholder";
+
 pub const CLIP_ID: &str = "clip_id";
 pub const CLIP_PATH: &str = "clip_path";
 pub const REPORT_PATH: &str = "report_path";
@@ -377,6 +381,61 @@ pub(crate) fn target_field() -> SectionedField {
             key: TARGET,
             label: "Target",
             placeholder: "100",
+        },
+    )
+}
+
+pub(crate) fn slot_field(options: &'static [&'static str]) -> SectionedField {
+    in_section(
+        ConfigSection::Behavior,
+        FormField::Select {
+            key: SLOT,
+            label: "Slot",
+            options,
+        },
+    )
+}
+
+pub(crate) fn platform_scope_field() -> SectionedField {
+    in_section(
+        ConfigSection::Behavior,
+        FormField::Text {
+            key: PLATFORM,
+            label: "Platform",
+            placeholder: "All platforms",
+        },
+    )
+}
+
+pub(crate) fn headline_field(placeholder: &'static str) -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: HEADLINE,
+            label: "Headline",
+            placeholder,
+        },
+    )
+}
+
+pub(crate) fn subline_field(placeholder: &'static str) -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: SUBLINE,
+            label: "Subline",
+            placeholder,
+        },
+    )
+}
+
+pub(crate) fn placeholder_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: PLACEHOLDER,
+            label: "Empty text",
+            placeholder: "No donations yet",
         },
     )
 }

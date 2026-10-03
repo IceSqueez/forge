@@ -10,6 +10,7 @@ pub mod error;
 pub mod icons;
 pub mod instance;
 pub mod kinds;
+pub mod latest;
 pub mod materialize;
 pub mod media;
 pub mod metrics;
@@ -41,7 +42,8 @@ pub use browser_preview::{
 pub use config::{effective_overlay_config, validate_overlay_config};
 pub use content::delivered_content;
 pub use descriptor::{
-    ConfigSection, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
+    ConfigSection, ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor,
+    SectionedField,
 };
 pub use document::{
     DOCUMENT_VERSION, ICON_FILE_FIELD, ICON_TINTABLE_FIELD, config_document, sample_document,
@@ -50,6 +52,9 @@ pub use error::OverlayError;
 pub use icons::{CURATED_ICONS, CuratedIcon, IconCategory, curated_icon};
 pub use instance::OverlayInstance;
 pub use kinds::register_builtin_kinds;
+pub use latest::{
+    LatestBinding, SLOT_OPTIONS, latest_binding, latest_content, sample_latest_value,
+};
 pub use materialize::{
     GENERATOR_VERSION, MaterializeReport, ensure_shared_directory, materialize_overlay,
     remove_overlay_directory,

@@ -25,6 +25,12 @@ impl DeliveryDisposition {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentFeed {
+    Deliveries,
+    LatestSlot,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigSection {
     Content,
     Style,
@@ -44,6 +50,9 @@ pub trait OverlayKindDescriptor: Send + Sync {
     fn icon_name(&self) -> &str;
     fn delivery_disposition(&self) -> DeliveryDisposition;
     fn order_sensitive(&self) -> bool;
+    fn content_feed(&self) -> ContentFeed {
+        ContentFeed::Deliveries
+    }
     fn config_schema_version(&self) -> u32;
     fn look_defaults(&self) -> OverlayConfig {
         OverlayConfig::new()

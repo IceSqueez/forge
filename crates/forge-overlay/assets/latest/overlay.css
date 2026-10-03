@@ -1,0 +1,107 @@
+:root {
+  --accent: #fab387;
+  --font: sans-serif;
+  --text-scale: calc(var(--text-size, 20) / 20);
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  display: flex;
+  box-sizing: border-box;
+  padding: var(--margin-top, 0px) var(--margin-right, 0px) var(--margin-bottom, 0px) var(--margin-left, 0px);
+  align-items: center;
+}
+
+#stage {
+  display: flex;
+  align-items: center;
+  gap: calc(14px * var(--text-scale));
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: calc(14px * var(--text-scale)) calc(20px * var(--text-scale));
+  border: 1px solid var(--accent);
+  border-radius: calc(12px * var(--text-scale));
+  background: rgba(20, 20, 28, 0.86);
+  font-family: var(--font);
+}
+
+.icon {
+  flex: none;
+  display: none;
+  width: calc(26px * var(--text-scale));
+  height: calc(26px * var(--text-scale));
+  color: var(--accent);
+}
+
+body[data-slot="donation"] .icon,
+body[data-slot="now_playing"] .icon {
+  display: block;
+}
+
+.glyph {
+  display: none;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body[data-slot="donation"] .glyph-donation,
+body[data-slot="now_playing"] .glyph-now_playing {
+  display: block;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--text-scale));
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.label {
+  color: var(--accent);
+  font-size: calc(13px * var(--text-scale));
+  font-weight: 600;
+}
+
+.value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.headline {
+  color: #fff;
+  font-size: calc(20px * var(--text-scale));
+  font-weight: 700;
+}
+
+.subline {
+  margin-left: calc(10px * var(--text-scale));
+  color: rgba(255, 255, 255, 0.7);
+  font-size: calc(15px * var(--text-scale));
+}
+
+#stage.empty .headline {
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+#stage.hidden {
+  opacity: 0;
+}

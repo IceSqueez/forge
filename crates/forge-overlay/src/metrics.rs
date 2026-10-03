@@ -1,4 +1,4 @@
-use crate::kinds::{alert, chat, frame, goal, ticker};
+use crate::kinds::{alert, chat, frame, goal, latest, ticker};
 
 pub const SURFACE_RGB: [u8; 3] = [20, 20, 28];
 pub const PILL_RADIUS: f32 = 999.0;
@@ -73,6 +73,22 @@ pub struct GoalMetrics {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LatestMetrics {
+    pub gap: f32,
+    pub padding_block: f32,
+    pub padding_inline: f32,
+    pub border: f32,
+    pub radius: f32,
+    pub icon_size: f32,
+    pub line_gap: f32,
+    pub label_size: f32,
+    pub headline_size: f32,
+    pub subline_size: f32,
+    pub subline_margin: f32,
+    pub surface_alpha: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TickerMetrics {
     pub gap: f32,
     pub padding_block: f32,
@@ -139,6 +155,21 @@ pub const GOAL: GoalMetrics = GoalMetrics {
     surface_alpha: 0.86,
 };
 
+pub const LATEST: LatestMetrics = LatestMetrics {
+    gap: 14.0,
+    padding_block: 14.0,
+    padding_inline: 20.0,
+    border: 1.0,
+    radius: 12.0,
+    icon_size: 26.0,
+    line_gap: 4.0,
+    label_size: 13.0,
+    headline_size: 20.0,
+    subline_size: 15.0,
+    subline_margin: 10.0,
+    surface_alpha: 0.86,
+};
+
 pub const TICKER: TickerMetrics = TickerMetrics {
     gap: 14.0,
     padding_block: 10.0,
@@ -189,6 +220,12 @@ pub const GOAL_SIZING: ElementSizing = ElementSizing {
     base_text_size: GOAL.label_size,
 };
 
+pub const LATEST_SIZING: ElementSizing = ElementSizing {
+    width: Some(AxisBound::Exact),
+    height: Some(AxisBound::AtMost),
+    base_text_size: LATEST.headline_size,
+};
+
 pub const TICKER_SIZING: ElementSizing = ElementSizing {
     width: Some(AxisBound::Exact),
     height: Some(AxisBound::AtMost),
@@ -201,6 +238,7 @@ pub fn element_sizing(kind_id: &str) -> Option<ElementSizing> {
         chat::KIND_ID => Some(CHAT_SIZING),
         frame::KIND_ID => Some(FRAME_SIZING),
         goal::KIND_ID => Some(GOAL_SIZING),
+        latest::KIND_ID => Some(LATEST_SIZING),
         ticker::KIND_ID => Some(TICKER_SIZING),
         _ => None,
     }
@@ -239,6 +277,7 @@ pub fn style_guards() -> Vec<StyleGuard> {
         guard(chat::KIND_ID, CHAT.declarations(), CHAT_SIZING),
         guard(frame::KIND_ID, FRAME.declarations(), FRAME_SIZING),
         guard(goal::KIND_ID, GOAL.declarations(), GOAL_SIZING),
+        guard(latest::KIND_ID, LATEST.declarations(), LATEST_SIZING),
         guard(ticker::KIND_ID, TICKER.declarations(), TICKER_SIZING),
     ]
 }
@@ -320,6 +359,25 @@ impl GoalMetrics {
             length("border-radius", self.track_radius),
             scaled_length("font-size", self.figure_size),
             format!("margin: 0 {};", scaled(self.separator_margin)),
+            surface(self.surface_alpha),
+        ]
+    }
+}
+
+impl LatestMetrics {
+    pub fn declarations(&self) -> Vec<String> {
+        vec![
+            scaled_length("gap", self.gap),
+            scaled_length_pair("padding", self.padding_block, self.padding_inline),
+            accent_border("border", self.border),
+            scaled_length("border-radius", self.radius),
+            scaled_length("width", self.icon_size),
+            scaled_length("height", self.icon_size),
+            scaled_length("gap", self.line_gap),
+            scaled_length("font-size", self.label_size),
+            scaled_length("font-size", self.headline_size),
+            scaled_length("font-size", self.subline_size),
+            scaled_length("margin-left", self.subline_margin),
             surface(self.surface_alpha),
         ]
     }

@@ -3,6 +3,7 @@ pub mod blank;
 pub mod chat;
 pub mod frame;
 pub mod goal;
+pub mod latest;
 pub mod ticker;
 
 use crate::error::OverlayError;
@@ -14,6 +15,7 @@ pub fn register_builtin_kinds(reg: &mut OverlayKindRegistry) -> Result<(), Overl
     reg.register(Box::new(chat::ChatOverlayKind))?;
     reg.register(Box::new(frame::FrameOverlayKind))?;
     reg.register(Box::new(goal::GoalOverlayKind))?;
+    reg.register(Box::new(latest::LatestOverlayKind))?;
     reg.register(Box::new(ticker::TickerOverlayKind))?;
     Ok(())
 }

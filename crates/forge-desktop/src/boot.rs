@@ -15,8 +15,8 @@ use forge_runtime::{
     SoundPlayer, SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions,
     register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
     spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_stream_live_signal,
-    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
+    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
+    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -422,6 +422,7 @@ pub async fn build_runtime(
         backend.media_repo(),
         backend.soundboard_clips_repo(),
     ))
+    .with_latest_values(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>)
     .with_event_wiring(
         Arc::new(forge_runtime::actions::ActionsService::new(
             backend.action_repo(),
@@ -438,6 +439,7 @@ pub async fn build_runtime(
         None => overlays,
     };
     overlay_service_cell.set(overlays.clone());
+    spawn_latest_overlay_feed(&bus, overlays.clone());
     if let Some(handle) = server.clone() {
         handle
             .set_overlay_connect_listener(

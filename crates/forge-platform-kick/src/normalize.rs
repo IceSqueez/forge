@@ -104,7 +104,7 @@ pub(crate) fn chat_message_chat_payload(raw: &Value) -> ChatPayload {
 pub(crate) fn chat_message_viewer(raw: &Value) -> Option<ChatViewer> {
     let sender = raw.get("sender")?;
     let id = u64_field(sender, "id")?;
-    let username = str_field(sender, "username").unwrap_or_default();
+    let username = str_field(sender, "username").filter(|name| !name.is_empty())?;
     Some(ChatViewer::new(id.to_string(), username))
 }
 

@@ -319,11 +319,35 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_recipients_are_every_enabled_platform_including_disconnected_ones() {
-        let reach = reach(&[T, Y], &[T]);
+    fn broadcast_recipients_exclude_enabled_platforms_that_are_not_connected() {
+        let reach = reach(&[T, Y, K], &[T, K]);
 
-        assert_eq!(reach.recipients(&SendRoute::Broadcast), vec![T, Y]);
+        assert_eq!(reach.recipients(&SendRoute::Broadcast), vec![T, K]);
         assert_eq!(reach.recipients(&SendRoute::Targeted(vec![T])), vec![T]);
+    }
+
+    #[test]
+    fn plan_send_broadcast_skips_a_failed_platform() {
+        let plan = plan_send("hi", &[], &reach(&[T, Y], &[T])).unwrap();
+
+        assert_eq!(plan.route, SendRoute::Broadcast);
+        assert_eq!(plan.recipients, vec![T]);
+    }
+
+    #[test]
+    fn plan_send_filters_a_targeted_disconnected_platform_out_of_the_recipients() {
+        let plan = plan_send("hi", &[T, Y], &reach(&[T, Y], &[T])).unwrap();
+
+        assert_eq!(plan.route, SendRoute::Targeted(vec![T]));
+        assert_eq!(plan.recipients, vec![T]);
+    }
+
+    #[test]
+    fn plan_send_refuses_a_target_that_is_only_a_disconnected_platform() {
+        assert_eq!(
+            plan_send("hi", &[Y], &reach(&[T, Y], &[])),
+            Err(SendRefusal::NoPlatformConnected)
+        );
     }
 
     #[test]
@@ -382,19 +406,27 @@ mod tests {
     }
 
     #[test]
-    fn plan_send_limit_is_the_tightest_among_the_recipients() {
+    fn plan_send_limit_is_the_tightest_among_the_connected_recipients() {
         let youtube = max_message_chars(Y);
         let text = "a".repeat(youtube + 1);
-        let youtube_enabled_but_down = reach(&[T, Y], &[T]);
 
         assert_eq!(
-            plan_send(&text, &[], &youtube_enabled_but_down),
+            plan_send(&text, &[], &reach(&[T, Y], &[T, Y])),
             Err(SendRefusal::TooLong {
                 count: youtube + 1,
                 limit: youtube,
             })
         );
         assert!(plan_send(&text, &[T], &reach(&[T, Y, K], &[T, Y, K])).is_ok());
+    }
+
+    #[test]
+    fn a_disconnected_platform_does_not_clamp_the_broadcast_limit() {
+        let text = "a".repeat(max_message_chars(Y) + 1);
+        let youtube_down = reach(&[T, Y], &[T]);
+
+        assert!(plan_send(&text, &[], &youtube_down).is_ok());
+        assert_eq!(youtube_down.char_limit(&[]), Some(max_message_chars(T)));
     }
 
     #[test]

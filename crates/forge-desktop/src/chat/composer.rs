@@ -247,11 +247,14 @@ mod tests {
     use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext};
 
     use super::super::platform_display_name;
+    use super::super::send_plan::PlatformReach;
     use super::ChatComposer;
     use crate::chat::send_plan::{
         CHAT_SEND_REQUEST_KIND, CHAT_SENT_KIND, DeliveryResult, SendReport,
     };
     use crate::home_stats::{HomeStats, Integration};
+    use crate::integration_lifecycle::IntegrationLifecycle;
+    use crate::integration_supervisor::{LifecycleState, LifecycleStates};
     use crate::test_support::{pump, runtime};
     use crate::toasts::Toasts;
 
@@ -448,5 +451,67 @@ mod tests {
 
         assert_eq!(field(&composer, vcx), "");
         assert!(!vcx.update(|_window, cx| composer.read(cx).is_sending()));
+    }
+
+    #[gpui::test]
+    fn reach_counts_only_running_integrations_as_connected(cx: &mut TestAppContext) {
+        let twitch = Integration::Twitch.builtin_id();
+        let youtube = Integration::YouTube.builtin_id();
+        let kick = Integration::Kick.builtin_id();
+        let rt = runtime();
+        let (composer, vcx) = mount(
+            cx,
+            &rt,
+            &[Integration::Twitch, Integration::YouTube, Integration::Kick],
+        );
+        let states: LifecycleStates = [
+            (twitch, LifecycleState::Running),
+            (youtube, LifecycleState::Failed("boom".to_owned())),
+            (kick, LifecycleState::Starting),
+        ]
+        .into_iter()
+        .collect();
+        let lifecycle = vcx.update(|_window, cx| cx.new(|_| IntegrationLifecycle::new(states)));
+
+        vcx.update(|_window, cx| {
+            composer.update(cx, |composer, cx| composer.set_lifecycle(lifecycle, cx));
+        });
+
+        let reach = vcx
+            .update(|_window, cx| composer.update(cx, |composer, cx| composer.current_reach(cx)));
+        assert_eq!(
+            reach,
+            PlatformReach {
+                enabled: vec![Platform::Twitch, Platform::YouTube, Platform::Kick],
+                connected: vec![Platform::Twitch],
+            }
+        );
+    }
+
+    #[gpui::test]
+    fn reach_has_no_connected_platform_while_every_enabled_one_is_starting_or_failed(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch, Integration::YouTube]);
+        let states: LifecycleStates = [
+            (Integration::Twitch.builtin_id(), LifecycleState::Starting),
+            (
+                Integration::YouTube.builtin_id(),
+                LifecycleState::Failed("boom".to_owned()),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let lifecycle = vcx.update(|_window, cx| cx.new(|_| IntegrationLifecycle::new(states)));
+
+        vcx.update(|_window, cx| {
+            composer.update(cx, |composer, cx| composer.set_lifecycle(lifecycle, cx));
+        });
+
+        let reach = vcx
+            .update(|_window, cx| composer.update(cx, |composer, cx| composer.current_reach(cx)));
+        assert_eq!(reach.enabled, vec![Platform::Twitch, Platform::YouTube]);
+        assert!(reach.connected.is_empty());
     }
 }

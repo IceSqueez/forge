@@ -607,3 +607,177 @@ impl Render for CodeEditor {
         editor.child(CodeEditorElement::new(cx.entity()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{Entity, TestAppContext, VisualTestContext};
+
+    const LOADED: &str = "let a = 1;\nlet b=2;";
+    const TYPED: &str = "!";
+
+    struct Heard {
+        seen: Vec<String>,
+        _sub: Subscription,
+    }
+
+    fn label(event: &InputEvent) -> String {
+        match event {
+            InputEvent::Changed(text) => format!("changed:{text}"),
+            InputEvent::Submitted(text) => format!("submitted:{text}"),
+            InputEvent::Blurred(text) => format!("blurred:{text}"),
+            InputEvent::Cancelled => "cancelled".to_owned(),
+        }
+    }
+
+    fn events_while(
+        cx: &mut TestAppContext,
+        act: impl FnOnce(&Entity<CodeEditor>, &mut VisualTestContext),
+    ) -> Vec<String> {
+        let (editor, vcx) =
+            cx.add_window_view(|_window, cx| CodeEditor::new(Language::Rhai, "", cx));
+        vcx.update(|window, _cx| window.activate_window());
+        vcx.update(|_window, cx| editor.update(cx, |editor, cx| editor.set_content(LOADED, cx)));
+        let heard = vcx.update(|_window, cx| {
+            cx.new(|cx| Heard {
+                seen: Vec::new(),
+                _sub: cx.subscribe(&editor, |this: &mut Heard, _editor, event, _cx| {
+                    this.seen.push(label(event));
+                }),
+            })
+        });
+        vcx.update(|window, cx| editor.update(cx, |editor, cx| editor.focus(window, cx)));
+        vcx.run_until_parked();
+
+        act(&editor, vcx);
+        vcx.run_until_parked();
+
+        vcx.update(|_window, cx| heard.read(cx).seen.clone())
+    }
+
+    fn type_more(editor: &Entity<CodeEditor>, vcx: &mut VisualTestContext) {
+        vcx.update(|window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.replace_text_in_range(None, TYPED, window, cx);
+            });
+        });
+    }
+
+    fn leave(vcx: &mut VisualTestContext) {
+        vcx.update(|window, cx| window.blur(cx));
+        vcx.run_until_parked();
+    }
+
+    fn refocus(editor: &Entity<CodeEditor>, vcx: &mut VisualTestContext) {
+        vcx.update(|window, cx| editor.update(cx, |editor, cx| editor.focus(window, cx)));
+        vcx.run_until_parked();
+    }
+
+    fn blurs(seen: &[String]) -> Vec<&str> {
+        seen.iter()
+            .map(String::as_str)
+            .filter(|label| label.starts_with("blurred:"))
+            .collect()
+    }
+
+    #[gpui::test]
+    fn leaving_an_unedited_editor_commits_nothing(cx: &mut TestAppContext) {
+        let seen = events_while(cx, |_editor, vcx| leave(vcx));
+
+        assert!(seen.is_empty(), "expected silence, saw {seen:?}");
+    }
+
+    #[gpui::test]
+    fn leaving_an_edited_editor_commits_once_and_the_next_blur_is_silent(cx: &mut TestAppContext) {
+        let seen = events_while(cx, |editor, vcx| {
+            type_more(editor, vcx);
+            leave(vcx);
+            refocus(editor, vcx);
+            leave(vcx);
+        });
+
+        assert_eq!(blurs(&seen), [format!("blurred:{TYPED}{LOADED}")]);
+    }
+
+    #[gpui::test]
+    fn edits_undone_back_to_the_loaded_text_commit_nothing_on_blur(cx: &mut TestAppContext) {
+        let seen = events_while(cx, |editor, vcx| {
+            type_more(editor, vcx);
+            vcx.update(|window, cx| {
+                editor.update(cx, |editor, cx| editor.undo(&Undo, window, cx));
+            });
+            leave(vcx);
+        });
+
+        assert!(blurs(&seen).is_empty(), "expected no commit, saw {seen:?}");
+    }
+
+    #[gpui::test]
+    fn set_content_moves_the_baseline_so_the_text_it_installed_never_commits(
+        cx: &mut TestAppContext,
+    ) {
+        let seen = events_while(cx, |editor, vcx| {
+            type_more(editor, vcx);
+            vcx.update(|_window, cx| {
+                editor.update(cx, |editor, cx| editor.set_content("print(1);", cx));
+            });
+            leave(vcx);
+        });
+
+        assert!(blurs(&seen).is_empty(), "expected no commit, saw {seen:?}");
+    }
+
+    #[gpui::test]
+    fn replacing_in_place_with_identical_text_announces_nothing_and_adds_no_undo_step(
+        cx: &mut TestAppContext,
+    ) {
+        let mut undo_left = None;
+        let seen = events_while(cx, |editor, vcx| {
+            vcx.update(|_window, cx| {
+                editor.update(cx, |editor, cx| {
+                    editor.replace_content_in_place(LOADED, cx);
+                    undo_left = Some(editor.buffer.undo());
+                });
+            });
+        });
+
+        assert_eq!((seen, undo_left), (Vec::new(), Some(false)));
+    }
+
+    #[gpui::test]
+    fn replacing_in_place_announces_the_new_text_and_commits_it_on_blur(cx: &mut TestAppContext) {
+        const FORMATTED: &str = "let a = 1;\nlet b = 2;";
+        let seen = events_while(cx, |editor, vcx| {
+            vcx.update(|_window, cx| {
+                editor.update(cx, |editor, cx| {
+                    editor.replace_content_in_place(FORMATTED, cx)
+                });
+            });
+            leave(vcx);
+        });
+
+        assert_eq!(
+            seen,
+            [
+                format!("changed:{FORMATTED}"),
+                format!("blurred:{FORMATTED}")
+            ]
+        );
+    }
+
+    #[gpui::test]
+    fn replacing_in_place_keeps_the_caret_line_and_does_not_scroll_to_it(cx: &mut TestAppContext) {
+        let (editor, vcx) =
+            cx.add_window_view(|_window, cx| CodeEditor::new(Language::Rhai, "", cx));
+        let kept = vcx.update(|_window, cx| {
+            editor.update(cx, |editor, cx| {
+                editor.set_content(LOADED, cx);
+                editor.buffer.move_to(LOADED.len());
+                editor.replace_content_in_place("let a = 1;\nlet b = 2;", cx);
+                (editor.buffer.cursor(), editor.follow_caret)
+            })
+        });
+
+        assert_eq!(kept, (19, false));
+    }
+}

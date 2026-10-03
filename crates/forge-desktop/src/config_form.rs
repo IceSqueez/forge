@@ -1457,4 +1457,125 @@ mod tests {
             ]
         );
     }
+
+    const CODE_KEY: &str = "body";
+    const CODE_GATE: &str = "use_body";
+    const RHAI_BODY: &str = "let n = 1;\r\nif n > 0 {\n\tprint(\"привіт 🚀\");\n}\n";
+    const JSON_BODY: &str = "{\n  \"items\": [1, 2.5, null],\n  \"name\": \"ü\"\n}";
+
+    fn code_spec(language: CodeLanguage) -> FormField {
+        FormField::Code {
+            key: CODE_KEY,
+            label: "Body",
+            language,
+        }
+    }
+
+    fn code_editor_of(fields: &[ConfigField]) -> Entity<CodeEditor> {
+        match fields {
+            [ConfigField::Code { editor, .. }] => editor.clone(),
+            _ => panic!("expected a single code field"),
+        }
+    }
+
+    #[gpui::test]
+    fn a_code_field_writes_what_its_editor_holds_as_a_verbatim_string(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (language, stored, edited, expected) in [
+            (CodeLanguage::Rhai, Some(RHAI_BODY), None, RHAI_BODY),
+            (CodeLanguage::Json, Some(JSON_BODY), None, JSON_BODY),
+            (CodeLanguage::Rhai, None, None, ""),
+            (CodeLanguage::Json, Some(""), None, ""),
+            (
+                CodeLanguage::Rhai,
+                Some(RHAI_BODY),
+                Some("print(2);"),
+                "print(2);",
+            ),
+            (CodeLanguage::Rhai, Some(RHAI_BODY), Some(""), ""),
+        ] {
+            let seeded: FieldConfig = stored
+                .map(|body| (CODE_KEY.to_owned(), Variant::String(body.to_owned())))
+                .into_iter()
+                .collect();
+            let (_host, fields) = build(cx, &code_spec(language), &FieldConfig::new(), &seeded, "");
+            if let Some(text) = edited {
+                let editor = code_editor_of(&fields);
+                editor.update(cx, |editor, cx| editor.set_content(text, cx));
+            }
+
+            assert_eq!(
+                collected(cx, &fields, &FieldConfig::new()).get(CODE_KEY),
+                Some(&Variant::String(expected.to_owned())),
+                "{language:?} stored {stored:?} edited {edited:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_gated_code_field_writes_only_while_its_toggle_is_on(cx: &mut gpui::TestAppContext) {
+        for (toggle, expected) in [
+            (true, Some(Variant::String(RHAI_BODY.to_owned()))),
+            (false, None),
+        ] {
+            let spec = FormField::Optional {
+                key: CODE_GATE,
+                label: "Use body",
+                inner: Box::new(code_spec(CodeLanguage::Rhai)),
+            };
+            let seeded = config(&[
+                (CODE_GATE, Variant::Bool(toggle)),
+                (CODE_KEY, Variant::String(RHAI_BODY.to_owned())),
+            ]);
+            let (_host, fields) = build(cx, &spec, &FieldConfig::new(), &seeded, "");
+
+            assert_eq!(
+                collected(cx, &fields, &FieldConfig::new()).get(CODE_KEY),
+                expected.as_ref(),
+                "toggle {toggle}"
+            );
+        }
+    }
+
+    struct CommitLog(Vec<String>);
+
+    fn log_commit(log: &mut CommitLog, event: &InputEvent, _: &mut Context<CommitLog>) {
+        let label = match event {
+            InputEvent::Changed(_) => "changed",
+            InputEvent::Submitted(_) => "submitted",
+            InputEvent::Blurred(_) => "blurred",
+            InputEvent::Cancelled => "cancelled",
+        };
+        log.0.push(label.to_owned());
+    }
+
+    #[gpui::test]
+    fn a_code_field_hands_only_a_blur_commit_to_the_form(cx: &mut gpui::TestAppContext) {
+        let host = cx.update(|cx| cx.new(|_| CommitLog(Vec::new())));
+        let fields = host.update(cx, |_, cx| {
+            let palette = forge_components::ThemeId::ForgeDefault.palette();
+            let ctx = FoldContext {
+                config: &FieldConfig::new(),
+                defaults: &FieldConfig::new(),
+                palette: &palette,
+                choices: ChoiceSupport::Text,
+                on_committed: log_commit as ConfigCommitHandler<CommitLog>,
+            };
+            let mut fields = Vec::new();
+            fold_config_field(&code_spec(CodeLanguage::Rhai), None, &ctx, &mut fields, cx);
+            fields
+        });
+        let editor = code_editor_of(&fields);
+
+        editor.update(cx, |_, cx| {
+            cx.emit(InputEvent::Changed("a".into()));
+            cx.emit(InputEvent::Submitted("a".into()));
+            cx.emit(InputEvent::Cancelled);
+            cx.emit(InputEvent::Blurred("a".into()));
+        });
+        cx.run_until_parked();
+
+        assert_eq!(host.read_with(cx, |log, _| log.0.clone()), ["blurred"]);
+    }
 }

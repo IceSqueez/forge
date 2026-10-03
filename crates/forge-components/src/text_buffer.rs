@@ -980,4 +980,91 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn replacing_all_text_keeps_the_caret_line_number_and_byte_column_clamped_to_the_new_text() {
+        for (text, caret, replacement, expected) in [
+            ("ab\ncd\nef", 4, "x\nyyyy\nz", 3),
+            ("ab\ncdef", 5, "ab\ncd", 5),
+            ("ab\ncdef", 6, "ab\ncd", 5),
+            ("ab\ncdef", 7, "AB\nC", 4),
+            ("ab\ncd", 4, "\n\nab\ncd", 1),
+            ("a\nb\nc", 5, "xyz", 1),
+            ("a\nb\nc", 5, "x\nyz", 3),
+            ("abc", 2, "", 0),
+            ("", 0, "abc", 0),
+            ("x", 1, "  x\n  y", 1),
+            ("при\nвіт", 9, "x\nвіт!", 4),
+        ] {
+            let mut buffer = loaded(text);
+            buffer.move_to(caret);
+            buffer.replace_all_keeping_caret_line(replacement);
+            assert_eq!(
+                (buffer.as_str(), buffer.selected_range().clone()),
+                (replacement, expected..expected),
+                "{text:?} at {caret} -> {replacement:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_caret_column_inside_a_multibyte_char_of_the_new_text_snaps_back_to_its_start() {
+        for (caret, replacement, expected) in [
+            (1, "привіт", 0),
+            (2, "привіт", 2),
+            (3, "привіт", 2),
+            (2, "€x", 0),
+            (3, "€x", 3),
+            (4, "a🚀", 1),
+        ] {
+            let mut buffer = loaded("abcdef");
+            buffer.move_to(caret);
+            buffer.replace_all_keeping_caret_line(replacement);
+            assert_eq!(
+                buffer.cursor(),
+                expected,
+                "column {caret} into {replacement:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn replacing_all_text_collapses_a_selection_to_the_line_and_column_of_its_caret_end() {
+        for (reversed, expected) in [(false, 6), (true, 1)] {
+            let mut buffer = selecting("ab\ncdef", 1..6, reversed);
+            buffer.replace_all_keeping_caret_line("AB\nCDEF");
+            assert_eq!(
+                shape(&buffer),
+                ("AB\nCDEF", expected..expected, false),
+                "reversed {reversed}"
+            );
+        }
+    }
+
+    #[test]
+    fn replacing_all_text_after_typing_undoes_as_its_own_single_step() {
+        let mut buffer = typed("ab");
+        buffer.replace_all_keeping_caret_line("a b");
+        assert_eq!(undo_trail(&mut buffer), vec!["ab", ""]);
+    }
+
+    #[test]
+    fn undo_of_a_full_replace_restores_the_selection_and_redo_restores_the_kept_caret() {
+        let mut buffer = selecting("ab\ncdef", 4..7, true);
+        buffer.replace_all_keeping_caret_line("ab\nCD");
+        buffer.undo();
+        let undone = (
+            buffer.as_str().to_string(),
+            buffer.selected_range().clone(),
+            buffer.is_reversed(),
+        );
+        buffer.redo();
+        assert_eq!(
+            (undone, shape(&buffer)),
+            (
+                ("ab\ncdef".to_string(), 4..7, true),
+                ("ab\nCD", 4..4, false)
+            )
+        );
+    }
 }

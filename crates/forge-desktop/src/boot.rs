@@ -473,6 +473,7 @@ pub async fn build_runtime(
         midi_sink: integrations.midi_sink,
         hotkey_client: integrations.hotkey_client,
         hotkey_reconciler: integrations.hotkey_reconciler,
+        donation_services: integrations.donation_services,
         server,
         overlays,
         overlay_kinds,

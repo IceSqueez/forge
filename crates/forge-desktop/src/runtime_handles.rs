@@ -38,6 +38,7 @@ pub struct RuntimeHandles {
     pub obs_install_seed: ObsInstallSeed,
     pub vtube_install_seed: VTubeInstallSeed,
     pub discord_client: Arc<forge_discord::DiscordClient>,
+    pub donation_services: crate::donation_services::DonationServices,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,

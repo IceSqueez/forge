@@ -90,7 +90,7 @@ fn body(s: impl Into<SharedString>, size: gpui::Pixels, color: Rgba) -> Div {
         .child(s.into())
 }
 
-fn divider(palette: &ForgePalette) -> Div {
+pub(crate) fn divider(palette: &ForgePalette) -> Div {
     div()
         .w_full()
         .flex_none()
@@ -98,7 +98,7 @@ fn divider(palette: &ForgePalette) -> Div {
         .bg(palette.border_regular)
 }
 
-fn card_shell(palette: &ForgePalette) -> Div {
+pub(crate) fn card_shell(palette: &ForgePalette) -> Div {
     div()
         .w_full()
         .flex()

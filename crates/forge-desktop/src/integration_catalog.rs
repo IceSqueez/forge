@@ -114,6 +114,8 @@ pub fn look_of(id: &IntegrationId, palette: &ForgePalette) -> IntegrationLook {
             Icon::Broadcast,
             platform_color(PlatformKind::Kick, palette),
         ),
+        "donatello" => (Some("D"), Icon::Coin, palette.accent_pink_light),
+        "monobank" => (Some("M"), Icon::Coin, palette.text_secondary),
         "obs" => (None, Icon::Broadcast, palette.success),
         "vtube" => (None, Icon::MoodTongue, palette.warning),
         "discord" => (None, Icon::BrandDiscord, palette.brand),
@@ -126,6 +128,11 @@ pub fn look_of(id: &IntegrationId, palette: &ForgePalette) -> IntegrationLook {
         glyph,
         tint,
     }
+}
+
+pub fn is_donation_service(id: &IntegrationId) -> bool {
+    declaration_of(id)
+        .is_some_and(|declaration| declaration.category == IntegrationCategory::DONATIONS)
 }
 
 pub struct Disclaimer {

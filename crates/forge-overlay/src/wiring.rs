@@ -43,6 +43,11 @@ const CURATED: &[CuratedWording] = &[
         subline: "%message_text%",
     },
     CuratedWording {
+        kind_id: "donation.received",
+        headline: "%user_name% donated %amount_formatted%!",
+        subline: "%message_text%",
+    },
+    CuratedWording {
         kind_id: "twitch.channel.raid_received",
         headline: "%user_name% is raiding!",
         subline: "%viewer_count% viewers incoming",

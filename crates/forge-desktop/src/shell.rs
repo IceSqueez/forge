@@ -581,6 +581,11 @@ impl AppShell {
                 cx,
             )
         });
+        if let Some(service) = handles.donation_services.service(id) {
+            detail.update(cx, |detail, cx| {
+                detail.attach_donation_settings(service, cx)
+            });
+        }
         cx.subscribe(&detail, |this, _view, event: &NavRequested, cx| {
             this.navigate(event.0.clone(), cx);
         })

@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::donation_factories::{wire_donatello, wire_monobank};
+use crate::donation_services::{DonationServices, restore_donatello_poll_interval};
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::integration_factories::{
     wire_discord, wire_hotkey, wire_kick, wire_midi, wire_obs, wire_twitch, wire_vtube,
@@ -78,6 +79,7 @@ pub struct Integrations {
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub hotkey_client: Option<Arc<forge_hotkey::HotkeyClient>>,
     pub hotkey_reconciler: Option<Arc<HotkeyReconciler>>,
+    pub donation_services: DonationServices,
 }
 
 #[derive(Clone)]
@@ -294,10 +296,15 @@ pub async fn build_integrations(
     if let Some(kick) = wire_kick(sub_actions, backend, bus) {
         factories.push(Arc::new(kick));
     }
+    let mut donation_services = DonationServices::default();
     if let Some(donatello) = wire_donatello(backend, endpoints, donations) {
+        let provider = donatello.provider();
+        restore_donatello_poll_interval(&provider, backend.as_ref()).await;
+        donation_services.donatello = Some(provider);
         factories.push(Arc::new(donatello));
     }
     if let Some(monobank) = wire_monobank(backend, endpoints, donations) {
+        donation_services.monobank = Some(monobank.provider());
         factories.push(Arc::new(monobank));
     }
 
@@ -310,6 +317,7 @@ pub async fn build_integrations(
         midi_sink,
         hotkey_client: Some(hotkey_client),
         hotkey_reconciler: Some(hotkey_reconciler),
+        donation_services,
     }
 }
 

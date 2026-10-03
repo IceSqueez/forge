@@ -185,6 +185,11 @@ pub fn run_boot(
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();
                     });
+                    crate::donation_services::mirror_donation_connectivity(
+                        &handles.donation_services,
+                        &platforms,
+                        cx,
+                    );
                     let integration_lifecycle = cx
                         .new(|_| IntegrationLifecycle::new(handles.integrations.watch().current()));
                     let topics = Topics::new(

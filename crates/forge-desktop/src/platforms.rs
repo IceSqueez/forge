@@ -1,4 +1,5 @@
 use forge_platform_core::ConnectionState;
+use forge_types::IntegrationId;
 
 use crate::home_stats::Integration;
 use crate::integrations::BuiltinRegistry;
@@ -13,6 +14,7 @@ const ROSTER: [Integration; 5] = [
 
 pub struct PlatformConnectivity {
     connections: Vec<(Integration, bool)>,
+    services: Vec<(IntegrationId, bool)>,
 }
 
 impl Default for PlatformConnectivity {
@@ -25,6 +27,7 @@ impl PlatformConnectivity {
     pub fn new() -> Self {
         Self {
             connections: ROSTER.iter().map(|integ| (*integ, false)).collect(),
+            services: Vec::new(),
         }
     }
 
@@ -38,6 +41,30 @@ impl PlatformConnectivity {
             .find(|(i, _)| *i == integ)
             .map(|(_, connected)| *connected)
             .unwrap_or(false)
+    }
+
+    pub fn is_integration_connected(&self, id: &IntegrationId) -> bool {
+        match Integration::from_id(id.as_str()) {
+            Some(integ) => self.is_connected(integ),
+            None => self
+                .services
+                .iter()
+                .any(|(service, connected)| service == id && *connected),
+        }
+    }
+
+    pub fn set_service_connected(&mut self, id: &IntegrationId, connected: bool) -> bool {
+        match self.services.iter_mut().find(|(service, _)| service == id) {
+            Some(entry) if entry.1 == connected => false,
+            Some(entry) => {
+                entry.1 = connected;
+                true
+            }
+            None => {
+                self.services.push((id.clone(), connected));
+                connected
+            }
+        }
     }
 
     pub fn set_connected(&mut self, integ: Integration, connected: bool) -> bool {

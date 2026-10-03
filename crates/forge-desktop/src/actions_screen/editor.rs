@@ -10,6 +10,7 @@ use crate::config_form::{
     FILL_VAL_FS, FoldContext, collect_field_values, fold_config_field, render_config_row,
     set_picked_value, sparse_overrides,
 };
+use crate::donation_services::donation_provider_options;
 use crate::integration_switch::{category_inactive_badge, inactive_badge, integration_name};
 use crate::obs_catalog_options::obs_catalog_fields;
 use crate::presentation::ActivePresentation;
@@ -28,6 +29,7 @@ use forge_registry::{
     FormSchemaSource, SubActionCategory, SubActionRegistry, SubActionRunner, TriggerKindDescriptor,
     TriggerRegistry,
 };
+use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_types::{
     ExecutionOutcome, PermissionRung, PlatformScope, SubActionStep, TriggerInstance,
     TriggerInstanceId, Variant,
@@ -869,6 +871,10 @@ impl ScreenActionsView {
             &self.rt_handle,
             async move {
                 let mut map: HashMap<String, Vec<(String, String)>> = HashMap::new();
+                map.insert(
+                    DONATION_PROVIDER_OPTIONS_KEY.to_owned(),
+                    donation_provider_options(),
+                );
                 let mut overlay_kind_by_identity: HashMap<String, String> = HashMap::new();
                 let mut concurrent_queue_ids: HashSet<String> = HashSet::new();
                 if let Ok(actions) = action_repo.list().await {

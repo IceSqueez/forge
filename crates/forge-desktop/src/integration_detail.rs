@@ -15,7 +15,7 @@ use forge_platform_core::{
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
 use forge_storage::{CredentialsRepo, HistoryRepo, SettingsRepo};
-use forge_types::{PlatformId, SubActionStep};
+use forge_types::{IntegrationId, PlatformId, SubActionStep};
 use futures_util::StreamExt as _;
 use gpui::{
     AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, Rgba, Subscription, Task,
@@ -33,9 +33,11 @@ use crate::builtin_sections::{
 };
 use crate::collection_manager::{CollectionManager, CollectionManagerEvent};
 use crate::connect_flow::{ConnectFlow, ConnectFlowEvent, ConnectFlowLaunch};
+use crate::donation_services::DonationService;
+use crate::donation_settings::{DonationSettingsLaunch, DonationSettingsView, remove_confirm};
 use crate::hub_crumb::hub_crumb;
 use crate::in_flight_steps::InFlightSteps;
-use crate::integration_catalog::declaration_of;
+use crate::integration_catalog::{declaration_of, is_donation_service, look_of};
 use crate::integration_quick_action_modal::{QuickActionModal, QuickActionModalEvent};
 use crate::integration_quick_actions::accent_color;
 use crate::integration_supervisor::IntegrationSlot;
@@ -53,6 +55,11 @@ use crate::window_presence::PresenceGate;
 struct ActiveConnect {
     view: Entity<ConnectFlow>,
     _subs: Vec<Subscription>,
+}
+
+struct DonationSettingsLink {
+    view: Entity<DonationSettingsView>,
+    _repaint: Subscription,
 }
 
 pub struct IntegrationDetail {
@@ -76,6 +83,7 @@ pub struct IntegrationDetail {
     obs_install_seed: ObsInstallSeed,
     vtube_install_seed: VTubeInstallSeed,
     connect: Option<ActiveConnect>,
+    donation_settings: Option<DonationSettingsLink>,
     is_twitch: bool,
     is_obs: bool,
     is_vtube: bool,
@@ -241,6 +249,7 @@ impl IntegrationDetail {
             obs_install_seed,
             vtube_install_seed,
             connect: None,
+            donation_settings: None,
             is_twitch,
             is_obs,
             is_vtube,
@@ -278,6 +287,22 @@ impl IntegrationDetail {
             this.open_connect_flow(platform, cx);
         }
         this
+    }
+
+    pub fn attach_donation_settings(&mut self, service: DonationService, cx: &mut Context<Self>) {
+        let launch = DonationSettingsLaunch {
+            service,
+            credentials: Arc::clone(&self.credentials),
+            settings: Arc::clone(&self.settings),
+            rt_handle: self.rt_handle.clone(),
+        };
+        let view = cx.new(|cx| DonationSettingsView::new(launch, cx));
+        let repaint = cx.observe(&view, |_, _, cx| cx.notify());
+        self.donation_settings = Some(DonationSettingsLink {
+            view,
+            _repaint: repaint,
+        });
+        cx.notify();
     }
 
     fn open_connect_flow(&mut self, platform: PlatformId, cx: &mut Context<Self>) {
@@ -336,6 +361,8 @@ impl IntegrationDetail {
         let idx = delta.index as usize;
         if idx < self.health_metrics.len() {
             self.health_metrics[idx].value = delta.new_value;
+            self.connection = self.status.connection();
+            self.header_actions = self.status.header_actions();
             self.refresh_content(cx);
         }
     }
@@ -529,6 +556,12 @@ impl IntegrationDetail {
             HeaderAction::Reconnect => self.dispatch_control(ControlVerb::Reconnect, cx),
             HeaderAction::RefreshToken => self.dispatch_control(ControlVerb::RefreshToken, cx),
             HeaderAction::Settings if self.is_obs => self.open_obs_settings(window, cx),
+            HeaderAction::Settings if self.donation_settings.is_some() => {
+                if let Some(link) = &self.donation_settings {
+                    link.view
+                        .update(cx, |settings, cx| settings.focus_token(window, cx));
+                }
+            }
             HeaderAction::Settings => {
                 cx.push_toast(ToastKind::Info, tr!("integration_settings_coming_soon"));
             }
@@ -1099,7 +1132,12 @@ impl IntegrationDetail {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (letter, brand) = hero_identity(self.icon.as_str(), &self.display_name, palette);
+        let (letter, brand) = hero_identity(
+            self.status.id(),
+            self.icon.as_str(),
+            &self.display_name,
+            palette,
+        );
         let hero_name = self
             .status
             .hero_name()
@@ -1276,6 +1314,7 @@ impl IntegrationDetail {
     fn state_banner(&self, palette: &ForgePalette, density: Density) -> Option<AnyElement> {
         let (accent, glyph, title, detail): (Rgba, Icon, String, String) = match self.connection {
             ConnectionState::Connected => return None,
+            ConnectionState::Disconnected if self.donation_settings.is_some() => return None,
             ConnectionState::Connecting => (
                 palette.info,
                 Icon::Refresh,
@@ -1365,6 +1404,10 @@ impl Render for IntegrationDetail {
                 let content =
                     content_sections(&self.augmented_sections(), &hooks, &palette, density);
                 let quick = self.quick_actions_card(&palette, density, cx);
+                let donation_settings = self
+                    .donation_settings
+                    .as_ref()
+                    .map(|link| link.view.clone());
 
                 div()
                     .w_full()
@@ -1376,6 +1419,7 @@ impl Render for IntegrationDetail {
                     .child(header_card)
                     .child(health)
                     .child(content)
+                    .children(donation_settings)
                     .child(quick)
                     .into_any_element()
             }
@@ -1388,6 +1432,10 @@ impl Render for IntegrationDetail {
             .bg(palette.base)
             .child(div().w_full().py(px(18.0)).px(px(22.0)).child(body));
 
+        let donation_remove_confirm = self
+            .donation_settings
+            .as_ref()
+            .and_then(|link| remove_confirm(&link.view, &palette, cx));
         let disconnect_overlay = self
             .pending_disconnect
             .is_pending()
@@ -1426,6 +1474,7 @@ impl Render for IntegrationDetail {
             .bg(palette.base)
             .child(frame)
             .children(disconnect_overlay)
+            .children(donation_remove_confirm)
             .children(self.quick_action_modal.clone())
             .children(self.collection_manager.clone())
             .children(self.obs_settings_modal.clone())
@@ -1445,7 +1494,16 @@ pub(crate) fn rebuilds_descriptors(event: &Event) -> bool {
     }
 }
 
-fn hero_identity(icon_str: &str, display_name: &str, palette: &ForgePalette) -> (String, Rgba) {
+fn hero_identity(
+    id: &IntegrationId,
+    icon_str: &str,
+    display_name: &str,
+    palette: &ForgePalette,
+) -> (String, Rgba) {
+    let look = look_of(id, palette);
+    if let Some(letter) = look.letter.filter(|_| is_donation_service(id)) {
+        return (letter.to_owned(), look.tint);
+    }
     match icon_str {
         "brand-twitch" => ("T".to_owned(), palette.brand),
         "brand-youtube" => ("Y".to_owned(), palette.random),

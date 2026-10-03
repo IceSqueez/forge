@@ -35,6 +35,12 @@ pub(crate) struct DonationFactory<P> {
     ingest: Arc<DonationIngest>,
 }
 
+impl<P> DonationFactory<P> {
+    pub(crate) fn provider(&self) -> Arc<P> {
+        Arc::clone(&self.provider)
+    }
+}
+
 #[async_trait]
 impl<P: DonationIntegration + 'static> IntegrationFactory for DonationFactory<P> {
     fn id(&self) -> IntegrationId {

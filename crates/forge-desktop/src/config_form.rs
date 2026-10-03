@@ -10,9 +10,11 @@ use forge_registry::FormField;
 use crate::collection_options::{
     ChoiceOptions, CollectionChoiceField, CollectionSource, collection_choice_fields,
 };
+use crate::donation_services::donation_provider_options;
 use crate::obs_catalog_options::{ObsCatalogField, ObsCatalogList};
 use crate::presentation::ActivePresentation;
 use crate::vtube_catalog_options::{VTubeCatalogField, VTubeCatalogList};
+use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_types::Variant;
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, Pixels, SharedString, Subscription, Window, div,
@@ -338,8 +340,13 @@ struct ChoicePopover {
     _sub: Subscription,
 }
 
+fn static_choice_options(options_key: &str) -> Option<Vec<(String, String)>> {
+    (options_key == DONATION_PROVIDER_OPTIONS_KEY).then(donation_provider_options)
+}
+
 fn has_options_provider(options_key: &str) -> bool {
-    CollectionSource::parse(options_key).is_some()
+    static_choice_options(options_key).is_some()
+        || CollectionSource::parse(options_key).is_some()
         || ObsCatalogList::parse(options_key).is_some()
         || VTubeCatalogList::parse(options_key).is_some()
 }
@@ -440,6 +447,7 @@ impl CollectionChoices {
                 options
                     .get(&choice_field.options_key)
                     .cloned()
+                    .or_else(|| static_choice_options(&choice_field.options_key))
                     .unwrap_or_default(),
             );
             *offered = next;

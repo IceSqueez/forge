@@ -1,9 +1,13 @@
 use std::collections::HashMap;
 
 use forge_registry::{SubActionRegistry, TriggerRegistry};
-use forge_types::{Action, ActionId, IntegrationId, SubActionStep, TriggerInstance};
+use forge_types::{Action, ActionId, IntegrationId, SubActionStep, TriggerInstance, Variant};
 
 use crate::actions_screen::nested_chains;
+use crate::integration_catalog::declarations;
+use crate::integration_switch::required_category;
+
+const SERVICE_FILTER_KEY: &str = "provider";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferencingAction {
@@ -45,11 +49,33 @@ pub fn tally_references(
         }
     }
     for trigger in triggers {
-        if let Some(owner) = trigger_kinds.owning_integration(&trigger.kind_id) {
-            tally.entry(owner.clone()).or_default().triggers += 1;
+        for owner in trigger_owners(trigger, trigger_kinds) {
+            tally.entry(owner).or_default().triggers += 1;
         }
     }
     tally
+}
+
+fn trigger_owners(
+    trigger: &TriggerInstance,
+    trigger_kinds: &TriggerRegistry,
+) -> Vec<IntegrationId> {
+    if let Some(owner) = trigger_kinds.owning_integration(&trigger.kind_id) {
+        return vec![owner.clone()];
+    }
+    let Some(category) = required_category(&trigger.kind_id) else {
+        return Vec::new();
+    };
+    let filtered = match trigger.overrides.get(SERVICE_FILTER_KEY) {
+        Some(Variant::String(service)) if !service.trim().is_empty() => Some(service.trim()),
+        _ => None,
+    };
+    declarations()
+        .into_iter()
+        .filter(|declaration| declaration.category == category)
+        .filter(|declaration| filtered.is_none_or(|service| declaration.id.as_str() == service))
+        .map(|declaration| declaration.id)
+        .collect()
 }
 
 fn collect_owners(

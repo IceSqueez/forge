@@ -19,7 +19,6 @@ use gpui::{
 };
 
 use crate::async_bridge;
-use crate::home_stats::Integration;
 use crate::integration_catalog::{
     CoreFeature, activity_key, core_features, core_tint, declaration_of, declarations,
     disclaimer_of, look_of,
@@ -316,8 +315,7 @@ impl IntegrationsHubView {
     }
 
     fn is_connected(&self, id: &IntegrationId, cx: &Context<Self>) -> bool {
-        Integration::from_id(id.as_str())
-            .is_some_and(|integ| self.connectivity.read(cx).is_connected(integ))
+        self.connectivity.read(cx).is_integration_connected(id)
     }
 
     fn reference_chip(

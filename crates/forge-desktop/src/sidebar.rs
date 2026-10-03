@@ -8,7 +8,6 @@ use gpui::{
     Rgba, SharedString, Window, div, prelude::*, px,
 };
 
-use crate::home_stats::Integration;
 use crate::integration_catalog::{core_features, declarations, look_of};
 use crate::integration_lifecycle::{CardStatus, IntegrationLifecycle};
 use crate::platforms::PlatformConnectivity;
@@ -206,8 +205,7 @@ impl SidebarNav {
                 .filter(|declaration| lifecycle.is_on(&declaration.id))
             {
                 let state = lifecycle.state_of(&declaration.id);
-                let connected = Integration::from_id(declaration.id.as_str())
-                    .is_some_and(|integ| connectivity.is_connected(integ));
+                let connected = connectivity.is_integration_connected(&declaration.id);
                 let status = Some(nav_status(
                     &CardStatus::resolve(&state, declaration.connection, connected),
                     declaration.connection,

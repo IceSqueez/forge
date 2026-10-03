@@ -10,12 +10,13 @@ use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, Config, DonationIngest, EventBus,
-    FirstChatLedger, OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary,
+    FirstChatLedger, LatestValues, OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary,
     OverlayServiceCell, OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry,
     SoundPlayer, SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions,
-    register_core_triggers, register_donation_sub_actions, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_live_viewer_aggregator,
-    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
+    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
+    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
+    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_stream_live_signal,
+    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -26,7 +27,7 @@ use forge_storage::{
     UserGlobalsRepo, reserved_keys,
 };
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::Shared;
+use forge_types::{LatestValueReader, Shared};
 
 use crate::audio_router::{AudioRouter, AudioRouterParts};
 use crate::clip_hotkeys::{HotkeySyncedClipsRepo, spawn_clip_hotkey_dispatcher};
@@ -186,6 +187,18 @@ pub async fn build_runtime(
     }
     spawn_viewer_tracker(Arc::clone(&bus), viewer_repo);
 
+    let anonymous_donor = Shared::new(crate::i18n::message_in(
+        startup_language,
+        crate::i18n::ANONYMOUS_DONOR_KEY,
+    ));
+    let latest_values = LatestValues::load(
+        backend.latest_value_repo(),
+        Arc::clone(&bus) as Arc<dyn EventPublisher>,
+        anonymous_donor.clone(),
+    )
+    .await;
+    spawn_latest_projector(&bus, latest_values.clone());
+
     let speech_output = build_speech_output(&backend).await;
     let speech_sink = Arc::new(RoutedSink::new(
         Arc::clone(&speech_output) as Arc<dyn AudioSink>
@@ -208,6 +221,8 @@ pub async fn build_runtime(
         speak_bridge.map(|bridge| bridge as Arc<dyn forge_script::SpeakRequester>);
 
     let mut script_registry_mut = ScriptRegistry::new();
+    script_registry_mut
+        .set_latest_values(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>);
     match speak_requester {
         Some(requester) => script_registry_mut.set_speak_requester(requester),
         None => eprintln!("forge-desktop: no speak dispatcher available; scripts cannot speak"),
@@ -239,10 +254,6 @@ pub async fn build_runtime(
         eprintln!("forge-desktop: core sub-action registration failed: {e}");
     }
 
-    let anonymous_donor = Shared::new(crate::i18n::message_in(
-        startup_language,
-        crate::i18n::ANONYMOUS_DONOR_KEY,
-    ));
     let donations = Arc::new(DonationIngest::new(
         backend.donation_repo(),
         Arc::clone(&bus) as Arc<dyn EventPublisher>,
@@ -250,6 +261,12 @@ pub async fn build_runtime(
     ));
     if let Err(e) = register_donation_sub_actions(&mut sub_action_reg, Arc::clone(&donations)) {
         eprintln!("forge-desktop: donation sub-action registration failed: {e}");
+    }
+    if let Err(e) = register_latest_sub_actions(
+        &mut sub_action_reg,
+        Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>,
+    ) {
+        eprintln!("forge-desktop: latest value sub-action registration failed: {e}");
     }
 
     let mut trigger_reg = TriggerRegistry::new();
@@ -455,6 +472,7 @@ pub async fn build_runtime(
         backend,
         startup_language,
         anonymous_donor,
+        latest_values,
         credentials_key_loss,
         bus,
         script_registry,

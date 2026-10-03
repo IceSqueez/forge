@@ -5,10 +5,10 @@ use std::time::{Duration, Instant};
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
 use forge_types::{
-    EventId, IntegrationAvailability, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON,
-    NO_WHISPER_PLATFORM_ENABLED_REASON, PlatformId, REPLY_PARENT_FIELD, SCRIPT_LOG_TARGET,
-    ScriptId, Variant, WHISPER_RECIPIENT_FIELD, integration_disabled_reason, requested_chat_target,
-    whispers_unsupported_reason,
+    EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader,
+    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, PlatformId,
+    REPLY_PARENT_FIELD, SCRIPT_LOG_TARGET, ScriptId, Variant, WHISPER_RECIPIENT_FIELD,
+    integration_disabled_reason, requested_chat_target, whispers_unsupported_reason,
 };
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
@@ -16,8 +16,9 @@ use tokio::runtime::Handle;
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
 
-pub const ENGINE_BOUND_NAMES: [&str; 11] = [
+pub const ENGINE_BOUND_NAMES: [&str; 12] = [
     "log", "warn", "error", "sleep", "chat", "globals", "audio", "http", "tts", "time", "obs",
+    "latest",
 ];
 
 pub fn is_engine_bound_name(name: &str) -> bool {
@@ -40,6 +41,7 @@ pub struct ForgeApi {
     speak: Option<Arc<dyn SpeakRequester>>,
     http: Option<Arc<ScriptHttpClient>>,
     integrations: Option<Arc<dyn IntegrationAvailability>>,
+    latest: Option<Arc<dyn LatestValueReader>>,
     pub deadline: Instant,
 }
 
@@ -59,6 +61,7 @@ impl ForgeApi {
             speak: None,
             http: None,
             integrations: None,
+            latest: None,
             deadline,
         }
     }
@@ -87,6 +90,11 @@ impl ForgeApi {
         integrations: Arc<dyn IntegrationAvailability>,
     ) -> Self {
         self.integrations = Some(integrations);
+        self
+    }
+
+    pub fn with_latest_values(mut self, latest: Arc<dyn LatestValueReader>) -> Self {
+        self.latest = Some(latest);
         self
     }
 
@@ -180,6 +188,11 @@ impl ForgeApi {
         root.set_sub_module("time", build_time_module());
         root.set_sub_module("obs", Module::new());
         root.set_sub_module("http", http);
+        let latest = match self.latest {
+            Some(reader) => build_latest_module(reader),
+            None => Module::new(),
+        };
+        root.set_sub_module("latest", latest);
 
         Arc::new(root)
     }
@@ -313,6 +326,48 @@ fn build_time_module() -> Module {
     });
 
     m
+}
+
+fn build_latest_module(reader: Arc<dyn LatestValueReader>) -> Module {
+    let mut m = Module::new();
+
+    let merged = Arc::clone(&reader);
+    m.set_native_fn(
+        "get",
+        move |slot: ImmutableString| -> Result<rhai::Dynamic, Box<EvalAltResult>> {
+            Ok(latest_dynamic(
+                merged.as_ref(),
+                slot.as_str(),
+                LatestScope::MostRecentAcrossPlatforms,
+            ))
+        },
+    );
+
+    m.set_native_fn(
+        "get",
+        move |slot: ImmutableString,
+              platform: ImmutableString|
+              -> Result<rhai::Dynamic, Box<EvalAltResult>> {
+            Ok(latest_dynamic(
+                reader.as_ref(),
+                slot.as_str(),
+                LatestScope::from_platform_filter(platform.as_str()),
+            ))
+        },
+    );
+
+    m
+}
+
+fn latest_dynamic(
+    reader: &dyn LatestValueReader,
+    slot: &str,
+    scope: LatestScope<'_>,
+) -> rhai::Dynamic {
+    reader
+        .latest(slot, scope)
+        .map(|value| variant_to_dynamic(value.to_variant()))
+        .unwrap_or(rhai::Dynamic::UNIT)
 }
 
 fn build_tts_module(requester: Arc<dyn SpeakRequester>) -> Module {

@@ -153,6 +153,32 @@ static CATALOG: &[MethodDescriptor] = &[
         doc: Some("Returns true if the key existed."),
     },
     MethodDescriptor {
+        namespace: Some("latest"),
+        name: "get",
+        params: &[ParamDescriptor {
+            name: "slot",
+            ty: "string",
+        }],
+        return_type: "Map",
+        doc: Some("Most recent value across platforms; () when the slot is empty."),
+    },
+    MethodDescriptor {
+        namespace: Some("latest"),
+        name: "get",
+        params: &[
+            ParamDescriptor {
+                name: "slot",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "platform",
+                ty: "string",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Value from one platform or service; () when it has none."),
+    },
+    MethodDescriptor {
         namespace: Some("tts"),
         name: "speak",
         params: &[ParamDescriptor {

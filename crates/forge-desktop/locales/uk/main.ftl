@@ -126,6 +126,7 @@ event_loss_consumer_trigger_evaluator = Перевірка тригерів
 event_loss_consumer_event_log = Журнал подій
 event_loss_consumer_chat_history = Історія чату
 event_loss_consumer_viewer_tracker = Облік глядачів
+event_loss_consumer_latest_values = Останні значення
 event_loss_consumer_run_history = Історія запусків
 event_loss_consumer_event_trail = Слід подій
 event_loss_consumer_observer = Інші вікна

@@ -118,6 +118,7 @@ event_loss_consumer_trigger_evaluator = Trigger evaluation
 event_loss_consumer_event_log = Event log
 event_loss_consumer_chat_history = Chat history
 event_loss_consumer_viewer_tracker = Viewer tracking
+event_loss_consumer_latest_values = Latest values
 event_loss_consumer_run_history = Run history
 event_loss_consumer_event_trail = Event trail
 event_loss_consumer_observer = Other views

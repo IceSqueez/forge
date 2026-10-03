@@ -135,6 +135,7 @@ impl SubActionRunner for ScriptRunNamedRunner {
         let publisher_arc = Arc::clone(&self.publisher);
         let globals_arc = Arc::clone(&self.globals);
         let speak_requester = self.registry.speak_requester();
+        let latest_values = self.registry.latest_values();
         let parent_event_id = ctx.parent_event_id;
         let integrations = ctx.executor.integration_availability();
         let http_cfg = Arc::new(load_script_http_config(self.settings.as_ref()).await);
@@ -174,6 +175,9 @@ impl SubActionRunner for ScriptRunNamedRunner {
             }
             if let Some(integrations) = integrations {
                 api = api.with_integration_availability(integrations);
+            }
+            if let Some(latest) = latest_values {
+                api = api.with_latest_values(latest);
             }
             let engine = Engine::with_api(cfg, api);
             let mut scope = scope;

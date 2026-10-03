@@ -21,6 +21,7 @@ mod event_log_writer;
 mod event_ring;
 mod first_chat_ledger;
 pub mod integration_gate;
+pub mod latest;
 pub mod live_viewers;
 mod overlay_lanes;
 pub mod overlay_media;
@@ -63,6 +64,9 @@ pub use donations::{
 pub use event_log_bridge::spawn_event_log_bridge;
 pub use first_chat_ledger::FirstChatLedger;
 pub use integration_gate::IntegrationGate;
+pub use latest::{
+    LatestResetError, LatestValues, register_latest_sub_actions, spawn_latest_projector,
+};
 pub use live_viewers::{LiveViewerAggregatorHandle, LiveViewerCount, spawn_live_viewer_aggregator};
 pub use overlay_media::OverlayMediaLibrary;
 pub use overlay_service::{

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_events::{Event, EventSource};
 use forge_script::SpeakRequester;
 use forge_storage::{ScriptRecord, ScriptRepo};
-use forge_types::ScriptId;
+use forge_types::{LatestValueReader, ScriptId};
 use tokio::sync::RwLock;
 use tracing::warn;
 
@@ -17,6 +17,7 @@ pub struct CompiledScript {
 pub struct ScriptRegistry {
     inner: Arc<RwLock<HashMap<ScriptId, Arc<CompiledScript>>>>,
     speak_requester: Option<Arc<dyn SpeakRequester>>,
+    latest_values: Option<Arc<dyn LatestValueReader>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -32,6 +33,7 @@ impl ScriptRegistry {
         Self {
             inner: Arc::new(RwLock::new(HashMap::new())),
             speak_requester: None,
+            latest_values: None,
         }
     }
 
@@ -41,6 +43,14 @@ impl ScriptRegistry {
 
     pub fn speak_requester(&self) -> Option<Arc<dyn SpeakRequester>> {
         self.speak_requester.clone()
+    }
+
+    pub fn set_latest_values(&mut self, latest: Arc<dyn LatestValueReader>) {
+        self.latest_values = Some(latest);
+    }
+
+    pub fn latest_values(&self) -> Option<Arc<dyn LatestValueReader>> {
+        self.latest_values.clone()
     }
 
     pub async fn load_all(&self, repo: &dyn ScriptRepo) -> Result<(), ScriptRegistryError> {

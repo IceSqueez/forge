@@ -3,7 +3,7 @@ use std::sync::Arc;
 use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, OverlayServiceHandle,
+    ActionEngineHandle, EventBus, LatestValues, LiveViewerAggregatorHandle, OverlayServiceHandle,
     QueueSchedulerHandle, ScriptRegistry, StreamLiveHandle, TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
@@ -21,6 +21,7 @@ pub struct RuntimeHandles {
     pub backend: Arc<dyn DataProvider>,
     pub startup_language: Language,
     pub anonymous_donor: forge_types::Shared<String>,
+    pub latest_values: LatestValues,
     pub credentials_key_loss: Option<CredentialsKeyLoss>,
     pub bus: Arc<EventBus>,
     pub script_registry: Arc<ScriptRegistry>,

@@ -4,6 +4,7 @@ pub mod donation;
 pub mod execution;
 pub mod ids;
 pub mod integration;
+pub mod latest;
 pub mod log_target;
 pub mod money;
 pub mod permission_rung;
@@ -35,6 +36,10 @@ pub use execution::{
 };
 pub use ids::{ActionId, ClipId, EventId, QueueId, ScriptId, TriggerInstanceId};
 pub use integration::{IntegrationAvailability, IntegrationId};
+pub use latest::{
+    LATEST_DONATION_SLOT, LatestScope, LatestValue, LatestValueReader, NOW_PLAYING_SLOT,
+    latest_fields,
+};
 pub use log_target::SCRIPT_LOG_TARGET;
 pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount, MoneyError};
 pub use permission_rung::{PermissionRung, PermissionRungError};

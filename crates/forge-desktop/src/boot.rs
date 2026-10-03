@@ -41,6 +41,7 @@ use crate::voice_gate::{VoiceGateOwner, config_from_settings};
 
 pub enum BootFailure {
     UpgradeRequired { expected: u32, found: u32 },
+    PreBaseline { found: u32 },
     Retry { reason: String },
 }
 
@@ -139,6 +140,7 @@ pub async fn build_runtime(
                 StorageError::SchemaMismatch { expected, found } => {
                     BootFailure::UpgradeRequired { expected, found }
                 }
+                StorageError::PreBaselineSchema { found } => BootFailure::PreBaseline { found },
                 other => BootFailure::Retry {
                     reason: other.to_string(),
                 },

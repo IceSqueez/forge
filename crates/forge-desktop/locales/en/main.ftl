@@ -7,6 +7,11 @@ boot_upgrade_reassure = Your data is safe and untouched.
 boot_retry = Retry
 boot_failure_title = Couldn't open your data
 boot_failure_reassure = Your data is safe. If this keeps happening, please report it.
+boot_pre_baseline_title = Open your data in an earlier version first
+boot_pre_baseline_body = This data folder was last used by a forge older than { $release } (database schema version { $found }). Open it once in forge { $release } first, then start this version again.
+boot_pre_baseline_reassure = Nothing was changed. Your data is untouched.
+boot_pre_baseline_open_folder = Open data folder
+boot_pre_baseline_quit = Quit
 
 ## Common actions shared across all screens
 

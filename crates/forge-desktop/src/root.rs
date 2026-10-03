@@ -4,9 +4,9 @@ use std::time::{Duration, Instant};
 use forge_awake::StatusWatch;
 use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card,
-    icon, mono_family, primary_button, radius, spacing, tr,
+    icon, mono_family, primary_button, radius, secondary_button, spacing, tr,
 };
-use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints};
+use forge_platform_core::{CONNECTION_STATE_CHANGED_KIND, PlatformEndpoints, paths};
 use forge_runtime::{EventSubscription, LiveViewerAggregatorHandle, LossWatch, QueueDepthWatch};
 use forge_storage::CredentialsKeyLoss;
 use futures_util::StreamExt as _;
@@ -567,6 +567,9 @@ impl Render for RootView {
             BootState::Failed(BootFailure::UpgradeRequired { expected, found }) => {
                 upgrade_screen(*expected, *found, &palette, density)
             }
+            BootState::Failed(BootFailure::PreBaseline { found }) => {
+                pre_baseline_screen(*found, &palette, density)
+            }
             BootState::Failed(BootFailure::Retry { reason }) => {
                 retry_screen(reason, cx.entity(), &palette, density)
             }
@@ -646,6 +649,55 @@ fn upgrade_screen(
                 .text_color(palette.text_muted)
                 .child(tr!("boot_upgrade_reassure")),
         );
+    centered(card(body, palette), palette, density)
+}
+
+fn pre_baseline_screen(found: u32, palette: &ForgePalette, density: Density) -> AnyElement {
+    let actions = div()
+        .flex()
+        .gap(spacing(Spacing::Sm, density))
+        .child(
+            secondary_button(tr!("boot_pre_baseline_open_folder"), palette)
+                .on_click("boot-open-data-folder", |_, _window, cx: &mut App| {
+                    cx.reveal_path(&paths::data_dir())
+                }),
+        )
+        .child(
+            primary_button(tr!("boot_pre_baseline_quit"), palette)
+                .on_click("boot-quit", |_, _window, cx: &mut App| cx.quit()),
+        );
+    let body = div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(spacing(Spacing::Md, density))
+        .child(icon(Icon::AlertTriangle, FONT_LG, palette.warning))
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_LG)
+                .text_color(palette.text_primary)
+                .child(tr!("boot_pre_baseline_title")),
+        )
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_SM)
+                .text_color(palette.text_secondary)
+                .child(tr!(
+                    "boot_pre_baseline_body",
+                    found = found as i64,
+                    release = forge_storage::LAST_PRE_BASELINE_RELEASE
+                )),
+        )
+        .child(
+            div()
+                .font_family(body_family())
+                .text_size(FONT_SM)
+                .text_color(palette.text_muted)
+                .child(tr!("boot_pre_baseline_reassure")),
+        )
+        .child(actions);
     centered(card(body, palette), palette, density)
 }
 

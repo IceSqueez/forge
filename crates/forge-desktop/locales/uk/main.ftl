@@ -7,6 +7,11 @@ boot_upgrade_reassure = Ваші дані у безпеці й недоторк�
 boot_retry = Повторити
 boot_failure_title = Не вдалося відкрити ваші дані
 boot_failure_reassure = Ваші дані у безпеці. Якщо це повторюється, повідомте про проблему.
+boot_pre_baseline_title = Спершу відкрийте дані в ранішій версії
+boot_pre_baseline_body = Цю теку даних востаннє використовував forge старіший за { $release } (версія схеми бази { $found }). Відкрийте її один раз у forge { $release }, а потім запустіть цю версію знову.
+boot_pre_baseline_reassure = Нічого не змінено. Ваші дані недоторкані.
+boot_pre_baseline_open_folder = Відкрити теку даних
+boot_pre_baseline_quit = Вийти
 
 ## Загальні дії, спільні для всіх екранів
 

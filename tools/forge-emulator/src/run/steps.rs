@@ -10,6 +10,9 @@ use super::outcome::{ActionDetail, LedgerExcerpt};
 use crate::EmulatorError;
 use crate::control::ControlClient;
 use crate::fixture::SeedReport;
+use crate::obs::{
+    CURRENT_PROGRAM_SCENE_CHANGED, FakeObs, INPUT_MUTE_STATE_CHANGED, STREAM_STATE_CHANGED,
+};
 use crate::overlay::OverlayPages;
 use crate::scenario::{Crowd, StepAction};
 use crate::twitch::FakeTwitch;
@@ -48,6 +51,7 @@ pub(crate) struct ActionFailure {
 pub(crate) struct Stimuli<'a> {
     pub(crate) client: &'a ControlClient,
     pub(crate) twitch: Option<&'a FakeTwitch>,
+    pub(crate) obs: Option<&'a FakeObs>,
     pub(crate) actions: &'a ActionIndex,
     pub(crate) pages: &'a OverlayPages,
 }
@@ -111,7 +115,46 @@ impl Stimuli<'_> {
                 .await
                 .map(|()| ActionDetail::GlobalSet)
                 .map_err(refused),
+            StepAction::ObsOnline {} => self
+                .obs()?
+                .go_online()
+                .await
+                .map(|()| ActionDetail::ObsOnline)
+                .map_err(refused),
+            StepAction::ObsIdentified { within_ms } => self
+                .obs()?
+                .wait_for(
+                    "an identified OBS WebSocket session",
+                    Duration::from_millis(*within_ms),
+                    |ledger| ledger.live_sessions().last().map(|session| session.id),
+                )
+                .await
+                .map(|session| ActionDetail::ObsIdentified { session })
+                .map_err(refused),
+            StepAction::ObsRestart { down_ms } => self
+                .obs()?
+                .restart(Duration::from_millis(*down_ms))
+                .await
+                .map(|closed_sessions| ActionDetail::ObsRestarted { closed_sessions })
+                .map_err(refused),
+            StepAction::ObsSceneSwitch { scene } => {
+                let delivered = self.obs()?.switch_scene(scene).map_err(refused)?;
+                pushed(CURRENT_PROGRAM_SCENE_CHANGED, delivered)
+            }
+            StepAction::ObsStream { active } => {
+                let delivered = self.obs()?.set_streaming(*active).map_err(refused)?;
+                pushed(STREAM_STATE_CHANGED, delivered)
+            }
+            StepAction::ObsInputMute { input, muted } => {
+                let delivered = self.obs()?.set_input_mute(input, *muted).map_err(refused)?;
+                pushed(INPUT_MUTE_STATE_CHANGED, delivered)
+            }
         }
+    }
+
+    fn obs(&self) -> Result<&FakeObs, ActionFailure> {
+        self.obs
+            .ok_or_else(|| plain("the run has no fake OBS".to_owned()))
     }
 
     async fn inject_event(
@@ -225,6 +268,18 @@ impl Stimuli<'_> {
             )
             .map_err(|e| with_ledger(e.to_string(), twitch))
     }
+}
+
+fn pushed(event_type: &str, delivered: usize) -> Result<ActionDetail, ActionFailure> {
+    if delivered == 0 {
+        return Err(plain(format!(
+            "no identified OBS session subscribed to {event_type} received it"
+        )));
+    }
+    Ok(ActionDetail::ObsEventPushed {
+        event_type: event_type.to_owned(),
+        delivered,
+    })
 }
 
 fn plain(reason: String) -> ActionFailure {

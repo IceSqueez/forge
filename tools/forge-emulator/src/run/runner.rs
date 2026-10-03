@@ -19,6 +19,7 @@ use crate::fixture::Redactions;
 use crate::launch::{
     ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
+use crate::obs::FakeObs;
 use crate::overlay::OverlayPages;
 use crate::scenario::{Expectation, Scenario, StepAction};
 use crate::twitch::FakeTwitch;
@@ -76,16 +77,30 @@ pub async fn run_scenario(
             match FakeDiscord::start(&names).await {
                 Ok(discord) => Some(discord),
                 Err(e) => {
-                    shut_down_fakes(fake, None).await;
+                    shut_down_fakes(fake, None, None).await;
                     return Err(e);
                 }
             }
         }
         None => None,
     };
+    let obs = match &scenario.fakes.obs {
+        Some(config) => match FakeObs::start(config.clone()).await {
+            Ok(obs) => Some(obs),
+            Err(e) => {
+                shut_down_fakes(fake, discord, None).await;
+                return Err(e);
+            }
+        },
+        None => None,
+    };
     let fixture = match &discord {
         Some(discord) => discord.addressed(&scenario.fixture),
         None => scenario.fixture.clone(),
+    };
+    let fixture = match &obs {
+        Some(obs) => obs.addressed(&fixture),
+        None => fixture,
     };
     let launch = LaunchOptions {
         emulator: options.emulator,
@@ -107,7 +122,7 @@ pub async fn run_scenario(
     let launched = tokio::select! {
         launched = launch_forge(&launch) => launched,
         () = &mut stop => {
-            shut_down_fakes(fake, discord).await;
+            shut_down_fakes(fake, discord, obs).await;
             return Ok(interrupted_before_ready(scenario));
         }
     };
@@ -120,7 +135,7 @@ pub async fn run_scenario(
     } = match launched {
         Ok(launched) => launched,
         Err(e) => {
-            shut_down_fakes(fake, discord).await;
+            shut_down_fakes(fake, discord, obs).await;
             return Err(e);
         }
     };
@@ -131,7 +146,7 @@ pub async fn run_scenario(
     {
         drop(client);
         let _ = process.shutdown(options.shutdown_grace).await;
-        shut_down_fakes(fake, discord).await;
+        shut_down_fakes(fake, discord, obs).await;
         return Err(e);
     }
     let version = client.forge_version().await.ok();
@@ -142,7 +157,7 @@ pub async fn run_scenario(
         Err(e) => {
             drop(client);
             let _ = process.shutdown(options.shutdown_grace).await;
-            shut_down_fakes(fake, discord).await;
+            shut_down_fakes(fake, discord, obs).await;
             return Err(e);
         }
     };
@@ -152,6 +167,7 @@ pub async fn run_scenario(
         journal: &journal,
         twitch: fake.as_ref(),
         discord: discord.as_ref(),
+        obs: obs.as_ref(),
         actions: &actions,
         pages: &pages,
         log_dir: log_dir.clone(),
@@ -176,7 +192,7 @@ pub async fn run_scenario(
         Err(e) => (None, Some(e.to_string())),
     };
     feeder.abort();
-    shut_down_fakes(fake, discord).await;
+    shut_down_fakes(fake, discord, obs).await;
 
     let forge = ForgeEvidence {
         run_root: options.run_root,
@@ -238,7 +254,14 @@ pub fn verdict(steps: &[StepOutcome], forge_exited_during_run: bool) -> Scenario
     }
 }
 
-async fn shut_down_fakes(fake: Option<FakeTwitch>, discord: Option<FakeDiscord>) {
+async fn shut_down_fakes(
+    fake: Option<FakeTwitch>,
+    discord: Option<FakeDiscord>,
+    obs: Option<FakeObs>,
+) {
+    if let Some(obs) = obs {
+        obs.shutdown().await;
+    }
     if let Some(fake) = fake {
         fake.shutdown().await;
     }

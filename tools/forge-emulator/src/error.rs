@@ -91,6 +91,9 @@ pub enum EmulatorError {
     #[error("invalid fake platform configuration: {reason}")]
     InvalidFakeConfig { reason: String },
 
+    #[error("the fake OBS refused: {reason}")]
+    FakeObsRefused { reason: String },
+
     #[error("no live EventSub session holds a `{subscription_type}` subscription")]
     NotSubscribed { subscription_type: String },
 

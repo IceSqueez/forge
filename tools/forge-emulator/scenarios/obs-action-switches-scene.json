@@ -1,0 +1,62 @@
+{
+  "name": "a forge action switches the OBS program scene",
+  "purpose": "An action whose single step is the OBS Switch Scene sub-action runs on request. The fake OBS records every request, so forge must send SetCurrentProgramScene naming the BRB scene; the fake then switches and pushes CurrentProgramSceneChanged, which forge must publish as obs.scene.changed to BRB. The GetStats expectation waits for forge's health poll, which starts only once forge has installed the session the sub-action needs.",
+  "fixture": {
+    "obs": { "password": "emulator-obs-password" },
+    "chat_commands": [
+      {
+        "phrase": "!brb",
+        "action_name": "Switch To BRB",
+        "steps": [
+          {
+            "kind_id": "obs.scenes.switch_current",
+            "config": { "scene": { "type": "string", "value": "BRB" } },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "obs": { "password": "emulator-obs-password" }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "obs_identified": { "within_ms": 30000 } },
+      "expect": [{ "obs_request": { "request_type": "GetStats", "within_ms": 10000 } }]
+    },
+    {
+      "do": { "run_action": { "action": "Switch To BRB" } },
+      "expect": [
+        {
+          "obs_request": {
+            "request_type": "SetCurrentProgramScene",
+            "request_data": { "/sceneName": { "equals": "BRB" } },
+            "code": 100,
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "obs",
+            "kind": "obs.scene.changed",
+            "payload": {
+              "/from_scene": { "equals": "Main" },
+              "/to_scene": { "equals": "BRB" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

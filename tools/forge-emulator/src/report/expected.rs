@@ -109,6 +109,25 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
                 span_ms(post.within_ms)
             )
         }
+        Expectation::ObsRequest(request) => format!(
+            "forge sends OBS a {} request{}{} within {}",
+            code(&request.request_type),
+            conditions(&request.request_data),
+            request
+                .code
+                .map(|status| format!(" answered with status {status}"))
+                .unwrap_or_default(),
+            span_ms(request.within_ms)
+        ),
+        Expectation::ObsAuth(auth) => format!(
+            "{} within {}",
+            if auth.accepted {
+                "forge identifies with OBS"
+            } else {
+                "OBS rejects forge's authentication"
+            },
+            span_ms(auth.within_ms)
+        ),
         Expectation::LogLine(line) => {
             let fields: Vec<String> = line
                 .fields

@@ -15,6 +15,26 @@ pub enum Expectation {
     OverlayContent(OverlayContent),
     LogLine(LogLine),
     DiscordPost(DiscordPost),
+    ObsRequest(ObsRequestSeen),
+    ObsAuth(ObsAuthOutcome),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObsRequestSeen {
+    pub request_type: String,
+    #[serde(default)]
+    pub request_data: PayloadMatchers,
+    #[serde(default)]
+    pub code: Option<u16>,
+    pub within_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObsAuthOutcome {
+    pub accepted: bool,
+    pub within_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,6 +176,8 @@ impl Expectation {
             Self::OverlayContent(_) => "overlay_content",
             Self::LogLine(_) => "log_line",
             Self::DiscordPost(_) => "discord_post",
+            Self::ObsRequest(_) => "obs_request",
+            Self::ObsAuth(_) => "obs_auth",
         }
     }
 
@@ -169,11 +191,17 @@ impl Expectation {
             | Self::CausedBy(_)
             | Self::OverlayContent(_)
             | Self::LogLine(_)
-            | Self::DiscordPost(_) => false,
+            | Self::DiscordPost(_)
+            | Self::ObsRequest(_)
+            | Self::ObsAuth(_) => false,
         }
     }
 
     pub fn needs_fake_discord(&self) -> bool {
         matches!(self, Self::DiscordPost(_))
+    }
+
+    pub fn needs_fake_obs(&self) -> bool {
+        matches!(self, Self::ObsRequest(_) | Self::ObsAuth(_))
     }
 }

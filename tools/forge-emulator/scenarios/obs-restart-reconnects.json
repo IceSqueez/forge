@@ -1,0 +1,37 @@
+{
+  "name": "forge reconnects after OBS restarts mid-session",
+  "purpose": "forge holds a live OBS session when OBS quits: the fake closes every connection with Going Away and refuses connections for two seconds, then accepts them again on the same port. forge must report obs.connection.disconnected, keep retrying without user action, authenticate again and report obs.connection.connected.",
+  "fixture": {
+    "obs": { "password": "emulator-obs-password" }
+  },
+  "fakes": {
+    "obs": { "password": "emulator-obs-password" }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "obs_identified": { "within_ms": 30000 } },
+      "expect": [{ "obs_request": { "request_type": "GetStats", "within_ms": 10000 } }]
+    },
+    {
+      "do": { "obs_restart": { "down_ms": 2000 } },
+      "expect": [
+        {
+          "event": {
+            "source": "obs",
+            "kind": "obs.connection.disconnected",
+            "within_ms": 10000
+          }
+        },
+        { "obs_auth": { "accepted": true, "within_ms": 30000 } },
+        {
+          "event": {
+            "source": "obs",
+            "kind": "obs.connection.connected",
+            "within_ms": 30000
+          }
+        }
+      ]
+    }
+  ]
+}

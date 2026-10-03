@@ -632,3 +632,48 @@ async fn a_discord_webhook_without_an_address_is_refused_instead_of_seeded() {
         "{refused:?}"
     );
 }
+
+fn obs_connection(port: u16) -> Fixture {
+    Fixture {
+        obs: Some(forge_emulator::fixture::ObsConnection {
+            password: "obs-seed-secret".to_owned(),
+            port,
+        }),
+        ..Fixture::default()
+    }
+}
+
+#[tokio::test]
+async fn a_seeded_obs_connection_is_the_one_forge_obs_dials_at_boot() {
+    let (dir, _) = seed_fresh(&obs_connection(4455)).await;
+    let backend = reopen(dir.path()).await;
+
+    let configured =
+        forge_storage::has_credentials_for(&backend, &forge_obs::OBS_INTEGRATION.id).await;
+    let stored = forge_obs::credentials::load(&backend)
+        .await
+        .unwrap()
+        .unwrap();
+    backend.shutdown().await;
+
+    assert_eq!(
+        (
+            configured.unwrap(),
+            stored.url.as_str(),
+            stored.password.as_str()
+        ),
+        (true, "ws://127.0.0.1:4455", "obs-seed-secret")
+    );
+}
+
+#[tokio::test]
+async fn an_obs_connection_without_a_port_is_refused_instead_of_seeded() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let refused = seed(Path::new(EMULATOR), dir.path(), &obs_connection(0)).await;
+
+    assert!(
+        matches!(&refused, Err(EmulatorError::SeederProcess { reason }) if reason.contains("has no port")),
+        "{refused:?}"
+    );
+}

@@ -50,6 +50,12 @@ running forge, and `seed` fills an empty data directory from a fixture on stdin.
 | `pause` | a fixed wait, with a mandatory reason |
 | `run_action` | runs a fixture action by name, as a dashboard would |
 | `set_global` | sets a global over the control socket |
+| `obs_online` | starts a fake OBS configured with `online_at_boot: false` |
+| `obs_identified` | waits until forge holds an identified OBS session |
+| `obs_restart` | OBS quits (every session closed, port refused for `down_ms`) and starts again |
+| `obs_scene_switch` | the streamer switches the OBS program scene |
+| `obs_stream` | the streamer starts or stops streaming in OBS |
+| `obs_input_mute` | the streamer mutes or unmutes an OBS input |
 
 ## Triggers other than chat commands
 
@@ -159,6 +165,45 @@ matching every given condition:
 
 `mention_parse` is compared as a set against `allowed_mentions.parse`; a post that carries no
 `allowed_mentions` never matches it.
+
+## OBS
+
+`fixture.obs` seeds forge's OBS connection and `fakes.obs` starts a fake OBS Studio that speaks
+obs-websocket v5 ([protocol](https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md)).
+The run fills the seeded connection's port with the fake's loopback port, so forge dials the
+fake through its ordinary stored credential and needs no endpoint override.
+
+```json
+"fixture": { "obs": { "password": "secret" } },
+"fakes": { "obs": { "password": "secret", "scenes": ["Main", "BRB"], "current_scene": "Main",
+                    "inputs": [{ "name": "Mic/Aux", "kind": "pulse_input_capture" }],
+                    "online_at_boot": true } }
+```
+
+Every `fakes.obs` field is optional; the defaults are no password, scenes `Main` and `BRB`, one
+`Mic/Aux` input and an OBS that is already running when forge starts. With a password the
+fake sends an authentication challenge in `Hello` and closes a wrong answer with
+`AuthenticationFailed` (4009). It answers the requests forge's OBS client sends - `GetVersion`,
+`GetStats`, the scene, scene-item and input getters, `SetCurrentProgramScene`, `SetInputMute`,
+`ToggleInputMute`, `GetStreamStatus`, `StartStream`, `StopStream` and `GetRecordStatus` - and
+`UnknownRequestType` (204) to anything else. A change made by a request or a step is pushed as
+the spec's event (`CurrentProgramSceneChanged`, `StreamStateChanged`,
+`InputMuteStateChanged`) to every identified session subscribed to its category. Request
+batches are not modelled.
+
+Two expectations read the fake's ledger, counting only what happened after the step started:
+
+```json
+{ "obs_request": { "request_type": "SetCurrentProgramScene",
+                   "request_data": { "/sceneName": { "equals": "BRB" } }, "code": 100,
+                   "within_ms": 5000 } }
+{ "obs_auth": { "accepted": false, "within_ms": 45000 } }
+```
+
+forge connects to OBS during boot, before the harness subscribes to its events; a scenario that
+judges forge's connection events starts the fake with `online_at_boot: false` and an
+`obs_online` step, so forge's retry loop connects while the harness is listening.
+`fake-obs [--password P] [--scene NAME]...` runs the fake alone and prints its address.
 
 ## Throughput runs
 
@@ -302,3 +347,11 @@ until that was fixed. It has passed since; if it ever fails again, the regressio
 `go-live-pings-the-discord-role.json` follows a `stream.online` notification to a Discord
 webhook post and judges the post's `allowed_mentions`: the role ping is parsed and
 `@everyone` is not.
+
+Five scenarios cover OBS: `obs-connects-and-reads-scenes.json` (authenticate, identify, load
+the scene list), `obs-action-switches-scene.json` (a Switch Scene step sends
+`SetCurrentProgramScene` and the change comes back as `obs.scene.changed`),
+`obs-events-fire-triggers.json` (scene, stream and mute changes made in OBS reach forge's
+triggers), `obs-restart-reconnects.json` (forge reconnects on its own after OBS restarts) and
+`obs-wrong-password-fails-visibly.json` (a wrong password publishes
+`obs.connection.auth_failed` and is not retried).

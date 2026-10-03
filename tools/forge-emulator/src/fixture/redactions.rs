@@ -39,7 +39,14 @@ impl Redactions {
             .into_iter()
             .flat_map(|seed| seed.overlays.iter())
             .map(|overlay| overlay.credential.clone());
-        Self::new(access_token.into_iter().chain(bearer).chain(overlays))
+        let obs_password = fixture.obs.as_ref().map(|obs| obs.password.clone());
+        Self::new(
+            access_token
+                .into_iter()
+                .chain(bearer)
+                .chain(overlays)
+                .chain(obs_password),
+        )
     }
 
     pub fn scrub(&self, text: &str) -> String {

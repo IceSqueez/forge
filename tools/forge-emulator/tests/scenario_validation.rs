@@ -1233,3 +1233,143 @@ fn discord_fake_and_post_expectation_problems_are_located() {
         ),
     ]);
 }
+
+fn with_obs(mut scenario: Value) -> Value {
+    scenario["fixture"]["obs"] = json!({ "password": "pw" });
+    scenario["fakes"]["obs"] = json!({ "password": "pw" });
+    scenario
+}
+
+#[test]
+fn obs_fake_step_and_expectation_problems_are_located() {
+    let mut connection_without_fake = with_obs(base());
+    connection_without_fake["fakes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("obs");
+    let mut fake_without_connection = base();
+    fake_without_connection["fakes"]["obs"] = json!({});
+    let mut port_pinned = with_obs(base());
+    port_pinned["fixture"]["obs"]["port"] = json!(4455);
+    let mut unknown_current_scene = with_obs(base());
+    unknown_current_scene["fakes"]["obs"]["current_scene"] = json!("Gaming");
+    let mut started_at_boot = with_obs(with_steps([step(json!({ "obs_online": {} }))]));
+    started_at_boot["fakes"]["obs"]["online_at_boot"] = json!(true);
+    let mut restarted_before_start = with_obs(with_steps([step(
+        json!({ "obs_restart": { "down_ms": 100 } }),
+    )]));
+    restarted_before_start["fakes"]["obs"]["online_at_boot"] = json!(false);
+    assert_cases(vec![
+        (
+            "a seeded connection with no fake to answer it",
+            connection_without_fake,
+            vec![(
+                "fakes.obs",
+                "is required because the fixture seeds an OBS connection; without it forge has no OBS to reach",
+            )],
+        ),
+        (
+            "a fake no seeded connection points at",
+            fake_without_connection,
+            vec![(
+                "fakes.obs",
+                "needs fixture.obs: forge connects only to an OBS the fixture seeds",
+            )],
+        ),
+        (
+            "a pinned port the run would overwrite",
+            port_pinned,
+            vec![(
+                "fixture.obs.port",
+                "must be left out: the run fills it with the fake OBS port",
+            )],
+        ),
+        (
+            "a current scene the fake does not offer",
+            unknown_current_scene,
+            vec![(
+                "fakes.obs.current_scene",
+                "names `Gaming`, which `scenes` does not list",
+            )],
+        ),
+        (
+            "starting an OBS that already runs",
+            started_at_boot,
+            vec![(
+                "steps[2].do.obs_online",
+                "the fake OBS is already running; set fakes.obs.online_at_boot to false to start it from a step",
+            )],
+        ),
+        (
+            "restarting an OBS that never started",
+            restarted_before_start,
+            vec![(
+                "steps[2].do.obs_restart",
+                "the fake OBS is not running yet, so there is nothing to restart",
+            )],
+        ),
+        (
+            "OBS steps and checks with no fake OBS",
+            with_steps([expecting(
+                json!({ "obs_scene_switch": { "scene": "BRB" } }),
+                json!([{ "obs_auth": { "accepted": true, "within_ms": 100 } }]),
+            )]),
+            vec![
+                (
+                    "steps[2].do.obs_scene_switch",
+                    "needs a fake OBS: add fixture.obs and fakes.obs",
+                ),
+                (
+                    "steps[2].expect[0].obs_auth",
+                    "needs a fake OBS: add fixture.obs and fakes.obs",
+                ),
+            ],
+        ),
+        (
+            "a scene and an input the fake does not offer",
+            with_obs(with_steps([
+                step(json!({ "obs_scene_switch": { "scene": "Gaming" } })),
+                step(json!({ "obs_input_mute": { "input": "Desk", "muted": true } })),
+            ])),
+            vec![
+                (
+                    "steps[2].do.obs_scene_switch.scene",
+                    "names scene `Gaming`, which fakes.obs.scenes does not list",
+                ),
+                (
+                    "steps[3].do.obs_input_mute.input",
+                    "names input `Desk`, which fakes.obs.inputs does not list",
+                ),
+            ],
+        ),
+        (
+            "a request check naming no request and waiting no time",
+            with_obs(with_steps([expecting(
+                pause(),
+                json!([{ "obs_request": { "request_type": " ", "within_ms": 0 } }]),
+            )])),
+            vec![
+                (
+                    "steps[2].expect[0].obs_request.request_type",
+                    "must not be blank",
+                ),
+                (
+                    "steps[2].expect[0].obs_request.within_ms",
+                    "must be between 1 and 120000, got 0",
+                ),
+            ],
+        ),
+    ]);
+}
+
+#[test]
+fn an_obs_started_from_a_step_may_then_be_restarted() {
+    let mut scenario = with_obs(with_steps([
+        step(json!({ "obs_online": {} })),
+        step(json!({ "obs_identified": { "within_ms": 5000 } })),
+        step(json!({ "obs_restart": { "down_ms": 500 } })),
+    ]));
+    scenario["fakes"]["obs"]["online_at_boot"] = json!(false);
+
+    assert_eq!(problems(scenario), []);
+}

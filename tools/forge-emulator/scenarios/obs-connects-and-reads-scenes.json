@@ -1,0 +1,31 @@
+{
+  "name": "forge connects to OBS with its password and reads the scene list",
+  "purpose": "The fixture seeds an OBS connection whose password matches the fake OBS, and the fake starts only after forge is up, so forge's first attempts are refused and its retry loop has to find OBS once it starts, the way a streamer opens OBS after forge. The fake answers Hello with an authentication challenge; forge must answer it correctly, identify, load its catalog starting with GetSceneList, and publish obs.connection.connected.",
+  "fixture": {
+    "obs": { "password": "emulator-obs-password" }
+  },
+  "fakes": {
+    "obs": {
+      "password": "emulator-obs-password",
+      "scenes": ["Main", "BRB", "Ending"],
+      "online_at_boot": false
+    }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "obs_online": {} },
+      "expect": [
+        { "obs_auth": { "accepted": true, "within_ms": 45000 } },
+        { "obs_request": { "request_type": "GetSceneList", "code": 100, "within_ms": 45000 } },
+        {
+          "event": {
+            "source": "obs",
+            "kind": "obs.connection.connected",
+            "within_ms": 45000
+          }
+        }
+      ]
+    }
+  ]
+}

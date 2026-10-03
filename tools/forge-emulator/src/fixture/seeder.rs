@@ -19,7 +19,7 @@ use super::report::{
 };
 use super::spec::{
     ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, EventTrigger, Fixture, OVERLAY_SEND_KIND,
-    OVERLAY_TARGET_KEY, OverlayFixture, QueueFixture, TwitchAccount,
+    OVERLAY_TARGET_KEY, ObsConnection, OverlayFixture, QueueFixture, TwitchAccount,
 };
 use crate::EmulatorError;
 
@@ -27,6 +27,7 @@ const DATABASE_FILE: &str = "forge.db";
 const SERVER_BEARER_CREDENTIAL: &str = "server:bearer";
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const DISCORD_CREDENTIAL_PREFIX: &str = "discord:";
+const OBS_HOST: &str = "127.0.0.1";
 const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const BEARER_TOKEN_BYTES: usize = 32;
@@ -102,6 +103,9 @@ async fn write_fixture(
     for webhook in &fixture.discord_webhooks {
         seed_discord_webhook(provider, webhook).await?;
     }
+    if let Some(obs) = &fixture.obs {
+        seed_obs_connection(provider, obs).await?;
+    }
     let kinds = builtin_overlay_kinds()?;
     let mut overlays = Vec::with_capacity(fixture.overlays.len());
     for overlay in &fixture.overlays {
@@ -157,6 +161,21 @@ async fn seed_discord_webhook(
             &CredentialId::new(format!("{DISCORD_CREDENTIAL_PREFIX}{}", webhook.name)),
             &credential,
         )
+        .await
+        .map_err(storage_error)
+}
+
+async fn seed_obs_connection(
+    provider: &dyn DataProvider,
+    obs: &ObsConnection,
+) -> Result<(), EmulatorError> {
+    if obs.port == 0 {
+        return Err(EmulatorError::InvalidFixture {
+            reason: "the OBS connection has no port; a scenario run fills it from fakes.obs"
+                .to_owned(),
+        });
+    }
+    forge_obs::credentials::store(provider, OBS_HOST, obs.port, &obs.password)
         .await
         .map_err(storage_error)
 }

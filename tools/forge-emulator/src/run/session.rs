@@ -14,6 +14,7 @@ use super::ledger_checks::{
 };
 use super::log_checks::observe_log_line;
 use super::log_tail::LogTail;
+use super::obs_checks::{ObsMark, observe_obs_auth, observe_obs_request};
 use super::outcome::{
     ActionDetail, ActionReport, Evidence, ExpectationOutcome, FailureCause, RunClock, StepOutcome,
     StepStatus, Verdict,
@@ -22,6 +23,7 @@ use super::overlay_checks::observe_overlay_content;
 use super::steps::{ActionIndex, Stimuli};
 use crate::control::ControlClient;
 use crate::discord::FakeDiscord;
+use crate::obs::FakeObs;
 use crate::overlay::{OverlayMarks, OverlayPages};
 use crate::scenario::{Expectation, Scenario, Step, StepAction};
 use crate::twitch::FakeTwitch;
@@ -31,6 +33,7 @@ pub struct Session<'a> {
     pub journal: &'a Journal,
     pub twitch: Option<&'a FakeTwitch>,
     pub discord: Option<&'a FakeDiscord>,
+    pub obs: Option<&'a FakeObs>,
     pub actions: &'a ActionIndex,
     pub pages: &'a OverlayPages,
     pub log_dir: PathBuf,
@@ -87,12 +90,17 @@ async fn run_step(
         (false, Some(discord)) => discord.posts().len(),
         _ => 0,
     };
+    let obs_from = match (is_ready_step, session.obs) {
+        (false, Some(obs)) => ObsMark::of(&obs.ledger()),
+        _ => ObsMark::default(),
+    };
     let performed = if is_ready_step {
         Ok(session.ready.clone())
     } else {
         let stimuli = Stimuli {
             client: session.client,
             twitch: session.twitch,
+            obs: session.obs,
             actions: session.actions,
             pages: session.pages,
         };
@@ -129,6 +137,7 @@ async fn run_step(
         acted,
         log_tail,
         discord_from,
+        obs_from,
     };
     let mut expectations = Vec::with_capacity(step.expect.len());
     for (position, expectation) in step.expect.iter().enumerate() {
@@ -160,6 +169,7 @@ struct ExpectationContext<'s, 'a> {
     acted: Instant,
     log_tail: LogTail,
     discord_from: usize,
+    obs_from: ObsMark,
 }
 
 impl ExpectationContext<'_, '_> {
@@ -253,6 +263,22 @@ impl ExpectationContext<'_, '_> {
                 };
                 (verdict, evidence, Some(until))
             }
+            Expectation::ObsRequest(request) => {
+                let until = deadline(request.within_ms);
+                let (verdict, evidence) = match session.obs {
+                    Some(obs) => observe_obs_request(obs, self.obs_from, until, request).await,
+                    None => no_fake_obs(),
+                };
+                (verdict, evidence, Some(until))
+            }
+            Expectation::ObsAuth(auth) => {
+                let until = deadline(auth.within_ms);
+                let (verdict, evidence) = match session.obs {
+                    Some(obs) => observe_obs_auth(obs, self.obs_from, until, auth).await,
+                    None => no_fake_obs(),
+                };
+                (verdict, evidence, Some(until))
+            }
         };
         ExpectationOutcome {
             index,
@@ -281,6 +307,10 @@ fn split(
 
 fn no_fake_twitch() -> (Verdict, Evidence) {
     (Verdict::Failed(FailureCause::NoFakeTwitch), Evidence::None)
+}
+
+fn no_fake_obs() -> (Verdict, Evidence) {
+    (Verdict::Failed(FailureCause::NoFakeObs), Evidence::None)
 }
 
 fn unevaluated(step: &Step) -> Vec<ExpectationOutcome> {

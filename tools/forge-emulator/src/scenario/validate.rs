@@ -65,6 +65,7 @@ struct Validator<'a> {
     command_matches_sent: u64,
     named_events: HashMap<&'a str, NamedEvent>,
     pages_opened: HashSet<&'a str>,
+    obs_online: bool,
 }
 
 impl<'a> Validator<'a> {
@@ -79,6 +80,11 @@ impl<'a> Validator<'a> {
             command_matches_sent: 0,
             named_events: HashMap::new(),
             pages_opened: HashSet::new(),
+            obs_online: scenario
+                .fakes
+                .obs
+                .as_ref()
+                .is_some_and(|obs| obs.online_at_boot),
         }
     }
 
@@ -127,6 +133,9 @@ impl<'a> Validator<'a> {
             if step.action.needs_fake_twitch() {
                 self.require_fake_twitch(&location);
             }
+            if step.action.needs_fake_obs() {
+                self.require_fake_obs(&location);
+            }
             self.check_action(index, &location, &step.action);
             for (position, expectation) in step.expect.iter().enumerate() {
                 let location = format!(
@@ -135,6 +144,9 @@ impl<'a> Validator<'a> {
                 );
                 if expectation.needs_fake_twitch() {
                     self.require_fake_twitch(&location);
+                }
+                if expectation.needs_fake_obs() {
+                    self.require_fake_obs(&location);
                 }
                 if expectation.needs_fake_discord() && !self.fake_discord {
                     self.report(
@@ -187,6 +199,7 @@ impl<'a> Validator<'a> {
             }
             (None, None) => {}
         }
+        self.check_fake_obs();
         let seeds_webhooks = !scenario.fixture.discord_webhooks.is_empty();
         match (seeds_webhooks, &scenario.fakes.discord) {
             (true, None) => self.report(
@@ -197,6 +210,82 @@ impl<'a> Validator<'a> {
                 "fakes.discord",
                 "needs fixture.discord_webhooks: the fake answers only the webhooks the fixture seeds",
             ),
+            _ => {}
+        }
+    }
+
+    fn require_fake_obs(&mut self, location: &str) {
+        if self.scenario.fakes.obs.is_none() {
+            self.report(location, "needs a fake OBS: add fixture.obs and fakes.obs");
+        }
+    }
+
+    fn check_fake_obs(&mut self) {
+        let scenario = self.scenario;
+        match (&scenario.fixture.obs, &scenario.fakes.obs) {
+            (Some(_), None) => self.report(
+                "fakes.obs",
+                "is required because the fixture seeds an OBS connection; without it forge has no OBS to reach",
+            ),
+            (None, Some(_)) => self.report(
+                "fakes.obs",
+                "needs fixture.obs: forge connects only to an OBS the fixture seeds",
+            ),
+            (Some(connection), Some(config)) => {
+                if connection.port != 0 {
+                    self.report(
+                        "fixture.obs.port",
+                        "must be left out: the run fills it with the fake OBS port",
+                    );
+                }
+                for (field, problem) in config.problems() {
+                    self.report(format!("fakes.obs.{field}"), problem);
+                }
+            }
+            (None, None) => {}
+        }
+    }
+
+    fn check_obs_action(&mut self, location: &str, action: &StepAction) {
+        let obs = self.scenario.fakes.obs.as_ref();
+        match action {
+            StepAction::ObsOnline {} => {
+                if self.obs_online {
+                    self.report(
+                        location,
+                        "the fake OBS is already running; set fakes.obs.online_at_boot to false to start it from a step",
+                    );
+                }
+                self.obs_online = true;
+            }
+            StepAction::ObsIdentified { within_ms } => {
+                self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
+            }
+            StepAction::ObsRestart { down_ms } => {
+                if !self.obs_online {
+                    self.report(
+                        location,
+                        "the fake OBS is not running yet, so there is nothing to restart",
+                    );
+                }
+                self.in_range(format!("{location}.down_ms"), *down_ms, 1, MAX_WAIT_MS);
+            }
+            StepAction::ObsSceneSwitch { scene }
+                if obs.is_some_and(|obs| !obs.declares_scene(scene)) =>
+            {
+                self.report(
+                    format!("{location}.scene"),
+                    format!("names scene `{scene}`, which fakes.obs.scenes does not list"),
+                );
+            }
+            StepAction::ObsInputMute { input, .. }
+                if obs.is_some_and(|obs| !obs.declares_input(input)) =>
+            {
+                self.report(
+                    format!("{location}.input"),
+                    format!("names input `{input}`, which fakes.obs.inputs does not list"),
+                );
+            }
             _ => {}
         }
     }
@@ -257,6 +346,12 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
+            StepAction::ObsOnline {}
+            | StepAction::ObsIdentified { .. }
+            | StepAction::ObsRestart { .. }
+            | StepAction::ObsSceneSwitch { .. }
+            | StepAction::ObsStream { .. }
+            | StepAction::ObsInputMute { .. } => self.check_obs_action(location, action),
             StepAction::SetGlobal { name, value, .. } => {
                 self.not_blank(format!("{location}.name"), name);
                 if let Err(e) = Variant::from_json(value.clone()) {
@@ -491,6 +586,23 @@ impl<'a> Validator<'a> {
             Expectation::OverlayContent(content) => self.check_overlay_content(location, content),
             Expectation::LogLine(line) => self.check_log_line(location, line),
             Expectation::DiscordPost(post) => self.check_discord_post(location, post),
+            Expectation::ObsRequest(request) => {
+                self.not_blank(format!("{location}.request_type"), &request.request_type);
+                self.in_range(
+                    format!("{location}.within_ms"),
+                    request.within_ms,
+                    1,
+                    MAX_WAIT_MS,
+                );
+            }
+            Expectation::ObsAuth(auth) => {
+                self.in_range(
+                    format!("{location}.within_ms"),
+                    auth.within_ms,
+                    1,
+                    MAX_WAIT_MS,
+                );
+            }
         }
     }
 

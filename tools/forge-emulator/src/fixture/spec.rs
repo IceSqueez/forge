@@ -23,6 +23,15 @@ pub struct Fixture {
     pub queues: Vec<QueueFixture>,
     #[serde(default)]
     pub discord_webhooks: Vec<DiscordWebhook>,
+    #[serde(default)]
+    pub obs: Option<ObsConnection>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ObsConnection {
+    pub password: String,
+    pub port: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +123,7 @@ impl Fixture {
             event_triggers: Vec::new(),
             queues: Vec::new(),
             discord_webhooks: Vec::new(),
+            obs: None,
         }
     }
 

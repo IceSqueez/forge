@@ -6,6 +6,7 @@ use std::time::Duration;
 use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint};
 use forge_emulator::discord::FakeDiscord;
 use forge_emulator::fixture::{SeedReport, SeededCommand, SeededServer, TwitchAccount};
+use forge_emulator::obs::{FakeObs, FakeObsConfig};
 use forge_emulator::overlay::OverlayPages;
 use forge_emulator::run::{
     ActionDetail, ActionIndex, ActionReport, FailureCause, Journal, RunClock, Session, StepOutcome,
@@ -283,6 +284,7 @@ struct Harness {
     forge: PretendForge,
     fake: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
+    obs: Option<FakeObs>,
     client: ControlClient,
     journal: Journal,
     actions: ActionIndex,
@@ -334,6 +336,7 @@ impl Harness {
             forge,
             fake,
             discord: None,
+            obs: None,
             client,
             journal,
             actions,
@@ -349,6 +352,7 @@ impl Harness {
             journal: &self.journal,
             twitch: self.fake.as_ref(),
             discord: self.discord.as_ref(),
+            obs: self.obs.as_ref(),
             actions: &self.actions,
             pages: &self.pages,
             log_dir: self.logs.path().to_owned(),
@@ -896,5 +900,200 @@ async fn discord_post_without_a_fake_discord_fails_as_unrunnable() {
     assert_eq!(
         verdicts(&steps[0]),
         [Verdict::Failed(FailureCause::NoFakeDiscord)]
+    );
+}
+
+const OBS_PASSWORD: &str = "obs-runner-secret";
+
+struct QuietPublisher;
+
+impl forge_events::EventPublisher for QuietPublisher {
+    fn publish(&self, _: Event) {}
+}
+
+fn obs_scenario(online_at_boot: bool, steps: Value) -> Scenario {
+    scenario(
+        json!({ "obs": { "password": OBS_PASSWORD } }),
+        json!({ "obs": { "password": OBS_PASSWORD, "online_at_boot": online_at_boot } }),
+        steps,
+    )
+}
+
+async fn harness_with_obs(online_at_boot: bool) -> Harness {
+    let mut harness = Harness::start(COOPERATIVE, false).await;
+    let obs = FakeObs::start(FakeObsConfig {
+        password: Some(OBS_PASSWORD.to_owned()),
+        online_at_boot,
+        ..FakeObsConfig::default()
+    })
+    .await
+    .unwrap();
+    harness.obs = Some(obs);
+    harness
+}
+
+async fn forge_obs_client(harness: &Harness, password: &str) -> forge_obs::ObsClient {
+    let url = harness.obs.as_ref().unwrap().url();
+    forge_obs::ObsClient::connect(&url, Some(password), std::sync::Arc::new(QuietPublisher))
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn obs_online_lets_a_retrying_forge_identify_and_read_the_scene_list() {
+    let harness = harness_with_obs(false).await;
+    let _forge = forge_obs_client(&harness, OBS_PASSWORD).await;
+    let scenario = obs_scenario(
+        false,
+        json!([
+            ready(),
+            {
+                "do": { "obs_online": {} },
+                "expect": [
+                    { "obs_auth": { "accepted": true, "within_ms": 10000 } },
+                    { "obs_request": { "request_type": "GetSceneList", "code": 100, "within_ms": 10000 } }
+                ]
+            },
+            { "do": { "obs_identified": { "within_ms": 1000 } } }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        statuses(&steps),
+        [StepStatus::Passed, StepStatus::Passed, StepStatus::Passed],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn obs_restart_is_followed_by_forge_identifying_again() {
+    let harness = harness_with_obs(true).await;
+    let _forge = forge_obs_client(&harness, OBS_PASSWORD).await;
+    let scenario = obs_scenario(
+        true,
+        json!([
+            ready(),
+            { "do": { "obs_identified": { "within_ms": 5000 } } },
+            {
+                "do": { "obs_restart": { "down_ms": 100 } },
+                "expect": [{ "obs_auth": { "accepted": true, "within_ms": 10000 } }]
+            }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        statuses(&steps),
+        [StepStatus::Passed, StepStatus::Passed, StepStatus::Passed],
+        "{steps:#?}"
+    );
+    assert!(
+        matches!(
+            &steps[2].action,
+            Some(ActionReport::Done(ActionDetail::ObsRestarted {
+                closed_sessions: 1
+            }))
+        ),
+        "{:?}",
+        steps[2].action
+    );
+}
+
+#[tokio::test]
+async fn obs_auth_rejected_passes_when_forge_offers_the_wrong_password() {
+    let harness = harness_with_obs(false).await;
+    let _forge = forge_obs_client(&harness, "not-the-password").await;
+    let scenario = obs_scenario(
+        false,
+        json!([
+            ready(),
+            {
+                "do": { "obs_online": {} },
+                "expect": [{ "obs_auth": { "accepted": false, "within_ms": 10000 } }]
+            }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(verdicts(&steps[1]), [Verdict::Passed], "{steps:#?}");
+}
+
+#[tokio::test]
+async fn an_obs_studio_change_no_session_receives_fails_its_step() {
+    let harness = harness_with_obs(true).await;
+    let scenario = obs_scenario(
+        true,
+        json!([ready(), { "do": { "obs_scene_switch": { "scene": "BRB" } } }]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(&steps[1].action, Some(ActionReport::Failed { reason, .. })
+            if reason.contains("no identified OBS session")),
+        "{:?}",
+        steps[1].action
+    );
+}
+
+#[tokio::test]
+async fn an_obs_request_made_before_a_step_starts_never_satisfies_its_expectations() {
+    let harness = harness_with_obs(true).await;
+    let _forge = forge_obs_client(&harness, OBS_PASSWORD).await;
+    harness
+        .obs
+        .as_ref()
+        .unwrap()
+        .wait_for("the catalog load", DEADLINE, |ledger| {
+            ledger
+                .requests
+                .iter()
+                .any(|request| request.request_type == "GetSceneList")
+                .then_some(())
+        })
+        .await
+        .unwrap();
+    let scenario = obs_scenario(
+        true,
+        json!([
+            ready(),
+            {
+                "do": { "pause": { "ms": 1, "reason": "forge already loaded its catalog" } },
+                "expect": [{ "obs_request": { "request_type": "GetSceneList", "within_ms": 50 } }]
+            }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(
+            verdicts(&steps[1]).as_slice(),
+            [Verdict::Failed(FailureCause::NoObsRequest { .. })]
+        ),
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn obs_checks_without_a_fake_obs_fail_as_unrunnable() {
+    let harness = Harness::start(COOPERATIVE, false).await;
+    let scenario = obs_scenario(
+        true,
+        json!([{
+            "do": { "forge_ready": { "within_ms": 1000 } },
+            "expect": [{ "obs_auth": { "accepted": true, "within_ms": 50 } }]
+        }]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        verdicts(&steps[0]),
+        [Verdict::Failed(FailureCause::NoFakeObs)]
     );
 }

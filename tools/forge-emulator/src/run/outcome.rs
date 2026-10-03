@@ -1,4 +1,5 @@
 use crate::discord::RecordedPost;
+use crate::obs::{ObsRequest, ObsSession};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -113,6 +114,17 @@ pub enum ActionDetail {
         execution_id: String,
     },
     GlobalSet,
+    ObsOnline,
+    ObsIdentified {
+        session: u64,
+    },
+    ObsRestarted {
+        closed_sessions: usize,
+    },
+    ObsEventPushed {
+        event_type: String,
+        delivered: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +198,13 @@ pub enum FailureCause {
         observed: usize,
     },
     NoFakeDiscord,
+    NoObsRequest {
+        observed: usize,
+    },
+    NoObsAuth {
+        sessions: usize,
+    },
+    NoFakeObs,
 }
 
 impl fmt::Display for FailureCause {
@@ -263,6 +282,15 @@ impl fmt::Display for FailureCause {
                 "no matching Discord post arrived in time, the fake recorded {observed} request(s)"
             ),
             Self::NoFakeDiscord => write!(f, "the run has no fake Discord"),
+            Self::NoObsRequest { observed } => write!(
+                f,
+                "no matching request reached the fake OBS in time, it recorded {observed} request(s)"
+            ),
+            Self::NoObsAuth { sessions } => write!(
+                f,
+                "no connection reached that authentication outcome in time, the fake OBS saw {sessions} connection(s)"
+            ),
+            Self::NoFakeObs => write!(f, "the run has no fake OBS"),
         }
     }
 }
@@ -277,6 +305,13 @@ pub enum Evidence {
     Overlay(OverlayEvidence),
     Log(LogEvidence),
     Discord(Vec<RecordedPost>),
+    Obs(ObsEvidence),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ObsEvidence {
+    pub sessions: Vec<ObsSession>,
+    pub requests: Vec<ObsRequest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -60,6 +60,27 @@ pub(crate) fn story(action: &StepAction) -> String {
             code(name),
             code(&compact(value, VALUE_CHARS))
         ),
+        StepAction::ObsOnline {} => "As the streamer I start OBS".to_owned(),
+        StepAction::ObsIdentified { within_ms } => format!(
+            "As OBS I wait up to {} for forge to connect and identify",
+            span_ms(*within_ms)
+        ),
+        StepAction::ObsRestart { down_ms } => format!(
+            "As the streamer I quit OBS and start it again {} later",
+            span_ms(*down_ms)
+        ),
+        StepAction::ObsSceneSwitch { scene } => {
+            format!("As the streamer I switch OBS to scene {}", code(scene))
+        }
+        StepAction::ObsStream { active } => format!(
+            "As the streamer I {} streaming in OBS",
+            if *active { "start" } else { "stop" }
+        ),
+        StepAction::ObsInputMute { input, muted } => format!(
+            "As the streamer I {} {} in OBS",
+            if *muted { "mute" } else { "unmute" },
+            code(input)
+        ),
     }
 }
 
@@ -82,6 +103,15 @@ pub(crate) fn step_short(action: &StepAction) -> String {
         StepAction::Pause { .. } => "a pause".to_owned(),
         StepAction::RunAction { action, .. } => format!("running action {}", code(action)),
         StepAction::SetGlobal { name, .. } => format!("setting global {}", code(name)),
+        StepAction::ObsOnline {} => "starting OBS".to_owned(),
+        StepAction::ObsIdentified { .. } => "connecting to OBS".to_owned(),
+        StepAction::ObsRestart { .. } => "an OBS restart".to_owned(),
+        StepAction::ObsSceneSwitch { scene } => format!("switching OBS to {}", code(scene)),
+        StepAction::ObsStream { active } => format!(
+            "{} the OBS stream",
+            if *active { "starting" } else { "stopping" }
+        ),
+        StepAction::ObsInputMute { input, .. } => format!("muting {} in OBS", code(input)),
     }
 }
 
@@ -104,6 +134,12 @@ pub(crate) fn action_title(action: &StepAction) -> String {
         }
         StepAction::RunAction { action, .. } => format!("Action {} could not be run", code(action)),
         StepAction::SetGlobal { name, .. } => format!("Global {} could not be set", code(name)),
+        StepAction::ObsOnline {} => "The fake OBS could not start".to_owned(),
+        StepAction::ObsIdentified { .. } => "forge did not connect to OBS".to_owned(),
+        StepAction::ObsRestart { .. } => "The fake OBS could not restart".to_owned(),
+        StepAction::ObsSceneSwitch { .. }
+        | StepAction::ObsStream { .. }
+        | StepAction::ObsInputMute { .. } => "OBS event not delivered to forge".to_owned(),
         StepAction::ForgeReady { .. } | StepAction::Pause { .. } => {
             format!("Step {} failed", code(action.keyword()))
         }
@@ -148,6 +184,19 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
         }
         StepAction::SetGlobal { name, .. } => {
             format!("forge accepts setting global {}", code(name))
+        }
+        StepAction::ObsOnline {} => "the fake OBS accepts connections".to_owned(),
+        StepAction::ObsIdentified { within_ms } => format!(
+            "forge holds an identified OBS WebSocket session within {}",
+            span_ms(*within_ms)
+        ),
+        StepAction::ObsRestart { .. } => {
+            "the fake OBS drops every connection and accepts new ones again".to_owned()
+        }
+        StepAction::ObsSceneSwitch { .. }
+        | StepAction::ObsStream { .. }
+        | StepAction::ObsInputMute { .. } => {
+            "the fake OBS pushes the event to an identified session subscribed to it".to_owned()
         }
     }
 }

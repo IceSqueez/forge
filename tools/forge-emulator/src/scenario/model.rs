@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::step::Step;
 use crate::fixture::{Fixture, TwitchAccount};
+use crate::obs::FakeObsConfig;
 use crate::twitch::FakeTwitchConfig;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,6 +25,8 @@ pub struct Fakes {
     pub twitch: Option<FakeTwitchSetup>,
     #[serde(default)]
     pub discord: Option<FakeDiscordSetup>,
+    #[serde(default)]
+    pub obs: Option<FakeObsConfig>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

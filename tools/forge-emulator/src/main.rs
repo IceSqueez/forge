@@ -13,6 +13,7 @@ use forge_emulator::launch::{
     DEFAULT_LOG_DIRECTIVES, ForgeCommand, ForgeProcess, GameGuard, LaunchOptions, LaunchedForge,
     LivePaths, OutputStream, launch_forge,
 };
+use forge_emulator::obs::{FakeObs, FakeObsConfig};
 use forge_emulator::report::{RunContext, RunReport, write_report};
 use forge_emulator::run::{RunOptions, ScenarioVerdict, run_scenario};
 use forge_emulator::scenario::load_scenario;
@@ -90,6 +91,16 @@ enum Command {
         /// Pre-seed a channel-point reward another app owns; repeatable.
         #[arg(long = "dashboard-reward", value_name = "TITLE")]
         dashboard_rewards: Vec<String>,
+    },
+    /// Run only a fake OBS Studio (obs-websocket v5) and print its address as OBS_URL=... until
+    /// interrupted; point forge's OBS connection at that host and port.
+    FakeObs {
+        /// Require this password; the fake accepts any client when omitted.
+        #[arg(long)]
+        password: Option<String>,
+        /// A scene the fake offers, in order; repeatable. Main and BRB when omitted.
+        #[arg(long = "scene", value_name = "NAME")]
+        scenes: Vec<String>,
     },
     /// Work with scenario files.
     Scenario {
@@ -193,6 +204,9 @@ async fn main() -> ExitCode {
         } => fake_twitch(fixture, dashboard_rewards)
             .await
             .map(|()| ExitCode::SUCCESS),
+        Command::FakeObs { password, scenes } => {
+            fake_obs(password, scenes).await.map(|()| ExitCode::SUCCESS)
+        }
         Command::Scenario {
             command: ScenarioCommand::Check { file },
         } => check_scenario(&file).map(|()| ExitCode::SUCCESS),
@@ -386,6 +400,29 @@ async fn fake_twitch(
     writeln!(out, "FORGE_TWITCH_CLIENT_ID={}", account.client_id)
         .and_then(|()| out.flush())
         .map_err(output_error)?;
+    stop_requested().await;
+    fake.shutdown().await;
+    Ok(())
+}
+
+async fn fake_obs(password: Option<String>, scenes: Vec<String>) -> Result<(), EmulatorError> {
+    let defaults = FakeObsConfig::default();
+    let config = FakeObsConfig {
+        password,
+        scenes: if scenes.is_empty() {
+            defaults.scenes.clone()
+        } else {
+            scenes
+        },
+        ..defaults
+    };
+    let fake = FakeObs::start(config).await?;
+    let mut out = std::io::stdout();
+    writeln!(out, "OBS_URL={}", fake.url())
+        .and_then(|()| out.flush())
+        .map_err(|e| EmulatorError::Output {
+            reason: e.to_string(),
+        })?;
     stop_requested().await;
     fake.shutdown().await;
     Ok(())

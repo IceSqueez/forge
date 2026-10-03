@@ -3,6 +3,7 @@ pub mod discord;
 mod error;
 pub mod fixture;
 pub mod launch;
+pub mod obs;
 pub mod overlay;
 pub mod report;
 pub mod run;

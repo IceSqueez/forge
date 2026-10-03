@@ -1,0 +1,82 @@
+{
+  "name": "OBS scene, stream and mute changes reach forge's triggers",
+  "purpose": "The streamer works in OBS while forge is connected: switching to the BRB scene, starting the stream and muting the mic. The fake OBS pushes CurrentProgramSceneChanged, StreamStateChanged (starting, then started) and InputMuteStateChanged to every session subscribed to their category. forge must publish each as its obs.* event and run the actions bound to the scene-changed trigger scoped to BRB and to the stream-started trigger.",
+  "fixture": {
+    "obs": { "password": "emulator-obs-password" },
+    "event_triggers": [
+      {
+        "trigger_kind": "obs.scenes.current_changed",
+        "config": { "scene": { "type": "string", "value": "BRB" } },
+        "action_name": "Be Right Back"
+      },
+      {
+        "trigger_kind": "obs.stream.started",
+        "action_name": "Went Live"
+      }
+    ]
+  },
+  "fakes": {
+    "obs": { "password": "emulator-obs-password" }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "obs_identified": { "within_ms": 30000 } },
+      "expect": [{ "obs_request": { "request_type": "GetStats", "within_ms": 10000 } }]
+    },
+    {
+      "do": { "obs_scene_switch": { "scene": "BRB" } },
+      "expect": [
+        {
+          "event": {
+            "source": "obs",
+            "kind": "obs.scene.changed",
+            "payload": { "/to_scene": { "equals": "BRB" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Be Right Back" } },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "obs_stream": { "active": true } },
+      "expect": [
+        {
+          "event": {
+            "source": "obs",
+            "kind": "obs.streaming.started",
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Went Live" } },
+            "count": { "exactly": 1 },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "obs_input_mute": { "input": "Mic/Aux", "muted": true } },
+      "expect": [
+        {
+          "event": {
+            "source": "obs",
+            "kind": "obs.audio.source_mute_changed",
+            "within_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

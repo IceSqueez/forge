@@ -52,6 +52,23 @@ pub enum StepAction {
         #[serde(default)]
         persisted: bool,
     },
+    ObsOnline {},
+    ObsIdentified {
+        within_ms: u64,
+    },
+    ObsRestart {
+        down_ms: u64,
+    },
+    ObsSceneSwitch {
+        scene: String,
+    },
+    ObsStream {
+        active: bool,
+    },
+    ObsInputMute {
+        input: String,
+        muted: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -96,6 +113,12 @@ impl StepAction {
             Self::Pause { .. } => "pause",
             Self::RunAction { .. } => "run_action",
             Self::SetGlobal { .. } => "set_global",
+            Self::ObsOnline {} => "obs_online",
+            Self::ObsIdentified { .. } => "obs_identified",
+            Self::ObsRestart { .. } => "obs_restart",
+            Self::ObsSceneSwitch { .. } => "obs_scene_switch",
+            Self::ObsStream { .. } => "obs_stream",
+            Self::ObsInputMute { .. } => "obs_input_mute",
         }
     }
 
@@ -107,6 +130,18 @@ impl StepAction {
                 | Self::Crowd(_)
                 | Self::TwitchEvent { .. }
                 | Self::SessionReconnect { .. }
+        )
+    }
+
+    pub fn needs_fake_obs(&self) -> bool {
+        matches!(
+            self,
+            Self::ObsOnline {}
+                | Self::ObsIdentified { .. }
+                | Self::ObsRestart { .. }
+                | Self::ObsSceneSwitch { .. }
+                | Self::ObsStream { .. }
+                | Self::ObsInputMute { .. }
         )
     }
 }

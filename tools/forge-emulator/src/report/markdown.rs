@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use crate::obs::Authentication;
 use time::format_description::well_known::Rfc3339;
 
 use super::actual::request_line;
@@ -307,6 +308,34 @@ fn expectation_evidence(evidence: &Evidence) -> Vec<String> {
             });
             lines
         }
+        Evidence::Obs(obs) => {
+            let mut lines = Vec::new();
+            listed(&mut lines, "OBS connection", &obs.sessions, |session| {
+                format!(
+                    "session {}: authentication {}, {}{}",
+                    session.id,
+                    authentication_label(session.authentication),
+                    if session.identified {
+                        "identified"
+                    } else {
+                        "not identified"
+                    },
+                    session
+                        .close_code
+                        .map(|close| format!(", closed with code {close}"))
+                        .unwrap_or_default()
+                )
+            });
+            listed(&mut lines, "OBS request", &obs.requests, |request| {
+                format!(
+                    "{} {} answered {}",
+                    code(&request.request_type),
+                    code(&compact(&request.request_data, PAYLOAD_CHARS)),
+                    request.code
+                )
+            });
+            lines
+        }
         Evidence::Log(log) => {
             let mut lines = Vec::new();
             if let Some(record) = &log.matched {
@@ -363,6 +392,15 @@ fn ledger_lines(ledger: &LedgerExcerpt) -> Vec<String> {
         lines.push("the fake Twitch recorded nothing relevant".to_owned());
     }
     lines
+}
+
+fn authentication_label(authentication: Authentication) -> &'static str {
+    match authentication {
+        Authentication::Pending => "pending",
+        Authentication::NotRequired => "not required",
+        Authentication::Accepted => "accepted",
+        Authentication::Rejected => "rejected",
+    }
 }
 
 fn listed<T>(lines: &mut Vec<String>, label: &str, items: &[T], line: impl Fn(&T) -> String) {

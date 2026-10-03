@@ -602,3 +602,56 @@ async fn shutdown_closes_open_sockets_and_stops_accepting() {
     assert!(tokio_tungstenite::connect_async(socket_url).await.is_err());
     assert!(reqwest::get(api_url).await.is_err());
 }
+
+async fn post_whisper(fake: &FakeTwitch, from: &str, to: &str, body: &Value) -> u16 {
+    let url = format!(
+        "{}/helix/whispers?from_user_id={from}&to_user_id={to}",
+        fake.api_base_url()
+    );
+    authorized(&reqwest::Client::new(), reqwest::Method::POST, url)
+        .json(body)
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16()
+}
+
+#[tokio::test]
+async fn whisper_from_the_broadcaster_is_accepted_with_no_content() {
+    let fake = start().await;
+    let broadcaster = config().broadcaster_user_id;
+
+    let status = post_whisper(
+        &fake,
+        &broadcaster,
+        "200000042",
+        &json!({ "message": "psst" }),
+    )
+    .await;
+
+    assert_eq!(status, 204);
+    assert_eq!(fake.ledger().unexpected_requests().count(), 0);
+}
+
+#[tokio::test]
+async fn whisper_requests_twitch_would_refuse_are_refused() {
+    let fake = start().await;
+    let broadcaster = config().broadcaster_user_id;
+    let cases = [
+        ("200000999", "200000042", json!({ "message": "psst" }), 401),
+        (broadcaster.as_str(), "", json!({ "message": "psst" }), 400),
+        (
+            broadcaster.as_str(),
+            "200000042",
+            json!({ "message": "" }),
+            400,
+        ),
+        (broadcaster.as_str(), "200000042", json!({}), 400),
+    ];
+
+    for (from, to, body, expected) in cases {
+        let status = post_whisper(&fake, from, to, &body).await;
+        assert_eq!(status, expected, "from {from:?} to {to:?} with {body}");
+    }
+}

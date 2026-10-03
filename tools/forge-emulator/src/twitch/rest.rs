@@ -24,6 +24,7 @@ enum Route {
     Polls,
     Predictions,
     SendChatMessage,
+    SendWhisper,
     ListRewards,
     CreateReward,
     UpdateReward,
@@ -39,6 +40,7 @@ impl Route {
             ("GET", "/helix/polls") => Self::Polls,
             ("GET", "/helix/predictions") => Self::Predictions,
             ("POST", "/helix/chat/messages") => Self::SendChatMessage,
+            ("POST", "/helix/whispers") => Self::SendWhisper,
             ("GET", CUSTOM_REWARDS) => Self::ListRewards,
             ("POST", CUSTOM_REWARDS) => Self::CreateReward,
             ("PATCH", CUSTOM_REWARDS) => Self::UpdateReward,
@@ -189,6 +191,7 @@ fn serve_plain(
             (StatusCode::OK, json!({ "data": [], "pagination": {} }))
         }
         Route::SendChatMessage => send_chat_message(body),
+        Route::SendWhisper => send_whisper(config, query, body),
         Route::ListRewards | Route::CreateReward | Route::UpdateReward | Route::DeleteReward => {
             error_body(StatusCode::NOT_FOUND, "")
         }
@@ -296,4 +299,36 @@ fn send_chat_message(body: Option<&Value>) -> (StatusCode, Value) {
     }
     let data = json!({ "message_id": ids::uuid_like(), "is_sent": true, "drop_reason": null });
     (StatusCode::OK, json!({ "data": [data] }))
+}
+
+fn send_whisper(
+    config: &FakeTwitchConfig,
+    query: &[(String, String)],
+    body: Option<&Value>,
+) -> (StatusCode, Value) {
+    let param = |key: &str| {
+        query
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+            .filter(|value| !value.is_empty())
+    };
+    let message = body
+        .and_then(|body| body["message"].as_str())
+        .filter(|message| !message.is_empty());
+    let (Some(from_user_id), Some(_), Some(_)) =
+        (param("from_user_id"), param("to_user_id"), message)
+    else {
+        return error_body(
+            StatusCode::BAD_REQUEST,
+            "from_user_id, to_user_id and message are required",
+        );
+    };
+    if from_user_id != config.broadcaster_user_id {
+        return error_body(
+            StatusCode::UNAUTHORIZED,
+            "The ID in from_user_id must match the user ID in the access token.",
+        );
+    }
+    (StatusCode::NO_CONTENT, Value::Null)
 }

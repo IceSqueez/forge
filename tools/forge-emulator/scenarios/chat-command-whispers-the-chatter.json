@@ -1,0 +1,74 @@
+{
+  "name": "a script whisper reaches the viewer privately and never public chat",
+  "purpose": "One Twitch chat command runs an inline script that calls forge::chat::whisper. The request must leave forge as exactly one Helix whisper from the broadcaster, publish chat.whisper.sent without the whisper text, and never fall back to a public chat message.",
+  "fixture": {
+    "twitch": {},
+    "chat_commands": [
+      {
+        "phrase": "!secret",
+        "action_name": "Whisper Back",
+        "steps": [
+          {
+            "kind_id": "script.run.inline",
+            "config": {
+              "body": {
+                "type": "string",
+                "value": "forge::chat::whisper(\"alice\", \"psst, only for you\")"
+              }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": {
+        "chat": {
+          "viewer": { "user_id": "200000042", "login": "alice" },
+          "text": "!secret"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "done",
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "whispered",
+            "source": "twitch",
+            "kind": "chat.whisper.sent",
+            "payload": {
+              "/whisper_to_login": { "equals": "alice" },
+              "/message": { "present": false }
+            },
+            "within_ms": 5000
+          }
+        },
+        { "event_absent": { "kind": "chat.send", "window_ms": 1000 } },
+        { "event_absent": { "kind": "chat.send.failed", "window_ms": 1000 } },
+        {
+          "twitch_request_count": { "method": "POST", "path": "/helix/whispers", "min": 1, "max": 1 }
+        },
+        {
+          "twitch_request_count": { "method": "POST", "path": "/helix/chat/messages", "max": 0 }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

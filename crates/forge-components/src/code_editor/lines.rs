@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use crate::highlight::{HighlightSpan, Language, LineState, highlight_line};
 
-const JSON_LOOKBEHIND_LINES: usize = 1;
-
 pub(crate) struct CodeLine<P> {
     text: Arc<str>,
     start: usize,
@@ -122,9 +120,9 @@ impl<P: Default> CodeLines<P> {
             .take_while(|(line, new)| &*line.text == **new)
             .count();
         let relex_from = if self.language == Language::Json {
-            prefix.saturating_sub(JSON_LOOKBEHIND_LINES)
+            0
         } else {
-            prefix
+            prefix.min(old_len.saturating_sub(1))
         };
         let suffix_from = new_len - suffix;
         let old_suffix_from = old_len - suffix;

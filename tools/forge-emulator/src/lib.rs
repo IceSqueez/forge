@@ -1,5 +1,6 @@
 pub mod control;
 pub mod discord;
+pub mod donatello;
 mod error;
 pub mod fixture;
 pub mod launch;

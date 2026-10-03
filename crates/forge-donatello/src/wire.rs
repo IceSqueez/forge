@@ -71,3 +71,30 @@ pub(crate) struct DonateWire {
     pub(crate) is_published: Option<bool>,
     pub(crate) created_at: String,
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::json;
+
+    use super::DonatesPageWire;
+
+    #[test]
+    fn page_metadata_counts_accept_numbers_and_numeric_strings() {
+        for (pages, total, expected) in [
+            (json!(3), json!(45), (Some(3), Some(45))),
+            (json!("3"), json!(" 45 "), (Some(3), Some(45))),
+            (json!("many"), json!(-1), (None, None)),
+            (json!(null), json!(null), (None, None)),
+        ] {
+            let page: DonatesPageWire =
+                serde_json::from_value(json!({ "content": [], "pages": pages, "total": total }))
+                    .unwrap();
+            assert_eq!(
+                (page.page_count(), page.total_count()),
+                expected,
+                "pages {pages} total {total}"
+            );
+        }
+    }
+}

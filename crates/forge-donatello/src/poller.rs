@@ -318,3 +318,46 @@ async fn emit(
     }
     Ok(newest)
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::{MAX_SCAN_PAGES, is_final_page};
+    use crate::wire::DonatesPageWire;
+
+    fn page(body: Value) -> DonatesPageWire {
+        serde_json::from_value(body).unwrap()
+    }
+
+    #[test]
+    fn final_page_is_detected_from_any_end_marker() {
+        let item = json!({ "pubId": "D-1" });
+        for (body, index, last) in [
+            (json!({ "content": [item], "last": true }), 0, true),
+            (json!({ "content": [] }), 0, true),
+            (json!({ "content": [item], "pages": 3 }), 2, true),
+            (json!({ "content": [item], "pages": 3 }), 1, false),
+            (
+                json!({ "content": [item], "pages": 3, "last": false }),
+                0,
+                false,
+            ),
+            (json!({ "content": [item] }), 7, false),
+        ] {
+            assert_eq!(
+                is_final_page(&page(body.clone()), index),
+                last,
+                "{body} at {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn page_walk_stops_at_the_scan_cap_even_without_end_markers() {
+        let endless = page(json!({ "content": [{ "pubId": "D-1" }] }));
+        assert!(!is_final_page(&endless, MAX_SCAN_PAGES - 2));
+        assert!(is_final_page(&endless, MAX_SCAN_PAGES - 1));
+    }
+}

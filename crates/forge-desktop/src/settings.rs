@@ -38,7 +38,6 @@ const NAV_GROUPS: [(&str, &[SettingsSection]); 3] = [
             SettingsSection::Appearance,
             SettingsSection::Language,
             SettingsSection::Shortcuts,
-            SettingsSection::Notifications,
         ],
     ),
     (
@@ -63,7 +62,6 @@ pub enum SettingsSection {
     Appearance,
     Language,
     Shortcuts,
-    Notifications,
     Audio,
     Scripting,
     Queues,
@@ -80,7 +78,6 @@ impl SettingsSection {
             SettingsSection::Appearance => tr!("settings_nav_appearance"),
             SettingsSection::Language => tr!("settings_nav_language_region"),
             SettingsSection::Shortcuts => tr!("settings_nav_shortcuts"),
-            SettingsSection::Notifications => tr!("settings_nav_notifications"),
             SettingsSection::Audio => tr!("settings_nav_audio"),
             SettingsSection::Scripting => tr!("settings_scripting_title"),
             SettingsSection::Queues => tr!("settings_queues_section_title"),
@@ -97,7 +94,6 @@ impl SettingsSection {
             SettingsSection::Appearance => Icon::Photo,
             SettingsSection::Language => Icon::Globe,
             SettingsSection::Shortcuts => Icon::Keyboard,
-            SettingsSection::Notifications => Icon::InfoCircle,
             SettingsSection::Audio => Icon::Volume,
             SettingsSection::Scripting => Icon::Terminal,
             SettingsSection::Queues => Icon::Notebook,
@@ -114,7 +110,6 @@ impl SettingsSection {
             SettingsSection::Appearance => "appearance",
             SettingsSection::Language => "language",
             SettingsSection::Shortcuts => "shortcuts",
-            SettingsSection::Notifications => "notifications",
             SettingsSection::Audio => "audio",
             SettingsSection::Scripting => "scripting",
             SettingsSection::Queues => "queues",
@@ -639,7 +634,6 @@ impl SettingsView {
             SettingsSection::Audio => self.audio.clone().into_any_element(),
             SettingsSection::Scripting => self.scripting.clone().into_any_element(),
             SettingsSection::WebSocket => self.websocket.clone().into_any_element(),
-            SettingsSection::Notifications => self.notifications_pane(palette, density),
             SettingsSection::Queues => self.queues_pane(palette, density),
             SettingsSection::Storage => self.storage.clone().into_any_element(),
             SettingsSection::Version => self.version_pane(palette, density, cx),
@@ -1141,27 +1135,6 @@ impl SettingsView {
                 palette,
             ))
             .child(card(stay_awake_row, palette))
-            .into_any_element()
-    }
-
-    fn notifications_pane(&self, palette: &ForgePalette, density: Density) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Md, density))
-            .child(pane_header(
-                Icon::InfoCircle,
-                tr!("settings_notifications_section_title"),
-                palette,
-            ))
-            .child(card(
-                div()
-                    .font_family(body_family())
-                    .text_size(FONT_SM)
-                    .text_color(palette.text_muted)
-                    .child(tr!("settings_notifications_hint")),
-                palette,
-            ))
             .into_any_element()
     }
 

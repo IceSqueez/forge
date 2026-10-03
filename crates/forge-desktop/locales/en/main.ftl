@@ -200,7 +200,6 @@ settings_stay_awake_label = Stay awake while forge is running
 settings_stay_awake_hint = Keeps the display and the system from sleeping while forge runs
 settings_nav_language_region = Language & region
 settings_nav_shortcuts = Shortcuts
-settings_nav_notifications = Notifications
 settings_nav_audio = Audio
 
 ## Settings → Diagnostics pane
@@ -282,11 +281,6 @@ settings_storage_retention_hint = How many days of event log history to keep in 
 settings_queues_section_title = Queues & threading
 settings_queues_workers_label = Worker threads
 settings_queues_managed_hint = Per-queue concurrency limits and blocking flags are managed on the Queues screen.
-
-## Settings → Notifications pane
-
-settings_notifications_section_title = Notifications
-settings_notifications_hint = Per-event-type toast customisation coming later. Errors and connection changes always surface in the status bar.
 
 ## Settings → Shortcuts pane
 

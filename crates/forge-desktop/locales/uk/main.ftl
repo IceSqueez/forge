@@ -208,7 +208,6 @@ settings_stay_awake_label = Не засинати, поки forge працює
 settings_stay_awake_hint = Екран і система не переходять у сон, поки forge працює
 settings_nav_language_region = Мова та регіон
 settings_nav_shortcuts = Скорочення
-settings_nav_notifications = Сповіщення
 settings_nav_audio = Аудіо
 
 ## Налаштування → панель діагностики
@@ -292,11 +291,6 @@ settings_storage_retention_hint = Скільки днів зберігати ж�
 settings_queues_section_title = Черги та потоки
 settings_queues_workers_label = Робочі потоки
 settings_queues_managed_hint = Ліміти паралелізму та прапорці блокування керуються на екрані Черги.
-
-## Налаштування → панель сповіщень
-
-settings_notifications_section_title = Сповіщення
-settings_notifications_hint = Налаштування спливаючих підказок за типом події з'явиться пізніше. Помилки та зміни підключень завжди відображаються в рядку стану.
 
 ## Налаштування → панель гарячих клавіш (ярлики)
 

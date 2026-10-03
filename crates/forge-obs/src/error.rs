@@ -87,4 +87,40 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn api_errors_keep_their_code_and_obs_message_except_studio_mode_which_gets_a_reason() {
+        let api = |code, message: Option<&str>| obws::error::Error::Api {
+            code,
+            message: message.map(str::to_owned),
+        };
+        let studio = map_request_error(
+            "SetCurrentPreviewScene",
+            api(
+                obws::responses::StatusCode::StudioModeNotActive,
+                Some("Studio mode is not active."),
+            ),
+        );
+        assert_eq!(
+            studio.to_string(),
+            "Studio Mode is off in OBS - the preview scene exists only in Studio Mode. Turn it on first with the \"Set Studio Mode\" sub-action"
+        );
+
+        for (message, expected) in [
+            (
+                Some("No source was found"),
+                "request failed: SetCurrentPreviewScene - ResourceNotFound: No source was found",
+            ),
+            (
+                None,
+                "request failed: SetCurrentPreviewScene - ResourceNotFound",
+            ),
+        ] {
+            let mapped = map_request_error(
+                "SetCurrentPreviewScene",
+                api(obws::responses::StatusCode::ResourceNotFound, message),
+            );
+            assert_eq!(mapped.to_string(), expected);
+        }
+    }
 }

@@ -16,6 +16,7 @@ members = [
   "crates/forge-obs",
   "crates/forge-vtube",
   "crates/forge-discord",
+  "crates/forge-donatello",
   "crates/forge-midi",
   "crates/forge-hotkey",
   "crates/forge-awake",
@@ -59,6 +60,11 @@ thiserror = { version = "2.0" }
 async-trait = { version = "0.1" }
 
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+jiff = { version = "0.2", default-features = false, features = [
+  "std",
+  "tz-system",
+  "tzdb-bundle-always",
+] }
 
 ulid = { version = "3.0", features = ["serde"] }
 

@@ -7,6 +7,7 @@ pub enum EndpointSurface {
     KickChatSocket,
     YouTubeDataApi,
     YouTubeUploadApi,
+    DonatelloApi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +26,7 @@ impl EndpointProtocol {
 }
 
 impl EndpointSurface {
-    pub const ALL: [EndpointSurface; 7] = [
+    pub const ALL: [EndpointSurface; 8] = [
         Self::TwitchApi,
         Self::TwitchEventSubSocket,
         Self::KickPublicApi,
@@ -33,6 +34,7 @@ impl EndpointSurface {
         Self::KickChatSocket,
         Self::YouTubeDataApi,
         Self::YouTubeUploadApi,
+        Self::DonatelloApi,
     ];
 
     pub const fn env_var(self) -> &'static str {
@@ -44,6 +46,7 @@ impl EndpointSurface {
             Self::KickChatSocket => "FORGE_KICK_CHAT_WS_BASE_URL",
             Self::YouTubeDataApi => "FORGE_YOUTUBE_API_BASE_URL",
             Self::YouTubeUploadApi => "FORGE_YOUTUBE_UPLOAD_BASE_URL",
+            Self::DonatelloApi => "FORGE_DONATELLO_API_BASE_URL",
         }
     }
 
@@ -56,6 +59,7 @@ impl EndpointSurface {
             Self::KickChatSocket => "wss://ws-us2.pusher.com/app",
             Self::YouTubeDataApi => "https://www.googleapis.com/youtube/v3",
             Self::YouTubeUploadApi => "https://www.googleapis.com/upload/youtube/v3",
+            Self::DonatelloApi => "https://donatello.to/api/v1",
         }
     }
 
@@ -65,7 +69,8 @@ impl EndpointSurface {
             | Self::KickPublicApi
             | Self::KickChannelApi
             | Self::YouTubeDataApi
-            | Self::YouTubeUploadApi => EndpointProtocol::Http,
+            | Self::YouTubeUploadApi
+            | Self::DonatelloApi => EndpointProtocol::Http,
             Self::TwitchEventSubSocket | Self::KickChatSocket => EndpointProtocol::WebSocket,
         }
     }

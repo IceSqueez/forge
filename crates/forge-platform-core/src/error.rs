@@ -34,6 +34,9 @@ pub enum PlatformError {
     #[error("feature '{feature}' is not supported by this platform")]
     Unsupported { feature: String },
 
+    #[error("malformed response: {reason}")]
+    MalformedResponse { reason: String },
+
     #[error("payload deserialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
 

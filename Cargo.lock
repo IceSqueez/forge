@@ -2625,6 +2625,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-donatello"
+version = "0.5.5"
+dependencies = [
+ "async-trait",
+ "forge-platform-core",
+ "forge-storage",
+ "forge-types",
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
+]
+
+[[package]]
 name = "forge-events"
 version = "0.5.5"
 dependencies = [
@@ -4477,6 +4498,7 @@ dependencies = [
  "defmt",
  "jiff-core",
  "jiff-static",
+ "jiff-tzdb",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",

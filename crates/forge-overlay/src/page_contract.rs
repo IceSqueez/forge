@@ -3,6 +3,10 @@ use crate::config::{
     ACCENT, FONT, MARGIN_BOTTOM, MARGIN_LEFT, MARGIN_RIGHT, MARGIN_TOP, POSITION, TEXT_SIZE,
 };
 use crate::descriptor::{ConfigSection, OverlayKindDescriptor};
+use crate::metrics::{
+    MARGIN_BOTTOM_PROPERTY, MARGIN_LEFT_PROPERTY, MARGIN_RIGHT_PROPERTY, MARGIN_TOP_PROPERTY,
+    TEXT_SIZE_PROPERTY,
+};
 
 pub const PAGE_NAMESPACE: &str = "forge";
 pub const BIND_ATTRIBUTE: &str = "data-bind";
@@ -105,23 +109,23 @@ pub const PAGE_CONTRACT: PageContract = PageContract {
             config_key: FONT,
         },
         RuntimeProperty {
-            property: "--text-size",
+            property: TEXT_SIZE_PROPERTY,
             config_key: TEXT_SIZE,
         },
         RuntimeProperty {
-            property: "--margin-top",
+            property: MARGIN_TOP_PROPERTY,
             config_key: MARGIN_TOP,
         },
         RuntimeProperty {
-            property: "--margin-right",
+            property: MARGIN_RIGHT_PROPERTY,
             config_key: MARGIN_RIGHT,
         },
         RuntimeProperty {
-            property: "--margin-bottom",
+            property: MARGIN_BOTTOM_PROPERTY,
             config_key: MARGIN_BOTTOM,
         },
         RuntimeProperty {
-            property: "--margin-left",
+            property: MARGIN_LEFT_PROPERTY,
             config_key: MARGIN_LEFT,
         },
     ],

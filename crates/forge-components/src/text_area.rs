@@ -53,35 +53,39 @@ actions!(
     ]
 );
 
+pub(crate) fn editing_key_bindings(context: &str) -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("backspace", Backspace, Some(context)),
+        KeyBinding::new("delete", Delete, Some(context)),
+        KeyBinding::new("left", Left, Some(context)),
+        KeyBinding::new("right", Right, Some(context)),
+        KeyBinding::new("up", Up, Some(context)),
+        KeyBinding::new("down", Down, Some(context)),
+        KeyBinding::new("shift-left", SelectLeft, Some(context)),
+        KeyBinding::new("shift-right", SelectRight, Some(context)),
+        KeyBinding::new("shift-up", SelectUp, Some(context)),
+        KeyBinding::new("shift-down", SelectDown, Some(context)),
+        KeyBinding::new("home", Home, Some(context)),
+        KeyBinding::new("end", End, Some(context)),
+        KeyBinding::new("enter", InsertNewline, Some(context)),
+        KeyBinding::new("cmd-a", SelectAll, Some(context)),
+        KeyBinding::new("ctrl-a", SelectAll, Some(context)),
+        KeyBinding::new("cmd-c", Copy, Some(context)),
+        KeyBinding::new("ctrl-c", Copy, Some(context)),
+        KeyBinding::new("cmd-x", Cut, Some(context)),
+        KeyBinding::new("ctrl-x", Cut, Some(context)),
+        KeyBinding::new("cmd-v", Paste, Some(context)),
+        KeyBinding::new("ctrl-v", Paste, Some(context)),
+        KeyBinding::new("cmd-z", Undo, Some(context)),
+        KeyBinding::new("ctrl-z", Undo, Some(context)),
+        KeyBinding::new("cmd-shift-z", Redo, Some(context)),
+        KeyBinding::new("ctrl-shift-z", Redo, Some(context)),
+        KeyBinding::new("ctrl-y", Redo, Some(context)),
+    ]
+}
+
 pub fn bind_text_area_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("backspace", Backspace, Some(KEY_CONTEXT)),
-        KeyBinding::new("delete", Delete, Some(KEY_CONTEXT)),
-        KeyBinding::new("left", Left, Some(KEY_CONTEXT)),
-        KeyBinding::new("right", Right, Some(KEY_CONTEXT)),
-        KeyBinding::new("up", Up, Some(KEY_CONTEXT)),
-        KeyBinding::new("down", Down, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-left", SelectLeft, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-right", SelectRight, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-up", SelectUp, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-down", SelectDown, Some(KEY_CONTEXT)),
-        KeyBinding::new("home", Home, Some(KEY_CONTEXT)),
-        KeyBinding::new("end", End, Some(KEY_CONTEXT)),
-        KeyBinding::new("enter", InsertNewline, Some(KEY_CONTEXT)),
-        KeyBinding::new("cmd-a", SelectAll, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-a", SelectAll, Some(KEY_CONTEXT)),
-        KeyBinding::new("cmd-c", Copy, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-c", Copy, Some(KEY_CONTEXT)),
-        KeyBinding::new("cmd-x", Cut, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-x", Cut, Some(KEY_CONTEXT)),
-        KeyBinding::new("cmd-v", Paste, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-v", Paste, Some(KEY_CONTEXT)),
-        KeyBinding::new("cmd-z", Undo, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-z", Undo, Some(KEY_CONTEXT)),
-        KeyBinding::new("cmd-shift-z", Redo, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-shift-z", Redo, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-y", Redo, Some(KEY_CONTEXT)),
-    ]);
+    cx.bind_keys(editing_key_bindings(KEY_CONTEXT));
 }
 
 struct AreaLayout {

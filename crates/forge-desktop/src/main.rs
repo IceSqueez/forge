@@ -140,7 +140,8 @@ mod vtube_connect_form;
 mod window_presence;
 
 use forge_components::{
-    FOOTER_HEIGHT, IconAssets, bind_picker_keys, bind_text_area_keys, bind_text_input_keys,
+    FOOTER_HEIGHT, IconAssets, bind_code_editor_keys, bind_picker_keys, bind_text_area_keys,
+    bind_text_input_keys,
 };
 use forge_platform_core::paths;
 use gpui::{
@@ -379,6 +380,7 @@ fn main() {
 
         bind_text_input_keys(cx);
         bind_text_area_keys(cx);
+        bind_code_editor_keys(cx);
         bind_picker_keys(cx);
         bind_list_keys(cx);
         register_shell_key_bindings(cx);

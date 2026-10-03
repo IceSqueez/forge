@@ -231,6 +231,15 @@ impl TextBuffer {
         self.marked = None;
     }
 
+    pub(crate) fn insert_newline_keeping_indent(&mut self) {
+        let at = self.target_range(None).start;
+        let line_start = self.text[..at].rfind('\n').map_or(0, |i| i + 1);
+        let before_caret = &self.text[line_start..at];
+        let indent_len = before_caret.len() - before_caret.trim_start_matches([' ', '\t']).len();
+        let newline = format!("\n{}", &before_caret[..indent_len]);
+        self.insert(&newline, EditKind::Standalone);
+    }
+
     pub(crate) fn delete_backward(&mut self) {
         self.delete_toward(EditKind::DeleteBackward);
     }

@@ -1,6 +1,7 @@
+use forge_components::highlight::Language;
 use forge_components::{
-    BORDER_THIN, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent,
-    OverlayPosition, TextArea, body_family, confirm_modal, empty_state, ghost_button_with_icon,
+    BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon,
+    InputEvent, OverlayPosition, body_family, confirm_modal, empty_state, ghost_button_with_icon,
     icon, mono_family, overlay, primary_button_with_icon, status_dot, tr,
 };
 use forge_overlay::{MediaIssue, OVERRIDABLE_FILES, sizing_notice_pending};
@@ -36,6 +37,7 @@ const HINT_PAD_H: Pixels = px(16.0);
 const HINT_GLYPH: Pixels = px(12.0);
 
 const EDITOR_FS: Pixels = px(12.5);
+const EDITOR_LINE_HEIGHT: Pixels = px(20.0);
 
 const FOOT_GAP: Pixels = px(10.0);
 const FOOT_PAD_V: Pixels = px(7.0);
@@ -56,7 +58,7 @@ struct OpenSource {
 }
 
 pub(super) struct CodeState {
-    editor: Entity<TextArea>,
+    editor: Entity<CodeEditor>,
     file: &'static str,
     open: Option<OpenSource>,
     loading: bool,
@@ -71,12 +73,14 @@ impl CodeState {
     pub(super) fn new(cx: &mut Context<OverlaysView>) -> Self {
         let palette = cx.palette();
         let editor = cx.new(|cx| {
-            TextArea::new(tr!("overlays_code_placeholder"), cx)
-                .with_palette(palette)
-                .mono()
-                .with_gutter()
-                .with_font_size(EDITOR_FS)
-                .fill()
+            CodeEditor::new(
+                file_language(first_file()),
+                tr!("overlays_code_placeholder"),
+                cx,
+            )
+            .with_palette(palette)
+            .with_font_size(EDITOR_FS)
+            .with_line_height(EDITOR_LINE_HEIGHT)
         });
         let sub = cx.subscribe(&editor, |_this, _area, event: &InputEvent, cx| {
             if let InputEvent::Changed(_) = event {
@@ -102,6 +106,14 @@ fn first_file() -> &'static str {
     OVERRIDABLE_FILES.first().copied().unwrap_or_default()
 }
 
+fn file_language(file: &str) -> Language {
+    match file.rsplit_once('.').map(|(_, extension)| extension) {
+        Some("css") => Language::Css,
+        Some("js") => Language::JavaScript,
+        _ => Language::Html,
+    }
+}
+
 fn tab_label(file: &str) -> String {
     file.rsplit_once('.')
         .map(|(_, extension)| extension)
@@ -119,10 +131,11 @@ impl OverlaysView {
     }
 
     pub(super) fn code_dirty(&self, cx: &App) -> bool {
+        let editor = self.code.editor.read(cx);
         self.code
             .open
             .as_ref()
-            .is_some_and(|open| open.original != self.code_body(cx))
+            .is_some_and(|open| open.original != editor.content())
     }
 
     fn is_overridden(&self, file: &str) -> bool {
@@ -199,9 +212,10 @@ impl OverlaysView {
             Ok(body) => {
                 self.mark_missing(file, body.is_none() && self.is_overridden(file));
                 let body = body.unwrap_or_default();
-                self.code
-                    .editor
-                    .update(cx, |area, cx| area.set_content(body.clone(), cx));
+                self.code.editor.update(cx, |editor, cx| {
+                    editor.set_language(file_language(file), cx);
+                    editor.set_content(body.clone(), cx);
+                });
                 self.code.open = Some(OpenSource {
                     id,
                     file,
@@ -452,7 +466,7 @@ impl OverlaysView {
     }
 
     fn render_code_meta(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
-        let lines = self.code_body(cx).lines().count().max(1);
+        let lines = self.code.editor.read(cx).line_count();
         let state = if self.code.saving {
             tr!("overlays_code_state_saving")
         } else if self.code_dirty(cx) {

@@ -6,6 +6,7 @@ pub(crate) mod caret_blink;
 pub mod chat_gap_row;
 pub mod chat_row;
 pub mod chip;
+pub mod code_editor;
 pub mod confirm;
 pub mod confirm_state;
 pub mod data;
@@ -66,6 +67,7 @@ pub use chat_row::{
     BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, badge_color, badge_label, chat_row,
 };
 pub use chip::{Chip, ChipGlyph, chip};
+pub use code_editor::{CodeEditor, bind_code_editor_keys};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use confirm_state::Confirm;
 pub use data::{

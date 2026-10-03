@@ -231,6 +231,7 @@ pub fn reapply_key_bindings(cx: &mut App, overrides: &HashMap<String, String>) {
     cx.clear_key_bindings();
     forge_components::bind_text_input_keys(cx);
     forge_components::bind_text_area_keys(cx);
+    forge_components::bind_code_editor_keys(cx);
     forge_components::bind_picker_keys(cx);
     bind_list_keys(cx);
     bind_shell(cx, overrides);

@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use forge_overlay::metrics::{
-    ALERT, AlertMetrics, CHAT, ChatMetrics, FRAME, FrameMetrics, GOAL, GoalMetrics,
-    TEXT_SCALE_PROPERTY, TICKER, TickerMetrics,
+    ALERT, AlertMetrics, CHAT, ChatMetrics, FRAME, FrameMetrics, GOAL, GoalMetrics, LATEST,
+    LatestMetrics, TEXT_SCALE_PROPERTY, TICKER, TickerMetrics,
 };
 use forge_overlay::{OverlayKindRegistry, element_sizing, register_builtin_kinds, style_guards};
 
@@ -23,6 +23,12 @@ const SCALED_NUMBERS: &[(&str, &[f32])] = &[
         &[4.0, 8.0, 10.0, 12.0, 12.0, 14.0, 14.0, 18.0],
     ),
     (
+        "overlay.latest",
+        &[
+            4.0, 10.0, 12.0, 13.0, 14.0, 14.0, 15.0, 20.0, 20.0, 26.0, 26.0,
+        ],
+    ),
+    (
         "overlay.ticker",
         &[3.0, 6.0, 10.0, 12.0, 13.0, 14.0, 19.0, 22.0, 26.0],
     ),
@@ -34,7 +40,8 @@ const BREAKING_TEXT: &[(&str, &[&str])] = &[
     ("overlay.goal", &[".label", ".figure"]),
 ];
 
-const ELLIPSIZING_TEXT: &[(&str, &str)] = &[("overlay.ticker", ".body")];
+const ELLIPSIZING_TEXT: &[(&str, &str)] =
+    &[("overlay.latest", ".value"), ("overlay.ticker", ".body")];
 
 fn registry() -> OverlayKindRegistry {
     let mut reg = OverlayKindRegistry::new();
@@ -145,6 +152,14 @@ fn a_metric_that_drifts_from_its_stylesheet_fails_its_guard() {
             GoalMetrics {
                 track_height: GOAL.track_height + 0.5,
                 ..GOAL
+            }
+            .declarations(),
+        ),
+        (
+            "overlay.latest",
+            LatestMetrics {
+                subline_margin: LATEST.subline_margin + 0.5,
+                ..LATEST
             }
             .declarations(),
         ),
@@ -292,6 +307,7 @@ fn every_stock_look_clips_at_the_box_and_keeps_its_margins_inside_it() {
         "overlay.chat",
         "overlay.frame",
         "overlay.goal",
+        "overlay.latest",
         "overlay.ticker",
     ] {
         let style = stylesheet(kind_id);
@@ -315,6 +331,7 @@ fn only_the_looks_that_keep_position_read_it_from_the_page() {
     for (kind_id, reads_position) in [
         ("overlay.alert", false),
         ("overlay.goal", false),
+        ("overlay.latest", false),
         ("overlay.ticker", false),
         ("overlay.chat", true),
         ("overlay.frame", true),

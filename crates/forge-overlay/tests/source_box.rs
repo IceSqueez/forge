@@ -20,14 +20,16 @@ const BLANK_KIND: &str = "overlay.blank";
 const CHAT_KIND: &str = "overlay.chat";
 const FRAME_KIND: &str = "overlay.frame";
 const GOAL_KIND: &str = "overlay.goal";
+const LATEST_KIND: &str = "overlay.latest";
 const TICKER_KIND: &str = "overlay.ticker";
 
-const ALL_KINDS: [&str; 6] = [
+const ALL_KINDS: [&str; 7] = [
     ALERT_KIND,
     BLANK_KIND,
     CHAT_KIND,
     FRAME_KIND,
     GOAL_KIND,
+    LATEST_KIND,
     TICKER_KIND,
 ];
 
@@ -47,6 +49,7 @@ const BASE_TEXT_SIZE: &[(&str, Option<u32>)] = &[
     (CHAT_KIND, Some(13)),
     (FRAME_KIND, Some(13)),
     (GOAL_KIND, Some(14)),
+    (LATEST_KIND, Some(20)),
     (TICKER_KIND, Some(19)),
 ];
 
@@ -55,6 +58,7 @@ const TEXT_SCALES: &[(&str, &[(u32, f32)])] = &[
     (CHAT_KIND, &[(13, 1.0), (26, 2.0)]),
     (FRAME_KIND, &[(13, 1.0), (26, 2.0)]),
     (GOAL_KIND, &[(14, 1.0), (28, 2.0), (7, 0.5)]),
+    (LATEST_KIND, &[(20, 1.0), (40, 2.0), (10, 0.5)]),
     (TICKER_KIND, &[(19, 1.0), (38, 2.0)]),
 ];
 
@@ -212,6 +216,7 @@ fn an_untouched_record_previews_at_its_looks_design_size_and_margins() {
         (ALERT_KIND, 800, 600, ContentMargins::even(10)),
         (TICKER_KIND, 1920, 96, ContentMargins::NONE),
         (GOAL_KIND, 640, 160, ContentMargins::NONE),
+        (LATEST_KIND, 600, 96, ContentMargins::NONE),
         (CHAT_KIND, 400, 600, ContentMargins::NONE),
         (FRAME_KIND, 1280, 720, ContentMargins::NONE),
     ] {
@@ -355,7 +360,7 @@ fn the_box_contract_retires_element_size_everywhere_and_position_where_the_box_p
         });
     }
 
-    for kind_id in [ALERT_KIND, TICKER_KIND, GOAL_KIND] {
+    for kind_id in [ALERT_KIND, TICKER_KIND, GOAL_KIND, LATEST_KIND] {
         with_kind(kind_id, |descriptor| {
             assert!(
                 !offers(descriptor, POSITION),

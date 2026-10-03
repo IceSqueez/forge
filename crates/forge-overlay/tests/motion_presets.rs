@@ -23,6 +23,7 @@ const CHAT_KIND: &str = "overlay.chat";
 const FRAME_KIND: &str = "overlay.frame";
 const GOAL_KIND: &str = "overlay.goal";
 const TICKER_KIND: &str = "overlay.ticker";
+const LATEST_KIND: &str = "overlay.latest";
 
 const MOVING_KINDS: [&str; 5] = [ALERT_KIND, CHAT_KIND, FRAME_KIND, GOAL_KIND, TICKER_KIND];
 const EXITING_KINDS: [&str; 2] = [ALERT_KIND, TICKER_KIND];
@@ -364,6 +365,7 @@ fn each_look_offers_exactly_the_motion_axes_it_plays_and_none_offers_the_old_ani
         (ALERT_KIND, true, true, true),
         (TICKER_KIND, true, true, true),
         (GOAL_KIND, true, true, false),
+        (LATEST_KIND, true, true, false),
         (CHAT_KIND, true, false, false),
         (FRAME_KIND, true, false, false),
         (BLANK_KIND, false, false, false),

@@ -14,6 +14,7 @@ const BUILTIN_IDS: &[&str] = &[
     "overlay.chat",
     "overlay.frame",
     "overlay.goal",
+    "overlay.latest",
     "overlay.ticker",
 ];
 
@@ -39,6 +40,14 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
     (
         "overlay.goal",
         &[("label", "Sub goal"), ("target", "100"), ("value", "42")],
+    ),
+    (
+        "overlay.latest",
+        &[
+            ("headline", "PixelPal"),
+            ("label", "Last donation"),
+            ("subline", "100.00 UAH"),
+        ],
     ),
     (
         "overlay.ticker",

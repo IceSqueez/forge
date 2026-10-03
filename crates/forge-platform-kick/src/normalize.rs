@@ -223,6 +223,22 @@ mod tests {
         assert_eq!(out["sender"]["color"], json!("#00FF00"));
     }
 
+    #[test]
+    fn chat_message_viewer_needs_a_numeric_id_and_a_non_empty_username() {
+        let sender = |username: Value| json!({ "sender": { "id": 42, "username": username } });
+        for raw in [
+            sender(json!("")),
+            sender(json!(null)),
+            json!({ "sender": { "id": 42 } }),
+        ] {
+            assert_eq!(chat_message_viewer(&raw), None, "accepted {raw}");
+        }
+        assert_eq!(
+            chat_message_viewer(&sender(json!("viewer"))),
+            Some(ChatViewer::new("42", "viewer"))
+        );
+    }
+
     fn fixture_message_with_badges(badges: Value) -> Value {
         let fixture: Value = serde_json::from_str(include_str!(
             "../tests/fixtures/published_chat_message.json"

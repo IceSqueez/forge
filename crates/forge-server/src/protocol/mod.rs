@@ -1258,42 +1258,134 @@ mod tests {
         assert_eq!(json["viewers"].as_array().unwrap().len(), 0);
     }
 
-    #[tokio::test]
-    async fn get_active_viewers_dedupes_by_platform_and_user_id() {
-        let ctx = make_ctx(false, false);
-        let chat_payload = |login: &str, id: &str| {
-            serde_json::json!({
-                "channel": "ch",
-                "user": { "login": login, "id": id, "roles": [] },
-                "message": "hi",
-            })
-        };
-        ctx.bus.publish(Event::new(
-            EventSource::Twitch,
-            "twitch.channel.chat.message",
-            chat_payload("alice", "111"),
-        ));
-        ctx.bus.publish(Event::new(
-            EventSource::Twitch,
-            "twitch.channel.chat.message",
-            chat_payload("alice", "111"),
-        ));
-        ctx.bus.publish(Event::new(
-            EventSource::Twitch,
-            "twitch.channel.chat.message",
-            chat_payload("bob", "222"),
-        ));
+    fn chat_event(
+        source: EventSource,
+        kind: &str,
+        viewer: Option<(&str, &str)>,
+        user: Option<serde_json::Value>,
+    ) -> Event {
+        let mut payload = serde_json::json!({ "message": "hi" });
+        if let Some(user) = user {
+            payload["user"] = user;
+        }
+        if let Some((id, name)) = viewer {
+            forge_types::ChatViewer::new(id, name).attach(&mut payload);
+        }
+        Event::new(source, kind, payload)
+    }
+
+    async fn active_viewers(ctx: &DispatchContext) -> Vec<serde_json::Value> {
         let req = WsEnvelope {
-            id: Some("av2".to_owned()),
+            id: Some("av".to_owned()),
             inner: WsRequest::GetActiveViewers,
         };
-        let resp = dispatch(req, &ctx).await;
-        let json = serialize_response_frame(&resp);
-        let viewers = json["viewers"].as_array().unwrap();
-        assert_eq!(viewers.len(), 2);
-        let ids: HashSet<&str> = viewers.iter().map(|v| v["id"].as_str().unwrap()).collect();
-        assert!(ids.contains("111"));
-        assert!(ids.contains("222"));
+        let json = serialize_response_frame(&dispatch(req, ctx).await);
+        json["viewers"].as_array().unwrap().clone()
+    }
+
+    fn viewer_of<'a>(
+        viewers: &'a [serde_json::Value],
+        platform: &str,
+        id: &str,
+    ) -> &'a serde_json::Value {
+        viewers
+            .iter()
+            .find(|v| v["platform"] == platform && v["id"] == id)
+            .unwrap_or_else(|| panic!("no {platform} viewer {id} in {viewers:?}"))
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_dedupes_by_platform_and_envelope_id() {
+        let ctx = make_ctx(false, false);
+        let twitch = |id, name| {
+            chat_event(
+                EventSource::Twitch,
+                "twitch.channel.chat.message",
+                Some((id, name)),
+                None,
+            )
+        };
+        ctx.bus.publish(twitch("111", "alice"));
+        ctx.bus.publish(twitch("111", "alice"));
+        ctx.bus.publish(twitch("222", "bob"));
+        ctx.bus.publish(chat_event(
+            EventSource::Kick,
+            "kick.chat.message.sent",
+            Some(("111", "alice")),
+            None,
+        ));
+
+        let viewers = active_viewers(&ctx).await;
+
+        assert_eq!(viewers.len(), 3);
+        viewer_of(&viewers, "twitch", "111");
+        viewer_of(&viewers, "twitch", "222");
+        viewer_of(&viewers, "kick", "111");
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_serves_youtube_and_kick_chatters_by_envelope_name() {
+        let ctx = make_ctx(false, false);
+        ctx.bus.publish(chat_event(
+            EventSource::YouTube,
+            "youtube.chat.message",
+            Some(("UCyt", "Yuliia")),
+            None,
+        ));
+        ctx.bus.publish(chat_event(
+            EventSource::Kick,
+            "kick.chat.message.sent",
+            Some(("77", "kicker")),
+            None,
+        ));
+
+        let viewers = active_viewers(&ctx).await;
+
+        assert_eq!(viewer_of(&viewers, "youtube", "UCyt")["login"], "Yuliia");
+        assert_eq!(viewer_of(&viewers, "kick", "77")["login"], "kicker");
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_keeps_the_twitch_login_over_the_envelope_name() {
+        let ctx = make_ctx(false, false);
+        ctx.bus.publish(chat_event(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            Some(("111", "Alice_Display")),
+            Some(serde_json::json!({ "login": "alice", "roles": ["moderator", "vip"] })),
+        ));
+        ctx.bus.publish(chat_event(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            Some(("222", "Bob_Display")),
+            Some(serde_json::json!({ "login": "", "roles": [] })),
+        ));
+
+        let viewers = active_viewers(&ctx).await;
+
+        let alice = viewer_of(&viewers, "twitch", "111");
+        assert_eq!(alice["login"], "alice");
+        assert_eq!(alice["roles"], serde_json::json!(["moderator", "vip"]));
+        assert_eq!(viewer_of(&viewers, "twitch", "222")["login"], "Bob_Display");
+    }
+
+    #[tokio::test]
+    async fn get_active_viewers_skips_chat_lines_without_a_viewer_envelope() {
+        let ctx = make_ctx(false, false);
+        ctx.bus.publish(chat_event(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            None,
+            Some(serde_json::json!({ "login": "legacy", "id": "9", "roles": [] })),
+        ));
+        ctx.bus.publish(chat_event(
+            EventSource::Twitch,
+            "twitch.channel.chat.message",
+            Some(("", "nameless")),
+            None,
+        ));
+
+        assert!(active_viewers(&ctx).await.is_empty());
     }
 
     #[tokio::test]

@@ -125,6 +125,7 @@ mod tests {
             settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
             bus: Arc::new(CapturingPublisher(Arc::clone(&captured))),
             integrations: Arc::new(TwitchDisabled),
+            latest_values: None,
         };
 
         let result = run_inline(
@@ -151,5 +152,66 @@ mod tests {
                 .any(|e| e.kind == "chat.send.request"),
             "no chat.send.request may leave a run aimed at a disabled integration"
         );
+    }
+
+    struct DonationReader;
+
+    impl LatestValueReader for DonationReader {
+        fn latest(
+            &self,
+            slot: &str,
+            _scope: forge_types::LatestScope<'_>,
+        ) -> Option<forge_types::LatestValue> {
+            (slot == "donation").then(|| {
+                forge_types::LatestValue::new(
+                    "donatello",
+                    time::OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+                    std::collections::BTreeMap::from([(
+                        "marker".to_owned(),
+                        forge_types::Variant::String("from-the-reader".to_owned()),
+                    )]),
+                )
+            })
+        }
+    }
+
+    async fn run_latest_probe(
+        latest_values: Option<Arc<dyn LatestValueReader>>,
+    ) -> Result<RunResult, ScriptError> {
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let host = ScriptHost {
+            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
+            integrations: Arc::new(TwitchDisabled),
+            latest_values,
+        };
+        run_inline(
+            r#"forge::latest::get("donation").marker"#.to_owned(),
+            ScriptContract::default(),
+            ArgStack::new(),
+            host,
+            ScriptId::new(),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn an_editor_run_reads_the_latest_value_from_the_wired_reader() {
+        let result = run_latest_probe(Some(Arc::new(DonationReader)))
+            .await
+            .unwrap();
+
+        assert_eq!(result.output_display, "from-the-reader");
+    }
+
+    #[tokio::test]
+    async fn an_editor_run_without_a_reader_has_no_latest_namespace() {
+        match run_latest_probe(None).await {
+            Err(ScriptError::Runtime { reason, .. }) => {
+                assert!(reason.contains("forge::latest::get"), "got: {reason}")
+            }
+            other => panic!("expected a missing-function error, got {other:?}"),
+        }
     }
 }

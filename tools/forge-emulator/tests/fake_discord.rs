@@ -286,7 +286,13 @@ async fn forge_file_upload_reaches_the_fake_with_its_caption_and_file_name() {
     let client = forge_client(&url);
 
     client
-        .send_file(ALERTS, Some("clip"), "clip.png", &[0, 13, 10, 255])
+        .send_file(
+            ALERTS,
+            Some("clip"),
+            "clip.png",
+            &[0, 13, 10, 255],
+            MentionPolicy::default(),
+        )
         .await
         .unwrap();
 

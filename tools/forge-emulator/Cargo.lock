@@ -1343,6 +1343,7 @@ dependencies = [
  "forge-discord",
  "forge-donatello",
  "forge-events",
+ "forge-monobank",
  "forge-obs",
  "forge-overlay",
  "forge-platform-core",
@@ -1376,6 +1377,25 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
+]
+
+[[package]]
+name = "forge-monobank"
+version = "0.5.5"
+dependencies = [
+ "async-trait",
+ "forge-platform-core",
+ "forge-storage",
+ "forge-types",
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tracing",
 ]
 
 [[package]]

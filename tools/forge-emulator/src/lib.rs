@@ -4,6 +4,7 @@ pub mod donatello;
 mod error;
 pub mod fixture;
 pub mod launch;
+pub mod monobank;
 pub mod obs;
 pub mod overlay;
 pub mod report;

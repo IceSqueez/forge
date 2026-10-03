@@ -333,20 +333,17 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
             EventSource::Kick => "kick",
             _ => continue,
         };
-        let user = match ev.payload.get("user") {
-            Some(u) if u.is_object() => u,
-            _ => continue,
-        };
-        let login = user
-            .get("login")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let id = user.get("id").and_then(|v| v.as_str()).unwrap_or_default();
-        if login.is_empty() || id.is_empty() {
+        let Some(viewer) = forge_types::ChatViewer::read(&ev.payload) else {
             continue;
-        }
+        };
+        let user = ev.payload.get("user");
+        let login = user
+            .and_then(|u| u.get("login"))
+            .and_then(|v| v.as_str())
+            .filter(|login| !login.is_empty())
+            .map_or_else(|| viewer.name.clone(), str::to_owned);
         let roles: Vec<String> = user
-            .get("roles")
+            .and_then(|u| u.get("roles"))
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -355,14 +352,16 @@ pub(crate) async fn handle_get_active_viewers(ctx: &DispatchContext) -> WsRespon
             })
             .unwrap_or_default();
 
-        viewers.entry((platform, id.to_owned())).or_insert_with(|| {
-            serde_json::json!({
-                "platform": platform,
-                "login": login,
-                "id": id,
-                "roles": roles,
-            })
-        });
+        viewers
+            .entry((platform, viewer.id.clone()))
+            .or_insert_with(|| {
+                serde_json::json!({
+                    "platform": platform,
+                    "login": login,
+                    "id": viewer.id,
+                    "roles": roles,
+                })
+            });
     }
 
     let wire: Vec<serde_json::Value> = viewers.into_values().collect();

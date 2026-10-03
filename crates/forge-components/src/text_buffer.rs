@@ -79,6 +79,33 @@ fn starts_new_word(previous: &str, next: &str) -> bool {
     previous_ends_in_word && next_starts_with_space
 }
 
+struct LineEdit {
+    at: usize,
+    removed: usize,
+    inserted: usize,
+}
+
+fn shifted(offset: usize, edits: &[LineEdit], stays_at_line_start: bool) -> usize {
+    let mut added = 0;
+    let mut dropped = 0;
+    for edit in edits {
+        if offset < edit.at || (stays_at_line_start && offset == edit.at) {
+            break;
+        }
+        added += edit.inserted;
+        dropped += edit.removed.min(offset - edit.at);
+    }
+    offset + added - dropped
+}
+
+fn outdent_width(line: &str, unit: &str) -> usize {
+    if line.starts_with('\t') {
+        return 1;
+    }
+    let spaces = line.len() - line.trim_start_matches(' ').len();
+    spaces.min(unit.len())
+}
+
 fn spliced(text: &str, range: Range<usize>, replacement: &str) -> Arc<str> {
     let mut out = String::with_capacity(text.len() - range.len() + replacement.len());
     out.push_str(&text[..range.start]);
@@ -238,6 +265,75 @@ impl TextBuffer {
         let indent_len = before_caret.len() - before_caret.trim_start_matches([' ', '\t']).len();
         let newline = format!("\n{}", &before_caret[..indent_len]);
         self.insert(&newline, EditKind::Standalone);
+    }
+
+    pub(crate) fn indent(&mut self, unit: &str) {
+        let range = self.target_range(None);
+        if !self.text[range].contains('\n') {
+            self.insert(unit, EditKind::Standalone);
+            return;
+        }
+        self.reshape_touched_lines(|line| (!line.is_empty()).then_some((0, unit)));
+    }
+
+    pub(crate) fn outdent(&mut self, unit: &str) {
+        self.reshape_touched_lines(|line| {
+            let removed = outdent_width(line, unit);
+            (removed > 0).then_some((removed, ""))
+        });
+    }
+
+    fn touched_lines(&self) -> Range<usize> {
+        let range = self.target_range(None);
+        let start = self.text[..range.start].rfind('\n').map_or(0, |i| i + 1);
+        let last = if range.end > range.start && self.text[..range.end].ends_with('\n') {
+            range.end - 1
+        } else {
+            range.end
+        };
+        let end = self.text[last..]
+            .find('\n')
+            .map_or(self.text.len(), |i| last + i);
+        start..end
+    }
+
+    fn reshape_touched_lines<'u>(&mut self, edit_for: impl Fn(&str) -> Option<(usize, &'u str)>) {
+        let block = self.touched_lines();
+        let mut reshaped = String::with_capacity(block.len());
+        let mut edits = Vec::new();
+        let mut line_start = block.start;
+        for (index, line) in self.text[block.clone()].split('\n').enumerate() {
+            if index > 0 {
+                reshaped.push('\n');
+            }
+            match edit_for(line) {
+                Some((removed, prefix)) => {
+                    reshaped.push_str(prefix);
+                    reshaped.push_str(&line[removed..]);
+                    edits.push(LineEdit {
+                        at: line_start,
+                        removed,
+                        inserted: prefix.len(),
+                    });
+                }
+                None => reshaped.push_str(line),
+            }
+            line_start += line.len() + 1;
+        }
+        if edits.is_empty() {
+            return;
+        }
+
+        let before = self.selection.clone();
+        let selection = Selection {
+            range: shifted(before.range.start, &edits, true)
+                ..shifted(before.range.end, &edits, false),
+            reversed: before.reversed,
+        };
+        self.apply(block, &reshaped, EditKind::Standalone);
+        self.selection = selection;
+        self.marked = None;
+        self.set_last_selection_after();
     }
 
     pub(crate) fn delete_backward(&mut self) {

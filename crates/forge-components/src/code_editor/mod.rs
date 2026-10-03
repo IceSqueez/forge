@@ -32,11 +32,12 @@ const LINE_HEIGHT_RATIO: f32 = 1.5;
 const ROW_CENTER: f32 = 0.5;
 const EDGE_INSET: Pixels = px(1.0);
 
-actions!(forge_code_editor, [Indent]);
+actions!(forge_code_editor, [Indent, Outdent]);
 
 pub fn bind_code_editor_keys(cx: &mut App) {
     let mut bindings = editing_key_bindings(KEY_CONTEXT);
     bindings.push(KeyBinding::new("tab", Indent, Some(KEY_CONTEXT)));
+    bindings.push(KeyBinding::new("shift-tab", Outdent, Some(KEY_CONTEXT)));
     cx.bind_keys(bindings);
 }
 
@@ -225,7 +226,13 @@ impl CodeEditor {
 
     fn indent(&mut self, _: &Indent, _: &mut Window, cx: &mut Context<Self>) {
         self.preferred_x = None;
-        self.buffer.insert(INDENT_UNIT, EditKind::Standalone);
+        self.buffer.indent(INDENT_UNIT);
+        self.edited(cx);
+    }
+
+    fn outdent(&mut self, _: &Outdent, _: &mut Window, cx: &mut Context<Self>) {
+        self.preferred_x = None;
+        self.buffer.outdent(INDENT_UNIT);
         self.edited(cx);
     }
 
@@ -523,6 +530,7 @@ impl Render for CodeEditor {
             .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::insert_newline))
             .on_action(cx.listener(Self::indent))
+            .on_action(cx.listener(Self::outdent))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::paste))

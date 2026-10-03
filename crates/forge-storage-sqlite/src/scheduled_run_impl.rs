@@ -5,7 +5,7 @@ use forge_storage::{
     MissedRunPolicy, ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement,
     ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState, StorageError,
 };
-use forge_types::{ActionId, EventId};
+use forge_types::{ActionId, EventId, Variant};
 use sqlx::SqliteConnection;
 use time::OffsetDateTime;
 
@@ -153,8 +153,38 @@ fn decode_row(row: ScheduledRunRow) -> Result<ScheduledRun, StorageError> {
     })
 }
 
-fn decode_rows(rows: Vec<ScheduledRunRow>) -> Result<Vec<ScheduledRun>, StorageError> {
-    rows.into_iter().map(decode_row).collect()
+fn decode_readable_rows(rows: Vec<ScheduledRunRow>) -> Vec<ScheduledRun> {
+    rows.into_iter()
+        .filter_map(|row| {
+            let id = row.id;
+            match decode_row(row) {
+                Ok(run) => Some(run),
+                Err(error) => {
+                    tracing::warn!(run_id = id, %error, "skipping unreadable scheduled run");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn contains_non_finite_float(value: &Variant) -> bool {
+    match value {
+        Variant::Float(number) => !number.is_finite(),
+        Variant::Array(items) => items.iter().any(contains_non_finite_float),
+        Variant::Object(fields) => fields.values().any(contains_non_finite_float),
+        _ => false,
+    }
+}
+
+fn reject_non_finite_args(spec: &ScheduledRunSpec) -> Result<(), StorageError> {
+    if spec.args.values().any(contains_non_finite_float) {
+        return Err(StorageError::ValidationFailed {
+            field: "args".to_owned(),
+            reason: "non-finite float values cannot be stored".to_owned(),
+        });
+    }
+    Ok(())
 }
 
 async fn supersede_pending_key(
@@ -227,6 +257,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         &self,
         spec: &ScheduledRunSpec,
     ) -> Result<ScheduledRunPlacement, StorageError> {
+        reject_non_finite_args(spec)?;
         let (policy, skip_late_ms) = policy_columns(spec.missed_run_policy)?;
         let args = serde_json::to_string(&spec.args)?;
         let mut tx = self
@@ -293,7 +324,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
-        decode_rows(rows)
+        Ok(decode_readable_rows(rows))
     }
 
     async fn list_due(&self, now: OffsetDateTime) -> Result<Vec<ScheduledRun>, StorageError> {
@@ -308,7 +339,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
-        decode_rows(rows)
+        Ok(decode_readable_rows(rows))
     }
 
     async fn next_due(&self) -> Result<Option<OffsetDateTime>, StorageError> {
@@ -387,7 +418,7 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
-        decode_rows(rows)
+        Ok(decode_readable_rows(rows))
     }
 
     async fn prune_resolved_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {

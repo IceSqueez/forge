@@ -174,14 +174,19 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
     ) -> Result<Option<ScheduledRun>, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
-            .after(async move { inner.claim(id, claimed_at).await })
+            .after_when(
+                async move { inner.claim(id, claimed_at).await },
+                Option::is_some,
+            )
             .await
     }
 
     async fn cancel(&self, id: ScheduledRunId, at: OffsetDateTime) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
-            .after(async move { inner.cancel(id, at).await })
+            .after_when(async move { inner.cancel(id, at).await }, |changed| {
+                *changed
+            })
             .await
     }
 
@@ -189,7 +194,10 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
         let inner = Arc::clone(&self.inner);
         let key = key.to_owned();
         self.revision
-            .after(async move { inner.cancel_by_key(&key, at).await })
+            .after_when(
+                async move { inner.cancel_by_key(&key, at).await },
+                |changed| *changed,
+            )
             .await
     }
 
@@ -202,7 +210,10 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
     ) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
-            .after(async move { inner.settle(id, outcome, reason, at).await })
+            .after_when(
+                async move { inner.settle(id, outcome, reason, at).await },
+                |changed| *changed,
+            )
             .await
     }
 
@@ -213,7 +224,10 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
     async fn prune_resolved_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
         let inner = Arc::clone(&self.inner);
         self.revision
-            .after(async move { inner.prune_resolved_before(cutoff).await })
+            .after_when(
+                async move { inner.prune_resolved_before(cutoff).await },
+                |deleted| *deleted > 0,
+            )
             .await
     }
 

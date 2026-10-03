@@ -41,10 +41,25 @@ impl CatalogRevision {
         T: Send + 'static,
         W: Future<Output = Result<T, StorageError>> + Send + 'static,
     {
-        let advance_on_exit = AdvanceOnDrop(self.clone());
+        self.after_when(write, |_| true).await
+    }
+
+    pub(crate) async fn after_when<T, W>(
+        &self,
+        write: W,
+        changed: fn(&T) -> bool,
+    ) -> Result<T, StorageError>
+    where
+        T: Send + 'static,
+        W: Future<Output = Result<T, StorageError>> + Send + 'static,
+    {
+        let mut advance_on_exit = AdvanceOnDrop::armed(self.clone());
         let landed = tokio::spawn(async move {
-            let _advance_on_exit = advance_on_exit;
-            write.await
+            let outcome = write.await;
+            if matches!(&outcome, Ok(value) if !changed(value)) {
+                advance_on_exit.disarm();
+            }
+            outcome
         });
         match landed.await {
             Ok(outcome) => outcome,
@@ -66,11 +81,29 @@ impl CatalogChanges {
     }
 }
 
-struct AdvanceOnDrop(CatalogRevision);
+struct AdvanceOnDrop {
+    revision: CatalogRevision,
+    armed: bool,
+}
+
+impl AdvanceOnDrop {
+    fn armed(revision: CatalogRevision) -> Self {
+        Self {
+            revision,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
 
 impl Drop for AdvanceOnDrop {
     fn drop(&mut self) {
-        self.0.advance();
+        if self.armed {
+            self.revision.advance();
+        }
     }
 }
 

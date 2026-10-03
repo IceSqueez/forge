@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
+use time::OffsetDateTime;
 use tokio::sync::{Mutex, MutexGuard};
 use tokio::task::JoinHandle;
 
@@ -8,6 +9,8 @@ use super::journal::Journal;
 use crate::EmulatorError;
 use crate::control::{ControlClient, EventFilter};
 use crate::launch::{ForgeExit, ForgeProcess, GameGuard, LaunchSpec, LivePaths};
+
+const BOOT_HISTORY_LIMIT: u32 = 500;
 
 pub struct LiveForge {
     pub process: Option<ForgeProcess>,
@@ -84,6 +87,7 @@ impl ForgeHost {
 
     pub async fn start(&self, ready_timeout: Duration) -> Result<u32, EmulatorError> {
         let relaunch = self.relaunch()?;
+        let launched_at = OffsetDateTime::now_utc();
         let mut process =
             ForgeProcess::spawn(&relaunch.spec, &relaunch.guard, &relaunch.live).await?;
         let (client, events) = match process
@@ -102,6 +106,23 @@ impl ForgeHost {
             drop(client);
             let _ = process.shutdown(relaunch.shutdown_grace).await;
             return Err(e);
+        }
+        match client.recent_events(BOOT_HISTORY_LIMIT).await {
+            Ok(history) => self.journal.seed(
+                history
+                    .into_iter()
+                    .filter(|event| event.timestamp >= launched_at)
+                    .filter(|event| {
+                        relaunch.filters.is_empty()
+                            || relaunch.filters.iter().any(|filter| filter.admits(event))
+                    })
+                    .collect(),
+            ),
+            Err(e) => {
+                drop(client);
+                let _ = process.shutdown(relaunch.shutdown_grace).await;
+                return Err(e);
+            }
         }
         let pid = process.pid();
         self.last_pid.store(pid, Ordering::Relaxed);

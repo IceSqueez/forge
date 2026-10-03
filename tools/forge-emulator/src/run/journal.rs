@@ -1,8 +1,12 @@
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
+
+use forge_events::Event;
+use forge_types::EventId;
 
 use crate::control::{EventStream, Observation};
 
@@ -26,6 +30,7 @@ struct Shared {
 #[derive(Default)]
 struct Inner {
     entries: Vec<JournalEntry>,
+    seeded: HashSet<EventId>,
     closed_at: Option<Instant>,
 }
 
@@ -56,8 +61,27 @@ impl Journal {
         })
     }
 
+    pub fn seed(&self, events: Vec<Event>) {
+        self.mutate(|inner| {
+            for event in events {
+                if inner.seeded.insert(event.id) {
+                    inner.entries.push(JournalEntry {
+                        arrived: Instant::now(),
+                        observation: Observation::Event(event),
+                    });
+                }
+            }
+        });
+    }
+
     pub fn record(&self, observation: Observation) {
         self.mutate(|inner| {
+            if let Observation::Event(event) = &observation
+                && !event.replay
+                && inner.seeded.remove(&event.id)
+            {
+                return;
+            }
             inner.entries.push(JournalEntry {
                 arrived: Instant::now(),
                 observation,
@@ -119,5 +143,59 @@ impl Journal {
             .inner
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use forge_events::EventSource;
+    use serde_json::json;
+    use time::macros::datetime;
+
+    use super::*;
+
+    fn event(replay: bool) -> Event {
+        Event {
+            id: EventId::new(),
+            source: EventSource::Core,
+            kind: "donation.received".to_owned(),
+            timestamp: datetime!(2026-10-03 12:00:00 UTC),
+            payload: json!({}),
+            caused_by: None,
+            replay,
+        }
+    }
+
+    #[test]
+    fn pushed_copy_of_a_seeded_event_is_recorded_once() {
+        let journal = Journal::new();
+        let seeded = event(false);
+        journal.seed(vec![seeded.clone()]);
+        journal.record(Observation::Event(seeded.clone()));
+        journal.record(Observation::Event(event(false)));
+
+        assert_eq!(journal.len(), 2);
+    }
+
+    #[test]
+    fn replay_of_a_seeded_event_is_still_recorded() {
+        let journal = Journal::new();
+        let seeded = event(false);
+        journal.seed(vec![seeded.clone()]);
+        let mut replayed = seeded;
+        replayed.replay = true;
+        journal.record(Observation::Event(replayed));
+
+        assert_eq!(journal.len(), 2);
+    }
+
+    #[test]
+    fn seeding_the_same_event_twice_keeps_one_entry() {
+        let journal = Journal::new();
+        let seeded = event(false);
+        journal.seed(vec![seeded.clone(), seeded]);
+
+        assert_eq!(journal.len(), 1);
     }
 }

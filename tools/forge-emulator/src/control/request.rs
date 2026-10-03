@@ -10,6 +10,16 @@ pub struct EventFilter {
     pub kind: Option<String>,
 }
 
+impl EventFilter {
+    pub fn admits(&self, event: &forge_events::Event) -> bool {
+        self.source.is_none_or(|source| source == event.source)
+            && self
+                .kind
+                .as_deref()
+                .is_none_or(|kind| kind == event.kind.as_str())
+    }
+}
+
 pub(crate) enum Request<'a> {
     Auth {
         token: &'a str,

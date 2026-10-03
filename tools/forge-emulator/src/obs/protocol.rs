@@ -35,6 +35,7 @@ pub const STATUS_RESOURCE_NOT_FOUND: u16 = 600;
 pub const SUBSCRIBE_SCENES: u64 = 1 << 2;
 pub const SUBSCRIBE_INPUTS: u64 = 1 << 3;
 pub const SUBSCRIBE_OUTPUTS: u64 = 1 << 6;
+pub const SUBSCRIBE_UI: u64 = 1 << 10;
 pub const SUBSCRIBE_ALL: u64 = (1 << 12) - 1;
 
 pub const OUTPUT_STARTING: &str = "OBS_WEBSOCKET_OUTPUT_STARTING";
@@ -43,6 +44,8 @@ pub const OUTPUT_STOPPING: &str = "OBS_WEBSOCKET_OUTPUT_STOPPING";
 pub const OUTPUT_STOPPED: &str = "OBS_WEBSOCKET_OUTPUT_STOPPED";
 
 pub const CURRENT_PROGRAM_SCENE_CHANGED: &str = "CurrentProgramSceneChanged";
+pub const CURRENT_PREVIEW_SCENE_CHANGED: &str = "CurrentPreviewSceneChanged";
+pub const STUDIO_MODE_STATE_CHANGED: &str = "StudioModeStateChanged";
 pub const STREAM_STATE_CHANGED: &str = "StreamStateChanged";
 pub const INPUT_MUTE_STATE_CHANGED: &str = "InputMuteStateChanged";
 

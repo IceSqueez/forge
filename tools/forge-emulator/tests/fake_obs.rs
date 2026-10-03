@@ -550,3 +550,151 @@ async fn the_configured_current_scene_is_the_program_scene_at_start() {
 
     assert_eq!(response["responseData"]["sceneName"], "BRB");
 }
+
+fn pushed_types(fake: &FakeObs) -> Vec<String> {
+    fake.ledger()
+        .events
+        .into_iter()
+        .map(|event| event.event_type)
+        .collect()
+}
+
+#[tokio::test]
+async fn preview_requests_are_refused_as_studio_mode_not_active_while_studio_mode_is_off() {
+    let fake = FakeObs::start(with_password()).await.unwrap();
+    let mut socket = identified(&fake, None).await;
+
+    let set = request(
+        &mut socket,
+        "SetCurrentPreviewScene",
+        json!({ "sceneName": "BRB" }),
+    )
+    .await;
+    let enabled = request(&mut socket, "GetStudioModeEnabled", json!({})).await;
+
+    assert_eq!(
+        (
+            set["requestStatus"]["code"].clone(),
+            enabled["responseData"]["studioModeEnabled"].clone(),
+            pushed_types(&fake),
+        ),
+        (json!(506), json!(false), Vec::<String>::new())
+    );
+}
+
+#[tokio::test]
+async fn enabling_studio_mode_pushes_the_state_change_once_and_repeating_pushes_nothing() {
+    let fake = FakeObs::start(with_password()).await.unwrap();
+    let mut socket = identified(&fake, None).await;
+
+    let first = request(
+        &mut socket,
+        "SetStudioModeEnabled",
+        json!({ "studioModeEnabled": true }),
+    )
+    .await;
+    request(
+        &mut socket,
+        "SetStudioModeEnabled",
+        json!({ "studioModeEnabled": true }),
+    )
+    .await;
+    let enabled = request(&mut socket, "GetStudioModeEnabled", json!({})).await;
+
+    let events = fake.ledger().events;
+    assert_eq!(
+        (
+            first["requestStatus"]["code"].clone(),
+            enabled["responseData"]["studioModeEnabled"].clone(),
+            events.len(),
+            events[0].event_type.clone(),
+            events[0].data.clone(),
+        ),
+        (
+            json!(100),
+            json!(true),
+            1,
+            "StudioModeStateChanged".to_owned(),
+            json!({ "studioModeEnabled": true }),
+        )
+    );
+}
+
+#[tokio::test]
+async fn setting_the_preview_scene_in_studio_mode_succeeds_and_pushes_the_preview_change() {
+    let fake = FakeObs::start(with_password()).await.unwrap();
+    let mut socket = identified(&fake, None).await;
+    request(
+        &mut socket,
+        "SetStudioModeEnabled",
+        json!({ "studioModeEnabled": true }),
+    )
+    .await;
+
+    let set = request(
+        &mut socket,
+        "SetCurrentPreviewScene",
+        json!({ "sceneName": "BRB" }),
+    )
+    .await;
+    let preview = request(&mut socket, "GetCurrentPreviewScene", json!({})).await;
+    let missing = request(&mut socket, "SetCurrentPreviewScene", json!({})).await;
+    let unknown = request(
+        &mut socket,
+        "SetCurrentPreviewScene",
+        json!({ "sceneName": "Nope" }),
+    )
+    .await;
+
+    let events = fake.ledger().events;
+    assert_eq!(
+        (
+            set["requestStatus"]["code"].clone(),
+            preview["responseData"]["currentPreviewSceneName"].clone(),
+            fake.current_scene(),
+            missing["requestStatus"]["code"].clone(),
+            unknown["requestStatus"]["code"].clone(),
+            events.last().map(|event| event.event_type.clone()),
+            events.last().map(|event| event.data["sceneName"].clone()),
+        ),
+        (
+            json!(100),
+            json!("BRB"),
+            Some("Main".to_owned()),
+            json!(300),
+            json!(600),
+            Some("CurrentPreviewSceneChanged".to_owned()),
+            Some(json!("BRB")),
+        )
+    );
+}
+
+#[tokio::test]
+async fn disabling_studio_mode_makes_preview_requests_refuse_again() {
+    let fake = FakeObs::start(with_password()).await.unwrap();
+    let mut socket = identified(&fake, None).await;
+    for enabled in [true, false] {
+        request(
+            &mut socket,
+            "SetStudioModeEnabled",
+            json!({ "studioModeEnabled": enabled }),
+        )
+        .await;
+    }
+
+    let set = request(
+        &mut socket,
+        "SetCurrentPreviewScene",
+        json!({ "sceneName": "BRB" }),
+    )
+    .await;
+    let missing_flag = request(&mut socket, "SetStudioModeEnabled", json!({})).await;
+
+    assert_eq!(
+        (
+            set["requestStatus"]["code"].clone(),
+            missing_flag["requestStatus"]["code"].clone(),
+        ),
+        (json!(506), json!(300))
+    );
+}

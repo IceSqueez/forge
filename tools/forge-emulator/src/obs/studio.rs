@@ -2,20 +2,24 @@ use serde_json::{Value, json};
 
 use super::config::{FakeInput, FakeObsConfig};
 use super::protocol::{
-    Answer, CURRENT_PROGRAM_SCENE_CHANGED, INPUT_MUTE_STATE_CHANGED, OBS_STUDIO_VERSION,
-    OBS_WEBSOCKET_VERSION, OUTPUT_STARTED, OUTPUT_STARTING, OUTPUT_STOPPED, OUTPUT_STOPPING,
-    RPC_VERSION, STATUS_MISSING_REQUEST_FIELD, STATUS_OUTPUT_NOT_RUNNING, STATUS_OUTPUT_RUNNING,
-    STATUS_RESOURCE_NOT_FOUND, STATUS_STUDIO_MODE_NOT_ACTIVE, STATUS_UNKNOWN_REQUEST_TYPE,
-    STREAM_STATE_CHANGED, SUBSCRIBE_INPUTS, SUBSCRIBE_OUTPUTS, SUBSCRIBE_SCENES,
+    Answer, CURRENT_PREVIEW_SCENE_CHANGED, CURRENT_PROGRAM_SCENE_CHANGED, INPUT_MUTE_STATE_CHANGED,
+    OBS_STUDIO_VERSION, OBS_WEBSOCKET_VERSION, OUTPUT_STARTED, OUTPUT_STARTING, OUTPUT_STOPPED,
+    OUTPUT_STOPPING, RPC_VERSION, STATUS_MISSING_REQUEST_FIELD, STATUS_OUTPUT_NOT_RUNNING,
+    STATUS_OUTPUT_RUNNING, STATUS_RESOURCE_NOT_FOUND, STATUS_STUDIO_MODE_NOT_ACTIVE,
+    STATUS_UNKNOWN_REQUEST_TYPE, STREAM_STATE_CHANGED, STUDIO_MODE_STATE_CHANGED, SUBSCRIBE_INPUTS,
+    SUBSCRIBE_OUTPUTS, SUBSCRIBE_SCENES, SUBSCRIBE_UI,
 };
 
-pub const SUPPORTED_REQUESTS: [&str; 18] = [
+pub const SUPPORTED_REQUESTS: [&str; 21] = [
     "GetVersion",
     "GetStats",
     "GetSceneList",
     "GetCurrentProgramScene",
     "SetCurrentProgramScene",
     "GetCurrentPreviewScene",
+    "SetCurrentPreviewScene",
+    "GetStudioModeEnabled",
+    "SetStudioModeEnabled",
     "GetSceneItemList",
     "GetSceneItemEnabled",
     "GetSceneItemLocked",
@@ -48,6 +52,8 @@ pub(crate) struct Studio {
     current: usize,
     inputs: Vec<FakeInput>,
     streaming: bool,
+    studio_mode: bool,
+    preview: usize,
 }
 
 fn scene_uuid(index: usize) -> String {
@@ -77,6 +83,8 @@ impl Studio {
             current,
             inputs: config.inputs.clone(),
             streaming: false,
+            studio_mode: false,
+            preview: current,
         }
     }
 
@@ -127,8 +135,18 @@ impl Studio {
                     Err(answer) => (answer, Vec::new()),
                 };
             }
-            "GetCurrentPreviewScene" => {
-                Answer::failure(STATUS_STUDIO_MODE_NOT_ACTIVE, "Studio mode is not active.")
+            "GetCurrentPreviewScene" => self.current_preview_scene(),
+            "SetCurrentPreviewScene" => {
+                return self.set_preview_scene(data);
+            }
+            "GetStudioModeEnabled" => {
+                Answer::success(Some(json!({ "studioModeEnabled": self.studio_mode })))
+            }
+            "SetStudioModeEnabled" => {
+                return match data.get("studioModeEnabled").and_then(Value::as_bool) {
+                    Some(enabled) => (Answer::success(None), self.set_studio_mode(enabled)),
+                    None => (missing("studioModeEnabled"), Vec::new()),
+                };
             }
             "GetSceneItemList" => match self.scene_index(data) {
                 Ok(_) => Answer::success(Some(json!({ "sceneItems": self.scene_items() }))),
@@ -230,6 +248,57 @@ impl Studio {
         Ok(self.mute(index, muted))
     }
 
+    fn studio_mode_inactive() -> Answer {
+        Answer::failure(STATUS_STUDIO_MODE_NOT_ACTIVE, "Studio mode is not active.")
+    }
+
+    fn current_preview_scene(&self) -> Answer {
+        if !self.studio_mode {
+            return Self::studio_mode_inactive();
+        }
+        let name = &self.scenes[self.preview];
+        let uuid = scene_uuid(self.preview);
+        Answer::success(Some(json!({
+            "sceneName": name,
+            "sceneUuid": uuid,
+            "currentPreviewSceneName": name,
+            "currentPreviewSceneUuid": uuid,
+        })))
+    }
+
+    fn set_preview_scene(&mut self, data: &Value) -> (Answer, Vec<Pushed>) {
+        if !self.studio_mode {
+            return (Self::studio_mode_inactive(), Vec::new());
+        }
+        let index = match self.scene_index(data) {
+            Ok(index) => index,
+            Err(answer) => return (answer, Vec::new()),
+        };
+        if index == self.preview {
+            return (Answer::success(None), Vec::new());
+        }
+        self.preview = index;
+        let pushed = vec![Pushed {
+            event_type: CURRENT_PREVIEW_SCENE_CHANGED,
+            intent: SUBSCRIBE_SCENES,
+            data: json!({ "sceneName": self.scenes[index], "sceneUuid": scene_uuid(index) }),
+        }];
+        (Answer::success(None), pushed)
+    }
+
+    fn set_studio_mode(&mut self, enabled: bool) -> Vec<Pushed> {
+        if self.studio_mode == enabled {
+            return Vec::new();
+        }
+        self.studio_mode = enabled;
+        self.preview = self.current;
+        vec![Pushed {
+            event_type: STUDIO_MODE_STATE_CHANGED,
+            intent: SUBSCRIBE_UI,
+            data: json!({ "studioModeEnabled": enabled }),
+        }]
+    }
+
     fn switch_to(&mut self, index: usize) -> Vec<Pushed> {
         if index == self.current {
             return Vec::new();
@@ -304,8 +373,8 @@ impl Studio {
         Answer::success(Some(json!({
             "currentProgramSceneName": self.scenes[self.current],
             "currentProgramSceneUuid": scene_uuid(self.current),
-            "currentPreviewSceneName": null,
-            "currentPreviewSceneUuid": null,
+            "currentPreviewSceneName": self.studio_mode.then(|| &self.scenes[self.preview]),
+            "currentPreviewSceneUuid": self.studio_mode.then(|| scene_uuid(self.preview)),
             "scenes": scenes,
         })))
     }

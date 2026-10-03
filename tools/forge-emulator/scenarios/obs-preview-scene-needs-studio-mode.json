@@ -1,0 +1,102 @@
+{
+  "name": "setting the OBS preview scene fails clearly until Studio Mode is on",
+  "purpose": "OBS has a preview scene only while Studio Mode is enabled, so the fake answers SetCurrentPreviewScene with StudioModeNotActive (506) until SetStudioModeEnabled turns it on. With Studio Mode off, the Set Preview Scene sub-action must fail and its subaction.done must carry the human reason naming Studio Mode, not a bare status code. After the Set Studio Mode sub-action turns it on, the same action must succeed and the fake must accept the request with 100.",
+  "fixture": {
+    "obs": { "password": "emulator-obs-password" },
+    "chat_commands": [
+      {
+        "phrase": "!preview",
+        "action_name": "Preview BRB",
+        "steps": [
+          {
+            "kind_id": "obs.scenes.set_preview",
+            "config": { "scene": { "type": "string", "value": "BRB" } },
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "phrase": "!studio",
+        "action_name": "Studio Mode On",
+        "steps": [
+          {
+            "kind_id": "obs.studio.set_enabled",
+            "config": { "on": { "type": "bool", "value": true } },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "obs": { "password": "emulator-obs-password" }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "obs_identified": { "within_ms": 30000 } },
+      "expect": [{ "obs_request": { "request_type": "GetStats", "within_ms": 10000 } }]
+    },
+    {
+      "do": { "run_action": { "action": "Preview BRB" } },
+      "expect": [
+        {
+          "obs_request": {
+            "request_type": "SetCurrentPreviewScene",
+            "code": 506,
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "subaction.done",
+            "payload": {
+              "/kind": { "equals": "obs.scenes.set_preview" },
+              "/outcome": { "equals": "failed" },
+              "/message": { "contains": "Studio Mode is off in OBS" }
+            },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "run_action": { "action": "Studio Mode On" } },
+      "expect": [
+        {
+          "obs_request": {
+            "request_type": "SetStudioModeEnabled",
+            "request_data": { "/studioModeEnabled": { "equals": true } },
+            "code": 100,
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "run_action": { "action": "Preview BRB" } },
+      "expect": [
+        {
+          "obs_request": {
+            "request_type": "SetCurrentPreviewScene",
+            "request_data": { "/sceneName": { "equals": "BRB" } },
+            "code": 100,
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "subaction.done",
+            "payload": {
+              "/kind": { "equals": "obs.scenes.set_preview" },
+              "/outcome": { "equals": "success" }
+            },
+            "within_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,1 +1,0 @@
-ALTER TABLE tts_pipeline_settings ADD COLUMN output_max_duration_secs INTEGER;

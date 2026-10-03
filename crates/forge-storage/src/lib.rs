@@ -48,7 +48,7 @@ pub use media::{
     MediaReferrer, MediaReferrerKind, MediaRepo, accept_media, sanitize_label, sniff,
 };
 pub use overlay::{OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo};
-pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION};
+pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE};
 pub use queue::QueueRepo;
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{

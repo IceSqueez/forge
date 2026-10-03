@@ -8,7 +8,7 @@ use flate2::write::GzEncoder;
 use forge_storage::DataProvider;
 use time::OffsetDateTime;
 
-pub const BACKUPS_DIR_NAME: &str = "backups";
+pub use forge_platform_core::paths::BACKUPS_DIR_NAME;
 
 const ARCHIVE_ROOT: &str = "forge";
 const ARCHIVE_EXTENSION: &str = "tar.gz";

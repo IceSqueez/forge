@@ -115,6 +115,10 @@ impl SqliteBackend {
 
     async fn migrate_and_gate(url: &str) -> Result<SqlitePools, SqliteStorageError> {
         let pool = connect_pools(url).await?;
+        if let Err(e) = crate::migrations::prepare_journal(pool.writer()).await {
+            pool.close().await;
+            return Err(e);
+        }
         apply_migrations(pool.writer()).await?;
         crate::registry_migration::migrate_registry_format(pool.writer()).await?;
 

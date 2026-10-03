@@ -10,6 +10,8 @@ const APP_DIR_NAME: &str = "forge";
 
 const MEDIA_DIR_NAME: &str = "media";
 
+pub const BACKUPS_DIR_NAME: &str = "backups";
+
 #[allow(clippy::expect_used)]
 fn base_dirs() -> BaseDirs {
     BaseDirs::new().expect("home directory must be discoverable on supported platforms")

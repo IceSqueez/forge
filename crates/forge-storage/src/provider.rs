@@ -8,7 +8,9 @@ use crate::{
     StorageError, TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 46;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 47;
+
+pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 
 #[async_trait]
 pub trait DataProvider:

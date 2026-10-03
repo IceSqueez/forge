@@ -6,6 +6,15 @@ pub enum SqliteStorageError {
     #[error("schema version mismatch: code expects {expected}, database is at {found}")]
     SchemaMismatch { expected: u32, found: u32 },
 
+    #[error("database predates the baseline schema (legacy version {found})")]
+    PreBaselineSchema { found: u32 },
+
+    #[error("unrecognized migration journal: {reason}")]
+    UnrecognizedJournal { reason: String },
+
+    #[error("pre-baseline snapshot failed: {reason}")]
+    AdoptionSnapshot { reason: String },
+
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 
@@ -28,6 +37,15 @@ impl From<SqliteStorageError> for forge_storage::StorageError {
             SqliteStorageError::SchemaMismatch { expected, found } => {
                 Self::SchemaMismatch { expected, found }
             }
+            SqliteStorageError::PreBaselineSchema { found } => Self::PreBaselineSchema { found },
+            SqliteStorageError::UnrecognizedJournal { reason } => Self::Migration {
+                migration: crate::migrations::JOURNAL_CHECK.to_owned(),
+                reason,
+            },
+            SqliteStorageError::AdoptionSnapshot { reason } => Self::Migration {
+                migration: crate::migrations::JOURNAL_CHECK.to_owned(),
+                reason,
+            },
             SqliteStorageError::Sqlx(inner) => Self::Connection {
                 reason: inner.to_string(),
             },

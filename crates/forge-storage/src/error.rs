@@ -17,6 +17,12 @@ pub enum StorageError {
     #[error("schema version mismatch: expected {expected}, found {found}")]
     SchemaMismatch { expected: u32, found: u32 },
 
+    #[error(
+        "database predates the baseline schema (legacy version {found}); open it once with forge {release} first",
+        release = crate::LAST_PRE_BASELINE_RELEASE
+    )]
+    PreBaselineSchema { found: u32 },
+
     #[error("key not found: {key}")]
     NotFound { key: String },
 

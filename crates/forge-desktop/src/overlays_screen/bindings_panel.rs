@@ -292,3 +292,180 @@ fn code_ranges(text: &str, tokens: &[&str]) -> Vec<Range<usize>> {
     ranges.sort_by_key(|range| range.start);
     ranges
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_overlay::{OverlayKindRegistry, look_contract, register_builtin_kinds};
+    use forge_storage::Language;
+
+    use super::*;
+    use crate::i18n::install_language;
+
+    const LOCALES: [Language; 2] = [Language::En, Language::Uk];
+
+    fn is_missing_label(text: &str) -> bool {
+        text.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    }
+
+    fn intro_tokens() -> (String, String, String) {
+        let contract = &PAGE_CONTRACT;
+        let marker = format!("{}=\"{EXAMPLE_NAME}\"", contract.bind.attribute);
+        let writer = format!("{}.{}", contract.namespace, contract.bind.writer);
+        let call = format!("{writer}({EXAMPLE_NAME}, {EXAMPLE_TEXT})");
+        (marker, call, writer)
+    }
+
+    fn spans<'a>(text: &'a str, ranges: &[Range<usize>]) -> Vec<&'a str> {
+        ranges
+            .iter()
+            .map(|range| text.get(range.clone()).expect("range on a char boundary"))
+            .collect()
+    }
+
+    #[test]
+    fn localized_intro_highlights_marker_call_and_writer_once_each() {
+        let (marker, call, writer) = intro_tokens();
+        for locale in LOCALES {
+            install_language(locale);
+            let text = strip_isolation(&tr!(
+                "overlays_bindings_intro",
+                marker = marker.as_str(),
+                call = call.as_str(),
+                writer = writer.as_str()
+            ));
+            let mut found = spans(&text, &code_ranges(&text, &[&call, &marker, &writer]));
+            found.sort_unstable();
+            let mut expected = vec![call.as_str(), marker.as_str(), writer.as_str()];
+            expected.sort_unstable();
+            assert_eq!(found, expected, "{locale:?}: {text}");
+        }
+    }
+
+    #[test]
+    fn localized_intro_carries_no_isolation_marks_after_stripping() {
+        let (marker, call, writer) = intro_tokens();
+        for locale in LOCALES {
+            install_language(locale);
+            let raw = tr!(
+                "overlays_bindings_intro",
+                marker = marker.as_str(),
+                call = call.as_str(),
+                writer = writer.as_str()
+            );
+            assert!(raw.contains(FORMAT_ISOLATION_MARKS), "{locale:?}");
+            assert!(
+                !strip_isolation(&raw).contains(FORMAT_ISOLATION_MARKS),
+                "{locale:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn code_ranges_marks_each_occurrence_once_in_text_order_without_overlap() {
+        let cases: [(&str, &[&str], &[&str]); 8] = [
+            (
+                "forge.set then forge.set(a)",
+                &["forge.set(a)", "forge.set"],
+                &["forge.set", "forge.set(a)"],
+            ),
+            (
+                "use forge.set(a) then forge.set",
+                &["forge.set(a)", "forge.set"],
+                &["forge.set(a)", "forge.set"],
+            ),
+            (
+                "forge.set first, then x=\"y\"",
+                &["x=\"y\"", "forge.set"],
+                &["forge.set", "x=\"y\""],
+            ),
+            (
+                "Позначте елемент x=\"y\", і forge.set(a) запише",
+                &["forge.set(a)", "x=\"y\""],
+                &["x=\"y\"", "forge.set(a)"],
+            ),
+            ("a token, a token", &["token"], &["token", "token"]),
+            ("no code here", &["forge.set(a)", "x=\"y\""], &[]),
+            ("empty tokens never match", &["", ""], &[]),
+            ("", &["forge.set"], &[]),
+        ];
+        for (text, tokens, expected) in cases {
+            let ranges = code_ranges(text, tokens);
+            assert_eq!(spans(text, &ranges), expected, "{text:?}");
+            assert!(
+                ranges.windows(2).all(|pair| pair[0].end <= pair[1].start),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_page_function_has_a_localized_summary() {
+        for locale in LOCALES {
+            install_language(locale);
+            for function in PAGE_CONTRACT.functions {
+                let summary = function_summary(function.name);
+                assert!(
+                    summary
+                        .as_deref()
+                        .is_some_and(|text| !is_missing_label(text)),
+                    "{locale:?}: {} -> {summary:?}",
+                    function.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_runtime_binding_has_a_localized_summary() {
+        let attribute = PAGE_CONTRACT.body_attribute.config_key;
+        let keys = PAGE_CONTRACT
+            .custom_properties
+            .iter()
+            .map(|property| property.config_key)
+            .chain(std::iter::once(attribute));
+        let keys: Vec<&str> = keys.collect();
+        for locale in LOCALES {
+            install_language(locale);
+            for key in &keys {
+                let summary = runtime_summary(key);
+                assert!(
+                    summary
+                        .as_deref()
+                        .is_some_and(|text| !is_missing_label(text)),
+                    "{locale:?}: {key} -> {summary:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_content_and_config_key_of_every_builtin_look_has_a_localized_label() {
+        let mut kinds = OverlayKindRegistry::new();
+        register_builtin_kinds(&mut kinds).expect("the builtin overlay kinds register");
+        let keys: Vec<(String, &str)> = kinds
+            .all()
+            .map(look_contract)
+            .flat_map(|look| {
+                let kind = look.kind_id.clone();
+                look.content_keys
+                    .iter()
+                    .copied()
+                    .chain(look.config_keys.iter().map(|entry| entry.key))
+                    .map(move |key| (kind.clone(), key))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        for locale in LOCALES {
+            install_language(locale);
+            for (kind, key) in &keys {
+                let label = binding_label(key);
+                assert!(
+                    label.as_deref().is_some_and(|text| !is_missing_label(text)),
+                    "{locale:?}: {kind}.{key} -> {label:?}"
+                );
+            }
+        }
+    }
+}

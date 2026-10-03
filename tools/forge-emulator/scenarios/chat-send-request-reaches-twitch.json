@@ -1,0 +1,115 @@
+{
+  "name": "a core chat send request reaches the Twitch chat endpoint",
+  "purpose": "The chat composer publishes chat.send.request from the core source, targeted at one platform by wire id or untargeted for a broadcast. The Send Chat Message sub-action publishes the same core request shape, so running it drives the composer path: each request must leave forge as exactly one Helix chat message and come back as chat.send caused by that request, never as chat.send.failed.",
+  "fixture": {
+    "twitch": {},
+    "chat_commands": [
+      {
+        "phrase": "!targeted",
+        "action_name": "Send To Twitch",
+        "steps": [
+          {
+            "kind_id": "twitch.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "hello twitch from forge" },
+              "target": { "type": "string", "value": "twitch" }
+            },
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "phrase": "!broadcast",
+        "action_name": "Send Everywhere",
+        "steps": [
+          {
+            "kind_id": "twitch.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "hello everyone from forge" },
+              "target": { "type": "string", "value": "" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.chat.message"], "within_ms": 30000 } }
+    },
+    {
+      "do": { "run_action": { "action": "Send To Twitch" } },
+      "expect": [
+        {
+          "event": {
+            "name": "targeted_request",
+            "source": "core",
+            "kind": "chat.send.request",
+            "payload": {
+              "/target": { "equals": "twitch" },
+              "/message": { "equals": "hello twitch from forge" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "targeted_sent",
+            "source": "twitch",
+            "kind": "chat.send",
+            "payload": {
+              "/channel": { "equals": "twitch" },
+              "/message": { "equals": "hello twitch from forge" }
+            },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "targeted_sent", "cause": "targeted_request" } },
+        { "event_absent": { "kind": "chat.send.failed", "window_ms": 1000 } },
+        {
+          "twitch_request_count": { "method": "POST", "path": "/helix/chat/messages", "min": 1, "max": 1 }
+        }
+      ]
+    },
+    {
+      "do": { "run_action": { "action": "Send Everywhere" } },
+      "expect": [
+        {
+          "event": {
+            "name": "broadcast_request",
+            "source": "core",
+            "kind": "chat.send.request",
+            "payload": {
+              "/target": { "present": false },
+              "/message": { "equals": "hello everyone from forge" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "broadcast_sent",
+            "source": "twitch",
+            "kind": "chat.send",
+            "payload": {
+              "/channel": { "equals": "twitch" },
+              "/message": { "equals": "hello everyone from forge" }
+            },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "broadcast_sent", "cause": "broadcast_request" } },
+        { "event_absent": { "kind": "chat.send.failed", "window_ms": 1000 } },
+        {
+          "twitch_request_count": { "method": "POST", "path": "/helix/chat/messages", "min": 2, "max": 2 }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

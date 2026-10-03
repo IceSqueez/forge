@@ -1377,4 +1377,85 @@ mod tests {
         });
         assert_eq!(cursor, 12);
     }
+
+    fn changes_after(
+        cx: &mut gpui::TestAppContext,
+        read_only: bool,
+        f: impl FnOnce(&mut TextArea, &mut Window, &mut Context<TextArea>),
+    ) -> (String, Vec<String>) {
+        let window = cx.add_window(|_window, cx| TextArea::new("placeholder", cx));
+        let area = window.root(cx).unwrap();
+        window
+            .update(cx, |area, window, cx| {
+                area.replace_text_in_range(None, "ab", window, cx);
+                area.read_only = read_only;
+            })
+            .unwrap();
+        let heard = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&heard);
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&area, move |_, event: &InputEvent, _| {
+                if let InputEvent::Changed(text) = event {
+                    sink.borrow_mut().push(text.to_string());
+                }
+            })
+        });
+        let content = window
+            .update(cx, |area, window, cx| {
+                f(area, window, cx);
+                area.content().to_string()
+            })
+            .unwrap();
+        let changes = heard.borrow().clone();
+        (content, changes)
+    }
+
+    #[gpui::test]
+    fn undo_and_redo_announce_the_restored_content(cx: &mut gpui::TestAppContext) {
+        let (_, changes) = changes_after(cx, false, |area, window, cx| {
+            area.undo(&Undo, window, cx);
+            area.redo(&Redo, window, cx);
+        });
+        assert_eq!(changes, vec!["".to_string(), "ab".to_string()]);
+    }
+
+    #[gpui::test]
+    fn undo_with_nothing_to_undo_announces_no_change(cx: &mut gpui::TestAppContext) {
+        let (_, changes) = changes_after(cx, false, |area, window, cx| {
+            area.undo(&Undo, window, cx);
+            area.undo(&Undo, window, cx);
+            area.redo(&Redo, window, cx);
+            area.redo(&Redo, window, cx);
+        });
+        assert_eq!(changes, vec!["".to_string(), "ab".to_string()]);
+    }
+
+    #[gpui::test]
+    fn read_only_area_ignores_undo_and_redo(cx: &mut gpui::TestAppContext) {
+        let result = changes_after(cx, true, |area, window, cx| {
+            area.undo(&Undo, window, cx);
+            area.redo(&Redo, window, cx);
+        });
+        assert_eq!(result, ("ab".to_string(), Vec::new()));
+    }
+
+    #[gpui::test]
+    fn text_for_range_tolerates_out_of_range_reversed_and_split_surrogate_ranges(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let texts = with_area(cx, "a\u{1F600}b", |area, window, cx| {
+            [1..99, Range { start: 3, end: 1 }, 1..2]
+                .into_iter()
+                .map(|range| area.text_for_range(range, &mut None, window, cx))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            texts,
+            vec![
+                Some("\u{1F600}b".to_string()),
+                None,
+                Some("\u{1F600}".to_string())
+            ]
+        );
+    }
 }

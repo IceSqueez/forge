@@ -1,4 +1,4 @@
-use forge_types::Variant;
+use forge_types::{LATEST_DONATION_SLOT, NOW_PLAYING_SLOT, Variant};
 
 use crate::config;
 use crate::descriptor::OverlayConfig;
@@ -10,6 +10,7 @@ pub enum PreviewShape {
     BadgeBanner,
     Blank,
     BorderedFrame,
+    LatestCard,
     MessageFeed,
     ProgressBar,
     Strip,
@@ -40,8 +41,15 @@ pub enum PreviewPosition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewLineRole {
+    Label,
     Headline,
     Subline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewMark {
+    Donation,
+    NowPlaying,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +89,7 @@ pub struct PreviewComposition {
     pub element: PreviewElement,
     pub lines: Vec<PreviewLine>,
     pub fill: Option<f32>,
+    pub mark: Option<PreviewMark>,
 }
 
 pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewComposition {
@@ -94,6 +103,7 @@ pub(crate) fn compose(shape: PreviewShape, config: &OverlayConfig) -> PreviewCom
         element: element_of(shape, config),
         lines: lines_of(shape, config),
         fill: fill_of(shape, config),
+        mark: mark_of(shape, config),
     }
 }
 
@@ -134,6 +144,7 @@ fn sizing_of(shape: PreviewShape) -> Option<ElementSizing> {
         PreviewShape::Blank => None,
         PreviewShape::BadgeBanner => Some(metrics::ALERT_SIZING),
         PreviewShape::BorderedFrame => Some(metrics::FRAME_SIZING),
+        PreviewShape::LatestCard => Some(metrics::LATEST_SIZING),
         PreviewShape::MessageFeed => Some(metrics::CHAT_SIZING),
         PreviewShape::ProgressBar => Some(metrics::GOAL_SIZING),
         PreviewShape::Strip => Some(metrics::TICKER_SIZING),
@@ -168,7 +179,30 @@ fn lines_of(shape: PreviewShape, config: &OverlayConfig) -> Vec<PreviewLine> {
         PreviewShape::Blank => Vec::new(),
         PreviewShape::MessageFeed => paired_lines(config, config::AUTHOR, config::MESSAGE),
         PreviewShape::ProgressBar => progress_lines(config),
+        PreviewShape::LatestCard => latest_lines(config),
         _ => paired_lines(config, config::HEADLINE, config::SUBLINE),
+    }
+}
+
+fn latest_lines(config: &OverlayConfig) -> Vec<PreviewLine> {
+    let label = line(
+        PreviewLineRole::Label,
+        config::read_str(config, config::LABEL),
+    );
+    label
+        .into_iter()
+        .chain(paired_lines(config, config::HEADLINE, config::SUBLINE))
+        .collect()
+}
+
+fn mark_of(shape: PreviewShape, config: &OverlayConfig) -> Option<PreviewMark> {
+    if shape != PreviewShape::LatestCard {
+        return None;
+    }
+    match config::read_str(config, config::SLOT) {
+        LATEST_DONATION_SLOT => Some(PreviewMark::Donation),
+        NOW_PLAYING_SLOT => Some(PreviewMark::NowPlaying),
+        _ => None,
     }
 }
 

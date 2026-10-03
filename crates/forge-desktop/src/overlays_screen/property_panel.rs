@@ -21,6 +21,7 @@ use super::base_sections::{
     BaseEvent, BaseState, FIELD_SECTIONS, PanelSection, base_hint, base_label, hinted,
 };
 use super::icon_choice::{IconImage, icon_field_row};
+use super::latest_section::LatestState;
 use super::motion_notices::MotionNotices;
 use super::motion_timing::{motion_hint, motion_label};
 use super::sound_choice::{PickOutcome, field_notes, notes_block, picked_clip, sound_choices};
@@ -112,6 +113,7 @@ pub(super) struct OverlayPropertyPanel {
     pub(super) service: OverlayServiceHandle,
     pub(super) rt_handle: tokio::runtime::Handle,
     pub(super) base: BaseState,
+    pub(super) latest: LatestState,
     _release: Subscription,
 }
 
@@ -160,6 +162,7 @@ impl OverlayPropertyPanel {
             service: launch.service,
             rt_handle: launch.rt_handle,
             base: BaseState::unset(),
+            latest: LatestState::default(),
             _release: release,
         };
         panel.refresh_media_choices();
@@ -293,6 +296,7 @@ impl OverlayPropertyPanel {
         }
         self.stored = sparse.clone();
         cx.emit(PropertyPanelEvent::Save(sparse));
+        self.refresh_latest(cx);
     }
 
     fn persist_on_release(&mut self, cx: &mut App) {
@@ -740,7 +744,8 @@ impl Render for OverlayPropertyPanel {
         body = body
             .children(self.render_sizing_notice(&palette, cx))
             .children(override_notice(&self.overridden_files, &palette))
-            .child(self.render_look_section(&palette, cx));
+            .child(self.render_look_section(&palette, cx))
+            .children(self.render_latest_section(&palette, cx));
 
         for section in FIELD_SECTIONS {
             body = body.children(match section {

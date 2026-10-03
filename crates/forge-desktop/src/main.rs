@@ -70,6 +70,7 @@ mod integration_supervisor;
 mod integration_switch;
 mod integrations;
 mod integrations_hub;
+mod latest_labels;
 mod log_archive;
 mod log_level;
 mod log_scrub;

@@ -6,6 +6,7 @@ mod form_modal;
 mod hide_timing;
 mod icon_choice;
 mod kind_visuals;
+mod latest_section;
 mod look_change;
 mod motion_notices;
 mod motion_timing;
@@ -29,7 +30,7 @@ use forge_overlay::config::SOUND_OPTIONS_KEY;
 use forge_overlay::{MediaIssue, OverlayKindRegistry, SectionedField, effective_overlay_config};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::actions::ActionsService;
-use forge_runtime::{OverlayServiceHandle, QueueSchedulerHandle};
+use forge_runtime::{EventBus, LatestValues, OverlayServiceHandle, QueueSchedulerHandle};
 use forge_server::ServerHandle;
 use forge_soundboard::{ClipLibrary, SoundboardError};
 use forge_storage::{
@@ -55,6 +56,7 @@ use event_wiring::{EventWiringView, WiringLaunch};
 use form_modal::{OverlayFormEvent, OverlayFormLaunch, OverlayFormModal, OverlayTypeChoice};
 use icon_choice::{IconImage, OpenIconPicker};
 use kind_visuals::{KindVisuals, kind_visuals};
+use latest_section::LatestSource;
 use preview_stage::{StageState, TestFireRun};
 use property_panel::{AdoptClipRequested, OverlayPropertyPanel, PanelLaunch, PropertyPanelEvent};
 
@@ -168,6 +170,7 @@ pub struct OverlaysView {
     receiver: Option<OverlayId>,
     hide_probe_gen: async_bridge::Generation,
     motion_probe_gen: async_bridge::Generation,
+    latest: LatestSource,
 }
 
 pub struct OverlaysLaunch {
@@ -184,6 +187,8 @@ pub struct OverlaysLaunch {
     pub triggers: Arc<TriggerRegistry>,
     pub sub_actions: Arc<SubActionRegistry>,
     pub scheduler: QueueSchedulerHandle,
+    pub latest_values: LatestValues,
+    pub bus: Arc<EventBus>,
 }
 
 impl OverlaysView {
@@ -209,6 +214,11 @@ impl OverlaysView {
         });
         let repaint = cx.observe(&wiring, |_, _, cx| cx.notify());
 
+        let latest = LatestSource {
+            values: launch.latest_values,
+            bus: launch.bus,
+            kinds: Arc::clone(&launch.kinds),
+        };
         let mut view = Self {
             repo: launch.repo,
             server: launch.server,
@@ -250,6 +260,7 @@ impl OverlaysView {
             receiver: None,
             hide_probe_gen: async_bridge::Generation::default(),
             motion_probe_gen: async_bridge::Generation::default(),
+            latest,
         };
         view.load(cx);
         view.load_receiver(cx);
@@ -594,10 +605,12 @@ impl OverlaysView {
 
         let issues = self.issues_of(&definition.id).to_vec();
         let base = self.base_launch(descriptor, &definition.id);
+        let latest = self.latest.clone();
         let view = cx.new(|cx| OverlayPropertyPanel::new(launch, cx));
         view.update(cx, |panel, cx| {
             panel.set_media_issues(issues, cx);
             panel.adopt_base(base, cx);
+            panel.bind_latest(latest, cx);
         });
         let sub = cx.subscribe(&view, Self::on_panel_event);
         let media_sub = cx.subscribe(&view, Self::on_adopt_requested);
@@ -1064,6 +1077,7 @@ impl Render for OverlaysView {
             .child(frame)
             .children(self.form.as_ref().map(|open| open.view.clone()))
             .children(delete)
+            .children(self.render_latest_reset_confirm(&palette, cx))
             .child(self.wiring.view.clone())
             .children(self.render_icon_picker(&palette, cx))
             .children(self.render_code_confirms(&palette, cx))

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::Icon;
-use forge_overlay::{OverlayConfig, OverlayKindDescriptor};
+use forge_overlay::{ContentFeed, OverlayConfig, OverlayKindDescriptor};
 use forge_registry::FormField;
 use forge_storage::OverlayId;
 use gpui::Context;
@@ -20,6 +20,7 @@ pub(super) fn look_summary(descriptor: &dyn OverlayKindDescriptor) -> LookSummar
         icon: Icon::from_name(descriptor.icon_name()),
         disposition: descriptor.delivery_disposition(),
         draws: descriptor.has_visual_page(),
+        slot_bound: descriptor.content_feed() == ContentFeed::LatestSlot,
     }
 }
 

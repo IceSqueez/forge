@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_overlay::{ConfigSection, OverlayKindRegistry};
+use forge_overlay::{ConfigSection, ContentFeed, OverlayKindRegistry};
 use forge_registry::{FormField, FormSchemaSource};
 use forge_runtime::CONTENT_SCHEMA_KEY;
 
@@ -30,6 +30,12 @@ impl OverlayContentSchema {
             .get(identity.trim())
             .and_then(|kind_id| self.kinds.get(kind_id))
             .is_some_and(|descriptor| descriptor.order_sensitive())
+    }
+
+    pub(super) fn takes_sends(&self, kind_id: &str) -> bool {
+        self.kinds
+            .get(kind_id)
+            .is_none_or(|descriptor| descriptor.content_feed() == ContentFeed::Deliveries)
     }
 }
 

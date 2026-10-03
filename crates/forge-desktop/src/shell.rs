@@ -338,6 +338,8 @@ impl AppShell {
                     triggers: handles.trigger_registry.clone(),
                     sub_actions: handles.sub_action_registry.clone(),
                     scheduler: handles.scheduler.clone(),
+                    latest_values: handles.latest_values.clone(),
+                    bus: Arc::clone(&handles.bus),
                 };
                 let view = cx.new(|cx| OverlaysView::new(launch, cx));
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {

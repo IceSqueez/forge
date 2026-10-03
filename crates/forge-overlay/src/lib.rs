@@ -71,7 +71,7 @@ pub use motion::{MotionAxes, MotionProfile};
 pub use motion_scan::{MotionIssue, OverriddenSources, motion_issues};
 pub use preview::{
     PreviewAccent, PreviewCanvas, PreviewComposition, PreviewElement, PreviewFont, PreviewLine,
-    PreviewLineRole, PreviewPosition, PreviewShape,
+    PreviewLineRole, PreviewMark, PreviewPosition, PreviewShape,
 };
 pub use registry::OverlayKindRegistry;
 pub use sample::{SampleContext, SampleTrigger, sample_content, sample_context};

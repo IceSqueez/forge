@@ -105,6 +105,7 @@ pub(super) struct LookSummary {
     pub(super) icon: Icon,
     pub(super) disposition: DeliveryDisposition,
     pub(super) draws: bool,
+    pub(super) slot_bound: bool,
 }
 
 pub(super) struct BaseLaunch {
@@ -162,6 +163,7 @@ impl BaseState {
                 icon: Icon::Browser,
                 disposition: DeliveryDisposition::Replace,
                 draws: true,
+                slot_bound: false,
             },
             looks: Vec::new(),
             receiver: false,
@@ -188,6 +190,10 @@ impl BaseState {
 
     fn queues_shows(&self) -> bool {
         self.look.disposition == DeliveryDisposition::Transient
+    }
+
+    pub(super) fn slot_bound(&self) -> bool {
+        self.look.slot_bound
     }
 
     fn in_flight(&self) -> bool {
@@ -270,6 +276,22 @@ impl OverlayPropertyPanel {
 
         let service = self.service.clone();
         let id = self.overlay_id.clone();
+        if self.base.slot_bound() {
+            async_bridge::run_async(
+                &self.rt_handle,
+                async move {
+                    service
+                        .test_fire(&id)
+                        .await
+                        .map(|fired| Fired::Applied(fired.delivery))
+                        .map_err(|error| error.to_string())
+                },
+                move |this, result, cx| this.on_show_fired(epoch, result, cx),
+                cx,
+            );
+            cx.notify();
+            return;
+        }
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -493,8 +515,12 @@ impl OverlayPropertyPanel {
                 "overlays-panel-fire-show",
                 cx.listener(|this, _: &ClickEvent, _, cx| this.fire_show(cx)),
             );
-        let status = fire_status(&self.base.fire, self.base.queues_shows())
-            .map(|(text, warn)| status_line(text, warn, palette));
+        let status = fire_status(
+            &self.base.fire,
+            self.base.queues_shows(),
+            self.base.slot_bound(),
+        )
+        .map(|(text, warn)| status_line(text, warn, palette));
         div()
             .flex()
             .flex_col()
@@ -572,10 +598,12 @@ fn delivery_text(delivery: OverlayDelivery) -> (String, bool) {
     }
 }
 
-fn fire_status(fire: &ShowFire, queues: bool) -> Option<(String, bool)> {
+fn fire_status(fire: &ShowFire, queues: bool, slot_bound: bool) -> Option<(String, bool)> {
     match fire {
         ShowFire::Idle => Some((
-            if queues {
+            if slot_bound {
+                tr!("overlays_show_fire_hint_latest")
+            } else if queues {
                 tr!("overlays_show_fire_hint")
             } else {
                 tr!("overlays_show_fire_hint_arrival")

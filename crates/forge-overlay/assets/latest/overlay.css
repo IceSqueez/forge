@@ -76,6 +76,7 @@ body[data-slot="now_playing"] .glyph-now_playing {
   color: var(--accent);
   font-size: calc(13px * var(--text-scale));
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .value {

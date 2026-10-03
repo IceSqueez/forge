@@ -1,7 +1,7 @@
 use forge_components::tr;
 use forge_runtime::delivery::{
-    CHAT_HISTORY, EVENT_LOG, EVENT_TRAIL, LATEST_VALUES, RUN_HISTORY, TRIGGER_EVALUATOR,
-    UNNAMED_OBSERVER, VIEWER_TRACKER,
+    CHAT_HISTORY, EVENT_LOG, EVENT_TRAIL, LATEST_OVERLAYS, LATEST_VALUES, RUN_HISTORY,
+    TRIGGER_EVALUATOR, UNNAMED_OBSERVER, VIEWER_TRACKER,
 };
 use forge_runtime::{ConsumerLoss, DeliveryTier, LossCount};
 
@@ -85,6 +85,7 @@ pub fn consumer_label(consumer: &str) -> String {
         CHAT_HISTORY => tr!("event_loss_consumer_chat_history"),
         VIEWER_TRACKER => tr!("event_loss_consumer_viewer_tracker"),
         LATEST_VALUES => tr!("event_loss_consumer_latest_values"),
+        LATEST_OVERLAYS => tr!("event_loss_consumer_latest_overlays"),
         RUN_HISTORY => tr!("event_loss_consumer_run_history"),
         EVENT_TRAIL => tr!("event_loss_consumer_event_trail"),
         UNNAMED_OBSERVER => tr!("event_loss_consumer_observer"),

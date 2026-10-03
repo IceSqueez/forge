@@ -6,7 +6,7 @@ use crate::config::{self, SPEECH, SPEECH_VOICE};
 use crate::descriptor::{
     ContentFeed, DeliveryDisposition, OverlayConfig, OverlayKindDescriptor, SectionedField,
 };
-use crate::latest::SLOT_OPTIONS;
+use crate::latest::{SLOT_OPTIONS, latest_content, sample_latest_value};
 use crate::metrics;
 use crate::motion::{self, MotionAxes, MotionProfile};
 use crate::preview::{PreviewComposition, PreviewShape, compose};
@@ -145,6 +145,9 @@ impl OverlayKindDescriptor for LatestOverlayKind {
     }
 
     fn preview(&self, config: &OverlayConfig) -> PreviewComposition {
-        compose(PreviewShape::Strip, config)
+        let sample = sample_latest_value(config::read_str(config, config::SLOT));
+        let mut shown = config.clone();
+        shown.extend(latest_content(self, config, Some(&sample)));
+        compose(PreviewShape::LatestCard, &shown)
     }
 }

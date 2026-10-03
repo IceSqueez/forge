@@ -2,10 +2,10 @@ use forge_components::{
     BORDER_THIN, Density, ForgePalette, GlyphArt, Icon, Radius, Spacing, body_family, glyph_art,
     icon, mono_family, radius, spacing, tr, with_alpha,
 };
-use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, SURFACE_RGB, TICKER};
+use forge_overlay::metrics::{ALERT, CHAT, FRAME, GOAL, LATEST, SURFACE_RGB, TICKER};
 use forge_overlay::{
     AxisBound, ElementSizing, PreviewComposition, PreviewElement, PreviewFont, PreviewLineRole,
-    PreviewPosition, PreviewShape, element_sizing,
+    PreviewMark, PreviewPosition, PreviewShape, element_sizing,
 };
 use gpui::{
     AnyElement, Div, FontWeight, Length, Pixels, Rgba, SharedString, div, prelude::*, px, relative,
@@ -19,6 +19,7 @@ const CHANNEL_MAX: f32 = 255.0;
 const UNSCALED_TEXT: f32 = 1.0;
 
 const TRACK_WASH_ALPHA: f32 = 0.14;
+const LATEST_SUBLINE_ALPHA: f32 = 0.7;
 const WHOLE_BOX: f32 = 1.0;
 
 #[derive(Clone, Copy)]
@@ -118,6 +119,7 @@ pub(super) fn render_composition(
             palette,
         ),
         PreviewShape::BorderedFrame => bordered_frame(composition, scale, accent, family, palette),
+        PreviewShape::LatestCard => latest_card(composition, plan, scale, accent, family, palette),
         PreviewShape::MessageFeed => {
             message_feed(composition, plan, scale, accent, family, palette)
         }
@@ -469,6 +471,90 @@ fn strip(
         .child(body);
 
     sized(bar, plan).into_any_element()
+}
+
+fn latest_card(
+    composition: &PreviewComposition,
+    plan: ElementPlan,
+    scale: Scale,
+    accent: Rgba,
+    family: SharedString,
+    palette: &ForgePalette,
+) -> AnyElement {
+    let headline = line_text(composition, PreviewLineRole::Headline)
+        .unwrap_or_else(|| SharedString::from(PLACEHOLDER));
+    let subline = line_text(composition, PreviewLineRole::Subline);
+
+    let value = div()
+        .w_full()
+        .min_w(px(0.0))
+        .flex()
+        .items_baseline()
+        .overflow_hidden()
+        .child(
+            div()
+                .flex_none()
+                .truncate()
+                .font_weight(FontWeight::BOLD)
+                .text_size(scale.text_at(LATEST.headline_size))
+                .text_color(palette.text_primary)
+                .child(headline),
+        )
+        .children(subline.map(|text| {
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .ml(scale.text_at(LATEST.subline_margin))
+                .truncate()
+                .text_size(scale.text_at(LATEST.subline_size))
+                .text_color(with_alpha(palette.text_primary, LATEST_SUBLINE_ALPHA))
+                .child(text)
+        }));
+
+    let body = div()
+        .flex_1()
+        .min_w(px(0.0))
+        .flex()
+        .flex_col()
+        .gap(scale.text_at(LATEST.line_gap))
+        .children(line_text(composition, PreviewLineRole::Label).map(|text| {
+            div()
+                .w_full()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(scale.text_at(LATEST.label_size))
+                .text_color(accent)
+                .child(text)
+        }))
+        .child(value);
+
+    let mark = composition.mark.map(|mark| {
+        let glyph = match mark {
+            PreviewMark::Donation => Icon::Coin,
+            PreviewMark::NowPlaying => Icon::Music,
+        };
+        div()
+            .flex_none()
+            .child(icon(glyph, scale.text_at(LATEST.icon_size), accent))
+    });
+
+    let card = div()
+        .flex_none()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(scale.text_at(LATEST.gap))
+        .overflow_hidden()
+        .py(scale.text_at(LATEST.padding_block))
+        .px(scale.text_at(LATEST.padding_inline))
+        .rounded(scale.text_at(LATEST.radius))
+        .border(scale.at(LATEST.border))
+        .border_color(accent)
+        .bg(surface(LATEST.surface_alpha))
+        .font_family(family)
+        .children(mark)
+        .child(body);
+
+    sized(card, plan).into_any_element()
 }
 
 fn line_text(composition: &PreviewComposition, role: PreviewLineRole) -> Option<SharedString> {

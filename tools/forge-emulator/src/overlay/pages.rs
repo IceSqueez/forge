@@ -41,6 +41,10 @@ impl OverlayMarks {
     pub fn of(&self, display_name: &str) -> usize {
         self.0.get(display_name).copied().unwrap_or(0)
     }
+
+    pub fn reopened(&mut self, display_name: &str) {
+        self.0.remove(display_name);
+    }
 }
 
 impl OverlayPages {
@@ -151,5 +155,17 @@ mod tests {
 
         assert_eq!(pages.marks().of("Alert Box"), 0);
         assert!(pages.page("Alert Box").is_none());
+    }
+
+    #[test]
+    fn a_reopened_page_is_read_from_its_first_frame_not_from_where_the_old_page_stopped() {
+        let mut marks = OverlayMarks(HashMap::from([
+            ("Last Donation".to_owned(), 3),
+            ("Alert Box".to_owned(), 5),
+        ]));
+
+        marks.reopened("Last Donation");
+
+        assert_eq!((marks.of("Last Donation"), marks.of("Alert Box")), (0, 5));
     }
 }

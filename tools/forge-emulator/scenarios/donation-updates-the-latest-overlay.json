@@ -1,0 +1,122 @@
+{
+  "name": "a latest-donation overlay shows the live donor, ignores a test donation, and hands a reconnecting page the current value",
+  "purpose": "A Latest overlay bound to the donation slot is pushed by forge, never by an action: a page that connects before any donation reads the placeholder, a Donatello donation replaces it with the donor and formatted amount, and a test donation leaves the slot alone, so a page that reconnects afterwards, and again after a restart, is handed the live donor rather than the test one.",
+  "fixture": {
+    "donatello": {},
+    "overlays": [
+      { "display_name": "Last Donation", "kind_id": "overlay.latest", "config": {} }
+    ],
+    "event_triggers": [
+      {
+        "trigger_kind": "script.event.custom",
+        "action_name": "Send Test Donation",
+        "config": { "event_name": { "type": "string", "value": "never-fired" } },
+        "steps": [
+          {
+            "kind_id": "donations.test_donation",
+            "config": {
+              "provider": { "type": "string", "value": "donatello" },
+              "donor_name": { "type": "string", "value": "Tester" },
+              "amount": { "type": "string", "value": "999" },
+              "currency": { "type": "string", "value": "UAH" },
+              "message": { "type": "string", "value": "just a test" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "donatello": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "donations_polled": { "within_ms": 60000 } } },
+    {
+      "do": { "overlay_page": { "overlay": "Last Donation", "within_ms": 30000 } },
+      "expect": [
+        {
+          "overlay_content": {
+            "overlay": "Last Donation",
+            "values": { "label": "Last donation", "placeholder": "No donations yet" },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "donatello_donation": {
+          "id": "dl-latest-overlay-1",
+          "donor": "Olena",
+          "amount": "150",
+          "message": "a private note"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "slot changed",
+            "source": "core",
+            "kind": "latest.changed",
+            "payload": { "/slot": { "equals": "donation" } },
+            "within_ms": 40000
+          }
+        },
+        {
+          "overlay_content": {
+            "overlay": "Last Donation",
+            "values": { "label": "Last donation", "headline": "Olena", "subline": "150 UAH" },
+            "within_ms": 40000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "run_action": { "action": "Send Test Donation" } },
+      "expect": [
+        {
+          "event": {
+            "source": "donation",
+            "kind": "donation.received",
+            "payload": { "/test": { "equals": true } },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event_absent": {
+            "source": "core",
+            "kind": "latest.changed",
+            "window_ms": 3000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Last Donation", "within_ms": 30000 } },
+      "expect": [
+        {
+          "overlay_content": {
+            "overlay": "Last Donation",
+            "values": { "headline": "Olena", "subline": "150 UAH" },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    { "do": { "forge_restart": { "within_ms": 60000 } } },
+    {
+      "do": { "overlay_page": { "overlay": "Last Donation", "within_ms": 30000 } },
+      "expect": [
+        {
+          "overlay_content": {
+            "overlay": "Last Donation",
+            "values": { "headline": "Olena", "subline": "150 UAH" },
+            "within_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

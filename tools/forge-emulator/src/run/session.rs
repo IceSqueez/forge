@@ -140,6 +140,10 @@ async fn run_step(
         }
     };
 
+    let mut marks = marks;
+    if let StepAction::OverlayPage { overlay, .. } = &step.action {
+        marks.reopened(overlay);
+    }
     let context = ExpectationContext {
         session,
         from,

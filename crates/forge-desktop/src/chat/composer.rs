@@ -228,3 +228,218 @@ impl Render for ChatComposer {
         self.input.clone()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_components::{FORGE_DEFAULT, Platform, ToastKind, tr};
+    use forge_events::{Event, EventSource};
+    use forge_runtime::{EventBus, NullEventLogRepo};
+    use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext};
+
+    use super::super::platform_display_name;
+    use super::ChatComposer;
+    use crate::chat::send_plan::{
+        CHAT_SEND_REQUEST_KIND, CHAT_SENT_KIND, DeliveryResult, SendReport,
+    };
+    use crate::home_stats::{HomeStats, Integration};
+    use crate::test_support::{pump, runtime};
+    use crate::toasts::Toasts;
+
+    fn mount<'a>(
+        cx: &'a mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        connected: &[Integration],
+    ) -> (Entity<ChatComposer>, &'a mut VisualTestContext) {
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let connections: Vec<(Integration, bool)> =
+            [Integration::Twitch, Integration::YouTube, Integration::Kick]
+                .into_iter()
+                .map(|integration| (integration, connected.contains(&integration)))
+                .collect();
+        let home_stats = cx.new(|_| {
+            let mut stats = HomeStats::new();
+            stats.set_connections(&connections);
+            stats
+        });
+        let handle = rt.handle().clone();
+        cx.add_window_view(|_window, cx| ChatComposer::new(home_stats, handle, FORGE_DEFAULT, cx))
+    }
+
+    fn type_text(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext, text: &str) {
+        vcx.update(|window, cx| {
+            let input = composer.read(cx).input.clone();
+            input.update(cx, |bar, cx| bar.focus(window, cx));
+        });
+        vcx.simulate_input(text);
+        vcx.run_until_parked();
+    }
+
+    fn field(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext) -> String {
+        vcx.update(|_window, cx| composer.read(cx).input.read(cx).content(cx))
+    }
+
+    fn error_toasts(vcx: &mut VisualTestContext) -> Vec<String> {
+        vcx.update(|_window, cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .filter(|toast| toast.kind == ToastKind::Error)
+                .map(|toast| toast.message.to_string())
+                .collect()
+        })
+    }
+
+    fn send(composer: &Entity<ChatComposer>, vcx: &mut VisualTestContext, text: &str) {
+        vcx.update(|_window, cx| {
+            composer.update(cx, |composer, cx| {
+                composer.send(text, &[Platform::Twitch], cx);
+            });
+        });
+        vcx.run_until_parked();
+    }
+
+    fn connected_bus(
+        composer: &Entity<ChatComposer>,
+        vcx: &mut VisualTestContext,
+    ) -> Arc<EventBus> {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let handed = Arc::clone(&bus);
+        vcx.update(|_window, cx| composer.update(cx, |composer, cx| composer.set_bus(handed, cx)));
+        bus
+    }
+
+    #[gpui::test]
+    fn sending_without_a_bus_toasts_unavailable_and_stays_idle(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+
+        send(&composer, vcx, "hello");
+
+        assert_eq!(error_toasts(vcx), vec![tr!("chat_send_unavailable")]);
+        assert!(!vcx.update(|_window, cx| composer.read(cx).is_sending()));
+    }
+
+    #[gpui::test]
+    fn refused_sends_toast_the_reason_except_for_blank_text(cx: &mut TestAppContext) {
+        for (connected, text, expected) in [
+            (
+                vec![],
+                "hello",
+                vec![tr!("chat_send_no_platform_connected")],
+            ),
+            (vec![Integration::Twitch], "   ", vec![]),
+        ] {
+            let rt = runtime();
+            let (composer, vcx) = mount(cx, &rt, &connected);
+
+            send(&composer, vcx, text);
+
+            assert_eq!(
+                error_toasts(vcx),
+                expected,
+                "text {text:?} with {connected:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_second_send_while_one_is_in_flight_is_ignored(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+        connected_bus(&composer, vcx);
+
+        send(&composer, vcx, "first");
+        send(&composer, vcx, "second");
+
+        let in_flight = vcx.update(|_window, cx| composer.read(cx).in_flight.clone());
+        assert_eq!(in_flight.as_deref(), Some("first"));
+    }
+
+    #[gpui::test]
+    fn the_report_clears_the_field_only_when_delivered_and_the_text_is_unchanged(
+        cx: &mut TestAppContext,
+    ) {
+        for (typed, result, cleared) in [
+            ("hello ", DeliveryResult::Delivered, true),
+            ("hello again", DeliveryResult::Delivered, false),
+            ("hello", DeliveryResult::Failed("banned".to_owned()), false),
+            ("hello", DeliveryResult::NoResponse, false),
+        ] {
+            let rt = runtime();
+            let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+            type_text(&composer, vcx, typed);
+            let report = SendReport {
+                message: "hello".to_owned(),
+                results: vec![(Platform::Twitch, result.clone())],
+            };
+
+            vcx.update(|_window, cx| {
+                composer.update(cx, |composer, cx| composer.apply_report(report, cx));
+            });
+
+            let expected = if cleared { "" } else { typed };
+            assert_eq!(
+                field(&composer, vcx),
+                expected,
+                "typed {typed:?}, {result:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_undelivered_report_toasts_once_per_problem_platform(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch, Integration::Kick]);
+        let report = SendReport {
+            message: "hello".to_owned(),
+            results: vec![
+                (Platform::Twitch, DeliveryResult::Delivered),
+                (Platform::Kick, DeliveryResult::Failed("banned".to_owned())),
+            ],
+        };
+
+        vcx.update(|_window, cx| {
+            composer.update(cx, |composer, cx| composer.apply_report(report, cx));
+        });
+
+        assert_eq!(
+            error_toasts(vcx),
+            vec![tr!(
+                "chat_send_failed",
+                platform = platform_display_name(Platform::Kick),
+                error = "banned".to_owned()
+            )]
+        );
+    }
+
+    #[gpui::test]
+    fn a_send_the_platform_confirms_clears_the_field(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (composer, vcx) = mount(cx, &rt, &[Integration::Twitch]);
+        let bus = connected_bus(&composer, vcx);
+        let mut observer = bus.subscribe();
+        type_text(&composer, vcx, "hello");
+
+        send(&composer, vcx, "hello");
+        pump(&rt);
+        let request = observer
+            .try_recv()
+            .unwrap()
+            .expect("a send request on the bus");
+        assert_eq!(request.kind, CHAT_SEND_REQUEST_KIND);
+        bus.publish(Event::caused_by(
+            EventSource::Twitch,
+            CHAT_SENT_KIND,
+            serde_json::json!({ "channel": "twitch", "message": "hello" }),
+            request.id,
+        ));
+        pump(&rt);
+        vcx.run_until_parked();
+
+        assert_eq!(field(&composer, vcx), "");
+        assert!(!vcx.update(|_window, cx| composer.read(cx).is_sending()));
+    }
+}

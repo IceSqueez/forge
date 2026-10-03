@@ -555,13 +555,6 @@ mod tests {
             .unwrap()
     }
 
-    #[test]
-    fn platform_bit_assigns_a_distinct_stable_bit_per_platform() {
-        assert_eq!(platform_bit(Platform::Twitch), 0b001);
-        assert_eq!(platform_bit(Platform::YouTube), 0b010);
-        assert_eq!(platform_bit(Platform::Kick), 0b100);
-    }
-
     #[gpui::test]
     fn targets_bitset_is_the_or_of_the_selected_platform_bits(cx: &mut gpui::TestAppContext) {
         for (targets, expected) in [
@@ -695,5 +688,96 @@ mod tests {
         assert_eq!(after_off, 0b101);
         assert_eq!(selected_off, vec![Platform::Twitch, Platform::Kick]);
         assert_eq!(after_on, 0b111);
+    }
+
+    fn all_on() -> Vec<(Platform, bool)> {
+        vec![
+            (Platform::Twitch, true),
+            (Platform::YouTube, true),
+            (Platform::Kick, true),
+        ]
+    }
+
+    #[gpui::test]
+    fn unavailable_platforms_drop_out_of_the_effective_targets_but_stay_selected(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (effective, selected) = with_bar(cx, all_on(), |bar, _window, cx| {
+            bar.set_available_targets(&[Platform::Twitch, Platform::Kick], cx);
+            (bar.effective_targets(), bar.selected_targets())
+        });
+
+        assert_eq!(effective, vec![Platform::Twitch, Platform::Kick]);
+        assert_eq!(
+            selected,
+            vec![Platform::Twitch, Platform::YouTube, Platform::Kick]
+        );
+    }
+
+    #[gpui::test]
+    fn a_platform_coming_back_rejoins_the_effective_targets(cx: &mut gpui::TestAppContext) {
+        let effective = with_bar(cx, all_on(), |bar, _window, cx| {
+            bar.set_available_targets(&[Platform::Twitch], cx);
+            bar.set_available_targets(&[Platform::Twitch, Platform::YouTube], cx);
+            bar.effective_targets()
+        });
+
+        assert_eq!(effective, vec![Platform::Twitch, Platform::YouTube]);
+    }
+
+    #[gpui::test]
+    fn toggling_an_unavailable_target_leaves_the_selection_unchanged(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let bits = with_bar(cx, all_on(), |bar, _window, cx| {
+            bar.set_available_targets(&[Platform::Twitch, Platform::Kick], cx);
+            bar.toggle_target(1, cx);
+            bar.targets_bitset()
+        });
+
+        assert_eq!(bits, 0b111);
+    }
+
+    #[gpui::test]
+    #[allow(clippy::unwrap_used)]
+    fn send_carries_only_the_available_selected_targets(cx: &mut gpui::TestAppContext) {
+        let window = cx.add_window(|_window, cx| {
+            InputBar::new("placeholder", FORGE_DEFAULT, cx).with_targets(all_on())
+        });
+        let bar = window.root(cx).unwrap();
+        let sent = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let sink = std::rc::Rc::clone(&sent);
+        let _subscription = cx.update(|cx| {
+            cx.subscribe(&bar, move |_, event: &InputBarEvent, _| {
+                if let InputBarEvent::Send { targets, .. } = event {
+                    sink.borrow_mut().push(targets.clone());
+                }
+            })
+        });
+
+        bar.update(cx, |bar, cx| {
+            bar.set_available_targets(&[Platform::YouTube], cx);
+            bar.emit_send(cx);
+        });
+
+        assert_eq!(*sent.borrow(), vec![vec![Platform::YouTube]]);
+    }
+
+    #[gpui::test]
+    fn char_count_counts_characters_of_the_trimmed_text(cx: &mut gpui::TestAppContext) {
+        for (text, expected) in [
+            ("  hello  ", 5),
+            ("привіт", 6),
+            ("👋 hi", 4),
+            (" \t ", 0),
+            ("", 0),
+        ] {
+            let count = with_bar(cx, all_on(), |bar, _window, cx| {
+                bar.field
+                    .update(cx, |field, cx| field.set_content(text, cx));
+                bar.char_count(cx)
+            });
+            assert_eq!(count, expected, "text {text:?}");
+        }
     }
 }

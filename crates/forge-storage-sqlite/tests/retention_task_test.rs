@@ -4,9 +4,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use forge_events::{Event, EventSource};
-use forge_storage::{DataProvider, set_event_log_retention_days};
+use forge_storage::{
+    DataProvider, MissedRunPolicy, ScheduledRunOutcome, ScheduledRunSpec,
+    set_event_log_retention_days,
+};
 use forge_storage_sqlite::SqliteBackend;
-use forge_types::EventId;
+use forge_types::{ActionId, EventId};
 use sqlx::SqlitePool;
 use sqlx::sqlite::SqlitePoolOptions;
 use time::OffsetDateTime;
@@ -192,4 +195,64 @@ async fn the_pruner_stops_once_its_backend_is_dropped() {
         .unwrap();
 
     assert_eq!(rows, 1, "a dropped backend's pruner must not keep deleting");
+}
+
+async fn resolved_run(db: &Db, age: time::Duration) -> forge_storage::ScheduledRunId {
+    let repo = db.backend.scheduled_run_repo();
+    let resolved_at = OffsetDateTime::now_utc() - age;
+    let id = repo
+        .schedule(&ScheduledRunSpec {
+            target_action_id: ActionId::new(),
+            due_at: resolved_at,
+            key: None,
+            missed_run_policy: MissedRunPolicy::RunLateOnce,
+            args: Default::default(),
+            scheduled_by_action: None,
+            scheduled_by_run: None,
+            trigger_event_id: None,
+            scheduled_at: resolved_at,
+            label: "follow-up".to_owned(),
+        })
+        .await
+        .unwrap()
+        .id;
+    repo.settle(id, ScheduledRunOutcome::Dispatched, None, resolved_at)
+        .await
+        .unwrap();
+    id
+}
+
+#[tokio::test]
+async fn a_sweep_prunes_resolved_scheduled_runs_older_than_the_window_and_keeps_pending_ones() {
+    let db = open(FAST_CADENCE).await;
+    let repo = db.backend.scheduled_run_repo();
+    let expired = resolved_run(&db, time::Duration::days(8)).await;
+    let recent = resolved_run(&db, time::Duration::days(1)).await;
+    let pending = repo
+        .schedule(&ScheduledRunSpec {
+            target_action_id: ActionId::new(),
+            due_at: OffsetDateTime::now_utc() - time::Duration::days(30),
+            key: None,
+            missed_run_policy: MissedRunPolicy::RunLateOnce,
+            args: Default::default(),
+            scheduled_by_action: None,
+            scheduled_by_run: None,
+            trigger_event_id: None,
+            scheduled_at: OffsetDateTime::now_utc() - time::Duration::days(31),
+            label: "overdue".to_owned(),
+        })
+        .await
+        .unwrap()
+        .id;
+
+    let deadline = Instant::now() + SLOW_CADENCE;
+    while repo.get(expired).await.unwrap().is_some() && Instant::now() < deadline {
+        tokio::time::sleep(POLL).await;
+    }
+
+    let mut present = Vec::new();
+    for id in [expired, recent, pending] {
+        present.push(repo.get(id).await.unwrap().is_some());
+    }
+    assert_eq!(present, vec![false, true, true]);
 }

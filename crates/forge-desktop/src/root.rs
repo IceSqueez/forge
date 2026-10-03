@@ -850,4 +850,60 @@ mod tests {
 
         assert_eq!((at_start, pending_in(&health, id, cx)), (Some(1), Some(2)));
     }
+    const FAILURE_WINDOW_W: f32 = 1000.0;
+    const FAILURE_WINDOW_H: f32 = 700.0;
+
+    #[gpui::test]
+    fn a_pre_baseline_failure_renders_its_screen_and_keeps_the_failed_state(
+        cx: &mut TestAppContext,
+    ) {
+        crate::test_support::install_presentation(cx);
+        let rt = runtime();
+        let handle = rt.handle().clone();
+        let (view, vcx) = cx.add_window_view(move |_window, cx| {
+            RootView::new(
+                handle,
+                LogTail::new(),
+                PlatformEndpoints::default(),
+                Screen::Home,
+                cx,
+            )
+        });
+        view.update(vcx, |root, cx| {
+            root.mark_failed(BootFailure::PreBaseline { found: 7 });
+            cx.notify();
+        });
+
+        vcx.simulate_resize(gpui::size(
+            gpui::px(FAILURE_WINDOW_W),
+            gpui::px(FAILURE_WINDOW_H),
+        ));
+        vcx.run_until_parked();
+
+        view.read_with(vcx, |root, _| {
+            assert!(matches!(
+                root.state,
+                BootState::Failed(BootFailure::PreBaseline { found: 7 })
+            ));
+        });
+    }
+
+    #[test]
+    fn the_pre_baseline_body_names_the_release_to_open_and_the_found_version_in_every_language() {
+        for language in [forge_storage::Language::En, forge_storage::Language::Uk] {
+            crate::i18n::install_language(language);
+
+            let body = tr!(
+                "boot_pre_baseline_body",
+                found = 7_i64,
+                release = forge_storage::LAST_PRE_BASELINE_RELEASE
+            );
+
+            assert!(
+                body.contains(forge_storage::LAST_PRE_BASELINE_RELEASE),
+                "{language:?}: {body}"
+            );
+            assert!(body.contains('7'), "{language:?}: {body}");
+        }
+    }
 }

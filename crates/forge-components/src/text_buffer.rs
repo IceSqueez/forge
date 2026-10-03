@@ -802,4 +802,150 @@ mod tests {
         type_chars(&mut buffer, "cd");
         assert_eq!(undo_trail(&mut buffer), vec!["  ab\n  ", "  ab", ""]);
     }
+
+    fn selecting(text: &str, range: Range<usize>, reversed: bool) -> TextBuffer {
+        let mut buffer = loaded(text);
+        if reversed {
+            buffer.move_to(range.end);
+            buffer.select_to(range.start);
+        } else {
+            buffer.move_to(range.start);
+            buffer.select_to(range.end);
+        }
+        buffer
+    }
+
+    fn shape(buffer: &TextBuffer) -> (&str, Range<usize>, bool) {
+        (
+            buffer.as_str(),
+            buffer.selected_range().clone(),
+            buffer.is_reversed(),
+        )
+    }
+
+    #[test]
+    fn indent_prefixes_each_non_empty_touched_line_and_moves_the_selection_with_it() {
+        for (text, select, reversed, expected, remapped) in [
+            ("ab\ncd", 1..4, false, "  ab\n  cd", 3..8),
+            ("ab\ncd", 1..4, true, "  ab\n  cd", 3..8),
+            ("ab\ncd", 0..5, false, "  ab\n  cd", 0..9),
+            ("ab\ncd\nef", 0..6, false, "  ab\n  cd\nef", 0..10),
+            ("ab\ncd", 2..3, false, "  ab\ncd", 4..5),
+            ("ab\n\ncd", 0..6, false, "  ab\n\n  cd", 0..10),
+            (
+                "\u{43f}\u{440}\n\u{432}\u{456}",
+                2..7,
+                false,
+                "  \u{43f}\u{440}\n  \u{432}\u{456}",
+                4..11,
+            ),
+        ] {
+            let mut buffer = selecting(text, select.clone(), reversed);
+            buffer.indent("  ");
+            assert_eq!(
+                shape(&buffer),
+                (expected, remapped, reversed),
+                "{text:?} {select:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn outdent_removes_at_most_one_unit_or_one_leading_tab_from_each_touched_line() {
+        for (text, select, reversed, expected, remapped) in [
+            ("    a\n  b\n c\nd", 0..14, false, "  a\nb\nc\nd", 0..9),
+            ("  a\n  b", 1..7, true, "a\nb", 0..3),
+            ("\t\tx\n\ty", 0..6, false, "\tx\ny", 0..4),
+            ("  a\n  b", 0..4, false, "a\n  b", 0..2),
+            ("    ab", 6..6, false, "  ab", 4..4),
+            ("    ab", 1..1, false, "  ab", 0..0),
+            (" \tx", 3..3, false, "\tx", 2..2),
+            (
+                "  \u{43f}\u{440}\n  \u{432}\u{456}",
+                2..13,
+                false,
+                "\u{43f}\u{440}\n\u{432}\u{456}",
+                0..9,
+            ),
+        ] {
+            let mut buffer = selecting(text, select.clone(), reversed);
+            buffer.outdent("  ");
+            assert_eq!(
+                shape(&buffer),
+                (expected, remapped, reversed),
+                "{text:?} {select:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reshaping_lines_that_need_no_change_leaves_the_text_and_history_untouched() {
+        let reshapes: [(BufferOp, &str, Range<usize>); 3] = [
+            (|b| b.outdent("  "), "ab\ncd", 0..5),
+            (|b| b.outdent("  "), "ab", 1..1),
+            (|b| b.indent("  "), "\n\n", 0..2),
+        ];
+        for (reshape, text, select) in reshapes {
+            let mut buffer = selecting(text, select.clone(), false);
+            reshape(&mut buffer);
+            let after = (buffer.as_str().to_string(), buffer.selected_range().clone());
+            assert_eq!(
+                (after, buffer.undo()),
+                ((text.to_string(), select), false),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn block_indent_and_outdent_each_undo_as_one_step() {
+        let reshapes: [(BufferOp, &str); 2] = [
+            (|b| b.indent("  "), "ab\ncd\nef"),
+            (|b| b.outdent("  "), "  ab\n  cd\n  ef"),
+        ];
+        for (reshape, text) in reshapes {
+            let mut buffer = typed("x");
+            buffer.reset(Arc::from(text));
+            buffer.select_all();
+            reshape(&mut buffer);
+            assert_eq!(undo_trail(&mut buffer), vec![text], "{text:?}");
+        }
+    }
+
+    #[test]
+    fn undo_of_a_block_indent_restores_the_selection_and_redo_restores_the_shifted_one() {
+        let mut buffer = selecting("ab\ncd", 1..4, true);
+        buffer.indent("  ");
+        buffer.undo();
+        let undone = (
+            buffer.as_str().to_string(),
+            buffer.selected_range().clone(),
+            buffer.is_reversed(),
+        );
+        buffer.redo();
+        assert_eq!(
+            (undone, shape(&buffer)),
+            (
+                ("ab\ncd".to_string(), 1..4, true),
+                ("  ab\n  cd", 3..8, true)
+            )
+        );
+    }
+
+    #[test]
+    fn tab_within_a_single_line_inserts_the_unit_in_place_of_the_selection() {
+        for (text, select, expected, cursor) in [
+            ("ab", 1..1, "a  b", 3),
+            ("abc", 1..2, "a  c", 3),
+            ("ab\ncd", 4..4, "ab\nc  d", 6),
+        ] {
+            let mut buffer = selecting(text, select.clone(), false);
+            buffer.indent("  ");
+            assert_eq!(
+                (buffer.as_str(), buffer.cursor()),
+                (expected, cursor),
+                "{text:?} {select:?}"
+            );
+        }
+    }
 }

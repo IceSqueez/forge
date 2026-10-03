@@ -2698,6 +2698,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-monobank"
+version = "0.5.5"
+dependencies = [
+ "async-trait",
+ "forge-platform-core",
+ "forge-storage",
+ "forge-types",
+ "jiff",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
+]
+
+[[package]]
 name = "forge-obs"
 version = "0.5.5"
 dependencies = [

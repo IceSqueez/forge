@@ -17,6 +17,7 @@ members = [
   "crates/forge-vtube",
   "crates/forge-discord",
   "crates/forge-donatello",
+  "crates/forge-monobank",
   "crates/forge-midi",
   "crates/forge-hotkey",
   "crates/forge-awake",

@@ -18,6 +18,11 @@ pub enum ObsError {
     #[error("raw payload serialization: {0}")]
     Payload(#[from] serde_json::Error),
 
+    #[error(
+        "Studio Mode is off in OBS - the preview scene exists only in Studio Mode. Turn it on first with the \"Set Studio Mode\" sub-action"
+    )]
+    StudioModeInactive,
+
     #[error("request failed: {request_type} - {message}")]
     Request {
         request_type: String,
@@ -37,6 +42,17 @@ pub(crate) fn map_request_error(request_type: &str, e: obws::error::Error) -> Ob
         obws::error::Error::Disconnected
         | obws::error::Error::Send(_)
         | obws::error::Error::ReceiveMessage(_) => ObsError::Disconnected,
+        obws::error::Error::Api {
+            code: obws::responses::StatusCode::StudioModeNotActive,
+            ..
+        } => ObsError::StudioModeInactive,
+        obws::error::Error::Api { code, message } => ObsError::Request {
+            request_type: request_type.to_owned(),
+            message: match message {
+                Some(detail) => format!("{code:?}: {detail}"),
+                None => format!("{code:?}"),
+            },
+        },
         _ => ObsError::Request {
             request_type: request_type.to_owned(),
             message: e.to_string(),

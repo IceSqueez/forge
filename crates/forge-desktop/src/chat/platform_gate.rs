@@ -20,8 +20,18 @@ impl ChatView {
         self._lifecycle_obs = Some(cx.observe(&lifecycle, |this, _, cx| {
             this.on_lifecycle_changed(cx);
         }));
+        self.composer.update(cx, |composer, cx| {
+            composer.set_lifecycle(lifecycle.clone(), cx);
+        });
         self.lifecycle = Some(lifecycle);
         self.on_lifecycle_changed(cx);
+        self
+    }
+
+    #[must_use]
+    pub fn with_chat_bus(self, bus: Arc<forge_runtime::EventBus>, cx: &mut Context<Self>) -> Self {
+        self.composer
+            .update(cx, |composer, cx| composer.set_bus(bus, cx));
         self
     }
 

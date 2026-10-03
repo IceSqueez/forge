@@ -188,6 +188,7 @@ impl AppShell {
                 let voice_alias_repo = handles.backend.voice_alias_repo();
                 let speak = handles.speak.clone();
                 let bot_accounts = handles.bot_accounts.clone();
+                let bus = Arc::clone(&handles.bus);
                 cx.new(|cx| {
                     ChatView::new(
                         topics.chat_feed.clone(),
@@ -202,6 +203,7 @@ impl AppShell {
                         cx,
                     )
                     .with_lifecycle(topics.integration_lifecycle.clone(), cx)
+                    .with_chat_bus(bus, cx)
                 })
                 .into()
             }

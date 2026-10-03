@@ -46,6 +46,7 @@ const HINT_GAP: gpui::Pixels = px(4.0);
 const HINT_ROW_GAP: gpui::Pixels = px(14.0);
 const TARGET_GROUP_GAP: gpui::Pixels = px(4.0);
 const WRAP_PAD_X: gpui::Pixels = px(14.0);
+const ALL_PLATFORM_BITS: u8 = 0b111;
 
 const EMOJIS: &[&str] = &[
     "😀",
@@ -123,6 +124,8 @@ const EMOJIS: &[&str] = &[
 pub struct InputBar {
     field: Entity<TextInput>,
     targets: Vec<(Platform, bool)>,
+    available: u8,
+    max_chars: Option<usize>,
     emoji_open: bool,
     palette: ForgePalette,
     density: Density,
@@ -153,6 +156,8 @@ impl InputBar {
                 (Platform::YouTube, true),
                 (Platform::Kick, true),
             ],
+            available: ALL_PLATFORM_BITS,
+            max_chars: None,
             emoji_open: false,
             palette,
             density: Density::default(),
@@ -183,6 +188,38 @@ impl InputBar {
 
     pub fn any_target_selected(&self) -> bool {
         self.targets.iter().any(|(_, active)| *active)
+    }
+
+    pub fn is_available(&self, platform: Platform) -> bool {
+        self.available & platform_bit(platform) != 0
+    }
+
+    pub fn effective_targets(&self) -> Vec<Platform> {
+        self.selected_targets()
+            .into_iter()
+            .filter(|platform| self.is_available(*platform))
+            .collect()
+    }
+
+    pub fn set_available_targets(&mut self, available: &[Platform], cx: &mut Context<Self>) {
+        let bits = available
+            .iter()
+            .fold(0, |acc, platform| acc | platform_bit(*platform));
+        if self.available != bits {
+            self.available = bits;
+            cx.notify();
+        }
+    }
+
+    pub fn set_max_chars(&mut self, max_chars: Option<usize>, cx: &mut Context<Self>) {
+        if self.max_chars != max_chars {
+            self.max_chars = max_chars;
+            cx.notify();
+        }
+    }
+
+    pub fn char_count(&self, cx: &App) -> usize {
+        self.field.read(cx).content().trim().chars().count()
     }
 
     pub fn content(&self, cx: &App) -> String {
@@ -221,14 +258,16 @@ impl InputBar {
         event: &InputEvent,
         cx: &mut Context<Self>,
     ) {
-        if let InputEvent::Submitted(_) = event {
-            self.emit_send(cx);
+        match event {
+            InputEvent::Submitted(_) => self.emit_send(cx),
+            InputEvent::Changed(_) => cx.notify(),
+            InputEvent::Blurred(_) | InputEvent::Cancelled => {}
         }
     }
 
     fn emit_send(&mut self, cx: &mut Context<Self>) {
         let text = self.field.read(cx).content().to_string();
-        let targets = self.selected_targets();
+        let targets = self.effective_targets();
         cx.emit(InputBarEvent::Send {
             text: text.into(),
             targets,
@@ -236,7 +275,12 @@ impl InputBar {
     }
 
     fn toggle_target(&mut self, idx: usize, cx: &mut Context<Self>) {
-        if let Some(entry) = self.targets.get_mut(idx) {
+        let available = self.available;
+        if let Some(entry) = self
+            .targets
+            .get_mut(idx)
+            .filter(|(platform, _)| available & platform_bit(*platform) != 0)
+        {
             entry.1 = !entry.1;
         }
         cx.emit(InputBarEvent::TargetsChanged);
@@ -266,10 +310,12 @@ impl InputBar {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let p = self.palette;
-        let letter_color = if active {
-            platform.color(&p)
-        } else {
-            p.text_faint
+        let available = self.is_available(platform);
+        let lit = active && available;
+        let letter_color = match (available, lit) {
+            (false, _) => p.text_extreme_faint,
+            (true, true) => platform.color(&p),
+            (true, false) => p.text_faint,
         };
 
         let mut tile = div()
@@ -280,21 +326,45 @@ impl InputBar {
             .justify_center()
             .w(TARGET_SIZE)
             .h(TARGET_SIZE)
-            .rounded(TARGET_RADIUS)
-            .cursor_pointer()
-            .on_click(cx.listener(move |this, _event, _window, cx| this.toggle_target(idx, cx)))
-            .child(
-                div()
-                    .font_family(body_family())
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(TARGET_LETTER_SIZE)
-                    .text_color(letter_color)
-                    .child(SharedString::from(platform.letter())),
+            .rounded(TARGET_RADIUS);
+        if available {
+            tile = tile.cursor_pointer().on_click(
+                cx.listener(move |this, _event, _window, cx| this.toggle_target(idx, cx)),
             );
-        if active {
+        }
+        tile = tile.child(
+            div()
+                .font_family(body_family())
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(TARGET_LETTER_SIZE)
+                .text_color(letter_color)
+                .child(SharedString::from(platform.letter())),
+        );
+        if lit {
             tile = tile.bg(p.surface_overlay);
         }
         tile
+    }
+
+    fn render_char_counter(&self, cx: &App) -> Option<impl IntoElement> {
+        let limit = self.max_chars?;
+        let count = self.char_count(cx);
+        if count == 0 {
+            return None;
+        }
+        let color = if count > limit {
+            self.palette.random
+        } else {
+            self.palette.text_faint
+        };
+        Some(
+            div()
+                .ml_auto()
+                .font_family(mono_family())
+                .text_size(FONT_XXS)
+                .text_color(color)
+                .child(format!("{count}/{limit}")),
+        )
     }
 
     fn render_hint(&self, glyph: &'static str, label: &'static str) -> impl IntoElement {
@@ -436,7 +506,8 @@ impl Render for InputBar {
                     .gap(HINT_ROW_GAP)
                     .child(self.render_hint("/", "commands"))
                     .child(self.render_hint("@", "mention"))
-                    .child(self.render_hint("!", "trigger action")),
+                    .child(self.render_hint("!", "trigger action"))
+                    .children(self.render_char_counter(cx)),
             );
 
         let emoji_panel = if self.emoji_open {

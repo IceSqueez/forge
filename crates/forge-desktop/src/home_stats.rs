@@ -272,6 +272,12 @@ impl HomeStats {
         }
     }
 
+    pub fn is_connected(&self, integration: Integration) -> bool {
+        self.connections
+            .iter()
+            .any(|(integ, connected)| *integ == integration && *connected)
+    }
+
     pub fn set_connections(&mut self, connections: &[(Integration, bool)]) -> bool {
         if self.connections == connections {
             return false;

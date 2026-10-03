@@ -5,12 +5,11 @@ use std::time::Duration;
 
 use forge_components::{
     BORDER_THIN, BadgeKind, BreadcrumbCrumb, ChatBody, ChatRow, ChipGlyph, Density, FONT_MD,
-    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputBar, InputBarEvent, InputEvent,
-    MenuPlacement, Platform, PlatformKind, Radius, ResizeEdge, ResizeRange, SearchState, Spacing,
-    TextInput, ToastKind, avatar_tile, badge, badge_color, badge_label, body_family, chat_gap_row,
-    chat_row, chip, context_menu, empty_state, icon, install_resize, menu_button, menu_divider,
-    menu_header, menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot,
-    tr,
+    FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, MenuPlacement, Platform,
+    PlatformKind, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextInput, ToastKind,
+    avatar_tile, badge, badge_color, badge_label, body_family, chat_gap_row, chat_row, chip,
+    context_menu, empty_state, icon, install_resize, menu_button, menu_divider, menu_header,
+    menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
@@ -35,7 +34,11 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
 
+mod composer;
 mod platform_gate;
+mod send_plan;
+
+pub use composer::ChatComposer;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -222,7 +225,7 @@ pub struct ChatView {
     action_engine: ActionEngineHandle,
     voice_alias_repo: Arc<dyn VoiceAliasRepo>,
     speak: Option<SpeakQueueHandle>,
-    input: Entity<InputBar>,
+    composer: Entity<ChatComposer>,
     search: SearchState,
     platform_filter: PlatformFilter,
     events_only: bool,
@@ -246,7 +249,6 @@ pub struct ChatView {
     last_seen_seq: u64,
     chat_list: ListState,
     _feed_obs: Subscription,
-    _input_sub: Subscription,
     _search_sub: Subscription,
     _drawer_search_sub: Subscription,
     _whisper_sub: Subscription,
@@ -277,7 +279,6 @@ impl ChatView {
         palette: ForgePalette,
         cx: &mut Context<Self>,
     ) -> Self {
-        let input = cx.new(|cx| InputBar::new(tr!("chat_send_placeholder_connected"), palette, cx));
         let search = SearchState::new(cx, palette, tr!("chat_search_placeholder"));
         let drawer_search =
             SearchState::on_surface(cx, palette, tr!("chat_drawer_search_placeholder"));
@@ -288,8 +289,9 @@ impl ChatView {
             cx.new(|cx| TextInput::new(tr!("chat_reply_placeholder"), cx).with_palette(palette));
 
         let feed_obs = cx.observe(&feed, Self::on_feed_changed);
+        let composer =
+            cx.new(|cx| ChatComposer::new(home_stats.clone(), rt_handle.clone(), palette, cx));
         let viewer_count = cx.new(|cx| ChatViewerCount::new(home_stats, cx));
-        let input_sub = cx.subscribe(&input, Self::on_input_event);
         let search_sub = cx.subscribe(search.field(), Self::on_search_event);
         let drawer_search_sub = cx.subscribe(drawer_search.field(), Self::on_drawer_search_event);
         let whisper_sub = cx.subscribe(&whisper_input, Self::on_whisper_event);
@@ -320,7 +322,7 @@ impl ChatView {
             action_engine,
             voice_alias_repo,
             speak,
-            input,
+            composer,
             search,
             platform_filter: PlatformFilter::All,
             events_only: false,
@@ -344,7 +346,6 @@ impl ChatView {
             last_seen_seq,
             chat_list,
             _feed_obs: feed_obs,
-            _input_sub: input_sub,
             _search_sub: search_sub,
             _drawer_search_sub: drawer_search_sub,
             _whisper_sub: whisper_sub,
@@ -466,35 +467,6 @@ impl ChatView {
             .filter(|name| drawer_matches(name, search))
             .cloned()
             .collect();
-    }
-
-    fn on_input_event(
-        &mut self,
-        _input: Entity<InputBar>,
-        event: &InputBarEvent,
-        cx: &mut Context<Self>,
-    ) {
-        match event {
-            InputBarEvent::Send { .. } => {
-                self.input.update(cx, |bar, cx| bar.clear(cx));
-                cx.notify();
-            }
-            InputBarEvent::TargetsChanged => self.refresh_send_placeholder(cx),
-            InputBarEvent::EmojiToggled => {}
-        }
-    }
-
-    fn refresh_send_placeholder(&mut self, cx: &mut Context<Self>) {
-        let selected = self.input.read(cx).selected_targets();
-        let placeholder = match selected.as_slice() {
-            [only] => tr!(
-                "chat_send_placeholder_to",
-                platform = platform_display_name(*only)
-            ),
-            _ => tr!("chat_send_placeholder_connected"),
-        };
-        self.input
-            .update(cx, |bar, cx| bar.set_placeholder(placeholder, cx));
     }
 
     fn on_search_event(
@@ -2111,7 +2083,7 @@ impl Render for ChatView {
                     .overflow_hidden()
                     .child(chat_area)
                     .children(reply_compose)
-                    .child(self.input.clone()),
+                    .child(self.composer.clone()),
             )
             .child(drawer);
 

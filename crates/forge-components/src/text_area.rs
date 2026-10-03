@@ -2,15 +2,16 @@ use std::ops::Range;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId,
-    HighlightStyle, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PaintQuad, Pixels, Point, ScrollWheelEvent, SharedString, Style, StyledText,
-    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill,
-    point, prelude::*, px, relative, size,
+    Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
+    KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, ScrollWheelEvent, SharedString, Style, TextAlign, TextRun, UTF16Selection,
+    UnderlineStyle, Window, WrappedLine, actions, div, fill, point, prelude::*, px, relative, size,
 };
 
 use crate::caret_blink::{CaretBlink, CaretHost, set_caret_blinking};
+use crate::highlight::Language;
 use crate::palette::{FORGE_DEFAULT, ForgePalette, with_alpha};
+use crate::syntax_color::syntax_runs;
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
 use crate::text_input::InputEvent;
@@ -118,14 +119,6 @@ impl AreaLayout {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub enum SyntaxMode {
-    #[default]
-    None,
-    Json,
-    Rhai,
-}
-
 pub struct TextArea {
     focus_handle: FocusHandle,
     buffer: TextBuffer,
@@ -142,7 +135,7 @@ pub struct TextArea {
     read_only: bool,
     height: Pixels,
     on_surface: bool,
-    syntax: SyntaxMode,
+    syntax: Option<Language>,
     gutter: bool,
     gutter_marks: Vec<usize>,
     fill: bool,
@@ -177,7 +170,7 @@ impl TextArea {
             read_only: false,
             height: DEFAULT_AREA_HEIGHT,
             on_surface: false,
-            syntax: SyntaxMode::None,
+            syntax: None,
             gutter: false,
             gutter_marks: Vec::new(),
             fill: false,
@@ -208,12 +201,12 @@ impl TextArea {
     }
 
     pub fn json_highlight(mut self) -> Self {
-        self.syntax = SyntaxMode::Json;
+        self.syntax = Some(Language::Json);
         self
     }
 
     pub fn rhai_highlight(mut self) -> Self {
-        self.syntax = SyntaxMode::Rhai;
+        self.syntax = Some(Language::Rhai);
         self
     }
 
@@ -717,186 +710,6 @@ fn build_runs(
     runs.into_iter().filter(|run| run.len > 0).collect()
 }
 
-fn json_literal_at(chars: &[(usize, char)], i: usize) -> Option<usize> {
-    for word in ["true", "false", "null"] {
-        let wl = word.len();
-        if i + wl <= chars.len() && word.chars().enumerate().all(|(k, wc)| chars[i + k].1 == wc) {
-            return Some(wl);
-        }
-    }
-    None
-}
-
-pub fn json_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
-    let n = chars.len();
-    let total = text.len();
-    let byte_at = |i: usize| if i < n { chars[i].0 } else { total };
-    let mut runs: Vec<(usize, Hsla)> = Vec::new();
-    let mut i = 0;
-    while i < n {
-        let c = chars[i].1;
-        let start = i;
-        let hue: Hsla = if c.is_whitespace() {
-            while i < n && chars[i].1.is_whitespace() {
-                i += 1;
-            }
-            palette.text_secondary.into()
-        } else if c == '"' {
-            i += 1;
-            while i < n {
-                match chars[i].1 {
-                    '\\' => i += 2,
-                    '"' => {
-                        i += 1;
-                        break;
-                    }
-                    _ => i += 1,
-                }
-            }
-            i = i.min(n);
-            let mut j = i;
-            while j < n && chars[j].1.is_whitespace() {
-                j += 1;
-            }
-            if j < n && chars[j].1 == ':' {
-                palette.info.into()
-            } else {
-                palette.success.into()
-            }
-        } else if c == '-' || c.is_ascii_digit() {
-            i += 1;
-            while i < n
-                && (chars[i].1.is_ascii_digit()
-                    || matches!(chars[i].1, '.' | 'e' | 'E' | '+' | '-'))
-            {
-                i += 1;
-            }
-            palette.bits.into()
-        } else if let Some(word_len) = json_literal_at(&chars, i) {
-            i += word_len;
-            palette.brand.into()
-        } else {
-            i += 1;
-            palette.text_primary.into()
-        };
-        let len = byte_at(i) - byte_at(start);
-        if len > 0 {
-            runs.push((len, hue));
-        }
-    }
-    runs
-}
-
-pub fn json_highlighted(text: impl Into<SharedString>, palette: &ForgePalette) -> StyledText {
-    let text = text.into();
-    let mut offset = 0usize;
-    let highlights: Vec<(Range<usize>, HighlightStyle)> = json_syntax_runs(&text, palette)
-        .into_iter()
-        .map(|(len, color)| {
-            let start = offset;
-            offset += len;
-            (start..offset, HighlightStyle::from(color))
-        })
-        .collect();
-    StyledText::new(text).with_highlights(highlights)
-}
-
-fn is_rhai_keyword(word: &str) -> bool {
-    matches!(
-        word,
-        "fn" | "let"
-            | "const"
-            | "if"
-            | "else"
-            | "return"
-            | "for"
-            | "in"
-            | "while"
-            | "loop"
-            | "break"
-            | "continue"
-            | "true"
-            | "false"
-            | "switch"
-            | "import"
-            | "as"
-            | "throw"
-            | "private"
-    )
-}
-
-fn rhai_syntax_runs(text: &str, palette: &ForgePalette) -> Vec<(usize, Hsla)> {
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
-    let n = chars.len();
-    let total = text.len();
-    let byte_at = |i: usize| if i < n { chars[i].0 } else { total };
-    let mut runs: Vec<(usize, Hsla)> = Vec::new();
-    let mut i = 0;
-    while i < n {
-        let c = chars[i].1;
-        let start = i;
-        let hue: Hsla = if c == '/' && i + 1 < n && chars[i + 1].1 == '/' {
-            while i < n && chars[i].1 != '\n' {
-                i += 1;
-            }
-            palette.code_comment.into()
-        } else if c == '"' {
-            i += 1;
-            while i < n {
-                match chars[i].1 {
-                    '\\' => i += 2,
-                    '"' => {
-                        i += 1;
-                        break;
-                    }
-                    _ => i += 1,
-                }
-            }
-            i = i.min(n);
-            palette.code_str.into()
-        } else if c.is_ascii_digit() {
-            i += 1;
-            while i < n
-                && (chars[i].1.is_ascii_digit() || matches!(chars[i].1, '.' | '_' | 'e' | 'E'))
-            {
-                i += 1;
-            }
-            palette.code_num.into()
-        } else if c.is_alphabetic() || c == '_' {
-            i += 1;
-            while i < n && (chars[i].1.is_alphanumeric() || chars[i].1 == '_') {
-                i += 1;
-            }
-            let word: String = chars[start..i].iter().map(|(_, ch)| *ch).collect();
-            let mut j = i;
-            while j < n && chars[j].1 == ' ' {
-                j += 1;
-            }
-            if is_rhai_keyword(&word) {
-                palette.code_keyword.into()
-            } else if j < n && chars[j].1 == '(' {
-                palette.code_fn.into()
-            } else {
-                palette.text_primary.into()
-            }
-        } else if c.is_whitespace() {
-            while i < n && chars[i].1.is_whitespace() {
-                i += 1;
-            }
-            palette.text_secondary.into()
-        } else {
-            i += 1;
-            palette.text_secondary.into()
-        };
-        let len = byte_at(i) - byte_at(start);
-        if len > 0 {
-            runs.push((len, hue));
-        }
-    }
-    runs
-}
-
 struct AreaElement {
     input: Entity<TextArea>,
 }
@@ -972,11 +785,9 @@ impl Element for AreaElement {
         let syntax_runs = if content.is_empty() {
             None
         } else {
-            match input.syntax {
-                SyntaxMode::Json => Some(json_syntax_runs(&content, &palette)),
-                SyntaxMode::Rhai => Some(rhai_syntax_runs(&content, &palette)),
-                SyntaxMode::None => None,
-            }
+            input
+                .syntax
+                .map(|language| syntax_runs(language, &content, &palette))
         };
         let runs = build_runs(
             &display_text,

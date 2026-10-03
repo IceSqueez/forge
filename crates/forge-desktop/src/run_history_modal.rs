@@ -1,11 +1,12 @@
 use crate::actions_screen::parse_variable_segments;
 use crate::integration_switch::integration_name;
 use crate::presentation::ActivePresentation;
+use forge_components::highlight::Language;
 use forge_components::{
     Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Radius,
-    Spacing, body_family, error_row, fmt_relative_time, icon, integration_disabled_reason,
-    json_highlighted, modal, mono_family, overlay, radius, spacing, status_dot, tooltip_builder,
-    tr,
+    Spacing, body_family, error_row, fmt_relative_time, highlighted_text, icon,
+    integration_disabled_reason, modal, mono_family, overlay, radius, spacing, status_dot,
+    tooltip_builder, tr,
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{
@@ -457,7 +458,7 @@ impl RunHistoryModal {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_muted)
-                    .child(json_highlighted(json, palette)),
+                    .child(highlighted_text(Language::Json, json, palette)),
             );
         }
 
@@ -677,7 +678,7 @@ impl RunHistoryModal {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_secondary)
-                    .child(json_highlighted(value.to_owned(), palette)),
+                    .child(highlighted_text(Language::Json, value.to_owned(), palette)),
             )
             .into_any_element()
     }

@@ -16,6 +16,7 @@ pub mod fonts;
 pub mod footer;
 pub mod glyph;
 pub mod grid_picker;
+pub mod highlight;
 pub mod hub_card;
 pub mod icons;
 pub mod inline_edit;
@@ -39,6 +40,7 @@ pub mod side_sheet;
 pub mod slider;
 pub mod sparkline;
 pub mod status;
+pub mod syntax_color;
 pub mod text_area;
 pub(crate) mod text_buffer;
 pub(crate) mod text_edit;
@@ -123,7 +125,8 @@ pub use side_sheet::{SheetPosition, SheetWidth, SideSheet, side_sheet};
 pub use slider::{Slider, slider};
 pub use sparkline::{Sparkline, sparkline};
 pub use status::{badge, connection_status_badge, pulse_dot, status_dot};
-pub use text_area::{TextArea, bind_text_area_keys, json_highlighted, json_syntax_runs};
+pub use syntax_color::{highlighted_text, syntax_runs, token_color};
+pub use text_area::{TextArea, bind_text_area_keys};
 pub use text_input::{
     InputEvent, TextInput, bind_text_input_keys, search_input, search_input_on_surface,
 };

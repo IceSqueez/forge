@@ -372,3 +372,206 @@ fn find_end_tag(cur: &Cursor, name: &str) -> Option<usize> {
         ends_name.then_some(cur.pos() + at)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::highlight::Language::Html;
+    use crate::highlight::TokenClass::{
+        Comment, Function, Keyword, Number, Plain, Punctuation, String, Variable,
+    };
+    use crate::highlight::tests::{assert_pieces, class_of, pieces};
+
+    #[test]
+    fn comment_spans_lines_until_its_close() {
+        assert_eq!(
+            pieces(Html, "<!-- a\n<b> -->x"),
+            vec![("<!-- a\n<b> -->", Comment), ("x", Plain)]
+        );
+    }
+
+    #[test]
+    fn abruptly_closed_comments_end_immediately() {
+        for text in ["<!-->x<b>", "<!--->x<b>"] {
+            assert_eq!(class_of(Html, text, "x"), Some(Plain), "{text:?}");
+            assert_eq!(class_of(Html, text, "b"), Some(Keyword), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn comment_closes_at_bang_close_sequence() {
+        assert_eq!(
+            pieces(Html, "<!-- a --!>x"),
+            vec![("<!-- a --!>", Comment), ("x", Plain)]
+        );
+    }
+
+    #[test]
+    fn unterminated_comment_colors_the_rest_of_the_document() {
+        assert_eq!(pieces(Html, "<!-- a\n<b>"), vec![("<!-- a\n<b>", Comment)]);
+    }
+
+    #[test]
+    fn doctype_is_case_insensitive_and_returns_to_data_after_close() {
+        for (text, keyword) in [
+            ("<!DOCTYPE html \"x\">t", "DOCTYPE"),
+            ("<!doctype html \"x\">t", "doctype"),
+        ] {
+            assert_eq!(
+                pieces(Html, text),
+                vec![
+                    ("<!", Punctuation),
+                    (keyword, Keyword),
+                    (" html ", Plain),
+                    ("\"x\"", String),
+                    (">", Punctuation),
+                    ("t", Plain),
+                ],
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bang_and_question_mark_markup_are_bogus_comments() {
+        for text in ["<!x\ny>t", "<?xml v?>t"] {
+            let bogus = &text[..text.len() - 1];
+            assert_eq!(
+                pieces(Html, text),
+                vec![(bogus, Comment), ("t", Plain)],
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_end_tag_is_punctuation_and_leaves_data_state() {
+        assert_eq!(
+            pieces(Html, "</>x"),
+            vec![("</>", Punctuation), ("x", Plain)]
+        );
+    }
+
+    #[test]
+    fn less_than_not_followed_by_a_letter_is_text() {
+        assert_eq!(pieces(Html, "a < 1 <3"), vec![("a < 1 <3", Plain)]);
+    }
+
+    #[test]
+    fn tag_name_attribute_name_and_values_are_classified() {
+        assert_pieces(
+            Html,
+            "<a href=x title='y' data-k>t</a>",
+            &[
+                ("a", Keyword),
+                ("href", Function),
+                ("=", Punctuation),
+                ("x", String),
+                ("'y'", String),
+                ("data-k", Function),
+                ("t", Plain),
+            ],
+        );
+    }
+
+    #[test]
+    fn quoted_attribute_value_continues_across_lines() {
+        assert_pieces(
+            Html,
+            "<a title=\"x\ny > z\" id=k>t",
+            &[("\"x\ny > z\"", String), ("id", Function), ("t", Plain)],
+        );
+    }
+
+    #[test]
+    fn character_references_are_variables_and_bare_ampersand_is_text() {
+        assert_pieces(
+            Html,
+            "a&amp;b&#x1F;c&#38;d & e",
+            &[
+                ("&amp;", Variable),
+                ("&#x1F;", Variable),
+                ("&#38;", Variable),
+            ],
+        );
+        assert_eq!(class_of(Html, "x & y", "x & y"), Some(Plain));
+    }
+
+    #[test]
+    fn style_body_is_lexed_as_css() {
+        assert_pieces(
+            Html,
+            "<style>\na { color: #fff }\n</style>",
+            &[("a", Function), ("color", Keyword), ("#fff", Number)],
+        );
+    }
+
+    #[test]
+    fn script_body_is_lexed_as_javascript() {
+        assert_pieces(
+            Html,
+            "<script>\nreturn f(1)\n</script>",
+            &[("return", Keyword), ("f", Function), ("1", Number)],
+        );
+    }
+
+    #[test]
+    fn title_body_stays_plain_text() {
+        assert_eq!(
+            class_of(Html, "<title>return <b> 1</title>", "return <b> 1"),
+            Some(Plain)
+        );
+    }
+
+    #[test]
+    fn script_end_tag_matches_in_any_case() {
+        for text in ["<script>a</SCRIPT>return", "<script>a</Script >return"] {
+            assert_eq!(class_of(Html, text, "return"), Some(Plain), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn longer_tag_name_does_not_close_the_script() {
+        assert_eq!(
+            class_of(Html, "<script>a</scriptx>return</script>", "return"),
+            Some(Keyword)
+        );
+    }
+
+    #[test]
+    fn markup_after_closed_style_is_html_again() {
+        assert_pieces(
+            Html,
+            "<style>a{}</style><b c=d>",
+            &[("b", Keyword), ("c", Function), ("d", String)],
+        );
+    }
+
+    #[test]
+    fn unterminated_tag_at_end_of_document_keeps_coloring_attributes() {
+        assert_eq!(
+            pieces(Html, "<a b=\"x"),
+            vec![
+                ("<", Punctuation),
+                ("a", Keyword),
+                (" ", Plain),
+                ("b", Function),
+                ("=", Punctuation),
+                ("\"x", String)
+            ]
+        );
+    }
+
+    #[test]
+    fn self_closing_slash_is_punctuation() {
+        assert_eq!(class_of(Html, "<img a/>", "/>"), Some(Punctuation));
+        assert_eq!(class_of(Html, "<img a/>", "a/"), None);
+    }
+
+    #[test]
+    fn comment_inside_tag_text_body_is_not_a_comment_token() {
+        assert_eq!(
+            class_of(Html, "<title><!-- x --></title>", "<!-- x -->"),
+            Some(Plain)
+        );
+    }
+}

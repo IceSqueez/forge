@@ -297,3 +297,150 @@ fn number(cur: &mut Cursor) {
         previous = c;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::highlight::Language::JavaScript;
+    use crate::highlight::TokenClass::{
+        Comment, Function, Keyword, Number, Plain, Punctuation, String,
+    };
+    use crate::highlight::tests::{assert_pieces, class_of, pieces};
+
+    #[test]
+    fn template_interpolation_switches_to_code_and_back() {
+        assert_eq!(
+            pieces(JavaScript, "`a${b}c`"),
+            vec![
+                ("`a", String),
+                ("${", Punctuation),
+                ("b", Plain),
+                ("}", Punctuation),
+                ("c`", String)
+            ]
+        );
+    }
+
+    #[test]
+    fn nested_template_returns_to_the_outer_template() {
+        assert_pieces(
+            JavaScript,
+            "`a${`b${c}`}d` + e",
+            &[("c", Plain), ("d`", String)],
+        );
+        assert_eq!(class_of(JavaScript, "`a${`b${c}`}d` + e", "e"), Some(Plain));
+    }
+
+    #[test]
+    fn object_braces_inside_interpolation_do_not_close_it() {
+        assert_pieces(
+            JavaScript,
+            "`${ {k: 1} }x`",
+            &[("k", Plain), ("1", Number), ("x`", String)],
+        );
+    }
+
+    #[test]
+    fn template_spans_lines() {
+        assert_pieces(JavaScript, "`a\nb` + c", &[("`a\nb`", String)]);
+        assert_eq!(class_of(JavaScript, "`a\nb` + c", "c"), Some(Plain));
+    }
+
+    #[test]
+    fn slash_after_operator_or_expression_keyword_starts_a_regex() {
+        for (text, regex) in [
+            ("x = /ab/g;", "/ab/g"),
+            ("return /a b/", "/a b/"),
+            ("f(/x\\/y/)", "/x\\/y/"),
+            ("/re/.test(s)", "/re/"),
+        ] {
+            assert_pieces(JavaScript, text, &[(regex, String)]);
+        }
+    }
+
+    #[test]
+    fn slash_after_operand_is_division() {
+        for text in [
+            "a / b / c",
+            "(a) / b / c",
+            "a[0] / b / c",
+            "1 / b / c",
+            "'s' / b / c",
+        ] {
+            assert_eq!(
+                class_of(JavaScript, text, "/"),
+                Some(Punctuation),
+                "{text:?}"
+            );
+            assert_eq!(class_of(JavaScript, text, "b"), Some(Plain), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn slash_inside_regex_class_does_not_end_the_regex() {
+        assert_pieces(JavaScript, "x = /[/]/;", &[("/[/]/", String)]);
+    }
+
+    #[test]
+    fn unterminated_regex_falls_back_to_punctuation() {
+        assert_eq!(
+            pieces(JavaScript, "x = /ab\nc"),
+            vec![
+                ("x ", Plain),
+                ("=", Punctuation),
+                (" ", Plain),
+                ("/", Punctuation),
+                ("ab\nc", Plain)
+            ]
+        );
+    }
+
+    #[test]
+    fn quoted_string_with_escaped_newline_continues() {
+        assert_pieces(JavaScript, "'a\\\nb' + c", &[("'a\\\nb'", String)]);
+        assert_eq!(class_of(JavaScript, "'a\\\nb' + c", "c"), Some(Plain));
+    }
+
+    #[test]
+    fn quoted_string_without_escape_ends_at_the_newline() {
+        assert_pieces(JavaScript, "'a\nb + c", &[("'a", String)]);
+        assert_eq!(class_of(JavaScript, "'a\nb + c", "b"), Some(Plain));
+    }
+
+    #[test]
+    fn block_comment_spans_lines() {
+        assert_eq!(
+            pieces(JavaScript, "/* a\nb */ c"),
+            vec![("/* a\nb */", Comment), (" c", Plain)]
+        );
+    }
+
+    #[test]
+    fn number_literals_with_suffix_prefix_leading_dot_and_exponent() {
+        assert_pieces(
+            JavaScript,
+            "[1n, 0x1F, .5, 1e-5, 1_000]",
+            &[
+                ("1n", Number),
+                ("0x1F", Number),
+                (".5", Number),
+                ("1e-5", Number),
+                ("1_000", Number),
+            ],
+        );
+    }
+
+    #[test]
+    fn identifier_before_paren_is_function_and_keywords_win() {
+        assert_pieces(
+            JavaScript,
+            "if (f (x)) return typeof y",
+            &[
+                ("if", Keyword),
+                ("f", Function),
+                ("return", Keyword),
+                ("typeof", Keyword),
+            ],
+        );
+        assert_eq!(class_of(JavaScript, "return typeof z", "z"), Some(Plain));
+    }
+}

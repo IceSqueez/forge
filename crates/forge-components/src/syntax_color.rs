@@ -47,3 +47,72 @@ pub fn highlighted_text(
         .collect();
     StyledText::new(text).with_highlights(highlights)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::palette::ThemeId;
+
+    const CLASSES: [TokenClass; 8] = [
+        TokenClass::Keyword,
+        TokenClass::Function,
+        TokenClass::String,
+        TokenClass::Number,
+        TokenClass::Comment,
+        TokenClass::Variable,
+        TokenClass::Plain,
+        TokenClass::Punctuation,
+    ];
+
+    #[test]
+    fn json_classes_use_data_viewer_colors_in_every_theme() {
+        for theme in ThemeId::ALL {
+            let palette = theme.palette();
+            for (class, expected) in [
+                (TokenClass::Variable, palette.info),
+                (TokenClass::String, palette.success),
+                (TokenClass::Number, palette.bits),
+                (TokenClass::Keyword, palette.brand),
+                (TokenClass::Plain, palette.text_primary),
+                (TokenClass::Punctuation, palette.text_secondary),
+            ] {
+                assert_eq!(
+                    token_color(Language::Json, class, &palette),
+                    Hsla::from(expected),
+                    "{theme:?} {class:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn code_classes_use_code_tokens_in_every_theme() {
+        for theme in ThemeId::ALL {
+            let palette = theme.palette();
+            for language in [
+                Language::Html,
+                Language::Css,
+                Language::JavaScript,
+                Language::Rhai,
+            ] {
+                for class in CLASSES {
+                    let expected = match class {
+                        TokenClass::Keyword => palette.code_keyword,
+                        TokenClass::Function => palette.code_fn,
+                        TokenClass::String => palette.code_str,
+                        TokenClass::Number => palette.code_num,
+                        TokenClass::Comment => palette.code_comment,
+                        TokenClass::Variable => palette.code_var,
+                        TokenClass::Plain => palette.text_primary,
+                        TokenClass::Punctuation => palette.text_secondary,
+                    };
+                    assert_eq!(
+                        token_color(language, class, &palette),
+                        Hsla::from(expected),
+                        "{theme:?} {language:?} {class:?}"
+                    );
+                }
+            }
+        }
+    }
+}

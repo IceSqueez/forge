@@ -380,3 +380,156 @@ fn value_token(cur: &mut Cursor, in_declaration: bool, out: &mut SpanSink) {
         out.push(cur.pos() - body, TokenClass::String);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::highlight::Language::Css;
+    use crate::highlight::TokenClass::{
+        Comment, Function, Keyword, Number, Plain, Punctuation, String, Variable,
+    };
+    use crate::highlight::tests::{assert_pieces, class_of, pieces};
+
+    #[test]
+    fn media_block_holds_rules_so_inner_selectors_stay_selectors() {
+        assert_pieces(
+            Css,
+            "@media screen {\n  a:hover { color: red }\n}",
+            &[
+                ("@media", Keyword),
+                ("a", Function),
+                (":hover", Keyword),
+                ("color", Keyword),
+            ],
+        );
+    }
+
+    #[test]
+    fn vendor_prefixed_keyframes_block_holds_rules() {
+        assert_pieces(
+            Css,
+            "@-webkit-keyframes k { 50% { top: 0 } }",
+            &[("50%", Number), ("top", Keyword)],
+        );
+    }
+
+    #[test]
+    fn declaration_at_rule_block_holds_properties() {
+        assert_pieces(Css, "@font-face { src: x }", &[("src", Keyword)]);
+    }
+
+    #[test]
+    fn statement_at_rule_ends_at_semicolon_and_returns_to_selectors() {
+        assert_pieces(
+            Css,
+            "@import url(x.css) \"y.css\";\na:hover {}",
+            &[
+                ("@import", Keyword),
+                ("url", Function),
+                ("x.css", String),
+                ("\"y.css\"", String),
+                (":hover", Keyword),
+            ],
+        );
+    }
+
+    #[test]
+    fn declaration_start_tells_properties_from_nested_selectors() {
+        assert_pieces(
+            Css,
+            "a {\n  color: red;\n  .b { top: 0 }\n  i { left: 0 }\n  &:hover { right: 0 }\n}",
+            &[
+                ("color", Keyword),
+                (".b", Function),
+                ("top", Keyword),
+                ("i", Function),
+                ("left", Keyword),
+                (":hover", Keyword),
+                ("right", Keyword),
+            ],
+        );
+    }
+
+    #[test]
+    fn custom_property_and_its_var_reference_are_variables() {
+        assert_eq!(
+            pieces(Css, "a { --x: 1; b: var(--x) }")
+                .into_iter()
+                .filter(|piece| piece.1 == Variable)
+                .collect::<Vec<_>>(),
+            vec![("--x", Variable), ("--x", Variable)]
+        );
+        assert_eq!(class_of(Css, "a { b: var(--x) }", "var"), Some(Function));
+    }
+
+    #[test]
+    fn numeric_values_with_sign_exponent_unit_and_percent_are_numbers() {
+        assert_pieces(
+            Css,
+            "a { m: -5px 1.5e3 50% .5em +1 #fff }",
+            &[
+                ("-5px", Number),
+                ("1.5e3", Number),
+                ("50%", Number),
+                (".5em", Number),
+                ("+1", Number),
+                ("#fff", Number),
+            ],
+        );
+    }
+
+    #[test]
+    fn hash_in_selector_is_an_id_selector_not_a_color() {
+        assert_eq!(pieces(Css, "#fff{}")[0], ("#fff", Function));
+    }
+
+    #[test]
+    fn important_flag_is_a_keyword_with_or_without_space() {
+        assert_pieces(
+            Css,
+            "a { b: red !important; c: blue ! important }",
+            &[("!important", Keyword), ("! important", Keyword)],
+        );
+    }
+
+    #[test]
+    fn unquoted_url_body_is_a_string() {
+        assert_pieces(
+            Css,
+            "a { b: url(a.png) }",
+            &[("url", Function), ("a.png", String)],
+        );
+    }
+
+    #[test]
+    fn string_with_escaped_newline_continues_on_the_next_line() {
+        assert_pieces(
+            Css,
+            "a { b: \"x\\\ny\"; color: red }",
+            &[("\"x\\\ny\"", String), ("color", Keyword)],
+        );
+    }
+
+    #[test]
+    fn unescaped_newline_ends_a_bad_string() {
+        assert_pieces(Css, "a { b: \"x\ny }", &[("\"x", String)]);
+    }
+
+    #[test]
+    fn unterminated_comment_colors_the_rest_of_the_document() {
+        assert_eq!(
+            pieces(Css, "a {}\n/* x\ny {}"),
+            vec![
+                ("a", Function),
+                (" ", Plain),
+                ("{}", Punctuation),
+                ("\n", Plain),
+                ("/* x\ny {}", Comment)
+            ]
+        );
+    }
+
+    #[test]
+    fn closed_comment_returns_to_code() {
+        assert_eq!(class_of(Css, "/* a */b{}", "b"), Some(Function));
+    }
+}

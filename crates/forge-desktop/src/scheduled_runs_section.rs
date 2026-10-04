@@ -75,6 +75,7 @@ pub struct ScheduledRunsView {
     busy: HashSet<ScheduledRunId>,
     now: OffsetDateTime,
     _revision_watch: Task<()>,
+    _catalog_watch: Task<()>,
     _countdown_tick: Task<()>,
 }
 
@@ -84,6 +85,7 @@ impl ScheduledRunsView {
     pub fn new(
         repo: Arc<dyn ScheduledRunRepo>,
         changes: CatalogChanges,
+        catalog_changes: CatalogChanges,
         action_repo: Arc<dyn ActionRepo>,
         runs: ScheduledRunsHandle,
         rt_handle: tokio::runtime::Handle,
@@ -99,6 +101,7 @@ impl ScheduledRunsView {
             busy: HashSet::new(),
             now: OffsetDateTime::now_utc(),
             _revision_watch: Self::watch_revision(changes, cx),
+            _catalog_watch: Self::watch_revision(catalog_changes, cx),
             _countdown_tick: Self::spawn_countdown_tick(cx),
         };
         view.reload(cx);

@@ -25,8 +25,15 @@ pub(crate) enum Span {
 impl Span {
     pub(crate) fn of_seconds(seconds: i64) -> Self {
         let seconds = seconds.max(0);
-        if seconds < SECS_PER_HOUR {
-            Span::Minutes(((seconds + SECS_PER_MINUTE - 1) / SECS_PER_MINUTE).max(1))
+        let minutes_per_hour = SECS_PER_HOUR / SECS_PER_MINUTE;
+        let rounded_up_minutes = (seconds + SECS_PER_MINUTE - 1) / SECS_PER_MINUTE;
+        if rounded_up_minutes < minutes_per_hour {
+            Span::Minutes(rounded_up_minutes.max(1))
+        } else if seconds < SECS_PER_HOUR {
+            Span::Hours {
+                hours: 1,
+                minutes: 0,
+            }
         } else if seconds < SECS_PER_DAY {
             Span::Hours {
                 hours: seconds / SECS_PER_HOUR,

@@ -505,10 +505,21 @@ impl AppShell {
     ) -> Entity<ScheduledRunsView> {
         let repo = handles.backend.scheduled_run_repo();
         let changes = handles.backend.scheduled_run_revision().subscribe();
+        let catalog_changes = handles.backend.catalog_revision().subscribe();
         let action_repo = handles.backend.action_repo();
         let runs = handles.scheduled_runs.clone();
         let rt_handle = handles.rt_handle.clone();
-        cx.new(|cx| ScheduledRunsView::new(repo, changes, action_repo, runs, rt_handle, cx))
+        cx.new(|cx| {
+            ScheduledRunsView::new(
+                repo,
+                changes,
+                catalog_changes,
+                action_repo,
+                runs,
+                rt_handle,
+                cx,
+            )
+        })
     }
 
     fn integration_switch(topics: &Topics, handles: &Arc<RuntimeHandles>) -> IntegrationSwitch {

@@ -15,6 +15,10 @@ use super::rewards::RewardAnswer;
 use super::state::{Inner, Shared, SubscriptionOutcome, SubscriptionRequest};
 
 const CUSTOM_REWARDS: &str = "/helix/channel_points/custom_rewards";
+const GOAL_CREATED_AT: &str = "2026-10-01T12:00:00Z";
+const MISSING_BROADCASTER_ID: &str = "Missing required parameter broadcaster_id";
+const FOREIGN_BROADCASTER_ID: &str =
+    "The ID in broadcaster_id must match the user ID found in the request's OAuth token.";
 
 #[derive(Debug, Clone, Copy)]
 enum Route {
@@ -23,6 +27,7 @@ enum Route {
     Streams,
     Polls,
     Predictions,
+    Goals,
     SendChatMessage,
     SendWhisper,
     ListRewards,
@@ -39,6 +44,7 @@ impl Route {
             ("GET", "/helix/streams") => Self::Streams,
             ("GET", "/helix/polls") => Self::Polls,
             ("GET", "/helix/predictions") => Self::Predictions,
+            ("GET", "/helix/goals") => Self::Goals,
             ("POST", "/helix/chat/messages") => Self::SendChatMessage,
             ("POST", "/helix/whispers") => Self::SendWhisper,
             ("GET", CUSTOM_REWARDS) => Self::ListRewards,
@@ -190,6 +196,7 @@ fn serve_plain(
         Route::Streams | Route::Polls | Route::Predictions => {
             (StatusCode::OK, json!({ "data": [], "pagination": {} }))
         }
+        Route::Goals => goals(config, query),
         Route::SendChatMessage => send_chat_message(body),
         Route::SendWhisper => send_whisper(config, query, body),
         Route::ListRewards | Route::CreateReward | Route::UpdateReward | Route::DeleteReward => {
@@ -283,6 +290,40 @@ fn users(inner: &Inner, config: &FakeTwitchConfig, query: &[(String, String)]) -
                     .any(|wanted| wanted.eq_ignore_ascii_case(login))
         })
         .collect()
+}
+
+fn goals(config: &FakeTwitchConfig, query: &[(String, String)]) -> (StatusCode, Value) {
+    let broadcaster_id = query
+        .iter()
+        .find(|(name, _)| name == "broadcaster_id")
+        .map(|(_, value)| value.as_str())
+        .filter(|value| !value.is_empty());
+    match broadcaster_id {
+        None => error_body(StatusCode::BAD_REQUEST, MISSING_BROADCASTER_ID),
+        Some(id) if id != config.broadcaster_user_id => {
+            error_body(StatusCode::UNAUTHORIZED, FOREIGN_BROADCASTER_ID)
+        }
+        Some(_) => {
+            let data: Vec<Value> = config
+                .goals
+                .iter()
+                .map(|goal| {
+                    json!({
+                        "id": goal.id,
+                        "broadcaster_id": config.broadcaster_user_id,
+                        "broadcaster_name": config.broadcaster_login,
+                        "broadcaster_login": config.broadcaster_login,
+                        "type": goal.goal_type,
+                        "description": goal.description,
+                        "current_amount": goal.current_amount,
+                        "target_amount": goal.target_amount,
+                        "created_at": GOAL_CREATED_AT,
+                    })
+                })
+                .collect();
+            (StatusCode::OK, json!({ "data": data }))
+        }
+    }
 }
 
 fn send_chat_message(body: Option<&Value>) -> (StatusCode, Value) {

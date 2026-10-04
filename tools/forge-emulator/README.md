@@ -374,6 +374,14 @@ fake. A crowd may hold up to 100 000 viewers and a million messages.
 second full subscription pass on a successor EventSub session - and was kept red as evidence
 until that was fixed. It has passed since; if it ever fails again, the regression is forge's.
 
+`creator-goals-sync-on-connect.json` covers state forge reads on connect rather than an
+event it is sent. `fakes.twitch.goals` lists the creator goals the fake serves on
+`GET /helix/goals` (`{ "id", "type", "description"?, "current_amount", "target_amount" }`; empty
+by default, a missing `broadcaster_id` answers 400 and another broadcaster's id 401). The goal
+fires the goal-progress trigger before any observer is attached, so the scenario binds it to a
+goal overlay and opens the page afterwards: the retained content, flagged `synced true`, is the
+proof. A `session_reconnect` then must not request the goals a second time.
+
 `go-live-pings-the-discord-role.json` follows a `stream.online` notification to a Discord
 webhook post and judges the post's `allowed_mentions`: the role ping is parsed and
 `@everyone` is not.

@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use forge_emulator::EmulatorError;
 use forge_emulator::fixture::TwitchAccount;
-use forge_emulator::twitch::{CredentialCheck, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge};
+use forge_emulator::twitch::{
+    CredentialCheck, FakeGoal, FakeTwitch, FakeTwitchConfig, Viewer, ViewerBadge,
+};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use tokio::net::TcpStream;
@@ -503,6 +505,55 @@ async fn user_lookup_resolves_the_broadcaster_and_known_viewers_only() {
             .collect();
         assert_eq!(ids, expected_ids, "query {query:?}");
     }
+}
+
+#[tokio::test]
+async fn seeded_goals_are_served_only_to_their_broadcaster() {
+    let goal = |id: &str, current_amount: i64| FakeGoal {
+        id: id.to_owned(),
+        goal_type: "follower".to_owned(),
+        description: String::new(),
+        current_amount,
+        target_amount: 100,
+    };
+    let fake = FakeTwitch::start(FakeTwitchConfig {
+        goals: vec![goal("goal-a", 3), goal("goal-b", 9)],
+        ..config()
+    })
+    .await
+    .unwrap();
+    let client = reqwest::Client::new();
+    let owner = TwitchAccount::default().user_id;
+    let cases = [
+        (
+            format!("?broadcaster_id={owner}"),
+            reqwest::StatusCode::OK,
+            vec!["goal-a", "goal-b"],
+        ),
+        (
+            "?broadcaster_id=999".to_owned(),
+            reqwest::StatusCode::UNAUTHORIZED,
+            vec![],
+        ),
+        (String::new(), reqwest::StatusCode::BAD_REQUEST, vec![]),
+    ];
+
+    for (query, expected_status, expected_ids) in &cases {
+        let url = format!("{}/helix/goals{query}", fake.api_base_url());
+        let response = authorized(&client, reqwest::Method::GET, url)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let body: Value = response.json().await.unwrap();
+        let ids: Vec<&str> = body["data"]
+            .as_array()
+            .map(|rows| rows.iter().filter_map(|row| row["id"].as_str()).collect())
+            .unwrap_or_default();
+        assert_eq!(status, *expected_status, "query {query:?}");
+        assert_eq!(&ids, expected_ids, "query {query:?}");
+    }
+    assert_eq!(fake.ledger().unexpected_requests().count(), 0);
 }
 
 #[tokio::test]

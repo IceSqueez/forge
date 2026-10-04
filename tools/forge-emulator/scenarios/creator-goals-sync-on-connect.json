@@ -1,0 +1,84 @@
+{
+  "name": "active creator goals fill a goal overlay as soon as forge connects",
+  "purpose": "EventSub reports goal progress only when the amount changes, so a goal overlay bound to the goal-progress trigger would stay on its stored placeholder until the next follow. On connect forge asks Helix for the active goals once and publishes one twitch.channel.goal.progress per goal, flagged goal.is_synced = true, which runs the bound action and leaves the overlay holding the current amounts. The page is opened only afterwards, so the retained content is what it renders. A session_reconnect keeps the connection Connected, so it must not ask Helix again.",
+  "fixture": {
+    "twitch": {},
+    "overlays": [
+      {
+        "display_name": "Follower Goal",
+        "kind_id": "overlay.goal",
+        "config": {
+          "label": { "type": "string", "value": "stored label" },
+          "value": { "type": "string", "value": "0" },
+          "target": { "type": "string", "value": "100" }
+        }
+      }
+    ],
+    "event_triggers": [
+      {
+        "trigger_kind": "twitch.goal.progress",
+        "action_name": "Show Goal",
+        "steps": [
+          {
+            "kind_id": "overlay.send",
+            "config": {
+              "overlay_id": { "type": "string", "value": "Follower Goal" },
+              "label": { "type": "string", "value": "%goal.type% synced %goal.is_synced%" },
+              "value": { "type": "string", "value": "%goal.current_amount%" },
+              "target": { "type": "string", "value": "%goal.target_amount%" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "twitch": {
+      "goals": [
+        { "id": "goal-followers", "type": "follower", "description": "Road to 1k", "current_amount": 250, "target_amount": 1000 }
+      ]
+    }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "twitch_subscribed": { "types": ["channel.goal.progress"], "within_ms": 30000 } }
+    },
+    {
+      "do": { "overlay_page": { "overlay": "Follower Goal", "within_ms": 30000 } },
+      "expect": [
+        {
+          "overlay_content": {
+            "overlay": "Follower Goal",
+            "values": {
+              "label": "follower synced true",
+              "value": "250",
+              "target": "1000"
+            },
+            "within_ms": 10000
+          }
+        },
+        {
+          "twitch_request_count": { "method": "GET", "path": "/helix/goals", "min": 1, "max": 1 }
+        }
+      ]
+    },
+    {
+      "do": { "session_reconnect": { "within_ms": 15000 } },
+      "expect": [
+        {
+          "event_absent": {
+            "source": "twitch",
+            "kind": "twitch.channel.goal.progress",
+            "window_ms": 3000
+          }
+        },
+        {
+          "twitch_request_count": { "method": "GET", "path": "/helix/goals", "min": 1, "max": 1 }
+        },
+        { "twitch_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

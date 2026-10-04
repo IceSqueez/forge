@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use forge_platform_core::{DEFAULT_RETRY_AFTER_SECS, PlatformError};
+use forge_platform_core::{
+    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError,
+};
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
 use tokio::sync::Mutex;
@@ -8,7 +10,6 @@ use tokio::sync::Mutex;
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::quota_state::{QuotaState, today_pacific};
 
-const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const FETCH_COST: u32 = 1;
 const UPDATE_COST: u32 = 50;
 
@@ -31,6 +32,7 @@ pub struct YoutubeStreamMetadata {
 
 impl YoutubeStreamMetadata {
     pub fn new(
+        endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
         quota: Arc<Mutex<QuotaState>>,
@@ -40,7 +42,9 @@ impl YoutubeStreamMetadata {
             access_token_source,
             active_broadcast_id,
             quota,
-            api_base: DEFAULT_API_BASE.to_owned(),
+            api_base: endpoints
+                .base_url(EndpointSurface::YouTubeDataApi)
+                .to_owned(),
         }
     }
 

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::{DedupSet, PlatformError};
+use forge_platform_core::{DedupSet, EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::{
     ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,
 };
@@ -21,7 +21,6 @@ use crate::payload_fields::{
 };
 use crate::quota_state::{BROADCAST_COST, CHAT_POLL_COST, QuotaState, today_pacific};
 
-const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
 const BROADCAST_CADENCE_SECS: u64 = 60;
@@ -48,6 +47,7 @@ pub struct YoutubeChatPoller {
 
 impl YoutubeChatPoller {
     pub fn new(
+        endpoints: &PlatformEndpoints,
         access_token_source: Arc<
             dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync,
         >,
@@ -62,7 +62,9 @@ impl YoutubeChatPoller {
             access_token_source,
             bus_sender,
             channel_id,
-            api_base: DEFAULT_API_BASE.to_owned(),
+            api_base: endpoints
+                .base_url(EndpointSurface::YouTubeDataApi)
+                .to_owned(),
             quota_tracker,
             live_chat_id,
             active_broadcast_id,

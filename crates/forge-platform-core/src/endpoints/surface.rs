@@ -8,6 +8,7 @@ pub enum EndpointSurface {
     KickOAuth,
     YouTubeDataApi,
     YouTubeUploadApi,
+    YouTubeOAuth,
     DonatelloApi,
     MonobankApi,
 }
@@ -28,7 +29,7 @@ impl EndpointProtocol {
 }
 
 impl EndpointSurface {
-    pub const ALL: [EndpointSurface; 10] = [
+    pub const ALL: [EndpointSurface; 11] = [
         Self::TwitchApi,
         Self::TwitchEventSubSocket,
         Self::KickPublicApi,
@@ -37,6 +38,7 @@ impl EndpointSurface {
         Self::KickOAuth,
         Self::YouTubeDataApi,
         Self::YouTubeUploadApi,
+        Self::YouTubeOAuth,
         Self::DonatelloApi,
         Self::MonobankApi,
     ];
@@ -51,6 +53,7 @@ impl EndpointSurface {
             Self::KickOAuth => "FORGE_KICK_OAUTH_BASE_URL",
             Self::YouTubeDataApi => "FORGE_YOUTUBE_API_BASE_URL",
             Self::YouTubeUploadApi => "FORGE_YOUTUBE_UPLOAD_BASE_URL",
+            Self::YouTubeOAuth => "FORGE_YOUTUBE_OAUTH_BASE_URL",
             Self::DonatelloApi => "FORGE_DONATELLO_API_BASE_URL",
             Self::MonobankApi => "FORGE_MONOBANK_API_BASE_URL",
         }
@@ -66,6 +69,7 @@ impl EndpointSurface {
             Self::KickOAuth => "https://id.kick.com/oauth",
             Self::YouTubeDataApi => "https://www.googleapis.com/youtube/v3",
             Self::YouTubeUploadApi => "https://www.googleapis.com/upload/youtube/v3",
+            Self::YouTubeOAuth => "https://oauth2.googleapis.com",
             Self::DonatelloApi => "https://donatello.to/api/v1",
             Self::MonobankApi => "https://api.monobank.ua",
         }
@@ -79,6 +83,7 @@ impl EndpointSurface {
             | Self::KickOAuth
             | Self::YouTubeDataApi
             | Self::YouTubeUploadApi
+            | Self::YouTubeOAuth
             | Self::DonatelloApi
             | Self::MonobankApi => EndpointProtocol::Http,
             Self::TwitchEventSubSocket | Self::KickChatSocket => EndpointProtocol::WebSocket,

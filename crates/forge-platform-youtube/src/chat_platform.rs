@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformError,
-    connection_state_changed_event,
+    AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints,
+    PlatformError, connection_state_changed_event,
 };
 use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
@@ -25,6 +25,7 @@ type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformErr
 
 pub struct YoutubePlatform {
     auth_flow: AuthFlow,
+    endpoints: PlatformEndpoints,
     capabilities: PlatformCapabilities,
     channel_id: String,
     events: Arc<PlatformEventChannel>,
@@ -40,6 +41,7 @@ pub struct YoutubePlatform {
 
 impl YoutubePlatform {
     pub fn new(
+        endpoints: &PlatformEndpoints,
         channel_id: String,
         credentials_manager: Arc<YoutubeCredentialsManager>,
         live_chat_id: LiveChatIdHandle,
@@ -47,6 +49,7 @@ impl YoutubePlatform {
         quota: Arc<tokio::sync::Mutex<QuotaState>>,
     ) -> Self {
         let sender = YoutubeSendChat::new(
+            endpoints,
             token_source(Arc::clone(&credentials_manager)),
             live_chat_id.clone(),
             Arc::clone(&quota),
@@ -54,6 +57,7 @@ impl YoutubePlatform {
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
             auth_flow: youtube_auth_flow(),
+            endpoints: endpoints.clone(),
             capabilities: youtube_capabilities(),
             channel_id,
             events: Arc::new(PlatformEventChannel::new()),
@@ -70,6 +74,10 @@ impl YoutubePlatform {
 
     pub fn active_broadcast_id(&self) -> ActiveBroadcastIdHandle {
         self.active_broadcast_id.clone()
+    }
+
+    pub(crate) fn endpoints(&self) -> &PlatformEndpoints {
+        &self.endpoints
     }
 
     pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
@@ -118,6 +126,7 @@ impl ChatPlatform for YoutubePlatform {
 
         let cancel = CancellationToken::new();
         let poller = YoutubeChatPoller::new(
+            &self.endpoints,
             token_source(Arc::clone(&self.credentials_manager)),
             tx,
             self.channel_id.clone(),

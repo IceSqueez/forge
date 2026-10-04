@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use forge_platform_core::auth::{
     CALLBACK_PATH, PkceClientConfig, PkceFlow, PkceRefreshConfig, ReauthPolicy,
 };
-use forge_platform_core::{AuthFlow, PlatformError};
+use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
 use forge_types::OAuthToken;
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -11,7 +11,9 @@ use serde::Deserialize;
 pub const GOOGLE_AUTHORIZE_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const GOOGLE_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 
-const YOUTUBE_CHANNELS_ENDPOINT: &str = "https://www.googleapis.com/youtube/v3/channels";
+const GOOGLE_TOKEN_PATH: &str = "/token";
+
+const YOUTUBE_CHANNELS_PATH: &str = "/channels";
 
 pub const YOUTUBE_BROADCASTER_SCOPES: &[&str] =
     &["https://www.googleapis.com/auth/youtube.force-ssl"];
@@ -66,13 +68,19 @@ pub struct GoogleAuthFlow {
 }
 
 impl GoogleAuthFlow {
-    pub fn new(client_id: String, client_secret: String) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, client_id: String, client_secret: String) -> Self {
         Self::with_endpoints(
             client_id,
             client_secret,
             GOOGLE_AUTHORIZE_ENDPOINT.to_owned(),
-            GOOGLE_TOKEN_ENDPOINT.to_owned(),
-            YOUTUBE_CHANNELS_ENDPOINT.to_owned(),
+            format!(
+                "{}{GOOGLE_TOKEN_PATH}",
+                endpoints.base_url(EndpointSurface::YouTubeOAuth)
+            ),
+            format!(
+                "{}{YOUTUBE_CHANNELS_PATH}",
+                endpoints.base_url(EndpointSurface::YouTubeDataApi)
+            ),
         )
     }
 

@@ -92,6 +92,7 @@ impl YoutubeIntegrationBundle {
         };
         let retired = CancellationToken::new();
         let viewer_poll = YoutubeViewerPoll::new(
+            platform.endpoints(),
             token_source,
             platform.active_broadcast_id(),
             Arc::clone(&quota),

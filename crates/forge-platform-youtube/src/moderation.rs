@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_platform_core::{DEFAULT_RETRY_AFTER_SECS, PlatformError};
+use forge_platform_core::{
+    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError,
+};
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
 use tokio::sync::Mutex;
@@ -9,7 +11,6 @@ use tokio::sync::Mutex;
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::quota_state::{QuotaState, today_pacific};
 
-const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const BAN_COST: u32 = 50;
 const MODERATOR_COST: u32 = 50;
 const MODERATOR_LIST_COST: u32 = 1;
@@ -28,6 +29,7 @@ pub struct YoutubeModeration {
 
 impl YoutubeModeration {
     pub fn new(
+        endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
         live_chat_id: LiveChatIdHandle,
         quota: Arc<Mutex<QuotaState>>,
@@ -38,7 +40,9 @@ impl YoutubeModeration {
             live_chat_id,
             quota,
             ban_ids: Mutex::new(HashMap::new()),
-            api_base: DEFAULT_API_BASE.to_owned(),
+            api_base: endpoints
+                .base_url(EndpointSurface::YouTubeDataApi)
+                .to_owned(),
         }
     }
 

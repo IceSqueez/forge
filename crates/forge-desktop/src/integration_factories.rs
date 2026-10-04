@@ -167,6 +167,7 @@ impl IntegrationFactory for TwitchFactory {
 }
 
 pub(crate) struct YoutubeFactory {
+    endpoints: PlatformEndpoints,
     bus: Arc<EventBus>,
     creds: Arc<dyn CredentialsRepo>,
     manager: Arc<forge_platform_youtube::YoutubeCredentialsManager>,
@@ -179,9 +180,10 @@ pub(crate) fn wire_youtube(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
+    endpoints: &PlatformEndpoints,
 ) -> Option<YoutubeFactory> {
     let (client_id, client_secret) = forge_platform_youtube::client_credentials()?;
-    let google = forge_platform_youtube::GoogleAuthFlow::new(client_id, client_secret);
+    let google = forge_platform_youtube::GoogleAuthFlow::new(endpoints, client_id, client_secret);
     let creds = creds_of(backend);
     let manager = Arc::new(forge_platform_youtube::YoutubeCredentialsManager::new(
         Arc::clone(&creds),
@@ -201,36 +203,43 @@ pub(crate) fn wire_youtube(
         })
     };
     let send = Arc::new(forge_platform_youtube::YoutubeSendChat::new(
+        endpoints,
         token_source(),
         live_chat_id.clone(),
         Arc::clone(&quota),
     ));
     let moderation = Arc::new(forge_platform_youtube::YoutubeModeration::new(
+        endpoints,
         token_source(),
         live_chat_id.clone(),
         Arc::clone(&quota),
     ));
     let metadata = Arc::new(forge_platform_youtube::YoutubeStreamMetadata::new(
+        endpoints,
         token_source(),
         active_broadcast.clone(),
         Arc::clone(&quota),
     ));
     let stream_stats = Arc::new(forge_platform_youtube::YoutubeStreamStats::new(
+        endpoints,
         token_source(),
         active_broadcast.clone(),
         Arc::clone(&quota),
     ));
     let ad_break = Arc::new(forge_platform_youtube::YoutubeAdBreak::new(
+        endpoints,
         token_source(),
         active_broadcast.clone(),
         Arc::clone(&quota),
     ));
     let thumbnail = Arc::new(forge_platform_youtube::YoutubeThumbnail::new(
+        endpoints,
         token_source(),
         active_broadcast.clone(),
         Arc::clone(&quota),
     ));
     let channel_lookup = Arc::new(forge_platform_youtube::YoutubeChannelLookup::new(
+        endpoints,
         token_source(),
         Arc::clone(&quota),
     ));
@@ -247,6 +256,7 @@ pub(crate) fn wire_youtube(
         eprintln!("forge-desktop: youtube sub-action registration failed: {e}");
     }
     Some(YoutubeFactory {
+        endpoints: endpoints.clone(),
         bus: Arc::clone(bus),
         creds,
         manager,
@@ -271,6 +281,7 @@ impl IntegrationFactory for YoutubeFactory {
             return Ok(RunningIntegration::idle());
         };
         let platform = Arc::new(forge_platform_youtube::YoutubePlatform::new(
+            &self.endpoints,
             stored.channel_id.clone(),
             Arc::clone(&self.manager),
             self.live_chat_id.clone(),

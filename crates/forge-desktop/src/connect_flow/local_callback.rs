@@ -60,7 +60,11 @@ impl ConnectFlow {
                     return;
                 };
                 let handle = Arc::new(tokio::sync::Mutex::new(Some(
-                    forge_platform_youtube::GoogleAuthFlow::new(cid, csec),
+                    forge_platform_youtube::GoogleAuthFlow::new(
+                        &forge_platform_core::PlatformEndpoints::default(),
+                        cid,
+                        csec,
+                    ),
                 )));
                 self.youtube_flow = Some(Arc::clone(&handle));
                 self.spawn_start(cancel, async move { start_youtube_oauth(handle).await }, cx);

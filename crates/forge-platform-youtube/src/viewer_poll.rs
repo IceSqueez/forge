@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_platform_core::{
-    LiveViewerSource, PlatformError, RateLimitOutcome, RateLimiter, TokenBucketRateLimiter,
-    ViewerReport, ViewerReportStream,
+    EndpointSurface, LiveViewerSource, PlatformEndpoints, PlatformError, RateLimitOutcome,
+    RateLimiter, TokenBucketRateLimiter, ViewerReport, ViewerReportStream,
 };
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
@@ -13,7 +13,6 @@ use tokio_stream::wrappers::WatchStream;
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
 use crate::quota_state::{QuotaState, today_pacific};
 
-const DEFAULT_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -52,6 +51,7 @@ pub struct YoutubeViewerPoll {
 
 impl YoutubeViewerPoll {
     pub fn new(
+        endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
         active_broadcast_id: ActiveBroadcastIdHandle,
         quota: Arc<Mutex<QuotaState>>,
@@ -67,7 +67,9 @@ impl YoutubeViewerPoll {
                 READ_BUDGET_WINDOW,
             )),
             reports_tx,
-            api_base: DEFAULT_API_BASE.to_owned(),
+            api_base: endpoints
+                .base_url(EndpointSurface::YouTubeDataApi)
+                .to_owned(),
         }
     }
 

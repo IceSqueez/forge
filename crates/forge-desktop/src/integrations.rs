@@ -290,7 +290,7 @@ pub async fn build_integrations(
     let (hotkey, hotkey_reconciler) = wire_hotkey(backend, bus, hotkey_main_thread).await;
     let hotkey_client = hotkey.client();
     factories.push(Arc::new(hotkey));
-    if let Some(youtube) = wire_youtube(sub_actions, backend, bus) {
+    if let Some(youtube) = wire_youtube(sub_actions, backend, bus, endpoints) {
         factories.push(Arc::new(youtube));
     }
     if let Some(kick) = wire_kick(sub_actions, backend, bus, endpoints) {

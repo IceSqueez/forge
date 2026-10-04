@@ -139,7 +139,7 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::{EventId, SubActionOutcome};
-    use time::{Date, Month, Time};
+    use time::{Date, Month, OffsetDateTime, Time};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {

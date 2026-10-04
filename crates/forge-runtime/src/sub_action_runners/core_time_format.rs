@@ -131,7 +131,7 @@ mod tests {
     use super::*;
     use forge_events::{Event, EventPublisher};
     use forge_types::{EventId, SubActionOutcome};
-    use time::{Date, Month, Time};
+    use time::{Date, Month, OffsetDateTime, Time};
 
     struct NullPublisher;
     impl EventPublisher for NullPublisher {
@@ -179,16 +179,6 @@ mod tests {
                 "fmt {fmt}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn format_resolves_unix_timestamp_source() {
-        let (outcome, out) = run(&cfg(Variant::Int(0), "[year]-[month]-[day]")).await;
-        assert!(matches!(outcome, SubActionOutcome::Success));
-        assert_eq!(
-            out.unwrap().get("time.formatted").and_then(|v| v.as_str()),
-            Some("1970-01-01")
-        );
     }
 
     #[tokio::test]

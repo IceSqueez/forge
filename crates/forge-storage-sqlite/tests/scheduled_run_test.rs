@@ -1019,3 +1019,18 @@ async fn next_due_moves_past_an_unreadable_run_once_it_is_failed() {
         (Some(at_min(-5)), Some(at_min(1)))
     );
 }
+
+#[tokio::test]
+async fn claiming_an_unreadable_run_fails_and_leaves_it_pending() {
+    let fixture = unreadable_fixture().await;
+
+    let claimed = fixture.repo.claim(fixture.due_unreadable, at_min(10)).await;
+
+    assert_eq!(
+        (
+            claimed.is_err(),
+            raw_state(&fixture.pools, fixture.due_unreadable).await
+        ),
+        (true, ("pending".to_owned(), None, None))
+    );
+}

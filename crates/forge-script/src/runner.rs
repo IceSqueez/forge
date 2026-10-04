@@ -222,4 +222,47 @@ mod tests {
             other => panic!("expected a missing-function error, got {other:?}"),
         }
     }
+
+    struct KeyHolder;
+
+    #[async_trait::async_trait]
+    impl ActionScheduler for KeyHolder {
+        async fn schedule(
+            &self,
+            _request: crate::ScriptScheduleRequest,
+        ) -> Result<crate::ScriptSchedulePlacement, crate::ScriptScheduleError> {
+            Err(crate::ScriptScheduleError::Rejected(
+                "not under test".to_owned(),
+            ))
+        }
+
+        async fn cancel_by_key(&self, key: &str) -> Result<bool, crate::ScriptScheduleError> {
+            Ok(key == "raid-thanks")
+        }
+    }
+
+    #[tokio::test]
+    async fn an_editor_run_schedules_through_the_wired_scheduler() {
+        let backend = sandboxed_backend([0xab; 32]).await.map(Arc::new);
+        let host = ScriptHost {
+            globals: Arc::clone(&backend) as Arc<dyn GlobalsRepo>,
+            settings: Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
+            integrations: Arc::new(TwitchDisabled),
+            latest_values: None,
+            scheduler: Some(Arc::new(KeyHolder)),
+        };
+
+        let result = run_inline(
+            r#"forge::schedule::cancel("raid-thanks")"#.to_owned(),
+            ScriptContract::default(),
+            ArgStack::new(),
+            host,
+            ScriptId::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.output_display, "true");
+    }
 }

@@ -201,6 +201,20 @@ mod tests {
             (61, Span::Minutes(2)),
             (3_540, Span::Minutes(59)),
             (
+                3_541,
+                Span::Hours {
+                    hours: 1,
+                    minutes: 0,
+                },
+            ),
+            (
+                3_599,
+                Span::Hours {
+                    hours: 1,
+                    minutes: 0,
+                },
+            ),
+            (
                 3_600,
                 Span::Hours {
                     hours: 1,

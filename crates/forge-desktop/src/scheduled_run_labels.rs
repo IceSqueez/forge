@@ -6,15 +6,14 @@ use forge_runtime::scheduled_runs::{
 use forge_runtime::{
     QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON,
 };
-use forge_storage::ScheduledRunState;
+use forge_storage::{
+    ACTION_REMOVED_REASON, CANCELLED_REASON, SUPERSEDED_REASON, ScheduledRunState,
+};
 use time::{OffsetDateTime, UtcOffset};
 
 const SECS_PER_MINUTE: i64 = 60;
 const SECS_PER_HOUR: i64 = 3_600;
 const SECS_PER_DAY: i64 = 86_400;
-
-pub(crate) const SUPERSEDED_REASON: &str = "superseded";
-pub(crate) const CANCELLED_REASON: &str = "cancelled";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Span {
@@ -123,6 +122,7 @@ pub(crate) fn reason_key(reason: &str) -> Option<&'static str> {
         MISSED_REASON => Some("queues_scheduled_reason_missed"),
         SUPERSEDED_REASON => Some("queues_scheduled_reason_superseded"),
         CANCELLED_REASON => Some("queues_scheduled_reason_cancelled"),
+        ACTION_REMOVED_REASON => Some("queues_scheduled_reason_action_removed"),
         ACTION_DISABLED_REASON => Some("queues_scheduled_reason_action_disabled"),
         ACTION_NOT_FOUND_REASON => Some("queues_scheduled_reason_action_not_found"),
         ACTIONS_UNAVAILABLE_REASON => Some("queues_scheduled_reason_actions_unavailable"),

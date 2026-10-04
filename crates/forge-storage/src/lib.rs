@@ -56,8 +56,9 @@ pub use overlay::{OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId
 pub use provider::{DataProvider, EXPECTED_SCHEMA_VERSION, LAST_PRE_BASELINE_RELEASE};
 pub use queue::QueueRepo;
 pub use scheduled_run::{
-    MissedRunPolicy, RevisingScheduledRunRepo, ScheduledRun, ScheduledRunId, ScheduledRunOutcome,
-    ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
+    ACTION_REMOVED_REASON, CANCELLED_REASON, MissedRunPolicy, RevisingScheduledRunRepo,
+    SUPERSEDED_REASON, ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement,
+    ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
 };
 pub use script::{ScriptRecord, ScriptRepo, ScriptTelemetry};
 pub use settings::{

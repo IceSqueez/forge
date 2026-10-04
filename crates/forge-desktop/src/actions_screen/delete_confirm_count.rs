@@ -1,42 +1,17 @@
 use super::*;
-use forge_runtime::ScheduledRunsHandle;
 use forge_storage::ScheduledRunRepo;
 
-#[derive(Clone)]
-pub(super) struct ScheduledRunsAccess {
-    repo: Arc<dyn ScheduledRunRepo>,
-    runs: ScheduledRunsHandle,
-}
-
-impl ScheduledRunsAccess {
-    pub(super) async fn cancel_pending_for(&self, action: ActionId) -> Result<(), String> {
-        let pending = self.repo.list_pending().await.map_err(|e| e.to_string())?;
-        for run in pending
-            .into_iter()
-            .filter(|run| run.spec.target_action_id == action)
-        {
-            self.runs.cancel(run.id).await.map_err(|e| e.to_string())?;
-        }
-        Ok(())
-    }
-}
-
 impl ScreenActionsView {
-    pub fn with_scheduled_runs(
-        mut self,
-        repo: Arc<dyn ScheduledRunRepo>,
-        runs: ScheduledRunsHandle,
-    ) -> Self {
-        self.scheduled_runs = Some(ScheduledRunsAccess { repo, runs });
+    pub fn with_scheduled_runs(mut self, repo: Arc<dyn ScheduledRunRepo>) -> Self {
+        self.scheduled_runs = Some(repo);
         self
     }
 
     pub(super) fn load_delete_scheduled_count(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.delete_scheduled_count = None;
-        let Some(access) = self.scheduled_runs.as_ref() else {
+        let Some(repo) = self.scheduled_runs.as_ref().map(Arc::clone) else {
             return;
         };
-        let repo = Arc::clone(&access.repo);
         async_bridge::run_async(
             &self.rt_handle,
             async move { repo.count_pending_for_action(id).await },

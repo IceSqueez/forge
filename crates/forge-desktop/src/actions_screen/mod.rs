@@ -37,13 +37,13 @@ use std::sync::{Arc, RwLock};
 mod analyzer;
 mod branch;
 mod collection_choices;
+mod delete_confirm_count;
 mod editor;
 mod integration_gating;
 mod list;
 mod nav;
 mod overlay_schema;
 mod run_history;
-mod scheduled_cleanup;
 mod sub_action_modal;
 mod test_run;
 mod test_trigger;
@@ -216,7 +216,7 @@ pub struct ScreenActionsView {
     header_menu_open: Option<Point<Pixels>>,
     pending_delete: Confirm<ActionId>,
     delete_scheduled_count: Option<(ActionId, u64)>,
-    scheduled_runs: Option<scheduled_cleanup::ScheduledRunsAccess>,
+    scheduled_runs: Option<Arc<dyn forge_storage::ScheduledRunRepo>>,
     detail: Option<ActionDetail>,
     telemetry: Option<ActionTelemetry>,
     last_outcome: Option<ExecutionOutcome>,

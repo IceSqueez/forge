@@ -8,6 +8,10 @@ use time::OffsetDateTime;
 
 use crate::{CatalogRevision, StorageError};
 
+pub const SUPERSEDED_REASON: &str = "superseded";
+pub const CANCELLED_REASON: &str = "cancelled";
+pub const ACTION_REMOVED_REASON: &str = "action_removed";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScheduledRunId(i64);
 

@@ -6,8 +6,8 @@ use time::OffsetDateTime;
 use tokio::sync::watch;
 
 use crate::{
-    ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, StorageError,
-    TriggerInstanceRepo,
+    ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, QueueRepo, ScheduledRunRepo,
+    StorageError, TriggerInstanceRepo,
 };
 
 #[derive(Debug, Clone)]
@@ -110,7 +110,13 @@ impl Drop for AdvanceOnDrop {
 pub struct RevisingActionRepo {
     inner: Arc<dyn ActionRepo>,
     revision: CatalogRevision,
-    scheduled_run_revision: Option<CatalogRevision>,
+    scheduled_run_cascade: Option<ScheduledRunCascade>,
+}
+
+#[derive(Clone)]
+struct ScheduledRunCascade {
+    runs: Arc<dyn ScheduledRunRepo>,
+    revision: CatalogRevision,
 }
 
 impl RevisingActionRepo {
@@ -118,19 +124,23 @@ impl RevisingActionRepo {
         Arc::new(Self {
             inner,
             revision,
-            scheduled_run_revision: None,
+            scheduled_run_cascade: None,
         })
     }
 
     pub fn wrap_cascading_scheduled_runs(
         inner: Arc<dyn ActionRepo>,
         revision: CatalogRevision,
+        scheduled_runs: Arc<dyn ScheduledRunRepo>,
         scheduled_run_revision: CatalogRevision,
     ) -> Arc<dyn ActionRepo> {
         Arc::new(Self {
             inner,
             revision,
-            scheduled_run_revision: Some(scheduled_run_revision),
+            scheduled_run_cascade: Some(ScheduledRunCascade {
+                runs: scheduled_runs,
+                revision: scheduled_run_revision,
+            }),
         })
     }
 }
@@ -155,12 +165,12 @@ impl ActionRepo for RevisingActionRepo {
 
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);
-        let scheduled_run_revision = self.scheduled_run_revision.clone();
+        let cascade = self.scheduled_run_cascade.clone();
         self.revision
             .after(async move {
                 let deleted = inner.delete(id).await?;
-                if deleted && let Some(revision) = scheduled_run_revision {
-                    revision.advance();
+                if deleted && let Some(cascade) = cascade {
+                    cascade.revision.advance();
                 }
                 Ok(deleted)
             })
@@ -227,8 +237,22 @@ impl ActionRepo for RevisingActionRepo {
 
     async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
         let inner = Arc::clone(&self.inner);
+        let cascade = self.scheduled_run_cascade.clone();
         self.revision
-            .after(async move { inner.archive(id).await })
+            .after(async move {
+                let pending = match &cascade {
+                    Some(cascade) => cascade.runs.count_pending_for_action(id).await?,
+                    None => 0,
+                };
+                let archived = inner.archive(id).await?;
+                if archived
+                    && pending > 0
+                    && let Some(cascade) = cascade
+                {
+                    cascade.revision.advance();
+                }
+                Ok(archived)
+            })
             .await
     }
 

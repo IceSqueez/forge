@@ -272,29 +272,17 @@ impl ScreenActionsView {
         let repo = Arc::clone(&self.action_repo);
         let restore_repo = Arc::clone(&self.action_repo);
         let restore_rt = self.rt_handle.clone();
-        let scheduled_runs = self.scheduled_runs.clone();
         self.delete_scheduled_count = None;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 repo.archive(id).await.map_err(|e| e.to_string())?;
-                let cleanup = match scheduled_runs {
-                    Some(access) => access.cancel_pending_for(id).await,
-                    None => Ok(()),
-                };
-                let actions = repo.list().await.map_err(|e| e.to_string())?;
-                Ok::<_, String>((actions, cleanup))
+                repo.list().await.map_err(|e| e.to_string())
             },
             move |this, result, cx| match result {
-                Ok((actions, cleanup)) => {
+                Ok(actions) => {
                     this.apply_actions(actions, cx);
                     this.raise_undo_toast(id, name, restore_repo, restore_rt, cx);
-                    if let Err(message) = cleanup {
-                        cx.push_toast(
-                            ToastKind::Error,
-                            tr!("actions_delete_scheduled_failed", error = message),
-                        );
-                    }
                 }
                 Err(message) => this.on_repo_error(&message, cx),
             },

@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
-    MissedRunPolicy, ScheduledRun, ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement,
-    ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState, StorageError,
+    CANCELLED_REASON, MissedRunPolicy, SUPERSEDED_REASON, ScheduledRun, ScheduledRunId,
+    ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,
+    ScheduledRunState, StorageError,
 };
 use forge_types::{ActionId, EventId, Variant};
 use sqlx::SqliteConnection;
@@ -22,9 +23,6 @@ const STATE_DISPATCHED: &str = "dispatched";
 const STATE_CANCELLED: &str = "cancelled";
 const STATE_SKIPPED: &str = "skipped";
 const STATE_FAILED: &str = "failed";
-
-const REASON_SUPERSEDED: &str = "superseded";
-const REASON_CANCELLED: &str = "cancelled";
 
 macro_rules! columns {
     () => {
@@ -197,7 +195,7 @@ async fn supersede_pending_key(
          WHERE key = ? AND state = ? RETURNING id",
     )
     .bind(STATE_CANCELLED)
-    .bind(REASON_SUPERSEDED)
+    .bind(SUPERSEDED_REASON)
     .bind(to_epoch_ms(at))
     .bind(key)
     .bind(STATE_PENDING)
@@ -224,7 +222,7 @@ impl SqliteScheduledRunRepo {
     ) -> Result<bool, StorageError> {
         let query = sqlx::query(sql)
             .bind(STATE_CANCELLED)
-            .bind(REASON_CANCELLED)
+            .bind(CANCELLED_REASON)
             .bind(to_epoch_ms(at));
         let query = match bind {
             Binding::Id(id) => query.bind(id.get()),

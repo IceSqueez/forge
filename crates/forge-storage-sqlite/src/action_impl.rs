@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use forge_storage::{ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus, StorageError};
+use forge_storage::{
+    ACTION_REMOVED_REASON, ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus,
+    StorageError,
+};
 use forge_types::{Action, ActionId, ExecutionMode, QueueId, SubActionStep};
 use serde_json;
 use time::OffsetDateTime;
@@ -393,15 +396,35 @@ impl ActionRepo for SqliteActionRepo {
     async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
         let id_str = id.to_string();
         let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
         let result =
             sqlx::query("UPDATE actions SET archived_at = ? WHERE id = ? AND archived_at IS NULL")
                 .bind(now_ms)
                 .bind(&id_str)
-                .execute(self.db.writer())
+                .execute(&mut *tx)
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
+        let archived = result.rows_affected() > 0;
+        if archived {
+            sqlx::query(
+                "UPDATE scheduled_runs SET state = 'cancelled', outcome_reason = ?, resolved_at = ?
+                 WHERE target_action_id = ? AND state = 'pending'",
+            )
+            .bind(ACTION_REMOVED_REASON)
+            .bind(now_ms)
+            .bind(&id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        }
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
 
-        Ok(result.rows_affected() > 0)
+        Ok(archived)
     }
 
     async fn restore(&self, id: ActionId) -> Result<bool, StorageError> {

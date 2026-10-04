@@ -786,7 +786,6 @@ actions_delete_scheduled_runs = { $count ->
     [one] Its { $count } pending scheduled run will be cancelled too.
    *[other] Its { $count } pending scheduled runs will be cancelled too.
 }
-actions_delete_scheduled_failed = The action was deleted, but its scheduled runs could not be cancelled: { $error }
 
 ## Triggers registry - error messages
 
@@ -1360,6 +1359,7 @@ queues_scheduled_reason_missed = Missed - forge was not running at the due time
 queues_scheduled_reason_missed_by = Missed by { $span } - forge was not running at the due time
 queues_scheduled_reason_superseded = Replaced by a newer run with the same key
 queues_scheduled_reason_cancelled = Cancelled before it was due
+queues_scheduled_reason_action_removed = The action was deleted
 queues_scheduled_reason_action_disabled = The action was disabled
 queues_scheduled_reason_action_not_found = The action no longer exists
 queues_scheduled_reason_actions_unavailable = Actions could not be read

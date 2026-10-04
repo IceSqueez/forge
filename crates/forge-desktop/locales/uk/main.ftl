@@ -802,7 +802,6 @@ actions_delete_scheduled_runs = { $count ->
     [many] Також буде скасовано { $count } її запланованих запусків.
    *[other] Також буде скасовано { $count } її запланованих запусків.
 }
-actions_delete_scheduled_failed = Дію видалено, але не вдалося скасувати її заплановані запуски: { $error }
 
 ## Triggers registry - error messages
 
@@ -1385,6 +1384,7 @@ queues_scheduled_reason_missed = Пропущено - forge не працюва�
 queues_scheduled_reason_missed_by = Пропущено на { $span } - forge не працював у призначений час
 queues_scheduled_reason_superseded = Замінено новішим запуском з тим самим ключем
 queues_scheduled_reason_cancelled = Скасовано до настання часу
+queues_scheduled_reason_action_removed = Дію було видалено
 queues_scheduled_reason_action_disabled = Дію було вимкнено
 queues_scheduled_reason_action_not_found = Дії більше не існує
 queues_scheduled_reason_actions_unavailable = Не вдалося прочитати дії

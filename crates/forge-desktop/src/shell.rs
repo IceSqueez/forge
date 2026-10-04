@@ -396,7 +396,6 @@ impl AppShell {
                 let scheduler = handles.scheduler.clone();
                 let builtins = handles.builtins.clone();
                 let scheduled_run_repo = handles.backend.scheduled_run_repo();
-                let scheduled_runs = handles.scheduled_runs.clone();
                 let switch = Self::integration_switch(topics, handles);
                 let view = cx.new(|cx| {
                     ScreenActionsView::new(
@@ -421,7 +420,7 @@ impl AppShell {
                         cx,
                     )
                     .with_builtins(builtins)
-                    .with_scheduled_runs(scheduled_run_repo, scheduled_runs)
+                    .with_scheduled_runs(scheduled_run_repo)
                     .with_integration_switch(switch, cx)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {

@@ -149,15 +149,76 @@ fn is_auth_loss(error: &PlatformError) -> bool {
     )
 }
 
-fn mark_auth(auth_tx: &watch::Sender<PollerAuth>, next: PollerAuth) -> bool {
-    auth_tx.send_if_modified(|current| {
-        if *current == next {
-            false
-        } else {
-            *current = next;
-            true
+#[derive(Debug, Clone, Copy)]
+enum PollEndpoint {
+    Channel,
+    Redemptions,
+}
+
+impl PollEndpoint {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Channel => "channel",
+            Self::Redemptions => "redemptions",
         }
-    })
+    }
+}
+
+struct AuthTracker {
+    tx: watch::Sender<PollerAuth>,
+    channel_lost: bool,
+    redemptions_lost: bool,
+}
+
+impl AuthTracker {
+    fn new(tx: watch::Sender<PollerAuth>) -> Self {
+        Self {
+            tx,
+            channel_lost: false,
+            redemptions_lost: false,
+        }
+    }
+
+    fn flag(&mut self, endpoint: PollEndpoint) -> &mut bool {
+        match endpoint {
+            PollEndpoint::Channel => &mut self.channel_lost,
+            PollEndpoint::Redemptions => &mut self.redemptions_lost,
+        }
+    }
+
+    fn publish(&self) {
+        let next = if self.channel_lost || self.redemptions_lost {
+            PollerAuth::AuthRequired
+        } else {
+            PollerAuth::Authorized
+        };
+        self.tx.send_if_modified(|current| {
+            if *current == next {
+                false
+            } else {
+                *current = next;
+                true
+            }
+        });
+    }
+
+    fn mark_lost(&mut self, endpoint: PollEndpoint) {
+        let flag = self.flag(endpoint);
+        let newly_lost = !*flag;
+        *flag = true;
+        if newly_lost {
+            warn!(
+                endpoint = endpoint.name(),
+                "kick poller authorization lost, sign in to Kick again"
+            );
+        }
+        self.publish();
+    }
+
+    fn mark_authorized(&mut self, endpoint: PollEndpoint) {
+        *self.flag(endpoint) = false;
+        self.publish();
+    }
 }
 
 fn clear_viewer_report(viewer_tx: &watch::Sender<ViewerReport>) {
@@ -171,20 +232,15 @@ fn clear_viewer_report(viewer_tx: &watch::Sender<ViewerReport>) {
     });
 }
 
-fn note_auth_loss(auth_tx: &watch::Sender<PollerAuth>) {
-    if mark_auth(auth_tx, PollerAuth::AuthRequired) {
-        warn!("kick poller authorization lost, sign in to Kick again");
-    }
-}
-
 fn note_poll_failure(
     error: &PlatformError,
-    auth_tx: &watch::Sender<PollerAuth>,
+    auth: &mut AuthTracker,
+    endpoint: PollEndpoint,
     viewer_tx: Option<&watch::Sender<ViewerReport>>,
     context: &'static str,
 ) {
     if is_auth_loss(error) {
-        note_auth_loss(auth_tx);
+        auth.mark_lost(endpoint);
         if let Some(viewer_tx) = viewer_tx {
             clear_viewer_report(viewer_tx);
         }
@@ -209,13 +265,19 @@ async fn poll_channel(
     token_source: &TokenSource,
     event_tx: &mpsc::Sender<Event>,
     viewer_tx: &watch::Sender<ViewerReport>,
-    auth_tx: &watch::Sender<PollerAuth>,
+    auth: &mut AuthTracker,
     last_snapshot: &mut Option<ChannelSnapshot>,
 ) -> Result<(), ()> {
     let token = match token_source().await {
         Ok(token) => token,
         Err(error) => {
-            note_poll_failure(&error, auth_tx, Some(viewer_tx), "kick token unavailable");
+            note_poll_failure(
+                &error,
+                auth,
+                PollEndpoint::Channel,
+                Some(viewer_tx),
+                "kick token unavailable",
+            );
             return Ok(());
         }
     };
@@ -223,11 +285,17 @@ async fn poll_channel(
     let snapshot = match channel.get_channel(&token).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            note_poll_failure(&error, auth_tx, Some(viewer_tx), "kick channel poll failed");
+            note_poll_failure(
+                &error,
+                auth,
+                PollEndpoint::Channel,
+                Some(viewer_tx),
+                "kick channel poll failed",
+            );
             return Ok(());
         }
     };
-    mark_auth(auth_tx, PollerAuth::Authorized);
+    auth.mark_authorized(PollEndpoint::Channel);
 
     let report = if snapshot.is_live {
         ViewerReport::Live {
@@ -261,14 +329,20 @@ async fn poll_redemptions(
     rewards: &KickRewards,
     token_source: &TokenSource,
     event_tx: &mpsc::Sender<Event>,
-    auth_tx: &watch::Sender<PollerAuth>,
+    auth: &mut AuthTracker,
     seen: &mut DedupSet,
     seeded: &mut bool,
 ) -> Result<(), ()> {
     let token = match token_source().await {
         Ok(token) => token,
         Err(error) => {
-            note_poll_failure(&error, auth_tx, None, "kick token unavailable");
+            note_poll_failure(
+                &error,
+                auth,
+                PollEndpoint::Redemptions,
+                None,
+                "kick token unavailable",
+            );
             return Ok(());
         }
     };
@@ -276,11 +350,17 @@ async fn poll_redemptions(
     let records = match rewards.list_pending_redemptions(&token).await {
         Ok(records) => records,
         Err(error) => {
-            note_poll_failure(&error, auth_tx, None, "kick redemption poll failed");
+            note_poll_failure(
+                &error,
+                auth,
+                PollEndpoint::Redemptions,
+                None,
+                "kick redemption poll failed",
+            );
             return Ok(());
         }
     };
-    mark_auth(auth_tx, PollerAuth::Authorized);
+    auth.mark_authorized(PollEndpoint::Redemptions);
 
     let emit_allowed = *seeded;
     for record in &records {
@@ -301,6 +381,7 @@ async fn run_loop(
     viewer_tx: watch::Sender<ViewerReport>,
     auth_tx: watch::Sender<PollerAuth>,
 ) {
+    let mut auth = AuthTracker::new(auth_tx);
     let mut channel_interval = tokio::time::interval(CHANNEL_POLL_INTERVAL);
     let mut redemption_interval = tokio::time::interval(REDEMPTION_POLL_INTERVAL);
     let mut last_snapshot: Option<ChannelSnapshot> = None;
@@ -315,7 +396,7 @@ async fn run_loop(
                     &token_source,
                     &event_tx,
                     &viewer_tx,
-                    &auth_tx,
+                    &mut auth,
                     &mut last_snapshot,
                 )
                     .await
@@ -329,7 +410,7 @@ async fn run_loop(
                     &rewards,
                     &token_source,
                     &event_tx,
-                    &auth_tx,
+                    &mut auth,
                     &mut seen,
                     &mut redemptions_seeded,
                 )

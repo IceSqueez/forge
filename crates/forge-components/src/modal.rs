@@ -1,10 +1,12 @@
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, InteractiveElement, IntoElement, ParentElement, Pixels,
-    RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    AnyElement, App, ClickEvent, ElementId, FocusHandle, InteractiveElement, IntoElement,
+    ParentElement, Pixels, RenderOnce, Rgba, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, px,
 };
 
 use crate::icons::{Icon, icon};
 use crate::palette::ForgePalette;
+use crate::text_input::{FocusNextField, FocusPreviousField};
 use crate::tokens::{
     BORDER_THIN, Density, FONT_MD, FONT_XS, ModalSize, Radius, Spacing, body_family, modal_width,
     radius, spacing,
@@ -14,6 +16,20 @@ const HEADER_TILE: Pixels = px(28.0);
 const HEADER_TILE_ICON: Pixels = px(15.0);
 const TITLE_GAP: Pixels = px(2.0);
 const FOOTER_GAP: Pixels = px(6.0);
+const MAX_TAB_STOPS: usize = 512;
+
+fn cycle_focus_within(scope: &FocusHandle, forward: bool, window: &mut Window, cx: &mut App) {
+    for _ in 0..MAX_TAB_STOPS {
+        if forward {
+            window.focus_next(cx);
+        } else {
+            window.focus_prev(cx);
+        }
+        if scope.contains_focused(window, cx) {
+            return;
+        }
+    }
+}
 
 fn pad(s: Spacing) -> Pixels {
     spacing(s, Density::Cozy)
@@ -229,7 +245,14 @@ impl Modal {
 }
 
 impl RenderOnce for Modal {
-    fn render(mut self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let scope_key = ElementId::Name(format!("modal-focus-scope-{}", self.title).into());
+        let scope = window
+            .use_keyed_state(scope_key, cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let forward_scope = scope.clone();
+        let backward_scope = scope.clone();
         let header = self.render_header();
         let footer = self.render_footer();
 
@@ -240,6 +263,15 @@ impl RenderOnce for Modal {
         let body = body.child(std::mem::replace(&mut self.body, div().into_any_element()));
 
         div()
+            .track_focus(&scope)
+            .capture_action(move |_: &FocusNextField, window, cx| {
+                cycle_focus_within(&forward_scope, true, window, cx);
+                cx.stop_propagation();
+            })
+            .capture_action(move |_: &FocusPreviousField, window, cx| {
+                cycle_focus_within(&backward_scope, false, window, cx);
+                cx.stop_propagation();
+            })
             .flex()
             .flex_col()
             .w(self

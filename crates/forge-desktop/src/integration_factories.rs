@@ -462,6 +462,7 @@ impl IntegrationFactory for KickFactory {
             poller_tx,
         );
         let viewer_report_rx = viewer_source.subscribe();
+        let poller_auth_rx = viewer_source.subscribe_auth();
         let (bundle, _health_tx) = forge_platform_kick::KickIntegrationBundle::new(
             stored.username,
             stored.user_id,
@@ -469,6 +470,7 @@ impl IntegrationFactory for KickFactory {
             Arc::clone(&self.manager),
             Arc::clone(&self.rate_limiter),
             viewer_report_rx,
+            poller_auth_rx,
         );
 
         let object = kick_builtin_object(Arc::clone(&bundle));

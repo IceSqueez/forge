@@ -35,7 +35,7 @@ pub use credentials::{CREDENTIAL_KEY, KickCredentials};
 pub use credentials_manager::KickCredentialsManager;
 pub use integration::KICK_INTEGRATION;
 pub use moderation::KickModeration;
-pub use poller::{KickPollerHandle, KickViewerSource, spawn_kick_poller};
+pub use poller::{KickPollerHandle, KickViewerSource, PollerAuth, spawn_kick_poller};
 pub use rewards::{CreateRewardParams, KickRewards, RedemptionRecord, UpdateRewardParams};
 pub use send::KickSendChat;
 pub use sub_actions::{

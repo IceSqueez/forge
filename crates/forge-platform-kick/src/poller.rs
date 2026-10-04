@@ -25,8 +25,15 @@ const REWARD_REDEEMED_KIND: &str = "kick.channel.reward.redemption.updated";
 pub(crate) type TokenSource =
     Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PollerAuth {
+    Authorized,
+    AuthRequired,
+}
+
 pub struct KickViewerSource {
     reports: watch::Receiver<ViewerReport>,
+    auth: watch::Receiver<PollerAuth>,
 }
 
 impl LiveViewerSource for KickViewerSource {
@@ -38,6 +45,10 @@ impl LiveViewerSource for KickViewerSource {
 impl KickViewerSource {
     pub fn subscribe(&self) -> watch::Receiver<ViewerReport> {
         self.reports.clone()
+    }
+
+    pub fn subscribe_auth(&self) -> watch::Receiver<PollerAuth> {
+        self.auth.clone()
     }
 }
 
@@ -56,15 +67,20 @@ pub fn spawn_kick_poller(
     event_tx: mpsc::Sender<Event>,
 ) -> (KickViewerSource, KickPollerHandle) {
     let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
+    let (auth_tx, auth_rx) = watch::channel(PollerAuth::Authorized);
     let task = tokio::spawn(run_loop(
         channel,
         rewards,
         token_source,
         event_tx,
         viewer_tx,
+        auth_tx,
     ));
     (
-        KickViewerSource { reports: viewer_rx },
+        KickViewerSource {
+            reports: viewer_rx,
+            auth: auth_rx,
+        },
         KickPollerHandle(task.abort_handle()),
     )
 }
@@ -126,8 +142,55 @@ fn poll_failure(error: &PlatformError) -> String {
     }
 }
 
-async fn resolve_token(token_source: &TokenSource) -> Option<String> {
-    token_source().await.ok()
+fn is_auth_loss(error: &PlatformError) -> bool {
+    matches!(
+        error,
+        PlatformError::ReauthRequired { .. } | PlatformError::Auth { .. }
+    )
+}
+
+fn mark_auth(auth_tx: &watch::Sender<PollerAuth>, next: PollerAuth) -> bool {
+    auth_tx.send_if_modified(|current| {
+        if *current == next {
+            false
+        } else {
+            *current = next;
+            true
+        }
+    })
+}
+
+fn clear_viewer_report(viewer_tx: &watch::Sender<ViewerReport>) {
+    viewer_tx.send_if_modified(|current| {
+        if matches!(current, ViewerReport::Absent) {
+            false
+        } else {
+            *current = ViewerReport::Absent;
+            true
+        }
+    });
+}
+
+fn note_auth_loss(auth_tx: &watch::Sender<PollerAuth>) {
+    if mark_auth(auth_tx, PollerAuth::AuthRequired) {
+        warn!("kick poller authorization lost, sign in to Kick again");
+    }
+}
+
+fn note_poll_failure(
+    error: &PlatformError,
+    auth_tx: &watch::Sender<PollerAuth>,
+    viewer_tx: Option<&watch::Sender<ViewerReport>>,
+    context: &'static str,
+) {
+    if is_auth_loss(error) {
+        note_auth_loss(auth_tx);
+        if let Some(viewer_tx) = viewer_tx {
+            clear_viewer_report(viewer_tx);
+        }
+    } else {
+        warn!(error = %poll_failure(error), "{context}");
+    }
 }
 
 async fn emit(
@@ -146,19 +209,25 @@ async fn poll_channel(
     token_source: &TokenSource,
     event_tx: &mpsc::Sender<Event>,
     viewer_tx: &watch::Sender<ViewerReport>,
+    auth_tx: &watch::Sender<PollerAuth>,
     last_snapshot: &mut Option<ChannelSnapshot>,
 ) -> Result<(), ()> {
-    let Some(token) = resolve_token(token_source).await else {
-        return Ok(());
+    let token = match token_source().await {
+        Ok(token) => token,
+        Err(error) => {
+            note_poll_failure(&error, auth_tx, Some(viewer_tx), "kick token unavailable");
+            return Ok(());
+        }
     };
 
     let snapshot = match channel.get_channel(&token).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            warn!(error = %poll_failure(&error), "kick channel poll failed");
+            note_poll_failure(&error, auth_tx, Some(viewer_tx), "kick channel poll failed");
             return Ok(());
         }
     };
+    mark_auth(auth_tx, PollerAuth::Authorized);
 
     let report = if snapshot.is_live {
         ViewerReport::Live {
@@ -192,20 +261,26 @@ async fn poll_redemptions(
     rewards: &KickRewards,
     token_source: &TokenSource,
     event_tx: &mpsc::Sender<Event>,
+    auth_tx: &watch::Sender<PollerAuth>,
     seen: &mut DedupSet,
     seeded: &mut bool,
 ) -> Result<(), ()> {
-    let Some(token) = resolve_token(token_source).await else {
-        return Ok(());
+    let token = match token_source().await {
+        Ok(token) => token,
+        Err(error) => {
+            note_poll_failure(&error, auth_tx, None, "kick token unavailable");
+            return Ok(());
+        }
     };
 
     let records = match rewards.list_pending_redemptions(&token).await {
         Ok(records) => records,
         Err(error) => {
-            warn!(error = %poll_failure(&error), "kick redemption poll failed");
+            note_poll_failure(&error, auth_tx, None, "kick redemption poll failed");
             return Ok(());
         }
     };
+    mark_auth(auth_tx, PollerAuth::Authorized);
 
     let emit_allowed = *seeded;
     for record in &records {
@@ -224,6 +299,7 @@ async fn run_loop(
     token_source: TokenSource,
     event_tx: mpsc::Sender<Event>,
     viewer_tx: watch::Sender<ViewerReport>,
+    auth_tx: watch::Sender<PollerAuth>,
 ) {
     let mut channel_interval = tokio::time::interval(CHANNEL_POLL_INTERVAL);
     let mut redemption_interval = tokio::time::interval(REDEMPTION_POLL_INTERVAL);
@@ -234,7 +310,14 @@ async fn run_loop(
     loop {
         tokio::select! {
             _ = channel_interval.tick() => {
-                if poll_channel(&channel, &token_source, &event_tx, &viewer_tx, &mut last_snapshot)
+                if poll_channel(
+                    &channel,
+                    &token_source,
+                    &event_tx,
+                    &viewer_tx,
+                    &auth_tx,
+                    &mut last_snapshot,
+                )
                     .await
                     .is_err()
                 {
@@ -246,6 +329,7 @@ async fn run_loop(
                     &rewards,
                     &token_source,
                     &event_tx,
+                    &auth_tx,
                     &mut seen,
                     &mut redemptions_seeded,
                 )

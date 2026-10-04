@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 use crate::capabilities::KICK_COMMUNITY_NOTE;
 use crate::chat_platform::KickPlatform;
 use crate::credentials_manager::KickCredentialsManager;
+use crate::poller::PollerAuth;
 use crate::triggers::ban::BanDescriptor;
 use crate::triggers::chat::ChatDescriptor;
 use crate::triggers::chat_command::ChatCommandDescriptor;
@@ -56,6 +57,7 @@ pub struct KickIntegrationBundle {
     credentials_manager: Arc<KickCredentialsManager>,
     rate_limiter: Arc<dyn RateLimiter>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
+    poller_auth_rx: watch::Receiver<PollerAuth>,
     state_rx: watch::Receiver<ConnectionState>,
     retired: CancellationToken,
 }
@@ -69,6 +71,7 @@ impl KickIntegrationBundle {
         credentials_manager: Arc<KickCredentialsManager>,
         rate_limiter: Arc<dyn RateLimiter>,
         viewer_report_rx: watch::Receiver<ViewerReport>,
+        poller_auth_rx: watch::Receiver<PollerAuth>,
     ) -> (Arc<Self>, broadcast::Sender<HealthDelta>) {
         let (health_tx, _) = broadcast::channel(16);
         let state_rx = platform.state_receiver();
@@ -82,11 +85,13 @@ impl KickIntegrationBundle {
             credentials_manager,
             rate_limiter,
             viewer_report_rx,
+            poller_auth_rx,
             state_rx,
             retired: CancellationToken::new(),
         });
         Self::spawn_health_bridge(&bundle);
         Self::spawn_viewer_health_bridge(&bundle);
+        Self::spawn_events_health_bridge(&bundle);
         Self::spawn_identity_refresh(&bundle);
         (bundle, health_tx)
     }
@@ -185,6 +190,28 @@ impl KickIntegrationBundle {
         });
     }
 
+    fn spawn_events_health_bridge(bundle: &Arc<Self>) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let bundle = Arc::clone(bundle);
+        let mut auth_rx = bundle.poller_auth_rx.clone();
+        handle.spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = auth_rx.changed() => if changed.is_err() { break },
+                }
+                let events_delta = HealthDelta {
+                    index: 1,
+                    new_value: events_health_value(*auth_rx.borrow()),
+                };
+                let _ = bundle.health_tx.send(events_delta);
+            }
+        });
+    }
+
     fn spawn_identity_refresh(bundle: &Arc<Self>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             return;
@@ -218,11 +245,18 @@ impl KickIntegrationBundle {
     }
 }
 
-fn events_health_value() -> HealthValue {
-    HealthValue::Status {
-        label: "Active".to_owned(),
-        active: true,
-        detail: Some("channels 30s / redemptions 12s".to_owned()),
+fn events_health_value(auth: PollerAuth) -> HealthValue {
+    match auth {
+        PollerAuth::Authorized => HealthValue::Status {
+            label: "Active".to_owned(),
+            active: true,
+            detail: Some("channels 30s / redemptions 12s".to_owned()),
+        },
+        PollerAuth::AuthRequired => HealthValue::Status {
+            label: "Auth required".to_owned(),
+            active: false,
+            detail: Some("sign in to Kick again".to_owned()),
+        },
     }
 }
 
@@ -304,7 +338,7 @@ impl BuiltinHealth for KickIntegrationBundle {
             },
             HealthMetric {
                 label: "Events".to_owned(),
-                value: events_health_value(),
+                value: events_health_value(*self.poller_auth_rx.borrow()),
             },
             HealthMetric {
                 label: "Viewers".to_owned(),

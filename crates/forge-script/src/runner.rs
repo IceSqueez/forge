@@ -132,6 +132,7 @@ mod tests {
             bus: Arc::new(CapturingPublisher(Arc::clone(&captured))),
             integrations: Arc::new(TwitchDisabled),
             latest_values: None,
+            scheduler: None,
         };
 
         let result = run_inline(
@@ -191,6 +192,7 @@ mod tests {
             bus: Arc::new(CapturingPublisher(Arc::new(Mutex::new(Vec::new())))),
             integrations: Arc::new(TwitchDisabled),
             latest_values,
+            scheduler: None,
         };
         run_inline(
             r#"forge::latest::get("donation").marker"#.to_owned(),

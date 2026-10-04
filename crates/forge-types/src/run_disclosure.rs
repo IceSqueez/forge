@@ -70,6 +70,10 @@ pub enum DisclosedTrigger {
         builtin_id: String,
         label_chars: usize,
     },
+    Scheduled {
+        event_id: EventId,
+        scheduled_run_id: i64,
+    },
 }
 
 impl From<&ExecutionMetadata> for DisclosedTrigger {
@@ -85,6 +89,14 @@ impl From<&ExecutionMetadata> for DisclosedTrigger {
             ExecutionMetadata::QuickAction { builtin_id, label } => Self::QuickAction {
                 builtin_id: builtin_id.clone(),
                 label_chars: label.chars().count(),
+            },
+            ExecutionMetadata::Scheduled {
+                event_id,
+                scheduled_run_id,
+                ..
+            } => Self::Scheduled {
+                event_id: *event_id,
+                scheduled_run_id: *scheduled_run_id,
             },
         }
     }

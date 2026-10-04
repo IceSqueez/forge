@@ -356,6 +356,16 @@ impl LifecycleWatch {
         self.0.changed().await.ok()?;
         Some(self.0.borrow_and_update().clone())
     }
+
+    pub async fn until_all_settled(mut self) {
+        let mut states = self.current();
+        while !states.values().all(LifecycleState::is_settled) {
+            match self.changed().await {
+                Some(next) => states = next,
+                None => return,
+            }
+        }
+    }
 }
 
 #[derive(Clone)]

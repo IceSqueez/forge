@@ -421,6 +421,10 @@ impl RunHistoryModal {
                 Icon::from_name("layout-grid"),
                 SharedString::from(label.clone()),
             ),
+            ExecutionMetadata::Scheduled { .. } => (
+                Icon::Clock,
+                tr!("action_editor_run_history_trigger_fallback").into(),
+            ),
         };
 
         let header = div()

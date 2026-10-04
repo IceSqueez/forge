@@ -17,6 +17,7 @@ use crate::catalog::Catalog;
 use crate::chain::ChainEngine;
 use crate::integration_gate::{GatedLeafExecutor, IntegrationGate, run_gated_step, step_owner};
 use crate::run_history::RunHistoryWriter;
+use crate::scheduled_runs::ScheduledOrigin;
 use crate::{Config, EventBus};
 
 const EXECUTION_INTAKE_CAPACITY: usize = 256;
@@ -58,6 +59,7 @@ pub struct ExecutionRequest {
 
 struct EngineJob {
     request: ExecutionRequest,
+    origin: Option<ScheduledOrigin>,
     cancel: CancelSignal,
     on_complete: Option<oneshot::Sender<()>>,
 }
@@ -75,6 +77,7 @@ impl ActionEngineHandle {
         self.sender
             .send(EngineJob {
                 request: req,
+                origin: None,
                 cancel: CancelSignal::new(),
                 on_complete: None,
             })
@@ -88,9 +91,31 @@ impl ActionEngineHandle {
         cancel: CancelSignal,
         on_complete: oneshot::Sender<()>,
     ) -> Result<(), DispatchError> {
+        self.send_tracked(req, None, cancel, on_complete).await
+    }
+
+    pub(crate) async fn dispatch_scheduled_tracked(
+        &self,
+        req: ExecutionRequest,
+        origin: ScheduledOrigin,
+        cancel: CancelSignal,
+        on_complete: oneshot::Sender<()>,
+    ) -> Result<(), DispatchError> {
+        self.send_tracked(req, Some(origin), cancel, on_complete)
+            .await
+    }
+
+    async fn send_tracked(
+        &self,
+        req: ExecutionRequest,
+        origin: Option<ScheduledOrigin>,
+        cancel: CancelSignal,
+        on_complete: oneshot::Sender<()>,
+    ) -> Result<(), DispatchError> {
         self.sender
             .send(EngineJob {
                 request: req,
+                origin,
                 cancel,
                 on_complete: Some(on_complete),
             })
@@ -207,6 +232,7 @@ impl ActionEngine {
     fn start(self: &Arc<Self>, job: EngineJob) {
         let EngineJob {
             request,
+            origin,
             cancel,
             on_complete,
         } = job;
@@ -219,7 +245,7 @@ impl ActionEngine {
         };
         let engine = Arc::clone(self);
         tokio::spawn(async move {
-            engine.run_execution(request, &cancel).await;
+            engine.run_execution(request, origin, &cancel).await;
             drop(cancel_guard);
             if let Some(done) = on_complete {
                 let _ = done.send(());
@@ -231,7 +257,7 @@ impl ActionEngine {
         &self,
         action: &Action,
         trigger_event_id: EventId,
-        trigger_kind: Option<String>,
+        metadata: ExecutionMetadata,
         arg_stack: ArgStack,
         started_at: OffsetDateTime,
     ) {
@@ -254,10 +280,7 @@ impl ActionEngine {
         ));
         let ctx = ExecutionContext {
             action_id: action.id,
-            metadata: ExecutionMetadata::Trigger {
-                event_id: trigger_event_id,
-                trigger_kind,
-            },
+            metadata,
             arg_stack_snapshot: arg_stack.snapshot(),
             started_at,
             completed_at: Some(started_at),
@@ -269,7 +292,12 @@ impl ActionEngine {
         self.history.record(ctx, None);
     }
 
-    async fn run_execution(&self, req: ExecutionRequest, cancel: &CancelSignal) {
+    async fn run_execution(
+        &self,
+        req: ExecutionRequest,
+        origin: Option<ScheduledOrigin>,
+        cancel: &CancelSignal,
+    ) {
         let action = match self.catalog.current().await {
             Ok(catalog) => match catalog.action(req.action_id) {
                 Some(action) => Arc::clone(action),
@@ -282,7 +310,13 @@ impl ActionEngine {
         };
 
         let arg_stack = req.initial_args;
-        let trigger_kind = req.trigger_kind;
+        let metadata = match origin {
+            Some(origin) => origin.into_metadata(req.trigger_event_id),
+            None => ExecutionMetadata::Trigger {
+                event_id: req.trigger_event_id,
+                trigger_kind: req.trigger_kind,
+            },
+        };
         let started_at = OffsetDateTime::now_utc();
 
         let ancestor_runs = self.bus.count_in_lineage(
@@ -294,7 +328,7 @@ impl ActionEngine {
             self.refuse_too_deep(
                 &action,
                 req.trigger_event_id,
-                trigger_kind,
+                metadata,
                 arg_stack,
                 started_at,
             )
@@ -304,10 +338,7 @@ impl ActionEngine {
 
         let mut ctx = ExecutionContext {
             action_id: req.action_id,
-            metadata: ExecutionMetadata::Trigger {
-                event_id: req.trigger_event_id,
-                trigger_kind,
-            },
+            metadata,
             arg_stack_snapshot: arg_stack.snapshot(),
             started_at,
             completed_at: None,

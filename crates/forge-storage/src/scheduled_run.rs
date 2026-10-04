@@ -97,6 +97,12 @@ pub trait ScheduledRunRepo: Send + Sync {
 
     async fn list_due(&self, now: OffsetDateTime) -> Result<Vec<ScheduledRun>, StorageError>;
 
+    async fn fail_unreadable_due(
+        &self,
+        now: OffsetDateTime,
+        reason: &str,
+    ) -> Result<Vec<ScheduledRunId>, StorageError>;
+
     async fn next_due(&self) -> Result<Option<OffsetDateTime>, StorageError>;
     async fn claim(
         &self,
@@ -165,6 +171,21 @@ impl ScheduledRunRepo for RevisingScheduledRunRepo {
 
     async fn next_due(&self) -> Result<Option<OffsetDateTime>, StorageError> {
         self.inner.next_due().await
+    }
+
+    async fn fail_unreadable_due(
+        &self,
+        now: OffsetDateTime,
+        reason: &str,
+    ) -> Result<Vec<ScheduledRunId>, StorageError> {
+        let inner = Arc::clone(&self.inner);
+        let reason = reason.to_owned();
+        self.revision
+            .after_when(
+                async move { inner.fail_unreadable_due(now, &reason).await },
+                |failed| !failed.is_empty(),
+            )
+            .await
     }
 
     async fn claim(

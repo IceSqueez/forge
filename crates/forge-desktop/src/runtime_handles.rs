@@ -4,7 +4,8 @@ use forge_overlay::OverlayKindRegistry;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, LatestValues, LiveViewerAggregatorHandle, OverlayServiceHandle,
-    QueueSchedulerHandle, ScriptRegistry, StreamLiveHandle, TriggerEvaluatorHandle,
+    QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, StreamLiveHandle,
+    TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
@@ -32,6 +33,7 @@ pub struct RuntimeHandles {
     pub action_engine: ActionEngineHandle,
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,
+    pub scheduled_runs: ScheduledRunsHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
     pub stream_live: StreamLiveHandle,
     pub builtins: BuiltinRegistry,

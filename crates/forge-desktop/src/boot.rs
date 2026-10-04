@@ -9,14 +9,15 @@ use forge_overlay::{OverlayKindRegistry, register_builtin_kinds};
 use forge_platform_core::{PlatformEndpoints, paths};
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionCancelRegistry, ActionEngineHandle, Catalog, Config, DonationIngest,
+    ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, DonationIngest,
     DonationOverlayAudience, EventBus, FirstChatLedger, LatestValues, OverlayConnectFanout,
     OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
-    OverlayServiceHandle, QueueScheduler, SchedulerCell, ScriptRegistry, SoundPlayer,
-    SpeakDispatcher, register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    register_donation_sub_actions, register_latest_sub_actions, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
-    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_stream_live_signal,
+    OverlayServiceHandle, QueueScheduler, ScheduledRunsParts, SchedulerCell, ScriptRegistry,
+    SoundPlayer, SpeakDispatcher, SystemWallClock, register_audio_sub_actions,
+    register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
+    register_latest_sub_actions, spawn_action_engine, spawn_chat_history_persistence,
+    spawn_event_log_bridge, spawn_latest_overlay_feed, spawn_latest_projector,
+    spawn_live_viewer_aggregator, spawn_scheduled_runs, spawn_stream_live_signal,
     spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
@@ -404,6 +405,16 @@ pub async fn build_runtime(
         stream_live.clone(),
         bot_accounts.clone(),
     );
+    let scheduled_runs = spawn_scheduled_runs(ScheduledRunsParts {
+        repo: backend.scheduled_run_repo(),
+        revision: backend.scheduled_run_revision(),
+        catalog: Arc::clone(&catalog),
+        actions: backend.action_repo(),
+        queues: scheduler.clone(),
+        bus: Arc::clone(&bus),
+        clock: Arc::new(SystemWallClock),
+        catch_up: CatchUpSettle::when(supervisor.watch().until_all_settled()),
+    });
 
     let server = build_server(&backend, &bus, &action_engine).await;
 
@@ -496,6 +507,7 @@ pub async fn build_runtime(
         action_engine,
         scheduler,
         trigger_evaluator,
+        scheduled_runs,
         live_viewers,
         stream_live,
         builtins: integrations.builtins,

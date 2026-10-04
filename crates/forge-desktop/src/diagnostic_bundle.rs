@@ -308,6 +308,10 @@ fn trigger_shape(trigger: &DisclosedTrigger) -> String {
             builtin_id,
             label_chars,
         } => format!("quick_action({builtin_id}, label {STAMP} len={label_chars}>)"),
+        DisclosedTrigger::Scheduled {
+            event_id,
+            scheduled_run_id,
+        } => format!("scheduled({event_id}, run={scheduled_run_id})"),
     }
 }
 

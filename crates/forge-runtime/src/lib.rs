@@ -34,6 +34,7 @@ mod persist_batch;
 mod queue_depth;
 pub mod queue_scheduler;
 mod run_history;
+pub mod scheduled_runs;
 pub mod script_registry;
 pub mod sound_player;
 pub mod speak_dispatcher;
@@ -87,6 +88,10 @@ pub use queue_scheduler::{
     MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
     QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,
     SchedulerRequest,
+};
+pub use scheduled_runs::{
+    CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleRequest, ScheduledPlacement,
+    ScheduledRunsHandle, ScheduledRunsParts, SystemWallClock, WallClock, spawn_scheduled_runs,
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};

@@ -50,7 +50,8 @@ impl EncodedRun {
         Ok(Self {
             action_id: ctx.action_id.to_string(),
             event_id: match &ctx.metadata {
-                ExecutionMetadata::Trigger { event_id, .. } => Some(event_id.to_string()),
+                ExecutionMetadata::Trigger { event_id, .. }
+                | ExecutionMetadata::Scheduled { event_id, .. } => Some(event_id.to_string()),
                 ExecutionMetadata::QuickAction { .. } => None,
             },
             started_at_ms: to_epoch_ms(ctx.started_at),

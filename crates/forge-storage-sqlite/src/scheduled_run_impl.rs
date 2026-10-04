@@ -342,6 +342,50 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         Ok(decode_readable_rows(rows))
     }
 
+    async fn fail_unreadable_due(
+        &self,
+        now: OffsetDateTime,
+        reason: &str,
+    ) -> Result<Vec<ScheduledRunId>, StorageError> {
+        let rows = sqlx::query_as::<_, ScheduledRunRow>(concat!(
+            "SELECT ",
+            columns!(),
+            " FROM scheduled_runs
+             WHERE state = ? AND due_at <= ? ORDER BY due_at, id"
+        ))
+        .bind(STATE_PENDING)
+        .bind(to_epoch_ms(now))
+        .fetch_all(self.db.reader())
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+        let unreadable: Vec<i64> = rows
+            .into_iter()
+            .filter_map(|row| {
+                let id = row.id;
+                decode_row(row).err().map(|_| id)
+            })
+            .collect();
+        let mut failed = Vec::with_capacity(unreadable.len());
+        for id in unreadable {
+            let result = sqlx::query(
+                "UPDATE scheduled_runs SET state = ?, outcome_reason = ?, resolved_at = ?
+                 WHERE id = ? AND state = ?",
+            )
+            .bind(STATE_FAILED)
+            .bind(reason)
+            .bind(to_epoch_ms(now))
+            .bind(id)
+            .bind(STATE_PENDING)
+            .execute(self.db.writer())
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+            if result.rows_affected() > 0 {
+                failed.push(ScheduledRunId::new(id));
+            }
+        }
+        Ok(failed)
+    }
+
     async fn next_due(&self) -> Result<Option<OffsetDateTime>, StorageError> {
         let due: Option<i64> =
             sqlx::query_scalar("SELECT MIN(due_at) FROM scheduled_runs WHERE state = ?")

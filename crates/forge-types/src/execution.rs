@@ -163,6 +163,14 @@ pub enum ExecutionMetadata {
         builtin_id: String,
         label: String,
     },
+    Scheduled {
+        event_id: EventId,
+        scheduled_run_id: i64,
+        #[serde(default)]
+        scheduled_by_action: Option<ActionId>,
+        #[serde(default)]
+        scheduled_by_run: Option<String>,
+    },
 }
 
 #[derive(Clone)]

@@ -11,9 +11,13 @@ use tokio::sync::{Notify, mpsc, oneshot, watch};
 use tracing::{info, warn};
 
 use crate::queue_depth::{DepthBoard, DepthCell, QueueDepthWatch};
+use crate::scheduled_runs::ScheduledOrigin;
 use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
 pub const MAX_PENDING_PER_QUEUE: usize = 500;
+
+pub(crate) const QUEUE_NOT_FOUND_REASON: &str = "queue_not_found";
+const QUEUE_OVERFLOW_REASON: &str = "queue_pending_overflow";
 
 #[derive(Clone, Default)]
 pub struct SchedulerCell {
@@ -49,6 +53,8 @@ pub enum SchedulerError {
     ChannelClosed,
     #[error("queue not found: {0}")]
     QueueNotFound(QueueId),
+    #[error("queue refused the run: {0}")]
+    Refused(&'static str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +157,11 @@ pub struct QueueSchedulerHandle {
 
 enum SchedulerCommand {
     Enqueue(SchedulerRequest),
+    Admit(
+        SchedulerRequest,
+        ScheduledOrigin,
+        oneshot::Sender<Result<(), SchedulerError>>,
+    ),
     SetMode(
         QueueId,
         QueueMode,
@@ -387,6 +398,7 @@ struct QueueTask {
     action_id: ActionId,
     trigger_event_id: EventId,
     trigger_kind: Option<String>,
+    origin: Option<ScheduledOrigin>,
     initial_args: ArgStack,
     bypass_pause: bool,
 }
@@ -396,6 +408,18 @@ impl QueueSchedulerHandle {
         self.sender
             .send(SchedulerCommand::Enqueue(req))
             .map_err(|_| SchedulerError::ChannelClosed)
+    }
+
+    pub(crate) async fn admit(
+        &self,
+        req: SchedulerRequest,
+        origin: ScheduledOrigin,
+    ) -> Result<(), SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::Admit(req, origin, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
 
     pub async fn set_mode(&self, queue_id: QueueId, mode: QueueMode) -> Result<(), SchedulerError> {
@@ -562,6 +586,7 @@ impl QueueScheduler {
                 trigger_kind: task.trigger_kind,
                 initial_args: task.initial_args,
             };
+            let origin = task.origin;
 
             let cancel = CancelSignal::new();
             let id = inflight.register(cancel.clone());
@@ -569,11 +594,15 @@ impl QueueScheduler {
             let inflight_ref = inflight.clone();
             tokio::spawn(async move {
                 let (done_tx, done_rx) = oneshot::channel::<()>();
-                if engine_ref
-                    .dispatch_tracked(req, cancel, done_tx)
-                    .await
-                    .is_ok()
-                {
+                let dispatched = match origin {
+                    Some(origin) => {
+                        engine_ref
+                            .dispatch_scheduled_tracked(req, origin, cancel, done_tx)
+                            .await
+                    }
+                    None => engine_ref.dispatch_tracked(req, cancel, done_tx).await,
+                };
+                if dispatched.is_ok() {
                     let _ = done_rx.await;
                 }
                 inflight_ref.complete(id);
@@ -592,7 +621,12 @@ impl QueueScheduler {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 SchedulerCommand::Enqueue(req) => {
-                    Self::enqueue(req, &mut slots, &bus);
+                    let _ = Self::enqueue(req, None, &mut slots, &bus);
+                }
+                SchedulerCommand::Admit(req, origin, reply) => {
+                    let admitted = Self::enqueue(req, Some(origin), &mut slots, &bus)
+                        .map_err(SchedulerError::Refused);
+                    let _ = reply.send(admitted);
                 }
                 SchedulerCommand::SetMode(queue_id, mode, reply) => {
                     let r = Self::set_mode(&queue_id, mode, &mut slots, &bus);
@@ -637,9 +671,10 @@ impl QueueScheduler {
 
     fn enqueue(
         req: SchedulerRequest,
+        origin: Option<ScheduledOrigin>,
         slots: &mut HashMap<QueueId, QueueSlot>,
         bus: &Arc<EventBus>,
-    ) {
+    ) -> Result<(), &'static str> {
         let SchedulerRequest {
             queue_id,
             action_id,
@@ -656,37 +691,40 @@ impl QueueScheduler {
                 queue_id,
                 action_id,
                 trigger_event_id,
-                "queue_not_found",
+                QUEUE_NOT_FOUND_REASON,
             );
-            return;
+            return Err(QUEUE_NOT_FOUND_REASON);
         };
 
         if !bypass_pause && slot.mode.intake == QueueIntake::Skip {
             let reason = slot.mode.skip_reason();
             Self::publish_skip(bus, queue_id, action_id, trigger_event_id, reason);
-            return;
+            return Err(reason);
         }
 
         let accepted = slot.pending.push(QueueTask {
             action_id,
             trigger_event_id,
             trigger_kind,
+            origin,
             initial_args,
             bypass_pause,
         });
 
-        if !accepted {
-            slot.overflowed = slot.overflowed.saturating_add(1);
-            let overflowed = slot.overflowed;
-            slot.depth.update(|depth| depth.overflowed = overflowed);
-            Self::publish_skip(
-                bus,
-                queue_id,
-                action_id,
-                trigger_event_id,
-                "queue_pending_overflow",
-            );
+        if accepted {
+            return Ok(());
         }
+        slot.overflowed = slot.overflowed.saturating_add(1);
+        let overflowed = slot.overflowed;
+        slot.depth.update(|depth| depth.overflowed = overflowed);
+        Self::publish_skip(
+            bus,
+            queue_id,
+            action_id,
+            trigger_event_id,
+            QUEUE_OVERFLOW_REASON,
+        );
+        Err(QUEUE_OVERFLOW_REASON)
     }
 
     fn publish_skip(

@@ -25,6 +25,8 @@ const POLL_FLOOR_MS: u64 = 3_000;
 const LONG_INTERVAL_MS: u64 = 60_000;
 const BROADCAST_CADENCE_SECS: u64 = 60;
 const DEDUP_WINDOW_SIZE: usize = 500;
+const CHAT_ENDED_EVENT_TYPE: &str = "chatEndedEvent";
+const LIVE_CHAT_ENDED_REASON: &str = "liveChatEnded";
 const CHAT_MESSAGES_PAGE_SIZE: &str = "200";
 
 struct ChatMessagesResponse {
@@ -195,7 +197,7 @@ impl YoutubeChatPoller {
             last_seen_title = Some(current_title);
 
             self.live_chat_id.set(Some(live_chat_id.clone()));
-            self.active_broadcast_id.set(Some(broadcast_id));
+            self.active_broadcast_id.set(Some(broadcast_id.clone()));
 
             let mut next_page_token: Option<String> = None;
             let broadcast_resolved_at = tokio::time::Instant::now();
@@ -252,6 +254,12 @@ impl YoutubeChatPoller {
                     .await
                 {
                     Ok(r) => r,
+                    Err(PlatformError::Http { status, body })
+                        if status == StatusCode::FORBIDDEN.as_u16()
+                            && body.contains(LIVE_CHAT_ENDED_REASON) =>
+                    {
+                        break 'inner;
+                    }
                     Err(e) => {
                         tracing::warn!("chat messages fetch failed: {e}");
                         tokio::select! {
@@ -262,15 +270,28 @@ impl YoutubeChatPoller {
                     }
                 };
 
+                let mut chat_ended = false;
                 for item in &response.items {
-                    if let Some(event) = self.build_event(item, &mut dedup) {
-                        if event.kind == "youtube.stream.offline" {
+                    if item_type(item) == CHAT_ENDED_EVENT_TYPE {
+                        chat_ended = true;
+                        if let Some(event) = self.chat_ended_event(item, &broadcast_id, &mut dedup)
+                        {
                             is_live = false;
+                            if self.bus_sender.send(event).is_err() {
+                                return Ok(());
+                            }
                         }
-                        if self.bus_sender.send(event).is_err() {
-                            return Ok(());
-                        }
+                        continue;
                     }
+                    if let Some(event) = self.build_event(item, &mut dedup)
+                        && self.bus_sender.send(event).is_err()
+                    {
+                        return Ok(());
+                    }
+                }
+
+                if chat_ended {
+                    break 'inner;
                 }
 
                 next_page_token = response.next_page_token;
@@ -286,7 +307,34 @@ impl YoutubeChatPoller {
 
             self.live_chat_id.set(None);
             self.active_broadcast_id.set(None);
+
+            tokio::select! {
+                () = tokio::time::sleep_until(
+                    broadcast_resolved_at + Duration::from_secs(BROADCAST_CADENCE_SECS)
+                ) => {}
+                () = cancel.cancelled() => return Ok(()),
+            }
         }
+    }
+
+    fn chat_ended_event(
+        &self,
+        item: &serde_json::Value,
+        broadcast_id: &str,
+        dedup: &mut DedupSet,
+    ) -> Option<Event> {
+        let id = item
+            .get("id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())?;
+        if !dedup.try_insert(id.to_owned()) {
+            return None;
+        }
+        Some(Event::new(
+            EventSource::YouTube,
+            "youtube.stream.offline",
+            serde_json::json!({ (stream_fields::BROADCAST_ID): broadcast_id }),
+        ))
     }
 
     async fn fetch_live_chat_id(
@@ -429,15 +477,6 @@ impl YoutubeChatPoller {
         let msg_type = snippet.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
         match msg_type {
-            "chatEndedEvent" => {
-                let event = Event::new(
-                    EventSource::YouTube,
-                    "youtube.stream.offline",
-                    serde_json::json!({ (stream_fields::BROADCAST_ID): id }),
-                );
-                Some(event)
-            }
-
             "textMessageEvent" => {
                 let text = snippet
                     .get("displayMessage")
@@ -867,6 +906,13 @@ impl YoutubeChatPoller {
             _ => None,
         }
     }
+}
+
+fn item_type(item: &serde_json::Value) -> &str {
+    item.get("snippet")
+        .and_then(|s| s.get("type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
 }
 
 fn sleep_duration(polling_interval_millis: u64, floor_ms: u64) -> Duration {

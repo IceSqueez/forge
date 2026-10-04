@@ -1400,6 +1400,102 @@ mod tests {
     }
 
     #[gpui::test]
+    fn an_integer_field_saves_a_number_clamped_into_its_bounds(cx: &mut gpui::TestAppContext) {
+        for (typed, expected) in [
+            ("128", 127),
+            ("1000000", 127),
+            ("127", 127),
+            ("126", 126),
+            ("0", 0),
+            ("1", 1),
+            ("-1", 0),
+            (" 200 ", 127),
+        ] {
+            let seeded = config(&[(NOTE_KEY, Variant::Int(SEEDED))]);
+            let (_host, fields) = build(
+                cx,
+                &integer_spec(NOTE_KEY),
+                &FieldConfig::new(),
+                &seeded,
+                typed,
+            );
+
+            assert_eq!(
+                collected(cx, &fields, &seeded).get(NOTE_KEY),
+                Some(&Variant::Int(expected)),
+                "typed: {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_integer_spec_with_min_above_max_saves_a_number_without_panicking(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let inverted = FormField::Integer {
+            key: NOTE_KEY,
+            label: "Note",
+            min: 10,
+            max: 5,
+        };
+        let (_host, fields) = build(cx, &inverted, &FieldConfig::new(), &FieldConfig::new(), "7");
+
+        assert!(matches!(
+            collected(cx, &fields, &FieldConfig::new()).get(NOTE_KEY),
+            Some(Variant::Int(_))
+        ));
+    }
+
+    #[test]
+    fn clamped_integer_text_rewrites_only_an_out_of_range_number() {
+        let bounds = 0..=127;
+        for (typed, expected) in [
+            ("128", Some("127")),
+            ("-1", Some("0")),
+            (" 300 ", Some("127")),
+            ("0", None),
+            ("127", None),
+            ("64", None),
+            ("", None),
+            ("abc", None),
+            ("4.5", None),
+        ] {
+            assert_eq!(
+                clamped_integer_text(typed, &bounds).as_deref(),
+                expected,
+                "typed: {typed:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn leaving_or_submitting_an_out_of_range_number_snaps_the_text_to_the_bound(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (typed, shown) in [("500", "127"), ("-3", "0"), ("42", "42"), ("abc", "abc")] {
+            for leave in [InputEvent::Submitted, InputEvent::Blurred] {
+                let (_host, fields) = build(
+                    cx,
+                    &integer_spec(NOTE_KEY),
+                    &FieldConfig::new(),
+                    &FieldConfig::new(),
+                    typed,
+                );
+                let ConfigField::Input { input, .. } = &fields[0] else {
+                    panic!("an integer spec builds an input field");
+                };
+                input.update(cx, |_, cx| cx.emit(leave(typed.into())));
+                cx.run_until_parked();
+
+                assert_eq!(
+                    input.read_with(cx, |field, _| field.content().to_owned()),
+                    shown
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
     fn emptying_an_optional_number_leaves_every_other_key_standing(cx: &mut gpui::TestAppContext) {
         let seeded = config(&[
             (NOTE_KEY, Variant::Int(SEEDED)),

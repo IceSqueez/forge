@@ -1742,6 +1742,14 @@ mod tests {
         config: SubActionConfig,
         cx: &mut TestAppContext,
     ) -> Vec<(String, Variant)> {
+        submitted_overrides(specs, config, cx).unwrap()
+    }
+
+    fn submitted_overrides(
+        specs: Vec<FormField>,
+        config: SubActionConfig,
+        cx: &mut TestAppContext,
+    ) -> Option<Vec<(String, Variant)>> {
         let (form, vcx, _rt) = open_launch(cx, launch_with(specs, config));
         let heard = std::rc::Rc::new(std::cell::RefCell::new(None));
         let sink = std::rc::Rc::clone(&heard);
@@ -1753,7 +1761,7 @@ mod tests {
             })
         });
         vcx.update(|_window, cx| form.update(cx, |form, cx| form.submit(cx)));
-        heard.borrow_mut().take().unwrap()
+        heard.borrow_mut().take()
     }
 
     fn override_for<'a>(overrides: &'a [(String, Variant)], key: &str) -> Option<&'a Variant> {
@@ -1803,6 +1811,56 @@ mod tests {
                 override_for(&overrides, CODE_FIELD),
                 expected.as_ref(),
                 "toggle {toggle}"
+            );
+        }
+    }
+
+    const COUNT_FIELD: &str = "count";
+    const COUNT_GATE: &str = "use_count";
+
+    fn count_spec(gated: bool) -> FormField {
+        let count = FormField::Integer {
+            key: COUNT_FIELD,
+            label: "Count",
+            min: 0,
+            max: 127,
+        };
+        if gated {
+            FormField::Optional {
+                key: COUNT_GATE,
+                label: "Use count",
+                inner: Box::new(count),
+            }
+        } else {
+            count
+        }
+    }
+
+    #[gpui::test]
+    fn an_out_of_range_integer_blocks_submit_only_while_its_field_is_in_use(
+        cx: &mut TestAppContext,
+    ) {
+        for (toggle, stored, commits) in [
+            (None, Variant::Int(127), true),
+            (None, Variant::Int(0), true),
+            (None, Variant::Int(128), false),
+            (None, Variant::Int(-1), false),
+            (None, Variant::String("abc".to_owned()), false),
+            (None, Variant::String(String::new()), true),
+            (Some(true), Variant::Int(200), false),
+            (Some(false), Variant::Int(200), true),
+        ] {
+            let mut config: SubActionConfig = [(COUNT_FIELD.to_owned(), stored.clone())]
+                .into_iter()
+                .collect();
+            if let Some(on) = toggle {
+                config.insert(COUNT_GATE.to_owned(), Variant::Bool(on));
+            }
+            let outcome = submitted_overrides(vec![count_spec(toggle.is_some())], config, cx);
+            assert_eq!(
+                outcome.is_some(),
+                commits,
+                "toggle {toggle:?}, stored {stored:?}"
             );
         }
     }

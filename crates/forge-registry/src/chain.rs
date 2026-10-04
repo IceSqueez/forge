@@ -2,7 +2,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
-use forge_types::{ArgStack, EventId, IntegrationAvailability, SubActionStep, SubActionTelemetry};
+use forge_types::{
+    ActionId, ArgStack, EventId, IntegrationAvailability, SubActionStep, SubActionTelemetry,
+};
 
 use crate::error::RegistryError;
 
@@ -98,6 +100,13 @@ impl CancelSignal {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunningAction {
+    pub action_id: ActionId,
+    pub start_event_id: EventId,
+    pub trigger_event_id: EventId,
+}
+
 #[async_trait]
 pub trait ChainExecutor: Send + Sync {
     async fn run_child_chain(
@@ -110,6 +119,10 @@ pub trait ChainExecutor: Send + Sync {
     fn cancel_signal(&self) -> CancelSignal;
 
     fn integration_availability(&self) -> Option<Arc<dyn IntegrationAvailability>> {
+        None
+    }
+
+    fn running_action(&self) -> Option<RunningAction> {
         None
     }
 }

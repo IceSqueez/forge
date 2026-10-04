@@ -401,6 +401,12 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         id: ScheduledRunId,
         claimed_at: OffsetDateTime,
     ) -> Result<Option<ScheduledRun>, StorageError> {
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
         let row = sqlx::query_as::<_, ScheduledRunRow>(concat!(
             "UPDATE scheduled_runs SET state = ?, resolved_at = ?
              WHERE id = ? AND state = ? RETURNING ",
@@ -411,10 +417,15 @@ impl ScheduledRunRepo for SqliteScheduledRunRepo {
         .bind(to_epoch_ms(claimed_at))
         .bind(id.get())
         .bind(STATE_PENDING)
-        .fetch_optional(self.db.writer())
+        .fetch_optional(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
-        row.map(decode_row).transpose()
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let run = decode_row(row)?;
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(Some(run))
     }
 
     async fn cancel(&self, id: ScheduledRunId, at: OffsetDateTime) -> Result<bool, StorageError> {

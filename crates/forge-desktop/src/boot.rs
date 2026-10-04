@@ -12,13 +12,13 @@ use forge_runtime::{
     ActionCancelRegistry, ActionEngineHandle, Catalog, CatchUpSettle, Config, DonationIngest,
     DonationOverlayAudience, EventBus, FirstChatLedger, LatestValues, OverlayConnectFanout,
     OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
-    OverlayServiceHandle, QueueScheduler, ScheduledRunsParts, SchedulerCell, ScriptRegistry,
-    SoundPlayer, SpeakDispatcher, SystemWallClock, register_audio_sub_actions,
+    OverlayServiceHandle, QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell,
+    ScriptRegistry, SoundPlayer, SpeakDispatcher, SystemWallClock, register_audio_sub_actions,
     register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
-    register_latest_sub_actions, spawn_action_engine, spawn_chat_history_persistence,
-    spawn_event_log_bridge, spawn_latest_overlay_feed, spawn_latest_projector,
-    spawn_live_viewer_aggregator, spawn_scheduled_runs, spawn_stream_live_signal,
-    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
+    register_latest_sub_actions, register_scheduled_run_sub_actions, spawn_action_engine,
+    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
+    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_scheduled_runs,
+    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -236,6 +236,7 @@ pub async fn build_runtime(
 
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
     let scheduler_cell = SchedulerCell::new();
+    let scheduled_runs_cell = ScheduledRunsCell::new();
     let overlay_service_cell = OverlayServiceCell::new();
     let mut sub_action_reg = SubActionRegistry::new();
     if let Err(e) = register_core_sub_actions(
@@ -264,6 +265,11 @@ pub async fn build_runtime(
         )
         .holding_catch_up(),
     );
+    if let Err(e) =
+        register_scheduled_run_sub_actions(&mut sub_action_reg, scheduled_runs_cell.clone())
+    {
+        eprintln!("forge-desktop: scheduled run sub-action registration failed: {e}");
+    }
     if let Err(e) = register_donation_sub_actions(&mut sub_action_reg, Arc::clone(&donations)) {
         eprintln!("forge-desktop: donation sub-action registration failed: {e}");
     }
@@ -415,6 +421,7 @@ pub async fn build_runtime(
         clock: Arc::new(SystemWallClock),
         catch_up: CatchUpSettle::when(supervisor.watch().until_all_settled()),
     });
+    scheduled_runs_cell.set(scheduled_runs.clone());
 
     let server = build_server(&backend, &bus, &action_engine).await;
 

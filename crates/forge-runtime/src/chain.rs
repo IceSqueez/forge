@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventSource};
 use forge_registry::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
-    RegistryError, RunContext, SubActionRegistry, TelemetrySink, effective_config,
+    RegistryError, RunContext, RunningAction, SubActionRegistry, TelemetrySink, effective_config,
 };
 use forge_types::{
     ArgStack, EventId, IntegrationAvailability, SubActionOutcome, SubActionStep,
@@ -160,6 +160,28 @@ impl ChainEngine {
             engine: Arc::clone(self),
             depth: 0,
             cancel,
+            running: None,
+        }
+    }
+
+    pub(crate) async fn run_action(
+        self: &Arc<Self>,
+        running: RunningAction,
+        concurrent: bool,
+        steps: &[SubActionStep],
+        arg_stack: &ArgStack,
+        cancel: &CancelSignal,
+    ) -> ChainRun {
+        let scope = ChainScope {
+            running: Some(running),
+            ..self.root_scope(cancel.clone())
+        };
+        if concurrent {
+            self.drive_concurrent(steps, arg_stack, running.start_event_id, &scope)
+                .await
+        } else {
+            self.drive_sequential(steps, arg_stack, running.start_event_id, &scope)
+                .await
         }
     }
 
@@ -488,6 +510,7 @@ pub struct ChainScope {
     engine: Arc<ChainEngine>,
     depth: u32,
     cancel: CancelSignal,
+    running: Option<RunningAction>,
 }
 
 #[async_trait]
@@ -507,6 +530,7 @@ impl ChainExecutor for ChainScope {
             engine: Arc::clone(&self.engine),
             depth: child_depth,
             cancel: self.cancel.clone(),
+            running: self.running,
         };
         let run = self
             .engine
@@ -526,6 +550,10 @@ impl ChainExecutor for ChainScope {
 
     fn integration_availability(&self) -> Option<Arc<dyn IntegrationAvailability>> {
         Some(Arc::new(self.engine.integrations.clone()))
+    }
+
+    fn running_action(&self) -> Option<RunningAction> {
+        self.running
     }
 }
 

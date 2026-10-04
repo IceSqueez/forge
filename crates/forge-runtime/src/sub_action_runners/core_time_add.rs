@@ -4,26 +4,11 @@ use forge_registry::{
     SubActionConfigExt, SubActionIo, SubActionRunner,
 };
 use forge_types::{ArgStack, SubActionConfig, SubActionTelemetry, Variant, VariantKind};
-use time::{Date, Duration, Month, OffsetDateTime, format_description::well_known::Rfc3339};
+use time::{Date, Duration, Month, OffsetDateTime};
+
+use super::datetime_input::resolve_datetime;
 
 pub struct CoreTimeAddRunner;
-
-fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, String> {
-    if let Some(dt) = v.as_datetime() {
-        return Ok(*dt);
-    }
-    if let Some(secs) = v.as_int() {
-        return OffsetDateTime::from_unix_timestamp(secs)
-            .map_err(|e| format!("unix timestamp out of range: {e}"));
-    }
-    let s = stack_interp.trim();
-    OffsetDateTime::parse(s, &Rfc3339).or_else(|_| {
-        s.parse::<i64>()
-            .ok()
-            .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok())
-            .ok_or_else(|| format!("cannot parse '{s}' as a datetime or unix timestamp"))
-    })
-}
 
 const MONTHS_PER_YEAR: i64 = 12;
 

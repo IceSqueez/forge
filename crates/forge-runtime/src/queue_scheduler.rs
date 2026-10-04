@@ -16,8 +16,10 @@ use crate::{ActionEngineHandle, EventBus, ExecutionRequest};
 
 pub const MAX_PENDING_PER_QUEUE: usize = 500;
 
-pub(crate) const QUEUE_NOT_FOUND_REASON: &str = "queue_not_found";
-const QUEUE_OVERFLOW_REASON: &str = "queue_pending_overflow";
+pub const QUEUE_NOT_FOUND_REASON: &str = "queue_not_found";
+pub const QUEUE_OVERFLOW_REASON: &str = "queue_pending_overflow";
+pub const QUEUE_PAUSED_REASON: &str = "queue_paused";
+pub const QUEUE_DRAINING_REASON: &str = "queue_draining";
 
 #[derive(Clone, Default)]
 pub struct SchedulerCell {
@@ -129,8 +131,8 @@ impl QueueMode {
 
     fn skip_reason(self) -> &'static str {
         match self.processing {
-            QueueProcessing::Running => "queue_draining",
-            QueueProcessing::Frozen => "queue_paused",
+            QueueProcessing::Running => QUEUE_DRAINING_REASON,
+            QueueProcessing::Frozen => QUEUE_PAUSED_REASON,
         }
     }
 }

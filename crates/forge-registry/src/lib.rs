@@ -20,7 +20,7 @@ pub mod variables;
 pub use category::{SubActionCategory, TriggerCategory};
 pub use chain::{
     CancelSignal, ChainExecutor, ChainSignal, ChildChainOutcome, ControlCell, ControlSignal,
-    StopMark, TelemetrySink,
+    RunningAction, StopMark, TelemetrySink,
 };
 pub use config_ext::SubActionConfigExt;
 pub use descriptor::{ChatTriggerFamily, TriggerKindDescriptor};

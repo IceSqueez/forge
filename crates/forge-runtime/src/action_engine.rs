@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use forge_events::{Event, EventPublisher, EventSource};
-use forge_registry::{CancelSignal, ChainSignal, RunContext, SubActionRegistry, effective_config};
+use forge_registry::{
+    CancelSignal, ChainSignal, RunContext, RunningAction, SubActionRegistry, effective_config,
+};
 use forge_storage::{ActionExecution, ActionRepo, ExecutionStatus, HistoryRepo};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionContext, ExecutionMetadata, ExecutionOutcome,
@@ -371,15 +373,15 @@ impl ActionEngine {
             action.sub_actions.clone()
         };
 
-        let run = if action.concurrent {
-            self.chain_engine
-                .run_concurrent(&pick, &arg_stack, start_event_id, cancel)
-                .await
-        } else {
-            self.chain_engine
-                .run_sequential(&pick, &arg_stack, start_event_id, cancel)
-                .await
+        let running = RunningAction {
+            action_id: action.id,
+            start_event_id,
+            trigger_event_id: req.trigger_event_id,
         };
+        let run = self
+            .chain_engine
+            .run_action(running, action.concurrent, &pick, &arg_stack, cancel)
+            .await;
 
         ctx.telemetry = run.telemetry;
         ctx.outcome = match run.signal {

@@ -85,13 +85,15 @@ pub use overlay_shows::{
 };
 pub use queue_depth::{QueueDepth, QueueDepthWatch, QueueDepths};
 pub use queue_scheduler::{
-    MAX_PENDING_PER_QUEUE, MembershipOutcome, QueueIntake, QueueMode, QueueProcessing,
+    MAX_PENDING_PER_QUEUE, MembershipOutcome, QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON,
+    QUEUE_OVERFLOW_REASON, QUEUE_PAUSED_REASON, QueueIntake, QueueMode, QueueProcessing,
     QueueRuntimeState, QueueScheduler, QueueSchedulerHandle, SchedulerCell, SchedulerError,
     SchedulerRequest,
 };
 pub use scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleRequest, ScheduledPlacement,
-    ScheduledRunsHandle, ScheduledRunsParts, SystemWallClock, WallClock, spawn_scheduled_runs,
+    ScheduledRunsCell, ScheduledRunsHandle, ScheduledRunsParts, SystemWallClock, WallClock,
+    spawn_scheduled_runs,
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};
@@ -102,7 +104,7 @@ pub use speak_dispatcher::{
 pub use stream_live::{LiveSource, StreamLiveHandle, StreamLiveState, spawn_stream_live_signal};
 pub use sub_action_runners::{
     CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
-    overlay_send_targets, register_core_sub_actions,
+    overlay_send_targets, register_core_sub_actions, register_scheduled_run_sub_actions,
 };
 pub use timer_scheduler::spawn_timer_scheduler;
 pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};

@@ -1,7 +1,9 @@
 mod core_action_cancel;
+mod core_action_cancel_scheduled;
 mod core_action_disable;
 mod core_action_enable;
 mod core_action_run;
+mod core_action_schedule;
 mod core_action_toggle;
 mod core_args_set;
 mod core_clipboard_copy;
@@ -64,6 +66,7 @@ mod core_users_get_var;
 mod core_users_increment_var;
 mod core_users_set_var;
 mod core_users_shared;
+mod datetime_input;
 mod file_sandbox;
 pub(crate) mod interpolate;
 mod os_ports;
@@ -76,9 +79,17 @@ mod server_broadcast;
 mod twitch_chat_send_message;
 
 pub use core_action_cancel::CoreActionCancelRunner;
+pub use core_action_cancel_scheduled::{
+    CANCEL_SCHEDULED_KIND_ID, CoreActionCancelScheduledRunner, DEFAULT_CANCELLED_VARIABLE,
+};
 pub use core_action_disable::CoreActionDisableRunner;
 pub use core_action_enable::CoreActionEnableRunner;
 pub use core_action_run::CoreActionRunRunner;
+pub use core_action_schedule::{
+    CoreActionScheduleRunner, DEFAULT_DUE_AT_VARIABLE, DEFAULT_SCHEDULED_ID_VARIABLE,
+    POLICY_RUN_LATE_ONCE, POLICY_SKIP_IF_LATE, SCHEDULE_ACTION_KIND_ID, UNIT_DAYS, UNIT_HOURS,
+    UNIT_MINUTES,
+};
 pub use core_action_toggle::CoreActionToggleRunner;
 pub use core_args_set::CoreArgsSetRunner;
 pub use core_clipboard_copy::CoreClipboardCopyRunner;
@@ -167,7 +178,21 @@ use crate::condition::ConditionGate;
 use crate::config::Config;
 use crate::egress::{EgressClient, HttpMethod};
 use crate::overlay_service::OverlayServiceCell;
+use crate::scheduled_runs::ScheduledRunsCell;
 use crate::script_registry::ScriptRegistry;
+
+pub fn register_scheduled_run_sub_actions(
+    reg: &mut SubActionRegistry,
+    scheduled_runs: ScheduledRunsCell,
+) -> Result<(), RegistryError> {
+    reg.register(Box::new(CoreActionScheduleRunner::new(
+        scheduled_runs.clone(),
+    )))?;
+    reg.register(Box::new(CoreActionCancelScheduledRunner::new(
+        scheduled_runs,
+    )))?;
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn register_core_sub_actions(

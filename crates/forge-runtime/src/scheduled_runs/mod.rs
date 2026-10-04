@@ -1,4 +1,5 @@
 mod catch_up;
+mod cell;
 mod clock;
 mod hand_off;
 mod handle;
@@ -9,6 +10,7 @@ mod request;
 mod scheduler;
 
 pub use catch_up::CatchUpSettle;
+pub use cell::ScheduledRunsCell;
 pub use clock::{SystemWallClock, WallClock};
 pub use hand_off::{
     ACTION_DISABLED_REASON, ACTION_NOT_FOUND_REASON, ACTIONS_UNAVAILABLE_REASON, HandOff,

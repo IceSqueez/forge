@@ -2,9 +2,10 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use forge_events::{Event, EventSource};
 use forge_registry::SubActionRegistry;
 use forge_runtime::queue_scheduler::MAX_PENDING_PER_QUEUE;
@@ -13,12 +14,13 @@ use forge_runtime::scheduled_runs::{
     MAX_PENDING_SCHEDULED_RUNS, MAX_PENDING_SCHEDULED_RUNS_PER_ACTION, MAX_SCHEDULE_DELAY,
     MAX_SCHEDULE_KEY_CHARS, MAX_SCHEDULED_ARGS_BYTES, MIN_LATE_TOLERANCE, MIN_SCHEDULE_DELAY,
     MISSED_REASON, SCHEDULED_AT_VARIABLE, SCHEDULED_DUE_AT_VARIABLE, SCHEDULED_KEY_VARIABLE,
-    SCHEDULED_LATE_SECONDS_VARIABLE, SCHEDULED_RUN_DUE_KIND, UNREADABLE_REASON,
+    SCHEDULED_LATE_SECONDS_VARIABLE, SCHEDULED_RUN_DUE_KIND, UNREADABLE_REASON, WALL_CLOCK_RECHECK,
 };
 use forge_runtime::{
-    ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, HandOff, NullEventLogRepo, QueueMode,
-    QueueScheduler, QueueSchedulerHandle, ScheduleDue, ScheduleError, ScheduleRequest,
-    ScheduledRunsHandle, ScheduledRunsParts, SchedulerRequest, WallClock, spawn_action_engine,
+    ActionCancelRegistry, Catalog, CatchUpSettle, EventBus, HandOff, NullEventLogRepo,
+    QUEUE_DRAINING_REASON, QUEUE_NOT_FOUND_REASON, QUEUE_PAUSED_REASON, QueueMode, QueueScheduler,
+    QueueSchedulerHandle, ScheduleDue, ScheduleError, ScheduleRequest, ScheduledRunsHandle,
+    ScheduledRunsParts, SchedulerRequest, WaitingRuns, WallClock, spawn_action_engine,
     spawn_scheduled_runs,
 };
 use forge_storage::action::MockActionRepo;
@@ -26,7 +28,8 @@ use forge_storage::history::MockHistoryRepo;
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
     CatalogRevision, DataProvider, MissedRunPolicy, MockScheduledRunRepo, ScheduledRun,
-    ScheduledRunId, ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
+    ScheduledRunId, ScheduledRunOutcome, ScheduledRunPlacement, ScheduledRunRepo, ScheduledRunSpec,
+    ScheduledRunState, StorageError,
 };
 use forge_storage_sqlite::SqliteBackend;
 use forge_types::{
@@ -35,6 +38,7 @@ use forge_types::{
 };
 use tempfile::TempDir;
 use time::OffsetDateTime;
+use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, timeout};
 
@@ -163,16 +167,37 @@ impl Harness {
     }
 
     fn start(&self, catch_up: CatchUpSettle) -> ScheduledRunsHandle {
-        spawn_scheduled_runs(ScheduledRunsParts {
-            repo: self.repo(),
+        spawn_scheduled_runs(self.parts(self.repo(), Arc::new(FixedClock), catch_up))
+    }
+
+    fn start_with(
+        &self,
+        repo: Arc<dyn ScheduledRunRepo>,
+        clock: Arc<dyn WallClock>,
+    ) -> ScheduledRunsHandle {
+        spawn_scheduled_runs(self.parts(repo, clock, CatchUpSettle::immediately()))
+    }
+
+    fn parts(
+        &self,
+        repo: Arc<dyn ScheduledRunRepo>,
+        clock: Arc<dyn WallClock>,
+        catch_up: CatchUpSettle,
+    ) -> ScheduledRunsParts {
+        ScheduledRunsParts {
+            repo,
             revision: self.dp.scheduled_run_revision(),
             catalog: Arc::clone(&self.catalog),
             actions: self.dp.action_repo(),
             queues: self.queues.clone(),
             bus: Arc::clone(&self.bus),
-            clock: Arc::new(FixedClock),
+            clock,
             catch_up,
-        })
+        }
+    }
+
+    async fn set_mode(&self, mode: QueueMode) {
+        self.queues.set_mode(self.queue_id, mode).await.unwrap();
     }
 
     async fn action(&self, shape: impl FnOnce(&mut Action)) -> Action {
@@ -250,36 +275,34 @@ fn outcome(run: &ScheduledRun) -> (ScheduledRunState, Option<&str>) {
     (run.state, run.outcome_reason.as_deref())
 }
 
+async fn waiting_for(handle: &ScheduledRunsHandle, ids: &[ScheduledRunId]) {
+    let mut watch = handle.watch_waiting_for_queue();
+    timeout(DEADLINE, async {
+        let mut waiting = watch.current();
+        while !ids.iter().all(|id| waiting.contains(id)) {
+            waiting = watch.changed().await.expect("the scheduler stopped");
+        }
+    })
+    .await
+    .expect("the runs never started waiting for their queue");
+}
+
+fn due_order(bus: &EventBus) -> Vec<i64> {
+    let mut order: Vec<i64> = bus
+        .recent(16)
+        .into_iter()
+        .filter(|event| event.kind == SCHEDULED_RUN_DUE_KIND)
+        .filter_map(|event| event.payload["scheduled_run_id"].as_i64())
+        .collect();
+    order.reverse();
+    order
+}
+
 #[tokio::test]
-async fn an_overdue_run_meets_its_queue_mode_on_hand_off() {
-    for (mode, bypass_pause, expected) in [
-        (
-            QueueMode::PAUSED,
-            false,
-            (ScheduledRunState::Failed, Some("queue_paused")),
-        ),
-        (
-            QueueMode::DRAINING,
-            false,
-            (ScheduledRunState::Failed, Some("queue_draining")),
-        ),
-        (
-            QueueMode::HOLDING,
-            false,
-            (ScheduledRunState::Dispatched, None),
-        ),
-        (
-            QueueMode::PAUSED,
-            true,
-            (ScheduledRunState::Dispatched, None),
-        ),
-    ] {
+async fn an_overdue_run_is_dispatched_into_a_queue_that_accepts_it() {
+    for (mode, bypass_pause) in [(QueueMode::HOLDING, false), (QueueMode::PAUSED, true)] {
         let harness = Harness::new().await;
-        harness
-            .queues
-            .set_mode(harness.queue_id, mode)
-            .await
-            .unwrap();
+        harness.set_mode(mode).await;
         let action = harness
             .action(|action| action.bypass_pause = bypass_pause)
             .await;
@@ -290,8 +313,30 @@ async fn an_overdue_run_meets_its_queue_mode_on_hand_off() {
         let run = harness.handed_off(&handle, id).await;
         assert_eq!(
             outcome(&run),
-            expected,
+            (ScheduledRunState::Dispatched, None),
             "{mode:?} bypass_pause={bypass_pause}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_overdue_run_stays_pending_while_its_queue_refuses_intake_and_dispatches_on_resume() {
+    for mode in [QueueMode::PAUSED, QueueMode::DRAINING] {
+        let harness = Harness::new().await;
+        harness.set_mode(mode).await;
+        let action = harness.action(|_| {}).await;
+        let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+        let handle = harness.start(CatchUpSettle::immediately());
+        waiting_for(&handle, &[id]).await;
+        let while_refused = harness.row(id).await.state;
+
+        harness.set_mode(QueueMode::RUNNING).await;
+
+        let after_resume = harness.handed_off(&handle, id).await.state;
+        assert_eq!(
+            (while_refused, after_resume),
+            (ScheduledRunState::Pending, ScheduledRunState::Dispatched),
+            "{mode:?}"
         );
     }
 }
@@ -369,11 +414,7 @@ async fn an_overdue_run_is_refused_only_once_its_queue_is_full() {
         ),
     ] {
         let harness = Harness::new().await;
-        harness
-            .queues
-            .set_mode(harness.queue_id, QueueMode::HOLDING)
-            .await
-            .unwrap();
+        harness.set_mode(QueueMode::HOLDING).await;
         let action = harness.action(|_| {}).await;
         harness.fill_queue(&action, already_pending).await;
         let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
@@ -405,11 +446,7 @@ async fn lateness_beyond_the_tolerance_skips_the_run_and_up_to_it_runs_once() {
         ),
     ] {
         let harness = Harness::new().await;
-        harness
-            .queues
-            .set_mode(harness.queue_id, QueueMode::HOLDING)
-            .await
-            .unwrap();
+        harness.set_mode(QueueMode::HOLDING).await;
         let action = harness.action(|_| {}).await;
         let mut late_run = overdue(action.id, late);
         late_run.missed_run_policy = policy;
@@ -1007,16 +1044,8 @@ async fn catch_up_hands_off_overdue_runs_by_due_time_then_insertion_order() {
         harness.handed_off(&handle, id).await;
     }
 
-    let mut order: Vec<i64> = harness
-        .bus
-        .recent(16)
-        .into_iter()
-        .filter(|event| event.kind == SCHEDULED_RUN_DUE_KIND)
-        .filter_map(|event| event.payload["scheduled_run_id"].as_i64())
-        .collect();
-    order.reverse();
     assert_eq!(
-        order,
+        due_order(&harness.bus),
         [oldest, oldest_tie, middle, newest].map(ScheduledRunId::get)
     );
 }
@@ -1147,4 +1176,464 @@ async fn a_dispatch_pass_fails_unreadable_due_runs_at_the_wall_clock_time() {
 
     let first = timeout(DEADLINE, calls.recv()).await.unwrap().unwrap();
     assert_eq!(first, (base(), UNREADABLE_REASON.to_owned()));
+}
+
+struct ShiftingClock(AtomicU64);
+
+impl ShiftingClock {
+    fn new() -> Arc<Self> {
+        Arc::new(Self(AtomicU64::new(0)))
+    }
+
+    fn advance(&self, by: Duration) {
+        self.0.fetch_add(by.as_secs(), Ordering::SeqCst);
+    }
+}
+
+impl WallClock for ShiftingClock {
+    fn now(&self) -> OffsetDateTime {
+        base() + Duration::from_secs(self.0.load(Ordering::SeqCst))
+    }
+}
+
+struct MidPassResume {
+    queues: QueueSchedulerHandle,
+    queue_id: QueueId,
+    armed: AtomicBool,
+    reads_since_armed: AtomicUsize,
+    resumed: AtomicBool,
+}
+
+impl MidPassResume {
+    fn arm(&self) {
+        self.reads_since_armed.store(0, Ordering::SeqCst);
+        self.armed.store(true, Ordering::SeqCst);
+    }
+}
+
+impl WallClock for MidPassResume {
+    fn now(&self) -> OffsetDateTime {
+        if self.armed.load(Ordering::SeqCst)
+            && self.reads_since_armed.fetch_add(1, Ordering::SeqCst) == 1
+        {
+            self.armed.store(false, Ordering::SeqCst);
+            tokio::task::block_in_place(|| {
+                Handle::current().block_on(self.queues.set_mode(self.queue_id, QueueMode::RUNNING))
+            })
+            .unwrap();
+            self.resumed.store(true, Ordering::SeqCst);
+        }
+        base()
+    }
+}
+
+enum RepoHook {
+    ArmOnFirstListDue(Arc<MidPassResume>),
+    SetModeOnFirstClaim(QueueSchedulerHandle, QueueId, QueueMode),
+}
+
+struct HookedRepo {
+    inner: Arc<dyn ScheduledRunRepo>,
+    hook: RepoHook,
+    fired: AtomicBool,
+}
+
+impl HookedRepo {
+    fn wrap(inner: Arc<dyn ScheduledRunRepo>, hook: RepoHook) -> Arc<dyn ScheduledRunRepo> {
+        Arc::new(Self {
+            inner,
+            hook,
+            fired: AtomicBool::new(false),
+        })
+    }
+}
+
+#[async_trait]
+impl ScheduledRunRepo for HookedRepo {
+    async fn schedule(
+        &self,
+        spec: &ScheduledRunSpec,
+    ) -> Result<ScheduledRunPlacement, StorageError> {
+        self.inner.schedule(spec).await
+    }
+
+    async fn get(&self, id: ScheduledRunId) -> Result<Option<ScheduledRun>, StorageError> {
+        self.inner.get(id).await
+    }
+
+    async fn list_pending(&self) -> Result<Vec<ScheduledRun>, StorageError> {
+        self.inner.list_pending().await
+    }
+
+    async fn list_due(&self, now: OffsetDateTime) -> Result<Vec<ScheduledRun>, StorageError> {
+        let due = self.inner.list_due(now).await?;
+        if let RepoHook::ArmOnFirstListDue(clock) = &self.hook
+            && !self.fired.swap(true, Ordering::SeqCst)
+        {
+            clock.arm();
+        }
+        Ok(due)
+    }
+
+    async fn fail_unreadable_due(
+        &self,
+        now: OffsetDateTime,
+        reason: &str,
+    ) -> Result<Vec<ScheduledRunId>, StorageError> {
+        self.inner.fail_unreadable_due(now, reason).await
+    }
+
+    async fn next_due(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+        self.inner.next_due().await
+    }
+
+    async fn claim(
+        &self,
+        id: ScheduledRunId,
+        claimed_at: OffsetDateTime,
+    ) -> Result<Option<ScheduledRun>, StorageError> {
+        if let RepoHook::SetModeOnFirstClaim(queues, queue_id, mode) = &self.hook
+            && !self.fired.swap(true, Ordering::SeqCst)
+        {
+            queues.set_mode(*queue_id, *mode).await.unwrap();
+        }
+        self.inner.claim(id, claimed_at).await
+    }
+
+    async fn cancel(&self, id: ScheduledRunId, at: OffsetDateTime) -> Result<bool, StorageError> {
+        self.inner.cancel(id, at).await
+    }
+
+    async fn cancel_by_key(&self, key: &str, at: OffsetDateTime) -> Result<bool, StorageError> {
+        self.inner.cancel_by_key(key, at).await
+    }
+
+    async fn settle(
+        &self,
+        id: ScheduledRunId,
+        outcome: ScheduledRunOutcome,
+        reason: Option<String>,
+        at: OffsetDateTime,
+    ) -> Result<bool, StorageError> {
+        self.inner.settle(id, outcome, reason, at).await
+    }
+
+    async fn list_recent_resolved(&self, limit: usize) -> Result<Vec<ScheduledRun>, StorageError> {
+        self.inner.list_recent_resolved(limit).await
+    }
+
+    async fn prune_resolved_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        self.inner.prune_resolved_before(cutoff).await
+    }
+
+    async fn count_pending(&self) -> Result<u64, StorageError> {
+        self.inner.count_pending().await
+    }
+
+    async fn count_pending_for_action(&self, action_id: ActionId) -> Result<u64, StorageError> {
+        self.inner.count_pending_for_action(action_id).await
+    }
+}
+
+#[tokio::test]
+async fn waiting_runs_are_handed_off_in_due_order_once_their_queue_resumes() {
+    let harness = Harness::new().await;
+    harness.set_mode(QueueMode::PAUSED).await;
+    let action = harness.action(|_| {}).await;
+    let one_minute = Duration::from_secs(60);
+    let later = harness.place(&overdue(action.id, one_minute)).await;
+    let earlier = harness.place(&overdue(action.id, one_minute * 3)).await;
+    let handle = harness.start(CatchUpSettle::immediately());
+    waiting_for(&handle, &[later, earlier]).await;
+
+    harness.set_mode(QueueMode::RUNNING).await;
+
+    for id in [later, earlier] {
+        harness.handed_off(&handle, id).await;
+    }
+    assert_eq!(
+        due_order(&harness.bus),
+        [earlier, later].map(ScheduledRunId::get)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_resuming_mid_pass_never_lets_a_later_run_overtake_an_earlier_one() {
+    let harness = Harness::new().await;
+    harness.set_mode(QueueMode::PAUSED).await;
+    let action = harness.action(|_| {}).await;
+    let one_minute = Duration::from_secs(60);
+    let earlier = harness.place(&overdue(action.id, one_minute * 3)).await;
+    let later = harness.place(&overdue(action.id, one_minute)).await;
+    let clock = Arc::new(MidPassResume {
+        queues: harness.queues.clone(),
+        queue_id: harness.queue_id,
+        armed: AtomicBool::new(false),
+        reads_since_armed: AtomicUsize::new(0),
+        resumed: AtomicBool::new(false),
+    });
+    let repo = HookedRepo::wrap(
+        harness.repo(),
+        RepoHook::ArmOnFirstListDue(Arc::clone(&clock)),
+    );
+
+    let handle = harness.start_with(repo, Arc::clone(&clock) as Arc<dyn WallClock>);
+
+    for id in [earlier, later] {
+        harness.handed_off(&handle, id).await;
+    }
+    assert_eq!(
+        (
+            clock.resumed.load(Ordering::SeqCst),
+            due_order(&harness.bus)
+        ),
+        (true, vec![earlier.get(), later.get()])
+    );
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Wake {
+    Resume,
+    StillRefusing,
+}
+
+#[tokio::test]
+async fn a_waiting_skip_if_late_run_is_judged_against_its_tolerance_on_the_next_pass() {
+    for (waited, wake, expected) in [
+        (
+            MIN_LATE_TOLERANCE,
+            Wake::Resume,
+            (ScheduledRunState::Dispatched, None),
+        ),
+        (
+            MIN_LATE_TOLERANCE + ONE_SECOND,
+            Wake::StillRefusing,
+            (ScheduledRunState::Skipped, Some(MISSED_REASON)),
+        ),
+    ] {
+        let harness = Harness::new().await;
+        harness.set_mode(QueueMode::PAUSED).await;
+        let action = harness.action(|_| {}).await;
+        let mut due_now = spec(action.id, base());
+        due_now.missed_run_policy = MissedRunPolicy::SkipIfLateBy(MIN_LATE_TOLERANCE);
+        let id = harness.place(&due_now).await;
+        let clock = ShiftingClock::new();
+        let handle = harness.start_with(harness.repo(), Arc::clone(&clock) as Arc<dyn WallClock>);
+        waiting_for(&handle, &[id]).await;
+
+        clock.advance(waited);
+        harness
+            .set_mode(match wake {
+                Wake::Resume => QueueMode::RUNNING,
+                Wake::StillRefusing => QueueMode::DRAINING,
+            })
+            .await;
+
+        let run = harness.handed_off(&handle, id).await;
+        assert_eq!(outcome(&run), expected, "waited {waited:?}, {wake:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_run_late_once_run_waits_indefinitely_and_reports_the_whole_wait_as_lateness() {
+    let mut harness = Harness::new().await;
+    harness.set_mode(QueueMode::PAUSED).await;
+    let action = harness.action(|_| {}).await;
+    let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+    let clock = ShiftingClock::new();
+    let handle = harness.start_with(harness.repo(), Arc::clone(&clock) as Arc<dyn WallClock>);
+    waiting_for(&handle, &[id]).await;
+    let paused_for = MAX_LATE_TOLERANCE * 2;
+
+    clock.advance(paused_for);
+    harness.set_mode(QueueMode::RUNNING).await;
+
+    let context = harness.next_run().await;
+    let expected_late = i64::try_from((paused_for + FIVE_MINUTES).as_secs()).unwrap();
+    assert_eq!(
+        context
+            .arg_stack_snapshot
+            .get(SCHEDULED_LATE_SECONDS_VARIABLE),
+        Some(&Variant::Int(expected_late))
+    );
+}
+
+#[tokio::test]
+async fn run_now_on_a_waiting_run_reports_its_queue_and_leaves_it_pending() {
+    for (mode, reason) in [
+        (QueueMode::PAUSED, QUEUE_PAUSED_REASON),
+        (QueueMode::DRAINING, QUEUE_DRAINING_REASON),
+    ] {
+        let harness = Harness::new().await;
+        harness.set_mode(mode).await;
+        let action = harness.action(|_| {}).await;
+        let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+        let handle = harness.start(CatchUpSettle::immediately());
+        waiting_for(&handle, &[id]).await;
+
+        let handed = timeout(DEADLINE, handle.run_now(id))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            (handed, harness.row(id).await.state),
+            (HandOff::WaitingForQueue(reason), ScheduledRunState::Pending),
+            "{mode:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_waiting_run_fails_once_its_queue_is_removed() {
+    let harness = Harness::new().await;
+    harness.set_mode(QueueMode::PAUSED).await;
+    let action = harness.action(|_| {}).await;
+    let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+    let handle = harness.start(CatchUpSettle::immediately());
+    waiting_for(&handle, &[id]).await;
+
+    harness.queues.deregister(harness.queue_id).await.unwrap();
+
+    let run = harness.handed_off(&handle, id).await;
+    assert_eq!(
+        outcome(&run),
+        (ScheduledRunState::Failed, Some(QUEUE_NOT_FOUND_REASON))
+    );
+}
+
+#[tokio::test]
+async fn the_waiting_watch_lists_a_run_while_it_waits_and_drops_it_once_dispatched() {
+    let harness = Harness::new().await;
+    harness.set_mode(QueueMode::PAUSED).await;
+    let action = harness.action(|_| {}).await;
+    let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+    let handle = harness.start(CatchUpSettle::immediately());
+    let watch = handle.watch_waiting_for_queue();
+    waiting_for(&handle, &[id]).await;
+    let while_paused = watch.current();
+
+    harness.set_mode(QueueMode::RUNNING).await;
+    harness.handed_off(&handle, id).await;
+
+    assert_eq!(
+        (while_paused, watch.current()),
+        (WaitingRuns::from([id]), WaitingRuns::new())
+    );
+}
+
+#[tokio::test]
+async fn a_pause_between_the_intake_check_and_admission_keeps_the_run_in_its_queue() {
+    let mut harness = Harness::new().await;
+    let action = harness.action(|_| {}).await;
+    let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+    let repo = HookedRepo::wrap(
+        harness.repo(),
+        RepoHook::SetModeOnFirstClaim(harness.queues.clone(), harness.queue_id, QueueMode::PAUSED),
+    );
+    let handle = harness.start_with(repo, Arc::new(FixedClock));
+    let state = harness.handed_off(&handle, id).await.state;
+    let held = harness.queues.queue_states().await.unwrap()[&harness.queue_id].pending;
+
+    harness.set_mode(QueueMode::RUNNING).await;
+
+    let ran = match harness.next_run().await.metadata {
+        ExecutionMetadata::Scheduled {
+            scheduled_run_id, ..
+        } => Some(scheduled_run_id),
+        _ => None,
+    };
+    assert_eq!(
+        (state, held, ran),
+        (ScheduledRunState::Dispatched, 1, Some(id.get()))
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_run_waiting_on_a_paused_queue_is_rechecked_no_faster_than_the_wall_clock_cadence() {
+    let queue = Queue {
+        id: QueueId::new(),
+        name: "paused".to_owned(),
+        description: String::new(),
+        concurrency: 1,
+    };
+    let action = Action {
+        id: ActionId::new(),
+        name: "follow-up".to_owned(),
+        group: None,
+        queue_id: queue.id,
+        enabled: true,
+        concurrent: false,
+        bypass_pause: false,
+        execution_mode: ExecutionMode::Sequential,
+        description: None,
+        sub_actions: Vec::new(),
+    };
+    let mut actions = MockActionRepo::new();
+    let listed = action.clone();
+    actions
+        .expect_list()
+        .returning(move || Ok(vec![listed.clone()]));
+    let mut triggers = MockTriggerInstanceRepo::new();
+    triggers
+        .expect_list_for_action()
+        .returning(|_| Ok(Vec::new()));
+    let catalog = Catalog::new(
+        Arc::new(actions),
+        Arc::new(triggers),
+        CatalogRevision::new(),
+    );
+    let bus = EventBus::new(Arc::new(NullEventLogRepo));
+    let engine = spawn_action_engine(
+        Arc::clone(&bus),
+        Arc::clone(&catalog),
+        Arc::new(MockActionRepo::new()),
+        Arc::new(MockHistoryRepo::new()),
+        Arc::new(SubActionRegistry::new()),
+        Arc::new(ActionCancelRegistry::new()),
+    );
+    let queues = QueueScheduler::spawn(engine, Arc::clone(&bus), vec![queue.clone()]);
+    queues.set_mode(queue.id, QueueMode::PAUSED).await.unwrap();
+    let waiting = ScheduledRun {
+        id: ScheduledRunId::new(1),
+        spec: overdue(action.id, FIVE_MINUTES),
+        state: ScheduledRunState::Pending,
+        outcome_reason: None,
+        resolved_at: None,
+    };
+    let watched = Duration::from_secs(10 * 60);
+    let cadence_passes =
+        usize::try_from(watched.as_secs() / WALL_CLOCK_RECHECK.as_secs()).unwrap() + 1;
+    let reads = Arc::new(AtomicUsize::new(0));
+    let (hot_tx, mut hot) = mpsc::unbounded_channel();
+    let mut repo = MockScheduledRunRepo::new();
+    repo.expect_next_due()
+        .returning(|| Ok(Some(base() - FIVE_MINUTES)));
+    repo.expect_fail_unreadable_due()
+        .returning(|_, _| Ok(Vec::new()));
+    let counted = Arc::clone(&reads);
+    repo.expect_list_due().returning(move |_| {
+        if counted.fetch_add(1, Ordering::SeqCst) >= cadence_passes * 4 {
+            let _ = hot_tx.send(());
+        }
+        Ok(vec![waiting.clone()])
+    });
+
+    let _handle = spawn_scheduled_runs(ScheduledRunsParts {
+        repo: Arc::new(repo),
+        revision: CatalogRevision::new(),
+        catalog,
+        actions: Arc::new(MockActionRepo::new()),
+        queues,
+        bus,
+        clock: Arc::new(FixedClock),
+        catch_up: CatchUpSettle::immediately(),
+    });
+    tokio::select! {
+        () = tokio::time::sleep(watched + WALL_CLOCK_RECHECK / 2) => {}
+        _ = hot.recv() => {}
+    }
+
+    let observed = reads.load(Ordering::SeqCst);
+    assert!((2..=cadence_passes).contains(&observed), "{observed} reads");
 }

@@ -1271,4 +1271,118 @@ mod tests {
         assert_eq!(restored, SEED);
         assert!(seen.is_empty(), "expected no commit, saw {seen:?}");
     }
+
+    fn press(vcx: &mut gpui::VisualTestContext, keys: &str) {
+        vcx.update(|_window, cx| bind_text_input_keys(cx));
+        vcx.simulate_keystrokes(keys);
+        vcx.run_until_parked();
+    }
+
+    #[gpui::test]
+    fn tab_commits_an_edited_field_even_when_it_is_the_only_tab_stop(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for key in ["tab", "shift-tab"] {
+            let seen = commits_while(cx, |input, vcx| {
+                type_more(input, vcx);
+                press(vcx, key);
+                leave(vcx);
+            });
+
+            assert_eq!(seen, ["blurred:amy!"], "{key}");
+        }
+    }
+
+    struct TwoFields {
+        first: Entity<TextInput>,
+        second: Entity<TextInput>,
+    }
+
+    impl Render for TwoFields {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div().child(self.first.clone()).child(self.second.clone())
+        }
+    }
+
+    struct FocusWalk {
+        first_commits: Vec<String>,
+        focused_first: Vec<bool>,
+    }
+
+    fn walk_two_fields(
+        cx: &mut gpui::TestAppContext,
+        edit_first: bool,
+        keys: &[&str],
+    ) -> FocusWalk {
+        let (form, vcx) = cx.add_window_view(|_window, cx| TwoFields {
+            first: cx.new(|cx| TextInput::new("first", cx)),
+            second: cx.new(|cx| TextInput::new("second", cx)),
+        });
+        vcx.update(|window, _cx| window.activate_window());
+        let (first, second) =
+            vcx.update(|_window, cx| (form.read(cx).first.clone(), form.read(cx).second.clone()));
+        let commits = vcx.update(|_window, cx| {
+            cx.new(|cx| Commits {
+                seen: Vec::new(),
+                _sub: cx.subscribe(&first, |this: &mut Commits, _field, event, _cx| {
+                    if let Some(label) = commit_label(event) {
+                        this.seen.push(label);
+                    }
+                }),
+            })
+        });
+        vcx.update(|_window, cx| first.update(cx, |field, cx| field.set_content(SEED, cx)));
+        vcx.update(|window, cx| first.update(cx, |field, cx| field.focus(window, cx)));
+        vcx.run_until_parked();
+        if edit_first {
+            type_more(&first, vcx);
+        }
+
+        let mut focused_first = Vec::new();
+        for key in keys {
+            press(vcx, key);
+            let (on_first, on_second) = vcx.update(|window, cx| {
+                (
+                    first.read(cx).focus_handle(cx).is_focused(window),
+                    second.read(cx).focus_handle(cx).is_focused(window),
+                )
+            });
+            assert_ne!(
+                on_first, on_second,
+                "exactly one field holds focus after {key}"
+            );
+            focused_first.push(on_first);
+        }
+        FocusWalk {
+            first_commits: vcx.update(|_window, cx| commits.read(cx).seen.clone()),
+            focused_first,
+        }
+    }
+
+    #[gpui::test]
+    fn tab_and_shift_tab_move_focus_between_fields(cx: &mut gpui::TestAppContext) {
+        let walk = walk_two_fields(cx, false, &["tab", "shift-tab"]);
+
+        assert_eq!(walk.focused_first, [false, true]);
+    }
+
+    #[gpui::test]
+    fn tab_away_commits_the_edit_once_and_later_round_trips_stay_silent(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let walk = walk_two_fields(cx, true, &["tab", "shift-tab", "tab"]);
+
+        assert_eq!(walk.first_commits, ["blurred:amy!"]);
+    }
+
+    #[gpui::test]
+    fn tab_away_from_an_unedited_field_emits_nothing(cx: &mut gpui::TestAppContext) {
+        let walk = walk_two_fields(cx, false, &["tab"]);
+
+        assert!(
+            walk.first_commits.is_empty(),
+            "expected no commit, saw {:?}",
+            walk.first_commits
+        );
+    }
 }

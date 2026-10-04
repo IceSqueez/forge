@@ -98,6 +98,13 @@ pub trait ActionRepo: Send + Sync {
         Err(StorageError::NotReady)
     }
 
+    async fn archive_reporting_cancelled_runs(
+        &self,
+        id: ActionId,
+    ) -> Result<Option<u64>, StorageError> {
+        Ok(self.archive(id).await?.then_some(0))
+    }
+
     async fn restore(&self, _id: ActionId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
     }

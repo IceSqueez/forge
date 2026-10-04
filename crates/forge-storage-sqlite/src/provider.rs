@@ -190,7 +190,6 @@ impl SqliteBackend {
             action: RevisingActionRepo::wrap_cascading_scheduled_runs(
                 Arc::new(SqliteActionRepo::new(pool.clone())),
                 catalog_revision.clone(),
-                Arc::clone(&scheduled_run),
                 scheduled_run_revision.clone(),
             ),
             trigger_instance: RevisingTriggerInstanceRepo::wrap(

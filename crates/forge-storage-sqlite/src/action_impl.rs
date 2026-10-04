@@ -394,6 +394,13 @@ impl ActionRepo for SqliteActionRepo {
     }
 
     async fn archive(&self, id: ActionId) -> Result<bool, StorageError> {
+        Ok(self.archive_reporting_cancelled_runs(id).await?.is_some())
+    }
+
+    async fn archive_reporting_cancelled_runs(
+        &self,
+        id: ActionId,
+    ) -> Result<Option<u64>, StorageError> {
         let id_str = id.to_string();
         let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1000;
         let mut tx = self
@@ -410,8 +417,9 @@ impl ActionRepo for SqliteActionRepo {
                 .await
                 .map_err(SqliteStorageError::Sqlx)?;
         let archived = result.rows_affected() > 0;
+        let mut cancelled_runs = 0;
         if archived {
-            sqlx::query(
+            let cancelled = sqlx::query(
                 "UPDATE scheduled_runs SET state = 'cancelled', outcome_reason = ?, resolved_at = ?
                  WHERE target_action_id = ? AND state = 'pending'",
             )
@@ -421,10 +429,11 @@ impl ActionRepo for SqliteActionRepo {
             .execute(&mut *tx)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
+            cancelled_runs = cancelled.rows_affected();
         }
         tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
 
-        Ok(archived)
+        Ok(archived.then_some(cancelled_runs))
     }
 
     async fn restore(&self, id: ActionId) -> Result<bool, StorageError> {

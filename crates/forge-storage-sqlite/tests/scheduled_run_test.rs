@@ -5,10 +5,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_storage::{
-    DataProvider, MissedRunPolicy, ScheduledRun, ScheduledRunId, ScheduledRunOutcome,
-    ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState, StorageError,
+    CatalogRevision, DataProvider, MissedRunPolicy, RevisingScheduledRunRepo, ScheduledRun,
+    ScheduledRunId, ScheduledRunOutcome, ScheduledRunRepo, ScheduledRunSpec, ScheduledRunState,
+    StorageError,
 };
-use forge_storage_sqlite::{SqliteBackend, SqlitePools, apply_migrations, connect_pools};
+use forge_storage_sqlite::{
+    SqliteBackend, SqlitePools, SqliteScheduledRunRepo, apply_migrations, connect_pools,
+};
 use forge_types::{Action, ActionId, EventId, Variant};
 use time::OffsetDateTime;
 
@@ -852,4 +855,167 @@ async fn the_schema_allows_one_pending_run_per_key_and_any_number_of_resolved_on
     row("pending", None).await.unwrap();
 
     assert!(row("pending", None).await.is_err());
+}
+
+const UNREADABLE: &str = "unreadable";
+
+async fn insert_unreadable(
+    pools: &SqlitePools,
+    due_at: OffsetDateTime,
+    state: &str,
+    resolved_at: Option<i64>,
+) -> ScheduledRunId {
+    let inserted = sqlx::query(
+        "INSERT INTO scheduled_runs (
+            target_action_id, due_at, missed_policy, args, scheduled_at, label, state, resolved_at
+        ) VALUES ('not-an-action-id', ?, 'run_late_once', '{}', 0, 'l', ?, ?)",
+    )
+    .bind(due_at.unix_timestamp() * 1000)
+    .bind(state)
+    .bind(resolved_at)
+    .execute(pools.writer())
+    .await
+    .unwrap();
+    ScheduledRunId::new(inserted.last_insert_rowid())
+}
+
+struct UnreadableFixture {
+    pools: SqlitePools,
+    _dir: tempfile::TempDir,
+    repo: Arc<dyn ScheduledRunRepo>,
+    revision: CatalogRevision,
+    due_unreadable: ScheduledRunId,
+    future_unreadable: ScheduledRunId,
+    dispatched_unreadable: ScheduledRunId,
+    due_readable: ScheduledRunId,
+}
+
+async fn unreadable_fixture() -> UnreadableFixture {
+    let (pools, dir) = migrated_pools().await;
+    let revision = CatalogRevision::new();
+    let repo = RevisingScheduledRunRepo::wrap(
+        Arc::new(SqliteScheduledRunRepo::new(pools.clone())),
+        revision.clone(),
+    );
+    let due_unreadable = insert_unreadable(&pools, at_min(-5), "pending", None).await;
+    let future_unreadable = insert_unreadable(&pools, at_min(60), "pending", None).await;
+    let dispatched_unreadable = insert_unreadable(&pools, at_min(-5), "dispatched", Some(1)).await;
+    let due_readable = place(&repo, &spec(ActionId::new(), 1, None)).await;
+    UnreadableFixture {
+        pools,
+        _dir: dir,
+        repo,
+        revision,
+        due_unreadable,
+        future_unreadable,
+        dispatched_unreadable,
+        due_readable,
+    }
+}
+
+async fn raw_state(
+    pools: &SqlitePools,
+    id: ScheduledRunId,
+) -> (String, Option<String>, Option<i64>) {
+    sqlx::query_as("SELECT state, outcome_reason, resolved_at FROM scheduled_runs WHERE id = ?")
+        .bind(id.get())
+        .fetch_one(pools.reader())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn failing_unreadable_due_runs_returns_only_due_pending_rows_that_cannot_decode() {
+    let fixture = unreadable_fixture().await;
+
+    let failed = fixture
+        .repo
+        .fail_unreadable_due(at_min(10), UNREADABLE)
+        .await
+        .unwrap();
+
+    assert_eq!(failed, vec![fixture.due_unreadable]);
+}
+
+#[tokio::test]
+async fn a_failed_unreadable_run_records_the_reason_and_the_resolution_time() {
+    let fixture = unreadable_fixture().await;
+
+    fixture
+        .repo
+        .fail_unreadable_due(at_min(10), UNREADABLE)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        raw_state(&fixture.pools, fixture.due_unreadable).await,
+        (
+            "failed".to_owned(),
+            Some(UNREADABLE.to_owned()),
+            Some(at_min(10).unix_timestamp() * 1000)
+        )
+    );
+}
+
+#[tokio::test]
+async fn failing_unreadable_due_runs_leaves_every_other_row_as_it_was() {
+    let fixture = unreadable_fixture().await;
+
+    fixture
+        .repo
+        .fail_unreadable_due(at_min(10), UNREADABLE)
+        .await
+        .unwrap();
+
+    let states = (
+        raw_state(&fixture.pools, fixture.future_unreadable).await.0,
+        raw_state(&fixture.pools, fixture.dispatched_unreadable)
+            .await
+            .0,
+        fetch(&fixture.repo, fixture.due_readable).await.state,
+    );
+    assert_eq!(
+        states,
+        (
+            "pending".to_owned(),
+            "dispatched".to_owned(),
+            ScheduledRunState::Pending
+        )
+    );
+}
+
+#[tokio::test]
+async fn failing_unreadable_due_runs_advances_the_schedule_revision_only_when_a_row_failed() {
+    let fixture = unreadable_fixture().await;
+
+    for (pass, expect_advance) in [("first", true), ("second", false)] {
+        let before = fixture.revision.current();
+        fixture
+            .repo
+            .fail_unreadable_due(at_min(10), UNREADABLE)
+            .await
+            .unwrap();
+        assert_eq!(
+            fixture.revision.current() > before,
+            expect_advance,
+            "{pass}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn next_due_moves_past_an_unreadable_run_once_it_is_failed() {
+    let fixture = unreadable_fixture().await;
+    let before = fixture.repo.next_due().await.unwrap();
+
+    fixture
+        .repo
+        .fail_unreadable_due(at_min(10), UNREADABLE)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        (before, fixture.repo.next_due().await.unwrap()),
+        (Some(at_min(-5)), Some(at_min(1)))
+    );
 }

@@ -816,6 +816,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn until_all_settled_waits_out_a_start_in_progress() {
+        let (release, hold) = oneshot::channel();
+        let factory = FakeFactory::new(
+            "twitch",
+            Behaviour {
+                hold_start: Some(hold),
+                ..Behaviour::default()
+            },
+        );
+        let harness = Harness::launch(&factory);
+        let slot = harness.slot(&factory);
+        let starting = tokio::spawn(async move { slot.set_enabled(true).await });
+        assert!(
+            settle_tasks(|| factory.starts() == 1).await,
+            "start never began"
+        );
+        let settled = tokio::spawn(harness.supervisor.watch().until_all_settled());
+        let waited_while_starting = !settle_tasks(|| settled.is_finished()).await;
+
+        release.send(()).unwrap();
+        starting.await.unwrap().unwrap();
+
+        let resolved = tokio::time::timeout(Duration::from_secs(5), settled)
+            .await
+            .is_ok();
+        assert_eq!((waited_while_starting, resolved), (true, true));
+    }
+
+    #[tokio::test]
     async fn rapid_toggles_during_a_start_coalesce_to_the_last_wish_without_restarting() {
         let (factory, harness) = toggle_while_starting(true).await;
 

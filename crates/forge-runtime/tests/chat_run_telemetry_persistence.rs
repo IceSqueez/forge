@@ -132,7 +132,8 @@ async fn run_for_chat_and_follow(chat: &Event, follow: &Event) -> Persisted {
             .lock()
             .unwrap()
             .extend(contexts.iter().filter_map(|ctx| match ctx.metadata {
-                ExecutionMetadata::Trigger { event_id, .. } => Some(event_id),
+                ExecutionMetadata::Trigger { event_id, .. }
+                | ExecutionMetadata::Scheduled { event_id, .. } => Some(event_id),
                 ExecutionMetadata::QuickAction { .. } => None,
             }));
         Ok(())

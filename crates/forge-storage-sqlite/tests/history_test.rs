@@ -140,7 +140,8 @@ async fn surviving_event_ids(backend: &SqliteBackend, action_id: ActionId) -> Ve
         .expect("recent_for_action")
         .into_iter()
         .filter_map(|c| match c.metadata {
-            ExecutionMetadata::Trigger { event_id, .. } => Some(event_id),
+            ExecutionMetadata::Trigger { event_id, .. }
+            | ExecutionMetadata::Scheduled { event_id, .. } => Some(event_id),
             ExecutionMetadata::QuickAction { .. } => None,
         })
         .collect()
@@ -268,6 +269,7 @@ fn run_labels(records: &[ExecutionContext]) -> Vec<String> {
         .map(|c| match &c.metadata {
             ExecutionMetadata::QuickAction { builtin_id, label } => format!("{builtin_id}/{label}"),
             ExecutionMetadata::Trigger { .. } => "trigger".to_owned(),
+            ExecutionMetadata::Scheduled { .. } => "scheduled".to_owned(),
         })
         .collect()
 }
@@ -532,4 +534,29 @@ async fn save_failed_outcome_roundtrips() {
         .expect("recent_for_action");
     assert_eq!(records.len(), 1);
     assert!(matches!(&records[0].outcome, ExecutionOutcome::Failed(msg) if msg == "rhai error"));
+}
+
+#[tokio::test]
+async fn a_scheduled_run_reads_back_with_its_scheduled_origin() {
+    let backend = setup().await;
+    let action_id = ActionId::new();
+    let mut ctx = make_ctx(action_id, EventId::new());
+    ctx.metadata = ExecutionMetadata::Scheduled {
+        event_id: EventId::new(),
+        scheduled_run_id: 42,
+        scheduled_by_action: Some(ActionId::new()),
+        scheduled_by_run: Some("run-7".to_owned()),
+    };
+
+    backend.history_repo().save(&ctx).await.expect("save");
+
+    let records = backend
+        .history_repo()
+        .recent_for_action(action_id, 1)
+        .await
+        .expect("recent_for_action");
+    assert_eq!(
+        records.into_iter().map(|c| c.metadata).collect::<Vec<_>>(),
+        vec![ctx.metadata]
+    );
 }

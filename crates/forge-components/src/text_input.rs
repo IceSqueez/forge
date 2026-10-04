@@ -36,6 +36,8 @@ actions!(
         Paste,
         Cut,
         Copy,
+        FocusNextField,
+        FocusPreviousField,
     ]
 );
 
@@ -51,6 +53,8 @@ pub fn bind_text_input_keys(cx: &mut App) {
         KeyBinding::new("end", End, Some(KEY_CONTEXT)),
         KeyBinding::new("enter", Submit, Some(KEY_CONTEXT)),
         KeyBinding::new("escape", Cancel, Some(KEY_CONTEXT)),
+        KeyBinding::new("tab", FocusNextField, Some(KEY_CONTEXT)),
+        KeyBinding::new("shift-tab", FocusPreviousField, Some(KEY_CONTEXT)),
         KeyBinding::new("cmd-a", SelectAll, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-a", SelectAll, Some(KEY_CONTEXT)),
         KeyBinding::new("cmd-c", Copy, Some(KEY_CONTEXT)),
@@ -112,7 +116,7 @@ impl CaretHost for TextInput {
 impl TextInput {
     pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            focus_handle: cx.focus_handle().tab_stop(true),
             content: SharedString::default(),
             placeholder: placeholder.into(),
             selected_range: 0..0,
@@ -309,11 +313,35 @@ impl TextInput {
     }
 
     fn on_blur(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        self.commit_on_leave(cx);
+    }
+
+    fn commit_on_leave(&mut self, cx: &mut Context<Self>) {
         if self.content == self.committed {
             return;
         }
         self.committed = self.content.clone();
         cx.emit(InputEvent::Blurred(self.content.clone()));
+    }
+
+    fn focus_next_field(
+        &mut self,
+        _: &FocusNextField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.commit_on_leave(cx);
+        window.focus_next(cx);
+    }
+
+    fn focus_previous_field(
+        &mut self,
+        _: &FocusPreviousField,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.commit_on_leave(cx);
+        window.focus_prev(cx);
     }
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
@@ -918,6 +946,8 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::submit))
             .on_action(cx.listener(Self::cancel))
+            .on_action(cx.listener(Self::focus_next_field))
+            .on_action(cx.listener(Self::focus_previous_field))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::paste))

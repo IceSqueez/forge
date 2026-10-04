@@ -876,4 +876,24 @@ mod tests {
             "{targets:?}"
         );
     }
+
+    #[test]
+    fn a_scheduled_run_names_the_action_that_scheduled_it_or_says_it_is_gone() {
+        crate::i18n::install_language(forge_storage::Language::En);
+        let source = ActionId::new();
+        let modal = RunHistoryModal::new("Scene", Arc::new(TriggerRegistry::new()))
+            .with_action_names(HashMap::from([(source, SharedString::from("Raid alert"))]));
+        for (scheduled_by, expected) in [
+            (Some(source), "Scheduled by Raid alert"),
+            (Some(ActionId::new()), "Scheduled by a deleted action"),
+            (None, "Scheduled run"),
+        ] {
+            let label: String = modal
+                .scheduled_by_label(scheduled_by)
+                .chars()
+                .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
+                .collect();
+            assert_eq!(label, expected, "{scheduled_by:?}");
+        }
+    }
 }

@@ -144,3 +144,212 @@ pub(crate) fn reason_label(reason: &str, late_by: Option<Span>) -> String {
         _ => reason_key(reason).map_or_else(|| reason.to_owned(), |key| tr!(key)),
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::path::Path;
+
+    use forge_storage::Language;
+
+    use super::*;
+    use crate::i18n::{install_language, message_in};
+
+    const OCT_4_2026_NOON_UTC: i64 = 1_791_115_200;
+    const MAR_15_2026_2330_UTC: i64 = 1_773_617_400;
+
+    const REASON_SOURCES: [&str; 3] = [
+        "../forge-storage/src/scheduled_run.rs",
+        "../forge-runtime/src/scheduled_runs/hand_off.rs",
+        "../forge-runtime/src/queue_scheduler.rs",
+    ];
+
+    fn plain(rendered: String) -> String {
+        rendered
+            .chars()
+            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
+            .collect()
+    }
+
+    fn reason_tokens_declared_in(source: &str) -> Vec<String> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(source);
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("pub const "))
+            .filter_map(|rest| rest.split_once("_REASON: &str = \""))
+            .filter_map(|(_, value)| value.strip_suffix("\";"))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    #[test]
+    fn span_of_seconds_rounds_up_to_minutes_then_floors_hours_and_days() {
+        for (seconds, expected) in [
+            (-30, Span::Minutes(1)),
+            (0, Span::Minutes(1)),
+            (1, Span::Minutes(1)),
+            (59, Span::Minutes(1)),
+            (60, Span::Minutes(1)),
+            (61, Span::Minutes(2)),
+            (3_540, Span::Minutes(59)),
+            (
+                3_600,
+                Span::Hours {
+                    hours: 1,
+                    minutes: 0,
+                },
+            ),
+            (
+                3_661,
+                Span::Hours {
+                    hours: 1,
+                    minutes: 1,
+                },
+            ),
+            (
+                86_399,
+                Span::Hours {
+                    hours: 23,
+                    minutes: 59,
+                },
+            ),
+            (86_400, Span::Days { days: 1, hours: 0 }),
+            (90_061, Span::Days { days: 1, hours: 1 }),
+        ] {
+            assert_eq!(Span::of_seconds(seconds), expected, "{seconds} s");
+        }
+    }
+
+    #[test]
+    fn countdown_is_due_now_from_the_due_second_onwards() {
+        let now = OffsetDateTime::from_unix_timestamp(OCT_4_2026_NOON_UTC).unwrap();
+        for (due_in_secs, expected) in [
+            (-172_800, Countdown::DueNow),
+            (-1, Countdown::DueNow),
+            (0, Countdown::DueNow),
+            (1, Countdown::In(Span::Minutes(1))),
+            (
+                3_600,
+                Countdown::In(Span::Hours {
+                    hours: 1,
+                    minutes: 0,
+                }),
+            ),
+        ] {
+            let due = now + time::Duration::seconds(due_in_secs);
+            assert_eq!(countdown(due, now), expected, "due in {due_in_secs} s");
+        }
+    }
+
+    #[test]
+    fn countdown_label_renders_due_now_or_the_remaining_span() {
+        let in_two_hours = Countdown::In(Span::Hours {
+            hours: 2,
+            minutes: 5,
+        });
+        for (language, remaining, expected) in [
+            (Language::En, Countdown::DueNow, "due now"),
+            (Language::En, in_two_hours, "in 2 h 5 min"),
+            (Language::Uk, Countdown::DueNow, "час настав"),
+            (Language::Uk, in_two_hours, "через 2 год 5 хв"),
+        ] {
+            install_language(language);
+            assert_eq!(plain(countdown_label(remaining)), expected, "{language:?}");
+        }
+    }
+
+    #[test]
+    fn every_reason_token_storage_or_runtime_declares_has_a_label_in_every_locale() {
+        for source in REASON_SOURCES {
+            let tokens = reason_tokens_declared_in(source);
+            assert!(!tokens.is_empty(), "{source} declares no reason tokens");
+            for token in tokens {
+                let key = reason_key(&token)
+                    .unwrap_or_else(|| panic!("{token} from {source} has no label key"));
+                for language in [Language::En, Language::Uk] {
+                    assert_ne!(
+                        message_in(language, key),
+                        key,
+                        "{language:?} catalog is missing {key}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reason_label_says_missed_by_the_late_span_only_for_missed_runs() {
+        let late = Some(Span::Hours {
+            hours: 1,
+            minutes: 30,
+        });
+        for (language, reason, late_by, expected) in [
+            (
+                Language::En,
+                MISSED_REASON,
+                late,
+                "Missed by 1 h 30 min - forge was not running at the due time",
+            ),
+            (
+                Language::En,
+                MISSED_REASON,
+                None,
+                "Missed - forge was not running at the due time",
+            ),
+            (
+                Language::En,
+                CANCELLED_REASON,
+                late,
+                "Cancelled before it was due",
+            ),
+            (
+                Language::Uk,
+                MISSED_REASON,
+                late,
+                "Пропущено на 1 год 30 хв - forge не працював у призначений час",
+            ),
+        ] {
+            install_language(language);
+            assert_eq!(
+                plain(reason_label(reason, late_by)),
+                expected,
+                "{language:?} {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn reason_label_shows_an_unknown_reason_verbatim() {
+        install_language(Language::En);
+        assert_eq!(reason_label("vendor_glitch", None), "vendor_glitch");
+    }
+
+    #[test]
+    fn every_outcome_badge_has_a_label_in_every_locale() {
+        for state in [
+            ScheduledRunState::Pending,
+            ScheduledRunState::Dispatched,
+            ScheduledRunState::Cancelled,
+            ScheduledRunState::Skipped,
+            ScheduledRunState::Failed,
+        ] {
+            let key = outcome_badge_key(outcome_tone(state));
+            for language in [Language::En, Language::Uk] {
+                assert_ne!(message_in(language, key), key, "{language:?} {state:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn local_stamp_shifts_the_instant_into_the_offset_across_midnight() {
+        install_language(Language::En);
+        assert_eq!(
+            local_stamp(
+                OffsetDateTime::from_unix_timestamp(MAR_15_2026_2330_UTC).unwrap(),
+                UtcOffset::from_hms(3, 0, 0).unwrap()
+            ),
+            "Mar 16, 2026 02:30"
+        );
+    }
+}

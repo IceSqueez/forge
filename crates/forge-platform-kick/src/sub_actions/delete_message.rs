@@ -161,8 +161,11 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
-        let client = KickSendChat::new(Arc::new(GrantLimiter))
-            .with_delete_base(format!("{}/chat", server.uri()));
+        let client = KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_delete_base(format!("{}/chat", server.uri()));
         DeleteMessageRunner::new(Arc::new(client), token_source())
     }
 
@@ -209,7 +212,10 @@ mod tests {
     #[test]
     fn default_config_message_id_matches_chat_trigger_arg_stack_key() {
         let runner = DeleteMessageRunner::new(
-            Arc::new(KickSendChat::new(Arc::new(GrantLimiter))),
+            Arc::new(KickSendChat::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
             token_source(),
         );
         assert_eq!(
@@ -221,7 +227,10 @@ mod tests {
     #[test]
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = DeleteMessageRunner::new(
-            Arc::new(KickSendChat::new(Arc::new(GrantLimiter))),
+            Arc::new(KickSendChat::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
             token_source(),
         );
 

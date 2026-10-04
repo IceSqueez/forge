@@ -230,8 +230,11 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> SendMessageRunner {
-        let client = KickSendChat::new(Arc::new(GrantLimiter))
-            .with_send_endpoint(format!("{}/chat", server.uri()));
+        let client = KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_send_endpoint(format!("{}/chat", server.uri()));
         SendMessageRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
 
@@ -289,8 +292,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = KickSendChat::new(Arc::new(GrantLimiter))
-            .with_send_endpoint(format!("{}/chat", server.uri()));
+        let client = KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_send_endpoint(format!("{}/chat", server.uri()));
         let runner = SendMessageRunner::new(
             Arc::new(client),
             token_source(),
@@ -306,8 +312,11 @@ mod tests {
     #[tokio::test]
     async fn user_mode_reports_a_broadcaster_id_failure_without_sending() {
         let server = MockServer::start().await;
-        let client = KickSendChat::new(Arc::new(GrantLimiter))
-            .with_send_endpoint(format!("{}/chat", server.uri()));
+        let client = KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_send_endpoint(format!("{}/chat", server.uri()));
         let runner = SendMessageRunner::new(
             Arc::new(client),
             token_source(),
@@ -332,7 +341,10 @@ mod tests {
     #[test]
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = SendMessageRunner::new(
-            Arc::new(KickSendChat::new(Arc::new(GrantLimiter))),
+            Arc::new(KickSendChat::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
             token_source(),
             broadcaster_id_source(42),
         );
@@ -416,8 +428,11 @@ mod tests {
                 .respond_with(ResponseTemplate::new(status))
                 .mount(&server)
                 .await;
-            let client = KickSendChat::new(Arc::new(GrantLimiter))
-                .with_send_endpoint(format!("{}/chat", server.uri()));
+            let client = KickSendChat::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )
+            .with_send_endpoint(format!("{}/chat", server.uri()));
             let runner = SendMessageRunner::new(Arc::new(client), token_source(), broadcaster_ids);
             let stack = ArgStack::new().set("u".to_owned(), Variant::String(String::new()));
             let publisher = RecordingPublisher::default();

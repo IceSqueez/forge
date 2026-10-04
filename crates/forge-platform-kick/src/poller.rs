@@ -330,11 +330,19 @@ mod tests {
     }
 
     fn channel_on(server: &MockServer) -> KickChannel {
-        KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+        KickChannel::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri())
     }
 
     fn rewards_on(server: &MockServer) -> KickRewards {
-        KickRewards::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+        KickRewards::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri())
     }
 
     fn channel_body(
@@ -789,8 +797,14 @@ mod tests {
     async fn stopping_the_poller_ends_its_task_and_closes_both_of_its_outputs() {
         let (event_tx, mut event_rx) = mpsc::channel(8);
         let (source, poller) = spawn_kick_poller(
-            Arc::new(KickChannel::new(Arc::new(GrantLimiter))),
-            Arc::new(KickRewards::new(Arc::new(GrantLimiter))),
+            Arc::new(KickChannel::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
+            Arc::new(KickRewards::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
             err_token(),
             event_tx,
         );

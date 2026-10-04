@@ -183,7 +183,11 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupUserRunner {
-        let channel = KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        let channel = KickChannel::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri());
         LookupUserRunner::new(Arc::new(channel), token_source())
     }
 
@@ -249,7 +253,10 @@ mod tests {
     #[test]
     fn validate_config_requires_a_non_empty_slug() {
         let runner = LookupUserRunner::new(
-            Arc::new(KickChannel::new(Arc::new(GrantLimiter))),
+            Arc::new(KickChannel::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
             token_source(),
         );
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

@@ -63,6 +63,7 @@ fn unconfigured_endpoints_reach_the_production_services_over_tls() {
             EndpointSurface::KickChatSocket,
             "wss://ws-us2.pusher.com/app",
         ),
+        (EndpointSurface::KickOAuth, "https://id.kick.com/oauth"),
         (
             EndpointSurface::YouTubeDataApi,
             "https://www.googleapis.com/youtube/v3",

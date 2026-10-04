@@ -178,7 +178,11 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> BanUserRunner {
-        let client = KickModeration::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        let client = KickModeration::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri());
         BanUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
 
@@ -222,7 +226,10 @@ mod tests {
     #[test]
     fn validate_config_accepts_non_empty_and_rejects_empty_missing_non_string() {
         let runner = BanUserRunner::new(
-            Arc::new(KickModeration::new(Arc::new(GrantLimiter))),
+            Arc::new(KickModeration::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
             token_source(),
             broadcaster_id_source(42),
         );

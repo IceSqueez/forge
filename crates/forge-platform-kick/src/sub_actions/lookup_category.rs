@@ -171,7 +171,11 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupCategoryRunner {
-        let categories = KickCategories::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        let categories = KickCategories::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri());
         LookupCategoryRunner::new(Arc::new(categories), token_source())
     }
 

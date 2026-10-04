@@ -214,8 +214,11 @@ mod tests {
     }
 
     fn grant_sender(server: &MockServer) -> KickSendChat {
-        KickSendChat::new(Arc::new(GrantLimiter))
-            .with_send_endpoint(format!("{}/chat", server.uri()))
+        KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_send_endpoint(format!("{}/chat", server.uri()))
     }
 
     #[tokio::test]
@@ -336,8 +339,11 @@ mod tests {
     #[tokio::test]
     async fn send_returns_rate_limit_exhausted_when_limiter_exhausted() {
         let server = MockServer::start().await;
-        let sender = KickSendChat::new(Arc::new(ExhaustedLimiter))
-            .with_send_endpoint(format!("{}/chat", server.uri()));
+        let sender = KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(ExhaustedLimiter),
+        )
+        .with_send_endpoint(format!("{}/chat", server.uri()));
 
         let err = sender.send("hi", "tok", 42, false).await.unwrap_err();
         assert!(matches!(err, PlatformError::RateLimitExhausted));
@@ -361,7 +367,11 @@ mod tests {
     }
 
     fn grant_deleter(server: &MockServer) -> KickSendChat {
-        KickSendChat::new(Arc::new(GrantLimiter)).with_delete_base(format!("{}/chat", server.uri()))
+        KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_delete_base(format!("{}/chat", server.uri()))
     }
 
     #[tokio::test]
@@ -440,8 +450,11 @@ mod tests {
     #[tokio::test]
     async fn delete_returns_rate_limit_exhausted_without_reaching_server() {
         let server = MockServer::start().await;
-        let sender = KickSendChat::new(Arc::new(ExhaustedLimiter))
-            .with_delete_base(format!("{}/chat", server.uri()));
+        let sender = KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(ExhaustedLimiter),
+        )
+        .with_delete_base(format!("{}/chat", server.uri()));
 
         let err = sender.delete("msg-1", "tok").await.unwrap_err();
         assert!(matches!(err, PlatformError::RateLimitExhausted));

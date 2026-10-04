@@ -814,11 +814,16 @@ mod tests {
         pub(super) fn bundle_with_viewer_channel()
         -> (Arc<KickIntegrationBundle>, watch::Sender<ViewerReport>) {
             let manager = Arc::new(KickCredentialsManager::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 Arc::new(EmptyRepo),
                 "test_cid".to_owned(),
                 "test_secret".to_owned(),
             ));
-            let platform = Arc::new(KickPlatform::new(manager.clone(), Arc::new(GrantLimiter)));
+            let platform = Arc::new(KickPlatform::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                manager.clone(),
+                Arc::new(GrantLimiter),
+            ));
             let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
             let (bundle, _) = KickIntegrationBundle::new(
                 "test_channel".to_owned(),
@@ -963,7 +968,10 @@ mod tests {
             register_kick_sub_actions(
                 &mut registry,
                 KickSubActionDeps {
-                    client: Arc::new(KickSendChat::new(Arc::clone(&limiter))),
+                    client: Arc::new(KickSendChat::new(
+                        &forge_platform_core::PlatformEndpoints::default(),
+                        Arc::clone(&limiter),
+                    )),
                     token_source: Arc::new(|| {
                         Box::pin(async { Ok("tok".to_owned()) })
                             as BoxFuture<'static, Result<String, PlatformError>>
@@ -972,10 +980,22 @@ mod tests {
                         Box::pin(async { Ok(1_u64) })
                             as BoxFuture<'static, Result<u64, PlatformError>>
                     }),
-                    moderation: Arc::new(KickModeration::new(Arc::clone(&limiter))),
-                    channel: Arc::new(KickChannel::new(Arc::clone(&limiter))),
-                    rewards: Arc::new(KickRewards::new(Arc::clone(&limiter))),
-                    categories: Arc::new(KickCategories::new(limiter)),
+                    moderation: Arc::new(KickModeration::new(
+                        &forge_platform_core::PlatformEndpoints::default(),
+                        Arc::clone(&limiter),
+                    )),
+                    channel: Arc::new(KickChannel::new(
+                        &forge_platform_core::PlatformEndpoints::default(),
+                        Arc::clone(&limiter),
+                    )),
+                    rewards: Arc::new(KickRewards::new(
+                        &forge_platform_core::PlatformEndpoints::default(),
+                        Arc::clone(&limiter),
+                    )),
+                    categories: Arc::new(KickCategories::new(
+                        &forge_platform_core::PlatformEndpoints::default(),
+                        limiter,
+                    )),
                 },
             )
             .unwrap();

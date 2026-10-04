@@ -179,7 +179,11 @@ mod tests {
     }
 
     fn moderation_on(server: &MockServer) -> KickModeration {
-        KickModeration::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+        KickModeration::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri())
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {
@@ -288,7 +292,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = KickModeration::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let client = KickModeration::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(ExhaustedLimiter),
+        )
+        .with_api_base(server.uri());
         let err = client.ban(99, 42, "tok").await.unwrap_err();
 
         assert!(matches!(err, PlatformError::RateLimitExhausted));

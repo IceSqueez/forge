@@ -279,12 +279,19 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> UpdateInfoRunner {
-        let client = KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        let client = KickChannel::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri());
         UpdateInfoRunner::new(Arc::new(client), token_source())
     }
 
     fn runner_offline() -> UpdateInfoRunner {
-        let client = KickChannel::new(Arc::new(GrantLimiter));
+        let client = KickChannel::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        );
         UpdateInfoRunner::new(Arc::new(client), token_source())
     }
 

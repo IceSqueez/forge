@@ -275,11 +275,16 @@ mod tests {
 
     fn platform(repo: Arc<InMemRepo>, limiter: Arc<dyn RateLimiter>) -> KickPlatform {
         let manager = Arc::new(KickCredentialsManager::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             repo,
             "test_cid".to_owned(),
             "test_secret".to_owned(),
         ));
-        KickPlatform::new(manager, limiter)
+        KickPlatform::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            manager,
+            limiter,
+        )
     }
 
     #[test]
@@ -327,7 +332,11 @@ mod tests {
             .mount(&server)
             .await;
         let mut p = platform(InMemRepo::with_valid_creds(), Arc::new(GrantLimiter));
-        p.sender = KickSendChat::new(Arc::new(GrantLimiter)).with_send_endpoint(server.uri());
+        p.sender = KickSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_send_endpoint(server.uri());
 
         p.send_reply("chan", "parent-7", "hello").await.unwrap();
 

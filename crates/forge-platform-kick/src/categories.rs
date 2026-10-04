@@ -158,7 +158,11 @@ mod tests {
     }
 
     fn categories_on(server: &MockServer) -> KickCategories {
-        KickCategories::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+        KickCategories::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri())
     }
 
     fn expect_err(result: Result<Vec<CategoryMatch>, PlatformError>) -> PlatformError {
@@ -283,7 +287,11 @@ mod tests {
         let server = MockServer::start().await;
         mount_categories(&server, serde_json::json!({ "data": [] })).await;
 
-        let client = KickCategories::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let client = KickCategories::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(ExhaustedLimiter),
+        )
+        .with_api_base(server.uri());
         let err = expect_err(client.search("tok", "q").await);
 
         assert!(matches!(err, PlatformError::RateLimitExhausted));

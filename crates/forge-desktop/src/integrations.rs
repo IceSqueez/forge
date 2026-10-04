@@ -1611,13 +1611,28 @@ mod tests {
         kick::register_kick_sub_actions(
             sub_actions,
             kick::KickSubActionDeps {
-                client: Arc::new(kick::KickSendChat::new(Arc::clone(&limiter))),
+                client: Arc::new(kick::KickSendChat::new(
+                    &forge_platform_core::PlatformEndpoints::default(),
+                    Arc::clone(&limiter),
+                )),
                 token_source: Arc::new(|| Box::pin(async { Ok("token".to_owned()) })),
                 broadcaster_id_source: Arc::new(|| Box::pin(async { Ok(1) })),
-                moderation: Arc::new(kick::KickModeration::new(Arc::clone(&limiter))),
-                channel: Arc::new(kick::KickChannel::new(Arc::clone(&limiter))),
-                rewards: Arc::new(kick::KickRewards::new(Arc::clone(&limiter))),
-                categories: Arc::new(kick::KickCategories::new(limiter)),
+                moderation: Arc::new(kick::KickModeration::new(
+                    &forge_platform_core::PlatformEndpoints::default(),
+                    Arc::clone(&limiter),
+                )),
+                channel: Arc::new(kick::KickChannel::new(
+                    &forge_platform_core::PlatformEndpoints::default(),
+                    Arc::clone(&limiter),
+                )),
+                rewards: Arc::new(kick::KickRewards::new(
+                    &forge_platform_core::PlatformEndpoints::default(),
+                    Arc::clone(&limiter),
+                )),
+                categories: Arc::new(kick::KickCategories::new(
+                    &forge_platform_core::PlatformEndpoints::default(),
+                    limiter,
+                )),
             },
         )
         .unwrap();

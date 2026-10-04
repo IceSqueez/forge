@@ -454,7 +454,11 @@ mod tests {
     }
 
     fn rewards_on(server: &MockServer) -> KickRewards {
-        KickRewards::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+        KickRewards::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri())
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {
@@ -659,7 +663,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = KickRewards::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let client = KickRewards::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(ExhaustedLimiter),
+        )
+        .with_api_base(server.uri());
         let err = client.create(minimal_create(), "tok").await.unwrap_err();
 
         assert!(matches!(err, PlatformError::RateLimitExhausted));
@@ -798,7 +806,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = KickRewards::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let client = KickRewards::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(ExhaustedLimiter),
+        )
+        .with_api_base(server.uri());
         let err = client.accept_redemptions(&ids(1), "tok").await.unwrap_err();
 
         assert!(matches!(err, PlatformError::RateLimitExhausted));

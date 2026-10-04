@@ -212,7 +212,11 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> TimeoutUserRunner {
-        let client = KickModeration::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        let client = KickModeration::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri());
         TimeoutUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
     }
 
@@ -268,7 +272,10 @@ mod tests {
     #[test]
     fn validate_config_enforces_user_id_and_duration_bounds() {
         let runner = TimeoutUserRunner::new(
-            Arc::new(KickModeration::new(Arc::new(GrantLimiter))),
+            Arc::new(KickModeration::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                Arc::new(GrantLimiter),
+            )),
             token_source(),
             broadcaster_id_source(42),
         );

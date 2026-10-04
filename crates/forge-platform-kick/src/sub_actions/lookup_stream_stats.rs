@@ -152,7 +152,11 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn runner_on(server: &MockServer) -> LookupStreamStatsRunner {
-        let channel = KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        let channel = KickChannel::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri());
         LookupStreamStatsRunner::new(Arc::new(channel), token_source())
     }
 

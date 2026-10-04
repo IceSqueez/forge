@@ -263,7 +263,11 @@ mod tests {
     }
 
     fn channel_on(server: &MockServer) -> KickChannel {
-        KickChannel::new(Arc::new(GrantLimiter)).with_api_base(server.uri())
+        KickChannel::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri())
     }
 
     async fn last_body(server: &MockServer) -> serde_json::Value {
@@ -388,7 +392,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let client = KickChannel::new(Arc::new(ExhaustedLimiter)).with_api_base(server.uri());
+        let client = KickChannel::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(ExhaustedLimiter),
+        )
+        .with_api_base(server.uri());
         let err = client
             .update_info("tok", Some("t".to_owned()), None, None)
             .await

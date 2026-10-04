@@ -257,12 +257,19 @@ mod tests {
     }
 
     fn runner_on(server: &MockServer) -> CreateRewardRunner {
-        let client = KickRewards::new(Arc::new(GrantLimiter)).with_api_base(server.uri());
+        let client = KickRewards::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        )
+        .with_api_base(server.uri());
         CreateRewardRunner::new(Arc::new(client), token_source())
     }
 
     fn runner_offline() -> CreateRewardRunner {
-        let client = KickRewards::new(Arc::new(GrantLimiter));
+        let client = KickRewards::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+        );
         CreateRewardRunner::new(Arc::new(client), token_source())
     }
 

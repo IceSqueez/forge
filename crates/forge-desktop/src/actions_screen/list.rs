@@ -1470,4 +1470,57 @@ mod tests {
         fixture.sync_detail(cx, "Lurk", &[CHAT_KIND, TIMER_TICK_KIND]);
         assert!(fixture.visible(cx, "Lurk"));
     }
+
+    #[gpui::test]
+    fn the_delete_note_reflects_whether_pending_scheduled_runs_are_known(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let fixture = Fixture::new(cx, &seeds());
+        let id = fixture.actions[0].id;
+        let other = ActionId::new();
+        let repo: Arc<dyn forge_storage::ScheduledRunRepo> =
+            Arc::new(forge_storage::MockScheduledRunRepo::new());
+
+        for (language, unknown) in [
+            (
+                forge_storage::Language::En,
+                "Any pending scheduled runs of this action will be cancelled too.",
+            ),
+            (
+                forge_storage::Language::Uk,
+                "Також буде скасовано всі її заплановані запуски, що очікують.",
+            ),
+        ] {
+            crate::i18n::install_language(language);
+            let note =
+                |with_repo: bool, count: Option<(ActionId, u64)>, cx: &mut gpui::TestAppContext| {
+                    fixture.view.update(cx, |view, _| {
+                        view.scheduled_runs = with_repo.then(|| Arc::clone(&repo));
+                        view.delete_scheduled_count = count;
+                        view.delete_scheduled_note(id)
+                    })
+                };
+            let expected_unknown = Some(unknown.to_owned());
+            assert_eq!(
+                note(true, None, cx),
+                expected_unknown,
+                "{language:?} no count yet"
+            );
+            assert_eq!(
+                note(true, Some((other, 3)), cx),
+                expected_unknown,
+                "{language:?} count belongs to another action"
+            );
+            assert_eq!(
+                note(true, Some((id, 0)), cx),
+                None,
+                "{language:?} known zero"
+            );
+            assert_eq!(note(false, None, cx), None, "{language:?} no repo");
+            assert!(
+                note(true, Some((id, 3)), cx).is_some_and(|text| text != unknown),
+                "{language:?} known count"
+            );
+        }
+    }
 }

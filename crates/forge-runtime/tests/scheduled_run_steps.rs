@@ -521,30 +521,44 @@ async fn schedule_step_refuses_oversized_variables_unless_it_does_not_inherit_th
 }
 
 #[tokio::test]
-async fn schedule_step_maps_the_missed_run_choice_to_the_stored_policy() {
+async fn schedule_step_maps_the_skip_toggle_to_the_stored_policy() {
     let harness = Harness::new().await;
     let target = harness.target().await;
-    let tolerance_minutes = i64::try_from(MIN_LATE_TOLERANCE.as_secs() / 60).unwrap();
+    let minimum = i64::try_from(MIN_LATE_TOLERANCE.as_secs() / 60).unwrap();
 
-    for (policy, minutes, expected) in [
-        (None, 1, MissedRunPolicy::RunLateOnce),
-        (Some("run late once"), 1, MissedRunPolicy::RunLateOnce),
-        (Some("something else"), 1, MissedRunPolicy::RunLateOnce),
+    for (pairs, expected) in [
+        (vec![], MissedRunPolicy::RunLateOnce),
         (
-            Some("skip if late"),
-            tolerance_minutes,
+            vec![
+                ("skip_if_late", Variant::Bool(false)),
+                ("late_tolerance_minutes", Variant::Int(90)),
+            ],
+            MissedRunPolicy::RunLateOnce,
+        ),
+        (
+            vec![
+                ("missed_policy", text("skip if late")),
+                ("late_tolerance_minutes", Variant::Int(90)),
+            ],
+            MissedRunPolicy::RunLateOnce,
+        ),
+        (
+            vec![
+                ("skip_if_late", Variant::Bool(true)),
+                ("late_tolerance_minutes", Variant::Int(minimum)),
+            ],
             MissedRunPolicy::SkipIfLateBy(MIN_LATE_TOLERANCE),
         ),
         (
-            Some("skip if late"),
-            90,
+            vec![
+                ("skip_if_late", Variant::Bool(true)),
+                ("late_tolerance_minutes", Variant::Int(90)),
+            ],
             MissedRunPolicy::SkipIfLateBy(90 * MINUTE),
         ),
     ] {
-        let mut pairs = vec![("late_tolerance_minutes", Variant::Int(minutes))];
-        pairs.extend(policy.map(|choice| ("missed_policy", text(choice))));
         let run = harness.schedule_target(target, &pairs).await;
-        assert_eq!(run.spec.missed_run_policy, expected, "{policy:?} {minutes}");
+        assert_eq!(run.spec.missed_run_policy, expected, "{pairs:?}");
     }
 }
 
@@ -561,7 +575,7 @@ async fn schedule_step_refuses_a_skip_tolerance_below_the_minimum() {
                 &ArgStack::new(),
                 &[
                     ("action_id", text(&target.to_string())),
-                    ("missed_policy", text("skip if late")),
+                    ("skip_if_late", Variant::Bool(true)),
                     ("late_tolerance_minutes", Variant::Int(minutes)),
                 ],
             )

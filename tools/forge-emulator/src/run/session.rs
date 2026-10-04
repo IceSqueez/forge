@@ -10,6 +10,9 @@ use super::event_checks::{
 };
 use super::forge_host::ForgeHost;
 use super::journal::Journal;
+use super::kick_checks::{
+    KickMark, assess_kick_request_count, assess_no_unexpected_kick_requests, observe_kick_request,
+};
 use super::ledger_checks::{
     assess_no_unexpected_requests, assess_request_count, observe_subscription,
 };
@@ -24,6 +27,7 @@ use super::overlay_checks::observe_overlay_content;
 use super::steps::{ActionFailure, ActionIndex, DonationFakes, Stimuli, restart_forge};
 use super::vtube_checks::{VTubeMark, observe_vtube_auth, observe_vtube_request};
 use crate::discord::FakeDiscord;
+use crate::kick::FakeKick;
 use crate::obs::FakeObs;
 use crate::overlay::{OverlayMarks, OverlayPages};
 use crate::scenario::{Expectation, Scenario, Step, StepAction};
@@ -35,6 +39,7 @@ pub struct Session<'a> {
     pub journal: &'a Journal,
     pub twitch: Option<&'a FakeTwitch>,
     pub discord: Option<&'a FakeDiscord>,
+    pub kick: Option<&'a FakeKick>,
     pub obs: Option<&'a FakeObs>,
     pub vtube: Option<&'a FakeVTube>,
     pub donations: DonationFakes<'a>,
@@ -98,6 +103,10 @@ async fn run_step(
         (false, Some(obs)) => ObsMark::of(&obs.ledger()),
         _ => ObsMark::default(),
     };
+    let kick_from = match (is_ready_step, session.kick) {
+        (false, Some(kick)) => KickMark::of(&kick.ledger()),
+        _ => KickMark::default(),
+    };
     let vtube_from = match (is_ready_step, session.vtube) {
         (false, Some(vtube)) => VTubeMark::of(&vtube.ledger()),
         _ => VTubeMark::default(),
@@ -113,6 +122,7 @@ async fn run_step(
                 let stimuli = Stimuli {
                     client: &live.client,
                     twitch: session.twitch,
+                    kick: session.kick,
                     obs: session.obs,
                     vtube: session.vtube,
                     donations: session.donations,
@@ -161,6 +171,7 @@ async fn run_step(
         discord_from,
         obs_from,
         vtube_from,
+        kick_from,
     };
     let mut expectations = Vec::with_capacity(step.expect.len());
     for (position, expectation) in step.expect.iter().enumerate() {
@@ -194,6 +205,7 @@ struct ExpectationContext<'s, 'a> {
     discord_from: usize,
     obs_from: ObsMark,
     vtube_from: VTubeMark,
+    kick_from: KickMark,
 }
 
 impl ExpectationContext<'_, '_> {
@@ -246,6 +258,28 @@ impl ExpectationContext<'_, '_> {
                 let (verdict, evidence) = match session.twitch {
                     Some(twitch) => assess_request_count(&twitch.ledger(), count),
                     None => no_fake_twitch(),
+                };
+                (verdict, evidence, None)
+            }
+            Expectation::KickRequest(request) => {
+                let until = deadline(request.within_ms);
+                let (verdict, evidence) = match session.kick {
+                    Some(kick) => observe_kick_request(kick, self.kick_from, until, request).await,
+                    None => no_fake_kick(),
+                };
+                (verdict, evidence, Some(until))
+            }
+            Expectation::KickRequestCount(count) => {
+                let (verdict, evidence) = match session.kick {
+                    Some(kick) => assess_kick_request_count(&kick.ledger(), count),
+                    None => no_fake_kick(),
+                };
+                (verdict, evidence, None)
+            }
+            Expectation::KickNoUnexpectedRequests {} => {
+                let (verdict, evidence) = match session.kick {
+                    Some(kick) => assess_no_unexpected_kick_requests(&kick.ledger()),
+                    None => no_fake_kick(),
                 };
                 (verdict, evidence, None)
             }
@@ -360,6 +394,10 @@ fn no_fake_twitch() -> (Verdict, Evidence) {
 
 fn no_fake_obs() -> (Verdict, Evidence) {
     (Verdict::Failed(FailureCause::NoFakeObs), Evidence::None)
+}
+
+fn no_fake_kick() -> (Verdict, Evidence) {
+    (Verdict::Failed(FailureCause::NoFakeKick), Evidence::None)
 }
 
 fn no_fake_vtube() -> (Verdict, Evidence) {

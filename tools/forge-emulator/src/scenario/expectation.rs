@@ -12,6 +12,9 @@ pub enum Expectation {
     TwitchSubscription(TwitchSubscription),
     TwitchNoUnexpectedRequests {},
     TwitchRequestCount(RequestCount),
+    KickRequest(KickRequestSeen),
+    KickRequestCount(RequestCount),
+    KickNoUnexpectedRequests {},
     OverlayContent(OverlayContent),
     LogLine(LogLine),
     DiscordPost(DiscordPost),
@@ -19,6 +22,19 @@ pub enum Expectation {
     ObsAuth(ObsAuthOutcome),
     VtubeRequest(VTubeRequestSeen),
     VtubeAuth(VTubeAuthOutcome),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KickRequestSeen {
+    #[serde(default)]
+    pub method: Option<String>,
+    pub path: String,
+    #[serde(default)]
+    pub body: PayloadMatchers,
+    #[serde(default)]
+    pub status: Option<u16>,
+    pub within_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -195,6 +211,9 @@ impl Expectation {
             Self::TwitchSubscription(_) => "twitch_subscription",
             Self::TwitchNoUnexpectedRequests {} => "twitch_no_unexpected_requests",
             Self::TwitchRequestCount(_) => "twitch_request_count",
+            Self::KickRequest(_) => "kick_request",
+            Self::KickRequestCount(_) => "kick_request_count",
+            Self::KickNoUnexpectedRequests {} => "kick_no_unexpected_requests",
             Self::OverlayContent(_) => "overlay_content",
             Self::LogLine(_) => "log_line",
             Self::DiscordPost(_) => "discord_post",
@@ -219,12 +238,22 @@ impl Expectation {
             | Self::ObsRequest(_)
             | Self::ObsAuth(_)
             | Self::VtubeRequest(_)
-            | Self::VtubeAuth(_) => false,
+            | Self::VtubeAuth(_)
+            | Self::KickRequest(_)
+            | Self::KickRequestCount(_)
+            | Self::KickNoUnexpectedRequests {} => false,
         }
     }
 
     pub fn needs_fake_discord(&self) -> bool {
         matches!(self, Self::DiscordPost(_))
+    }
+
+    pub fn needs_fake_kick(&self) -> bool {
+        matches!(
+            self,
+            Self::KickRequest(_) | Self::KickRequestCount(_) | Self::KickNoUnexpectedRequests {}
+        )
     }
 
     pub fn needs_fake_obs(&self) -> bool {

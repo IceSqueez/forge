@@ -290,6 +290,44 @@ with `online_at_boot: false` and a `vtube_online` step. forge publishes VTube St
 the source `v_tube`. `fake-vtube [--token T] [--deny-token-requests]` runs the fake alone and
 prints its address.
 
+## Kick
+
+`fixture.kick` seeds forge's Kick credentials and client id and secret, and `fakes.kick` starts
+a fake Kick: one loopback HTTP server for the official public API (`/public/v1`), the channel
+API forge reads the chatroom id from (`/api/v2`) and the OAuth token endpoint (`/oauth`), plus
+a Pusher WebSocket (`/app/<key>`) for chat receive. The run points forge at it through
+`FORGE_KICK_API_BASE_URL`, `FORGE_KICK_CHANNEL_API_BASE_URL`, `FORGE_KICK_OAUTH_BASE_URL` and
+`FORGE_KICK_CHAT_WS_BASE_URL`, and passes the fixture's client id and secret as
+`FORGE_KICK_CLIENT_ID` / `FORGE_KICK_CLIENT_SECRET`. Browser login is not modelled: the
+credentials are seeded, never obtained.
+
+```json
+"fixture": { "kick": { "username": "forge_emulator", "user_id": 200000001,
+                       "token_expired": false } },
+"fakes": { "kick": { "chatroom_id": 300000001, "live_at_boot": false,
+                     "stream_title": "forge emulator stream", "category_id": 15,
+                     "category_name": "Just Chatting", "viewer_count": 42,
+                     "refresh": "accept" } }
+```
+
+Every field is optional and the example shows the defaults; the fixture also takes
+`client_id`, `client_secret`, `access_token` and `refresh_token`. `token_expired` seeds an
+expiry an hour in the past, so forge refreshes before its first authorized call. The public API
+accepts only the current access token (a refresh rotates both tokens and retires the old ones),
+and `"refresh": "reject"` answers every refresh with 400 `{"error": "Invalid request"}`, as Kick
+documents. A wrong app key on the socket gets `pusher:error` 4001. The fake models chat send and
+delete, the channel read, the pending-redemption list, the channel lookup and the token refresh;
+any other request is answered 404 and counted as unexpected.
+
+Steps: `kick_chat_joined` waits for a connection subscribed to `chatrooms.<id>.v2`; `kick_chat`
+pushes a `ChatMessageEvent` from `sender` (`user_id`, `username`); `kick_pusher_event` pushes any
+event name with a JSON object as its data; `kick_stream` flips the channel live or offline for
+forge's next poll; `kick_channel_polled` waits for a channel read after the step starts (forge
+polls every 30 seconds). Expectations: `kick_request` (method, path, body pointers, status,
+within the step), `kick_request_count` and `kick_no_unexpected_requests` (whole run). forge
+publishes Kick events with the source `kick`; chat commands are `event_triggers` with the
+`kick.chat.command` descriptor.
+
 ## Throughput runs
 
 `stress run <profile> --forge <binary>` is a separate mode from scenarios: it seeds the profile's
@@ -424,6 +462,12 @@ nine chatter lines and one command each, ten thousand messages twelve millisecon
 load is sustained for about two minutes instead of bursting. It asserts one command match and one
 finished action per sender, no `request.fail` for the whole run, and no unexpected request to the
 fake. A crowd may hold up to 100 000 viewers and a million messages.
+
+Four scenarios cover Kick: `kick-chat-command-replies-in-chat.json` (chat command, reply through
+the send endpoint), `kick-gifted-subs-thank-the-gifter.json` (`GiftedSubscriptionsEvent` to the
+gift trigger and its variables), `kick-stream-online-and-offline.json` (channel poll to the
+livestream status trigger, both directions) and `kick-refresh-failure-is-visible.json` (a refused
+refresh fails the send step with a re-authentication message and posts nothing).
 
 `reconnect-keeps-subscriptions.json` was the first defect this harness found - forge ran a
 second full subscription pass on a successor EventSub session - and was kept red as evidence

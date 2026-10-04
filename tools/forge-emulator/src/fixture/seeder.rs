@@ -18,9 +18,9 @@ use super::report::{
     SeedReport, SeededCommand, SeededEventTrigger, SeededOverlay, SeededServer, SeededTwitch,
 };
 use super::spec::{
-    ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, EventTrigger, Fixture, OVERLAY_SEND_KIND,
-    OVERLAY_TARGET_KEY, ObsConnection, OverlayFixture, QueueFixture, TwitchAccount,
-    VTubeConnection,
+    ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, EventTrigger, Fixture, KickAccount,
+    OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, ObsConnection, OverlayFixture, QueueFixture,
+    TwitchAccount, VTubeConnection,
 };
 use crate::EmulatorError;
 use crate::donatello::FAKE_DONATELLO_TOKEN;
@@ -38,6 +38,8 @@ const VTUBE_API_VERSION: &str = "1.0";
 const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const BEARER_TOKEN_BYTES: usize = 32;
+const KICK_TOKEN_LIFETIME: time::Duration = time::Duration::days(3650);
+const KICK_TOKEN_EXPIRED_AGO: time::Duration = time::Duration::hours(1);
 
 pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, EmulatorError> {
     fixture.validate()?;
@@ -104,6 +106,9 @@ async fn write_fixture(
         Some(account) => Some(seed_twitch_account(provider, account).await?),
         None => None,
     };
+    if let Some(kick) = &fixture.kick {
+        seed_kick_account(provider, kick).await?;
+    }
     for queue in &fixture.queues {
         seed_queue(provider, queue).await?;
     }
@@ -151,6 +156,35 @@ async fn write_fixture(
         chat_commands,
         event_triggers,
     })
+}
+
+async fn seed_kick_account(
+    provider: &dyn DataProvider,
+    account: &KickAccount,
+) -> Result<(), EmulatorError> {
+    let now = time::OffsetDateTime::now_utc();
+    let credentials = forge_platform_kick::KickCredentials {
+        access_token: account.access_token.clone(),
+        refresh_token: account.refresh_token.clone(),
+        user_id: account.user_id,
+        username: account.username.clone(),
+        client_id: account.client_id.clone(),
+        expires_at: if account.token_expired {
+            now - KICK_TOKEN_EXPIRED_AGO
+        } else {
+            now + KICK_TOKEN_LIFETIME
+        },
+    };
+    let stored = serde_json::to_string(&credentials).map_err(|e| EmulatorError::Storage {
+        reason: format!("Kick credentials could not be encoded: {e}"),
+    })?;
+    provider
+        .store(
+            &CredentialId::new(forge_platform_kick::CREDENTIAL_KEY),
+            &stored,
+        )
+        .await
+        .map_err(storage_error)
 }
 
 async fn seed_queue(

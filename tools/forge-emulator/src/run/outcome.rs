@@ -1,4 +1,5 @@
 use crate::discord::RecordedPost;
+use crate::kick::{KickRequest, PusherSession};
 use crate::obs::{ObsRequest, ObsSession};
 use crate::vtube::{VTubeRequest, VTubeSession};
 use std::fmt;
@@ -115,6 +116,20 @@ pub enum ActionDetail {
         execution_id: String,
     },
     GlobalSet,
+    KickChatJoined {
+        session: u64,
+    },
+    KickChatSent {
+        message_id: String,
+    },
+    KickEventPushed {
+        event: String,
+        delivered: usize,
+    },
+    KickStreamSet {
+        live: bool,
+    },
+    KickChannelPolled,
     ObsOnline,
     ObsIdentified {
         session: u64,
@@ -233,6 +248,13 @@ pub enum FailureCause {
         sessions: usize,
     },
     NoFakeVTube,
+    NoKickRequest {
+        observed: usize,
+    },
+    UnexpectedKickRequests {
+        count: usize,
+    },
+    NoFakeKick,
 }
 
 impl fmt::Display for FailureCause {
@@ -328,6 +350,15 @@ impl fmt::Display for FailureCause {
                 "no connection reached that authentication outcome in time, the fake VTube Studio saw {sessions} connection(s)"
             ),
             Self::NoFakeVTube => write!(f, "the run has no fake VTube Studio"),
+            Self::NoKickRequest { observed } => write!(
+                f,
+                "no matching request reached the fake Kick in time, it recorded {observed} request(s) in the window"
+            ),
+            Self::UnexpectedKickRequests { count } => write!(
+                f,
+                "forge sent {count} request(s) the fake Kick has no model for"
+            ),
+            Self::NoFakeKick => write!(f, "the run has no fake Kick"),
         }
     }
 }
@@ -344,6 +375,13 @@ pub enum Evidence {
     Discord(Vec<RecordedPost>),
     Obs(ObsEvidence),
     VTube(VTubeEvidence),
+    Kick(KickEvidence),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct KickEvidence {
+    pub sessions: Vec<PusherSession>,
+    pub requests: Vec<KickRequest>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

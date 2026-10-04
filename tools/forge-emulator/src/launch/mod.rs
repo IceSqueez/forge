@@ -12,4 +12,4 @@ pub use launcher::{LaunchOptions, LaunchedForge, launch_forge};
 pub use live_paths::LivePaths;
 pub use output::{CapturedOutput, OutputLine, OutputStream};
 pub use process::{ForgeExit, ForgeProcess};
-pub use spec::{DEFAULT_LOG_DIRECTIVES, ForgeCommand, INHERITED_VARIABLES, LaunchSpec};
+pub use spec::{DEFAULT_LOG_DIRECTIVES, ForgeCommand, INHERITED_VARIABLES, KickClient, LaunchSpec};

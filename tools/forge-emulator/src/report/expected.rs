@@ -69,6 +69,28 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
             count_range(count.min, count.max),
             code(&request_label(count))
         ),
+        Expectation::KickRequest(request) => format!(
+            "forge sends the fake Kick {}{}{} within {}",
+            code(&match &request.method {
+                Some(method) => format!("{method} {}", request.path),
+                None => request.path.clone(),
+            }),
+            conditions(&request.body),
+            request
+                .status
+                .map(|status| format!(" answered with status {status}"))
+                .unwrap_or_default(),
+            span_ms(request.within_ms)
+        ),
+        Expectation::KickRequestCount(count) => format!(
+            "forge sends the fake Kick {} {} request(s) over the whole run so far",
+            count_range(count.min, count.max),
+            code(&request_label(count))
+        ),
+        Expectation::KickNoUnexpectedRequests {} => {
+            "forge sends the fake Kick only requests it models, over the whole run so far"
+                .to_owned()
+        }
         Expectation::OverlayContent(content) => {
             let values: Vec<String> = content
                 .values

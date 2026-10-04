@@ -60,6 +60,27 @@ pub(crate) fn story(action: &StepAction) -> String {
             code(name),
             code(&compact(value, VALUE_CHARS))
         ),
+        StepAction::KickChatJoined { within_ms } => format!(
+            "As Kick I wait up to {} for forge to join the channel's chatroom",
+            span_ms(*within_ms)
+        ),
+        StepAction::KickChat(message) => format!(
+            "As a Kick viewer {} I send {} in chat",
+            code(&message.sender.username),
+            quoted(&message.text)
+        ),
+        StepAction::KickPusherEvent { event, .. } => format!(
+            "As Kick I push a {} event to forge's chatroom connection",
+            code(event)
+        ),
+        StepAction::KickStream { live } => format!(
+            "As the streamer I {} the Kick stream",
+            if *live { "start" } else { "end" }
+        ),
+        StepAction::KickChannelPolled { within_ms } => format!(
+            "As Kick I wait up to {} for forge to read the channel",
+            span_ms(*within_ms)
+        ),
         StepAction::ObsOnline {} => "As the streamer I start OBS".to_owned(),
         StepAction::ObsIdentified { within_ms } => format!(
             "As OBS I wait up to {} for forge to connect and identify",
@@ -169,6 +190,17 @@ pub(crate) fn step_short(action: &StepAction) -> String {
         StepAction::Pause { .. } => "a pause".to_owned(),
         StepAction::RunAction { action, .. } => format!("running action {}", code(action)),
         StepAction::SetGlobal { name, .. } => format!("setting global {}", code(name)),
+        StepAction::KickChatJoined { .. } => "joining Kick chat".to_owned(),
+        StepAction::KickChat(message) => format!(
+            "Kick chat message {}",
+            quoted(&clip(&message.text, SHORT_TEXT_CHARS))
+        ),
+        StepAction::KickPusherEvent { event, .. } => format!("a Kick {} event", code(event)),
+        StepAction::KickStream { live } => format!(
+            "{} the Kick stream",
+            if *live { "starting" } else { "ending" }
+        ),
+        StepAction::KickChannelPolled { .. } => "a Kick channel poll".to_owned(),
         StepAction::ObsOnline {} => "starting OBS".to_owned(),
         StepAction::ObsIdentified { .. } => "connecting to OBS".to_owned(),
         StepAction::ObsRestart { .. } => "an OBS restart".to_owned(),
@@ -217,6 +249,12 @@ pub(crate) fn action_title(action: &StepAction) -> String {
         }
         StepAction::RunAction { action, .. } => format!("Action {} could not be run", code(action)),
         StepAction::SetGlobal { name, .. } => format!("Global {} could not be set", code(name)),
+        StepAction::KickChatJoined { .. } => "forge did not join Kick chat".to_owned(),
+        StepAction::KickChat(_) | StepAction::KickPusherEvent { .. } => {
+            "Kick event not delivered to forge".to_owned()
+        }
+        StepAction::KickStream { .. } => "The fake Kick could not change the stream".to_owned(),
+        StepAction::KickChannelPolled { .. } => "forge did not read the Kick channel".to_owned(),
         StepAction::ObsOnline {} => "The fake OBS could not start".to_owned(),
         StepAction::ObsIdentified { .. } => "forge did not connect to OBS".to_owned(),
         StepAction::ObsRestart { .. } => "The fake OBS could not restart".to_owned(),
@@ -289,6 +327,21 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
         StepAction::SetGlobal { name, .. } => {
             format!("forge accepts setting global {}", code(name))
         }
+        StepAction::KickChatJoined { within_ms } => format!(
+            "forge subscribes a live chat connection to the chatroom within {}",
+            span_ms(*within_ms)
+        ),
+        StepAction::KickChat(_) | StepAction::KickPusherEvent { .. } => {
+            "the fake Kick pushes the event to a chat connection that joined the chatroom"
+                .to_owned()
+        }
+        StepAction::KickStream { .. } => {
+            "the fake Kick reports the new stream state on forge's next channel read".to_owned()
+        }
+        StepAction::KickChannelPolled { within_ms } => format!(
+            "forge reads the channel from the public API within {}",
+            span_ms(*within_ms)
+        ),
         StepAction::ObsOnline {} => "the fake OBS accepts connections".to_owned(),
         StepAction::ObsIdentified { within_ms } => format!(
             "forge holds an identified OBS WebSocket session within {}",

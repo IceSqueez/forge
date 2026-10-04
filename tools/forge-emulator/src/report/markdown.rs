@@ -337,6 +337,46 @@ fn expectation_evidence(evidence: &Evidence) -> Vec<String> {
             });
             lines
         }
+        Evidence::Kick(kick) => {
+            let mut lines = Vec::new();
+            listed(
+                &mut lines,
+                "Kick chat connection",
+                &kick.sessions,
+                |session| {
+                    format!(
+                        "session {}: app key {}, joined {}{}",
+                        session.id,
+                        code(&session.app_key),
+                        if session.subscriptions.is_empty() {
+                            "nothing".to_owned()
+                        } else {
+                            session
+                                .subscriptions
+                                .iter()
+                                .map(|channel| code(channel))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        },
+                        if session.live { "" } else { ", closed" }
+                    )
+                },
+            );
+            listed(&mut lines, "Kick request", &kick.requests, |request| {
+                format!(
+                    "{} {} answered {}{}",
+                    request.method,
+                    code(&request.path),
+                    request.status,
+                    request
+                        .body
+                        .as_ref()
+                        .map(|body| format!(" for body {}", code(&compact(body, PAYLOAD_CHARS))))
+                        .unwrap_or_default()
+                )
+            });
+            lines
+        }
         Evidence::VTube(vtube) => {
             let mut lines = Vec::new();
             listed(

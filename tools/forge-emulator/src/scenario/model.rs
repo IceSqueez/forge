@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::donation::{FakeDonatelloSetup, FakeMonobankSetup};
 use super::step::Step;
 use crate::fixture::{Fixture, TwitchAccount};
+use crate::kick::FakeKickSetup;
 use crate::obs::FakeObsConfig;
 use crate::twitch::{FakeGoal, FakeTwitchConfig};
 use crate::vtube::FakeVTubeConfig;
@@ -27,6 +28,8 @@ pub struct Fakes {
     pub twitch: Option<FakeTwitchSetup>,
     #[serde(default)]
     pub discord: Option<FakeDiscordSetup>,
+    #[serde(default)]
+    pub kick: Option<FakeKickSetup>,
     #[serde(default)]
     pub obs: Option<FakeObsConfig>,
     #[serde(default)]

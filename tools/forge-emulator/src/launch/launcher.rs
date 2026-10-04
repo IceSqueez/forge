@@ -4,7 +4,7 @@ use std::time::Duration;
 use super::game_guard::GameGuard;
 use super::live_paths::LivePaths;
 use super::process::ForgeProcess;
-use super::spec::{ForgeCommand, LaunchSpec};
+use super::spec::{ForgeCommand, KickClient, LaunchSpec};
 use crate::EmulatorError;
 use crate::control::{ControlClient, EventStream};
 use crate::fixture::{Fixture, ForgeDataDir, SeedReport, seed};
@@ -58,6 +58,10 @@ pub async fn launch_forge(options: &LaunchOptions) -> Result<LaunchedForge, Emul
                 .twitch
                 .as_ref()
                 .map(|twitch| twitch.client_id.clone()),
+            kick_client: options.fixture.kick.as_ref().map(|kick| KickClient {
+                client_id: kick.client_id.clone(),
+                client_secret: kick.client_secret.clone(),
+            }),
             endpoint_overrides: options.endpoint_overrides.clone(),
             log_directives: options.log_directives.clone(),
         };

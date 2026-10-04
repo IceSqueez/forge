@@ -18,6 +18,7 @@ use crate::control::EventFilter;
 use crate::discord::FakeDiscord;
 use crate::donatello::{FakeDonatello, FakeDonatelloConfig};
 use crate::fixture::{Fixture, Redactions};
+use crate::kick::{FakeKick, FakeKickConfig};
 use crate::launch::{
     ForgeCommand, GameGuard, LaunchOptions, LaunchedForge, LivePaths, OutputStream, launch_forge,
 };
@@ -147,6 +148,7 @@ pub async fn run_scenario(
         journal: &journal,
         twitch: fakes.twitch.as_ref(),
         discord: fakes.discord.as_ref(),
+        kick: fakes.kick.as_ref(),
         obs: fakes.obs.as_ref(),
         vtube: fakes.vtube.as_ref(),
         donations: fakes.donations(&scenario.fixture),
@@ -221,6 +223,7 @@ pub async fn run_scenario(
 struct RunFakes {
     twitch: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
+    kick: Option<FakeKick>,
     obs: Option<FakeObs>,
     vtube: Option<FakeVTube>,
     donatello: Option<FakeDonatello>,
@@ -232,6 +235,7 @@ impl RunFakes {
         let mut fakes = Self {
             twitch: None,
             discord: None,
+            kick: None,
             obs: None,
             vtube: None,
             donatello: None,
@@ -256,6 +260,9 @@ impl RunFakes {
                 .map(|webhook| webhook.name.clone())
                 .collect();
             self.discord = Some(FakeDiscord::start(&names).await?);
+        }
+        if let (Some(account), Some(setup)) = (&scenario.fixture.kick, &scenario.fakes.kick) {
+            self.kick = Some(FakeKick::start(FakeKickConfig::for_account(account, setup)).await?);
         }
         if let Some(config) = &scenario.fakes.obs {
             self.obs = Some(FakeObs::start(config.clone()).await?);
@@ -324,6 +331,7 @@ impl RunFakes {
                 .map(FakeDonatello::endpoint_override),
         );
         overrides.extend(self.monobank.as_ref().map(FakeMonobank::endpoint_override));
+        overrides.extend(self.kick.iter().flat_map(|kick| kick.endpoint_overrides()));
         overrides
     }
 
@@ -347,6 +355,9 @@ impl RunFakes {
         }
         if let Some(twitch) = self.twitch {
             twitch.shutdown().await;
+        }
+        if let Some(kick) = self.kick {
+            kick.shutdown().await;
         }
         if let Some(discord) = self.discord {
             discord.shutdown().await;

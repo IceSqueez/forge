@@ -1,7 +1,10 @@
+use std::fmt;
+
 use forge_storage::OverlayConfig;
 use forge_types::{SubActionStep, TriggerConfig};
 use serde::{Deserialize, Serialize};
 
+use super::redactions::REDACTED;
 use crate::EmulatorError;
 
 pub const OVERLAY_SEND_KIND: &str = "overlay.send";
@@ -23,6 +26,8 @@ pub struct Fixture {
     pub queues: Vec<QueueFixture>,
     #[serde(default)]
     pub discord_webhooks: Vec<DiscordWebhook>,
+    #[serde(default)]
+    pub kick: Option<KickAccount>,
     #[serde(default)]
     pub obs: Option<ObsConnection>,
     #[serde(default)]
@@ -101,6 +106,46 @@ impl Default for TwitchAccount {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct KickAccount {
+    pub client_id: String,
+    pub client_secret: String,
+    pub user_id: u64,
+    pub username: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub token_expired: bool,
+}
+
+impl Default for KickAccount {
+    fn default() -> Self {
+        Self {
+            client_id: "emulatorkickclient".to_owned(),
+            client_secret: "emulator-kick-client-secret".to_owned(),
+            user_id: 200_000_001,
+            username: "forge_emulator".to_owned(),
+            access_token: "emulator-kick-access-token".to_owned(),
+            refresh_token: "emulator-kick-refresh-token".to_owned(),
+            token_expired: false,
+        }
+    }
+}
+
+impl fmt::Debug for KickAccount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KickAccount")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &REDACTED)
+            .field("user_id", &self.user_id)
+            .field("username", &self.username)
+            .field("access_token", &REDACTED)
+            .field("refresh_token", &REDACTED)
+            .field("token_expired", &self.token_expired)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChatCommand {
@@ -145,6 +190,7 @@ impl Fixture {
     pub fn chat_command_mvp() -> Self {
         Self {
             twitch: Some(TwitchAccount::default()),
+            kick: None,
             overlays: Vec::new(),
             chat_commands: vec![ChatCommand {
                 phrase: "!ping".to_owned(),
@@ -246,6 +292,26 @@ impl Fixture {
                     "two Discord webhooks are both named `{}`, so a step could not tell them apart",
                     webhook.name
                 )));
+            }
+        }
+        if let Some(kick) = &self.kick {
+            for (field, value) in [
+                ("client_id", &kick.client_id),
+                ("client_secret", &kick.client_secret),
+                ("username", &kick.username),
+                ("access_token", &kick.access_token),
+                ("refresh_token", &kick.refresh_token),
+            ] {
+                if value.trim().is_empty() {
+                    return Err(invalid(format!(
+                        "kick.{field} is blank, so forge could not reach the fake Kick"
+                    )));
+                }
+            }
+            if kick.user_id == 0 {
+                return Err(invalid(
+                    "kick.user_id is 0, which no Kick broadcaster has".to_owned(),
+                ));
             }
         }
         if let Some(monobank) = &self.monobank

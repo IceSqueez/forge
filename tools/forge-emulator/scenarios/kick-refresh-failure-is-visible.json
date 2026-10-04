@@ -1,0 +1,63 @@
+{
+  "name": "a rejected Kick token refresh is visible and sends nothing",
+  "purpose": "The seeded Kick access token has expired and the fake token endpoint refuses the refresh, as after the streamer revokes forge's access on Kick. Running an action whose step sends a Kick chat message must make forge try the refresh against the OAuth endpoint, fail that step with a re-authentication message the streamer can read in the run history, and never post to the chat endpoint with the stale token.",
+  "fixture": {
+    "kick": { "token_expired": true },
+    "event_triggers": [
+      {
+        "trigger_kind": "kick.chat.command",
+        "action_name": "Kick Announce",
+        "config": {
+          "phrase": { "type": "string", "value": "!announce" }
+        },
+        "steps": [
+          {
+            "kind_id": "kick.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "announcement from forge" },
+              "as_bot": { "type": "bool", "value": false }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "kick": { "refresh": "reject" }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "run_action": { "action": "Kick Announce" } },
+      "expect": [
+        {
+          "kick_request": {
+            "method": "POST",
+            "path": "/oauth/token",
+            "body": {
+              "/grant_type": { "equals": "refresh_token" },
+              "/refresh_token": { "equals": "emulator-kick-refresh-token" }
+            },
+            "status": 400,
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "subaction.done",
+            "payload": {
+              "/kind": { "equals": "kick.chat.send_message" },
+              "/outcome": { "equals": "failed" },
+              "/message": { "contains": "re-authentication required" }
+            },
+            "within_ms": 10000
+          }
+        },
+        { "event_absent": { "source": "kick", "kind": "chat.send", "window_ms": 2000 } },
+        { "kick_request_count": { "method": "POST", "path": "/public/v1/chat", "max": 0 } }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "name": "Kick gifted subscriptions run the gift trigger with the gifter and the count",
+  "purpose": "Kick pushes GiftedSubscriptionsEvent on the chatroom channel when a viewer gifts subscriptions. forge must publish kick.channel.subscription.gifts with the gifter and every giftee, run the action bound to the gift trigger, and expose the gifter login and the gift count as variables, which the action's Send Message step posts back to Kick chat.",
+  "fixture": {
+    "kick": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "kick.channel.subscription.gifts",
+        "action_name": "Thank Gifter",
+        "steps": [
+          {
+            "kind_id": "kick.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "thanks %gifter_login% for %gift_count% subs" },
+              "as_bot": { "type": "bool", "value": false }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "kick": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "kick_chat_joined": { "within_ms": 30000 } } },
+    {
+      "do": {
+        "kick_pusher_event": {
+          "event": "App\\Events\\GiftedSubscriptionsEvent",
+          "data": {
+            "chatroom_id": 300000001,
+            "gifted_usernames": ["giftee_one", "giftee_two", "giftee_three"],
+            "gifter_username": "big_gifter",
+            "gifter_user_id": 200000077,
+            "gifter_total": 12
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "gifts",
+            "source": "kick",
+            "kind": "kick.channel.subscription.gifts",
+            "payload": {
+              "/gifter/username": { "equals": "big_gifter" },
+              "/count": { "equals": 3 },
+              "/giftees/2/username": { "equals": "giftee_three" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Thank Gifter" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "started", "cause": "gifts" } },
+        {
+          "kick_request": {
+            "method": "POST",
+            "path": "/public/v1/chat",
+            "body": { "/content": { "equals": "thanks big_gifter for 3 subs" } },
+            "status": 200,
+            "within_ms": 5000
+          }
+        },
+        { "kick_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

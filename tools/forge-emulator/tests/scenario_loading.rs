@@ -39,7 +39,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p", "fixture": {},
 "steps": [{"do": {"wait_for": {}}}]}"#,
             (2, 28),
-            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `twitch_event`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`, `obs_online`, `obs_identified`, `obs_restart`, `obs_scene_switch`, `obs_stream`, `obs_input_mute`, `vtube_online`, `vtube_authenticated`, `vtube_hotkey`, `vtube_model_load`, `vtube_model_unload`, `vtube_model_config_changed`, `vtube_tracking`, `vtube_item_added`, `vtube_item_removed`, `vtube_expression`, `donatello_donation`, `monobank_top_up`, `donations_polled`, `forge_restart`",
+            "unknown variant `wait_for`, expected one of `forge_ready`, `twitch_subscribed`, `chat`, `crowd`, `twitch_event`, `session_reconnect`, `overlay_page`, `pause`, `run_action`, `set_global`, `kick_chat_joined`, `kick_chat`, `kick_pusher_event`, `kick_stream`, `kick_channel_polled`, `obs_online`, `obs_identified`, `obs_restart`, `obs_scene_switch`, `obs_stream`, `obs_input_mute`, `vtube_online`, `vtube_authenticated`, `vtube_hotkey`, `vtube_model_load`, `vtube_model_unload`, `vtube_model_config_changed`, `vtube_tracking`, `vtube_item_added`, `vtube_item_removed`, `vtube_expression`, `donatello_donation`, `monobank_top_up`, `donations_polled`, `forge_restart`",
         ),
         (
             "unknown field inside a step",
@@ -55,7 +55,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
 "steps": [{"do": {"forge_ready": {"within_ms": 1}},
   "expect": [{"event_seen": {}}]}]}"#,
             (3, 26),
-            "unknown variant `event_seen`, expected one of `event`, `event_absent`, `caused_by`, `twitch_subscription`, `twitch_no_unexpected_requests`, `twitch_request_count`, `overlay_content`, `log_line`, `discord_post`, `obs_request`, `obs_auth`, `vtube_request`, `vtube_auth`",
+            "unknown variant `event_seen`, expected one of `event`, `event_absent`, `caused_by`, `twitch_subscription`, `twitch_no_unexpected_requests`, `twitch_request_count`, `kick_request`, `kick_request_count`, `kick_no_unexpected_requests`, `overlay_content`, `log_line`, `discord_post`, `obs_request`, `obs_auth`, `vtube_request`, `vtube_auth`",
         ),
         (
             "unknown top-level field",
@@ -69,7 +69,7 @@ fn syntax_and_shape_errors_carry_file_line_and_column() {
             r#"{"name": "n", "purpose": "p",
 "fixture": {"twich": {}}, "steps": []}"#,
             (2, 19),
-            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`, `discord_webhooks`, `obs`, `vtube`, `donatello`, `monobank`",
+            "unknown field `twich`, expected one of `twitch`, `overlays`, `chat_commands`, `event_triggers`, `queues`, `discord_webhooks`, `kick`, `obs`, `vtube`, `donatello`, `monobank`",
         ),
         (
             "missing deadline",

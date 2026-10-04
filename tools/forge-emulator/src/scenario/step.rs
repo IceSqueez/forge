@@ -4,6 +4,7 @@ use serde_json::{Map, Value};
 use super::crowd::Crowd;
 use super::donation::{DonatelloGift, MonobankGift, OfflineGift};
 use super::expectation::Expectation;
+use crate::kick::KickChatter;
 use crate::twitch::{Viewer, ViewerBadge};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,6 +53,20 @@ pub enum StepAction {
         value: Value,
         #[serde(default)]
         persisted: bool,
+    },
+    KickChatJoined {
+        within_ms: u64,
+    },
+    KickChat(KickChatMessage),
+    KickPusherEvent {
+        event: String,
+        data: Value,
+    },
+    KickStream {
+        live: bool,
+    },
+    KickChannelPolled {
+        within_ms: u64,
     },
     ObsOnline {},
     ObsIdentified {
@@ -116,6 +131,13 @@ pub struct ChatMessage {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct KickChatMessage {
+    pub sender: KickChatter,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChatViewer {
     pub user_id: String,
     pub login: String,
@@ -149,6 +171,11 @@ impl StepAction {
             Self::Pause { .. } => "pause",
             Self::RunAction { .. } => "run_action",
             Self::SetGlobal { .. } => "set_global",
+            Self::KickChatJoined { .. } => "kick_chat_joined",
+            Self::KickChat(_) => "kick_chat",
+            Self::KickPusherEvent { .. } => "kick_pusher_event",
+            Self::KickStream { .. } => "kick_stream",
+            Self::KickChannelPolled { .. } => "kick_channel_polled",
             Self::ObsOnline {} => "obs_online",
             Self::ObsIdentified { .. } => "obs_identified",
             Self::ObsRestart { .. } => "obs_restart",
@@ -180,6 +207,17 @@ impl StepAction {
                 | Self::Crowd(_)
                 | Self::TwitchEvent { .. }
                 | Self::SessionReconnect { .. }
+        )
+    }
+
+    pub fn needs_fake_kick(&self) -> bool {
+        matches!(
+            self,
+            Self::KickChatJoined { .. }
+                | Self::KickChat(_)
+                | Self::KickPusherEvent { .. }
+                | Self::KickStream { .. }
+                | Self::KickChannelPolled { .. }
         )
     }
 

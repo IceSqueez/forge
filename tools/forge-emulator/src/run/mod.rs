@@ -2,6 +2,7 @@ mod discord_checks;
 mod event_checks;
 mod forge_host;
 mod journal;
+mod kick_checks;
 mod ledger_checks;
 mod log_checks;
 mod log_record;
@@ -20,8 +21,8 @@ pub use log_record::LogRecord;
 pub(crate) use log_tail::LogTail;
 pub use outcome::{
     ActionDetail, ActionReport, CausationEvidence, EVIDENCE_LIMIT, EventEvidence, Evidence,
-    ExpectationOutcome, FailureCause, ForgeEvidence, Gap, GapKind, JournaledEvent, LedgerExcerpt,
-    LogEvidence, NearMiss, ObsEvidence, OverlayEvidence, ReceivedContent, RunClock,
+    ExpectationOutcome, FailureCause, ForgeEvidence, Gap, GapKind, JournaledEvent, KickEvidence,
+    LedgerExcerpt, LogEvidence, NearMiss, ObsEvidence, OverlayEvidence, ReceivedContent, RunClock,
     ScenarioOutcome, ScenarioVerdict, StepOutcome, StepStatus, VTubeEvidence, Verdict,
 };
 pub use runner::{RunOptions, run_scenario, subscription_filters, verdict};

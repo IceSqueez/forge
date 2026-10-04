@@ -1347,6 +1347,7 @@ dependencies = [
  "forge-obs",
  "forge-overlay",
  "forge-platform-core",
+ "forge-platform-kick",
  "forge-platform-twitch",
  "forge-registry",
  "forge-server",
@@ -1361,6 +1362,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.20",
@@ -1453,6 +1455,31 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "forge-platform-kick"
+version = "0.5.5"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-storage",
+ "forge-types",
+ "futures",
+ "futures-core",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
  "tracing",
 ]
 

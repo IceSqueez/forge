@@ -8,6 +8,8 @@ use crate::EmulatorError;
 use crate::fixture::ForgeDataDir;
 
 const TWITCH_CLIENT_ID_VARIABLE: &str = "FORGE_TWITCH_CLIENT_ID";
+const KICK_CLIENT_ID_VARIABLE: &str = "FORGE_KICK_CLIENT_ID";
+const KICK_CLIENT_SECRET_VARIABLE: &str = "FORGE_KICK_CLIENT_SECRET";
 pub const DEFAULT_LOG_DIRECTIVES: &str = "info,forge=debug";
 
 pub const INHERITED_VARIABLES: [&str; 20] = [
@@ -48,12 +50,28 @@ impl ForgeCommand {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct KickClient {
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+impl std::fmt::Debug for KickClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KickClient")
+            .field("client_id", &self.client_id)
+            .field("client_secret", &crate::fixture::REDACTED)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LaunchSpec {
     pub forge: ForgeCommand,
     pub data_dir: ForgeDataDir,
     pub home: PathBuf,
     pub twitch_client_id: Option<String>,
+    pub kick_client: Option<KickClient>,
     pub endpoint_overrides: Vec<(&'static str, String)>,
     pub log_directives: String,
 }
@@ -110,6 +128,11 @@ impl LaunchSpec {
         if let Some(client_id) = &self.twitch_client_id {
             command.env(TWITCH_CLIENT_ID_VARIABLE, client_id);
         }
+        if let Some(kick) = &self.kick_client {
+            command
+                .env(KICK_CLIENT_ID_VARIABLE, &kick.client_id)
+                .env(KICK_CLIENT_SECRET_VARIABLE, &kick.client_secret);
+        }
         for (variable, url) in &self.endpoint_overrides {
             command.env(variable, url);
         }
@@ -130,6 +153,7 @@ mod tests {
             data_dir: ForgeDataDir::fresh(data).unwrap(),
             home,
             twitch_client_id: Some("fixtureclient".to_owned()),
+            kick_client: None,
             endpoint_overrides: vec![(
                 EndpointSurface::TwitchApi.env_var(),
                 "http://127.0.0.1:1".to_owned(),
@@ -241,6 +265,40 @@ mod tests {
         spec.twitch_client_id = None;
         let env = configured(&spec, &[("FORGE_TWITCH_CLIENT_ID", "inherited")]);
         assert!(!env.contains_key("FORGE_TWITCH_CLIENT_ID"), "{env:?}");
+    }
+
+    #[test]
+    fn kick_client_credentials_come_from_the_fixture_over_inherited_values() {
+        let data = tempfile::tempdir().unwrap();
+        let mut spec = spec(data.path(), PathBuf::from("/scratch/home"));
+        spec.kick_client = Some(KickClient {
+            client_id: "fixturekick".to_owned(),
+            client_secret: "fixture-kick-secret".to_owned(),
+        });
+        let env = configured(
+            &spec,
+            &[
+                ("FORGE_KICK_CLIENT_ID", "real-id"),
+                ("FORGE_KICK_CLIENT_SECRET", "real-secret"),
+            ],
+        );
+        assert_eq!(
+            (
+                env.get("FORGE_KICK_CLIENT_ID").map(String::as_str),
+                env.get("FORGE_KICK_CLIENT_SECRET").map(String::as_str),
+            ),
+            (Some("fixturekick"), Some("fixture-kick-secret"))
+        );
+    }
+
+    #[test]
+    fn kick_client_debug_output_never_carries_the_secret() {
+        let client = KickClient {
+            client_id: "fixturekick".to_owned(),
+            client_secret: "fixture-kick-secret".to_owned(),
+        };
+        let rendered = format!("{client:?}");
+        assert!(!rendered.contains("fixture-kick-secret"), "{rendered}");
     }
 
     #[test]

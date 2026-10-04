@@ -4,6 +4,7 @@ pub mod discord;
 pub mod donatello;
 mod error;
 pub mod fixture;
+pub mod kick;
 pub mod launch;
 pub mod monobank;
 pub mod obs;

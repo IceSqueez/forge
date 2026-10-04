@@ -59,6 +59,7 @@ impl Stage {
             data_dir: ForgeDataDir::fresh(&self.data).unwrap(),
             home: self.home.clone(),
             twitch_client_id: Some("fixtureclientid".to_owned()),
+            kick_client: None,
             endpoint_overrides: vec![(
                 "FORGE_TWITCH_API_BASE_URL",
                 "http://127.0.0.1:1".to_owned(),

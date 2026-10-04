@@ -1,0 +1,79 @@
+{
+  "name": "Kick stream going live and ending reach forge's livestream status trigger",
+  "purpose": "forge learns the Kick stream state only by polling the channel on the official public API. Once forge has read the offline channel, the fake channel goes live and later ends; each flip must surface on forge's next poll as one kick.livestream.status.updated carrying the new is_live, and run the action bound to the status trigger, whose Send Message step posts the is_live variable to Kick chat.",
+  "fixture": {
+    "kick": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "kick.livestream.status.updated",
+        "action_name": "Stream Status",
+        "steps": [
+          {
+            "kind_id": "kick.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "live now: %is_live%" },
+              "as_bot": { "type": "bool", "value": false }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "kick": { "live_at_boot": false, "stream_title": "emulator marathon", "viewer_count": 31 }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "kick_channel_polled": { "within_ms": 40000 } } },
+    {
+      "do": { "kick_stream": { "live": true } },
+      "expect": [
+        {
+          "event": {
+            "source": "kick",
+            "kind": "kick.livestream.status.updated",
+            "payload": {
+              "/is_live": { "equals": true },
+              "/stream_title": { "equals": "emulator marathon" }
+            },
+            "within_ms": 40000
+          }
+        },
+        {
+          "kick_request": {
+            "method": "POST",
+            "path": "/public/v1/chat",
+            "body": { "/content": { "equals": "live now: true" } },
+            "status": 200,
+            "within_ms": 45000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "kick_stream": { "live": false } },
+      "expect": [
+        {
+          "event": {
+            "source": "kick",
+            "kind": "kick.livestream.status.updated",
+            "payload": { "/is_live": { "equals": false } },
+            "within_ms": 40000
+          }
+        },
+        {
+          "kick_request": {
+            "method": "POST",
+            "path": "/public/v1/chat",
+            "body": { "/content": { "equals": "live now: false" } },
+            "status": 200,
+            "within_ms": 45000
+          }
+        },
+        { "kick_request_count": { "method": "POST", "path": "/public/v1/chat", "min": 2, "max": 2 } },
+        { "kick_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

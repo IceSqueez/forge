@@ -97,6 +97,9 @@ pub enum EmulatorError {
     #[error("the fake VTube Studio refused: {reason}")]
     FakeVTubeRefused { reason: String },
 
+    #[error("no live Kick chat connection has joined `{channel}`")]
+    KickChannelNotJoined { channel: String },
+
     #[error("no live EventSub session holds a `{subscription_type}` subscription")]
     NotSubscribed { subscription_type: String },
 

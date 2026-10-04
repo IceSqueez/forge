@@ -16,6 +16,7 @@ use crate::EmulatorError;
 use crate::control::ControlClient;
 use crate::donatello::{DONATES_PATH, FakeDonatello};
 use crate::fixture::SeedReport;
+use crate::kick::{CHANNELS_PATH, FakeKick};
 use crate::monobank::{FakeMonobank, MonobankEndpoint};
 use crate::obs::{
     CURRENT_PROGRAM_SCENE_CHANGED, FakeObs, INPUT_MUTE_STATE_CHANGED, STREAM_STATE_CHANGED,
@@ -62,6 +63,7 @@ pub(crate) struct ActionFailure {
 pub(crate) struct Stimuli<'a> {
     pub(crate) client: &'a ControlClient,
     pub(crate) twitch: Option<&'a FakeTwitch>,
+    pub(crate) kick: Option<&'a FakeKick>,
     pub(crate) obs: Option<&'a FakeObs>,
     pub(crate) vtube: Option<&'a FakeVTube>,
     pub(crate) donations: DonationFakes<'a>,
@@ -231,6 +233,57 @@ impl Stimuli<'_> {
                 .await
                 .map(|()| ActionDetail::GlobalSet)
                 .map_err(refused),
+            StepAction::KickChatJoined { within_ms } => {
+                let kick = self.kick()?;
+                let channel = kick.chat_channel();
+                kick.wait_for(
+                    "a Kick chat connection joined to the chatroom",
+                    Duration::from_millis(*within_ms),
+                    |ledger| ledger.joined(&channel),
+                )
+                .await
+                .map(|session| ActionDetail::KickChatJoined { session })
+                .map_err(refused)
+            }
+            StepAction::KickChat(message) => self
+                .kick()?
+                .inject_chat_message(&message.sender, &message.text)
+                .await
+                .map(|message_id| ActionDetail::KickChatSent { message_id })
+                .map_err(refused),
+            StepAction::KickPusherEvent { event, data } => self
+                .kick()?
+                .push_event(event, data)
+                .await
+                .map(|delivered| ActionDetail::KickEventPushed {
+                    event: event.clone(),
+                    delivered,
+                })
+                .map_err(refused),
+            StepAction::KickStream { live } => {
+                self.kick()?.set_live(*live);
+                Ok(ActionDetail::KickStreamSet { live: *live })
+            }
+            StepAction::KickChannelPolled { within_ms } => {
+                let kick = self.kick()?;
+                let from = kick.ledger().requests.len();
+                kick.wait_for(
+                    "a Kick channel poll",
+                    Duration::from_millis(*within_ms),
+                    |ledger| {
+                        ledger.requests[from..]
+                            .iter()
+                            .any(|request| {
+                                request.path == CHANNELS_PATH
+                                    && request.status == StatusCode::OK.as_u16()
+                            })
+                            .then_some(())
+                    },
+                )
+                .await
+                .map(|()| ActionDetail::KickChannelPolled)
+                .map_err(refused)
+            }
             StepAction::ObsOnline {} => self
                 .obs()?
                 .go_online()
@@ -325,6 +378,11 @@ impl Stimuli<'_> {
                 "forge_restart replaces the running forge, so the session performs it".to_owned(),
             )),
         }
+    }
+
+    fn kick(&self) -> Result<&FakeKick, ActionFailure> {
+        self.kick
+            .ok_or_else(|| plain("the run has no fake Kick".to_owned()))
     }
 
     fn vtube(&self) -> Result<&FakeVTube, ActionFailure> {

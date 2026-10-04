@@ -6,8 +6,8 @@ use forge_types::Variant;
 use super::crowd::{Crowd, CrowdLine, template_problem};
 use super::donation::{DonatelloGift, MonobankGift, OfflineGift};
 use super::expectation::{
-    AbsentEvent, Causation, DiscordPost, Expectation, LogLine, ObservedEvent, OverlayContent,
-    RequestCount, TwitchSubscription,
+    AbsentEvent, Causation, DiscordPost, Expectation, KickRequestSeen, LogLine, ObservedEvent,
+    OverlayContent, RequestCount, TwitchSubscription,
 };
 use super::matcher::{PayloadMatchers, ValueMatcher};
 use super::model::Scenario;
@@ -68,6 +68,7 @@ struct Validator<'a> {
     pages_opened: HashSet<&'a str>,
     obs_online: bool,
     vtube_online: bool,
+    kick_live: bool,
 }
 
 impl<'a> Validator<'a> {
@@ -92,6 +93,11 @@ impl<'a> Validator<'a> {
                 .vtube
                 .as_ref()
                 .is_some_and(|vtube| vtube.online_at_boot),
+            kick_live: scenario
+                .fakes
+                .kick
+                .as_ref()
+                .is_some_and(|kick| kick.live_at_boot),
         }
     }
 
@@ -146,6 +152,9 @@ impl<'a> Validator<'a> {
             if step.action.needs_fake_vtube() {
                 self.require_fake_vtube(&location);
             }
+            if step.action.needs_fake_kick() {
+                self.require_fake_kick(&location);
+            }
             self.check_action(index, &location, &step.action);
             for (position, expectation) in step.expect.iter().enumerate() {
                 let location = format!(
@@ -160,6 +169,9 @@ impl<'a> Validator<'a> {
                 }
                 if expectation.needs_fake_vtube() {
                     self.require_fake_vtube(&location);
+                }
+                if expectation.needs_fake_kick() {
+                    self.require_fake_kick(&location);
                 }
                 if expectation.needs_fake_discord() && !self.fake_discord {
                     self.report(
@@ -212,6 +224,7 @@ impl<'a> Validator<'a> {
             }
             (None, None) => {}
         }
+        self.check_fake_kick();
         self.check_fake_obs();
         self.check_fake_vtube();
         self.check_fake_donations();
@@ -318,6 +331,95 @@ impl<'a> Validator<'a> {
             }
             _ => {}
         }
+    }
+
+    fn require_fake_kick(&mut self, location: &str) {
+        let scenario = self.scenario;
+        if scenario.fixture.kick.is_none() || scenario.fakes.kick.is_none() {
+            self.report(
+                location,
+                "needs a fake Kick: add fixture.kick and fakes.kick",
+            );
+        }
+    }
+
+    fn check_fake_kick(&mut self) {
+        let scenario = self.scenario;
+        match (&scenario.fixture.kick, &scenario.fakes.kick) {
+            (Some(_), None) => self.report(
+                "fakes.kick",
+                "is required because the fixture seeds a Kick account; without it forge would reach the real Kick",
+            ),
+            (None, Some(_)) => self.report(
+                "fakes.kick",
+                "needs fixture.kick: the fake accepts only the credentials the fixture seeds",
+            ),
+            (Some(_), Some(setup)) => {
+                if setup.chatroom_id == 0 {
+                    self.report("fakes.kick.chatroom_id", "must be non-zero");
+                }
+            }
+            (None, None) => {}
+        }
+    }
+
+    fn check_kick_action(&mut self, location: &str, action: &StepAction) {
+        match action {
+            StepAction::KickChatJoined { within_ms }
+            | StepAction::KickChannelPolled { within_ms } => {
+                self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
+            }
+            StepAction::KickChat(message) => {
+                self.not_blank(format!("{location}.text"), &message.text);
+                self.not_blank(
+                    format!("{location}.sender.username"),
+                    &message.sender.username,
+                );
+                if message.sender.user_id == 0 {
+                    self.report(format!("{location}.sender.user_id"), "must be non-zero");
+                }
+            }
+            StepAction::KickPusherEvent { event, data } => {
+                self.not_blank(format!("{location}.event"), event);
+                if !data.is_object() {
+                    self.report(
+                        format!("{location}.data"),
+                        "must be a JSON object: Kick events carry an object encoded as a string",
+                    );
+                }
+            }
+            StepAction::KickStream { live } => {
+                if *live == self.kick_live {
+                    self.report(
+                        format!("{location}.live"),
+                        format!(
+                            "the fake Kick stream is already {}, so this step changes nothing",
+                            if *live { "live" } else { "offline" }
+                        ),
+                    );
+                }
+                self.kick_live = *live;
+            }
+            _ => {}
+        }
+    }
+
+    fn check_kick_request(&mut self, location: &str, request: &KickRequestSeen) {
+        self.check_request_count(
+            location,
+            &RequestCount {
+                method: request.method.clone(),
+                path: request.path.clone(),
+                min: Some(1),
+                max: None,
+            },
+        );
+        self.in_range(
+            format!("{location}.within_ms"),
+            request.within_ms,
+            1,
+            MAX_WAIT_MS,
+        );
     }
 
     fn require_fake_obs(&mut self, location: &str) {
@@ -538,6 +640,11 @@ impl<'a> Validator<'a> {
                     );
                 }
             }
+            StepAction::KickChatJoined { .. }
+            | StepAction::KickChat(_)
+            | StepAction::KickPusherEvent { .. }
+            | StepAction::KickStream { .. }
+            | StepAction::KickChannelPolled { .. } => self.check_kick_action(location, action),
             StepAction::ObsOnline {}
             | StepAction::ObsIdentified { .. }
             | StepAction::ObsRestart { .. }
@@ -788,7 +895,11 @@ impl<'a> Validator<'a> {
                 self.check_subscription_expectation(location, subscription);
             }
             Expectation::TwitchNoUnexpectedRequests {} => {}
-            Expectation::TwitchRequestCount(count) => self.check_request_count(location, count),
+            Expectation::TwitchRequestCount(count) | Expectation::KickRequestCount(count) => {
+                self.check_request_count(location, count);
+            }
+            Expectation::KickRequest(request) => self.check_kick_request(location, request),
+            Expectation::KickNoUnexpectedRequests {} => {}
             Expectation::OverlayContent(content) => self.check_overlay_content(location, content),
             Expectation::LogLine(line) => self.check_log_line(location, line),
             Expectation::DiscordPost(post) => self.check_discord_post(location, post),

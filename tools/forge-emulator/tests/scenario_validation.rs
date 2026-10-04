@@ -1637,3 +1637,142 @@ fn vtube_fake_step_and_expectation_problems_are_located() {
         ),
     ]);
 }
+
+fn with_kick(mut scenario: Value) -> Value {
+    scenario["fixture"]["kick"] = json!({});
+    scenario["fakes"]["kick"] = json!({});
+    scenario
+}
+
+#[test]
+fn kick_fake_step_and_expectation_problems_are_located() {
+    let mut account_without_fake = with_kick(base());
+    account_without_fake["fakes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("kick");
+    let mut fake_without_account = base();
+    fake_without_account["fakes"]["kick"] = json!({});
+    let mut no_chatroom = with_kick(base());
+    no_chatroom["fakes"]["kick"]["chatroom_id"] = json!(0);
+    let mut blank_username = with_kick(base());
+    blank_username["fixture"]["kick"]["username"] = json!(" ");
+    assert_cases(vec![
+        (
+            "a seeded account with no fake to answer it",
+            account_without_fake,
+            vec![(
+                "fakes.kick",
+                "is required because the fixture seeds a Kick account; without it forge would reach the real Kick",
+            )],
+        ),
+        (
+            "a fake no seeded account uses",
+            fake_without_account,
+            vec![(
+                "fakes.kick",
+                "needs fixture.kick: the fake accepts only the credentials the fixture seeds",
+            )],
+        ),
+        (
+            "a chatroom no connection could join",
+            no_chatroom,
+            vec![("fakes.kick.chatroom_id", "must be non-zero")],
+        ),
+        (
+            "a blank seeded username",
+            blank_username,
+            vec![(
+                "fixture",
+                "kick.username is blank, so forge could not reach the fake Kick",
+            )],
+        ),
+        (
+            "Kick steps and checks with no fake",
+            with_steps([expecting(
+                json!({ "kick_chat_joined": { "within_ms": 100 } }),
+                json!([{ "kick_no_unexpected_requests": {} }]),
+            )]),
+            vec![
+                (
+                    "steps[2].do.kick_chat_joined",
+                    "needs a fake Kick: add fixture.kick and fakes.kick",
+                ),
+                (
+                    "steps[2].expect[0].kick_no_unexpected_requests",
+                    "needs a fake Kick: add fixture.kick and fakes.kick",
+                ),
+            ],
+        ),
+        (
+            "malformed Kick stimuli",
+            with_kick(with_steps([
+                step(
+                    json!({ "kick_chat": { "sender": { "user_id": 0, "username": "" }, "text": " " } }),
+                ),
+                step(json!({ "kick_pusher_event": { "event": "", "data": "not an object" } })),
+                step(json!({ "kick_channel_polled": { "within_ms": 0 } })),
+            ])),
+            vec![
+                ("steps[2].do.kick_chat.text", "must not be blank"),
+                ("steps[2].do.kick_chat.sender.username", "must not be blank"),
+                ("steps[2].do.kick_chat.sender.user_id", "must be non-zero"),
+                ("steps[3].do.kick_pusher_event.event", "must not be blank"),
+                (
+                    "steps[3].do.kick_pusher_event.data",
+                    "must be a JSON object: Kick events carry an object encoded as a string",
+                ),
+                (
+                    "steps[4].do.kick_channel_polled.within_ms",
+                    "must be between 1 and 120000, got 0",
+                ),
+            ],
+        ),
+        (
+            "a stream step that repeats the current state",
+            with_kick(with_steps([
+                step(json!({ "kick_stream": { "live": false } })),
+                step(json!({ "kick_stream": { "live": true } })),
+                step(json!({ "kick_stream": { "live": true } })),
+            ])),
+            vec![
+                (
+                    "steps[2].do.kick_stream.live",
+                    "the fake Kick stream is already offline, so this step changes nothing",
+                ),
+                (
+                    "steps[4].do.kick_stream.live",
+                    "the fake Kick stream is already live, so this step changes nothing",
+                ),
+            ],
+        ),
+        (
+            "malformed Kick request checks",
+            with_kick(with_steps([expecting(
+                pause(),
+                json!([
+                    { "kick_request": { "method": "post", "path": "public/v1/chat", "within_ms": 0 } },
+                    { "kick_request_count": { "path": "/public/v1/chat" } }
+                ]),
+            )])),
+            vec![
+                (
+                    "steps[2].expect[0].kick_request.path",
+                    "must start with `/`",
+                ),
+                (
+                    "steps[2].expect[0].kick_request.method",
+                    "`post` is not an upper-case HTTP method such as GET",
+                ),
+                (
+                    "steps[2].expect[0].kick_request.within_ms",
+                    "must be between 1 and 120000, got 0",
+                ),
+                (
+                    "steps[2].expect[1].kick_request_count",
+                    "needs min, max, or both",
+                ),
+            ],
+        ),
+    ]);
+}

@@ -16,6 +16,6 @@ pub use seeder::seed_forge_environment;
 pub use spawn::seed;
 pub use spec::{
     ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, DonatelloAccount, EventTrigger, Fixture,
-    FixtureAction, MonobankAccount, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, ObsConnection,
-    OverlayFixture, QueueFixture, TwitchAccount, VTubeConnection, overlay_targets,
+    FixtureAction, KickAccount, MonobankAccount, OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY,
+    ObsConnection, OverlayFixture, QueueFixture, TwitchAccount, VTubeConnection, overlay_targets,
 };

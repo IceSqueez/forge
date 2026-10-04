@@ -723,3 +723,61 @@ async fn a_vtube_connection_without_a_port_is_refused_instead_of_seeded() {
         "{refused:?}"
     );
 }
+
+#[tokio::test]
+async fn a_seeded_kick_account_is_served_by_forges_manager_refreshing_only_when_expired() {
+    for token_expired in [false, true] {
+        let account = forge_emulator::fixture::KickAccount {
+            token_expired,
+            ..forge_emulator::fixture::KickAccount::default()
+        };
+        let fake = forge_emulator::kick::FakeKick::start(
+            forge_emulator::kick::FakeKickConfig::for_account(
+                &account,
+                &forge_emulator::kick::FakeKickSetup::default(),
+            ),
+        )
+        .await
+        .unwrap();
+        let overrides = fake.endpoint_overrides();
+        let endpoints = forge_platform_core::PlatformEndpoints::resolve(|variable| {
+            overrides
+                .iter()
+                .find(|(name, _)| *name == variable)
+                .map(|(_, url)| std::ffi::OsString::from(url))
+        })
+        .unwrap();
+        let (dir, _) = seed_fresh(&Fixture {
+            kick: Some(account.clone()),
+            ..Fixture::default()
+        })
+        .await;
+        let backend = Arc::new(reopen(dir.path()).await);
+        let configured = forge_storage::has_credentials_for(
+            backend.as_ref(),
+            &forge_platform_kick::KICK_INTEGRATION.id,
+        )
+        .await
+        .unwrap();
+        let manager = forge_platform_kick::KickCredentialsManager::new(
+            &endpoints,
+            Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+            account.client_id.clone(),
+            account.client_secret.clone(),
+        );
+        let served = manager.get_valid_access_token().await.unwrap();
+        let user_id = manager.user_id().await.unwrap();
+        backend.shutdown().await;
+
+        let expected_token = if token_expired {
+            fake.access_token()
+        } else {
+            account.access_token.clone()
+        };
+        assert_eq!(
+            (configured, served, user_id),
+            (true, expected_token, account.user_id),
+            "token_expired = {token_expired}"
+        );
+    }
+}

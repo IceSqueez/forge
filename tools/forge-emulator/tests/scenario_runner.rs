@@ -8,6 +8,7 @@ use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint};
 use forge_emulator::discord::FakeDiscord;
 use forge_emulator::donatello::{FAKE_DONATELLO_TOKEN, FakeDonatello, FakeDonatelloConfig};
 use forge_emulator::fixture::{SeedReport, SeededCommand, SeededServer, TwitchAccount};
+use forge_emulator::kick::FakeKick;
 use forge_emulator::monobank::{FAKE_MONOBANK_TOKEN, FakeJar, FakeMonobank, FakeMonobankConfig};
 use forge_emulator::obs::{FakeObs, FakeObsConfig};
 use forge_emulator::overlay::OverlayPages;
@@ -290,6 +291,7 @@ struct Harness {
     forge: PretendForge,
     fake: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
+    kick: Option<FakeKick>,
     obs: Option<FakeObs>,
     vtube: Option<FakeVTube>,
     donatello: Option<FakeDonatello>,
@@ -345,6 +347,7 @@ impl Harness {
             forge,
             fake,
             discord: None,
+            kick: None,
             obs: None,
             vtube: None,
             donatello: None,
@@ -364,6 +367,7 @@ impl Harness {
             journal: &self.journal,
             twitch: self.fake.as_ref(),
             discord: self.discord.as_ref(),
+            kick: self.kick.as_ref(),
             obs: self.obs.as_ref(),
             vtube: self.vtube.as_ref(),
             donations: DonationFakes {
@@ -1497,5 +1501,217 @@ async fn a_vtube_expression_change_passes_without_a_listening_session() {
             Some(ActionReport::Done(ActionDetail::VTubeStateChanged))
         ),
         "{steps:#?}"
+    );
+}
+
+fn kick_scenario(steps: Value) -> Scenario {
+    scenario(json!({ "kick": {} }), json!({ "kick": {} }), steps)
+}
+
+async fn harness_with_kick() -> Harness {
+    let mut harness = Harness::start(COOPERATIVE, false).await;
+    harness.kick = Some(
+        FakeKick::start(forge_emulator::kick::FakeKickConfig::default())
+            .await
+            .unwrap(),
+    );
+    harness
+}
+
+fn kick_endpoints(fake: &FakeKick) -> forge_platform_core::PlatformEndpoints {
+    let overrides = fake.endpoint_overrides();
+    forge_platform_core::PlatformEndpoints::resolve(|variable| {
+        overrides
+            .iter()
+            .find(|(name, _)| *name == variable)
+            .map(|(_, url)| std::ffi::OsString::from(url))
+    })
+    .unwrap()
+}
+
+struct KickGrant;
+
+#[async_trait::async_trait]
+impl forge_platform_core::RateLimiter for KickGrant {
+    async fn acquire(
+        &self,
+        _weight: u32,
+    ) -> Result<forge_platform_core::RateLimitOutcome, forge_platform_core::PlatformError> {
+        Ok(forge_platform_core::RateLimitOutcome::Granted)
+    }
+
+    fn remaining(&self) -> u32 {
+        u32::MAX
+    }
+
+    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+}
+
+async fn forge_kick_echo(fake: &FakeKick) -> forge_platform_kick::KickChatHandle {
+    let endpoints = kick_endpoints(fake);
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<Event>(16);
+    let handle = forge_platform_kick::KickChat::new(
+        &endpoints,
+        fake.config().username.clone(),
+        reqwest::Client::new(),
+    )
+    .connect(event_tx)
+    .await
+    .unwrap();
+    let sender = forge_platform_kick::KickSendChat::new(&endpoints, Arc::new(KickGrant));
+    let token = fake.access_token();
+    let broadcaster = fake.config().user_id;
+    tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let text = event.payload["content"].as_str().unwrap_or_default();
+            let _ = sender
+                .send(&format!("echo {text}"), &token, broadcaster, false)
+                .await;
+        }
+    });
+    handle
+}
+
+#[tokio::test]
+async fn kick_chat_reaches_a_joined_forge_and_its_reply_satisfies_kick_request() {
+    let harness = harness_with_kick().await;
+    let forge = forge_kick_echo(harness.kick.as_ref().unwrap()).await;
+    let scenario = kick_scenario(json!([
+        ready(),
+        { "do": { "kick_chat_joined": { "within_ms": 10000 } } },
+        {
+            "do": { "kick_chat": { "sender": { "user_id": 7, "username": "alice" }, "text": "hi" } },
+            "expect": [
+                {
+                    "kick_request": {
+                        "method": "POST",
+                        "path": "/public/v1/chat",
+                        "body": { "/content": { "equals": "echo hi" } },
+                        "status": 200,
+                        "within_ms": 10000
+                    }
+                },
+                { "kick_request_count": { "path": "/public/v1/chat", "min": 1, "max": 1 } },
+                { "kick_no_unexpected_requests": {} }
+            ]
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+    forge.shutdown();
+
+    assert_eq!(
+        verdicts(&steps[2]),
+        [Verdict::Passed, Verdict::Passed, Verdict::Passed],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn kick_request_fails_when_forge_sends_nothing_in_the_window() {
+    let harness = harness_with_kick().await;
+    let scenario = kick_scenario(json!([
+        ready(),
+        {
+            "do": { "pause": { "ms": 10, "reason": "give forge a moment" } },
+            "expect": [
+                { "kick_request": { "path": "/public/v1/chat", "within_ms": 100 } }
+            ]
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        verdicts(&steps[1]),
+        [Verdict::Failed(FailureCause::NoKickRequest { observed: 0 })],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn kick_chat_fails_its_step_when_no_connection_joined() {
+    let harness = harness_with_kick().await;
+    let scenario = kick_scenario(json!([
+        ready(),
+        { "do": { "kick_chat": { "sender": { "user_id": 7, "username": "alice" }, "text": "hi" } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(&steps[1].action, Some(ActionReport::Failed { reason, .. })
+            if reason.contains("no live Kick chat connection")),
+        "{:?}",
+        steps[1].action
+    );
+}
+
+#[tokio::test]
+async fn kick_no_unexpected_requests_fails_after_an_unmodeled_call() {
+    let harness = harness_with_kick().await;
+    let fake = harness.kick.as_ref().unwrap();
+    let users = format!(
+        "{}/users",
+        kick_endpoints(fake).base_url(forge_platform_core::EndpointSurface::KickPublicApi)
+    );
+    reqwest::get(&users).await.unwrap();
+    let scenario = kick_scenario(json!([
+        ready(),
+        {
+            "do": { "pause": { "ms": 10, "reason": "give forge a moment" } },
+            "expect": [{ "kick_no_unexpected_requests": {} }]
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        verdicts(&steps[1]),
+        [Verdict::Failed(FailureCause::UnexpectedKickRequests {
+            count: 1
+        })],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn kick_channel_polled_passes_once_a_polling_forge_reads_the_channel() {
+    let harness = harness_with_kick().await;
+    let fake = harness.kick.as_ref().unwrap();
+    let channel = forge_platform_kick::KickChannel::new(&kick_endpoints(fake), Arc::new(KickGrant));
+    let token = fake.access_token();
+    let poller = tokio::spawn(async move {
+        loop {
+            channel.get_channel(&token).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    });
+    let scenario = kick_scenario(json!([
+        ready(),
+        { "do": { "kick_channel_polled": { "within_ms": 5000 } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+    poller.abort();
+
+    assert_eq!(steps[1].status, StepStatus::Passed, "{steps:#?}");
+}
+
+#[tokio::test]
+async fn kick_channel_polled_fails_when_forge_never_reads_the_channel() {
+    let harness = harness_with_kick().await;
+    let scenario = kick_scenario(json!([
+        ready(),
+        { "do": { "kick_channel_polled": { "within_ms": 100 } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(&steps[1].action, Some(ActionReport::Failed { reason, .. })
+            if reason.contains("a Kick channel poll")),
+        "{:?}",
+        steps[1].action
     );
 }

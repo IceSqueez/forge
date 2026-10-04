@@ -1,0 +1,103 @@
+{
+  "name": "a Kick chat command replies through the Kick send endpoint",
+  "purpose": "forge joins the channel's chatroom on the Pusher socket after reading the chatroom id from the channel API. One viewer chat message that starts with the command phrase must arrive as kick.chat.message.sent, run the action bound to the kick.chat.command trigger, and that action's Send Message step must post the interpolated reply to the official chat endpoint as the broadcaster, then publish chat.send. Every request forge makes must be one the fake models, so a Kick call still aimed at a hard-coded production host or path shows up here.",
+  "fixture": {
+    "kick": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "kick.chat.command",
+        "action_name": "Kick Hello",
+        "config": {
+          "phrase": { "type": "string", "value": "!hello" },
+          "case_sensitive": { "type": "bool", "value": false }
+        },
+        "steps": [
+          {
+            "kind_id": "kick.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "hi %user_login%" },
+              "as_bot": { "type": "bool", "value": false }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "kick": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "kick_chat_joined": { "within_ms": 30000 } } },
+    {
+      "do": {
+        "kick_chat": {
+          "sender": { "user_id": 200000042, "username": "alice_kick" },
+          "text": "!hello there"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat",
+            "source": "kick",
+            "kind": "kick.chat.message.sent",
+            "payload": {
+              "/content": { "equals": "!hello there" },
+              "/sender/username": { "equals": "alice_kick" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Kick Hello" } },
+            "within_ms": 5000
+          }
+        },
+        { "caused_by": { "effect": "started", "cause": "chat" } },
+        {
+          "kick_request": {
+            "method": "POST",
+            "path": "/public/v1/chat",
+            "body": {
+              "/content": { "equals": "hi alice_kick" },
+              "/type": { "equals": "user" },
+              "/broadcaster_user_id": { "equals": 200000001 }
+            },
+            "status": 200,
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "kick",
+            "kind": "chat.send",
+            "payload": {
+              "/channel": { "equals": "kick" },
+              "/message": { "equals": "hi alice_kick" }
+            },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.done",
+            "payload": {
+              "/action_name": { "equals": "Kick Hello" },
+              "/outcome": { "equals": "success" }
+            },
+            "within_ms": 5000
+          }
+        },
+        { "kick_request_count": { "method": "POST", "path": "/public/v1/chat", "min": 1, "max": 1 } },
+        { "kick_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

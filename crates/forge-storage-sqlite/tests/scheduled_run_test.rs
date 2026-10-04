@@ -687,16 +687,150 @@ async fn deleting_an_action_drops_its_pending_runs_and_keeps_its_history_and_oth
     );
 }
 
+fn whole_second(at: OffsetDateTime) -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(at.unix_timestamp()).unwrap()
+}
+
 #[tokio::test]
-async fn archiving_an_action_keeps_its_pending_runs() {
+async fn archiving_an_action_cancels_its_pending_runs_as_action_removed_at_archive_time() {
     let backend = setup().await;
     let repo = backend.scheduled_run_repo();
     let (archived, _) = saved_actions(&backend).await;
-    let pending = place(&repo, &spec(archived, 10, None)).await;
+    let keyed = place(&repo, &spec(archived, 10, Some("vip:alice"))).await;
+    let plain = place(&repo, &spec(archived, 20, None)).await;
+    let before = whole_second(OffsetDateTime::now_utc());
 
     assert!(backend.action_repo().archive(archived).await.unwrap());
 
-    assert_eq!(pending_ids(&repo).await, vec![pending]);
+    let after = OffsetDateTime::now_utc();
+    for id in [keyed, plain] {
+        let run = fetch(&repo, id).await;
+        let resolved_at = run
+            .resolved_at
+            .expect("a cancelled run carries its resolution time");
+        assert_eq!(
+            (
+                run.state,
+                run.outcome_reason.as_deref(),
+                (before..=after).contains(&resolved_at),
+            ),
+            (ScheduledRunState::Cancelled, Some("action_removed"), true),
+            "{id:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn archiving_an_action_spares_its_resolved_runs_and_other_actions_pending_runs() {
+    let backend = setup().await;
+    let repo = backend.scheduled_run_repo();
+    let (archived, kept) = saved_actions(&backend).await;
+    let dispatched = place(&repo, &spec(archived, 1, None)).await;
+    repo.claim(dispatched, at_min(1)).await.unwrap();
+    let cancelled = place(&repo, &spec(archived, 10, None)).await;
+    repo.cancel(cancelled, at_min(2)).await.unwrap();
+    let kept_pending = place(&repo, &spec(kept, 10, None)).await;
+
+    assert!(backend.action_repo().archive(archived).await.unwrap());
+
+    let dispatched = fetch(&repo, dispatched).await;
+    let cancelled = fetch(&repo, cancelled).await;
+    assert_eq!(
+        (
+            dispatched.state,
+            dispatched.resolved_at,
+            cancelled.outcome_reason.as_deref(),
+            cancelled.resolved_at,
+            pending_ids(&repo).await,
+        ),
+        (
+            ScheduledRunState::Dispatched,
+            Some(at_min(1)),
+            Some("cancelled"),
+            Some(at_min(2)),
+            vec![kept_pending],
+        )
+    );
+}
+
+#[tokio::test]
+async fn archiving_an_already_archived_or_missing_action_leaves_pending_runs_pending() {
+    let backend = setup().await;
+    let repo = backend.scheduled_run_repo();
+    let (archived, _) = saved_actions(&backend).await;
+    assert!(backend.action_repo().archive(archived).await.unwrap());
+
+    for (target, case) in [
+        (archived, "an already archived action"),
+        (ActionId::new(), "an action that does not exist"),
+    ] {
+        let pending = place(&repo, &spec(target, 10, None)).await;
+
+        let changed = backend.action_repo().archive(target).await.unwrap();
+
+        assert_eq!(
+            (changed, fetch(&repo, pending).await.state),
+            (false, ScheduledRunState::Pending),
+            "{case}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn archiving_advances_the_schedule_revision_only_when_a_pending_run_was_cancelled() {
+    let backend = setup().await;
+    let repo = backend.scheduled_run_repo();
+    let (with_runs, without_runs) = saved_actions(&backend).await;
+    let missing = ActionId::new();
+    place(&repo, &spec(with_runs, 10, None)).await;
+    place(&repo, &spec(missing, 10, None)).await;
+    let revision = backend.scheduled_run_revision();
+
+    for (id, expect_advance, case) in [
+        (missing, false, "a missing action with a pending run"),
+        (without_runs, false, "an action without pending runs"),
+        (with_runs, true, "an action with a pending run"),
+        (with_runs, false, "the same action archived again"),
+    ] {
+        let before = revision.current();
+        backend.action_repo().archive(id).await.unwrap();
+        assert_eq!(revision.current() > before, expect_advance, "{case}");
+    }
+}
+
+#[tokio::test]
+async fn restoring_an_archived_action_does_not_bring_its_cancelled_runs_back() {
+    let backend = setup().await;
+    let repo = backend.scheduled_run_repo();
+    let (archived, _) = saved_actions(&backend).await;
+    let run = place(&repo, &spec(archived, 10, None)).await;
+    assert!(backend.action_repo().archive(archived).await.unwrap());
+
+    assert!(backend.action_repo().restore(archived).await.unwrap());
+
+    assert_eq!(
+        (
+            fetch(&repo, run).await.state,
+            repo.count_pending_for_action(archived).await.unwrap(),
+        ),
+        (ScheduledRunState::Cancelled, 0)
+    );
+}
+
+#[tokio::test]
+async fn deleting_an_archived_action_keeps_the_runs_its_archive_cancelled() {
+    let backend = setup().await;
+    let repo = backend.scheduled_run_repo();
+    let (archived, _) = saved_actions(&backend).await;
+    let run = place(&repo, &spec(archived, 10, None)).await;
+    assert!(backend.action_repo().archive(archived).await.unwrap());
+
+    assert!(backend.action_repo().delete(archived).await.unwrap());
+
+    assert_eq!(
+        fetch(&repo, run).await.outcome_reason.as_deref(),
+        Some("action_removed")
+    );
 }
 
 #[tokio::test]

@@ -1349,6 +1349,7 @@ dependencies = [
  "forge-platform-core",
  "forge-platform-kick",
  "forge-platform-twitch",
+ "forge-platform-youtube",
  "forge-registry",
  "forge-server",
  "forge-storage",
@@ -1369,6 +1370,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-tungstenite 0.30.0",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1506,6 +1508,28 @@ dependencies = [
  "tokio-util",
  "tracing",
  "twitch_api",
+]
+
+[[package]]
+name = "forge-platform-youtube"
+version = "0.5.5"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-storage",
+ "forge-types",
+ "futures",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

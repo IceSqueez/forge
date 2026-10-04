@@ -19,6 +19,7 @@ use forge_emulator::run::{
 use forge_emulator::scenario::{Scenario, parse_scenario};
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
 use forge_emulator::vtube::{FakeVTube, FakeVTubeConfig};
+use forge_emulator::youtube::{FakeYouTube, FakeYouTubeConfig};
 use forge_events::{Event, EventSource};
 use forge_types::{ActionId, EventId, TriggerInstanceId};
 use futures_util::{SinkExt, StreamExt};
@@ -292,6 +293,7 @@ struct Harness {
     fake: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
     kick: Option<FakeKick>,
+    youtube: Option<FakeYouTube>,
     obs: Option<FakeObs>,
     vtube: Option<FakeVTube>,
     donatello: Option<FakeDonatello>,
@@ -348,6 +350,7 @@ impl Harness {
             fake,
             discord: None,
             kick: None,
+            youtube: None,
             obs: None,
             vtube: None,
             donatello: None,
@@ -368,6 +371,7 @@ impl Harness {
             twitch: self.fake.as_ref(),
             discord: self.discord.as_ref(),
             kick: self.kick.as_ref(),
+            youtube: self.youtube.as_ref(),
             obs: self.obs.as_ref(),
             vtube: self.vtube.as_ref(),
             donations: DonationFakes {
@@ -1713,5 +1717,226 @@ async fn kick_channel_polled_fails_when_forge_never_reads_the_channel() {
             if reason.contains("a Kick channel poll")),
         "{:?}",
         steps[1].action
+    );
+}
+
+fn youtube_scenario(steps: Value) -> Scenario {
+    scenario(
+        json!({ "youtube": {} }),
+        json!({ "youtube": { "live_at_boot": true } }),
+        steps,
+    )
+}
+
+async fn harness_with_youtube(live: bool) -> Harness {
+    let mut harness = Harness::start(COOPERATIVE, false).await;
+    harness.youtube = Some(
+        FakeYouTube::start(FakeYouTubeConfig {
+            live,
+            ..FakeYouTubeConfig::default()
+        })
+        .await
+        .unwrap(),
+    );
+    harness
+}
+
+fn youtube_endpoints(fake: &FakeYouTube) -> forge_platform_core::PlatformEndpoints {
+    let overrides = fake.endpoint_overrides();
+    forge_platform_core::PlatformEndpoints::resolve(|variable| {
+        overrides
+            .iter()
+            .find(|(name, _)| *name == variable)
+            .map(|(_, url)| std::ffi::OsString::from(url))
+    })
+    .unwrap()
+}
+
+fn youtube_token(
+    fake: &FakeYouTube,
+) -> Arc<
+    dyn Fn() -> futures_util::future::BoxFuture<
+            'static,
+            Result<String, forge_platform_core::PlatformError>,
+        > + Send
+        + Sync,
+> {
+    let token = fake.access_token();
+    Arc::new(move || {
+        let token = token.clone();
+        Box::pin(async move { Ok(token) })
+    })
+}
+
+fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
+    let endpoints = youtube_endpoints(fake);
+    let live_chat = forge_platform_youtube::LiveChatIdHandle::new();
+    let quota = Arc::new(tokio::sync::Mutex::new(
+        forge_platform_youtube::QuotaState::default(),
+    ));
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let poller = forge_platform_youtube::YoutubeChatPoller::new(
+        &endpoints,
+        youtube_token(fake),
+        event_tx,
+        fake.config().channel_id.clone(),
+        live_chat.clone(),
+        forge_platform_youtube::ActiveBroadcastIdHandle::new(),
+        Arc::clone(&quota),
+    );
+    let sender = forge_platform_youtube::YoutubeSendChat::new(
+        &endpoints,
+        youtube_token(fake),
+        live_chat,
+        quota,
+    );
+    tokio::spawn(async move {
+        let polling = tokio::spawn(poller.run(tokio_util::sync::CancellationToken::new()));
+        while let Some(event) = event_rx.recv().await {
+            if event.kind == "youtube.chat.command" {
+                let text = event.payload["message_text"].as_str().unwrap_or_default();
+                sender.send(&format!("echo {text}")).await.ok();
+            }
+        }
+        polling.abort();
+    })
+}
+
+#[tokio::test]
+async fn youtube_chat_reaches_a_polling_forge_and_its_reply_satisfies_youtube_request() {
+    let harness = harness_with_youtube(true).await;
+    let forge = forge_youtube_echo(harness.youtube.as_ref().unwrap());
+    let scenario = youtube_scenario(json!([
+        ready(),
+        { "do": { "youtube_chat_polled": { "within_ms": 10000 } } },
+        {
+            "do": {
+                "youtube_chat": {
+                    "author": { "channel_id": "UCaliceViewer00000000001", "display_name": "Alice" },
+                    "text": "!hi"
+                }
+            },
+            "expect": [
+                {
+                    "youtube_request": {
+                        "method": "POST",
+                        "path": "/youtube/v3/liveChat/messages",
+                        "body": { "/snippet/textMessageDetails/messageText": { "equals": "echo !hi" } },
+                        "status": 200,
+                        "within_ms": 10000
+                    }
+                },
+                { "youtube_request_count": { "method": "POST", "path": "/youtube/v3/liveChat/messages", "min": 1, "max": 1 } },
+                { "youtube_no_unexpected_requests": {} }
+            ]
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+    forge.abort();
+
+    assert_eq!(
+        verdicts(&steps[2]),
+        [Verdict::Passed, Verdict::Passed, Verdict::Passed],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn youtube_request_fails_when_forge_sends_nothing_in_the_window() {
+    let harness = harness_with_youtube(true).await;
+    let scenario = youtube_scenario(json!([
+        ready(),
+        {
+            "do": { "pause": { "ms": 10, "reason": "give forge a moment" } },
+            "expect": [
+                { "youtube_request": { "path": "/youtube/v3/liveChat/messages", "within_ms": 100 } }
+            ]
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        verdicts(&steps[1]),
+        [Verdict::Failed(FailureCause::NoYouTubeRequest {
+            observed: 0
+        })],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn youtube_chat_polled_fails_naming_the_build_time_client_when_forge_never_polls() {
+    let harness = harness_with_youtube(true).await;
+    let scenario = youtube_scenario(json!([
+        ready(),
+        { "do": { "youtube_chat_polled": { "within_ms": 100 } } }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(&steps[1].action, Some(ActionReport::Failed { reason, .. })
+            if reason.contains("FORGE_YOUTUBE_CLIENT_ID")),
+        "{:?}",
+        steps[1].action
+    );
+}
+
+#[tokio::test]
+async fn youtube_chat_fails_its_step_while_the_broadcast_is_offline() {
+    let harness = harness_with_youtube(false).await;
+    let scenario = youtube_scenario(json!([
+        ready(),
+        {
+            "do": {
+                "youtube_chat": {
+                    "author": { "channel_id": "UCaliceViewer00000000001", "display_name": "Alice" },
+                    "text": "hi"
+                }
+            }
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(&steps[1].action, Some(ActionReport::Failed { reason, .. })
+            if reason.contains("is not live")),
+        "{:?}",
+        steps[1].action
+    );
+}
+
+#[tokio::test]
+async fn youtube_no_unexpected_requests_fails_after_an_unmodeled_call() {
+    let harness = harness_with_youtube(true).await;
+    let fake = harness.youtube.as_ref().unwrap();
+    reqwest::Client::new()
+        .put(format!(
+            "{}/videos",
+            youtube_endpoints(fake).base_url(forge_platform_core::EndpointSurface::YouTubeDataApi)
+        ))
+        .bearer_auth(fake.access_token())
+        .send()
+        .await
+        .unwrap();
+    let scenario = youtube_scenario(json!([
+        ready(),
+        {
+            "do": { "pause": { "ms": 10, "reason": "give forge a moment" } },
+            "expect": [{ "youtube_no_unexpected_requests": {} }]
+        }
+    ]));
+
+    let steps = harness.run(&scenario).await;
+
+    assert_eq!(
+        verdicts(&steps[1]),
+        [Verdict::Failed(FailureCause::UnexpectedYouTubeRequests {
+            count: 1
+        })],
+        "{steps:#?}"
     );
 }

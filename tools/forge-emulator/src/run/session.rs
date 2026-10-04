@@ -26,6 +26,9 @@ use super::outcome::{
 use super::overlay_checks::observe_overlay_content;
 use super::steps::{ActionFailure, ActionIndex, DonationFakes, Stimuli, restart_forge};
 use super::vtube_checks::{VTubeMark, observe_vtube_auth, observe_vtube_request};
+use super::youtube_checks::{
+    assess_no_unexpected_youtube_requests, assess_youtube_request_count, observe_youtube_request,
+};
 use crate::discord::FakeDiscord;
 use crate::kick::FakeKick;
 use crate::obs::FakeObs;
@@ -33,6 +36,7 @@ use crate::overlay::{OverlayMarks, OverlayPages};
 use crate::scenario::{Expectation, Scenario, Step, StepAction};
 use crate::twitch::FakeTwitch;
 use crate::vtube::FakeVTube;
+use crate::youtube::FakeYouTube;
 
 pub struct Session<'a> {
     pub forge: &'a ForgeHost,
@@ -40,6 +44,7 @@ pub struct Session<'a> {
     pub twitch: Option<&'a FakeTwitch>,
     pub discord: Option<&'a FakeDiscord>,
     pub kick: Option<&'a FakeKick>,
+    pub youtube: Option<&'a FakeYouTube>,
     pub obs: Option<&'a FakeObs>,
     pub vtube: Option<&'a FakeVTube>,
     pub donations: DonationFakes<'a>,
@@ -107,6 +112,10 @@ async fn run_step(
         (false, Some(kick)) => KickMark::of(&kick.ledger()),
         _ => KickMark::default(),
     };
+    let youtube_from = match (is_ready_step, session.youtube) {
+        (false, Some(youtube)) => youtube.ledger().requests.len(),
+        _ => 0,
+    };
     let vtube_from = match (is_ready_step, session.vtube) {
         (false, Some(vtube)) => VTubeMark::of(&vtube.ledger()),
         _ => VTubeMark::default(),
@@ -123,6 +132,7 @@ async fn run_step(
                     client: &live.client,
                     twitch: session.twitch,
                     kick: session.kick,
+                    youtube: session.youtube,
                     obs: session.obs,
                     vtube: session.vtube,
                     donations: session.donations,
@@ -172,6 +182,7 @@ async fn run_step(
         obs_from,
         vtube_from,
         kick_from,
+        youtube_from,
     };
     let mut expectations = Vec::with_capacity(step.expect.len());
     for (position, expectation) in step.expect.iter().enumerate() {
@@ -206,6 +217,7 @@ struct ExpectationContext<'s, 'a> {
     obs_from: ObsMark,
     vtube_from: VTubeMark,
     kick_from: KickMark,
+    youtube_from: usize,
 }
 
 impl ExpectationContext<'_, '_> {
@@ -280,6 +292,30 @@ impl ExpectationContext<'_, '_> {
                 let (verdict, evidence) = match session.kick {
                     Some(kick) => assess_no_unexpected_kick_requests(&kick.ledger()),
                     None => no_fake_kick(),
+                };
+                (verdict, evidence, None)
+            }
+            Expectation::YoutubeRequest(request) => {
+                let until = deadline(request.within_ms);
+                let (verdict, evidence) = match session.youtube {
+                    Some(youtube) => {
+                        observe_youtube_request(youtube, self.youtube_from, until, request).await
+                    }
+                    None => no_fake_youtube(),
+                };
+                (verdict, evidence, Some(until))
+            }
+            Expectation::YoutubeRequestCount(count) => {
+                let (verdict, evidence) = match session.youtube {
+                    Some(youtube) => assess_youtube_request_count(&youtube.ledger(), count),
+                    None => no_fake_youtube(),
+                };
+                (verdict, evidence, None)
+            }
+            Expectation::YoutubeNoUnexpectedRequests {} => {
+                let (verdict, evidence) = match session.youtube {
+                    Some(youtube) => assess_no_unexpected_youtube_requests(&youtube.ledger()),
+                    None => no_fake_youtube(),
                 };
                 (verdict, evidence, None)
             }
@@ -398,6 +434,10 @@ fn no_fake_obs() -> (Verdict, Evidence) {
 
 fn no_fake_kick() -> (Verdict, Evidence) {
     (Verdict::Failed(FailureCause::NoFakeKick), Evidence::None)
+}
+
+fn no_fake_youtube() -> (Verdict, Evidence) {
+    (Verdict::Failed(FailureCause::NoFakeYouTube), Evidence::None)
 }
 
 fn no_fake_vtube() -> (Verdict, Evidence) {

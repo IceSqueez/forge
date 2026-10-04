@@ -15,6 +15,9 @@ pub enum Expectation {
     KickRequest(KickRequestSeen),
     KickRequestCount(RequestCount),
     KickNoUnexpectedRequests {},
+    YoutubeRequest(YouTubeRequestSeen),
+    YoutubeRequestCount(RequestCount),
+    YoutubeNoUnexpectedRequests {},
     OverlayContent(OverlayContent),
     LogLine(LogLine),
     DiscordPost(DiscordPost),
@@ -27,6 +30,19 @@ pub enum Expectation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KickRequestSeen {
+    #[serde(default)]
+    pub method: Option<String>,
+    pub path: String,
+    #[serde(default)]
+    pub body: PayloadMatchers,
+    #[serde(default)]
+    pub status: Option<u16>,
+    pub within_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct YouTubeRequestSeen {
     #[serde(default)]
     pub method: Option<String>,
     pub path: String,
@@ -214,6 +230,9 @@ impl Expectation {
             Self::KickRequest(_) => "kick_request",
             Self::KickRequestCount(_) => "kick_request_count",
             Self::KickNoUnexpectedRequests {} => "kick_no_unexpected_requests",
+            Self::YoutubeRequest(_) => "youtube_request",
+            Self::YoutubeRequestCount(_) => "youtube_request_count",
+            Self::YoutubeNoUnexpectedRequests {} => "youtube_no_unexpected_requests",
             Self::OverlayContent(_) => "overlay_content",
             Self::LogLine(_) => "log_line",
             Self::DiscordPost(_) => "discord_post",
@@ -241,7 +260,10 @@ impl Expectation {
             | Self::VtubeAuth(_)
             | Self::KickRequest(_)
             | Self::KickRequestCount(_)
-            | Self::KickNoUnexpectedRequests {} => false,
+            | Self::KickNoUnexpectedRequests {}
+            | Self::YoutubeRequest(_)
+            | Self::YoutubeRequestCount(_)
+            | Self::YoutubeNoUnexpectedRequests {} => false,
         }
     }
 
@@ -253,6 +275,15 @@ impl Expectation {
         matches!(
             self,
             Self::KickRequest(_) | Self::KickRequestCount(_) | Self::KickNoUnexpectedRequests {}
+        )
+    }
+
+    pub fn needs_fake_youtube(&self) -> bool {
+        matches!(
+            self,
+            Self::YoutubeRequest(_)
+                | Self::YoutubeRequestCount(_)
+                | Self::YoutubeNoUnexpectedRequests {}
         )
     }
 

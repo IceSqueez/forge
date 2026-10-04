@@ -328,6 +328,59 @@ within the step), `kick_request_count` and `kick_no_unexpected_requests` (whole 
 publishes Kick events with the source `kick`; chat commands are `event_triggers` with the
 `kick.chat.command` descriptor.
 
+## YouTube
+
+`fixture.youtube` seeds forge's YouTube credentials and `fakes.youtube` starts a fake YouTube: one
+loopback HTTP server for the Data API (`/youtube/v3`), the upload API (`/upload/youtube/v3`) and
+the Google token endpoint (`/oauth2/token`). The run points forge at it through
+`FORGE_YOUTUBE_API_BASE_URL`, `FORGE_YOUTUBE_UPLOAD_BASE_URL` and `FORGE_YOUTUBE_OAUTH_BASE_URL`.
+Browser login is not modelled: the credentials are seeded, never obtained.
+
+forge wires YouTube only when it was **built** with non-empty `FORGE_YOUTUBE_CLIENT_ID` and
+`FORGE_YOUTUBE_CLIENT_SECRET` (they are read at compile time, so the launch cannot supply them).
+Any values work against the fake, which accepts every client id; a build without them never
+polls, and `youtube_chat_polled` fails saying so. To build a binary for these runs without
+touching your own one:
+
+```sh
+FORGE_YOUTUBE_CLIENT_ID=emulator FORGE_YOUTUBE_CLIENT_SECRET=emulator \
+  CARGO_TARGET_DIR=/path/to/scratch/yt-target env -u RUSTUP_TOOLCHAIN cargo build
+```
+
+```json
+"fixture": { "youtube": { "channel_id": "UCemulatorForgeChannel01", "channel_title": "forge emulator",
+                          "channel_handle": "@forge_emulator", "token_expired": false } },
+"fakes": { "youtube": { "live_at_boot": false, "broadcast_id": "EmuBroadcst",
+                        "live_chat_id": "EmulatorLiveChatId0001",
+                        "broadcast_title": "forge emulator stream", "concurrent_viewers": 42,
+                        "polling_interval_ms": 3000, "refresh": "accept" } }
+```
+
+Every field is optional and the example shows the defaults; the fixture also takes
+`access_token` and `refresh_token`. `token_expired` seeds an expiry an hour in the past, so forge
+refreshes before its first authorized call. The Data API accepts only the current access token
+and answers anything else with Google's 401 `authError`; a refresh rotates the access token only,
+as Google does, and `"refresh": "reject"` answers it with 400 `invalid_grant`. Shapes follow the
+[Live Streaming API reference](https://developers.google.com/youtube/v3/live/docs): the active
+broadcast list (`liveBroadcasts?broadcastStatus=active`) carries the `liveChatId`; the chat list
+returns every message added since the `pageToken` it issued, a `nextPageToken` and
+`pollingIntervalMillis`; ending the broadcast adds a `chatEndedEvent` and `offlineAt`, after which
+the chat list and inserts answer 403 `liveChatEnded`. A `textMessageEvent` insert is echoed back
+into the chat as the channel owner, as YouTube does. The fake also models `videos` (viewer count,
+title) and `channels` for the seeded channel; any other request is answered 404 and counted as
+unexpected.
+
+forge resolves the broadcast once a minute, so a broadcast started after boot can take up to a
+minute to reach it; it learns the end from the chat poll. Steps: `youtube_chat_polled` waits for a
+successful chat poll after the step starts; `youtube_chat` adds a `textMessageEvent` from `author`
+(`channel_id`, `display_name`, optional `sponsor`, `moderator`); `youtube_chat_event` adds any
+message with the given `snippet` (copied from the liveChatMessage reference, e.g. a
+`superChatEvent` with `superChatDetails`); `youtube_broadcast` starts or ends the broadcast. Chat
+steps need the broadcast live at that point. Expectations: `youtube_request` (method, path, body
+pointers, status, within the step), `youtube_request_count` and `youtube_no_unexpected_requests`
+(whole run). The recorded refresh form never keeps `client_secret`. forge publishes YouTube events
+with the source `you_tube`.
+
 ## Throughput runs
 
 `stress run <profile> --forge <binary>` is a separate mode from scenarios: it seeds the profile's

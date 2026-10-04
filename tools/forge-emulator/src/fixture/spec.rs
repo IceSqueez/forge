@@ -29,6 +29,8 @@ pub struct Fixture {
     #[serde(default)]
     pub kick: Option<KickAccount>,
     #[serde(default)]
+    pub youtube: Option<YouTubeAccount>,
+    #[serde(default)]
     pub obs: Option<ObsConnection>,
     #[serde(default)]
     pub vtube: Option<VTubeConnection>,
@@ -132,6 +134,43 @@ impl Default for KickAccount {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct YouTubeAccount {
+    pub channel_id: String,
+    pub channel_title: String,
+    pub channel_handle: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub token_expired: bool,
+}
+
+impl Default for YouTubeAccount {
+    fn default() -> Self {
+        Self {
+            channel_id: "UCemulatorForgeChannel01".to_owned(),
+            channel_title: "forge emulator".to_owned(),
+            channel_handle: "@forge_emulator".to_owned(),
+            access_token: "emulator-youtube-access-token".to_owned(),
+            refresh_token: "emulator-youtube-refresh-token".to_owned(),
+            token_expired: false,
+        }
+    }
+}
+
+impl fmt::Debug for YouTubeAccount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("YouTubeAccount")
+            .field("channel_id", &self.channel_id)
+            .field("channel_title", &self.channel_title)
+            .field("channel_handle", &self.channel_handle)
+            .field("access_token", &REDACTED)
+            .field("refresh_token", &REDACTED)
+            .field("token_expired", &self.token_expired)
+            .finish()
+    }
+}
+
 impl fmt::Debug for KickAccount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("KickAccount")
@@ -191,6 +230,7 @@ impl Fixture {
         Self {
             twitch: Some(TwitchAccount::default()),
             kick: None,
+            youtube: None,
             overlays: Vec::new(),
             chat_commands: vec![ChatCommand {
                 phrase: "!ping".to_owned(),
@@ -312,6 +352,20 @@ impl Fixture {
                 return Err(invalid(
                     "kick.user_id is 0, which no Kick broadcaster has".to_owned(),
                 ));
+            }
+        }
+        if let Some(youtube) = &self.youtube {
+            for (field, value) in [
+                ("channel_id", &youtube.channel_id),
+                ("channel_title", &youtube.channel_title),
+                ("access_token", &youtube.access_token),
+                ("refresh_token", &youtube.refresh_token),
+            ] {
+                if value.trim().is_empty() {
+                    return Err(invalid(format!(
+                        "youtube.{field} is blank, so forge could not reach the fake YouTube"
+                    )));
+                }
             }
         }
         if let Some(monobank) = &self.monobank

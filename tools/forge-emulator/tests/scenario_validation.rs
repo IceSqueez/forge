@@ -1776,3 +1776,196 @@ fn kick_fake_step_and_expectation_problems_are_located() {
         ),
     ]);
 }
+
+fn with_youtube(mut scenario: Value, live_at_boot: bool) -> Value {
+    scenario["fixture"]["youtube"] = json!({});
+    scenario["fakes"]["youtube"] = json!({ "live_at_boot": live_at_boot });
+    scenario
+}
+
+fn youtube_chat(text: &str) -> Value {
+    json!({ "youtube_chat": {
+        "author": { "channel_id": "UCaliceViewer00000000001", "display_name": "Alice" },
+        "text": text
+    } })
+}
+
+#[test]
+fn youtube_fake_step_and_expectation_problems_are_located() {
+    let mut account_without_fake = with_youtube(base(), true);
+    account_without_fake["fakes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("youtube");
+    let mut fake_without_account = base();
+    fake_without_account["fakes"]["youtube"] = json!({});
+    let mut unusable_fake = with_youtube(base(), true);
+    unusable_fake["fakes"]["youtube"]["live_chat_id"] = json!(" ");
+    unusable_fake["fakes"]["youtube"]["polling_interval_ms"] = json!(0);
+    let mut blank_token = with_youtube(base(), true);
+    blank_token["fixture"]["youtube"]["access_token"] = json!("");
+    assert_cases(vec![
+        (
+            "a seeded account with no fake to answer it",
+            account_without_fake,
+            vec![(
+                "fakes.youtube",
+                "is required because the fixture seeds a YouTube account; without it forge would reach the real YouTube",
+            )],
+        ),
+        (
+            "a fake no seeded account uses",
+            fake_without_account,
+            vec![(
+                "fakes.youtube",
+                "needs fixture.youtube: the fake accepts only the credentials the fixture seeds",
+            )],
+        ),
+        (
+            "a fake with no chat id and no polling interval",
+            unusable_fake,
+            vec![
+                ("fakes.youtube.live_chat_id", "must not be blank"),
+                (
+                    "fakes.youtube.polling_interval_ms",
+                    "must be between 1 and 120000, got 0",
+                ),
+            ],
+        ),
+        (
+            "a blank seeded access token",
+            blank_token,
+            vec![(
+                "fixture",
+                "youtube.access_token is blank, so forge could not reach the fake YouTube",
+            )],
+        ),
+        (
+            "YouTube steps and checks with no fake",
+            with_steps([expecting(
+                json!({ "youtube_chat_polled": { "within_ms": 100 } }),
+                json!([{ "youtube_no_unexpected_requests": {} }]),
+            )]),
+            vec![
+                (
+                    "steps[2].do.youtube_chat_polled",
+                    "needs a fake YouTube: add fixture.youtube and fakes.youtube",
+                ),
+                (
+                    "steps[2].expect[0].youtube_no_unexpected_requests",
+                    "needs a fake YouTube: add fixture.youtube and fakes.youtube",
+                ),
+            ],
+        ),
+        (
+            "malformed YouTube stimuli",
+            with_youtube(
+                with_steps([
+                    step(json!({ "youtube_chat": {
+                        "author": { "channel_id": " ", "display_name": "" }, "text": " "
+                    } })),
+                    step(json!({ "youtube_chat_event": {
+                        "author": { "channel_id": "UCaliceViewer00000000001", "display_name": "Alice" },
+                        "snippet": { "superChatDetails": {} }
+                    } })),
+                    step(json!({ "youtube_chat_polled": { "within_ms": 0 } })),
+                ]),
+                true,
+            ),
+            vec![
+                ("steps[2].do.youtube_chat.text", "must not be blank"),
+                (
+                    "steps[2].do.youtube_chat.author.channel_id",
+                    "must not be blank",
+                ),
+                (
+                    "steps[2].do.youtube_chat.author.display_name",
+                    "must not be blank",
+                ),
+                (
+                    "steps[3].do.youtube_chat_event.snippet",
+                    "must be a liveChatMessage snippet object with a non-blank `type`",
+                ),
+                (
+                    "steps[4].do.youtube_chat_polled.within_ms",
+                    "must be between 1 and 120000, got 0",
+                ),
+            ],
+        ),
+        (
+            "chat into a broadcast that is offline at that point",
+            with_youtube(
+                with_steps([
+                    step(youtube_chat("too early")),
+                    step(json!({ "youtube_broadcast": { "live": true } })),
+                    step(youtube_chat("on time")),
+                    step(json!({ "youtube_broadcast": { "live": false } })),
+                    step(youtube_chat("too late")),
+                ]),
+                false,
+            ),
+            vec![
+                (
+                    "steps[2].do.youtube_chat",
+                    "the fake YouTube broadcast is offline, so its chat takes no message: start it with youtube_broadcast first",
+                ),
+                (
+                    "steps[6].do.youtube_chat",
+                    "the fake YouTube broadcast is offline, so its chat takes no message: start it with youtube_broadcast first",
+                ),
+            ],
+        ),
+        (
+            "a broadcast step that repeats the current state",
+            with_youtube(
+                with_steps([
+                    step(json!({ "youtube_broadcast": { "live": true } })),
+                    step(json!({ "youtube_broadcast": { "live": false } })),
+                    step(json!({ "youtube_broadcast": { "live": false } })),
+                ]),
+                true,
+            ),
+            vec![
+                (
+                    "steps[2].do.youtube_broadcast.live",
+                    "the fake YouTube broadcast is already live, so this step changes nothing",
+                ),
+                (
+                    "steps[4].do.youtube_broadcast.live",
+                    "the fake YouTube broadcast is already offline, so this step changes nothing",
+                ),
+            ],
+        ),
+        (
+            "malformed YouTube request checks",
+            with_youtube(
+                with_steps([expecting(
+                    pause(),
+                    json!([
+                        { "youtube_request": { "method": "post", "path": "youtube/v3/liveChat/messages", "within_ms": 0 } },
+                        { "youtube_request_count": { "path": "/youtube/v3/liveChat/messages" } }
+                    ]),
+                )]),
+                true,
+            ),
+            vec![
+                (
+                    "steps[2].expect[0].youtube_request.path",
+                    "must start with `/`",
+                ),
+                (
+                    "steps[2].expect[0].youtube_request.method",
+                    "`post` is not an upper-case HTTP method such as GET",
+                ),
+                (
+                    "steps[2].expect[0].youtube_request.within_ms",
+                    "must be between 1 and 120000, got 0",
+                ),
+                (
+                    "steps[2].expect[1].youtube_request_count",
+                    "needs min, max, or both",
+                ),
+            ],
+        ),
+    ]);
+}

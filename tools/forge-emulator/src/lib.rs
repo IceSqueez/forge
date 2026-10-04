@@ -15,5 +15,6 @@ pub mod scenario;
 pub mod stress;
 pub mod twitch;
 pub mod vtube;
+pub mod youtube;
 
 pub use error::EmulatorError;

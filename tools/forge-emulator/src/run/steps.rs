@@ -28,6 +28,7 @@ use crate::vtube::{
     FakeVTube, HOTKEY_TRIGGERED_EVENT, ITEM_EVENT, MODEL_CONFIG_CHANGED_EVENT, MODEL_LOADED_EVENT,
     TRACKING_STATUS_CHANGED_EVENT,
 };
+use crate::youtube::{FakeYouTube, LIVE_CHAT_MESSAGES_PATH};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionIndex {
@@ -64,6 +65,7 @@ pub(crate) struct Stimuli<'a> {
     pub(crate) client: &'a ControlClient,
     pub(crate) twitch: Option<&'a FakeTwitch>,
     pub(crate) kick: Option<&'a FakeKick>,
+    pub(crate) youtube: Option<&'a FakeYouTube>,
     pub(crate) obs: Option<&'a FakeObs>,
     pub(crate) vtube: Option<&'a FakeVTube>,
     pub(crate) donations: DonationFakes<'a>,
@@ -284,6 +286,46 @@ impl Stimuli<'_> {
                 .map(|()| ActionDetail::KickChannelPolled)
                 .map_err(refused)
             }
+            StepAction::YoutubeChatPolled { within_ms } => {
+                let youtube = self.youtube()?;
+                let from = youtube.ledger().requests.len();
+                youtube
+                    .wait_for(
+                        "a successful YouTube chat poll (forge needs non-empty build-time FORGE_YOUTUBE_CLIENT_ID and FORGE_YOUTUBE_CLIENT_SECRET to wire YouTube at all)",
+                        Duration::from_millis(*within_ms),
+                        |ledger| {
+                            ledger.requests[from..]
+                                .iter()
+                                .any(|request| {
+                                    request.method == "GET"
+                                        && request.path == LIVE_CHAT_MESSAGES_PATH
+                                        && request.status == StatusCode::OK.as_u16()
+                                })
+                                .then_some(())
+                        },
+                    )
+                    .await
+                    .map(|()| ActionDetail::YoutubeChatPolled)
+                    .map_err(refused)
+            }
+            StepAction::YoutubeChat(message) => self
+                .youtube()?
+                .inject_chat_message(&message.author, &message.text)
+                .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
+                .map_err(refused),
+            StepAction::YoutubeChatEvent { author, snippet } => {
+                let snippet = snippet.as_object().cloned().ok_or_else(|| {
+                    plain("the YouTube chat event snippet must be an object".to_owned())
+                })?;
+                self.youtube()?
+                    .inject_chat_event(author, snippet)
+                    .map(|message_id| ActionDetail::YoutubeChatSent { message_id })
+                    .map_err(refused)
+            }
+            StepAction::YoutubeBroadcast { live } => {
+                self.youtube()?.set_live(*live);
+                Ok(ActionDetail::YoutubeBroadcastSet { live: *live })
+            }
             StepAction::ObsOnline {} => self
                 .obs()?
                 .go_online()
@@ -383,6 +425,11 @@ impl Stimuli<'_> {
     fn kick(&self) -> Result<&FakeKick, ActionFailure> {
         self.kick
             .ok_or_else(|| plain("the run has no fake Kick".to_owned()))
+    }
+
+    fn youtube(&self) -> Result<&FakeYouTube, ActionFailure> {
+        self.youtube
+            .ok_or_else(|| plain("the run has no fake YouTube".to_owned()))
     }
 
     fn vtube(&self) -> Result<&FakeVTube, ActionFailure> {

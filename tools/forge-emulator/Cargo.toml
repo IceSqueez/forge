@@ -36,6 +36,7 @@ forge-overlay = { path = "../../crates/forge-overlay" }
 forge-platform-core = { path = "../../crates/forge-platform-core" }
 forge-platform-kick = { path = "../../crates/forge-platform-kick" }
 forge-platform-twitch = { path = "../../crates/forge-platform-twitch" }
+forge-platform-youtube = { path = "../../crates/forge-platform-youtube" }
 forge-server = { path = "../../crates/forge-server" }
 forge-storage = { path = "../../crates/forge-storage" }
 forge-storage-sqlite = { path = "../../crates/forge-storage-sqlite" }
@@ -69,3 +70,4 @@ forge-registry = { path = "../../crates/forge-registry" }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }
 tokio = { version = "1.53", features = ["test-util"] }
+tokio-util = { version = "0.7" }

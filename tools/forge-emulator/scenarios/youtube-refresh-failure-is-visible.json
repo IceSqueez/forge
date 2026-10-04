@@ -1,0 +1,63 @@
+{
+  "name": "a rejected YouTube token refresh is visible and reaches no Data API endpoint",
+  "purpose": "The seeded YouTube access token has expired and the fake token endpoint answers the refresh with 400 invalid_grant, as Google does after the streamer revokes forge's access. Running an action whose step looks up a YouTube channel must make forge try the refresh against the OAuth token endpoint, fail that step with a re-authentication message the streamer can read in the run history, and never call the Data API with the stale token.",
+  "fixture": {
+    "youtube": { "token_expired": true },
+    "event_triggers": [
+      {
+        "trigger_kind": "youtube.chat.command",
+        "action_name": "YouTube Lookup",
+        "config": {
+          "phrase": { "type": "string", "value": "!who" }
+        },
+        "steps": [
+          {
+            "kind_id": "youtube.lookup.viewer",
+            "config": {
+              "identifier": { "type": "string", "value": "@forge_emulator" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "youtube": { "live_at_boot": true, "refresh": "reject" }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "run_action": { "action": "YouTube Lookup" } },
+      "expect": [
+        {
+          "youtube_request": {
+            "method": "POST",
+            "path": "/oauth2/token",
+            "body": {
+              "/grant_type": { "equals": "refresh_token" },
+              "/refresh_token": { "equals": "emulator-youtube-refresh-token" }
+            },
+            "status": 400,
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "subaction.done",
+            "payload": {
+              "/kind": { "equals": "youtube.lookup.viewer" },
+              "/outcome": { "equals": "failed" },
+              "/message": { "contains": "re-authentication required" }
+            },
+            "within_ms": 10000
+          }
+        },
+        { "youtube_request_count": { "path": "/youtube/v3/channels", "max": 0 } },
+        { "youtube_request_count": { "path": "/youtube/v3/liveBroadcasts", "max": 0 } },
+        { "youtube_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

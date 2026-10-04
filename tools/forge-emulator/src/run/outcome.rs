@@ -2,6 +2,7 @@ use crate::discord::RecordedPost;
 use crate::kick::{KickRequest, PusherSession};
 use crate::obs::{ObsRequest, ObsSession};
 use crate::vtube::{VTubeRequest, VTubeSession};
+use crate::youtube::YouTubeRequest;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -130,6 +131,13 @@ pub enum ActionDetail {
         live: bool,
     },
     KickChannelPolled,
+    YoutubeChatPolled,
+    YoutubeChatSent {
+        message_id: String,
+    },
+    YoutubeBroadcastSet {
+        live: bool,
+    },
     ObsOnline,
     ObsIdentified {
         session: u64,
@@ -255,6 +263,13 @@ pub enum FailureCause {
         count: usize,
     },
     NoFakeKick,
+    NoYouTubeRequest {
+        observed: usize,
+    },
+    UnexpectedYouTubeRequests {
+        count: usize,
+    },
+    NoFakeYouTube,
 }
 
 impl fmt::Display for FailureCause {
@@ -359,6 +374,15 @@ impl fmt::Display for FailureCause {
                 "forge sent {count} request(s) the fake Kick has no model for"
             ),
             Self::NoFakeKick => write!(f, "the run has no fake Kick"),
+            Self::NoYouTubeRequest { observed } => write!(
+                f,
+                "no matching request reached the fake YouTube in time, it recorded {observed} request(s) in the window"
+            ),
+            Self::UnexpectedYouTubeRequests { count } => write!(
+                f,
+                "forge sent {count} request(s) the fake YouTube has no model for"
+            ),
+            Self::NoFakeYouTube => write!(f, "the run has no fake YouTube"),
         }
     }
 }
@@ -376,6 +400,12 @@ pub enum Evidence {
     Obs(ObsEvidence),
     VTube(VTubeEvidence),
     Kick(KickEvidence),
+    YouTube(YouTubeEvidence),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct YouTubeEvidence {
+    pub requests: Vec<YouTubeRequest>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

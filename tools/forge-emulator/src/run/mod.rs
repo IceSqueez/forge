@@ -14,6 +14,7 @@ mod runner;
 mod session;
 mod steps;
 mod vtube_checks;
+mod youtube_checks;
 
 pub use forge_host::{ForgeHost, LiveForge, Relaunch};
 pub use journal::{Journal, JournalEntry, JournalView};
@@ -24,6 +25,7 @@ pub use outcome::{
     ExpectationOutcome, FailureCause, ForgeEvidence, Gap, GapKind, JournaledEvent, KickEvidence,
     LedgerExcerpt, LogEvidence, NearMiss, ObsEvidence, OverlayEvidence, ReceivedContent, RunClock,
     ScenarioOutcome, ScenarioVerdict, StepOutcome, StepStatus, VTubeEvidence, Verdict,
+    YouTubeEvidence,
 };
 pub use runner::{RunOptions, run_scenario, subscription_filters, verdict};
 pub use session::{Session, execute_steps};

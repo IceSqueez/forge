@@ -377,6 +377,31 @@ fn expectation_evidence(evidence: &Evidence) -> Vec<String> {
             });
             lines
         }
+        Evidence::YouTube(youtube) => {
+            let mut lines = Vec::new();
+            listed(
+                &mut lines,
+                "YouTube request",
+                &youtube.requests,
+                |request| {
+                    format!(
+                        "{} {} answered {}{}",
+                        request.method,
+                        code(&request.path),
+                        request.status,
+                        request
+                            .body
+                            .as_ref()
+                            .map(|body| format!(
+                                " for body {}",
+                                code(&compact(body, PAYLOAD_CHARS))
+                            ))
+                            .unwrap_or_default()
+                    )
+                },
+            );
+            lines
+        }
         Evidence::VTube(vtube) => {
             let mut lines = Vec::new();
             listed(

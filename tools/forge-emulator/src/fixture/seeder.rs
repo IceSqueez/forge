@@ -20,7 +20,7 @@ use super::report::{
 use super::spec::{
     ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, EventTrigger, Fixture, KickAccount,
     OVERLAY_SEND_KIND, OVERLAY_TARGET_KEY, ObsConnection, OverlayFixture, QueueFixture,
-    TwitchAccount, VTubeConnection,
+    TwitchAccount, VTubeConnection, YouTubeAccount,
 };
 use crate::EmulatorError;
 use crate::donatello::FAKE_DONATELLO_TOKEN;
@@ -40,6 +40,9 @@ const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 *
 const BEARER_TOKEN_BYTES: usize = 32;
 const KICK_TOKEN_LIFETIME: time::Duration = time::Duration::days(3650);
 const KICK_TOKEN_EXPIRED_AGO: time::Duration = time::Duration::hours(1);
+const YOUTUBE_TOKEN_LIFETIME: time::Duration = time::Duration::days(3650);
+const YOUTUBE_TOKEN_EXPIRED_AGO: time::Duration = time::Duration::hours(1);
+const YOUTUBE_SEEDED_CLIENT_ID: &str = "emulator-youtube-client";
 
 pub async fn seed_forge_environment(fixture: &Fixture) -> Result<SeedReport, EmulatorError> {
     fixture.validate()?;
@@ -108,6 +111,9 @@ async fn write_fixture(
     };
     if let Some(kick) = &fixture.kick {
         seed_kick_account(provider, kick).await?;
+    }
+    if let Some(youtube) = &fixture.youtube {
+        seed_youtube_account(provider, youtube).await?;
     }
     for queue in &fixture.queues {
         seed_queue(provider, queue).await?;
@@ -181,6 +187,36 @@ async fn seed_kick_account(
     provider
         .store(
             &CredentialId::new(forge_platform_kick::CREDENTIAL_KEY),
+            &stored,
+        )
+        .await
+        .map_err(storage_error)
+}
+
+async fn seed_youtube_account(
+    provider: &dyn DataProvider,
+    account: &YouTubeAccount,
+) -> Result<(), EmulatorError> {
+    let now = time::OffsetDateTime::now_utc();
+    let credentials = forge_platform_youtube::YoutubeCredentials {
+        access_token: account.access_token.clone(),
+        refresh_token: account.refresh_token.clone(),
+        client_id: YOUTUBE_SEEDED_CLIENT_ID.to_owned(),
+        channel_id: account.channel_id.clone(),
+        channel_title: account.channel_title.clone(),
+        channel_handle: Some(account.channel_handle.clone()).filter(|handle| !handle.is_empty()),
+        expires_at: if account.token_expired {
+            now - YOUTUBE_TOKEN_EXPIRED_AGO
+        } else {
+            now + YOUTUBE_TOKEN_LIFETIME
+        },
+    };
+    let stored = serde_json::to_string(&credentials).map_err(|e| EmulatorError::Storage {
+        reason: format!("YouTube credentials could not be encoded: {e}"),
+    })?;
+    provider
+        .store(
+            &CredentialId::new(forge_platform_youtube::CREDENTIAL_KEY),
             &stored,
         )
         .await

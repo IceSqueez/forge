@@ -1,0 +1,103 @@
+{
+  "name": "a YouTube chat command replies through the live chat insert endpoint",
+  "purpose": "forge resolves the active broadcast on the Data API, takes its liveChatId and polls liveChat/messages, following nextPageToken and pollingIntervalMillis. One viewer message that starts with the command phrase must arrive as youtube.chat.command, run the action bound to the youtube.chat.command trigger, and that action's Send Message step must insert the interpolated reply as a textMessageEvent into the same live chat, then publish chat.send. Every request forge makes must be one the fake models, so a YouTube call still aimed at a hard-coded production host or path shows up here.",
+  "fixture": {
+    "youtube": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "youtube.chat.command",
+        "action_name": "YouTube Hello",
+        "config": {
+          "phrase": { "type": "string", "value": "!hello" },
+          "case_sensitive": { "type": "bool", "value": false }
+        },
+        "steps": [
+          {
+            "kind_id": "youtube.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "hi %user_display_name%" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "youtube": { "live_at_boot": true }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "youtube_chat_polled": { "within_ms": 30000 } } },
+    {
+      "do": {
+        "youtube_chat": {
+          "author": { "channel_id": "UCaliceViewer00000000001", "display_name": "Alice" },
+          "text": "!hello there"
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "chat",
+            "source": "you_tube",
+            "kind": "youtube.chat.command",
+            "payload": {
+              "/message_text": { "equals": "!hello there" },
+              "/author/display_name": { "equals": "Alice" },
+              "/command_name": { "equals": "hello" }
+            },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "name": "started",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "YouTube Hello" } },
+            "within_ms": 10000
+          }
+        },
+        { "caused_by": { "effect": "started", "cause": "chat" } },
+        {
+          "youtube_request": {
+            "method": "POST",
+            "path": "/youtube/v3/liveChat/messages",
+            "body": {
+              "/snippet/liveChatId": { "equals": "EmulatorLiveChatId0001" },
+              "/snippet/type": { "equals": "textMessageEvent" },
+              "/snippet/textMessageDetails/messageText": { "equals": "hi Alice" }
+            },
+            "status": 200,
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "source": "you_tube",
+            "kind": "chat.send",
+            "payload": {
+              "/channel": { "equals": "youtube" },
+              "/message": { "equals": "hi Alice" }
+            },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.done",
+            "payload": {
+              "/action_name": { "equals": "YouTube Hello" },
+              "/outcome": { "equals": "success" }
+            },
+            "within_ms": 10000
+          }
+        },
+        { "youtube_request_count": { "method": "POST", "path": "/youtube/v3/liveChat/messages", "min": 1, "max": 1 } },
+        { "youtube_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "name": "a YouTube Super Chat and a new membership each run their trigger with the viewer's details",
+  "purpose": "Super Chats and new memberships reach forge only as liveChatMessage items of type superChatEvent and newSponsorEvent on the chat poll. Each must publish its own event (youtube.chat.super_chat with the amount in micros and the currency, youtube.channel.member with the membership level), run the action bound to its trigger, and that action's Send Message step must insert a thank-you built from the trigger's variables into the live chat.",
+  "fixture": {
+    "youtube": {},
+    "event_triggers": [
+      {
+        "trigger_kind": "youtube.chat.super_chat",
+        "action_name": "Thank Super Chat",
+        "steps": [
+          {
+            "kind_id": "youtube.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "thanks %user_display_name% for %amount_micros% micros of %currency%" }
+            },
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "trigger_kind": "youtube.channel.member",
+        "action_name": "Welcome Member",
+        "steps": [
+          {
+            "kind_id": "youtube.chat.send_message",
+            "config": {
+              "message": { "type": "string", "value": "welcome %user_display_name% to %member_level_name%" }
+            },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "youtube": { "live_at_boot": true }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    { "do": { "youtube_chat_polled": { "within_ms": 30000 } } },
+    {
+      "do": {
+        "youtube_chat_event": {
+          "author": { "channel_id": "UCbobSupporter0000000001", "display_name": "Bob" },
+          "snippet": {
+            "type": "superChatEvent",
+            "displayMessage": "$5.00 from Bob: \"great stream\"",
+            "superChatDetails": {
+              "amountMicros": "5000000",
+              "currency": "USD",
+              "amountDisplayString": "$5.00",
+              "userComment": "great stream",
+              "tier": 2
+            }
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "super_chat",
+            "source": "you_tube",
+            "kind": "youtube.chat.super_chat",
+            "payload": {
+              "/amount_micros": { "equals": 5000000 },
+              "/currency": { "equals": "USD" },
+              "/message_text": { "equals": "great stream" },
+              "/author/display_name": { "equals": "Bob" }
+            },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "name": "thanked",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Thank Super Chat" } },
+            "within_ms": 10000
+          }
+        },
+        { "caused_by": { "effect": "thanked", "cause": "super_chat" } },
+        {
+          "youtube_request": {
+            "method": "POST",
+            "path": "/youtube/v3/liveChat/messages",
+            "body": {
+              "/snippet/textMessageDetails/messageText": { "equals": "thanks Bob for 5000000 micros of USD" }
+            },
+            "status": 200,
+            "within_ms": 10000
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "youtube_chat_event": {
+          "author": { "channel_id": "UCcarolMember00000000001", "display_name": "Carol", "sponsor": true },
+          "snippet": {
+            "type": "newSponsorEvent",
+            "displayMessage": "Welcome to Forge Fans!",
+            "newSponsorDetails": { "memberLevelName": "Forge Fans", "isUpgrade": false }
+          }
+        }
+      },
+      "expect": [
+        {
+          "event": {
+            "name": "member",
+            "source": "you_tube",
+            "kind": "youtube.channel.member",
+            "payload": {
+              "/member_level_name": { "equals": "Forge Fans" },
+              "/author/display_name": { "equals": "Carol" }
+            },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "name": "welcomed",
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Welcome Member" } },
+            "within_ms": 10000
+          }
+        },
+        { "caused_by": { "effect": "welcomed", "cause": "member" } },
+        {
+          "youtube_request": {
+            "method": "POST",
+            "path": "/youtube/v3/liveChat/messages",
+            "body": {
+              "/snippet/textMessageDetails/messageText": { "equals": "welcome Carol to Forge Fans" }
+            },
+            "status": 200,
+            "within_ms": 10000
+          }
+        },
+        { "youtube_request_count": { "method": "POST", "path": "/youtube/v3/liveChat/messages", "min": 2, "max": 2 } },
+        { "youtube_no_unexpected_requests": {} }
+      ]
+    }
+  ]
+}

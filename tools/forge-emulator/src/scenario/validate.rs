@@ -7,7 +7,7 @@ use super::crowd::{Crowd, CrowdLine, template_problem};
 use super::donation::{DonatelloGift, MonobankGift, OfflineGift};
 use super::expectation::{
     AbsentEvent, Causation, DiscordPost, Expectation, KickRequestSeen, LogLine, ObservedEvent,
-    OverlayContent, RequestCount, TwitchSubscription,
+    OverlayContent, RequestCount, TwitchSubscription, YouTubeRequestSeen,
 };
 use super::matcher::{PayloadMatchers, ValueMatcher};
 use super::model::Scenario;
@@ -69,6 +69,7 @@ struct Validator<'a> {
     obs_online: bool,
     vtube_online: bool,
     kick_live: bool,
+    youtube_live: bool,
 }
 
 impl<'a> Validator<'a> {
@@ -98,6 +99,11 @@ impl<'a> Validator<'a> {
                 .kick
                 .as_ref()
                 .is_some_and(|kick| kick.live_at_boot),
+            youtube_live: scenario
+                .fakes
+                .youtube
+                .as_ref()
+                .is_some_and(|youtube| youtube.live_at_boot),
         }
     }
 
@@ -155,6 +161,9 @@ impl<'a> Validator<'a> {
             if step.action.needs_fake_kick() {
                 self.require_fake_kick(&location);
             }
+            if step.action.needs_fake_youtube() {
+                self.require_fake_youtube(&location);
+            }
             self.check_action(index, &location, &step.action);
             for (position, expectation) in step.expect.iter().enumerate() {
                 let location = format!(
@@ -172,6 +181,9 @@ impl<'a> Validator<'a> {
                 }
                 if expectation.needs_fake_kick() {
                     self.require_fake_kick(&location);
+                }
+                if expectation.needs_fake_youtube() {
+                    self.require_fake_youtube(&location);
                 }
                 if expectation.needs_fake_discord() && !self.fake_discord {
                     self.report(
@@ -225,6 +237,7 @@ impl<'a> Validator<'a> {
             (None, None) => {}
         }
         self.check_fake_kick();
+        self.check_fake_youtube();
         self.check_fake_obs();
         self.check_fake_vtube();
         self.check_fake_donations();
@@ -405,6 +418,113 @@ impl<'a> Validator<'a> {
     }
 
     fn check_kick_request(&mut self, location: &str, request: &KickRequestSeen) {
+        self.check_request_count(
+            location,
+            &RequestCount {
+                method: request.method.clone(),
+                path: request.path.clone(),
+                min: Some(1),
+                max: None,
+            },
+        );
+        self.in_range(
+            format!("{location}.within_ms"),
+            request.within_ms,
+            1,
+            MAX_WAIT_MS,
+        );
+    }
+
+    fn require_fake_youtube(&mut self, location: &str) {
+        let scenario = self.scenario;
+        if scenario.fixture.youtube.is_none() || scenario.fakes.youtube.is_none() {
+            self.report(
+                location,
+                "needs a fake YouTube: add fixture.youtube and fakes.youtube",
+            );
+        }
+    }
+
+    fn check_fake_youtube(&mut self) {
+        let scenario = self.scenario;
+        match (&scenario.fixture.youtube, &scenario.fakes.youtube) {
+            (Some(_), None) => self.report(
+                "fakes.youtube",
+                "is required because the fixture seeds a YouTube account; without it forge would reach the real YouTube",
+            ),
+            (None, Some(_)) => self.report(
+                "fakes.youtube",
+                "needs fixture.youtube: the fake accepts only the credentials the fixture seeds",
+            ),
+            (Some(_), Some(setup)) => {
+                self.not_blank("fakes.youtube.broadcast_id", &setup.broadcast_id);
+                self.not_blank("fakes.youtube.live_chat_id", &setup.live_chat_id);
+                self.in_range(
+                    "fakes.youtube.polling_interval_ms",
+                    setup.polling_interval_ms,
+                    1,
+                    MAX_WAIT_MS,
+                );
+            }
+            (None, None) => {}
+        }
+    }
+
+    fn require_live_youtube_chat(&mut self, location: String) {
+        if !self.youtube_live {
+            self.report(
+                location,
+                "the fake YouTube broadcast is offline, so its chat takes no message: start it with youtube_broadcast first",
+            );
+        }
+    }
+
+    fn check_youtube_author(&mut self, location: &str, author: &crate::youtube::YouTubeChatter) {
+        self.not_blank(format!("{location}.author.channel_id"), &author.channel_id);
+        self.not_blank(
+            format!("{location}.author.display_name"),
+            &author.display_name,
+        );
+    }
+
+    fn check_youtube_action(&mut self, location: &str, action: &StepAction) {
+        match action {
+            StepAction::YoutubeChatPolled { within_ms } => {
+                self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
+            }
+            StepAction::YoutubeChat(message) => {
+                self.not_blank(format!("{location}.text"), &message.text);
+                self.check_youtube_author(location, &message.author);
+                self.require_live_youtube_chat(location.to_owned());
+            }
+            StepAction::YoutubeChatEvent { author, snippet } => {
+                self.check_youtube_author(location, author);
+                let kind = snippet.get("type").and_then(|kind| kind.as_str());
+                if !snippet.is_object() || kind.is_none_or(|kind| kind.trim().is_empty()) {
+                    self.report(
+                        format!("{location}.snippet"),
+                        "must be a liveChatMessage snippet object with a non-blank `type`",
+                    );
+                }
+                self.require_live_youtube_chat(location.to_owned());
+            }
+            StepAction::YoutubeBroadcast { live } => {
+                if *live == self.youtube_live {
+                    self.report(
+                        format!("{location}.live"),
+                        format!(
+                            "the fake YouTube broadcast is already {}, so this step changes nothing",
+                            if *live { "live" } else { "offline" }
+                        ),
+                    );
+                }
+                self.youtube_live = *live;
+            }
+            _ => {}
+        }
+    }
+
+    fn check_youtube_request(&mut self, location: &str, request: &YouTubeRequestSeen) {
         self.check_request_count(
             location,
             &RequestCount {
@@ -645,6 +765,10 @@ impl<'a> Validator<'a> {
             | StepAction::KickPusherEvent { .. }
             | StepAction::KickStream { .. }
             | StepAction::KickChannelPolled { .. } => self.check_kick_action(location, action),
+            StepAction::YoutubeChatPolled { .. }
+            | StepAction::YoutubeChat(_)
+            | StepAction::YoutubeChatEvent { .. }
+            | StepAction::YoutubeBroadcast { .. } => self.check_youtube_action(location, action),
             StepAction::ObsOnline {}
             | StepAction::ObsIdentified { .. }
             | StepAction::ObsRestart { .. }
@@ -895,11 +1019,15 @@ impl<'a> Validator<'a> {
                 self.check_subscription_expectation(location, subscription);
             }
             Expectation::TwitchNoUnexpectedRequests {} => {}
-            Expectation::TwitchRequestCount(count) | Expectation::KickRequestCount(count) => {
+            Expectation::TwitchRequestCount(count)
+            | Expectation::KickRequestCount(count)
+            | Expectation::YoutubeRequestCount(count) => {
                 self.check_request_count(location, count);
             }
             Expectation::KickRequest(request) => self.check_kick_request(location, request),
             Expectation::KickNoUnexpectedRequests {} => {}
+            Expectation::YoutubeRequest(request) => self.check_youtube_request(location, request),
+            Expectation::YoutubeNoUnexpectedRequests {} => {}
             Expectation::OverlayContent(content) => self.check_overlay_content(location, content),
             Expectation::LogLine(line) => self.check_log_line(location, line),
             Expectation::DiscordPost(post) => self.check_discord_post(location, post),

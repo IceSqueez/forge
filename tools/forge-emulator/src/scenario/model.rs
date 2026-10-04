@@ -9,6 +9,7 @@ use crate::kick::FakeKickSetup;
 use crate::obs::FakeObsConfig;
 use crate::twitch::{FakeGoal, FakeTwitchConfig};
 use crate::vtube::FakeVTubeConfig;
+use crate::youtube::FakeYouTubeSetup;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,6 +31,8 @@ pub struct Fakes {
     pub discord: Option<FakeDiscordSetup>,
     #[serde(default)]
     pub kick: Option<FakeKickSetup>,
+    #[serde(default)]
+    pub youtube: Option<FakeYouTubeSetup>,
     #[serde(default)]
     pub obs: Option<FakeObsConfig>,
     #[serde(default)]

@@ -100,6 +100,9 @@ pub enum EmulatorError {
     #[error("no live Kick chat connection has joined `{channel}`")]
     KickChannelNotJoined { channel: String },
 
+    #[error("the fake YouTube chat `{live_chat_id}` is not live: start the broadcast first")]
+    YouTubeChatNotLive { live_chat_id: String },
+
     #[error("no live EventSub session holds a `{subscription_type}` subscription")]
     NotSubscribed { subscription_type: String },
 

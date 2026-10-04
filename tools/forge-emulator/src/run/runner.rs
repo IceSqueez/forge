@@ -28,6 +28,7 @@ use crate::overlay::OverlayPages;
 use crate::scenario::{Expectation, Scenario, StepAction};
 use crate::twitch::FakeTwitch;
 use crate::vtube::FakeVTube;
+use crate::youtube::{FakeYouTube, FakeYouTubeConfig};
 
 const EVIDENCE_TAIL_LINES: usize = 50;
 
@@ -149,6 +150,7 @@ pub async fn run_scenario(
         twitch: fakes.twitch.as_ref(),
         discord: fakes.discord.as_ref(),
         kick: fakes.kick.as_ref(),
+        youtube: fakes.youtube.as_ref(),
         obs: fakes.obs.as_ref(),
         vtube: fakes.vtube.as_ref(),
         donations: fakes.donations(&scenario.fixture),
@@ -224,6 +226,7 @@ struct RunFakes {
     twitch: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
     kick: Option<FakeKick>,
+    youtube: Option<FakeYouTube>,
     obs: Option<FakeObs>,
     vtube: Option<FakeVTube>,
     donatello: Option<FakeDonatello>,
@@ -236,6 +239,7 @@ impl RunFakes {
             twitch: None,
             discord: None,
             kick: None,
+            youtube: None,
             obs: None,
             vtube: None,
             donatello: None,
@@ -263,6 +267,10 @@ impl RunFakes {
         }
         if let (Some(account), Some(setup)) = (&scenario.fixture.kick, &scenario.fakes.kick) {
             self.kick = Some(FakeKick::start(FakeKickConfig::for_account(account, setup)).await?);
+        }
+        if let (Some(account), Some(setup)) = (&scenario.fixture.youtube, &scenario.fakes.youtube) {
+            self.youtube =
+                Some(FakeYouTube::start(FakeYouTubeConfig::for_account(account, setup)).await?);
         }
         if let Some(config) = &scenario.fakes.obs {
             self.obs = Some(FakeObs::start(config.clone()).await?);
@@ -332,6 +340,11 @@ impl RunFakes {
         );
         overrides.extend(self.monobank.as_ref().map(FakeMonobank::endpoint_override));
         overrides.extend(self.kick.iter().flat_map(|kick| kick.endpoint_overrides()));
+        overrides.extend(
+            self.youtube
+                .iter()
+                .flat_map(|youtube| youtube.endpoint_overrides()),
+        );
         overrides
     }
 
@@ -358,6 +371,9 @@ impl RunFakes {
         }
         if let Some(kick) = self.kick {
             kick.shutdown().await;
+        }
+        if let Some(youtube) = self.youtube {
+            youtube.shutdown().await;
         }
         if let Some(discord) = self.discord {
             discord.shutdown().await;

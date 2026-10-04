@@ -6,6 +6,7 @@ use super::donation::{DonatelloGift, MonobankGift, OfflineGift};
 use super::expectation::Expectation;
 use crate::kick::KickChatter;
 use crate::twitch::{Viewer, ViewerBadge};
+use crate::youtube::YouTubeChatter;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -67,6 +68,17 @@ pub enum StepAction {
     },
     KickChannelPolled {
         within_ms: u64,
+    },
+    YoutubeChatPolled {
+        within_ms: u64,
+    },
+    YoutubeChat(YouTubeChatMessage),
+    YoutubeChatEvent {
+        author: YouTubeChatter,
+        snippet: Value,
+    },
+    YoutubeBroadcast {
+        live: bool,
     },
     ObsOnline {},
     ObsIdentified {
@@ -138,6 +150,13 @@ pub struct KickChatMessage {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct YouTubeChatMessage {
+    pub author: YouTubeChatter,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ChatViewer {
     pub user_id: String,
     pub login: String,
@@ -176,6 +195,10 @@ impl StepAction {
             Self::KickPusherEvent { .. } => "kick_pusher_event",
             Self::KickStream { .. } => "kick_stream",
             Self::KickChannelPolled { .. } => "kick_channel_polled",
+            Self::YoutubeChatPolled { .. } => "youtube_chat_polled",
+            Self::YoutubeChat(_) => "youtube_chat",
+            Self::YoutubeChatEvent { .. } => "youtube_chat_event",
+            Self::YoutubeBroadcast { .. } => "youtube_broadcast",
             Self::ObsOnline {} => "obs_online",
             Self::ObsIdentified { .. } => "obs_identified",
             Self::ObsRestart { .. } => "obs_restart",
@@ -218,6 +241,16 @@ impl StepAction {
                 | Self::KickPusherEvent { .. }
                 | Self::KickStream { .. }
                 | Self::KickChannelPolled { .. }
+        )
+    }
+
+    pub fn needs_fake_youtube(&self) -> bool {
+        matches!(
+            self,
+            Self::YoutubeChatPolled { .. }
+                | Self::YoutubeChat(_)
+                | Self::YoutubeChatEvent { .. }
+                | Self::YoutubeBroadcast { .. }
         )
     }
 

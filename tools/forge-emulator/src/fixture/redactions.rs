@@ -48,6 +48,10 @@ impl Redactions {
                 kick.client_secret.clone(),
             ]
         });
+        let youtube = fixture
+            .youtube
+            .iter()
+            .flat_map(|youtube| [youtube.access_token.clone(), youtube.refresh_token.clone()]);
         Self::new(
             access_token
                 .into_iter()
@@ -55,7 +59,8 @@ impl Redactions {
                 .chain(overlays)
                 .chain(obs_password)
                 .chain(vtube_token)
-                .chain(kick),
+                .chain(kick)
+                .chain(youtube),
         )
     }
 

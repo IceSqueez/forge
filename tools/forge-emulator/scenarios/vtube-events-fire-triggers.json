@@ -1,0 +1,117 @@
+{
+  "name": "VTube Studio hotkey, tracking, item and expression changes reach forge's triggers",
+  "purpose": "The streamer works in VTube Studio while forge is connected: pressing the Wave hotkey, stepping away from the tracker, dropping an item into the scene and turning on the Blush expression. The fake pushes HotkeyTriggeredEvent, TrackingStatusChangedEvent and ItemEvent to every authenticated session subscribed to them; the expression change has no event forge subscribes to, so forge must notice it through its ExpressionStateRequest poll. Each change must arrive as its vtube.* event and run the action bound to its trigger.",
+  "fixture": {
+    "vtube": {},
+    "event_triggers": [
+      { "trigger_kind": "vtube.hotkey.triggered", "action_name": "Hotkey Pressed" },
+      { "trigger_kind": "vtube.tracking.face_lost", "action_name": "Streamer Away" },
+      { "trigger_kind": "vtube.item.added", "action_name": "Item Dropped" },
+      { "trigger_kind": "vtube.expression.state_changed", "action_name": "Expression Changed" }
+    ]
+  },
+  "fakes": {
+    "vtube": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "vtube_authenticated": { "within_ms": 30000 } },
+      "expect": [
+        {
+          "vtube_request": {
+            "message_type": "ExpressionStateRequest",
+            "succeeded": true,
+            "within_ms": 10000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "vtube_hotkey": { "hotkey": "Wave" } },
+      "expect": [
+        {
+          "event": {
+            "source": "v_tube",
+            "kind": "vtube.hotkey.triggered",
+            "payload": { "/hotkey_name": { "equals": "Wave" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Hotkey Pressed" } },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "vtube_tracking": { "face_found": false } },
+      "expect": [
+        {
+          "event": {
+            "source": "v_tube",
+            "kind": "vtube.tracking.face_lost",
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Streamer Away" } },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "vtube_item_added": { "file": "emulator_star.png" } },
+      "expect": [
+        {
+          "event": {
+            "source": "v_tube",
+            "kind": "vtube.item.added",
+            "payload": { "/item_file_name": { "equals": "emulator_star.png" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Item Dropped" } },
+            "within_ms": 5000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "vtube_expression": { "file": "Blush.exp3.json", "active": true } },
+      "expect": [
+        {
+          "event": {
+            "source": "v_tube",
+            "kind": "vtube.expression.state_changed",
+            "payload": {
+              "/expression_file": { "equals": "Blush.exp3.json" },
+              "/is_active": { "equals": true }
+            },
+            "within_ms": 10000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.start",
+            "payload": { "/action_name": { "equals": "Expression Changed" } },
+            "within_ms": 10000
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1511,3 +1511,129 @@ fn donation_service_setup_and_step_problems_are_located() {
         ),
     ]);
 }
+
+fn with_vtube(mut scenario: Value) -> Value {
+    scenario["fixture"]["vtube"] = json!({});
+    scenario["fakes"]["vtube"] = json!({});
+    scenario
+}
+
+#[test]
+fn vtube_fake_step_and_expectation_problems_are_located() {
+    let mut connection_without_fake = with_vtube(base());
+    connection_without_fake["fakes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("vtube");
+    let mut fake_without_connection = base();
+    fake_without_connection["fakes"]["vtube"] = json!({});
+    let mut port_pinned = with_vtube(base());
+    port_pinned["fixture"]["vtube"]["port"] = json!(8001);
+    let mut blank_token = with_vtube(base());
+    blank_token["fixture"]["vtube"]["token"] = json!(" ");
+    let mut unknown_current_model = with_vtube(base());
+    unknown_current_model["fakes"]["vtube"]["current_model"] = json!("Ghost");
+    let started_at_boot = with_vtube(with_steps([step(json!({ "vtube_online": {} }))]));
+    assert_cases(vec![
+        (
+            "a seeded connection with no fake to answer it",
+            connection_without_fake,
+            vec![(
+                "fakes.vtube",
+                "is required because the fixture seeds a VTube Studio connection; without it forge has no VTube Studio to reach",
+            )],
+        ),
+        (
+            "a fake no seeded connection points at",
+            fake_without_connection,
+            vec![(
+                "fakes.vtube",
+                "needs fixture.vtube: forge connects only to a VTube Studio the fixture seeds",
+            )],
+        ),
+        (
+            "a pinned port the run would overwrite",
+            port_pinned,
+            vec![(
+                "fixture.vtube.port",
+                "must be left out: the run fills it with the fake VTube Studio port",
+            )],
+        ),
+        (
+            "a blank seeded token",
+            blank_token,
+            vec![("fixture.vtube.token", "must not be blank")],
+        ),
+        (
+            "a current model the fake does not offer",
+            unknown_current_model,
+            vec![(
+                "fakes.vtube.current_model",
+                "names `Ghost`, which `models` does not list",
+            )],
+        ),
+        (
+            "starting a VTube Studio that already runs",
+            started_at_boot,
+            vec![(
+                "steps[2].do.vtube_online",
+                "the fake VTube Studio is already running; set fakes.vtube.online_at_boot to false to start it from a step",
+            )],
+        ),
+        (
+            "VTube Studio steps and checks with no fake",
+            with_steps([expecting(
+                json!({ "vtube_hotkey": { "hotkey": "Wave" } }),
+                json!([{ "vtube_auth": { "accepted": true, "within_ms": 100 } }]),
+            )]),
+            vec![
+                (
+                    "steps[2].do.vtube_hotkey",
+                    "needs a fake VTube Studio: add fixture.vtube and fakes.vtube",
+                ),
+                (
+                    "steps[2].expect[0].vtube_auth",
+                    "needs a fake VTube Studio: add fixture.vtube and fakes.vtube",
+                ),
+            ],
+        ),
+        (
+            "names the fake does not declare",
+            with_vtube(with_steps([
+                step(json!({ "vtube_hotkey": { "hotkey": "Dance" } })),
+                step(json!({ "vtube_model_load": { "model": "Ghost" } })),
+                step(json!({ "vtube_item_added": { "file": "nope.png" } })),
+                step(json!({ "vtube_expression": { "file": "Cry.exp3.json", "active": true } })),
+            ])),
+            vec![
+                (
+                    "steps[2].do.vtube_hotkey.hotkey",
+                    "names `Dance`, which fakes.vtube.models[].hotkeys does not list",
+                ),
+                (
+                    "steps[3].do.vtube_model_load.model",
+                    "names `Ghost`, which fakes.vtube.models does not list",
+                ),
+                (
+                    "steps[4].do.vtube_item_added.file",
+                    "names `nope.png`, which fakes.vtube.items does not list",
+                ),
+                (
+                    "steps[5].do.vtube_expression.file",
+                    "names `Cry.exp3.json`, which fakes.vtube.models[].expressions does not list",
+                ),
+            ],
+        ),
+        (
+            "a request check that wants success and an error at once",
+            with_vtube(with_steps([expecting(
+                pause(),
+                json!([{ "vtube_request": { "message_type": "HotkeyTriggerRequest", "succeeded": true, "error_id": 202, "within_ms": 100 } }]),
+            )])),
+            vec![(
+                "steps[2].expect[0].vtube_request.error_id",
+                "contradicts succeeded: a request answered with an error did not succeed",
+            )],
+        ),
+    ]);
+}

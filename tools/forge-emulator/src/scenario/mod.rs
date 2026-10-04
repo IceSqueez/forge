@@ -14,6 +14,7 @@ pub use donation::{
 pub use expectation::{
     AbsentEvent, Causation, DiscordPost, Expectation, LogLine, ObsAuthOutcome, ObsRequestSeen,
     ObservedCount, ObservedEvent, OverlayContent, RequestCount, TwitchSubscription,
+    VTubeAuthOutcome, VTubeRequestSeen,
 };
 pub use load::{load_scenario, parse_scenario};
 pub use matcher::{EventPattern, PayloadMatchers, UniqueMap, ValueMatcher};

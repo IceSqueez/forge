@@ -20,6 +20,7 @@ use super::report::{
 use super::spec::{
     ChatCommand, DEFAULT_QUEUE_NAME, DiscordWebhook, EventTrigger, Fixture, OVERLAY_SEND_KIND,
     OVERLAY_TARGET_KEY, ObsConnection, OverlayFixture, QueueFixture, TwitchAccount,
+    VTubeConnection,
 };
 use crate::EmulatorError;
 use crate::donatello::FAKE_DONATELLO_TOKEN;
@@ -32,6 +33,8 @@ const SERVER_BEARER_CREDENTIAL: &str = "server:bearer";
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const DISCORD_CREDENTIAL_PREFIX: &str = "discord:";
 const OBS_HOST: &str = "127.0.0.1";
+const VTUBE_HOST: &str = "127.0.0.1";
+const VTUBE_API_VERSION: &str = "1.0";
 const CHAT_COMMAND_TRIGGER_KIND: &str = "twitch.chat.command";
 const TWITCH_TOKEN_LIFETIME: Duration = Duration::from_secs(10 * 365 * 24 * 60 * 60);
 const BEARER_TOKEN_BYTES: usize = 32;
@@ -109,6 +112,9 @@ async fn write_fixture(
     }
     if let Some(obs) = &fixture.obs {
         seed_obs_connection(provider, obs).await?;
+    }
+    if let Some(vtube) = &fixture.vtube {
+        seed_vtube_connection(provider, vtube).await?;
     }
     if fixture.donatello.is_some() {
         let token = serde_json::json!({ "token": FAKE_DONATELLO_TOKEN }).to_string();
@@ -198,6 +204,28 @@ async fn seed_obs_connection(
     forge_obs::credentials::store(provider, OBS_HOST, obs.port, &obs.password)
         .await
         .map_err(storage_error)
+}
+
+async fn seed_vtube_connection(
+    provider: &dyn DataProvider,
+    vtube: &VTubeConnection,
+) -> Result<(), EmulatorError> {
+    if vtube.port == 0 {
+        return Err(EmulatorError::InvalidFixture {
+            reason:
+                "the VTube Studio connection has no port; a scenario run fills it from fakes.vtube"
+                    .to_owned(),
+        });
+    }
+    forge_vtube::credentials::store(
+        provider,
+        &vtube.token,
+        VTUBE_API_VERSION,
+        VTUBE_HOST,
+        vtube.port,
+    )
+    .await
+    .map_err(storage_error)
 }
 
 fn builtin_overlay_kinds() -> Result<OverlayKindRegistry, EmulatorError> {

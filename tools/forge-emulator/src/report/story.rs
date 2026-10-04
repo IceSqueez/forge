@@ -81,6 +81,52 @@ pub(crate) fn story(action: &StepAction) -> String {
             if *muted { "mute" } else { "unmute" },
             code(input)
         ),
+        StepAction::VtubeOnline {} => "As the streamer I start VTube Studio".to_owned(),
+        StepAction::VtubeAuthenticated { within_ms } => format!(
+            "As VTube Studio I wait up to {} for forge to connect and authenticate",
+            span_ms(*within_ms)
+        ),
+        StepAction::VtubeHotkey { hotkey } => {
+            format!(
+                "As the streamer I press the VTube Studio hotkey {}",
+                code(hotkey)
+            )
+        }
+        StepAction::VtubeModelLoad { model } => {
+            format!(
+                "As the streamer I load the VTube Studio model {}",
+                code(model)
+            )
+        }
+        StepAction::VtubeModelUnload {} => {
+            "As the streamer I unload the VTube Studio model".to_owned()
+        }
+        StepAction::VtubeModelConfigChanged {} => {
+            "As the streamer I change the loaded VTube Studio model's settings".to_owned()
+        }
+        StepAction::VtubeTracking { face_found } => format!(
+            "As the streamer I {} the VTube Studio tracker",
+            if *face_found {
+                "step back in front of"
+            } else {
+                "step away from"
+            }
+        ),
+        StepAction::VtubeItemAdded { file } => {
+            format!(
+                "As the streamer I add the item {} to the VTube Studio scene",
+                code(file)
+            )
+        }
+        StepAction::VtubeItemRemoved { file } => format!(
+            "As the streamer I remove the item {} from the VTube Studio scene",
+            code(file)
+        ),
+        StepAction::VtubeExpression { file, active } => format!(
+            "As the streamer I turn the VTube Studio expression {} {}",
+            code(file),
+            if *active { "on" } else { "off" }
+        ),
         StepAction::DonatelloDonation(gift) => format!(
             "As a viewer I donate {} UAH on Donatello as donation {}",
             gift.amount,
@@ -132,6 +178,19 @@ pub(crate) fn step_short(action: &StepAction) -> String {
             if *active { "starting" } else { "stopping" }
         ),
         StepAction::ObsInputMute { input, .. } => format!("muting {} in OBS", code(input)),
+        StepAction::VtubeOnline {} => "starting VTube Studio".to_owned(),
+        StepAction::VtubeAuthenticated { .. } => "connecting to VTube Studio".to_owned(),
+        StepAction::VtubeHotkey { hotkey } => format!("pressing hotkey {}", code(hotkey)),
+        StepAction::VtubeModelLoad { model } => format!("loading model {}", code(model)),
+        StepAction::VtubeModelUnload {} => "unloading the model".to_owned(),
+        StepAction::VtubeModelConfigChanged {} => "changing the model settings".to_owned(),
+        StepAction::VtubeTracking { face_found } => format!(
+            "the tracker {} the face",
+            if *face_found { "finding" } else { "losing" }
+        ),
+        StepAction::VtubeItemAdded { file } => format!("adding item {}", code(file)),
+        StepAction::VtubeItemRemoved { file } => format!("removing item {}", code(file)),
+        StepAction::VtubeExpression { file, .. } => format!("toggling expression {}", code(file)),
         StepAction::DonatelloDonation(gift) => format!("Donatello donation {}", code(&gift.id)),
         StepAction::MonobankTopUp(gift) => format!("monobank top-up {}", code(&gift.id)),
         StepAction::DonationsPolled { .. } => "donation polling".to_owned(),
@@ -164,6 +223,22 @@ pub(crate) fn action_title(action: &StepAction) -> String {
         StepAction::ObsSceneSwitch { .. }
         | StepAction::ObsStream { .. }
         | StepAction::ObsInputMute { .. } => "OBS event not delivered to forge".to_owned(),
+        StepAction::VtubeOnline {} => "The fake VTube Studio could not start".to_owned(),
+        StepAction::VtubeAuthenticated { .. } => {
+            "forge did not authenticate with VTube Studio".to_owned()
+        }
+        StepAction::VtubeExpression { .. } => {
+            "The fake VTube Studio could not change the expression".to_owned()
+        }
+        StepAction::VtubeHotkey { .. }
+        | StepAction::VtubeModelLoad { .. }
+        | StepAction::VtubeModelUnload {}
+        | StepAction::VtubeModelConfigChanged {}
+        | StepAction::VtubeTracking { .. }
+        | StepAction::VtubeItemAdded { .. }
+        | StepAction::VtubeItemRemoved { .. } => {
+            "VTube Studio event not delivered to forge".to_owned()
+        }
         StepAction::DonatelloDonation(_) | StepAction::MonobankTopUp(_) => {
             "The fake donation service could not take the donation".to_owned()
         }
@@ -226,6 +301,24 @@ pub(crate) fn action_expected(action: &StepAction) -> String {
         | StepAction::ObsStream { .. }
         | StepAction::ObsInputMute { .. } => {
             "the fake OBS pushes the event to an identified session subscribed to it".to_owned()
+        }
+        StepAction::VtubeOnline {} => "the fake VTube Studio accepts connections".to_owned(),
+        StepAction::VtubeAuthenticated { within_ms } => format!(
+            "forge holds an authenticated VTube Studio session within {}",
+            span_ms(*within_ms)
+        ),
+        StepAction::VtubeExpression { .. } => {
+            "the fake VTube Studio flips the expression for forge's next state poll".to_owned()
+        }
+        StepAction::VtubeHotkey { .. }
+        | StepAction::VtubeModelLoad { .. }
+        | StepAction::VtubeModelUnload {}
+        | StepAction::VtubeModelConfigChanged {}
+        | StepAction::VtubeTracking { .. }
+        | StepAction::VtubeItemAdded { .. }
+        | StepAction::VtubeItemRemoved { .. } => {
+            "the fake VTube Studio pushes the event to an authenticated session subscribed to it"
+                .to_owned()
         }
         StepAction::DonatelloDonation(_) | StepAction::MonobankTopUp(_) => {
             "the fake donation service lists the donation on its next poll".to_owned()

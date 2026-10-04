@@ -25,6 +25,7 @@ use forge_emulator::run::{RunOptions, ScenarioVerdict, run_scenario};
 use forge_emulator::scenario::load_scenario;
 use forge_emulator::stress::{StressOptions, load_profile, run_stress, write_stress_report};
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
+use forge_emulator::vtube::{FakeVTube, FakeVTubeConfig};
 use forge_events::Event;
 use time::OffsetDateTime;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
@@ -107,6 +108,16 @@ enum Command {
         /// A scene the fake offers, in order; repeatable. Main and BRB when omitted.
         #[arg(long = "scene", value_name = "NAME")]
         scenes: Vec<String>,
+    },
+    /// Run only a fake VTube Studio (public API 1.0) and print its address as VTUBE_URL=... until
+    /// interrupted; point forge's VTube Studio connection at that host and port.
+    FakeVtube {
+        /// The plugin token the fake accepts and hands out on a token request.
+        #[arg(long)]
+        token: Option<String>,
+        /// Deny token requests, as if the streamer clicked Deny in VTube Studio.
+        #[arg(long)]
+        deny_token_requests: bool,
     },
     /// Run only a fake Donatello API and print the environment a forge started elsewhere needs
     /// to reach it, one KEY=VALUE per line, until interrupted. Reads commands from stdin, one per
@@ -239,6 +250,12 @@ async fn main() -> ExitCode {
         Command::FakeObs { password, scenes } => {
             fake_obs(password, scenes).await.map(|()| ExitCode::SUCCESS)
         }
+        Command::FakeVtube {
+            token,
+            deny_token_requests,
+        } => fake_vtube(token, deny_token_requests)
+            .await
+            .map(|()| ExitCode::SUCCESS),
         Command::FakeDonatello {
             token,
             nickname,
@@ -467,6 +484,25 @@ async fn fake_obs(password: Option<String>, scenes: Vec<String>) -> Result<(), E
     let fake = FakeObs::start(config).await?;
     let mut out = std::io::stdout();
     writeln!(out, "OBS_URL={}", fake.url())
+        .and_then(|()| out.flush())
+        .map_err(|e| EmulatorError::Output {
+            reason: e.to_string(),
+        })?;
+    stop_requested().await;
+    fake.shutdown().await;
+    Ok(())
+}
+
+async fn fake_vtube(token: Option<String>, deny_token_requests: bool) -> Result<(), EmulatorError> {
+    let defaults = FakeVTubeConfig::default();
+    let config = FakeVTubeConfig {
+        token: token.unwrap_or(defaults.token.clone()),
+        approve_token_requests: !deny_token_requests,
+        ..defaults
+    };
+    let fake = FakeVTube::start(config).await?;
+    let mut out = std::io::stdout();
+    writeln!(out, "VTUBE_URL={}", fake.url())
         .and_then(|()| out.flush())
         .map_err(|e| EmulatorError::Output {
             reason: e.to_string(),

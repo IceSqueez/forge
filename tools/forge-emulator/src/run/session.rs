@@ -22,11 +22,13 @@ use super::outcome::{
 };
 use super::overlay_checks::observe_overlay_content;
 use super::steps::{ActionFailure, ActionIndex, DonationFakes, Stimuli, restart_forge};
+use super::vtube_checks::{VTubeMark, observe_vtube_auth, observe_vtube_request};
 use crate::discord::FakeDiscord;
 use crate::obs::FakeObs;
 use crate::overlay::{OverlayMarks, OverlayPages};
 use crate::scenario::{Expectation, Scenario, Step, StepAction};
 use crate::twitch::FakeTwitch;
+use crate::vtube::FakeVTube;
 
 pub struct Session<'a> {
     pub forge: &'a ForgeHost,
@@ -34,6 +36,7 @@ pub struct Session<'a> {
     pub twitch: Option<&'a FakeTwitch>,
     pub discord: Option<&'a FakeDiscord>,
     pub obs: Option<&'a FakeObs>,
+    pub vtube: Option<&'a FakeVTube>,
     pub donations: DonationFakes<'a>,
     pub actions: &'a ActionIndex,
     pub pages: &'a OverlayPages,
@@ -95,6 +98,10 @@ async fn run_step(
         (false, Some(obs)) => ObsMark::of(&obs.ledger()),
         _ => ObsMark::default(),
     };
+    let vtube_from = match (is_ready_step, session.vtube) {
+        (false, Some(vtube)) => VTubeMark::of(&vtube.ledger()),
+        _ => VTubeMark::default(),
+    };
     let performed = if is_ready_step {
         Ok(session.ready.clone())
     } else if let StepAction::ForgeRestart { within_ms, offline } = &step.action {
@@ -107,6 +114,7 @@ async fn run_step(
                     client: &live.client,
                     twitch: session.twitch,
                     obs: session.obs,
+                    vtube: session.vtube,
                     donations: session.donations,
                     actions: session.actions,
                     pages: session.pages,
@@ -152,6 +160,7 @@ async fn run_step(
         log_tail,
         discord_from,
         obs_from,
+        vtube_from,
     };
     let mut expectations = Vec::with_capacity(step.expect.len());
     for (position, expectation) in step.expect.iter().enumerate() {
@@ -184,6 +193,7 @@ struct ExpectationContext<'s, 'a> {
     log_tail: LogTail,
     discord_from: usize,
     obs_from: ObsMark,
+    vtube_from: VTubeMark,
 }
 
 impl ExpectationContext<'_, '_> {
@@ -293,6 +303,24 @@ impl ExpectationContext<'_, '_> {
                 };
                 (verdict, evidence, Some(until))
             }
+            Expectation::VtubeRequest(request) => {
+                let until = deadline(request.within_ms);
+                let (verdict, evidence) = match session.vtube {
+                    Some(vtube) => {
+                        observe_vtube_request(vtube, self.vtube_from, until, request).await
+                    }
+                    None => no_fake_vtube(),
+                };
+                (verdict, evidence, Some(until))
+            }
+            Expectation::VtubeAuth(auth) => {
+                let until = deadline(auth.within_ms);
+                let (verdict, evidence) = match session.vtube {
+                    Some(vtube) => observe_vtube_auth(vtube, self.vtube_from, until, auth).await,
+                    None => no_fake_vtube(),
+                };
+                (verdict, evidence, Some(until))
+            }
         };
         ExpectationOutcome {
             index,
@@ -332,6 +360,10 @@ fn no_fake_twitch() -> (Verdict, Evidence) {
 
 fn no_fake_obs() -> (Verdict, Evidence) {
     (Verdict::Failed(FailureCause::NoFakeObs), Evidence::None)
+}
+
+fn no_fake_vtube() -> (Verdict, Evidence) {
+    (Verdict::Failed(FailureCause::NoFakeVTube), Evidence::None)
 }
 
 fn unevaluated(step: &Step) -> Vec<ExpectationOutcome> {

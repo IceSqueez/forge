@@ -677,3 +677,49 @@ async fn an_obs_connection_without_a_port_is_refused_instead_of_seeded() {
         "{refused:?}"
     );
 }
+
+fn vtube_connection(port: u16) -> Fixture {
+    Fixture {
+        vtube: Some(forge_emulator::fixture::VTubeConnection {
+            token: "vtube-seed-token".to_owned(),
+            port,
+        }),
+        ..Fixture::default()
+    }
+}
+
+#[tokio::test]
+async fn a_seeded_vtube_connection_is_the_one_forge_vtube_dials_at_boot() {
+    let (dir, _) = seed_fresh(&vtube_connection(8123)).await;
+    let backend = reopen(dir.path()).await;
+
+    let configured =
+        forge_storage::has_credentials_for(&backend, &forge_vtube::VTUBE_INTEGRATION.id).await;
+    let stored = forge_vtube::credentials::load(&backend)
+        .await
+        .unwrap()
+        .unwrap();
+    backend.shutdown().await;
+
+    assert_eq!(
+        (
+            configured.unwrap(),
+            stored.host.as_str(),
+            stored.port,
+            stored.token.as_str()
+        ),
+        (true, "127.0.0.1", 8123, "vtube-seed-token")
+    );
+}
+
+#[tokio::test]
+async fn a_vtube_connection_without_a_port_is_refused_instead_of_seeded() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let refused = seed(Path::new(EMULATOR), dir.path(), &vtube_connection(0)).await;
+
+    assert!(
+        matches!(&refused, Err(EmulatorError::SeederProcess { reason }) if reason.contains("has no port")),
+        "{refused:?}"
+    );
+}

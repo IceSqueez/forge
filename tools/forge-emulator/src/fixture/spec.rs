@@ -26,6 +26,8 @@ pub struct Fixture {
     #[serde(default)]
     pub obs: Option<ObsConnection>,
     #[serde(default)]
+    pub vtube: Option<VTubeConnection>,
+    #[serde(default)]
     pub donatello: Option<DonatelloAccount>,
     #[serde(default)]
     pub monobank: Option<MonobankAccount>,
@@ -46,6 +48,22 @@ pub struct MonobankAccount {
 pub struct ObsConnection {
     pub password: String,
     pub port: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct VTubeConnection {
+    pub token: String,
+    pub port: u16,
+}
+
+impl Default for VTubeConnection {
+    fn default() -> Self {
+        Self {
+            token: crate::vtube::DEFAULT_TOKEN.to_owned(),
+            port: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +156,7 @@ impl Fixture {
             queues: Vec::new(),
             discord_webhooks: Vec::new(),
             obs: None,
+            vtube: None,
             donatello: None,
             monobank: None,
         }

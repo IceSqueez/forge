@@ -17,6 +17,28 @@ pub enum Expectation {
     DiscordPost(DiscordPost),
     ObsRequest(ObsRequestSeen),
     ObsAuth(ObsAuthOutcome),
+    VtubeRequest(VTubeRequestSeen),
+    VtubeAuth(VTubeAuthOutcome),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VTubeRequestSeen {
+    pub message_type: String,
+    #[serde(default)]
+    pub data: PayloadMatchers,
+    #[serde(default)]
+    pub succeeded: Option<bool>,
+    #[serde(default)]
+    pub error_id: Option<i64>,
+    pub within_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VTubeAuthOutcome {
+    pub accepted: bool,
+    pub within_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -178,6 +200,8 @@ impl Expectation {
             Self::DiscordPost(_) => "discord_post",
             Self::ObsRequest(_) => "obs_request",
             Self::ObsAuth(_) => "obs_auth",
+            Self::VtubeRequest(_) => "vtube_request",
+            Self::VtubeAuth(_) => "vtube_auth",
         }
     }
 
@@ -193,7 +217,9 @@ impl Expectation {
             | Self::LogLine(_)
             | Self::DiscordPost(_)
             | Self::ObsRequest(_)
-            | Self::ObsAuth(_) => false,
+            | Self::ObsAuth(_)
+            | Self::VtubeRequest(_)
+            | Self::VtubeAuth(_) => false,
         }
     }
 
@@ -203,5 +229,9 @@ impl Expectation {
 
     pub fn needs_fake_obs(&self) -> bool {
         matches!(self, Self::ObsRequest(_) | Self::ObsAuth(_))
+    }
+
+    pub fn needs_fake_vtube(&self) -> bool {
+        matches!(self, Self::VtubeRequest(_) | Self::VtubeAuth(_))
     }
 }

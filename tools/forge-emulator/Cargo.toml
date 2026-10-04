@@ -39,6 +39,7 @@ forge-server = { path = "../../crates/forge-server" }
 forge-storage = { path = "../../crates/forge-storage" }
 forge-storage-sqlite = { path = "../../crates/forge-storage-sqlite" }
 forge-types = { path = "../../crates/forge-types" }
+forge-vtube = { path = "../../crates/forge-vtube" }
 axum = { version = "0.8" }
 base64 = { version = "0.22" }
 clap = { version = "4.6", features = ["derive"] }

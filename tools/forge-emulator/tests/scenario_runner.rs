@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use forge_emulator::control::{ClientTimeouts, ControlClient, ControlEndpoint};
@@ -16,6 +17,7 @@ use forge_emulator::run::{
 };
 use forge_emulator::scenario::{Scenario, parse_scenario};
 use forge_emulator::twitch::{FakeTwitch, FakeTwitchConfig};
+use forge_emulator::vtube::{FakeVTube, FakeVTubeConfig};
 use forge_events::{Event, EventSource};
 use forge_types::{ActionId, EventId, TriggerInstanceId};
 use futures_util::{SinkExt, StreamExt};
@@ -289,6 +291,7 @@ struct Harness {
     fake: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
     obs: Option<FakeObs>,
+    vtube: Option<FakeVTube>,
     donatello: Option<FakeDonatello>,
     monobank: Option<FakeMonobank>,
     host: ForgeHost,
@@ -343,6 +346,7 @@ impl Harness {
             fake,
             discord: None,
             obs: None,
+            vtube: None,
             donatello: None,
             monobank: None,
             host: ForgeHost::attached(client, journal.clone()),
@@ -361,6 +365,7 @@ impl Harness {
             twitch: self.fake.as_ref(),
             discord: self.discord.as_ref(),
             obs: self.obs.as_ref(),
+            vtube: self.vtube.as_ref(),
             donations: DonationFakes {
                 donatello: self.donatello.as_ref(),
                 monobank: self.monobank.as_ref().map(|fake| (fake, JAR)),
@@ -1256,5 +1261,241 @@ async fn forge_restart_fails_on_a_forge_the_emulator_did_not_launch() {
         ),
         "{:?}",
         steps[1].action
+    );
+}
+
+const VTUBE_TOKEN: &str = "vtube-runner-token";
+
+#[derive(Default)]
+struct MemoryCredentials(std::sync::Mutex<std::collections::HashMap<String, String>>);
+
+#[async_trait::async_trait]
+impl forge_storage::CredentialsRepo for MemoryCredentials {
+    async fn store(
+        &self,
+        id: &forge_storage::CredentialId,
+        plaintext: &str,
+    ) -> Result<(), forge_storage::StorageError> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(id.as_str().to_owned(), plaintext.to_owned());
+        Ok(())
+    }
+
+    async fn load(
+        &self,
+        id: &forge_storage::CredentialId,
+    ) -> Result<Option<String>, forge_storage::StorageError> {
+        Ok(self.0.lock().unwrap().get(id.as_str()).cloned())
+    }
+
+    async fn delete(
+        &self,
+        id: &forge_storage::CredentialId,
+    ) -> Result<bool, forge_storage::StorageError> {
+        Ok(self.0.lock().unwrap().remove(id.as_str()).is_some())
+    }
+
+    async fn list_ids(
+        &self,
+    ) -> Result<Vec<forge_storage::CredentialId>, forge_storage::StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn last_refresh(
+        &self,
+        _: &forge_storage::CredentialId,
+    ) -> Result<Option<time::OffsetDateTime>, forge_storage::StorageError> {
+        Ok(None)
+    }
+
+    async fn mark_refreshed(
+        &self,
+        _: &forge_storage::CredentialId,
+    ) -> Result<(), forge_storage::StorageError> {
+        Ok(())
+    }
+}
+
+fn vtube_scenario(online_at_boot: bool, steps: Value) -> Scenario {
+    scenario(
+        json!({ "vtube": { "token": VTUBE_TOKEN } }),
+        json!({ "vtube": { "token": VTUBE_TOKEN, "online_at_boot": online_at_boot } }),
+        steps,
+    )
+}
+
+async fn harness_with_vtube(online_at_boot: bool) -> Harness {
+    let mut harness = Harness::start(COOPERATIVE, false).await;
+    let vtube = FakeVTube::start(FakeVTubeConfig {
+        token: VTUBE_TOKEN.to_owned(),
+        online_at_boot,
+        ..FakeVTubeConfig::default()
+    })
+    .await
+    .unwrap();
+    harness.vtube = Some(vtube);
+    harness
+}
+
+async fn forge_vtube_client(harness: &Harness, token: &str) -> Arc<forge_vtube::VTubeClient> {
+    let port = harness.vtube.as_ref().unwrap().port();
+    let credentials = Arc::new(MemoryCredentials::default());
+    forge_vtube::credentials::store(&*credentials, token, "1.0", "127.0.0.1", port)
+        .await
+        .unwrap();
+    forge_vtube::credentials::load_and_connect(
+        &*credentials,
+        Arc::new(QuietPublisher),
+        credentials.clone(),
+    )
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn vtube_online_lets_a_retrying_forge_authenticate_and_subscribe() {
+    let harness = harness_with_vtube(false).await;
+    let forge = forge_vtube_client(&harness, VTUBE_TOKEN).await;
+    let scenario = vtube_scenario(
+        false,
+        json!([
+            ready(),
+            {
+                "do": { "vtube_online": {} },
+                "expect": [
+                    { "vtube_auth": { "accepted": true, "within_ms": 10000 } },
+                    {
+                        "vtube_request": {
+                            "message_type": "EventSubscriptionRequest",
+                            "data": { "/eventName": { "equals": "ItemEvent" } },
+                            "succeeded": true,
+                            "within_ms": 10000
+                        }
+                    }
+                ]
+            },
+            { "do": { "vtube_authenticated": { "within_ms": 1000 } } }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+    forge.shutdown().await;
+
+    assert_eq!(
+        statuses(&steps),
+        [StepStatus::Passed, StepStatus::Passed, StepStatus::Passed],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn vtube_auth_rejected_passes_when_forge_offers_a_revoked_token() {
+    let harness = harness_with_vtube(false).await;
+    let forge = forge_vtube_client(&harness, "a-revoked-token").await;
+    let scenario = vtube_scenario(
+        false,
+        json!([
+            ready(),
+            {
+                "do": { "vtube_online": {} },
+                "expect": [
+                    { "vtube_auth": { "accepted": false, "within_ms": 10000 } },
+                    { "vtube_auth": { "accepted": true, "within_ms": 50 } }
+                ]
+            }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+    forge.shutdown().await;
+
+    assert_eq!(
+        verdicts(&steps[1]),
+        [
+            Verdict::Passed,
+            Verdict::Failed(FailureCause::NoVTubeAuth { sessions: 1 })
+        ],
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn vtube_request_expectations_tell_answered_requests_from_refused_ones() {
+    let harness = harness_with_vtube(true).await;
+    let forge = forge_vtube_client(&harness, VTUBE_TOKEN).await;
+    let poll = |answer: Value| {
+        let mut request = json!({ "message_type": "ExpressionStateRequest", "within_ms": 5000 });
+        request
+            .as_object_mut()
+            .unwrap()
+            .extend(answer.as_object().unwrap().clone());
+        json!({ "vtube_request": request })
+    };
+    let scenario = vtube_scenario(
+        true,
+        json!([
+            ready(),
+            { "do": { "vtube_authenticated": { "within_ms": 10000 } } },
+            {
+                "do": { "pause": { "ms": 10, "reason": "let the expression poll run" } },
+                "expect": [poll(json!({ "succeeded": true })), poll(json!({ "error_id": 601 }))]
+            }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+    forge.shutdown().await;
+
+    assert!(
+        matches!(
+            verdicts(&steps[2]).as_slice(),
+            [
+                Verdict::Passed,
+                Verdict::Failed(FailureCause::NoVTubeRequest { .. })
+            ]
+        ),
+        "{steps:#?}"
+    );
+}
+
+#[tokio::test]
+async fn a_vtube_studio_change_no_session_receives_fails_its_step() {
+    let harness = harness_with_vtube(true).await;
+    let scenario = vtube_scenario(
+        true,
+        json!([ready(), { "do": { "vtube_hotkey": { "hotkey": "Wave" } } }]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(&steps[1].action, Some(ActionReport::Failed { reason, .. })
+            if reason.contains("no authenticated VTube Studio session")),
+        "{:?}",
+        steps[1].action
+    );
+}
+
+#[tokio::test]
+async fn a_vtube_expression_change_passes_without_a_listening_session() {
+    let harness = harness_with_vtube(true).await;
+    let scenario = vtube_scenario(
+        true,
+        json!([
+            ready(),
+            { "do": { "vtube_expression": { "file": "Blush.exp3.json", "active": true } } }
+        ]),
+    );
+
+    let steps = harness.run(&scenario).await;
+
+    assert!(
+        matches!(
+            steps[1].action,
+            Some(ActionReport::Done(ActionDetail::VTubeStateChanged))
+        ),
+        "{steps:#?}"
     );
 }

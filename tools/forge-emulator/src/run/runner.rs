@@ -26,6 +26,7 @@ use crate::obs::FakeObs;
 use crate::overlay::OverlayPages;
 use crate::scenario::{Expectation, Scenario, StepAction};
 use crate::twitch::FakeTwitch;
+use crate::vtube::FakeVTube;
 
 const EVIDENCE_TAIL_LINES: usize = 50;
 
@@ -147,6 +148,7 @@ pub async fn run_scenario(
         twitch: fakes.twitch.as_ref(),
         discord: fakes.discord.as_ref(),
         obs: fakes.obs.as_ref(),
+        vtube: fakes.vtube.as_ref(),
         donations: fakes.donations(&scenario.fixture),
         actions: &actions,
         pages: &pages,
@@ -220,6 +222,7 @@ struct RunFakes {
     twitch: Option<FakeTwitch>,
     discord: Option<FakeDiscord>,
     obs: Option<FakeObs>,
+    vtube: Option<FakeVTube>,
     donatello: Option<FakeDonatello>,
     monobank: Option<FakeMonobank>,
 }
@@ -230,6 +233,7 @@ impl RunFakes {
             twitch: None,
             discord: None,
             obs: None,
+            vtube: None,
             donatello: None,
             monobank: None,
         };
@@ -255,6 +259,9 @@ impl RunFakes {
         }
         if let Some(config) = &scenario.fakes.obs {
             self.obs = Some(FakeObs::start(config.clone()).await?);
+        }
+        if let Some(config) = &scenario.fakes.vtube {
+            self.vtube = Some(FakeVTube::start(config.clone()).await?);
         }
         let now = time::OffsetDateTime::now_utc();
         if let Some(setup) = &scenario.fakes.donatello {
@@ -295,8 +302,12 @@ impl RunFakes {
             Some(discord) => discord.addressed(fixture),
             None => fixture.clone(),
         };
-        match &self.obs {
+        let fixture = match &self.obs {
             Some(obs) => obs.addressed(&fixture),
+            None => fixture,
+        };
+        match &self.vtube {
+            Some(vtube) => vtube.addressed(&fixture),
             None => fixture,
         }
     }
@@ -330,6 +341,9 @@ impl RunFakes {
     async fn shutdown(self) {
         if let Some(obs) = self.obs {
             obs.shutdown().await;
+        }
+        if let Some(vtube) = self.vtube {
+            vtube.shutdown().await;
         }
         if let Some(twitch) = self.twitch {
             twitch.shutdown().await;

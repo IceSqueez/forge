@@ -23,6 +23,10 @@ use crate::obs::{
 use crate::overlay::OverlayPages;
 use crate::scenario::{Crowd, DonatelloGift, MonobankGift, OfflineGift, StepAction};
 use crate::twitch::FakeTwitch;
+use crate::vtube::{
+    FakeVTube, HOTKEY_TRIGGERED_EVENT, ITEM_EVENT, MODEL_CONFIG_CHANGED_EVENT, MODEL_LOADED_EVENT,
+    TRACKING_STATUS_CHANGED_EVENT,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActionIndex {
@@ -59,6 +63,7 @@ pub(crate) struct Stimuli<'a> {
     pub(crate) client: &'a ControlClient,
     pub(crate) twitch: Option<&'a FakeTwitch>,
     pub(crate) obs: Option<&'a FakeObs>,
+    pub(crate) vtube: Option<&'a FakeVTube>,
     pub(crate) donations: DonationFakes<'a>,
     pub(crate) actions: &'a ActionIndex,
     pub(crate) pages: &'a OverlayPages,
@@ -260,6 +265,55 @@ impl Stimuli<'_> {
                 let delivered = self.obs()?.set_input_mute(input, *muted).map_err(refused)?;
                 pushed(INPUT_MUTE_STATE_CHANGED, delivered)
             }
+            StepAction::VtubeOnline {} => self
+                .vtube()?
+                .go_online()
+                .await
+                .map(|()| ActionDetail::VTubeOnline)
+                .map_err(refused),
+            StepAction::VtubeAuthenticated { within_ms } => self
+                .vtube()?
+                .wait_for(
+                    "an authenticated VTube Studio session",
+                    Duration::from_millis(*within_ms),
+                    |ledger| ledger.live_sessions().last().map(|session| session.id),
+                )
+                .await
+                .map(|session| ActionDetail::VTubeAuthenticated { session })
+                .map_err(refused),
+            StepAction::VtubeHotkey { hotkey } => {
+                let delivered = self.vtube()?.trigger_hotkey(hotkey).map_err(refused)?;
+                vtube_pushed(HOTKEY_TRIGGERED_EVENT, delivered)
+            }
+            StepAction::VtubeModelLoad { model } => {
+                let delivered = self.vtube()?.load_model(model).map_err(refused)?;
+                vtube_pushed(MODEL_LOADED_EVENT, delivered)
+            }
+            StepAction::VtubeModelUnload {} => {
+                let delivered = self.vtube()?.unload_model().map_err(refused)?;
+                vtube_pushed(MODEL_LOADED_EVENT, delivered)
+            }
+            StepAction::VtubeModelConfigChanged {} => {
+                let delivered = self.vtube()?.change_model_config().map_err(refused)?;
+                vtube_pushed(MODEL_CONFIG_CHANGED_EVENT, delivered)
+            }
+            StepAction::VtubeTracking { face_found } => {
+                let delivered = self.vtube()?.set_face_found(*face_found).map_err(refused)?;
+                vtube_pushed(TRACKING_STATUS_CHANGED_EVENT, delivered)
+            }
+            StepAction::VtubeItemAdded { file } => {
+                let delivered = self.vtube()?.add_item(file).map_err(refused)?;
+                vtube_pushed(ITEM_EVENT, delivered)
+            }
+            StepAction::VtubeItemRemoved { file } => {
+                let delivered = self.vtube()?.remove_item(file).map_err(refused)?;
+                vtube_pushed(ITEM_EVENT, delivered)
+            }
+            StepAction::VtubeExpression { file, active } => self
+                .vtube()?
+                .set_expression(file, *active)
+                .map(|_| ActionDetail::VTubeStateChanged)
+                .map_err(refused),
             StepAction::DonatelloDonation(gift) => self.donations.donate_on_donatello(gift),
             StepAction::MonobankTopUp(gift) => self.donations.top_up_on_monobank(gift),
             StepAction::DonationsPolled { within_ms } => {
@@ -271,6 +325,11 @@ impl Stimuli<'_> {
                 "forge_restart replaces the running forge, so the session performs it".to_owned(),
             )),
         }
+    }
+
+    fn vtube(&self) -> Result<&FakeVTube, ActionFailure> {
+        self.vtube
+            .ok_or_else(|| plain("the run has no fake VTube Studio".to_owned()))
     }
 
     fn obs(&self) -> Result<&FakeObs, ActionFailure> {
@@ -399,6 +458,18 @@ fn pushed(event_type: &str, delivered: usize) -> Result<ActionDetail, ActionFail
     }
     Ok(ActionDetail::ObsEventPushed {
         event_type: event_type.to_owned(),
+        delivered,
+    })
+}
+
+fn vtube_pushed(event_name: &str, delivered: usize) -> Result<ActionDetail, ActionFailure> {
+    if delivered == 0 {
+        return Err(plain(format!(
+            "no authenticated VTube Studio session subscribed to {event_name} received it"
+        )));
+    }
+    Ok(ActionDetail::VTubeEventPushed {
+        event_name: event_name.to_owned(),
         delivered,
     })
 }

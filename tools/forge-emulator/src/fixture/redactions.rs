@@ -40,12 +40,14 @@ impl Redactions {
             .flat_map(|seed| seed.overlays.iter())
             .map(|overlay| overlay.credential.clone());
         let obs_password = fixture.obs.as_ref().map(|obs| obs.password.clone());
+        let vtube_token = fixture.vtube.as_ref().map(|vtube| vtube.token.clone());
         Self::new(
             access_token
                 .into_iter()
                 .chain(bearer)
                 .chain(overlays)
-                .chain(obs_password),
+                .chain(obs_password)
+                .chain(vtube_token),
         )
     }
 

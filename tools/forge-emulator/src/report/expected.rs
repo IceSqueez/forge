@@ -128,6 +128,27 @@ pub(crate) fn expected(expectation: &Expectation, action: &StepAction) -> String
             },
             span_ms(auth.within_ms)
         ),
+        Expectation::VtubeRequest(request) => format!(
+            "forge sends VTube Studio a {}{}{} within {}",
+            code(&request.message_type),
+            conditions(&request.data),
+            match (request.succeeded, request.error_id) {
+                (_, Some(error_id)) => format!(" answered with error {error_id}"),
+                (Some(true), None) => " answered without an error".to_owned(),
+                (Some(false), None) => " answered with an error".to_owned(),
+                (None, None) => String::new(),
+            },
+            span_ms(request.within_ms)
+        ),
+        Expectation::VtubeAuth(auth) => format!(
+            "{} within {}",
+            if auth.accepted {
+                "VTube Studio accepts forge's token"
+            } else {
+                "VTube Studio rejects forge's token"
+            },
+            span_ms(auth.within_ms)
+        ),
         Expectation::LogLine(line) => {
             let fields: Vec<String> = line
                 .fields

@@ -70,6 +70,31 @@ pub enum StepAction {
         input: String,
         muted: bool,
     },
+    VtubeOnline {},
+    VtubeAuthenticated {
+        within_ms: u64,
+    },
+    VtubeHotkey {
+        hotkey: String,
+    },
+    VtubeModelLoad {
+        model: String,
+    },
+    VtubeModelUnload {},
+    VtubeModelConfigChanged {},
+    VtubeTracking {
+        face_found: bool,
+    },
+    VtubeItemAdded {
+        file: String,
+    },
+    VtubeItemRemoved {
+        file: String,
+    },
+    VtubeExpression {
+        file: String,
+        active: bool,
+    },
     DonatelloDonation(DonatelloGift),
     MonobankTopUp(MonobankGift),
     DonationsPolled {
@@ -130,6 +155,16 @@ impl StepAction {
             Self::ObsSceneSwitch { .. } => "obs_scene_switch",
             Self::ObsStream { .. } => "obs_stream",
             Self::ObsInputMute { .. } => "obs_input_mute",
+            Self::VtubeOnline {} => "vtube_online",
+            Self::VtubeAuthenticated { .. } => "vtube_authenticated",
+            Self::VtubeHotkey { .. } => "vtube_hotkey",
+            Self::VtubeModelLoad { .. } => "vtube_model_load",
+            Self::VtubeModelUnload {} => "vtube_model_unload",
+            Self::VtubeModelConfigChanged {} => "vtube_model_config_changed",
+            Self::VtubeTracking { .. } => "vtube_tracking",
+            Self::VtubeItemAdded { .. } => "vtube_item_added",
+            Self::VtubeItemRemoved { .. } => "vtube_item_removed",
+            Self::VtubeExpression { .. } => "vtube_expression",
             Self::DonatelloDonation(_) => "donatello_donation",
             Self::MonobankTopUp(_) => "monobank_top_up",
             Self::DonationsPolled { .. } => "donations_polled",
@@ -157,6 +192,22 @@ impl StepAction {
                 | Self::ObsSceneSwitch { .. }
                 | Self::ObsStream { .. }
                 | Self::ObsInputMute { .. }
+        )
+    }
+
+    pub fn needs_fake_vtube(&self) -> bool {
+        matches!(
+            self,
+            Self::VtubeOnline {}
+                | Self::VtubeAuthenticated { .. }
+                | Self::VtubeHotkey { .. }
+                | Self::VtubeModelLoad { .. }
+                | Self::VtubeModelUnload {}
+                | Self::VtubeModelConfigChanged {}
+                | Self::VtubeTracking { .. }
+                | Self::VtubeItemAdded { .. }
+                | Self::VtubeItemRemoved { .. }
+                | Self::VtubeExpression { .. }
         )
     }
 }

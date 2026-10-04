@@ -56,6 +56,14 @@ running forge, and `seed` fills an empty data directory from a fixture on stdin.
 | `obs_scene_switch` | the streamer switches the OBS program scene |
 | `obs_stream` | the streamer starts or stops streaming in OBS |
 | `obs_input_mute` | the streamer mutes or unmutes an OBS input |
+| `vtube_online` | starts a fake VTube Studio configured with `online_at_boot: false` |
+| `vtube_authenticated` | waits until forge holds an authenticated VTube Studio session |
+| `vtube_hotkey` | the streamer presses a hotkey of the loaded model |
+| `vtube_model_load` / `vtube_model_unload` | the streamer loads another model or unloads the current one |
+| `vtube_model_config_changed` | the streamer changes the loaded model's settings |
+| `vtube_tracking` | the tracker finds or loses the streamer's face |
+| `vtube_item_added` / `vtube_item_removed` | the streamer drops an item into the scene or removes it |
+| `vtube_expression` | the streamer turns an expression on or off; forge sees it on its next expression poll |
 | `donatello_donation` | a viewer donates on the fake Donatello |
 | `monobank_top_up` | a viewer tops up the seeded jar on the fake monobank |
 | `donations_polled` | waits until every fake donation service serves a donation list requested after the step began |
@@ -235,6 +243,53 @@ judges forge's connection events starts the fake with `online_at_boot: false` an
 `obs_online` step, so forge's retry loop connects while the harness is listening.
 `fake-obs [--password P] [--scene NAME]...` runs the fake alone and prints its address.
 
+## VTube Studio
+
+`fixture.vtube` seeds forge's VTube Studio plugin token and `fakes.vtube` starts a fake VTube
+Studio that speaks the public API 1.0 ([API](https://github.com/DenchiSoft/VTubeStudio),
+[events](https://github.com/DenchiSoft/VTubeStudio/tree/master/Events)). As with OBS, the run
+fills the seeded connection's port with the fake's loopback port, so forge dials the fake
+through its ordinary stored credential and needs no endpoint override.
+
+```json
+"fixture": { "vtube": { "token": "emulator-vtube-token" } },
+"fakes": { "vtube": { "token": "emulator-vtube-token", "approve_token_requests": true,
+                      "models": [{ "name": "Emulator Avatar", "hotkeys": ["Wave", "Blush"],
+                                   "expressions": ["Blush.exp3.json", "Smile.exp3.json"] }],
+                      "current_model": "Emulator Avatar", "items": ["emulator_star.png"],
+                      "parameters": ["FaceAngleX", "MouthOpen"], "face_found": true,
+                      "online_at_boot": true } }
+```
+
+Every field is optional and the example shows the defaults (the default `parameters` also list
+`FaceAngleY` and `MouthSmile`; `current_model` defaults to the first model). An
+`AuthenticationRequest` with any other token is answered `authenticated: false`, which forge
+treats as a revoked token. Until a session authenticates, everything except `APIStateRequest`
+and the two authentication requests is refused with `RequestRequiresAuthetication` (8). The
+fake answers the requests forge's VTube Studio client sends - the model, hotkey, expression,
+parameter, item, tint and physics requests behind its sub-actions - with the documented payloads
+and `ErrorID.cs` errors, and `RequestTypeUnknown` (7) to anything else. A change made by a request
+or a step is pushed as the documented event (`ModelLoadedEvent`, `ModelConfigChangedEvent`,
+`HotkeyTriggeredEvent`, `TrackingStatusChangedEvent`, `ItemEvent`, `ExpressionToggledEvent`) to
+every authenticated session subscribed to it; a hotkey forge triggers comes back with
+`hotkeyTriggeredByAPI: true`. Permissions, post-processing and custom parameters are not
+modelled.
+
+Two expectations read the fake's ledger, counting only what happened after the step started.
+`succeeded` asks for an answer without an error and `error_id` for that `ErrorID.cs` error:
+
+```json
+{ "vtube_request": { "message_type": "HotkeyTriggerRequest",
+                     "data": { "/hotkeyID": { "equals": "Wave" } }, "succeeded": true,
+                     "within_ms": 5000 } }
+{ "vtube_auth": { "accepted": false, "within_ms": 45000 } }
+```
+
+forge connects during boot, so a scenario that judges forge's connection events starts the fake
+with `online_at_boot: false` and a `vtube_online` step. forge publishes VTube Studio events with
+the source `v_tube`. `fake-vtube [--token T] [--deny-token-requests]` runs the fake alone and
+prints its address.
+
 ## Throughput runs
 
 `stress run <profile> --forge <binary>` is a separate mode from scenarios: it seeds the profile's
@@ -393,3 +448,9 @@ the scene list), `obs-action-switches-scene.json` (a Switch Scene step sends
 triggers), `obs-restart-reconnects.json` (forge reconnects on its own after OBS restarts) and
 `obs-wrong-password-fails-visibly.json` (a wrong password publishes
 `obs.connection.auth_failed` and is not retried).
+
+Three scenarios cover VTube Studio: `vtube-action-triggers-hotkey.json` (a Trigger Hotkey step
+sends `HotkeyTriggerRequest` and the hotkey comes back as `vtube.hotkey.triggered`),
+`vtube-events-fire-triggers.json` (hotkey, tracking, item and expression changes made in VTube
+Studio reach forge's triggers) and `vtube-revoked-token-fails-visibly.json` (a revoked token
+publishes `vtube.connection.changed` with reason `auth_required` and is not retried).

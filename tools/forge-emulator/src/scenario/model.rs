@@ -7,6 +7,7 @@ use super::step::Step;
 use crate::fixture::{Fixture, TwitchAccount};
 use crate::obs::FakeObsConfig;
 use crate::twitch::{FakeGoal, FakeTwitchConfig};
+use crate::vtube::FakeVTubeConfig;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -28,6 +29,8 @@ pub struct Fakes {
     pub discord: Option<FakeDiscordSetup>,
     #[serde(default)]
     pub obs: Option<FakeObsConfig>,
+    #[serde(default)]
+    pub vtube: Option<FakeVTubeConfig>,
     #[serde(default)]
     pub donatello: Option<FakeDonatelloSetup>,
     #[serde(default)]

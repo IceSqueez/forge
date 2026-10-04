@@ -1,5 +1,6 @@
 use crate::discord::RecordedPost;
 use crate::obs::{ObsRequest, ObsSession};
+use crate::vtube::{VTubeRequest, VTubeSession};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -125,6 +126,15 @@ pub enum ActionDetail {
         event_type: String,
         delivered: usize,
     },
+    VTubeOnline,
+    VTubeAuthenticated {
+        session: u64,
+    },
+    VTubeEventPushed {
+        event_name: String,
+        delivered: usize,
+    },
+    VTubeStateChanged,
     DonationListed {
         provider: String,
         donation_id: String,
@@ -216,6 +226,13 @@ pub enum FailureCause {
         sessions: usize,
     },
     NoFakeObs,
+    NoVTubeRequest {
+        observed: usize,
+    },
+    NoVTubeAuth {
+        sessions: usize,
+    },
+    NoFakeVTube,
 }
 
 impl fmt::Display for FailureCause {
@@ -302,6 +319,15 @@ impl fmt::Display for FailureCause {
                 "no connection reached that authentication outcome in time, the fake OBS saw {sessions} connection(s)"
             ),
             Self::NoFakeObs => write!(f, "the run has no fake OBS"),
+            Self::NoVTubeRequest { observed } => write!(
+                f,
+                "no matching request reached the fake VTube Studio in time, it recorded {observed} request(s)"
+            ),
+            Self::NoVTubeAuth { sessions } => write!(
+                f,
+                "no connection reached that authentication outcome in time, the fake VTube Studio saw {sessions} connection(s)"
+            ),
+            Self::NoFakeVTube => write!(f, "the run has no fake VTube Studio"),
         }
     }
 }
@@ -317,6 +343,13 @@ pub enum Evidence {
     Log(LogEvidence),
     Discord(Vec<RecordedPost>),
     Obs(ObsEvidence),
+    VTube(VTubeEvidence),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct VTubeEvidence {
+    pub sessions: Vec<VTubeSession>,
+    pub requests: Vec<VTubeRequest>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

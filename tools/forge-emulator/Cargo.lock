@@ -1353,6 +1353,7 @@ dependencies = [
  "forge-storage",
  "forge-storage-sqlite",
  "forge-types",
+ "forge-vtube",
  "futures-util",
  "jiff",
  "rand 0.10.2",
@@ -1658,6 +1659,28 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.20",
+ "tracing",
+ "ulid",
+]
+
+[[package]]
+name = "forge-vtube"
+version = "0.5.5"
+dependencies = [
+ "async-trait",
+ "forge-events",
+ "forge-platform-core",
+ "forge-registry",
+ "forge-storage",
+ "forge-types",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite 0.30.0",
  "tracing",
  "ulid",
 ]

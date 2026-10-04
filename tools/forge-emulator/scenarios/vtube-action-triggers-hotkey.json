@@ -1,0 +1,67 @@
+{
+  "name": "a forge action presses a VTube Studio hotkey",
+  "purpose": "An action whose single step is the VTube Studio Trigger Hotkey sub-action runs on request. The fake VTube Studio records every request, so forge must send HotkeyTriggerRequest naming the Wave hotkey and get it answered without an error; VTube Studio then pushes HotkeyTriggeredEvent to subscribed plugins, which forge must publish as vtube.hotkey.triggered. The ExpressionStateRequest expectation waits for forge's expression poll, which starts only after forge has authenticated and subscribed to events.",
+  "fixture": {
+    "vtube": {},
+    "chat_commands": [
+      {
+        "phrase": "!wave",
+        "action_name": "Wave On Stream",
+        "steps": [
+          {
+            "kind_id": "vtube.hotkey.trigger",
+            "config": { "hotkey_id": { "type": "string", "value": "Wave" } },
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  },
+  "fakes": {
+    "vtube": {}
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "vtube_authenticated": { "within_ms": 30000 } },
+      "expect": [
+        {
+          "vtube_request": {
+            "message_type": "ExpressionStateRequest",
+            "succeeded": true,
+            "within_ms": 10000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "run_action": { "action": "Wave On Stream" } },
+      "expect": [
+        {
+          "vtube_request": {
+            "message_type": "HotkeyTriggerRequest",
+            "data": { "/hotkeyID": { "equals": "Wave" } },
+            "succeeded": true,
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "v_tube",
+            "kind": "vtube.hotkey.triggered",
+            "payload": { "/hotkey_name": { "equals": "Wave" } },
+            "within_ms": 5000
+          }
+        },
+        {
+          "event": {
+            "source": "core",
+            "kind": "action.done",
+            "payload": { "/outcome": { "equals": "success" } },
+            "within_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

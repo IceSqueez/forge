@@ -1,0 +1,43 @@
+{
+  "name": "a revoked VTube Studio token is reported, not retried forever",
+  "purpose": "The seeded plugin token is not one the fake VTube Studio accepts, as after the streamer revokes forge's API access. When VTube Studio starts, forge authenticates with the stale token and the fake answers authenticated: false. forge must publish vtube.connection.changed with reason auth_required and stop: retrying would hammer VTube Studio with a token that can never work, so no connected change may follow.",
+  "fixture": {
+    "vtube": { "token": "a-revoked-token" }
+  },
+  "fakes": {
+    "vtube": { "online_at_boot": false }
+  },
+  "steps": [
+    { "do": { "forge_ready": { "within_ms": 60000 } } },
+    {
+      "do": { "vtube_online": {} },
+      "expect": [
+        { "vtube_auth": { "accepted": false, "within_ms": 45000 } },
+        {
+          "event": {
+            "source": "v_tube",
+            "kind": "vtube.connection.changed",
+            "payload": {
+              "/is_connected": { "equals": false },
+              "/reason": { "equals": "auth_required" }
+            },
+            "within_ms": 45000
+          }
+        }
+      ]
+    },
+    {
+      "do": { "pause": { "ms": 5000, "reason": "give a retry loop time to show itself" } },
+      "expect": [
+        {
+          "event_absent": {
+            "source": "v_tube",
+            "kind": "vtube.connection.changed",
+            "payload": { "/is_connected": { "equals": true } },
+            "window_ms": 5000
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::obs::Authentication;
+use crate::vtube::TokenCheck;
 use time::format_description::well_known::Rfc3339;
 
 use super::actual::request_line;
@@ -336,6 +337,45 @@ fn expectation_evidence(evidence: &Evidence) -> Vec<String> {
             });
             lines
         }
+        Evidence::VTube(vtube) => {
+            let mut lines = Vec::new();
+            listed(
+                &mut lines,
+                "VTube Studio connection",
+                &vtube.sessions,
+                |session| {
+                    format!(
+                        "session {}: token {}{}, subscribed to {}{}",
+                        session.id,
+                        token_label(session.authentication),
+                        if session.token_requested {
+                            " after a token request"
+                        } else {
+                            ""
+                        },
+                        session.subscriptions.len(),
+                        if session.closed { ", closed" } else { "" }
+                    )
+                },
+            );
+            listed(
+                &mut lines,
+                "VTube Studio request",
+                &vtube.requests,
+                |request| {
+                    format!(
+                        "{} {} answered {}",
+                        code(&request.message_type),
+                        code(&compact(&request.data, PAYLOAD_CHARS)),
+                        request.error_id.map_or_else(
+                            || "without an error".to_owned(),
+                            |id| format!("error {id}")
+                        )
+                    )
+                },
+            );
+            lines
+        }
         Evidence::Log(log) => {
             let mut lines = Vec::new();
             if let Some(record) = &log.matched {
@@ -400,6 +440,14 @@ fn authentication_label(authentication: Authentication) -> &'static str {
         Authentication::NotRequired => "not required",
         Authentication::Accepted => "accepted",
         Authentication::Rejected => "rejected",
+    }
+}
+
+fn token_label(check: TokenCheck) -> &'static str {
+    match check {
+        TokenCheck::Pending => "not presented",
+        TokenCheck::Accepted => "accepted",
+        TokenCheck::Rejected => "rejected",
     }
 }
 

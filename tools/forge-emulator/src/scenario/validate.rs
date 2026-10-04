@@ -67,6 +67,7 @@ struct Validator<'a> {
     named_events: HashMap<&'a str, NamedEvent>,
     pages_opened: HashSet<&'a str>,
     obs_online: bool,
+    vtube_online: bool,
 }
 
 impl<'a> Validator<'a> {
@@ -86,6 +87,11 @@ impl<'a> Validator<'a> {
                 .obs
                 .as_ref()
                 .is_some_and(|obs| obs.online_at_boot),
+            vtube_online: scenario
+                .fakes
+                .vtube
+                .as_ref()
+                .is_some_and(|vtube| vtube.online_at_boot),
         }
     }
 
@@ -137,6 +143,9 @@ impl<'a> Validator<'a> {
             if step.action.needs_fake_obs() {
                 self.require_fake_obs(&location);
             }
+            if step.action.needs_fake_vtube() {
+                self.require_fake_vtube(&location);
+            }
             self.check_action(index, &location, &step.action);
             for (position, expectation) in step.expect.iter().enumerate() {
                 let location = format!(
@@ -148,6 +157,9 @@ impl<'a> Validator<'a> {
                 }
                 if expectation.needs_fake_obs() {
                     self.require_fake_obs(&location);
+                }
+                if expectation.needs_fake_vtube() {
+                    self.require_fake_vtube(&location);
                 }
                 if expectation.needs_fake_discord() && !self.fake_discord {
                     self.report(
@@ -201,6 +213,7 @@ impl<'a> Validator<'a> {
             (None, None) => {}
         }
         self.check_fake_obs();
+        self.check_fake_vtube();
         self.check_fake_donations();
         let seeds_webhooks = !scenario.fixture.discord_webhooks.is_empty();
         match (seeds_webhooks, &scenario.fakes.discord) {
@@ -383,6 +396,92 @@ impl<'a> Validator<'a> {
         }
     }
 
+    fn require_fake_vtube(&mut self, location: &str) {
+        if self.scenario.fakes.vtube.is_none() {
+            self.report(
+                location,
+                "needs a fake VTube Studio: add fixture.vtube and fakes.vtube",
+            );
+        }
+    }
+
+    fn check_fake_vtube(&mut self) {
+        let scenario = self.scenario;
+        match (&scenario.fixture.vtube, &scenario.fakes.vtube) {
+            (Some(_), None) => self.report(
+                "fakes.vtube",
+                "is required because the fixture seeds a VTube Studio connection; without it forge has no VTube Studio to reach",
+            ),
+            (None, Some(_)) => self.report(
+                "fakes.vtube",
+                "needs fixture.vtube: forge connects only to a VTube Studio the fixture seeds",
+            ),
+            (Some(connection), Some(config)) => {
+                if connection.port != 0 {
+                    self.report(
+                        "fixture.vtube.port",
+                        "must be left out: the run fills it with the fake VTube Studio port",
+                    );
+                }
+                self.not_blank("fixture.vtube.token", &connection.token);
+                for (field, problem) in config.problems() {
+                    self.report(format!("fakes.vtube.{field}"), problem);
+                }
+            }
+            (None, None) => {}
+        }
+    }
+
+    fn check_vtube_action(&mut self, location: &str, action: &StepAction) {
+        let vtube = self.scenario.fakes.vtube.as_ref();
+        let undeclared = |field: &str, value: &str, list: &str| {
+            (
+                format!("{location}.{field}"),
+                format!("names `{value}`, which fakes.vtube.{list} does not list"),
+            )
+        };
+        let problem = match action {
+            StepAction::VtubeOnline {} => {
+                let already = self.vtube_online;
+                self.vtube_online = true;
+                already.then(|| {
+                    (
+                        location.to_owned(),
+                        "the fake VTube Studio is already running; set fakes.vtube.online_at_boot to false to start it from a step".to_owned(),
+                    )
+                })
+            }
+            StepAction::VtubeAuthenticated { within_ms } => {
+                self.in_range(format!("{location}.within_ms"), *within_ms, 1, MAX_WAIT_MS);
+                None
+            }
+            StepAction::VtubeHotkey { hotkey }
+                if vtube.is_some_and(|v| !v.declares_hotkey(hotkey)) =>
+            {
+                Some(undeclared("hotkey", hotkey, "models[].hotkeys"))
+            }
+            StepAction::VtubeModelLoad { model }
+                if vtube.is_some_and(|v| !v.declares_model(model)) =>
+            {
+                Some(undeclared("model", model, "models"))
+            }
+            StepAction::VtubeItemAdded { file } | StepAction::VtubeItemRemoved { file }
+                if vtube.is_some_and(|v| !v.declares_item(file)) =>
+            {
+                Some(undeclared("file", file, "items"))
+            }
+            StepAction::VtubeExpression { file, .. }
+                if vtube.is_some_and(|v| !v.declares_expression(file)) =>
+            {
+                Some(undeclared("file", file, "models[].expressions"))
+            }
+            _ => None,
+        };
+        if let Some((location, message)) = problem {
+            self.report(location, message);
+        }
+    }
+
     fn require_fake_twitch(&mut self, location: &str) {
         if !self.fake_twitch {
             self.report(
@@ -445,6 +544,16 @@ impl<'a> Validator<'a> {
             | StepAction::ObsSceneSwitch { .. }
             | StepAction::ObsStream { .. }
             | StepAction::ObsInputMute { .. } => self.check_obs_action(location, action),
+            StepAction::VtubeOnline {}
+            | StepAction::VtubeAuthenticated { .. }
+            | StepAction::VtubeHotkey { .. }
+            | StepAction::VtubeModelLoad { .. }
+            | StepAction::VtubeModelUnload {}
+            | StepAction::VtubeModelConfigChanged {}
+            | StepAction::VtubeTracking { .. }
+            | StepAction::VtubeItemAdded { .. }
+            | StepAction::VtubeItemRemoved { .. }
+            | StepAction::VtubeExpression { .. } => self.check_vtube_action(location, action),
             StepAction::DonatelloDonation(_)
             | StepAction::MonobankTopUp(_)
             | StepAction::DonationsPolled { .. }
@@ -693,6 +802,29 @@ impl<'a> Validator<'a> {
                 );
             }
             Expectation::ObsAuth(auth) => {
+                self.in_range(
+                    format!("{location}.within_ms"),
+                    auth.within_ms,
+                    1,
+                    MAX_WAIT_MS,
+                );
+            }
+            Expectation::VtubeRequest(request) => {
+                self.not_blank(format!("{location}.message_type"), &request.message_type);
+                if request.succeeded == Some(true) && request.error_id.is_some() {
+                    self.report(
+                        format!("{location}.error_id"),
+                        "contradicts succeeded: a request answered with an error did not succeed",
+                    );
+                }
+                self.in_range(
+                    format!("{location}.within_ms"),
+                    request.within_ms,
+                    1,
+                    MAX_WAIT_MS,
+                );
+            }
+            Expectation::VtubeAuth(auth) => {
                 self.in_range(
                     format!("{location}.within_ms"),
                     auth.within_ms,

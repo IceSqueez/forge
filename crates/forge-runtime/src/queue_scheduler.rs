@@ -129,11 +129,14 @@ impl QueueMode {
         }
     }
 
-    fn skip_reason(self) -> &'static str {
-        match self.processing {
+    fn intake_refusal(self, bypass_pause: bool) -> Option<&'static str> {
+        if bypass_pause || self.intake == QueueIntake::Accept {
+            return None;
+        }
+        Some(match self.processing {
             QueueProcessing::Running => QUEUE_DRAINING_REASON,
             QueueProcessing::Frozen => QUEUE_PAUSED_REASON,
-        }
+        })
     }
 }
 
@@ -155,6 +158,7 @@ pub struct QueueRuntimeState {
 pub struct QueueSchedulerHandle {
     sender: mpsc::UnboundedSender<SchedulerCommand>,
     depths: DepthBoard,
+    intake_changes: watch::Receiver<()>,
 }
 
 enum SchedulerCommand {
@@ -164,6 +168,7 @@ enum SchedulerCommand {
         ScheduledOrigin,
         oneshot::Sender<Result<(), SchedulerError>>,
     ),
+    IntakeRefusal(QueueId, bool, oneshot::Sender<Option<&'static str>>),
     SetMode(
         QueueId,
         QueueMode,
@@ -175,6 +180,11 @@ enum SchedulerCommand {
     Reconfigure(Queue, oneshot::Sender<MembershipOutcome>),
     QueryStates(oneshot::Sender<HashMap<QueueId, QueueRuntimeState>>),
     Shutdown,
+}
+
+enum Admission {
+    Triggered,
+    Scheduled(ScheduledOrigin),
 }
 
 struct QueueSlot {
@@ -424,6 +434,24 @@ impl QueueSchedulerHandle {
         rx.await.map_err(|_| SchedulerError::ChannelClosed)?
     }
 
+    pub(crate) async fn intake_refusal(
+        &self,
+        queue_id: QueueId,
+        bypass_pause: bool,
+    ) -> Result<Option<&'static str>, SchedulerError> {
+        let (tx, rx) = oneshot::channel();
+        self.sender
+            .send(SchedulerCommand::IntakeRefusal(queue_id, bypass_pause, tx))
+            .map_err(|_| SchedulerError::ChannelClosed)?;
+        rx.await.map_err(|_| SchedulerError::ChannelClosed)
+    }
+
+    pub(crate) fn intake_changes(&self) -> watch::Receiver<()> {
+        let mut changes = self.intake_changes.clone();
+        changes.mark_unchanged();
+        changes
+    }
+
     pub async fn set_mode(&self, queue_id: QueueId, mode: QueueMode) -> Result<(), SchedulerError> {
         let (tx, rx) = oneshot::channel();
         self.sender
@@ -494,6 +522,7 @@ impl QueueScheduler {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let engine = Arc::new(engine);
         let depths = DepthBoard::new();
+        let (intake_tx, intake_changes) = watch::channel(());
 
         let mut slots: HashMap<QueueId, QueueSlot> = HashMap::with_capacity(initial_queues.len());
         for queue in initial_queues {
@@ -508,11 +537,13 @@ impl QueueScheduler {
             bus,
             engine,
             depths.clone(),
+            intake_tx,
         ));
 
         QueueSchedulerHandle {
             sender: cmd_tx,
             depths,
+            intake_changes,
         }
     }
 
@@ -619,19 +650,30 @@ impl QueueScheduler {
         bus: Arc<EventBus>,
         engine: Arc<ActionEngineHandle>,
         depths: DepthBoard,
+        intake_changed: watch::Sender<()>,
     ) {
         while let Some(cmd) = cmd_rx.recv().await {
             match cmd {
                 SchedulerCommand::Enqueue(req) => {
-                    let _ = Self::enqueue(req, None, &mut slots, &bus);
+                    let _ = Self::enqueue(req, Admission::Triggered, &mut slots, &bus);
                 }
                 SchedulerCommand::Admit(req, origin, reply) => {
-                    let admitted = Self::enqueue(req, Some(origin), &mut slots, &bus)
-                        .map_err(SchedulerError::Refused);
+                    let admitted =
+                        Self::enqueue(req, Admission::Scheduled(origin), &mut slots, &bus)
+                            .map_err(SchedulerError::Refused);
                     let _ = reply.send(admitted);
+                }
+                SchedulerCommand::IntakeRefusal(queue_id, bypass_pause, reply) => {
+                    let refusal = slots
+                        .get(&queue_id)
+                        .and_then(|slot| slot.mode.intake_refusal(bypass_pause));
+                    let _ = reply.send(refusal);
                 }
                 SchedulerCommand::SetMode(queue_id, mode, reply) => {
                     let r = Self::set_mode(&queue_id, mode, &mut slots, &bus);
+                    if r.is_ok() {
+                        intake_changed.send_replace(());
+                    }
                     let _ = reply.send(r);
                 }
                 SchedulerCommand::Clear(queue_id, keep_current, reply) => {
@@ -645,6 +687,7 @@ impl QueueScheduler {
                         let id = queue.id;
                         let slot = Self::make_queue_slot(queue, Arc::clone(&engine), &depths);
                         slots.insert(id, slot);
+                        intake_changed.send_replace(());
                         MembershipOutcome::Applied
                     };
                     let _ = reply.send(outcome);
@@ -653,6 +696,7 @@ impl QueueScheduler {
                     let outcome = match slots.remove(&queue_id) {
                         Some(_) => {
                             depths.deregister(&queue_id);
+                            intake_changed.send_replace(());
                             MembershipOutcome::Applied
                         }
                         None => MembershipOutcome::NotFound,
@@ -673,7 +717,7 @@ impl QueueScheduler {
 
     fn enqueue(
         req: SchedulerRequest,
-        origin: Option<ScheduledOrigin>,
+        admission: Admission,
         slots: &mut HashMap<QueueId, QueueSlot>,
         bus: &Arc<EventBus>,
     ) -> Result<(), &'static str> {
@@ -698,11 +742,16 @@ impl QueueScheduler {
             return Err(QUEUE_NOT_FOUND_REASON);
         };
 
-        if !bypass_pause && slot.mode.intake == QueueIntake::Skip {
-            let reason = slot.mode.skip_reason();
-            Self::publish_skip(bus, queue_id, action_id, trigger_event_id, reason);
-            return Err(reason);
-        }
+        let origin = match admission {
+            Admission::Triggered => {
+                if let Some(reason) = slot.mode.intake_refusal(bypass_pause) {
+                    Self::publish_skip(bus, queue_id, action_id, trigger_event_id, reason);
+                    return Err(reason);
+                }
+                None
+            }
+            Admission::Scheduled(origin) => Some(origin),
+        };
 
         let accepted = slot.pending.push(QueueTask {
             action_id,

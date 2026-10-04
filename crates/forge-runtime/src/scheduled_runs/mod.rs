@@ -10,6 +10,7 @@ mod request;
 mod scheduler;
 mod scheduling_context;
 mod script_scheduler;
+mod waiting;
 
 pub use catch_up::CatchUpSettle;
 pub use cell::ScheduledRunsCell;
@@ -35,3 +36,4 @@ pub use request::{
 pub use scheduler::{ScheduledRunsParts, spawn_scheduled_runs};
 pub use scheduling_context::{ScheduleIntent, SchedulingContext};
 pub use script_scheduler::ScriptScheduling;
+pub use waiting::{WaitingForQueueWatch, WaitingRuns};

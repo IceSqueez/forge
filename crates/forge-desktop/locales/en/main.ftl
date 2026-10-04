@@ -1341,6 +1341,7 @@ queues_scheduled_empty = Nothing scheduled - add a Schedule Action step to an ac
 queues_scheduled_load_failed = Could not load scheduled runs: { $error }
 queues_scheduled_due_now = due now
 queues_scheduled_due_in = in { $span }
+queues_scheduled_waiting_for_queue = waiting for its queue
 queues_scheduled_from = from
 queues_scheduled_from_removed = from a deleted action
 queues_scheduled_from_unknown = scheduled outside an action run

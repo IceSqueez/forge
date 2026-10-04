@@ -1366,6 +1366,7 @@ queues_scheduled_empty = Нічого не заплановано - додайт
 queues_scheduled_load_failed = Не вдалося завантажити заплановані запуски: { $error }
 queues_scheduled_due_now = час настав
 queues_scheduled_due_in = через { $span }
+queues_scheduled_waiting_for_queue = чекає на свою чергу
 queues_scheduled_from = від
 queues_scheduled_from_removed = від видаленої дії
 queues_scheduled_from_unknown = заплановано поза запуском дії

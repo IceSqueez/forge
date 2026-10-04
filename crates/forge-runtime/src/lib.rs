@@ -93,7 +93,8 @@ pub use queue_scheduler::{
 pub use scheduled_runs::{
     CatchUpSettle, HandOff, ScheduleDue, ScheduleError, ScheduleIntent, ScheduleRequest,
     ScheduledPlacement, ScheduledRunsCell, ScheduledRunsHandle, ScheduledRunsParts,
-    SchedulingContext, ScriptScheduling, SystemWallClock, WallClock, spawn_scheduled_runs,
+    SchedulingContext, ScriptScheduling, SystemWallClock, WaitingForQueueWatch, WaitingRuns,
+    WallClock, spawn_scheduled_runs,
 };
 pub use script_registry::{CompiledScript, ScriptRegistry, ScriptRegistryError};
 pub use sound_player::{SoundPlayer, SoundPlayerError};

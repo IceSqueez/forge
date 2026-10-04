@@ -5,18 +5,19 @@ use forge_storage::{
     ActionRepo, CatalogChanges, CatalogRevision, ScheduledRunRepo, ScheduledRunSpec,
 };
 use time::OffsetDateTime;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
 use super::catch_up::CatchUpSettle;
 use super::clock::WallClock;
-use super::hand_off::{HandOffPath, UNREADABLE_REASON};
+use super::hand_off::{HandOff, HandOffPath, QueueHolds, UNREADABLE_REASON};
 use super::handle::{Command, ScheduledRunsHandle};
 use super::limits::{
     CATCH_UP_SETTLE_LIMIT, MAX_PENDING_SCHEDULED_RUNS, MAX_PENDING_SCHEDULED_RUNS_PER_ACTION,
     WALL_CLOCK_RECHECK,
 };
 use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement};
+use super::waiting::WaitingRuns;
 use crate::catalog::Catalog;
 use crate::{EventBus, QueueSchedulerHandle};
 
@@ -40,6 +41,7 @@ struct ScheduledRunsTask {
     path: HandOffPath,
     next_due: Option<OffsetDateTime>,
     retry_at: Option<OffsetDateTime>,
+    waiting: watch::Sender<WaitingRuns>,
 }
 
 pub fn spawn_scheduled_runs(parts: ScheduledRunsParts) -> ScheduledRunsHandle {
@@ -55,6 +57,8 @@ pub fn spawn_scheduled_runs(parts: ScheduledRunsParts) -> ScheduledRunsHandle {
     } = parts;
     let (commands_tx, commands) = mpsc::channel(COMMAND_CAPACITY);
     let changes = revision.subscribe();
+    let intake_changes = queues.intake_changes();
+    let (waiting, waiting_rx) = watch::channel(WaitingRuns::new());
     let task = ScheduledRunsTask {
         repo: Arc::clone(&repo),
         actions: Arc::clone(&actions),
@@ -69,9 +73,10 @@ pub fn spawn_scheduled_runs(parts: ScheduledRunsParts) -> ScheduledRunsHandle {
         },
         next_due: None,
         retry_at: None,
+        waiting,
     };
-    tokio::spawn(task.run(commands, changes, catch_up));
-    ScheduledRunsHandle::new(commands_tx, repo, clock)
+    tokio::spawn(task.run(commands, changes, intake_changes, catch_up));
+    ScheduledRunsHandle::new(commands_tx, repo, clock, waiting_rx)
 }
 
 impl ScheduledRunsTask {
@@ -79,6 +84,7 @@ impl ScheduledRunsTask {
         mut self,
         mut commands: mpsc::Receiver<Command>,
         mut changes: CatalogChanges,
+        mut intake_changes: watch::Receiver<()>,
         catch_up: CatchUpSettle,
     ) {
         self.refresh_next_due().await;
@@ -86,8 +92,10 @@ impl ScheduledRunsTask {
         let mut settled = false;
         let mut commands_open = true;
         let mut revisions_open = true;
+        let mut intake_open = true;
         loop {
             let pause = self.pause_before_next_check();
+            let waiting_for_queue = !self.waiting.borrow().is_empty();
             tokio::select! {
                 command = commands.recv(), if commands_open => match command {
                     Some(command) => self.serve(command).await,
@@ -96,6 +104,10 @@ impl ScheduledRunsTask {
                 revision = changes.changed(), if revisions_open => match revision {
                     Some(_) => self.refresh_next_due().await,
                     None => revisions_open = false,
+                },
+                intake = intake_changes.changed(), if intake_open && waiting_for_queue => match intake {
+                    Ok(()) => self.dispatch_due().await,
+                    Err(_) => intake_open = false,
                 },
                 in_time = &mut settling, if !settled => {
                     settled = true;
@@ -191,6 +203,7 @@ impl ScheduledRunsTask {
                 let now = self.clock.now();
                 if next_due.is_none_or(|due| due > now) {
                     self.retry_at = None;
+                    self.publish_waiting(WaitingRuns::new());
                 }
                 self.next_due = next_due;
             }
@@ -213,6 +226,22 @@ impl ScheduledRunsTask {
         Some(until_due.max(until_retry).min(WALL_CLOCK_RECHECK))
     }
 
+    fn publish_waiting(&self, runs: WaitingRuns) {
+        self.waiting.send_if_modified(|waiting| {
+            if *waiting == runs {
+                return false;
+            }
+            for id in runs.difference(waiting) {
+                info!(
+                    scheduled_run = id.get(),
+                    "scheduled run is due but its queue is not accepting runs, waiting"
+                );
+            }
+            *waiting = runs;
+            true
+        });
+    }
+
     async fn dispatch_due(&mut self) {
         let now = self.clock.now();
         if self.next_due.is_none_or(|due| due > now) {
@@ -221,12 +250,21 @@ impl ScheduledRunsTask {
         self.fail_unreadable(now).await;
         match self.repo.list_due(now).await {
             Ok(due) => {
+                let mut holds = QueueHolds::new();
+                let mut waiting = WaitingRuns::new();
                 for run in due {
                     let id = run.id;
-                    if let Err(e) = self.path.due(run).await {
-                        warn!(scheduled_run = id.get(), error = %e, "scheduled run could not be handed off");
+                    match self.path.due(run, &mut holds).await {
+                        Ok(HandOff::WaitingForQueue(_)) => {
+                            waiting.insert(id);
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            warn!(scheduled_run = id.get(), error = %e, "scheduled run could not be handed off");
+                        }
                     }
                 }
+                self.publish_waiting(waiting);
             }
             Err(e) => warn!(error = %e, "scheduled runs: could not list due items"),
         }

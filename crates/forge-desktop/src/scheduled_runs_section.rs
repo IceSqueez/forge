@@ -7,7 +7,7 @@ use forge_components::{
     ToastKind, body_family, card, ghost_button_with_icon, hub_section_header, icon, mono_family,
     radius, section_label, spacing, tr, with_alpha,
 };
-use forge_runtime::{HandOff, ScheduledRunsHandle};
+use forge_runtime::{HandOff, ScheduledRunsHandle, WaitingForQueueWatch, WaitingRuns};
 use forge_storage::{ActionRepo, CatalogChanges, ScheduledRun, ScheduledRunId, ScheduledRunRepo};
 use forge_types::ActionId;
 use gpui::{
@@ -80,8 +80,10 @@ pub struct ScheduledRunsView {
     state: Scheduled,
     recent_open: bool,
     busy: HashSet<ScheduledRunId>,
+    waiting_for_queue: WaitingRuns,
     now: OffsetDateTime,
     _revision_watch: Task<()>,
+    _waiting_watch: Task<()>,
     _catalog_watch: Task<()>,
     _countdown_tick: Task<()>,
 }
@@ -98,6 +100,7 @@ impl ScheduledRunsView {
         rt_handle: tokio::runtime::Handle,
         cx: &mut Context<Self>,
     ) -> Self {
+        let waiting = runs.watch_waiting_for_queue();
         let view = Self {
             repo,
             action_repo,
@@ -106,8 +109,10 @@ impl ScheduledRunsView {
             state: Scheduled::Loading,
             recent_open: false,
             busy: HashSet::new(),
+            waiting_for_queue: waiting.current(),
             now: OffsetDateTime::now_utc(),
             _revision_watch: Self::watch_revision(changes, cx),
+            _waiting_watch: Self::watch_waiting(waiting, cx),
             _catalog_watch: Self::watch_revision(catalog_changes, cx),
             _countdown_tick: Self::spawn_countdown_tick(cx),
         };
@@ -119,6 +124,20 @@ impl ScheduledRunsView {
         cx.spawn(async move |this, cx| {
             while changes.changed().await.is_some() {
                 if this.update(cx, |this, cx| this.reload(cx)).is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    fn watch_waiting(mut waiting: WaitingForQueueWatch, cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            while let Some(runs) = waiting.changed().await {
+                let applied = this.update(cx, |this, cx| {
+                    this.waiting_for_queue = runs;
+                    cx.notify();
+                });
+                if applied.is_err() {
                     break;
                 }
             }
@@ -230,7 +249,7 @@ impl ScheduledRunsView {
                 ToastKind::Success,
                 tr!("queues_scheduled_run_now_started", name = label),
             ),
-            Ok(HandOff::Skipped(reason)) => (
+            Ok(HandOff::Skipped(reason) | HandOff::WaitingForQueue(reason)) => (
                 ToastKind::Warn,
                 tr!(
                     "queues_scheduled_run_now_refused",
@@ -329,9 +348,14 @@ impl ScheduledRunsView {
             .child(origin);
 
         let remaining = countdown(spec.due_at, self.now);
-        let countdown_ink = match remaining {
-            Countdown::DueNow => palette.warning,
-            Countdown::In(_) => palette.text_primary,
+        let (due_caption, countdown_ink) = if self.waiting_for_queue.contains(&id) {
+            (tr!("queues_scheduled_waiting_for_queue"), palette.warning)
+        } else {
+            let ink = match remaining {
+                Countdown::DueNow => palette.warning,
+                Countdown::In(_) => palette.text_primary,
+            };
+            (countdown_label(remaining), ink)
         };
         let due = div()
             .flex_none()
@@ -345,7 +369,8 @@ impl ScheduledRunsView {
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(countdown_ink)
-                    .child(countdown_label(remaining)),
+                    .text_right()
+                    .child(due_caption),
             )
             .child(
                 div()

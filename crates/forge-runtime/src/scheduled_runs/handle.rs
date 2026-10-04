@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use forge_storage::{ScheduledRunId, ScheduledRunRepo};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use super::clock::WallClock;
 use super::hand_off::HandOff;
 use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement, normalized_key};
+use super::waiting::{WaitingForQueueWatch, WaitingRuns};
 
 pub(super) enum Command {
     Schedule(
@@ -23,6 +24,7 @@ pub struct ScheduledRunsHandle {
     commands: mpsc::Sender<Command>,
     repo: Arc<dyn ScheduledRunRepo>,
     clock: Arc<dyn WallClock>,
+    waiting: watch::Receiver<WaitingRuns>,
 }
 
 impl ScheduledRunsHandle {
@@ -30,13 +32,20 @@ impl ScheduledRunsHandle {
         commands: mpsc::Sender<Command>,
         repo: Arc<dyn ScheduledRunRepo>,
         clock: Arc<dyn WallClock>,
+        waiting: watch::Receiver<WaitingRuns>,
     ) -> Self {
         Self {
             commands,
             repo,
             clock,
+            waiting,
         }
     }
+
+    pub fn watch_waiting_for_queue(&self) -> WaitingForQueueWatch {
+        WaitingForQueueWatch::new(self.waiting.clone())
+    }
+
     pub async fn schedule(
         &self,
         request: ScheduleRequest,

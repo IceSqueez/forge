@@ -1,12 +1,13 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_storage::{
     ActionRepo, MissedRunPolicy, ScheduledRun, ScheduledRunId, ScheduledRunOutcome,
-    ScheduledRunRepo, StorageError,
+    ScheduledRunRepo, ScheduledRunState, StorageError,
 };
-use forge_types::{Action, ActionId, EventId};
+use forge_types::{Action, ActionId, EventId, QueueId};
 use serde_json::json;
 use tracing::{info, warn};
 
@@ -31,8 +32,11 @@ pub enum HandOff {
     Dispatched,
     Skipped(&'static str),
     Failed(&'static str),
+    WaitingForQueue(&'static str),
     NotPending,
 }
+
+pub(super) type QueueHolds = HashMap<QueueId, &'static str>;
 
 enum Target {
     Ready(Arc<Action>),
@@ -49,7 +53,11 @@ pub(super) struct HandOffPath {
 }
 
 impl HandOffPath {
-    pub(super) async fn due(&self, run: ScheduledRun) -> Result<HandOff, StorageError> {
+    pub(super) async fn due(
+        &self,
+        run: ScheduledRun,
+        holds: &mut QueueHolds,
+    ) -> Result<HandOff, StorageError> {
         let now = self.clock.now();
         let late = lateness(run.spec.due_at, now);
         if let MissedRunPolicy::SkipIfLateBy(tolerance) = run.spec.missed_run_policy
@@ -74,24 +82,43 @@ impl HandOffPath {
             );
             return Ok(HandOff::Skipped(MISSED_REASON));
         }
-        self.claim_and_hand_off(run.id, late).await
+        self.claim_and_hand_off(&run, late, holds).await
     }
 
     pub(super) async fn now(&self, id: ScheduledRunId) -> Result<HandOff, StorageError> {
-        self.claim_and_hand_off(id, Duration::ZERO).await
+        let pending = self
+            .repo
+            .get(id)
+            .await?
+            .filter(|run| run.state == ScheduledRunState::Pending);
+        let Some(run) = pending else {
+            return Ok(HandOff::NotPending);
+        };
+        self.claim_and_hand_off(&run, Duration::ZERO, &mut QueueHolds::new())
+            .await
     }
 
     async fn claim_and_hand_off(
         &self,
-        id: ScheduledRunId,
+        pending: &ScheduledRun,
         late: Duration,
+        holds: &mut QueueHolds,
     ) -> Result<HandOff, StorageError> {
-        let Some(run) = self.repo.claim(id, self.clock.now()).await? else {
+        let target = self.resolve(pending.spec.target_action_id).await;
+        if let Target::Ready(action) = &target
+            && let Some(reason) = self.queue_hold(action, holds).await
+        {
+            return Ok(HandOff::WaitingForQueue(reason));
+        }
+        let Some(run) = self.repo.claim(pending.id, self.clock.now()).await? else {
             return Ok(HandOff::NotPending);
         };
-        let outcome = self.hand_off(&run, late).await;
+        let outcome = match target {
+            Target::Ready(action) => self.admit(&run, &action, late).await,
+            Target::Refused(outcome) => outcome,
+        };
         match outcome {
-            HandOff::Dispatched | HandOff::NotPending => {}
+            HandOff::Dispatched | HandOff::WaitingForQueue(_) | HandOff::NotPending => {}
             HandOff::Skipped(reason) => {
                 self.settle(&run, ScheduledRunOutcome::Skipped, reason)
                     .await
@@ -101,11 +128,24 @@ impl HandOffPath {
         Ok(outcome)
     }
 
-    async fn hand_off(&self, run: &ScheduledRun, late: Duration) -> HandOff {
-        let action = match self.resolve(run.spec.target_action_id).await {
-            Target::Ready(action) => action,
-            Target::Refused(outcome) => return outcome,
-        };
+    async fn queue_hold(&self, action: &Action, holds: &mut QueueHolds) -> Option<&'static str> {
+        if action.bypass_pause {
+            return None;
+        }
+        if let Some(reason) = holds.get(&action.queue_id) {
+            return Some(reason);
+        }
+        let reason = self
+            .queues
+            .intake_refusal(action.queue_id, false)
+            .await
+            .ok()
+            .flatten()?;
+        holds.insert(action.queue_id, reason);
+        Some(reason)
+    }
+
+    async fn admit(&self, run: &ScheduledRun, action: &Action, late: Duration) -> HandOff {
         let trigger_event_id = self.record_due(run, late);
         let request = SchedulerRequest {
             queue_id: action.queue_id,

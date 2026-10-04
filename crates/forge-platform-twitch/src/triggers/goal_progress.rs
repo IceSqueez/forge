@@ -89,6 +89,10 @@ impl TriggerKindDescriptor for GoalProgressDescriptor {
             .and_then(|v| v.get(fields::TARGET_AMOUNT))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
+        let is_synced = goal
+            .and_then(|v| v.get(fields::IS_SYNCED))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         ArgStack::new()
             .set("goal.id".to_owned(), Variant::String(goal_id))
@@ -98,6 +102,7 @@ impl TriggerKindDescriptor for GoalProgressDescriptor {
                 Variant::Int(current_amount),
             )
             .set("goal.target_amount".to_owned(), Variant::Int(target_amount))
+            .set("goal.is_synced".to_owned(), Variant::Bool(is_synced))
     }
     fn output_schema(&self) -> Option<VariableSchema> {
         Some({
@@ -132,6 +137,12 @@ impl TriggerKindDescriptor for GoalProgressDescriptor {
                             min: 0,
                             max: 1000000,
                         }),
+                    },
+                    DeclaredVariable {
+                        name: "goal.is_synced".to_owned(),
+                        kind: VariantKind::Bool,
+                        label: "Synced on connect".to_owned(),
+                        synthesis: None,
                     },
                 ],
             }

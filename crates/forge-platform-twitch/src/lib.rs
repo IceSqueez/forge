@@ -5,6 +5,7 @@ pub mod builtin;
 pub mod chat;
 pub mod chat_platform;
 mod control;
+mod creator_goals;
 pub mod credentials;
 pub mod credentials_manager;
 mod custom_rewards;

@@ -7,6 +7,7 @@ use tokio::sync::{Mutex, watch};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::{BroadcastStream, WatchStream};
 use tokio_util::sync::CancellationToken;
+use tracing::debug;
 
 #[cfg(test)]
 use forge_platform_core::TokenBucketRateLimiter;
@@ -27,6 +28,7 @@ use forge_types::{SubActionStep, Variant};
 
 use crate::TWITCH_BROADCASTER_SCOPES;
 use crate::chat::{ChatConnectionState, TwitchChat, TwitchChatHandle};
+use crate::creator_goals;
 use crate::credentials;
 use crate::credentials_manager::TwitchCredentialsManager;
 use crate::helix::{
@@ -224,6 +226,7 @@ impl TwitchIntegrationBundle {
             if !already_connected {
                 Self::spawn_identity_refresh(self);
                 Self::spawn_lifecycle_seed(self);
+                Self::spawn_goal_sync(self);
                 self.lifecycle.rewards_changed();
             }
         } else {
@@ -248,6 +251,22 @@ impl TwitchIntegrationBundle {
                 .lifecycle
                 .seed_from_helix(bundle.transport.as_ref(), &bundle.config.broadcaster_id)
                 .await;
+        });
+    }
+
+    fn spawn_goal_sync(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        tokio::spawn(async move {
+            match creator_goals::publish_current_goals(
+                bundle.transport.as_ref(),
+                bundle.bus.as_ref(),
+                &bundle.config.broadcaster_id,
+            )
+            .await
+            {
+                Ok(synced) => debug!(synced, "creator goals synced"),
+                Err(_) => debug!("creator goal sync failed"),
+            }
         });
     }
 

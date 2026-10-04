@@ -26,6 +26,7 @@ use tracing::{debug, error, info, trace, warn};
 use super::dedup::MessageIdWindow;
 use super::dispatch;
 use super::payload;
+use crate::creator_goals::{GoalProgressOrigin, goal_progress_event};
 use crate::payload_fields::ad_break as ad_break_fields;
 use crate::payload_fields::automatic_reward as automatic_reward_fields;
 use crate::payload_fields::automod as automod_fields;
@@ -2583,39 +2584,9 @@ impl ChatSession {
         event_data: &serde_json::Value,
         _frame_msg_id: &str,
     ) {
-        let goal_id = event_data
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let goal_type = event_data
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_owned();
-        let current_amount = event_data
-            .get("current_amount")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-        let target_amount = event_data
-            .get("target_amount")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0);
-
-        debug!(goal_id = %goal_id, current_amount, "goal progress");
-
-        self.config.bus.publish(Event::new(
-            EventSource::Twitch,
-            "twitch.channel.goal.progress",
-            serde_json::json!({
-                (goal_fields::GOAL): {
-                    (goal_fields::GOAL_ID): goal_id,
-                    (goal_fields::GOAL_TYPE): goal_type,
-                    (goal_fields::CURRENT_AMOUNT): current_amount,
-                    (goal_fields::TARGET_AMOUNT): target_amount,
-                },
-            }),
-        ));
+        self.config
+            .bus
+            .publish(goal_progress_event(event_data, GoalProgressOrigin::Live));
     }
 
     pub(super) fn publish_goal_end_event(

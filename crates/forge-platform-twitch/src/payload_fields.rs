@@ -160,6 +160,7 @@ pub(crate) mod goal {
     pub(crate) const TARGET_AMOUNT: &str = "target_amount";
     pub(crate) const STARTED_AT: &str = "started_at";
     pub(crate) const IS_ACHIEVED: &str = "is_achieved";
+    pub(crate) const IS_SYNCED: &str = "is_synced";
     pub(crate) const ENDED_AT: &str = "ended_at";
 }
 

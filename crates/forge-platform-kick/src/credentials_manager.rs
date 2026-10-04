@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use forge_platform_core::PlatformError;
 use forge_platform_core::auth::{
     PkceRefreshConfig, PkceRefresher, REFRESH_BUFFER_SECS, ReauthPolicy,
 };
+use forge_platform_core::{PlatformEndpoints, PlatformError};
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use time::{Duration, OffsetDateTime};
 
-use crate::auth::KickAuthBundle;
+use crate::auth::{KickAuthBundle, kick_token_endpoint};
 use crate::credentials::{CREDENTIAL_KEY, KickCredentials};
 
 const PLATFORM: &str = "kick";
@@ -20,12 +20,17 @@ pub struct KickCredentialsManager {
 }
 
 impl KickCredentialsManager {
-    pub fn new(repo: Arc<dyn CredentialsRepo>, client_id: String, client_secret: String) -> Self {
+    pub fn new(
+        endpoints: &PlatformEndpoints,
+        repo: Arc<dyn CredentialsRepo>,
+        client_id: String,
+        client_secret: String,
+    ) -> Self {
         Self::with_refresh_endpoint(
             repo,
             client_id,
             client_secret,
-            crate::auth::KICK_TOKEN_ENDPOINT.to_owned(),
+            kick_token_endpoint(endpoints),
         )
     }
 

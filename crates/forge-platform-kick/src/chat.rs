@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use forge_events::{Event, EventSource};
-use forge_platform_core::Backoff;
 use forge_platform_core::chat::ConnectionState;
+use forge_platform_core::{Backoff, EndpointSurface, PlatformEndpoints};
 use forge_types::ChatPayload;
 use futures_util::StreamExt;
 use serde::Deserialize;
@@ -16,14 +16,13 @@ use crate::normalize;
 
 pub const PUSHER_APP_KEY: &str = "32cbd69e4b950bf97679";
 
-const PUSHER_WS_BASE: &str = "wss://ws-us2.pusher.com/app";
 const PUSHER_PROTOCOL_PARAMS: &str = "protocol=7&client=js&version=7.6.0&flash=false";
 
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct KickChat {
-    slug: String,
-    http: reqwest::Client,
+    fetcher: ChannelInfoFetcher,
+    ws_url: String,
 }
 
 pub struct KickChatHandle {
@@ -46,20 +45,18 @@ impl KickChatHandle {
 }
 
 impl KickChat {
-    pub fn new(slug: String, http: reqwest::Client) -> Self {
-        Self { slug, http }
-    }
-
-    fn pusher_ws_url() -> String {
-        format!("{PUSHER_WS_BASE}/{PUSHER_APP_KEY}?{PUSHER_PROTOCOL_PARAMS}")
+    pub fn new(endpoints: &PlatformEndpoints, slug: String, http: reqwest::Client) -> Self {
+        Self {
+            fetcher: ChannelInfoFetcher::new(endpoints, slug, http),
+            ws_url: pusher_ws_url(endpoints.base_url(EndpointSurface::KickChatSocket)),
+        }
     }
 
     pub async fn connect(self, event_tx: mpsc::Sender<Event>) -> Result<KickChatHandle, KickError> {
-        let fetcher = ChannelInfoFetcher::new(self.slug.clone(), self.http.clone());
+        let Self { fetcher, ws_url } = self;
         let channel_info = fetcher.fetch().await?;
         let chatroom_id = channel_info.chatroom_id;
 
-        let ws_url = Self::pusher_ws_url();
         let ws_stream = connect_ws(&ws_url).await?;
 
         let (close_tx, close_rx) = oneshot::channel();
@@ -72,14 +69,17 @@ impl KickChat {
                 event_tx,
                 close_rx,
                 ws_url,
-                slug: self.slug.clone(),
-                http: self.http.clone(),
+                fetcher,
                 state_tx,
             },
         ));
 
         Ok(KickChatHandle { close_tx, state_rx })
     }
+}
+
+fn pusher_ws_url(ws_base: &str) -> String {
+    format!("{ws_base}/{PUSHER_APP_KEY}?{PUSHER_PROTOCOL_PARAMS}")
 }
 
 async fn connect_ws(
@@ -139,8 +139,7 @@ struct RunLoopContext {
     event_tx: mpsc::Sender<Event>,
     close_rx: oneshot::Receiver<()>,
     ws_url: String,
-    slug: String,
-    http: reqwest::Client,
+    fetcher: ChannelInfoFetcher,
     state_tx: watch::Sender<ConnectionState>,
 }
 
@@ -166,8 +165,7 @@ async fn run_loop(
         event_tx,
         mut close_rx,
         ws_url,
-        slug,
-        http,
+        fetcher,
         state_tx,
     } = ctx;
     let mut backoff = Backoff::default();
@@ -234,8 +232,6 @@ async fn run_loop(
             let _ = state_tx.send(ConnectionState::Disconnected);
             return;
         }
-
-        let fetcher = ChannelInfoFetcher::new(slug.clone(), http.clone());
 
         let new_chatroom_id = match fetcher.fetch().await {
             Ok(info) => info.chatroom_id,

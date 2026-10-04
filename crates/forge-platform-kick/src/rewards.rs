@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use forge_platform_core::{
-    DEFAULT_RETRY_AFTER_SECS, NON_HTTP_STATUS, PlatformError, RateLimiter, acquire_or_wait,
+    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, NON_HTTP_STATUS, PlatformEndpoints, PlatformError,
+    RateLimiter, acquire_or_wait,
 };
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-const REWARDS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels/rewards";
+const REWARDS_PATH: &str = "/channels/rewards";
 const MAX_REDEMPTION_BATCH: usize = 25;
 
 pub struct KickRewards {
@@ -132,17 +133,20 @@ struct RedeemerRef {
 }
 
 impl KickRewards {
-    pub fn new(limiter: Arc<dyn RateLimiter>) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
         Self {
             client: reqwest::Client::new(),
             limiter,
-            rewards_endpoint: REWARDS_ENDPOINT.to_owned(),
+            rewards_endpoint: format!(
+                "{}{REWARDS_PATH}",
+                endpoints.base_url(EndpointSurface::KickPublicApi)
+            ),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.rewards_endpoint = format!("{base}/channels/rewards");
+        self.rewards_endpoint = format!("{base}{REWARDS_PATH}");
         self
     }
 

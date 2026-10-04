@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
-use forge_platform_core::{DEFAULT_RETRY_AFTER_SECS, PlatformError, RateLimiter, acquire_or_wait};
+use forge_platform_core::{
+    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError, RateLimiter,
+    acquire_or_wait,
+};
 use reqwest::StatusCode;
 
-const SEND_ENDPOINT: &str = "https://api.kick.com/public/v1/chat";
-const DELETE_BASE: &str = "https://api.kick.com/public/v1/chat";
+const CHAT_PATH: &str = "/chat";
 
 pub struct KickSendChat {
     client: reqwest::Client,
@@ -14,12 +16,16 @@ pub struct KickSendChat {
 }
 
 impl KickSendChat {
-    pub fn new(limiter: Arc<dyn RateLimiter>) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
+        let chat_endpoint = format!(
+            "{}{CHAT_PATH}",
+            endpoints.base_url(EndpointSurface::KickPublicApi)
+        );
         Self {
             client: reqwest::Client::new(),
             limiter,
-            send_endpoint: SEND_ENDPOINT.to_owned(),
-            delete_base: DELETE_BASE.to_owned(),
+            send_endpoint: chat_endpoint.clone(),
+            delete_base: chat_endpoint,
         }
     }
 

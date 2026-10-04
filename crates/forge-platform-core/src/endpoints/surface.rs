@@ -5,6 +5,7 @@ pub enum EndpointSurface {
     KickPublicApi,
     KickChannelApi,
     KickChatSocket,
+    KickOAuth,
     YouTubeDataApi,
     YouTubeUploadApi,
     DonatelloApi,
@@ -27,12 +28,13 @@ impl EndpointProtocol {
 }
 
 impl EndpointSurface {
-    pub const ALL: [EndpointSurface; 9] = [
+    pub const ALL: [EndpointSurface; 10] = [
         Self::TwitchApi,
         Self::TwitchEventSubSocket,
         Self::KickPublicApi,
         Self::KickChannelApi,
         Self::KickChatSocket,
+        Self::KickOAuth,
         Self::YouTubeDataApi,
         Self::YouTubeUploadApi,
         Self::DonatelloApi,
@@ -46,6 +48,7 @@ impl EndpointSurface {
             Self::KickPublicApi => "FORGE_KICK_API_BASE_URL",
             Self::KickChannelApi => "FORGE_KICK_CHANNEL_API_BASE_URL",
             Self::KickChatSocket => "FORGE_KICK_CHAT_WS_BASE_URL",
+            Self::KickOAuth => "FORGE_KICK_OAUTH_BASE_URL",
             Self::YouTubeDataApi => "FORGE_YOUTUBE_API_BASE_URL",
             Self::YouTubeUploadApi => "FORGE_YOUTUBE_UPLOAD_BASE_URL",
             Self::DonatelloApi => "FORGE_DONATELLO_API_BASE_URL",
@@ -60,6 +63,7 @@ impl EndpointSurface {
             Self::KickPublicApi => "https://api.kick.com/public/v1",
             Self::KickChannelApi => "https://kick.com/api/v2",
             Self::KickChatSocket => "wss://ws-us2.pusher.com/app",
+            Self::KickOAuth => "https://id.kick.com/oauth",
             Self::YouTubeDataApi => "https://www.googleapis.com/youtube/v3",
             Self::YouTubeUploadApi => "https://www.googleapis.com/upload/youtube/v3",
             Self::DonatelloApi => "https://donatello.to/api/v1",
@@ -72,6 +76,7 @@ impl EndpointSurface {
             Self::TwitchApi
             | Self::KickPublicApi
             | Self::KickChannelApi
+            | Self::KickOAuth
             | Self::YouTubeDataApi
             | Self::YouTubeUploadApi
             | Self::DonatelloApi

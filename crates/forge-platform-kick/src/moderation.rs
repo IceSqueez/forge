@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
-use forge_platform_core::{DEFAULT_RETRY_AFTER_SECS, PlatformError, RateLimiter, acquire_or_wait};
+use forge_platform_core::{
+    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError, RateLimiter,
+    acquire_or_wait,
+};
 use reqwest::StatusCode;
 
-const BANS_ENDPOINT: &str = "https://api.kick.com/public/v1/moderation/bans";
+const BANS_PATH: &str = "/moderation/bans";
 
 pub struct KickModeration {
     client: reqwest::Client,
@@ -12,17 +15,20 @@ pub struct KickModeration {
 }
 
 impl KickModeration {
-    pub fn new(limiter: Arc<dyn RateLimiter>) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
         Self {
             client: reqwest::Client::new(),
             limiter,
-            bans_endpoint: BANS_ENDPOINT.to_owned(),
+            bans_endpoint: format!(
+                "{}{BANS_PATH}",
+                endpoints.base_url(EndpointSurface::KickPublicApi)
+            ),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.bans_endpoint = format!("{base}/moderation/bans");
+        self.bans_endpoint = format!("{base}{BANS_PATH}");
         self
     }
 

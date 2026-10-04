@@ -326,10 +326,12 @@ pub(crate) fn wire_kick(
     sub_actions: &mut SubActionRegistry,
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
+    endpoints: &PlatformEndpoints,
 ) -> Option<KickFactory> {
     let (client_id, client_secret) = forge_platform_kick::client_credentials()?;
     let creds = creds_of(backend);
     let manager = Arc::new(forge_platform_kick::KickCredentialsManager::new(
+        endpoints,
         Arc::clone(&creds),
         client_id,
         client_secret,
@@ -339,24 +341,30 @@ pub(crate) fn wire_kick(
         KICK_API_BUDGET_WINDOW,
     ));
     let platform = Arc::new(forge_platform_kick::KickPlatform::new(
+        endpoints,
         Arc::clone(&manager),
         Arc::clone(&rate_limiter),
     ));
-    let sender = Arc::new(forge_platform_kick::KickSendChat::new(Arc::new(
-        NoopRateLimiter,
-    )));
-    let moderation = Arc::new(forge_platform_kick::KickModeration::new(Arc::clone(
-        &rate_limiter,
-    )));
-    let channel = Arc::new(forge_platform_kick::KickChannel::new(Arc::clone(
-        &rate_limiter,
-    )));
-    let rewards = Arc::new(forge_platform_kick::KickRewards::new(Arc::clone(
-        &rate_limiter,
-    )));
-    let categories = Arc::new(forge_platform_kick::KickCategories::new(Arc::clone(
-        &rate_limiter,
-    )));
+    let sender = Arc::new(forge_platform_kick::KickSendChat::new(
+        endpoints,
+        Arc::new(NoopRateLimiter),
+    ));
+    let moderation = Arc::new(forge_platform_kick::KickModeration::new(
+        endpoints,
+        Arc::clone(&rate_limiter),
+    ));
+    let channel = Arc::new(forge_platform_kick::KickChannel::new(
+        endpoints,
+        Arc::clone(&rate_limiter),
+    ));
+    let rewards = Arc::new(forge_platform_kick::KickRewards::new(
+        endpoints,
+        Arc::clone(&rate_limiter),
+    ));
+    let categories = Arc::new(forge_platform_kick::KickCategories::new(
+        endpoints,
+        Arc::clone(&rate_limiter),
+    ));
 
     let manager_for_sub_actions = Arc::clone(&manager);
     let manager_for_broadcaster = Arc::clone(&manager);

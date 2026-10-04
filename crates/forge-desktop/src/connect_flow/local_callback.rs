@@ -1032,7 +1032,12 @@ async fn wait_for_kick_authorization(
     let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
         return Err("Kick OAuth client credentials are not configured".to_owned());
     };
-    let manager = forge_platform_kick::KickCredentialsManager::new(credentials_repo, cid, csec);
+    let manager = forge_platform_kick::KickCredentialsManager::new(
+        &forge_platform_core::PlatformEndpoints::default(),
+        credentials_repo,
+        cid,
+        csec,
+    );
     manager
         .save_from_bundle(bundle)
         .await

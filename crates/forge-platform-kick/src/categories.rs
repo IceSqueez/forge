@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use forge_platform_core::{DEFAULT_RETRY_AFTER_SECS, PlatformError, RateLimiter, acquire_or_wait};
+use forge_platform_core::{
+    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError, RateLimiter,
+    acquire_or_wait,
+};
 use reqwest::StatusCode;
 use serde::Deserialize;
 
-const CATEGORIES_ENDPOINT: &str = "https://api.kick.com/public/v1/categories";
+const CATEGORIES_PATH: &str = "/categories";
 const MAX_MATCHES: usize = 10;
 
 pub struct KickCategories {
@@ -33,18 +36,21 @@ struct CategoryData {
 }
 
 impl KickCategories {
-    pub fn new(limiter: Arc<dyn RateLimiter>) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
         Self {
             client: reqwest::Client::new(),
             limiter,
-            categories_endpoint: CATEGORIES_ENDPOINT.to_owned(),
+            categories_endpoint: format!(
+                "{}{CATEGORIES_PATH}",
+                endpoints.base_url(EndpointSurface::KickPublicApi)
+            ),
         }
     }
 
     #[cfg(test)]
     #[allow(dead_code)]
     pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.categories_endpoint = format!("{base}/categories");
+        self.categories_endpoint = format!("{base}{CATEGORIES_PATH}");
         self
     }
 

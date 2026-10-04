@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformError, RateLimiter,
-    connection_state_changed_event,
+    AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints,
+    PlatformError, RateLimiter, connection_state_changed_event,
 };
 use tokio::sync::{mpsc, watch};
 
@@ -24,6 +24,7 @@ pub struct KickPlatform {
     capabilities: PlatformCapabilities,
     events: Arc<PlatformEventChannel>,
     credentials_manager: Arc<KickCredentialsManager>,
+    endpoints: PlatformEndpoints,
     http: reqwest::Client,
     sender: KickSendChat,
     handle: Mutex<Option<KickChatHandle>>,
@@ -32,6 +33,7 @@ pub struct KickPlatform {
 
 impl KickPlatform {
     pub fn new(
+        endpoints: &PlatformEndpoints,
         credentials_manager: Arc<KickCredentialsManager>,
         rate_limiter: Arc<dyn RateLimiter>,
     ) -> Self {
@@ -41,8 +43,9 @@ impl KickPlatform {
             capabilities: kick_capabilities(),
             events: Arc::new(PlatformEventChannel::new()),
             credentials_manager,
+            endpoints: endpoints.clone(),
             http: reqwest::Client::new(),
-            sender: KickSendChat::new(rate_limiter),
+            sender: KickSendChat::new(endpoints, rate_limiter),
             handle: Mutex::new(None),
             state_tx,
         }
@@ -104,7 +107,7 @@ impl ChatPlatform for KickPlatform {
         }
 
         let (chat_tx, mut chat_rx) = mpsc::channel::<Event>(CHAT_FORWARD_CAPACITY);
-        let handle = KickChat::new(creds.username, self.http.clone())
+        let handle = KickChat::new(&self.endpoints, creds.username, self.http.clone())
             .connect(chat_tx)
             .await
             .map_err(map_connect_error)?;

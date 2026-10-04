@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use forge_platform_core::auth::{CALLBACK_PATH, PkceClientConfig, PkceFlow};
-use forge_platform_core::{AuthFlow, PlatformError};
+use forge_platform_core::{AuthFlow, EndpointSurface, PlatformEndpoints, PlatformError};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -11,6 +11,8 @@ pub const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
 pub const KICK_USERS_ENDPOINT: &str = "https://api.kick.com/public/v1/users";
 
 pub const KICK_OAUTH_CALLBACK_PORT: u16 = 53127;
+
+const KICK_TOKEN_PATH: &str = "/token";
 
 const KICK_SCOPES: &[&str] = &[
     "user:read",
@@ -30,6 +32,13 @@ pub fn kick_auth_flow() -> AuthFlow {
         redirect_path: CALLBACK_PATH.to_owned(),
         scopes: KICK_SCOPES.iter().map(|s| (*s).to_owned()).collect(),
     }
+}
+
+pub(crate) fn kick_token_endpoint(endpoints: &PlatformEndpoints) -> String {
+    format!(
+        "{}{KICK_TOKEN_PATH}",
+        endpoints.base_url(EndpointSurface::KickOAuth)
+    )
 }
 
 #[derive(Debug, Clone)]

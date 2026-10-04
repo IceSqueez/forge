@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use forge_platform_core::{
-    DEFAULT_RETRY_AFTER_SECS, NON_HTTP_STATUS, PlatformError, RateLimiter, acquire_or_wait,
+    DEFAULT_RETRY_AFTER_SECS, EndpointSurface, NON_HTTP_STATUS, PlatformEndpoints, PlatformError,
+    RateLimiter, acquire_or_wait,
 };
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
-const CHANNELS_ENDPOINT: &str = "https://api.kick.com/public/v1/channels";
+const CHANNELS_PATH: &str = "/channels";
 
 pub struct KickChannel {
     client: reqwest::Client,
@@ -74,17 +75,20 @@ struct StreamData {
 }
 
 impl KickChannel {
-    pub fn new(limiter: Arc<dyn RateLimiter>) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
         Self {
             client: reqwest::Client::new(),
             limiter,
-            channels_endpoint: CHANNELS_ENDPOINT.to_owned(),
+            channels_endpoint: format!(
+                "{}{CHANNELS_PATH}",
+                endpoints.base_url(EndpointSurface::KickPublicApi)
+            ),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn with_api_base(mut self, base: String) -> Self {
-        self.channels_endpoint = format!("{base}/channels");
+        self.channels_endpoint = format!("{base}{CHANNELS_PATH}");
         self
     }
 

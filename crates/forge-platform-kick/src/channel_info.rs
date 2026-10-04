@@ -1,10 +1,11 @@
+use forge_platform_core::{EndpointSurface, PlatformEndpoints};
 use reqwest::header;
 use serde::Deserialize;
 use tracing::debug;
 
 use crate::error::KickError;
 
-const CHANNEL_API_BASE: &str = "https://kick.com/api/v2/channels";
+const CHANNELS_PATH: &str = "/channels";
 const ERROR_BODY_LIMIT: usize = 200;
 const USER_AGENT: &str = concat!(
     "forge/",
@@ -26,11 +27,14 @@ pub struct ChannelInfoFetcher {
 }
 
 impl ChannelInfoFetcher {
-    pub fn new(slug: String, http: reqwest::Client) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, slug: String, http: reqwest::Client) -> Self {
         Self {
             slug,
             http,
-            endpoint_base: CHANNEL_API_BASE.to_owned(),
+            endpoint_base: format!(
+                "{}{CHANNELS_PATH}",
+                endpoints.base_url(EndpointSurface::KickChannelApi)
+            ),
         }
     }
 

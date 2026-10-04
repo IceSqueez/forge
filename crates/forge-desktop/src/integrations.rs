@@ -293,7 +293,7 @@ pub async fn build_integrations(
     if let Some(youtube) = wire_youtube(sub_actions, backend, bus) {
         factories.push(Arc::new(youtube));
     }
-    if let Some(kick) = wire_kick(sub_actions, backend, bus) {
+    if let Some(kick) = wire_kick(sub_actions, backend, bus, endpoints) {
         factories.push(Arc::new(kick));
     }
     let mut donation_services = DonationServices::default();

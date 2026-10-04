@@ -786,6 +786,7 @@ actions_delete_scheduled_runs = { $count ->
     [one] Its { $count } pending scheduled run will be cancelled too.
    *[other] Its { $count } pending scheduled runs will be cancelled too.
 }
+actions_delete_scheduled_runs_unknown = Any pending scheduled runs of this action will be cancelled too.
 
 ## Triggers registry - error messages
 
@@ -1351,7 +1352,7 @@ queues_scheduled_run_now_failed = Could not run it now: { $error }
 queues_scheduled_cancel_failed = Could not cancel the scheduled run: { $error }
 queues_scheduled_not_pending = This run already started or was cancelled.
 queues_scheduled_recent = RECENT ({ $count })
-queues_scheduled_outcome_ran = RAN
+queues_scheduled_outcome_ran = STARTED
 queues_scheduled_outcome_cancelled = CANCELLED
 queues_scheduled_outcome_skipped = SKIPPED
 queues_scheduled_outcome_failed = FAILED

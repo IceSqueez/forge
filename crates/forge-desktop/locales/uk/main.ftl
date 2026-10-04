@@ -802,6 +802,7 @@ actions_delete_scheduled_runs = { $count ->
     [many] Також буде скасовано { $count } її запланованих запусків.
    *[other] Також буде скасовано { $count } її запланованих запусків.
 }
+actions_delete_scheduled_runs_unknown = Також буде скасовано всі її заплановані запуски, що очікують.
 
 ## Triggers registry - error messages
 

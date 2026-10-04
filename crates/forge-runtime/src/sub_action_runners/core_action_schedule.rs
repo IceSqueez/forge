@@ -23,9 +23,6 @@ pub const UNIT_MINUTES: &str = "minutes";
 pub const UNIT_HOURS: &str = "hours";
 pub const UNIT_DAYS: &str = "days";
 
-pub const POLICY_RUN_LATE_ONCE: &str = "run late once";
-pub const POLICY_SKIP_IF_LATE: &str = "skip if late";
-
 pub const DEFAULT_DUE_AT_VARIABLE: &str = "schedule.due_at";
 pub const DEFAULT_SCHEDULED_ID_VARIABLE: &str = "schedule.id";
 
@@ -36,7 +33,7 @@ const USE_DUE_AT_KEY: &str = "use_due_at";
 const DUE_AT_KEY: &str = "due_at";
 const SCHEDULE_KEY_KEY: &str = "key";
 const INHERIT_ARGS_KEY: &str = "inherit_args";
-const MISSED_POLICY_KEY: &str = "missed_policy";
+const SKIP_IF_LATE_KEY: &str = "skip_if_late";
 const LATE_TOLERANCE_MINUTES_KEY: &str = "late_tolerance_minutes";
 const DUE_AT_INTO_KEY: &str = "due_at_into_var";
 const ID_INTO_KEY: &str = "id_into_var";
@@ -104,7 +101,7 @@ fn due(config: &SubActionConfig, ctx: &RunContext<'_>) -> Result<ScheduleDue, St
 }
 
 fn missed_run_policy(config: &SubActionConfig) -> MissedRunPolicy {
-    if config.str(MISSED_POLICY_KEY) != Some(POLICY_SKIP_IF_LATE) {
+    if !config.bool(SKIP_IF_LATE_KEY).unwrap_or(false) {
         return MissedRunPolicy::RunLateOnce;
     }
     skip_if_late_by_minutes(config.int(LATE_TOLERANCE_MINUTES_KEY).unwrap_or(0))
@@ -155,10 +152,7 @@ impl SubActionRunner for CoreActionScheduleRunner {
         cfg.insert(DUE_AT_KEY.to_owned(), Variant::String(String::new()));
         cfg.insert(SCHEDULE_KEY_KEY.to_owned(), Variant::String(String::new()));
         cfg.insert(INHERIT_ARGS_KEY.to_owned(), Variant::Bool(true));
-        cfg.insert(
-            MISSED_POLICY_KEY.to_owned(),
-            Variant::String(POLICY_RUN_LATE_ONCE.to_owned()),
-        );
+        cfg.insert(SKIP_IF_LATE_KEY.to_owned(), Variant::Bool(false));
         cfg.insert(
             LATE_TOLERANCE_MINUTES_KEY.to_owned(),
             Variant::Int(DEFAULT_LATE_TOLERANCE_MINUTES),
@@ -209,16 +203,15 @@ impl SubActionRunner for CoreActionScheduleRunner {
                 key: INHERIT_ARGS_KEY,
                 label: "Pass current variables",
             },
-            FormField::Select {
-                key: MISSED_POLICY_KEY,
-                label: "If forge was closed at the due time",
-                options: &[POLICY_RUN_LATE_ONCE, POLICY_SKIP_IF_LATE],
-            },
-            FormField::Integer {
-                key: LATE_TOLERANCE_MINUTES_KEY,
-                label: "Skip when late by more than (minutes)",
-                min: whole_minutes(MIN_LATE_TOLERANCE),
-                max: whole_minutes(MAX_LATE_TOLERANCE),
+            FormField::Optional {
+                key: SKIP_IF_LATE_KEY,
+                label: "Skip instead of running late if forge was closed",
+                inner: Box::new(FormField::Integer {
+                    key: LATE_TOLERANCE_MINUTES_KEY,
+                    label: "Skip when late by more than (minutes)",
+                    min: whole_minutes(MIN_LATE_TOLERANCE),
+                    max: whole_minutes(MAX_LATE_TOLERANCE),
+                }),
             },
             FormField::Text {
                 key: DUE_AT_INTO_KEY,

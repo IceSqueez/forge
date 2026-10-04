@@ -87,8 +87,7 @@ pub use core_action_enable::CoreActionEnableRunner;
 pub use core_action_run::CoreActionRunRunner;
 pub use core_action_schedule::{
     CoreActionScheduleRunner, DEFAULT_DUE_AT_VARIABLE, DEFAULT_SCHEDULED_ID_VARIABLE,
-    POLICY_RUN_LATE_ONCE, POLICY_SKIP_IF_LATE, SCHEDULE_ACTION_KIND_ID, UNIT_DAYS, UNIT_HOURS,
-    UNIT_MINUTES,
+    SCHEDULE_ACTION_KIND_ID, UNIT_DAYS, UNIT_HOURS, UNIT_MINUTES,
 };
 pub use core_action_toggle::CoreActionToggleRunner;
 pub use core_args_set::CoreArgsSetRunner;

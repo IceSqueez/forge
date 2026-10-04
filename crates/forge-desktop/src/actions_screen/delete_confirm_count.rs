@@ -31,6 +31,10 @@ impl ScreenActionsView {
                 "actions_delete_scheduled_runs",
                 count = i64::try_from(count).unwrap_or(i64::MAX)
             )),
+            Some((counted, _)) if counted == id => None,
+            _ if self.scheduled_runs.is_some() => {
+                Some(tr!("actions_delete_scheduled_runs_unknown"))
+            }
             _ => None,
         }
     }

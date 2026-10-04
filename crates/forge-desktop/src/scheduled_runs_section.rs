@@ -44,9 +44,16 @@ struct ScheduledRow {
     run: ScheduledRun,
     offset: UtcOffset,
     scheduled_by_name: Option<String>,
+    target_name: Option<String>,
 }
 
 impl ScheduledRow {
+    fn title(&self) -> String {
+        self.target_name
+            .clone()
+            .unwrap_or_else(|| self.run.spec.label.clone())
+    }
+
     fn late_by(&self) -> Option<Span> {
         let resolved = self.run.resolved_at?;
         Some(Span::of_seconds(
@@ -305,7 +312,7 @@ impl ScheduledRunsView {
                 .on_click(
                     cx.listener(move |this, _: &ClickEvent, _, cx| this.open_action(target, cx)),
                 )
-                .child(spec.label.clone()),
+                .child(row.title()),
         );
         if let Some(key) = spec.key.as_deref() {
             title = title.child(running_pill(key.to_owned(), palette));
@@ -348,7 +355,7 @@ impl ScheduledRunsView {
                     .child(local_stamp(spec.due_at, row.offset)),
             );
 
-        let label = spec.label.clone();
+        let label = row.title();
         let run_now =
             ghost_button_with_icon(Icon::PlayerPlay, tr!("queues_scheduled_run_now"), palette)
                 .density(density)
@@ -468,7 +475,7 @@ impl ScheduledRunsView {
                     .font_family(mono_family())
                     .text_size(FONT_XS)
                     .text_color(palette.text_secondary)
-                    .child(run.spec.label.clone()),
+                    .child(row.title()),
             )
             .children(
                 run.spec
@@ -681,9 +688,11 @@ async fn load_snapshot(
             .spec
             .scheduled_by_action
             .and_then(|id| names.get(&id).cloned());
+        let target_name = names.get(&run.spec.target_action_id).cloned();
         ScheduledRow {
             offset: system_offset_at(anchor),
             scheduled_by_name,
+            target_name,
             run,
         }
     };

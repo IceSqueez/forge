@@ -140,8 +140,13 @@ mod tests {
     fn runner_on(server: &MockServer) -> DeleteMessageRunner {
         let handle = LiveChatIdHandle::new();
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let sender =
-            YoutubeSendChat::new(token_source(), handle, quota).with_api_base(server.uri());
+        let sender = YoutubeSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server.uri());
         DeleteMessageRunner::new(Arc::new(sender))
     }
 
@@ -190,6 +195,7 @@ mod tests {
     fn validate_config_rejects_empty_or_non_string_id_and_accepts_valid() {
         let runner = DeleteMessageRunner::new(Arc::new(
             YoutubeSendChat::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 token_source(),
                 LiveChatIdHandle::new(),
                 Arc::new(Mutex::new(QuotaState::default())),

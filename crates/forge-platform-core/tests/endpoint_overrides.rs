@@ -72,6 +72,10 @@ fn unconfigured_endpoints_reach_the_production_services_over_tls() {
             EndpointSurface::YouTubeUploadApi,
             "https://www.googleapis.com/upload/youtube/v3",
         ),
+        (
+            EndpointSurface::YouTubeOAuth,
+            "https://oauth2.googleapis.com",
+        ),
         (EndpointSurface::DonatelloApi, "https://donatello.to/api/v1"),
         (EndpointSurface::MonobankApi, "https://api.monobank.ua"),
     ];

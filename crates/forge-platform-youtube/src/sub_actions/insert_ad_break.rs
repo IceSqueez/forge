@@ -144,8 +144,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("bc".to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let ad_break =
-            YoutubeAdBreak::new(token_source(), handle, quota).with_api_base(server.uri());
+        let ad_break = YoutubeAdBreak::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server.uri());
         InsertAdBreakRunner::new(Arc::new(ad_break))
     }
 
@@ -157,8 +162,13 @@ mod tests {
     fn validate_config_enforces_duration_bounds() {
         let handle = ActiveBroadcastIdHandle::new();
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let ad_break = YoutubeAdBreak::new(token_source(), handle, quota)
-            .with_api_base("http://127.0.0.1:0".to_owned());
+        let ad_break = YoutubeAdBreak::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base("http://127.0.0.1:0".to_owned());
         let runner = InsertAdBreakRunner::new(Arc::new(ad_break));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

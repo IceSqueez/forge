@@ -317,7 +317,11 @@ mod tests {
 
     #[tokio::test]
     async fn start_builds_authorize_url_with_offline_access_and_no_prompt_by_default() {
-        let mut flow = GoogleAuthFlow::new("test_client".to_owned(), "test_secret".to_owned());
+        let mut flow = GoogleAuthFlow::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            "test_client".to_owned(),
+            "test_secret".to_owned(),
+        );
         let url = flow.start().await.unwrap().auth_url;
         assert!(url.starts_with(GOOGLE_AUTHORIZE_ENDPOINT));
         assert!(url.contains("client_id=test_client"));
@@ -327,7 +331,11 @@ mod tests {
 
     #[tokio::test]
     async fn start_appends_prompt_when_force_consent_enabled() {
-        let mut flow = GoogleAuthFlow::new("test_client".to_owned(), "test_secret".to_owned());
+        let mut flow = GoogleAuthFlow::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            "test_client".to_owned(),
+            "test_secret".to_owned(),
+        );
         flow.set_force_consent(true);
         let url = flow.start().await.unwrap().auth_url;
         assert!(url.contains("prompt=consent"));

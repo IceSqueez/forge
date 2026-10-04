@@ -382,8 +382,13 @@ mod tests {
             last_reset_date: today_pacific(),
             ..QuotaState::default()
         }));
-        let moderation = YoutubeModeration::new(token_source(), handle, quota.clone())
-            .with_api_base(server.uri());
+        let moderation = YoutubeModeration::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota.clone(),
+        )
+        .with_api_base(server.uri());
         (moderation, quota)
     }
 

@@ -171,8 +171,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let stats =
-            YoutubeStreamStats::new(token_source(), handle, quota).with_api_base(server.uri());
+        let stats = YoutubeStreamStats::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server.uri());
         LookupStreamStatsRunner::new(Arc::new(stats))
     }
 

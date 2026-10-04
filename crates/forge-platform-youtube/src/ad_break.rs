@@ -144,8 +144,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let ad_break = YoutubeAdBreak::new(token_source(), handle, Arc::clone(&quota))
-            .with_api_base(server.uri());
+        let ad_break = YoutubeAdBreak::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            Arc::clone(&quota),
+        )
+        .with_api_base(server.uri());
         (ad_break, quota)
     }
 

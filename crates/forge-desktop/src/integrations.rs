@@ -1571,36 +1571,46 @@ mod tests {
         yt::register_youtube_sub_actions(
             sub_actions,
             Arc::new(yt::YoutubeSendChat::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 chat.clone(),
                 Arc::clone(&quota),
             )),
             Arc::new(yt::YoutubeModeration::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 chat,
                 Arc::clone(&quota),
             )),
             Arc::new(yt::YoutubeStreamMetadata::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast.clone(),
                 Arc::clone(&quota),
             )),
             Arc::new(yt::YoutubeStreamStats::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast.clone(),
                 Arc::clone(&quota),
             )),
             Arc::new(yt::YoutubeAdBreak::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast.clone(),
                 Arc::clone(&quota),
             )),
             Arc::new(yt::YoutubeThumbnail::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
                 broadcast,
                 Arc::clone(&quota),
             )),
-            Arc::new(yt::YoutubeChannelLookup::new(youtube_token_source(), quota)),
+            Arc::new(yt::YoutubeChannelLookup::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                youtube_token_source(),
+                quota,
+            )),
         )
         .unwrap();
     }

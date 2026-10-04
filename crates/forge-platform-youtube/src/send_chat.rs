@@ -274,8 +274,13 @@ mod tests {
     fn make_sender(server: &MockServer) -> (YoutubeSendChat, LiveChatIdHandle) {
         let handle = LiveChatIdHandle::new();
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let sender =
-            YoutubeSendChat::new(token_source(), handle.clone(), quota).with_api_base(server.uri());
+        let sender = YoutubeSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle.clone(),
+            quota,
+        )
+        .with_api_base(server.uri());
         (sender, handle)
     }
 
@@ -284,8 +289,13 @@ mod tests {
         quota: Arc<Mutex<QuotaState>>,
     ) -> (YoutubeSendChat, LiveChatIdHandle) {
         let handle = LiveChatIdHandle::new();
-        let sender =
-            YoutubeSendChat::new(token_source(), handle.clone(), quota).with_api_base(server.uri());
+        let sender = YoutubeSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle.clone(),
+            quota,
+        )
+        .with_api_base(server.uri());
         (sender, handle)
     }
 
@@ -350,8 +360,13 @@ mod tests {
             qt.peak_seen = 9999;
             qt.last_reset_date = today;
         }
-        let sender_at_limit = YoutubeSendChat::new(token_source(), handle.clone(), qt_arc)
-            .with_api_base(server.uri());
+        let sender_at_limit = YoutubeSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle.clone(),
+            qt_arc,
+        )
+        .with_api_base(server.uri());
         let err = sender_at_limit.send("hi").await.unwrap_err();
         assert!(
             matches!(err, PlatformError::QuotaExhausted),

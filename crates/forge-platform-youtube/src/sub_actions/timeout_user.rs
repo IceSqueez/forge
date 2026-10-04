@@ -146,6 +146,7 @@ mod tests {
                 + Sync,
         > = Arc::new(|| Box::pin(async { Ok(String::new()) }));
         let moderation = YoutubeModeration::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             source,
             LiveChatIdHandle::new(),
             Arc::new(Mutex::new(QuotaState::default())),

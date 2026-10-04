@@ -196,7 +196,12 @@ mod tests {
 
     fn runner_on(server: &MockServer) -> LookupViewerRunner {
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let lookup = YoutubeChannelLookup::new(token_source(), quota).with_api_base(server.uri());
+        let lookup = YoutubeChannelLookup::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            quota,
+        )
+        .with_api_base(server.uri());
         LookupViewerRunner::new(Arc::new(lookup))
     }
 
@@ -227,7 +232,12 @@ mod tests {
 
     fn runner_on_uri(uri: &str) -> LookupViewerRunner {
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let lookup = YoutubeChannelLookup::new(token_source(), quota).with_api_base(uri.to_owned());
+        let lookup = YoutubeChannelLookup::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            quota,
+        )
+        .with_api_base(uri.to_owned());
         LookupViewerRunner::new(Arc::new(lookup))
     }
 

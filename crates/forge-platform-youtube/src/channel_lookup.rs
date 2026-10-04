@@ -169,7 +169,12 @@ mod tests {
 
     fn lookup_on(server: &MockServer) -> YoutubeChannelLookup {
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        YoutubeChannelLookup::new(token_source(), quota).with_api_base(server.uri())
+        YoutubeChannelLookup::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            quota,
+        )
+        .with_api_base(server.uri())
     }
 
     fn one_channel() -> serde_json::Value {

@@ -1039,6 +1039,7 @@ mod tests {
     fn make_poller(server: &MockServer) -> (YoutubeChatPoller, UnboundedSender<Event>) {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx.clone(),
             "UCtest".to_owned(),
@@ -1058,6 +1059,7 @@ mod tests {
     ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),
@@ -1420,6 +1422,7 @@ mod tests {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),
@@ -1511,6 +1514,7 @@ mod tests {
         let live = LiveChatIdHandle::new();
         let broadcast = ActiveBroadcastIdHandle::new();
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),
@@ -1563,6 +1567,7 @@ mod tests {
         broadcast.set(Some("stale-bc".to_owned()));
 
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),
@@ -1892,6 +1897,7 @@ mod tests {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let live = LiveChatIdHandle::new();
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),
@@ -2201,6 +2207,7 @@ mod tests {
     fn poller_at(api_base: String) -> YoutubeChatPoller {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),
@@ -2278,6 +2285,7 @@ mod tests {
         edit(&mut raw);
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),
@@ -2316,6 +2324,7 @@ mod tests {
         .unwrap();
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let poller = YoutubeChatPoller::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
             tx,
             "UCtest".to_owned(),

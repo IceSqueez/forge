@@ -218,8 +218,13 @@ mod tests {
             handle.set(Some("lc".to_owned()));
         }
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let sender =
-            YoutubeSendChat::new(token_source(), handle, quota).with_api_base(server.uri());
+        let sender = YoutubeSendChat::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server.uri());
         CreatePollRunner::new(Arc::new(sender))
     }
 
@@ -251,8 +256,13 @@ mod tests {
         let runner = {
             let handle = LiveChatIdHandle::new();
             let quota = Arc::new(Mutex::new(QuotaState::default()));
-            let sender = YoutubeSendChat::new(token_source(), handle, quota)
-                .with_api_base("http://127.0.0.1:0".to_owned());
+            let sender = YoutubeSendChat::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                token_source(),
+                handle,
+                quota,
+            )
+            .with_api_base("http://127.0.0.1:0".to_owned());
             CreatePollRunner::new(Arc::new(sender))
         };
 

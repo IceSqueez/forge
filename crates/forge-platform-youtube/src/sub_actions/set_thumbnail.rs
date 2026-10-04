@@ -161,8 +161,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let thumb =
-            YoutubeThumbnail::new(token_source(), handle, quota).with_api_base(server.uri());
+        let thumb = YoutubeThumbnail::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server.uri());
         SetThumbnailRunner::new(Arc::new(thumb))
     }
 
@@ -178,7 +183,13 @@ mod tests {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let thumb = YoutubeThumbnail::new(token_source(), handle, quota).with_api_base(server_uri);
+        let thumb = YoutubeThumbnail::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server_uri);
         let runner = SetThumbnailRunner::new(Arc::new(thumb));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

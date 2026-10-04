@@ -171,7 +171,14 @@ mod tests {
             Box::pin(async { Ok("test-token".to_owned()) })
                 as BoxFuture<'static, Result<String, PlatformError>>
         });
-        YoutubeViewerPoll::new(source, broadcast, quota, tx).with_api_base(api_base)
+        YoutubeViewerPoll::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            source,
+            broadcast,
+            quota,
+            tx,
+        )
+        .with_api_base(api_base)
     }
 
     #[test]

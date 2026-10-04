@@ -218,8 +218,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let meta = YoutubeStreamMetadata::new(token_source(), handle, Arc::clone(&quota))
-            .with_api_base(server.uri());
+        let meta = YoutubeStreamMetadata::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            Arc::clone(&quota),
+        )
+        .with_api_base(server.uri());
         (meta, quota)
     }
 
@@ -352,8 +357,13 @@ mod tests {
         let server = MockServer::start().await;
         let handle = ActiveBroadcastIdHandle::new();
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let meta = YoutubeStreamMetadata::new(token_source(), handle, Arc::clone(&quota))
-            .with_api_base(server.uri());
+        let meta = YoutubeStreamMetadata::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            Arc::clone(&quota),
+        )
+        .with_api_base(server.uri());
 
         let err = meta.set_title("x").await.unwrap_err();
 
@@ -383,8 +393,13 @@ mod tests {
             qt.peak_seen = 10_000;
             qt.last_reset_date = today;
         }
-        let meta = YoutubeStreamMetadata::new(token_source(), handle, Arc::clone(&quota))
-            .with_api_base(server.uri());
+        let meta = YoutubeStreamMetadata::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            Arc::clone(&quota),
+        )
+        .with_api_base(server.uri());
 
         let err = meta.set_title("x").await.unwrap_err();
 

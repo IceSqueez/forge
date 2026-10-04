@@ -282,9 +282,14 @@ mod tests {
     fn platform() -> YoutubePlatform {
         let manager = Arc::new(YoutubeCredentialsManager::new(
             Arc::new(EmptyRepo),
-            GoogleAuthFlow::new("test_cid".to_owned(), "test_secret".to_owned()),
+            GoogleAuthFlow::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                "test_cid".to_owned(),
+                "test_secret".to_owned(),
+            ),
         ));
         YoutubePlatform::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             "UCtest".to_owned(),
             manager,
             LiveChatIdHandle::new(),

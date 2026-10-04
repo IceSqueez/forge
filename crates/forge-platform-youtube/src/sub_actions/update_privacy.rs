@@ -147,8 +147,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(Some("vid-1".to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let meta =
-            YoutubeStreamMetadata::new(token_source(), handle, quota).with_api_base(server.uri());
+        let meta = YoutubeStreamMetadata::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server.uri());
         UpdatePrivacyRunner::new(Arc::new(meta))
     }
 
@@ -207,8 +212,13 @@ mod tests {
         let server_uri = "http://127.0.0.1:0".to_owned();
         let handle = ActiveBroadcastIdHandle::new();
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let meta =
-            YoutubeStreamMetadata::new(token_source(), handle, quota).with_api_base(server_uri);
+        let meta = YoutubeStreamMetadata::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server_uri);
         let runner = UpdatePrivacyRunner::new(Arc::new(meta));
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![

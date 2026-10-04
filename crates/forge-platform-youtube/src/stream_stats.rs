@@ -190,7 +190,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        YoutubeStreamStats::new(token_source(), handle, quota).with_api_base(server.uri())
+        YoutubeStreamStats::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            quota,
+        )
+        .with_api_base(server.uri())
     }
 
     fn details_body(extra: serde_json::Value) -> serde_json::Value {

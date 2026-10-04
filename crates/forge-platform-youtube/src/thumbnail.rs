@@ -188,8 +188,13 @@ mod tests {
         let handle = ActiveBroadcastIdHandle::new();
         handle.set(broadcast.map(|s| s.to_owned()));
         let quota = Arc::new(Mutex::new(QuotaState::default()));
-        let thumb = YoutubeThumbnail::new(token_source(), handle, Arc::clone(&quota))
-            .with_api_base(server.uri());
+        let thumb = YoutubeThumbnail::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            token_source(),
+            handle,
+            Arc::clone(&quota),
+        )
+        .with_api_base(server.uri());
         (thumb, quota)
     }
 

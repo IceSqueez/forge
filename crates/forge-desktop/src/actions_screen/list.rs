@@ -252,11 +252,13 @@ impl ScreenActionsView {
     pub(super) fn request_delete(&mut self, id: ActionId, cx: &mut Context<Self>) {
         self.pending_delete.request(id);
         self.menu_open = None;
+        self.load_delete_scheduled_count(id, cx);
         cx.notify();
     }
 
     fn cancel_delete(&mut self, cx: &mut Context<Self>) {
         self.pending_delete.cancel();
+        self.delete_scheduled_count = None;
         cx.notify();
     }
 
@@ -270,16 +272,29 @@ impl ScreenActionsView {
         let repo = Arc::clone(&self.action_repo);
         let restore_repo = Arc::clone(&self.action_repo);
         let restore_rt = self.rt_handle.clone();
+        let scheduled_runs = self.scheduled_runs.clone();
+        self.delete_scheduled_count = None;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
                 repo.archive(id).await.map_err(|e| e.to_string())?;
-                repo.list().await.map_err(|e| e.to_string())
+                let cleanup = match scheduled_runs {
+                    Some(access) => access.cancel_pending_for(id).await,
+                    None => Ok(()),
+                };
+                let actions = repo.list().await.map_err(|e| e.to_string())?;
+                Ok::<_, String>((actions, cleanup))
             },
             move |this, result, cx| match result {
-                Ok(actions) => {
+                Ok((actions, cleanup)) => {
                     this.apply_actions(actions, cx);
                     this.raise_undo_toast(id, name, restore_repo, restore_rt, cx);
+                    if let Err(message) = cleanup {
+                        cx.push_toast(
+                            ToastKind::Error,
+                            tr!("actions_delete_scheduled_failed", error = message),
+                        );
+                    }
                 }
                 Err(message) => this.on_repo_error(&message, cx),
             },
@@ -1155,9 +1170,13 @@ impl ScreenActionsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let name = self.find(id).map(|a| a.name.clone()).unwrap_or_default();
+        let body = match self.delete_scheduled_note(id) {
+            Some(note) => format!("{} {note}", tr!("actions_delete_body")),
+            None => tr!("actions_delete_body"),
+        };
         let card = confirm_modal(
             tr!("actions_delete_title"),
-            tr!("actions_delete_body"),
+            body,
             ConfirmTone::Destructive,
             palette,
         )

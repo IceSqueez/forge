@@ -43,6 +43,7 @@ mod list;
 mod nav;
 mod overlay_schema;
 mod run_history;
+mod scheduled_cleanup;
 mod sub_action_modal;
 mod test_run;
 mod test_trigger;
@@ -214,6 +215,8 @@ pub struct ScreenActionsView {
     _test_run_sub: Option<Subscription>,
     header_menu_open: Option<Point<Pixels>>,
     pending_delete: Confirm<ActionId>,
+    delete_scheduled_count: Option<(ActionId, u64)>,
+    scheduled_runs: Option<scheduled_cleanup::ScheduledRunsAccess>,
     detail: Option<ActionDetail>,
     telemetry: Option<ActionTelemetry>,
     last_outcome: Option<ExecutionOutcome>,
@@ -301,6 +304,8 @@ impl ScreenActionsView {
             _test_run_sub: None,
             header_menu_open: None,
             pending_delete: Confirm::default(),
+            delete_scheduled_count: None,
+            scheduled_runs: None,
             detail: None,
             telemetry: None,
             last_outcome: None,

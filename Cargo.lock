@@ -2585,6 +2585,7 @@ dependencies = [
  "futures-util",
  "gpui",
  "gpui_platform",
+ "jiff",
  "open",
  "rand 0.10.3",
  "regex",

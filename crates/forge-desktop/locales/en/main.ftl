@@ -524,6 +524,9 @@ action_editor_run_history_open_integration = Open { $name }
 action_editor_run_history_step_skipped = skipped
 action_editor_run_history_step_nested = ↳
 action_editor_run_history_trigger_fallback = Trigger
+action_editor_run_history_scheduled_by = Scheduled by { $name }
+action_editor_run_history_scheduled_by_removed = Scheduled by a deleted action
+action_editor_run_history_scheduled = Scheduled run
 action_editor_run_history_step_args_in = @in
 action_editor_run_history_step_produced = @out
 
@@ -779,6 +782,11 @@ actions_rename_taken = Name '{ $name }' is already taken
 actions_deleted_toast = Deleted '{ $name }'
 actions_delete_title = Delete action?
 actions_delete_body = This will remove the action and all of its sub-actions and triggers.
+actions_delete_scheduled_runs = { $count ->
+    [one] Its { $count } pending scheduled run will be cancelled too.
+   *[other] Its { $count } pending scheduled runs will be cancelled too.
+}
+actions_delete_scheduled_failed = The action was deleted, but its scheduled runs could not be cancelled: { $error }
 
 ## Triggers registry - error messages
 
@@ -1322,6 +1330,48 @@ queues_not_live_badge = NOT LIVE · RESTART
 ## Queues - overflow pill
 
 queues_overflow_more = +{ $count } more
+
+## Queues - scheduled runs
+
+queues_scheduled_title = Scheduled
+queues_scheduled_blurb = Action runs planned for later by a Schedule Action step
+queues_scheduled_count = { $count } pending
+queues_scheduled_loading = Loading scheduled runs...
+queues_scheduled_empty = Nothing scheduled - add a Schedule Action step to an action to plan a run
+queues_scheduled_load_failed = Could not load scheduled runs: { $error }
+queues_scheduled_due_now = due now
+queues_scheduled_due_in = in { $span }
+queues_scheduled_from = from
+queues_scheduled_from_removed = from a deleted action
+queues_scheduled_from_unknown = scheduled outside an action run
+queues_scheduled_run_now = Run now
+queues_scheduled_cancel = Cancel
+queues_scheduled_run_now_started = Started “{ $name }” now.
+queues_scheduled_run_now_refused = “{ $name }” did not start: { $reason }
+queues_scheduled_run_now_failed = Could not run it now: { $error }
+queues_scheduled_cancel_failed = Could not cancel the scheduled run: { $error }
+queues_scheduled_not_pending = This run already started or was cancelled.
+queues_scheduled_recent = RECENT ({ $count })
+queues_scheduled_outcome_ran = RAN
+queues_scheduled_outcome_cancelled = CANCELLED
+queues_scheduled_outcome_skipped = SKIPPED
+queues_scheduled_outcome_failed = FAILED
+queues_scheduled_reason_missed = Missed - forge was not running at the due time
+queues_scheduled_reason_missed_by = Missed by { $span } - forge was not running at the due time
+queues_scheduled_reason_superseded = Replaced by a newer run with the same key
+queues_scheduled_reason_cancelled = Cancelled before it was due
+queues_scheduled_reason_action_disabled = The action was disabled
+queues_scheduled_reason_action_not_found = The action no longer exists
+queues_scheduled_reason_actions_unavailable = Actions could not be read
+queues_scheduled_reason_queues_closed = Queues were shutting down
+queues_scheduled_reason_unreadable = The stored run could not be read
+queues_scheduled_reason_queue_paused = Its queue was paused
+queues_scheduled_reason_queue_draining = Its queue was draining
+queues_scheduled_reason_queue_overflow = Its queue was full
+queues_scheduled_reason_queue_not_found = Its queue no longer exists
+scheduled_span_minutes = { $minutes } min
+scheduled_span_hours = { $hours } h { $minutes } min
+scheduled_span_days = { $days } d { $hours } h
 
 ## Queues - built-in queue descriptions
 

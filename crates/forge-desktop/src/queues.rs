@@ -25,6 +25,8 @@ use gpui::{
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
 use crate::queue_health::QueueHealth;
+use crate::scheduled_runs_section::ScheduledRunsView;
+use crate::sidebar::NavRequested;
 use crate::toasts::PushToast;
 
 const BADGE_RADIUS: Pixels = px(8.0);
@@ -502,9 +504,13 @@ pub struct QueuesView {
     rt_handle: tokio::runtime::Handle,
     status_filter: QueueFilter,
     search: SearchState,
+    scheduled: Option<Entity<ScheduledRunsView>>,
+    _scheduled_sub: Option<Subscription>,
     _health_obs: Subscription,
     _search_sub: Subscription,
 }
+
+impl EventEmitter<NavRequested> for QueuesView {}
 
 impl QueuesView {
     pub fn new(
@@ -540,11 +546,28 @@ impl QueuesView {
             rt_handle,
             status_filter: QueueFilter::default(),
             search,
+            scheduled: None,
+            _scheduled_sub: None,
             _health_obs: health_obs,
             _search_sub: search_sub,
         };
         view.reload(cx);
         view
+    }
+
+    pub fn with_scheduled(
+        mut self,
+        section: Entity<ScheduledRunsView>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        self._scheduled_sub = Some(cx.subscribe(
+            &section,
+            |_this, _section, event: &NavRequested, cx| {
+                cx.emit(NavRequested(event.0.clone()));
+            },
+        ));
+        self.scheduled = Some(section);
+        self
     }
 
     fn on_search_event(
@@ -1428,7 +1451,8 @@ impl Render for QueuesView {
                     .gap(spacing(Spacing::Sm, density))
                     .p(spacing(Spacing::Md, density))
                     .child(subtitle)
-                    .child(body),
+                    .child(body)
+                    .children(self.scheduled.clone()),
             );
 
         let body_col = div().flex_1().h_full().flex().flex_col().child(scroll);
@@ -1725,7 +1749,10 @@ fn concurrent_panel(q: &QueueRow, palette: &ForgePalette, density: Density) -> A
         .into_any_element()
 }
 
-fn running_pill(label: impl Into<SharedString>, palette: &ForgePalette) -> impl IntoElement {
+pub(crate) fn running_pill(
+    label: impl Into<SharedString>,
+    palette: &ForgePalette,
+) -> impl IntoElement {
     badge(
         palette.border_regular,
         palette.text_primary,

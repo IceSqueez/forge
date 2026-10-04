@@ -15,7 +15,8 @@ impl ScreenActionsView {
         self.header_menu_open = None;
 
         let registry = Arc::clone(&self.trigger_registry);
-        let view = cx.new(|_| RunHistoryModal::new(action_name, registry));
+        let names = self.action_names();
+        let view = cx.new(|_| RunHistoryModal::new(action_name, registry).with_action_names(names));
         let subs = [
             cx.subscribe(&view, Self::on_history_event),
             cx.subscribe(&view, Self::on_history_open_integration),
@@ -44,6 +45,14 @@ impl ScreenActionsView {
             cx,
         );
         cx.notify();
+    }
+
+    fn action_names(&self) -> HashMap<ActionId, SharedString> {
+        self.groups
+            .iter()
+            .flat_map(|group| group.actions.iter())
+            .map(|action| (action.id, SharedString::from(action.name.clone())))
+            .collect()
     }
 
     fn on_history_event(

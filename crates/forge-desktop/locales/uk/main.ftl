@@ -534,6 +534,9 @@ action_editor_run_history_open_integration = Відкрити { $name }
 action_editor_run_history_step_skipped = пропущено
 action_editor_run_history_step_nested = ↳
 action_editor_run_history_trigger_fallback = Тригер
+action_editor_run_history_scheduled_by = Заплановано дією { $name }
+action_editor_run_history_scheduled_by_removed = Заплановано видаленою дією
+action_editor_run_history_scheduled = Запланований запуск
 action_editor_run_history_step_args_in = @in
 action_editor_run_history_step_produced = @out
 
@@ -793,6 +796,13 @@ actions_rename_taken = Назву '{ $name }' вже зайнято
 actions_deleted_toast = Видалено '{ $name }'
 actions_delete_title = Видалити дію?
 actions_delete_body = Це видалить дію та всі її піддії й тригери.
+actions_delete_scheduled_runs = { $count ->
+    [one] Також буде скасовано { $count } її запланований запуск.
+    [few] Також буде скасовано { $count } її заплановані запуски.
+    [many] Також буде скасовано { $count } її запланованих запусків.
+   *[other] Також буде скасовано { $count } її запланованих запусків.
+}
+actions_delete_scheduled_failed = Дію видалено, але не вдалося скасувати її заплановані запуски: { $error }
 
 ## Triggers registry - error messages
 
@@ -1345,6 +1355,48 @@ queues_not_live_badge = НЕ В РОБОТІ · ПЕРЕЗАПУСК
 ## Черги - чіп переповнення
 
 queues_overflow_more = +{ $count } ще
+
+## Черги - заплановані запуски
+
+queues_scheduled_title = Заплановано
+queues_scheduled_blurb = Запуски дій, відкладені кроком «Schedule Action»
+queues_scheduled_count = { $count } в очікуванні
+queues_scheduled_loading = Завантаження запланованих запусків...
+queues_scheduled_empty = Нічого не заплановано - додайте до дії крок «Schedule Action»
+queues_scheduled_load_failed = Не вдалося завантажити заплановані запуски: { $error }
+queues_scheduled_due_now = час настав
+queues_scheduled_due_in = через { $span }
+queues_scheduled_from = від
+queues_scheduled_from_removed = від видаленої дії
+queues_scheduled_from_unknown = заплановано поза запуском дії
+queues_scheduled_run_now = Запустити зараз
+queues_scheduled_cancel = Скасувати
+queues_scheduled_run_now_started = «{ $name }» запущено зараз.
+queues_scheduled_run_now_refused = «{ $name }» не запустилася: { $reason }
+queues_scheduled_run_now_failed = Не вдалося запустити зараз: { $error }
+queues_scheduled_cancel_failed = Не вдалося скасувати запланований запуск: { $error }
+queues_scheduled_not_pending = Цей запуск уже відбувся або скасований.
+queues_scheduled_recent = НЕЩОДАВНІ ({ $count })
+queues_scheduled_outcome_ran = ЗАПУЩЕНО
+queues_scheduled_outcome_cancelled = СКАСОВАНО
+queues_scheduled_outcome_skipped = ПРОПУЩЕНО
+queues_scheduled_outcome_failed = ПОМИЛКА
+queues_scheduled_reason_missed = Пропущено - forge не працював у призначений час
+queues_scheduled_reason_missed_by = Пропущено на { $span } - forge не працював у призначений час
+queues_scheduled_reason_superseded = Замінено новішим запуском з тим самим ключем
+queues_scheduled_reason_cancelled = Скасовано до настання часу
+queues_scheduled_reason_action_disabled = Дію було вимкнено
+queues_scheduled_reason_action_not_found = Дії більше не існує
+queues_scheduled_reason_actions_unavailable = Не вдалося прочитати дії
+queues_scheduled_reason_queues_closed = Черги зупинялися
+queues_scheduled_reason_unreadable = Не вдалося прочитати збережений запуск
+queues_scheduled_reason_queue_paused = Її черга була на паузі
+queues_scheduled_reason_queue_draining = Її черга спустошувалася
+queues_scheduled_reason_queue_overflow = Її черга була переповнена
+queues_scheduled_reason_queue_not_found = Її черги більше не існує
+scheduled_span_minutes = { $minutes } хв
+scheduled_span_hours = { $hours } год { $minutes } хв
+scheduled_span_days = { $days } д { $hours } год
 
 ## Черги - описи вбудованих черг
 

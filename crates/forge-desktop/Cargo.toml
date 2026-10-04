@@ -56,6 +56,7 @@ fluent-langneg = { workspace = true }
 futures-util = { workspace = true }
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
+jiff = { workspace = true }
 open = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }

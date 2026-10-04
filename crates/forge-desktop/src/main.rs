@@ -98,6 +98,8 @@ mod routed_sink;
 mod run_history_modal;
 mod runtime_handles;
 mod runtime_status;
+mod scheduled_run_labels;
+mod scheduled_runs_section;
 mod screen;
 mod script_editor;
 mod server_console;

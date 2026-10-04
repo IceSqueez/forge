@@ -10,13 +10,14 @@ use forge_components::{
 };
 use forge_registry::{TriggerKindDescriptor, TriggerRegistry};
 use forge_types::{
-    ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId, SubActionOutcome,
-    SubActionTelemetry,
+    ActionId, ExecutionContext, ExecutionMetadata, ExecutionOutcome, IntegrationId,
+    SubActionOutcome, SubActionTelemetry,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, ElementId, EventEmitter, Pixels, Rgba, SharedString, Window,
     div, prelude::*, px,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 
 const MODAL_W: Pixels = px(880.0);
@@ -86,6 +87,7 @@ enum Load {
 pub struct RunHistoryModal {
     subtitle: SharedString,
     trigger_registry: Arc<TriggerRegistry>,
+    action_names: HashMap<ActionId, SharedString>,
     load: Load,
     selected: usize,
 }
@@ -99,8 +101,28 @@ impl RunHistoryModal {
         Self {
             subtitle: subtitle.into(),
             trigger_registry,
+            action_names: HashMap::new(),
             load: Load::Pending,
             selected: 0,
+        }
+    }
+
+    pub fn with_action_names(mut self, names: HashMap<ActionId, SharedString>) -> Self {
+        self.action_names = names;
+        self
+    }
+
+    fn scheduled_by_label(&self, scheduled_by: Option<ActionId>) -> SharedString {
+        match scheduled_by {
+            Some(id) => match self.action_names.get(&id) {
+                Some(name) => tr!(
+                    "action_editor_run_history_scheduled_by",
+                    name = name.to_string()
+                )
+                .into(),
+                None => tr!("action_editor_run_history_scheduled_by_removed").into(),
+            },
+            None => tr!("action_editor_run_history_scheduled").into(),
         }
     }
 
@@ -421,10 +443,10 @@ impl RunHistoryModal {
                 Icon::from_name("layout-grid"),
                 SharedString::from(label.clone()),
             ),
-            ExecutionMetadata::Scheduled { .. } => (
-                Icon::Clock,
-                tr!("action_editor_run_history_trigger_fallback").into(),
-            ),
+            ExecutionMetadata::Scheduled {
+                scheduled_by_action,
+                ..
+            } => (Icon::Clock, self.scheduled_by_label(*scheduled_by_action)),
         };
 
         let header = div()

@@ -44,6 +44,7 @@ use crate::presentation::{ActivePresentation, Presentation};
 use crate::queues::QueuesView;
 use crate::runtime_handles::RuntimeHandles;
 use crate::runtime_status::RuntimeStatus;
+use crate::scheduled_runs_section::ScheduledRunsView;
 use crate::screen::Screen;
 use crate::script_editor::ScriptEditorView;
 use crate::server_console::ServerConsoleView;
@@ -264,7 +265,8 @@ impl AppShell {
                 let queue_repo = handles.backend.queue_repo();
                 let action_repo = handles.backend.action_repo();
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| {
+                let scheduled = Self::scheduled_runs_section(handles, cx);
+                let view = cx.new(|cx| {
                     QueuesView::new(
                         queue_health,
                         scheduler,
@@ -273,8 +275,9 @@ impl AppShell {
                         rt_handle,
                         cx,
                     )
-                })
-                .into()
+                    .with_scheduled(scheduled, cx)
+                });
+                Self::routed(view, cx)
             }
             Screen::Soundboard => {
                 let player = handles.soundboard_player.clone();
@@ -392,6 +395,8 @@ impl AppShell {
                 let bus = Arc::clone(&handles.bus);
                 let scheduler = handles.scheduler.clone();
                 let builtins = handles.builtins.clone();
+                let scheduled_run_repo = handles.backend.scheduled_run_repo();
+                let scheduled_runs = handles.scheduled_runs.clone();
                 let switch = Self::integration_switch(topics, handles);
                 let view = cx.new(|cx| {
                     ScreenActionsView::new(
@@ -416,6 +421,7 @@ impl AppShell {
                         cx,
                     )
                     .with_builtins(builtins)
+                    .with_scheduled_runs(scheduled_run_repo, scheduled_runs)
                     .with_integration_switch(switch, cx)
                 });
                 cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
@@ -492,6 +498,18 @@ impl AppShell {
         })
         .detach();
         view.into()
+    }
+
+    fn scheduled_runs_section(
+        handles: &Arc<RuntimeHandles>,
+        cx: &mut Context<Self>,
+    ) -> Entity<ScheduledRunsView> {
+        let repo = handles.backend.scheduled_run_repo();
+        let changes = handles.backend.scheduled_run_revision().subscribe();
+        let action_repo = handles.backend.action_repo();
+        let runs = handles.scheduled_runs.clone();
+        let rt_handle = handles.rt_handle.clone();
+        cx.new(|cx| ScheduledRunsView::new(repo, changes, action_repo, runs, rt_handle, cx))
     }
 
     fn integration_switch(topics: &Topics, handles: &Arc<RuntimeHandles>) -> IntegrationSwitch {

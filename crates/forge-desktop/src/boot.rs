@@ -13,12 +13,13 @@ use forge_runtime::{
     DonationOverlayAudience, EventBus, FirstChatLedger, LatestValues, OverlayConnectFanout,
     OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
     OverlayServiceHandle, QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell,
-    ScriptRegistry, SoundPlayer, SpeakDispatcher, SystemWallClock, register_audio_sub_actions,
-    register_core_sub_actions, register_core_triggers, register_donation_sub_actions,
-    register_latest_sub_actions, register_scheduled_run_sub_actions, spawn_action_engine,
-    spawn_chat_history_persistence, spawn_event_log_bridge, spawn_latest_overlay_feed,
-    spawn_latest_projector, spawn_live_viewer_aggregator, spawn_scheduled_runs,
-    spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator, spawn_viewer_tracker,
+    ScriptRegistry, ScriptScheduling, SoundPlayer, SpeakDispatcher, SystemWallClock,
+    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
+    register_donation_sub_actions, register_latest_sub_actions, register_scheduled_run_sub_actions,
+    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
+    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
+    spawn_scheduled_runs, spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
+    spawn_viewer_tracker,
 };
 use forge_soundboard::{
     BusAudioEventSink, ClipLibrary, CpalSinkFactory, SoundboardPlayer, SoundboardSettingsHandle,
@@ -222,9 +223,14 @@ pub async fn build_runtime(
     let speak_requester: Option<Arc<dyn forge_script::SpeakRequester>> =
         speak_bridge.map(|bridge| bridge as Arc<dyn forge_script::SpeakRequester>);
 
+    let scheduled_runs_cell = ScheduledRunsCell::new();
     let mut script_registry_mut = ScriptRegistry::new();
     script_registry_mut
         .set_latest_values(Arc::new(latest_values.clone()) as Arc<dyn LatestValueReader>);
+    script_registry_mut.set_scheduling(ScriptScheduling::new(
+        scheduled_runs_cell.clone(),
+        backend.action_repo(),
+    ));
     match speak_requester {
         Some(requester) => script_registry_mut.set_speak_requester(requester),
         None => eprintln!("forge-desktop: no speak dispatcher available; scripts cannot speak"),
@@ -236,7 +242,6 @@ pub async fn build_runtime(
 
     let cancel_registry = Arc::new(ActionCancelRegistry::new());
     let scheduler_cell = SchedulerCell::new();
-    let scheduled_runs_cell = ScheduledRunsCell::new();
     let overlay_service_cell = OverlayServiceCell::new();
     let mut sub_action_reg = SubActionRegistry::new();
     if let Err(e) = register_core_sub_actions(

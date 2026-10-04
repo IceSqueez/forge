@@ -12,7 +12,7 @@ use forge_components::{
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
-use forge_runtime::{EventBus, ScriptRegistry};
+use forge_runtime::{EventBus, SchedulingContext, ScriptRegistry};
 use forge_script::{
     MethodDescriptor, RunResult, ScriptError, ScriptHost, content_hash, format_script,
     inert_annotation_lines, is_engine_bound_name, run_inline, validate_syntax,
@@ -1229,6 +1229,9 @@ impl ScriptEditorView {
             bus: Arc::clone(&self.bus) as Arc<dyn EventPublisher>,
             integrations: Arc::clone(&self.integrations),
             latest_values: self.script_registry.latest_values(),
+            scheduler: self
+                .script_registry
+                .action_scheduler(SchedulingContext::outside_any_run(args.clone())),
         };
         let scripts = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         async_bridge::run_async(

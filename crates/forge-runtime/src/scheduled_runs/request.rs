@@ -64,7 +64,15 @@ pub enum ScheduleError {
     Storage(#[from] StorageError),
 }
 
-const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
+const SECONDS_PER_MINUTE: u64 = 60;
+const SECONDS_PER_DAY: u64 = 24 * 60 * SECONDS_PER_MINUTE;
+
+pub fn skip_if_late_by_minutes(minutes: i64) -> MissedRunPolicy {
+    let minutes = u64::try_from(minutes).unwrap_or(0);
+    MissedRunPolicy::SkipIfLateBy(Duration::from_secs(
+        minutes.saturating_mul(SECONDS_PER_MINUTE),
+    ))
+}
 
 impl ScheduleRequest {
     pub(super) fn into_spec(

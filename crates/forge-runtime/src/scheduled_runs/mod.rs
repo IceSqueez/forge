@@ -8,6 +8,8 @@ mod origin;
 mod provenance;
 mod request;
 mod scheduler;
+mod scheduling_context;
+mod script_scheduler;
 
 pub use catch_up::CatchUpSettle;
 pub use cell::ScheduledRunsCell;
@@ -27,5 +29,9 @@ pub use provenance::{
     SCHEDULED_AT_VARIABLE, SCHEDULED_DUE_AT_VARIABLE, SCHEDULED_KEY_VARIABLE,
     SCHEDULED_LATE_SECONDS_VARIABLE,
 };
-pub use request::{ScheduleDue, ScheduleError, ScheduleRequest, ScheduledPlacement};
+pub use request::{
+    ScheduleDue, ScheduleError, ScheduleRequest, ScheduledPlacement, skip_if_late_by_minutes,
+};
 pub use scheduler::{ScheduledRunsParts, spawn_scheduled_runs};
+pub use scheduling_context::{ScheduleIntent, SchedulingContext};
+pub use script_scheduler::ScriptScheduling;

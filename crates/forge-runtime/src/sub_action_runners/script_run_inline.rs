@@ -16,6 +16,7 @@ use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetr
 use serde_json::json;
 use time::OffsetDateTime;
 
+use crate::scheduled_runs::SchedulingContext;
 use crate::script_registry::ScriptRegistry;
 
 pub struct ScriptRunInlineRunner {
@@ -99,6 +100,9 @@ impl SubActionRunner for ScriptRunInlineRunner {
         let globals_arc = Arc::clone(&self.globals);
         let speak_requester = self.registry.speak_requester();
         let latest_values = self.registry.latest_values();
+        let scheduler = self
+            .registry
+            .action_scheduler(SchedulingContext::of_run(ctx));
         let parent_event_id = ctx.parent_event_id;
         let integrations = ctx.executor.integration_availability();
         let arg_stack_clone = ctx.arg_stack.clone();
@@ -143,6 +147,9 @@ impl SubActionRunner for ScriptRunInlineRunner {
             }
             if let Some(latest) = latest_values {
                 api = api.with_latest_values(latest);
+            }
+            if let Some(scheduler) = scheduler {
+                api = api.with_action_scheduler(scheduler);
             }
             let engine = Engine::with_api(cfg, api);
             let mut scope = scope;

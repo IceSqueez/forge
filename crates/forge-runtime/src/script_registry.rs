@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_events::{Event, EventSource};
-use forge_script::SpeakRequester;
+use forge_script::{ActionScheduler, SpeakRequester};
 use forge_storage::{ScriptRecord, ScriptRepo};
 use forge_types::{LatestValueReader, ScriptId};
 use tokio::sync::RwLock;
 use tracing::warn;
 
 use crate::EventBus;
+use crate::scheduled_runs::{SchedulingContext, ScriptScheduling};
 
 pub struct CompiledScript {
     pub record: ScriptRecord,
@@ -18,6 +19,7 @@ pub struct ScriptRegistry {
     inner: Arc<RwLock<HashMap<ScriptId, Arc<CompiledScript>>>>,
     speak_requester: Option<Arc<dyn SpeakRequester>>,
     latest_values: Option<Arc<dyn LatestValueReader>>,
+    scheduling: Option<ScriptScheduling>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -34,6 +36,7 @@ impl ScriptRegistry {
             inner: Arc::new(RwLock::new(HashMap::new())),
             speak_requester: None,
             latest_values: None,
+            scheduling: None,
         }
     }
 
@@ -51,6 +54,16 @@ impl ScriptRegistry {
 
     pub fn latest_values(&self) -> Option<Arc<dyn LatestValueReader>> {
         self.latest_values.clone()
+    }
+
+    pub fn set_scheduling(&mut self, scheduling: ScriptScheduling) {
+        self.scheduling = Some(scheduling);
+    }
+
+    pub fn action_scheduler(&self, context: SchedulingContext) -> Option<Arc<dyn ActionScheduler>> {
+        self.scheduling
+            .as_ref()
+            .map(|scheduling| scheduling.for_context(context))
     }
 
     pub async fn load_all(&self, repo: &dyn ScriptRepo) -> Result<(), ScriptRegistryError> {

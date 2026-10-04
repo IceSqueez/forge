@@ -1333,7 +1333,7 @@ queues_overflow_more = +{ $count } more
 ## Queues - scheduled runs
 
 queues_scheduled_title = Scheduled
-queues_scheduled_blurb = Action runs planned for later by a Schedule Action step
+queues_scheduled_blurb = Action runs planned for later by a Schedule Action step or a script
 queues_scheduled_count = { $count } pending
 queues_scheduled_loading = Loading scheduled runs...
 queues_scheduled_empty = Nothing scheduled - add a Schedule Action step to an action to plan a run

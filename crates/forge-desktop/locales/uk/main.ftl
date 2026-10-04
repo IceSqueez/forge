@@ -1358,7 +1358,7 @@ queues_overflow_more = +{ $count } ще
 ## Черги - заплановані запуски
 
 queues_scheduled_title = Заплановано
-queues_scheduled_blurb = Запуски дій, відкладені кроком «Schedule Action»
+queues_scheduled_blurb = Запуски дій, відкладені кроком «Schedule Action» або скриптом
 queues_scheduled_count = { $count } в очікуванні
 queues_scheduled_loading = Завантаження запланованих запусків...
 queues_scheduled_empty = Нічого не заплановано - додайте до дії крок «Schedule Action»

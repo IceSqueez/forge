@@ -66,7 +66,7 @@ mod core_users_get_var;
 mod core_users_increment_var;
 mod core_users_set_var;
 mod core_users_shared;
-mod datetime_input;
+pub(crate) mod datetime_input;
 mod file_sandbox;
 pub(crate) mod interpolate;
 mod os_ports;

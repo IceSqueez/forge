@@ -9,6 +9,7 @@ use forge_types::{
 };
 
 use crate::error::ScriptError;
+use crate::schedule::ActionScheduler;
 use crate::{Engine, ForgeApi, build_scope_for_contract, load_script_engine_config};
 
 #[derive(Debug, Clone)]
@@ -31,6 +32,7 @@ pub struct ScriptHost {
     pub bus: Arc<dyn EventPublisher>,
     pub integrations: Arc<dyn IntegrationAvailability>,
     pub latest_values: Option<Arc<dyn LatestValueReader>>,
+    pub scheduler: Option<Arc<dyn ActionScheduler>>,
 }
 
 pub async fn run_inline(
@@ -46,6 +48,7 @@ pub async fn run_inline(
         bus,
         integrations,
         latest_values,
+        scheduler,
     } = host;
     let mut scope =
         build_scope_for_contract(&contract, &arg_stack).map_err(|e| ScriptError::Runtime {
@@ -59,6 +62,9 @@ pub async fn run_inline(
         .with_integration_availability(integrations);
     if let Some(reader) = latest_values {
         api = api.with_latest_values(reader);
+    }
+    if let Some(scheduler) = scheduler {
+        api = api.with_action_scheduler(scheduler);
     }
     let error_count = api.error_count_handle();
     let engine = Engine::with_api(cfg, api);

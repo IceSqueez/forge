@@ -179,6 +179,124 @@ static CATALOG: &[MethodDescriptor] = &[
         doc: Some("Value from one platform or service; () when it has none."),
     },
     MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "after",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "seconds",
+                ty: "int",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Runs the action by id or name later; returns #{id, due_at}."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "after",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "seconds",
+                ty: "int",
+            },
+            ParamDescriptor {
+                name: "options",
+                ty: "Map",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "at",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "when",
+                ty: "string",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Runs the action at an RFC 3339 time; returns #{id, due_at}."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "at",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "when",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "options",
+                ty: "Map",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "at",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "unix_seconds",
+                ty: "int",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Runs the action at a unix time; returns #{id, due_at}."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "at",
+        params: &[
+            ParamDescriptor {
+                name: "action",
+                ty: "string",
+            },
+            ParamDescriptor {
+                name: "unix_seconds",
+                ty: "int",
+            },
+            ParamDescriptor {
+                name: "options",
+                ty: "Map",
+            },
+        ],
+        return_type: "Map",
+        doc: Some("Options: key, inherit_args, skip_if_late_minutes."),
+    },
+    MethodDescriptor {
+        namespace: Some("schedule"),
+        name: "cancel",
+        params: &[ParamDescriptor {
+            name: "key",
+            ty: "string",
+        }],
+        return_type: "Bool",
+        doc: Some("Cancels the pending run with this exact key; true if one was pending."),
+    },
+    MethodDescriptor {
         namespace: Some("tts"),
         name: "speak",
         params: &[ParamDescriptor {

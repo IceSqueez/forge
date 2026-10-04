@@ -14,7 +14,7 @@ use forge_types::{
 use super::datetime_input::resolve_datetime;
 use crate::scheduled_runs::{
     MAX_LATE_TOLERANCE, MAX_SCHEDULE_DELAY, MIN_LATE_TOLERANCE, ScheduleDue, ScheduleError,
-    ScheduleRequest, ScheduledRunsCell,
+    ScheduleIntent, ScheduleRequest, ScheduledRunsCell, SchedulingContext, skip_if_late_by_minutes,
 };
 
 pub const SCHEDULE_ACTION_KIND_ID: &str = "core.action.schedule";
@@ -71,22 +71,13 @@ impl CoreActionScheduleRunner {
         let key = ctx
             .arg_stack
             .interpolate(config.str(SCHEDULE_KEY_KEY).unwrap_or(""));
-        let args = if config.bool(INHERIT_ARGS_KEY).unwrap_or(true) {
-            ctx.arg_stack.snapshot()
-        } else {
-            Default::default()
-        };
-        let running = ctx.executor.running_action();
-        Ok(ScheduleRequest {
+        Ok(SchedulingContext::of_run(ctx).request(ScheduleIntent {
             target_action_id,
             due: due(config, ctx)?,
             key: Some(key),
             missed_run_policy: missed_run_policy(config),
-            args,
-            scheduled_by_action: running.map(|run| run.action_id),
-            scheduled_by_run: running.map(|run| run.start_event_id.to_string()),
-            trigger_event_id: Some(running.map_or(ctx.parent_event_id, |run| run.trigger_event_id)),
-        })
+            inherit_args: config.bool(INHERIT_ARGS_KEY).unwrap_or(true),
+        }))
     }
 }
 
@@ -116,10 +107,7 @@ fn missed_run_policy(config: &SubActionConfig) -> MissedRunPolicy {
     if config.str(MISSED_POLICY_KEY) != Some(POLICY_SKIP_IF_LATE) {
         return MissedRunPolicy::RunLateOnce;
     }
-    let minutes = u64::try_from(config.int(LATE_TOLERANCE_MINUTES_KEY).unwrap_or(0)).unwrap_or(0);
-    MissedRunPolicy::SkipIfLateBy(Duration::from_secs(
-        minutes.saturating_mul(SECONDS_PER_MINUTE),
-    ))
+    skip_if_late_by_minutes(config.int(LATE_TOLERANCE_MINUTES_KEY).unwrap_or(0))
 }
 
 fn whole_minutes(duration: Duration) -> i64 {

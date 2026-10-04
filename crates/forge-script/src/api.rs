@@ -15,10 +15,12 @@ use tokio::runtime::Handle;
 
 use crate::convert::{dynamic_to_variant, variant_to_dynamic};
 use crate::http_client::{HttpError, HttpResponse, ScriptHttpClient};
+use crate::schedule::ActionScheduler;
+use crate::schedule_api::build_schedule_module;
 
-pub const ENGINE_BOUND_NAMES: [&str; 12] = [
+pub const ENGINE_BOUND_NAMES: [&str; 13] = [
     "log", "warn", "error", "sleep", "chat", "globals", "audio", "http", "tts", "time", "obs",
-    "latest",
+    "latest", "schedule",
 ];
 
 pub fn is_engine_bound_name(name: &str) -> bool {
@@ -42,6 +44,7 @@ pub struct ForgeApi {
     http: Option<Arc<ScriptHttpClient>>,
     integrations: Option<Arc<dyn IntegrationAvailability>>,
     latest: Option<Arc<dyn LatestValueReader>>,
+    scheduler: Option<Arc<dyn ActionScheduler>>,
     pub deadline: Instant,
 }
 
@@ -62,6 +65,7 @@ impl ForgeApi {
             http: None,
             integrations: None,
             latest: None,
+            scheduler: None,
             deadline,
         }
     }
@@ -95,6 +99,11 @@ impl ForgeApi {
 
     pub fn with_latest_values(mut self, latest: Arc<dyn LatestValueReader>) -> Self {
         self.latest = Some(latest);
+        self
+    }
+
+    pub fn with_action_scheduler(mut self, scheduler: Arc<dyn ActionScheduler>) -> Self {
+        self.scheduler = Some(scheduler);
         self
     }
 
@@ -193,6 +202,7 @@ impl ForgeApi {
             None => Module::new(),
         };
         root.set_sub_module("latest", latest);
+        root.set_sub_module("schedule", build_schedule_module(self.scheduler));
 
         Arc::new(root)
     }

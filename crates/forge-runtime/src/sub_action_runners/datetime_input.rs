@@ -1,7 +1,7 @@
 use forge_types::Variant;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-pub(super) fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, String> {
+pub(crate) fn resolve_datetime(v: &Variant, stack_interp: &str) -> Result<OffsetDateTime, String> {
     if let Some(dt) = v.as_datetime() {
         return Ok(*dt);
     }

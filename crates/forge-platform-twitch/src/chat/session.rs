@@ -5781,7 +5781,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn goal_progress_event_nests_goal_with_current_and_target_amounts() {
+    async fn goal_progress_notification_publishes_a_live_unsynced_progress_event() {
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
@@ -5801,8 +5801,7 @@ mod tests {
 
         assert_eq!(ev.kind, "twitch.channel.goal.progress");
         assert_eq!(ev.payload["goal"]["id"].as_str(), Some("goal-2"));
-        assert_eq!(ev.payload["goal"]["current_amount"].as_i64(), Some(42));
-        assert_eq!(ev.payload["goal"]["target_amount"].as_i64(), Some(100));
+        assert_eq!(ev.payload["goal"]["is_synced"].as_bool(), Some(false));
     }
 
     #[tokio::test]

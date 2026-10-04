@@ -1656,6 +1656,84 @@ mod tests {
         assert!(!reward_revision_moved(&mut revisions));
     }
 
+    fn bundle_recording_helix(
+        broadcaster_id: &str,
+    ) -> (
+        Arc<TwitchIntegrationBundle>,
+        Arc<crate::sub_actions::test_support::MockTransport>,
+    ) {
+        let transport = Arc::new(
+            crate::sub_actions::test_support::MockTransport::returning_sequence(Vec::new()),
+        );
+        let (_, rx) = watch::channel(ChatConnectionState::Disconnected);
+        let bundle = TwitchIntegrationBundle::for_test_with_transport(
+            Some("streamer".to_owned()),
+            rx,
+            SubscriptionTracker::default(),
+            Arc::new(NullCreds),
+            BroadcasterTier::Standard,
+            Arc::clone(&transport) as Arc<dyn HelixTransport>,
+            broadcaster_id,
+        );
+        (bundle, transport)
+    }
+
+    async fn settle_spawned_tasks() {
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    fn goal_requests(
+        transport: &crate::sub_actions::test_support::MockTransport,
+    ) -> Vec<HelixRequest> {
+        (0..transport.call_count())
+            .map(|index| transport.request(index))
+            .filter(|request| request.path == "/helix/goals")
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn creator_goals_sync_once_per_fresh_connection() {
+        let (b, transport) = bundle_recording_helix("1");
+        let steps = [
+            (ChatConnectionState::Connected, 1),
+            (ChatConnectionState::Connected, 1),
+            (ChatConnectionState::Reconnecting { attempt: 1 }, 1),
+            (ChatConnectionState::Connected, 2),
+            (ChatConnectionState::Disconnected, 2),
+            (ChatConnectionState::Connecting, 2),
+            (ChatConnectionState::Connected, 3),
+        ];
+
+        for (state, expected_syncs) in steps {
+            b.on_chat_state_changed(state);
+            settle_spawned_tasks().await;
+            assert_eq!(
+                goal_requests(&transport).len(),
+                expected_syncs,
+                "after {state:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn creator_goal_sync_asks_for_the_configured_broadcaster() {
+        let (b, transport) = bundle_recording_helix("4242");
+
+        b.on_chat_state_changed(ChatConnectionState::Connected);
+        settle_spawned_tasks().await;
+
+        let queries: Vec<Vec<(String, String)>> = goal_requests(&transport)
+            .into_iter()
+            .map(|request| request.query)
+            .collect();
+        assert_eq!(
+            queries,
+            vec![vec![("broadcaster_id".to_owned(), "4242".to_owned())]]
+        );
+    }
+
     #[test]
     fn the_rewards_manager_action_targets_a_collection_the_bundle_declares() {
         let b = make_bundle_with_tier(ChatConnectionState::Connected, BroadcasterTier::Affiliate);

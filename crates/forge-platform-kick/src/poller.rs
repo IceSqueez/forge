@@ -492,12 +492,20 @@ mod tests {
         watch::channel(ViewerReport::Live { count: 5 }).0
     }
 
-    fn auth_sender() -> watch::Sender<PollerAuth> {
-        watch::channel(PollerAuth::Authorized).0
+    fn tracker() -> AuthTracker {
+        AuthTracker::new(watch::channel(PollerAuth::Authorized).0)
     }
 
-    fn auth_required_sender() -> watch::Sender<PollerAuth> {
-        watch::channel(PollerAuth::AuthRequired).0
+    fn tracker_lost(endpoints: &[PollEndpoint]) -> AuthTracker {
+        let mut tracker = AuthTracker::new(watch::channel(PollerAuth::AuthRequired).0);
+        for endpoint in endpoints {
+            *tracker.flag(*endpoint) = true;
+        }
+        tracker
+    }
+
+    fn published(tracker: &AuthTracker) -> PollerAuth {
+        *tracker.tx.borrow()
     }
 
     const AUTH_LOST_MESSAGE: &str = "kick poller authorization lost, sign in to Kick again";
@@ -684,7 +692,7 @@ mod tests {
             &ok_token(),
             &tx,
             &viewer_sender(),
-            &auth_sender(),
+            &mut tracker(),
             &mut last,
         )
         .await
@@ -712,7 +720,7 @@ mod tests {
             &ok_token(),
             &tx,
             &viewer_sender(),
-            &auth_sender(),
+            &mut tracker(),
             &mut last,
         )
         .await
@@ -739,7 +747,7 @@ mod tests {
             &ok_token(),
             &tx,
             &viewer_sender(),
-            &auth_sender(),
+            &mut tracker(),
             &mut last,
         )
         .await
@@ -774,7 +782,7 @@ mod tests {
             &ok_token(),
             &tx,
             &viewer_sender(),
-            &auth_sender(),
+            &mut tracker(),
             &mut last,
         )
         .await
@@ -812,7 +820,7 @@ mod tests {
             let channel = channel_on(&server);
             let (tx, mut rx) = mpsc::channel(4);
             let viewer_tx = live_viewer_sender();
-            let auth_tx = auth_sender();
+            let mut auth = tracker();
             let mut last = None;
 
             let result = poll_channel(
@@ -820,13 +828,13 @@ mod tests {
                 &token_source,
                 &tx,
                 &viewer_tx,
-                &auth_tx,
+                &mut auth,
                 &mut last,
             )
             .await;
 
             assert!(result.is_ok(), "{case}: auth loss must not stop the loop");
-            assert_eq!(*auth_tx.borrow(), PollerAuth::AuthRequired, "{case}");
+            assert_eq!(published(&auth), PollerAuth::AuthRequired, "{case}");
             assert_eq!(*viewer_tx.borrow(), ViewerReport::Absent, "{case}");
             assert!(last.is_none(), "{case}: no snapshot without a channel read");
             assert!(rx.try_recv().is_err(), "{case}: nothing emits");
@@ -842,7 +850,7 @@ mod tests {
             }
             let rewards = rewards_on(&server);
             let (tx, mut rx) = mpsc::channel(4);
-            let auth_tx = auth_sender();
+            let mut auth = tracker();
             let mut seen = DedupSet::unbounded();
             let mut seeded = false;
 
@@ -850,14 +858,14 @@ mod tests {
                 &rewards,
                 &token_source,
                 &tx,
-                &auth_tx,
+                &mut auth,
                 &mut seen,
                 &mut seeded,
             )
             .await;
 
             assert!(result.is_ok(), "{case}: auth loss must not stop the loop");
-            assert_eq!(*auth_tx.borrow(), PollerAuth::AuthRequired, "{case}");
+            assert_eq!(published(&auth), PollerAuth::AuthRequired, "{case}");
             assert!(!seeded, "{case}: a failed poll must not count as the seed");
             assert!(rx.try_recv().is_err(), "{case}: nothing emits");
         }
@@ -870,32 +878,32 @@ mod tests {
         mount_no_redemptions(&server).await;
         let (tx, _rx) = mpsc::channel(4);
 
-        let channel_auth = auth_required_sender();
+        let mut channel_auth = tracker_lost(&[PollEndpoint::Channel]);
         poll_channel(
             &channel_on(&server),
             &ok_token(),
             &tx,
             &viewer_sender(),
-            &channel_auth,
+            &mut channel_auth,
             &mut None,
         )
         .await
         .unwrap();
 
-        let redemption_auth = auth_required_sender();
+        let mut redemption_auth = tracker_lost(&[PollEndpoint::Redemptions]);
         poll_redemptions(
             &rewards_on(&server),
             &ok_token(),
             &tx,
-            &redemption_auth,
+            &mut redemption_auth,
             &mut DedupSet::unbounded(),
             &mut false,
         )
         .await
         .unwrap();
 
-        assert_eq!(*channel_auth.borrow(), PollerAuth::Authorized);
-        assert_eq!(*redemption_auth.borrow(), PollerAuth::Authorized);
+        assert_eq!(published(&channel_auth), PollerAuth::Authorized);
+        assert_eq!(published(&redemption_auth), PollerAuth::Authorized);
     }
 
     #[tokio::test]
@@ -921,7 +929,7 @@ mod tests {
             &rewards,
             &ok_token(),
             &tx,
-            &auth_sender(),
+            &mut tracker(),
             &mut seen,
             &mut seeded,
         )
@@ -960,7 +968,7 @@ mod tests {
             &rewards,
             &ok_token(),
             &tx,
-            &auth_sender(),
+            &mut tracker(),
             &mut seen,
             &mut seeded,
         )
@@ -1015,7 +1023,7 @@ mod tests {
             &rewards,
             &ok_token(),
             &tx,
-            &auth_sender(),
+            &mut tracker(),
             &mut seen,
             &mut seeded,
         )
@@ -1027,7 +1035,7 @@ mod tests {
             &rewards,
             &ok_token(),
             &tx,
-            &auth_sender(),
+            &mut tracker(),
             &mut seen,
             &mut seeded,
         )
@@ -1045,7 +1053,7 @@ mod tests {
             &rewards,
             &ok_token(),
             &tx,
-            &auth_sender(),
+            &mut tracker(),
             &mut seen,
             &mut seeded,
         )
@@ -1127,7 +1135,7 @@ mod tests {
                 &ok_token(),
                 &tx,
                 &viewer_sender(),
-                &auth_sender(),
+                &mut tracker(),
                 &mut last,
             )
             .await
@@ -1161,7 +1169,7 @@ mod tests {
     }
 
     #[test]
-    fn auth_loss_warns_once_across_repeated_failing_polls() {
+    fn each_endpoint_losing_authorization_warns_once_across_repeated_failing_polls() {
         let ((auth, uri), lines) =
             crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
                 let server = MockServer::start().await;
@@ -1176,23 +1184,32 @@ mod tests {
                 let rewards = rewards_on(&server);
                 let (tx, _rx) = mpsc::channel(4);
                 let viewer_tx = viewer_sender();
-                let auth_tx = auth_sender();
+                let mut auth = tracker();
                 let mut last = None;
                 let mut seen = DedupSet::unbounded();
                 let mut seeded = false;
                 for _ in 0..3 {
-                    poll_channel(&channel, &ok_token(), &tx, &viewer_tx, &auth_tx, &mut last)
+                    poll_channel(&channel, &ok_token(), &tx, &viewer_tx, &mut auth, &mut last)
                         .await
                         .unwrap();
-                    poll_redemptions(&rewards, &ok_token(), &tx, &auth_tx, &mut seen, &mut seeded)
-                        .await
-                        .unwrap();
+                    poll_redemptions(
+                        &rewards,
+                        &ok_token(),
+                        &tx,
+                        &mut auth,
+                        &mut seen,
+                        &mut seeded,
+                    )
+                    .await
+                    .unwrap();
                 }
-                (*auth_tx.borrow(), server.uri())
+                (published(&auth), server.uri())
             });
 
         assert_eq!(auth, PollerAuth::AuthRequired);
-        assert_eq!(auth_lost_warnings(&lines), 1, "{lines:?}");
+        let mut endpoints = auth_lost_endpoints(&lines);
+        endpoints.sort();
+        assert_eq!(endpoints, vec!["channel", "redemptions"], "{lines:?}");
         for line in crate::log_capture::forge_lines(&lines) {
             assert!(
                 !line.mentions(TOKEN_SENTINEL) && !line.mentions(&uri),
@@ -1201,6 +1218,123 @@ mod tests {
                 line.fields
             );
         }
+    }
+
+    fn auth_lost_endpoints(lines: &[crate::log_capture::CapturedLine]) -> Vec<String> {
+        crate::log_capture::forge_lines(lines)
+            .iter()
+            .filter(|line| {
+                line.level == tracing::Level::WARN && line.message() == AUTH_LOST_MESSAGE
+            })
+            .filter_map(|line| line.field("endpoint").map(str::to_owned))
+            .collect()
+    }
+
+    async fn run_cycles(
+        channel_server: &MockServer,
+        redemptions_server: &MockServer,
+        auth: &mut AuthTracker,
+        cycles: usize,
+    ) {
+        let (tx, _rx) = mpsc::channel(4);
+        let viewer_tx = viewer_sender();
+        let mut last = None;
+        let mut seen = DedupSet::unbounded();
+        let mut seeded = false;
+        for _ in 0..cycles {
+            poll_channel(
+                &channel_on(channel_server),
+                &ok_token(),
+                &tx,
+                &viewer_tx,
+                auth,
+                &mut last,
+            )
+            .await
+            .unwrap();
+            poll_redemptions(
+                &rewards_on(redemptions_server),
+                &ok_token(),
+                &tx,
+                auth,
+                &mut seen,
+                &mut seeded,
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn one_healthy_endpoint_does_not_mask_the_other_losing_authorization() {
+        let ((states, tracker_state), lines) =
+            crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+                let healthy = MockServer::start().await;
+                mount_live_channel(&healthy).await;
+                let rejected = MockServer::start().await;
+                mount_status(&rejected, REDEMPTIONS_ROUTE, reqwest::StatusCode::FORBIDDEN).await;
+                let mut auth = tracker();
+                let mut observed = Vec::new();
+                for _ in 0..3 {
+                    run_cycles(&healthy, &rejected, &mut auth, 1).await;
+                    observed.push(published(&auth));
+                }
+                (observed, auth.redemptions_lost && !auth.channel_lost)
+            });
+
+        assert_eq!(states, vec![PollerAuth::AuthRequired; 3]);
+        assert!(tracker_state);
+        assert_eq!(
+            auth_lost_endpoints(&lines),
+            vec!["redemptions"],
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn auth_stays_required_until_every_lost_endpoint_recovers() {
+        let (states, _) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let healthy = MockServer::start().await;
+            mount_live_channel(&healthy).await;
+            mount_no_redemptions(&healthy).await;
+            let rejected = MockServer::start().await;
+            mount_status(&rejected, CHANNELS_ROUTE, reqwest::StatusCode::UNAUTHORIZED).await;
+            mount_status(
+                &rejected,
+                REDEMPTIONS_ROUTE,
+                reqwest::StatusCode::UNAUTHORIZED,
+            )
+            .await;
+            let channel_back = MockServer::start().await;
+            mount_live_channel(&channel_back).await;
+            mount_status(
+                &channel_back,
+                REDEMPTIONS_ROUTE,
+                reqwest::StatusCode::UNAUTHORIZED,
+            )
+            .await;
+
+            let mut auth = tracker();
+            let mut observed = Vec::new();
+            for (channel_server, redemptions_server) in [
+                (&rejected, &rejected),
+                (&channel_back, &channel_back),
+                (&healthy, &healthy),
+            ] {
+                run_cycles(channel_server, redemptions_server, &mut auth, 1).await;
+                observed.push(published(&auth));
+            }
+            observed
+        });
+
+        assert_eq!(
+            states,
+            vec![
+                PollerAuth::AuthRequired,
+                PollerAuth::AuthRequired,
+                PollerAuth::Authorized
+            ]
+        );
     }
 
     #[test]
@@ -1212,14 +1346,14 @@ mod tests {
             mount_live_channel(&healthy).await;
             let (tx, _rx) = mpsc::channel(4);
             let viewer_tx = viewer_sender();
-            let auth_tx = auth_sender();
+            let mut auth = tracker();
             for server in [&rejected, &healthy, &rejected] {
                 poll_channel(
                     &channel_on(server),
                     &ok_token(),
                     &tx,
                     &viewer_tx,
-                    &auth_tx,
+                    &mut auth,
                     &mut None,
                 )
                 .await
@@ -1236,18 +1370,18 @@ mod tests {
             let server = MockServer::start().await;
             mount_live_channel(&server).await;
             let (tx, _rx) = mpsc::channel(4);
-            let auth_tx = auth_required_sender();
+            let mut auth = tracker_lost(&[PollEndpoint::Channel]);
             poll_channel(
                 &channel_on(&server),
                 &ok_token(),
                 &tx,
                 &viewer_sender(),
-                &auth_tx,
+                &mut auth,
                 &mut None,
             )
             .await
             .unwrap();
-            *auth_tx.borrow()
+            published(&auth)
         });
 
         assert_eq!(auth, PollerAuth::Authorized);
@@ -1270,18 +1404,18 @@ mod tests {
                     let server = MockServer::start().await;
                     let (tx, _rx) = mpsc::channel(4);
                     let viewer_tx = live_viewer_sender();
-                    let auth_tx = auth_sender();
+                    let mut auth = tracker();
                     poll_channel(
                         &channel_on(&server),
                         &failing_token(make),
                         &tx,
                         &viewer_tx,
-                        &auth_tx,
+                        &mut auth,
                         &mut None,
                     )
                     .await
                     .unwrap();
-                    (*auth_tx.borrow(), *viewer_tx.borrow())
+                    (published(&auth), *viewer_tx.borrow())
                 });
 
             assert_eq!(auth, PollerAuth::Authorized, "{case}");

@@ -4,6 +4,7 @@ use crate::async_bridge;
 use crate::config_field_label::localized_label;
 use crate::config_form::{code_field_editor, dependent_options};
 use crate::presentation::ActivePresentation;
+use crate::quick_action_field_rows::int_entry_invalid;
 use forge_components::{
     BORDER_THIN, CodeEditor, DateTimePicker, DateTimePickerEvent, DateTimePickerLabels, FONT_SM,
     FONT_XS, FONT_XXS, InputEvent, Picker, PickerEvent, PickerItem, PickerLabels, Radius, Spacing,
@@ -16,6 +17,7 @@ use forge_registry::{
 };
 use forge_types::{SubActionConfig, Variant, normalize_var_name};
 use gpui::{FocusHandle, FontWeight, Rgba};
+use std::ops::RangeInclusive;
 
 #[derive(Clone, Copy)]
 pub(super) enum SubFormTarget {
@@ -40,7 +42,7 @@ enum SubFormField {
     Input {
         key: String,
         label: String,
-        integer: bool,
+        integer: Option<RangeInclusive<i64>>,
         browse: bool,
         datetime: bool,
         gate: Option<String>,
@@ -481,25 +483,6 @@ impl EditSubActionForm {
     }
 
     fn submit(&mut self, cx: &mut Context<Self>) {
-        let mut has_invalid = false;
-        for field in &self.fields {
-            if let SubFormField::Input { key, input, .. } = field
-                && is_var_key(key)
-            {
-                let text = input.read(cx).content().to_owned();
-                let invalid = !text.trim().is_empty() && normalize_var_name(&text).is_none();
-                input.update(cx, |input, cx| input.set_invalid(invalid, cx));
-                has_invalid |= invalid;
-            }
-        }
-        if has_invalid {
-            return;
-        }
-        let target = self.target;
-        let kind_id = self.kind_id.clone();
-        let continue_on_error = self.continue_on_error;
-        let label = resolve_step_label(self.name_input.read(cx).content(), &self.kind_label);
-        let condition = normalize_condition(self.condition_input.read(cx).content());
         let bool_vals: HashMap<String, bool> = self
             .fields
             .iter()
@@ -512,6 +495,38 @@ impl EditSubActionForm {
             gate.map(|g| bool_vals.get(g).copied().unwrap_or(false))
                 .unwrap_or(true)
         };
+        let mut has_invalid = false;
+        for field in &self.fields {
+            let SubFormField::Input {
+                key,
+                integer,
+                gate,
+                input,
+                ..
+            } = field
+            else {
+                continue;
+            };
+            let text = input.read(cx).content().to_owned();
+            let invalid = if is_var_key(key) {
+                !text.trim().is_empty() && normalize_var_name(&text).is_none()
+            } else if let Some(range) = integer {
+                gate_on(gate.as_ref())
+                    && int_entry_invalid(&text, *range.start(), *range.end(), false)
+            } else {
+                continue;
+            };
+            input.update(cx, |input, cx| input.set_invalid(invalid, cx));
+            has_invalid |= invalid;
+        }
+        if has_invalid {
+            return;
+        }
+        let target = self.target;
+        let kind_id = self.kind_id.clone();
+        let continue_on_error = self.continue_on_error;
+        let label = resolve_step_label(self.name_input.read(cx).content(), &self.kind_label);
+        let condition = normalize_condition(self.condition_input.read(cx).content());
         let overrides: Vec<(String, Variant)> = self
             .fields
             .iter()
@@ -1076,7 +1091,7 @@ fn field_value(field: &SubFormField, cx: &App) -> Option<(String, Variant)> {
             ..
         } => {
             let text = input.read(cx).content().to_owned();
-            if *integer {
+            if integer.is_some() {
                 let parsed = text.trim().parse::<i64>().ok()?;
                 Some((key.clone(), Variant::Int(parsed)))
             } else if is_var_key(key) {
@@ -1130,7 +1145,7 @@ fn sub_field_is_half(field: &SubFormField) -> bool {
             browse,
             datetime,
             ..
-        } => !*browse && !*datetime && (*integer || is_var_key(key)),
+        } => !*browse && !*datetime && (integer.is_some() || is_var_key(key)),
         _ => false,
     }
 }
@@ -1205,7 +1220,7 @@ fn build_input_field(
     key: &str,
     label: &str,
     placeholder: &'static str,
-    integer: bool,
+    integer: Option<RangeInclusive<i64>>,
     browse: bool,
     datetime: bool,
     gate: Option<String>,
@@ -1218,7 +1233,13 @@ fn build_input_field(
         .map(forge_types::display_scalar)
         .unwrap_or_default();
     let is_var = is_var_key(key);
-    let invalid_seed = is_var && !seed.trim().is_empty() && normalize_var_name(&seed).is_none();
+    let invalid_seed = if is_var {
+        !seed.trim().is_empty() && normalize_var_name(&seed).is_none()
+    } else {
+        integer
+            .as_ref()
+            .is_some_and(|range| int_entry_invalid(&seed, *range.start(), *range.end(), false))
+    };
     let input = cx.new(|cx| {
         let ph = if is_var { "%result%" } else { placeholder };
         let mut input = TextInput::new(ph, cx).with_palette(palette);
@@ -1236,7 +1257,21 @@ fn build_input_field(
     if invalid_seed {
         input.update(cx, |input, cx| input.set_invalid(true, cx));
     }
-    let sub = is_var.then(|| cx.subscribe(&input, EditSubActionForm::on_var_input_event));
+    let sub = if is_var {
+        Some(cx.subscribe(&input, EditSubActionForm::on_var_input_event))
+    } else {
+        integer.clone().map(|range| {
+            cx.subscribe(
+                &input,
+                move |_, field: Entity<TextInput>, event: &InputEvent, cx| {
+                    if let InputEvent::Changed(text) = event {
+                        let invalid = int_entry_invalid(text, *range.start(), *range.end(), false);
+                        field.update(cx, |input, cx| input.set_invalid(invalid, cx));
+                    }
+                },
+            )
+        })
+    };
     SubFormField::Input {
         key: key.to_owned(),
         label: label.to_owned(),
@@ -1353,7 +1388,7 @@ fn push_form_field(
             key,
             label,
             placeholder,
-            false,
+            None,
             false,
             false,
             gate,
@@ -1371,16 +1406,35 @@ fn push_form_field(
         } => out.push(build_code_field(
             key, label, gate, *language, config, palette, cx,
         )),
-        FormField::Integer { key, label, .. } | FormField::Slider { key, label, .. } => {
-            out.push(build_input_field(
-                key, label, "0", true, false, false, gate, config, palette, cx,
-            ))
+        FormField::Integer {
+            key,
+            label,
+            min,
+            max,
         }
+        | FormField::Slider {
+            key,
+            label,
+            min,
+            max,
+            ..
+        } => out.push(build_input_field(
+            key,
+            label,
+            "0",
+            Some(*min..=*max),
+            false,
+            false,
+            gate,
+            config,
+            palette,
+            cx,
+        )),
         FormField::FilePicker { key, label } => out.push(build_input_field(
-            key, label, "", false, true, false, gate, config, palette, cx,
+            key, label, "", None, true, false, gate, config, palette, cx,
         )),
         FormField::DateTime { key, label } => out.push(build_input_field(
-            key, label, "", false, false, true, gate, config, palette, cx,
+            key, label, "", None, false, true, gate, config, palette, cx,
         )),
         FormField::Select {
             key,

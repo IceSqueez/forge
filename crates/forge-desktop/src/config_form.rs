@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::ops::RangeInclusive;
 
 use forge_components::highlight::Language;
 use forge_components::{
@@ -14,6 +15,7 @@ use crate::collection_options::{
 use crate::donation_services::donation_provider_options;
 use crate::obs_catalog_options::{ObsCatalogField, ObsCatalogList};
 use crate::presentation::ActivePresentation;
+use crate::quick_action_field_rows::int_entry_invalid;
 use crate::vtube_catalog_options::{VTubeCatalogField, VTubeCatalogList};
 use forge_runtime::triggers::DONATION_PROVIDER_OPTIONS_KEY;
 use forge_types::Variant;
@@ -49,7 +51,7 @@ type FieldConfig = BTreeMap<String, Variant>;
 pub(crate) enum ConfigField {
     Input {
         key: String,
-        integer: bool,
+        integer: Option<RangeInclusive<i64>>,
         optional: bool,
         gate: Option<String>,
         input: Entity<TextInput>,
@@ -154,7 +156,7 @@ pub(crate) struct FoldContext<'a, V: 'static> {
 struct InputSpec<'a> {
     key: &'a str,
     placeholder: SharedString,
-    integer: bool,
+    integer: Option<RangeInclusive<i64>>,
     optional: bool,
 }
 
@@ -162,7 +164,7 @@ fn free_text(key: &str, placeholder: SharedString) -> InputSpec<'_> {
     InputSpec {
         key,
         placeholder,
-        integer: false,
+        integer: None,
         optional: false,
     }
 }
@@ -193,7 +195,7 @@ pub(crate) fn fold_config_field<V: 'static>(
         FormField::Code { key, language, .. } => {
             out.push(build_config_code(key, *language, gate, ctx, cx))
         }
-        FormField::Integer { key, .. } => {
+        FormField::Integer { key, min, max, .. } => {
             let optional = !ctx.defaults.contains_key(*key);
             let placeholder = if optional {
                 SharedString::from(tr!("config_form_auto_placeholder"))
@@ -204,7 +206,7 @@ pub(crate) fn fold_config_field<V: 'static>(
                 InputSpec {
                     key,
                     placeholder,
-                    integer: true,
+                    integer: Some(*min..=*max),
                     optional,
                 },
                 gate,
@@ -603,20 +605,29 @@ fn build_config_input<V: 'static>(
 ) -> ConfigField {
     let seed = read_text(ctx.config, spec.key);
     let palette = *ctx.palette;
+    let seed_invalid = spec
+        .integer
+        .as_ref()
+        .is_some_and(|range| integer_text_invalid(&seed, range));
     let input = cx.new(|cx| {
         let mut input = TextInput::new(spec.placeholder, cx).with_palette(palette);
         if !seed.is_empty() {
             input.set_content(seed, cx);
         }
+        input.set_invalid(seed_invalid, cx);
         input
     });
     let on_committed = ctx.on_committed;
+    let range = spec.integer.clone();
     let sub = cx.subscribe(
         &input,
         move |view, field: Entity<TextInput>, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Cancelled) {
                 field.update(cx, |input, cx| input.restore_committed(cx));
                 return;
+            }
+            if let Some(range) = &range {
+                bound_integer_input(&field, event, range, cx);
             }
             on_committed(view, event, cx);
         },
@@ -628,6 +639,45 @@ fn build_config_input<V: 'static>(
         gate,
         input,
         _sub: sub,
+    }
+}
+
+fn integer_text_invalid(text: &str, range: &RangeInclusive<i64>) -> bool {
+    int_entry_invalid(text, *range.start(), *range.end(), false)
+}
+
+fn clamped_integer_text(text: &str, range: &RangeInclusive<i64>) -> Option<String> {
+    let typed = text.trim().parse::<i64>().ok()?;
+    let clamped = within(typed, range);
+    (clamped != typed).then(|| clamped.to_string())
+}
+
+fn within(number: i64, range: &RangeInclusive<i64>) -> i64 {
+    number.max(*range.start()).min(*range.end())
+}
+
+fn bound_integer_input(
+    field: &Entity<TextInput>,
+    event: &InputEvent,
+    range: &RangeInclusive<i64>,
+    cx: &mut App,
+) {
+    match event {
+        InputEvent::Changed(text) => {
+            let invalid = integer_text_invalid(text, range);
+            field.update(cx, |input, cx| input.set_invalid(invalid, cx));
+        }
+        InputEvent::Submitted(text) | InputEvent::Blurred(text) => {
+            let settled = clamped_integer_text(text, range);
+            field.update(cx, |input, cx| {
+                if let Some(settled) = settled {
+                    input.set_content(settled, cx);
+                }
+                let invalid = integer_text_invalid(input.content(), range);
+                input.set_invalid(invalid, cx);
+            });
+        }
+        InputEvent::Cancelled => {}
     }
 }
 
@@ -751,13 +801,14 @@ pub(crate) fn collect_field_values(fields: &[ConfigField], buffer: &mut FieldCon
                     continue;
                 }
                 let text = input.read(cx).content().to_owned();
-                if !*integer {
+                let Some(range) = integer else {
                     buffer.insert(key.clone(), Variant::String(text));
                     continue;
-                }
+                };
                 let typed = text.trim();
                 if let Ok(number) = typed.parse::<i64>() {
-                    buffer.insert(key.clone(), Variant::Int(number));
+                    let bounded = within(number, range);
+                    buffer.insert(key.clone(), Variant::Int(bounded));
                 } else if *optional && typed.is_empty() {
                     buffer.remove(key);
                 }

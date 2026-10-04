@@ -68,7 +68,7 @@ impl OverlayPropertyPanel {
             .filter_map(|field| {
                 let ConfigField::Input {
                     key,
-                    integer: true,
+                    integer: Some(_),
                     input,
                     ..
                 } = field

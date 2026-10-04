@@ -364,24 +364,90 @@ mod tests {
         async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
     }
 
+    const TOKEN_SENTINEL: &str = "kick_token_sentinel";
+
     fn ok_token() -> TokenSource {
         Arc::new(|| {
-            Box::pin(async { Ok::<_, PlatformError>("tok".to_owned()) }) as BoxFuture<'static, _>
+            Box::pin(async { Ok::<_, PlatformError>(TOKEN_SENTINEL.to_owned()) })
+                as BoxFuture<'static, _>
         })
     }
 
+    fn failing_token(make: fn() -> PlatformError) -> TokenSource {
+        Arc::new(move || Box::pin(async move { Err::<String, _>(make()) }) as BoxFuture<'static, _>)
+    }
+
+    fn auth_rejected() -> PlatformError {
+        PlatformError::Auth {
+            reason: "not authorized".to_owned(),
+        }
+    }
+
+    fn reauth_required() -> PlatformError {
+        PlatformError::ReauthRequired {
+            platform: "kick".to_owned(),
+        }
+    }
+
+    fn storage_unreadable() -> PlatformError {
+        PlatformError::Io(std::io::Error::other("credential store unreadable"))
+    }
+
+    fn network_down() -> PlatformError {
+        PlatformError::Network {
+            reason: "error sending request".to_owned(),
+        }
+    }
+
     fn err_token() -> TokenSource {
-        Arc::new(|| {
-            Box::pin(async {
-                Err::<String, _>(PlatformError::Auth {
-                    reason: "not authorized".to_owned(),
-                })
-            }) as BoxFuture<'static, _>
-        })
+        failing_token(auth_rejected)
     }
 
     fn viewer_sender() -> watch::Sender<ViewerReport> {
         watch::channel(ViewerReport::Absent).0
+    }
+
+    fn live_viewer_sender() -> watch::Sender<ViewerReport> {
+        watch::channel(ViewerReport::Live { count: 5 }).0
+    }
+
+    fn auth_sender() -> watch::Sender<PollerAuth> {
+        watch::channel(PollerAuth::Authorized).0
+    }
+
+    fn auth_required_sender() -> watch::Sender<PollerAuth> {
+        watch::channel(PollerAuth::AuthRequired).0
+    }
+
+    const AUTH_LOST_MESSAGE: &str = "kick poller authorization lost, sign in to Kick again";
+
+    const CHANNELS_ROUTE: &str = "/channels";
+    const REDEMPTIONS_ROUTE: &str = "/channels/rewards/redemptions";
+
+    async fn mount_status(server: &MockServer, route: &'static str, status: reqwest::StatusCode) {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(ResponseTemplate::new(status.as_u16()))
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_live_channel(server: &MockServer) {
+        Mock::given(method("GET"))
+            .and(path(CHANNELS_ROUTE))
+            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, "T", 1, "C")))
+            .mount(server)
+            .await;
+    }
+
+    async fn mount_no_redemptions(server: &MockServer) {
+        Mock::given(method("GET"))
+            .and(path(REDEMPTIONS_ROUTE))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
+            )
+            .mount(server)
+            .await;
     }
 
     fn snapshot(
@@ -532,9 +598,16 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = None;
 
-        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
-            .await
-            .unwrap();
+        poll_channel(
+            &channel,
+            &ok_token(),
+            &tx,
+            &viewer_sender(),
+            &auth_sender(),
+            &mut last,
+        )
+        .await
+        .unwrap();
 
         assert!(last.is_some(), "first successful poll seeds last_snapshot");
         assert!(rx.try_recv().is_err(), "seeding must not emit any event");
@@ -553,9 +626,16 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = Some(snapshot(true, "T", 1, "C"));
 
-        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
-            .await
-            .unwrap();
+        poll_channel(
+            &channel,
+            &ok_token(),
+            &tx,
+            &viewer_sender(),
+            &auth_sender(),
+            &mut last,
+        )
+        .await
+        .unwrap();
 
         assert!(rx.try_recv().is_err(), "identical data must emit nothing");
     }
@@ -573,9 +653,16 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = Some(snapshot(false, "T", 1, "C"));
 
-        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
-            .await
-            .unwrap();
+        poll_channel(
+            &channel,
+            &ok_token(),
+            &tx,
+            &viewer_sender(),
+            &auth_sender(),
+            &mut last,
+        )
+        .await
+        .unwrap();
 
         let event = rx.try_recv().unwrap();
         assert_eq!(event.kind, LIVESTREAM_STATUS_KIND);
@@ -601,9 +688,16 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(4);
         let mut last = Some(snapshot(true, "Old", 1, "C"));
 
-        poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last)
-            .await
-            .unwrap();
+        poll_channel(
+            &channel,
+            &ok_token(),
+            &tx,
+            &viewer_sender(),
+            &auth_sender(),
+            &mut last,
+        )
+        .await
+        .unwrap();
 
         let event = rx.try_recv().unwrap();
         assert_eq!(event.kind, LIVESTREAM_METADATA_KIND);
@@ -614,31 +708,113 @@ mod tests {
         );
     }
 
+    fn auth_loss_cases() -> [(&'static str, TokenSource, Option<reqwest::StatusCode>); 4] {
+        [
+            ("token rejected", failing_token(auth_rejected), None),
+            ("re-auth required", failing_token(reauth_required), None),
+            (
+                "API 401",
+                ok_token(),
+                Some(reqwest::StatusCode::UNAUTHORIZED),
+            ),
+            ("API 403", ok_token(), Some(reqwest::StatusCode::FORBIDDEN)),
+        ]
+    }
+
     #[tokio::test]
-    async fn poll_channel_token_error_skips_http_and_emits_nothing() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/channels"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(channel_body(true, "T", 1, "C")))
-            .expect(0)
-            .mount(&server)
+    async fn poll_channel_auth_loss_flags_auth_required_and_clears_the_viewer_report() {
+        for (case, token_source, api_status) in auth_loss_cases() {
+            let server = MockServer::start().await;
+            if let Some(status) = api_status {
+                mount_status(&server, CHANNELS_ROUTE, status).await;
+            }
+            let channel = channel_on(&server);
+            let (tx, mut rx) = mpsc::channel(4);
+            let viewer_tx = live_viewer_sender();
+            let auth_tx = auth_sender();
+            let mut last = None;
+
+            let result = poll_channel(
+                &channel,
+                &token_source,
+                &tx,
+                &viewer_tx,
+                &auth_tx,
+                &mut last,
+            )
             .await;
 
-        let channel = channel_on(&server);
-        let (tx, mut rx) = mpsc::channel(4);
-        let mut last = None;
+            assert!(result.is_ok(), "{case}: auth loss must not stop the loop");
+            assert_eq!(*auth_tx.borrow(), PollerAuth::AuthRequired, "{case}");
+            assert_eq!(*viewer_tx.borrow(), ViewerReport::Absent, "{case}");
+            assert!(last.is_none(), "{case}: no snapshot without a channel read");
+            assert!(rx.try_recv().is_err(), "{case}: nothing emits");
+        }
+    }
 
-        let result = poll_channel(&channel, &err_token(), &tx, &viewer_sender(), &mut last).await;
+    #[tokio::test]
+    async fn poll_redemptions_auth_loss_flags_auth_required_and_emits_nothing() {
+        for (case, token_source, api_status) in auth_loss_cases() {
+            let server = MockServer::start().await;
+            if let Some(status) = api_status {
+                mount_status(&server, REDEMPTIONS_ROUTE, status).await;
+            }
+            let rewards = rewards_on(&server);
+            let (tx, mut rx) = mpsc::channel(4);
+            let auth_tx = auth_sender();
+            let mut seen = DedupSet::unbounded();
+            let mut seeded = false;
 
-        assert!(
-            result.is_ok(),
-            "a token error is non-fatal for the poll loop"
-        );
-        assert!(
-            last.is_none(),
-            "no snapshot seeded when the token is unavailable"
-        );
-        assert!(rx.try_recv().is_err());
+            let result = poll_redemptions(
+                &rewards,
+                &token_source,
+                &tx,
+                &auth_tx,
+                &mut seen,
+                &mut seeded,
+            )
+            .await;
+
+            assert!(result.is_ok(), "{case}: auth loss must not stop the loop");
+            assert_eq!(*auth_tx.borrow(), PollerAuth::AuthRequired, "{case}");
+            assert!(!seeded, "{case}: a failed poll must not count as the seed");
+            assert!(rx.try_recv().is_err(), "{case}: nothing emits");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_successful_poll_after_auth_loss_restores_authorized() {
+        let server = MockServer::start().await;
+        mount_live_channel(&server).await;
+        mount_no_redemptions(&server).await;
+        let (tx, _rx) = mpsc::channel(4);
+
+        let channel_auth = auth_required_sender();
+        poll_channel(
+            &channel_on(&server),
+            &ok_token(),
+            &tx,
+            &viewer_sender(),
+            &channel_auth,
+            &mut None,
+        )
+        .await
+        .unwrap();
+
+        let redemption_auth = auth_required_sender();
+        poll_redemptions(
+            &rewards_on(&server),
+            &ok_token(),
+            &tx,
+            &redemption_auth,
+            &mut DedupSet::unbounded(),
+            &mut false,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(*channel_auth.borrow(), PollerAuth::Authorized);
+        assert_eq!(*redemption_auth.borrow(), PollerAuth::Authorized);
     }
 
     #[tokio::test]
@@ -660,9 +836,16 @@ mod tests {
         let mut seen = DedupSet::unbounded();
         let mut seeded = false;
 
-        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
-            .await
-            .unwrap();
+        poll_redemptions(
+            &rewards,
+            &ok_token(),
+            &tx,
+            &auth_sender(),
+            &mut seen,
+            &mut seeded,
+        )
+        .await
+        .unwrap();
 
         assert!(rx.try_recv().is_err(), "the seeding poll must emit nothing");
         assert!(seeded, "a successful first poll flips the seeded flag");
@@ -692,9 +875,16 @@ mod tests {
         seen.try_insert("rd_1".to_owned());
         let mut seeded = true;
 
-        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
-            .await
-            .unwrap();
+        poll_redemptions(
+            &rewards,
+            &ok_token(),
+            &tx,
+            &auth_sender(),
+            &mut seen,
+            &mut seeded,
+        )
+        .await
+        .unwrap();
 
         let event = rx.try_recv().unwrap();
         assert_eq!(event.kind, REWARD_REDEEMED_KIND);
@@ -703,32 +893,6 @@ mod tests {
             rx.try_recv().is_err(),
             "the already-seen id must not re-emit"
         );
-    }
-
-    #[tokio::test]
-    async fn poll_redemptions_token_error_skips_and_emits_nothing() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/channels/rewards/redemptions"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": [] })),
-            )
-            .expect(0)
-            .mount(&server)
-            .await;
-
-        let rewards = rewards_on(&server);
-        let (tx, mut rx) = mpsc::channel(4);
-        let mut seen = DedupSet::unbounded();
-        let mut seeded = true;
-
-        let result = poll_redemptions(&rewards, &err_token(), &tx, &mut seen, &mut seeded).await;
-
-        assert!(
-            result.is_ok(),
-            "a token error is non-fatal for the poll loop"
-        );
-        assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]
@@ -766,14 +930,28 @@ mod tests {
         let mut seen = DedupSet::unbounded();
         let mut seeded = false;
 
-        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
-            .await
-            .unwrap();
+        poll_redemptions(
+            &rewards,
+            &ok_token(),
+            &tx,
+            &auth_sender(),
+            &mut seen,
+            &mut seeded,
+        )
+        .await
+        .unwrap();
         assert!(rx.try_recv().is_err(), "the seeding poll must emit nothing");
 
-        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
-            .await
-            .unwrap();
+        poll_redemptions(
+            &rewards,
+            &ok_token(),
+            &tx,
+            &auth_sender(),
+            &mut seen,
+            &mut seeded,
+        )
+        .await
+        .unwrap();
         let event = rx.try_recv().unwrap();
         assert_eq!(event.kind, REWARD_REDEEMED_KIND);
         assert_eq!(event.payload["id"], "c");
@@ -782,9 +960,16 @@ mod tests {
             "still-pending a and b must never be re-emitted"
         );
 
-        poll_redemptions(&rewards, &ok_token(), &tx, &mut seen, &mut seeded)
-            .await
-            .unwrap();
+        poll_redemptions(
+            &rewards,
+            &ok_token(),
+            &tx,
+            &auth_sender(),
+            &mut seen,
+            &mut seeded,
+        )
+        .await
+        .unwrap();
         assert!(
             rx.try_recv().is_err(),
             "a is still pending and already seen, so nothing emits"
@@ -856,7 +1041,15 @@ mod tests {
             let channel = channel_on(&server);
             let (tx, _rx) = mpsc::channel(4);
             let mut last = None;
-            poll_channel(&channel, &ok_token(), &tx, &viewer_sender(), &mut last).await
+            poll_channel(
+                &channel,
+                &ok_token(),
+                &tx,
+                &viewer_sender(),
+                &auth_sender(),
+                &mut last,
+            )
+            .await
         });
 
         assert!(result.is_ok(), "a failed poll must not stop the loop");
@@ -873,6 +1066,151 @@ mod tests {
                 "response body reached a {} line: {:?}",
                 line.level,
                 line.fields
+            );
+        }
+    }
+
+    fn auth_lost_warnings(lines: &[crate::log_capture::CapturedLine]) -> usize {
+        crate::log_capture::forge_lines(lines)
+            .iter()
+            .filter(|line| {
+                line.level == tracing::Level::WARN && line.message() == AUTH_LOST_MESSAGE
+            })
+            .count()
+    }
+
+    #[test]
+    fn auth_loss_warns_once_across_repeated_failing_polls() {
+        let ((auth, uri), lines) =
+            crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+                let server = MockServer::start().await;
+                mount_status(&server, CHANNELS_ROUTE, reqwest::StatusCode::UNAUTHORIZED).await;
+                mount_status(
+                    &server,
+                    REDEMPTIONS_ROUTE,
+                    reqwest::StatusCode::UNAUTHORIZED,
+                )
+                .await;
+                let channel = channel_on(&server);
+                let rewards = rewards_on(&server);
+                let (tx, _rx) = mpsc::channel(4);
+                let viewer_tx = viewer_sender();
+                let auth_tx = auth_sender();
+                let mut last = None;
+                let mut seen = DedupSet::unbounded();
+                let mut seeded = false;
+                for _ in 0..3 {
+                    poll_channel(&channel, &ok_token(), &tx, &viewer_tx, &auth_tx, &mut last)
+                        .await
+                        .unwrap();
+                    poll_redemptions(&rewards, &ok_token(), &tx, &auth_tx, &mut seen, &mut seeded)
+                        .await
+                        .unwrap();
+                }
+                (*auth_tx.borrow(), server.uri())
+            });
+
+        assert_eq!(auth, PollerAuth::AuthRequired);
+        assert_eq!(auth_lost_warnings(&lines), 1, "{lines:?}");
+        for line in crate::log_capture::forge_lines(&lines) {
+            assert!(
+                !line.mentions(TOKEN_SENTINEL) && !line.mentions(&uri),
+                "token or URL reached a {} line: {:?}",
+                line.level,
+                line.fields
+            );
+        }
+    }
+
+    #[test]
+    fn auth_loss_after_recovery_warns_again() {
+        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let rejected = MockServer::start().await;
+            mount_status(&rejected, CHANNELS_ROUTE, reqwest::StatusCode::UNAUTHORIZED).await;
+            let healthy = MockServer::start().await;
+            mount_live_channel(&healthy).await;
+            let (tx, _rx) = mpsc::channel(4);
+            let viewer_tx = viewer_sender();
+            let auth_tx = auth_sender();
+            for server in [&rejected, &healthy, &rejected] {
+                poll_channel(
+                    &channel_on(server),
+                    &ok_token(),
+                    &tx,
+                    &viewer_tx,
+                    &auth_tx,
+                    &mut None,
+                )
+                .await
+                .unwrap();
+            }
+        });
+
+        assert_eq!(auth_lost_warnings(&lines), 2, "{lines:?}");
+    }
+
+    #[test]
+    fn recovering_from_auth_required_logs_no_warning() {
+        let (auth, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let server = MockServer::start().await;
+            mount_live_channel(&server).await;
+            let (tx, _rx) = mpsc::channel(4);
+            let auth_tx = auth_required_sender();
+            poll_channel(
+                &channel_on(&server),
+                &ok_token(),
+                &tx,
+                &viewer_sender(),
+                &auth_tx,
+                &mut None,
+            )
+            .await
+            .unwrap();
+            *auth_tx.borrow()
+        });
+
+        assert_eq!(auth, PollerAuth::Authorized);
+        assert!(
+            crate::log_capture::forge_lines(&lines)
+                .iter()
+                .all(|line| line.level != tracing::Level::WARN),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn non_auth_token_failure_warns_without_flagging_auth_or_clearing_viewers() {
+        for (case, make) in [
+            ("storage", storage_unreadable as fn() -> PlatformError),
+            ("network", network_down),
+        ] {
+            let ((auth, viewers), lines) =
+                crate::log_capture::capture_blocking(tracing::Level::TRACE, async move {
+                    let server = MockServer::start().await;
+                    let (tx, _rx) = mpsc::channel(4);
+                    let viewer_tx = live_viewer_sender();
+                    let auth_tx = auth_sender();
+                    poll_channel(
+                        &channel_on(&server),
+                        &failing_token(make),
+                        &tx,
+                        &viewer_tx,
+                        &auth_tx,
+                        &mut None,
+                    )
+                    .await
+                    .unwrap();
+                    (*auth_tx.borrow(), *viewer_tx.borrow())
+                });
+
+            assert_eq!(auth, PollerAuth::Authorized, "{case}");
+            assert_eq!(viewers, ViewerReport::Live { count: 5 }, "{case}");
+            assert_eq!(auth_lost_warnings(&lines), 0, "{case}");
+            assert!(
+                crate::log_capture::forge_lines(&lines).iter().any(|line| {
+                    line.level == tracing::Level::WARN && line.message() == "kick token unavailable"
+                }),
+                "{case}: {lines:?}"
             );
         }
     }

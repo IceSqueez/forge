@@ -845,8 +845,11 @@ mod tests {
             async fn observe_remote_throttle(&self, _: StdDuration) {}
         }
 
-        pub(super) fn bundle_with_viewer_channel()
-        -> (Arc<KickIntegrationBundle>, watch::Sender<ViewerReport>) {
+        pub(super) fn bundle_with_feeds() -> (
+            Arc<KickIntegrationBundle>,
+            watch::Sender<ViewerReport>,
+            watch::Sender<PollerAuth>,
+        ) {
             let manager = Arc::new(KickCredentialsManager::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 Arc::new(EmptyRepo),
@@ -859,6 +862,7 @@ mod tests {
                 Arc::new(GrantLimiter),
             ));
             let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
+            let (auth_tx, auth_rx) = watch::channel(PollerAuth::Authorized);
             let (bundle, _) = KickIntegrationBundle::new(
                 "test_channel".to_owned(),
                 777,
@@ -866,12 +870,13 @@ mod tests {
                 manager,
                 Arc::new(GrantLimiter),
                 viewer_rx,
+                auth_rx,
             );
-            (bundle, viewer_tx)
+            (bundle, viewer_tx, auth_tx)
         }
 
         pub(super) fn disconnected_bundle() -> Arc<KickIntegrationBundle> {
-            bundle_with_viewer_channel().0
+            bundle_with_feeds().0
         }
 
         #[test]
@@ -934,7 +939,7 @@ mod tests {
 
         #[tokio::test]
         async fn a_viewer_report_updates_the_metric_slot_labelled_viewers() {
-            let (bundle, viewer_tx) = bundle_with_viewer_channel();
+            let (bundle, viewer_tx, _auth_tx) = bundle_with_feeds();
             let mut health = bundle.stream();
 
             viewer_tx.send(ViewerReport::Live { count: 5 }).unwrap();
@@ -959,8 +964,39 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn a_poller_auth_change_updates_the_events_metric_slot() {
+            let (bundle, _viewer_tx, auth_tx) = bundle_with_feeds();
+            let mut health = bundle.stream();
+
+            for (auth, active, label) in [
+                (PollerAuth::AuthRequired, false, "Auth required"),
+                (PollerAuth::Authorized, true, "Active"),
+            ] {
+                auth_tx.send(auth).unwrap();
+
+                let delta = tokio::time::timeout(StdDuration::from_secs(5), health.next())
+                    .await
+                    .expect("the events bridge must publish a health delta")
+                    .expect("the health stream must stay open");
+
+                let slot = &bundle.metrics()[usize::from(delta.index)];
+                assert_eq!(slot.label, "Events", "{auth:?}");
+                assert_eq!(delta.new_value, slot.value, "{auth:?}");
+                assert!(
+                    matches!(
+                        &slot.value,
+                        HealthValue::Status { label: shown, active: lit, .. }
+                            if shown == label && *lit == active
+                    ),
+                    "{auth:?}: {:?}",
+                    slot.value
+                );
+            }
+        }
+
+        #[tokio::test]
         async fn shutting_down_twice_stops_every_bridge_that_holds_the_bundle() {
-            let (bundle, _viewer_tx) = bundle_with_viewer_channel();
+            let (bundle, _viewer_tx, _auth_tx) = bundle_with_feeds();
 
             bundle.shutdown().await;
             bundle.shutdown().await;

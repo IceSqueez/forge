@@ -2226,6 +2226,136 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn chat_ended_offline_carries_the_attached_broadcast_id_not_the_message_id() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(json!([chat_ended_item("ended-msg-id")]), 0),
+        )
+        .await;
+
+        let (poller, rx) = make_poller_with_receiver(&server);
+        let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
+
+        let offline: Vec<&Event> = events
+            .iter()
+            .filter(|e| e.kind == "youtube.stream.offline")
+            .collect();
+        assert_eq!(offline.len(), 1, "exactly one offline, got {events:?}");
+        assert_eq!(
+            offline[0].payload[stream_fields::BROADCAST_ID]
+                .as_str()
+                .unwrap(),
+            "broadcast-1"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn duplicate_chat_ended_message_yields_exactly_one_offline() {
+        let server = MockServer::start().await;
+        mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
+        mount_chat_mock(
+            &server,
+            chat_response(
+                json!([chat_ended_item("ended-1"), chat_ended_item("ended-1")]),
+                0,
+            ),
+        )
+        .await;
+
+        let (poller, rx) = make_poller_with_receiver(&server);
+        let events = drain_events_over_broadcast_cycles(poller, rx, &server, 2).await;
+
+        let offline = events
+            .iter()
+            .filter(|e| e.kind == "youtube.stream.offline")
+            .count();
+        assert_eq!(offline, 1, "dedup must collapse repeats, got {events:?}");
+    }
+
+    async fn request_count(server: &MockServer, request_path: &str) -> usize {
+        server
+            .received_requests()
+            .await
+            .map(|reqs| reqs.iter().filter(|r| r.url.path() == request_path).count())
+            .unwrap_or(0)
+    }
+
+    async fn advance_until_chat_polled(server: &MockServer) {
+        let started = std::time::Instant::now();
+        while request_count(server, "/liveChat/messages").await == 0 {
+            assert!(
+                started.elapsed() < POLLER_WALL_BUDGET,
+                "poller never polled the chat"
+            );
+            tokio::time::sleep(POLLER_CHECK_STEP).await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn ended_chat_is_not_repolled_and_next_discovery_waits_for_the_cadence() {
+        let ended_responses = [
+            (
+                "chatEndedEvent",
+                ResponseTemplate::new(200)
+                    .set_body_json(chat_response(json!([chat_ended_item("ended-1")]), 0)),
+            ),
+            (
+                "403 liveChatEnded",
+                ResponseTemplate::new(403).set_body_json(json!({
+                    "error": { "errors": [{ "reason": "liveChatEnded" }] }
+                })),
+            ),
+        ];
+
+        for (label, response) in ended_responses {
+            let server = MockServer::start().await;
+            mount_broadcast_mock(&server, broadcast_response("lc-live")).await;
+            Mock::given(method("GET"))
+                .and(path("/liveChat/messages"))
+                .respond_with(response)
+                .mount(&server)
+                .await;
+
+            let (poller, _rx) = make_poller_with_receiver(&server);
+            let cancel = CancellationToken::new();
+            let cancel_clone = cancel.clone();
+            let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+
+            advance_until_chat_polled(&server).await;
+            tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS - 5)).await;
+            let chat_polls_before_cadence = request_count(&server, "/liveChat/messages").await;
+            let discoveries_before_cadence = request_count(&server, "/liveBroadcasts").await;
+
+            tokio::time::sleep(Duration::from_secs(10)).await;
+            let started = std::time::Instant::now();
+            while request_count(&server, "/liveBroadcasts").await < 2
+                && started.elapsed() < POLLER_WALL_BUDGET
+            {
+                tokio::time::sleep(POLLER_CHECK_STEP).await;
+            }
+            let discoveries_after_cadence = request_count(&server, "/liveBroadcasts").await;
+
+            cancel.cancel();
+            join.await.unwrap().unwrap();
+
+            assert_eq!(
+                chat_polls_before_cadence, 1,
+                "{label}: ended chat re-polled"
+            );
+            assert_eq!(
+                discoveries_before_cadence, 1,
+                "{label}: discovery ran before the cadence elapsed"
+            );
+            assert_eq!(
+                discoveries_after_cadence, 2,
+                "{label}: discovery did not resume after the cadence"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn same_live_session_resolved_twice_emits_single_online() {
         let server = MockServer::start().await;
         mount_sequenced_broadcasts(

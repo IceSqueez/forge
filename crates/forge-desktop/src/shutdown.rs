@@ -15,9 +15,10 @@ use tokio::runtime::Runtime;
 
 use crate::runtime_handles::RuntimeHandles;
 
-const SETTLE: Duration = Duration::from_millis(20);
+const SETTLE: Duration = Duration::from_millis(10);
 const TIMER_STOP_BUDGET: Duration = Duration::from_millis(10);
 const SCHEDULED_RUNS_STOP_BUDGET: Duration = Duration::from_millis(10);
+const TRIGGER_EVALUATOR_STOP_BUDGET: Duration = Duration::from_millis(10);
 const SERVER_STOP_BUDGET: Duration = Duration::from_millis(40);
 const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(20);
 const FLUSH_BUDGET: Duration = Duration::from_millis(60);
@@ -25,6 +26,7 @@ const ABANDON_BUDGET: Duration = Duration::from_millis(10);
 const STORAGE_CLOSE_BUDGET: Duration = Duration::from_millis(20);
 const GRACEFUL_BUDGET: Duration = TIMER_STOP_BUDGET
     .saturating_add(SCHEDULED_RUNS_STOP_BUDGET)
+    .saturating_add(TRIGGER_EVALUATOR_STOP_BUDGET)
     .saturating_add(SETTLE)
     .saturating_add(SERVER_STOP_BUDGET)
     .saturating_add(SPEAK_STOP_BUDGET)
@@ -117,7 +119,8 @@ impl ShutdownHandles {
         tracing::info!("graceful shutdown: stopping intake");
         let _ = tokio::time::timeout(TIMER_STOP_BUDGET, self.timer_scheduler.stop()).await;
         let _ = tokio::time::timeout(SCHEDULED_RUNS_STOP_BUDGET, self.scheduled_runs.stop()).await;
-        self.trigger_evaluator.shutdown();
+        let _ = tokio::time::timeout(TRIGGER_EVALUATOR_STOP_BUDGET, self.trigger_evaluator.stop())
+            .await;
 
         if let Some(server) = self.server {
             let _ = tokio::time::timeout(SERVER_STOP_BUDGET, server.stop()).await;

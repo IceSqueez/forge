@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_registry::{
-    CancelSignal, ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
+    ChatTriggerFamily, TriggerKindDescriptor, TriggerRegistry, effective_config,
     kind_matches_prefix,
 };
 use forge_types::{
@@ -19,6 +19,7 @@ use crate::catalog::{Catalog, CatalogSnapshot};
 use crate::cooldown::CooldownMap;
 use crate::delivery::{CriticalSubscription, TRIGGER_EVALUATOR};
 use crate::event_log_bridge::identity_digest;
+use crate::task_stop::{StopListener, TaskStop, task_stop};
 use crate::{Config, EventBus, QueueSchedulerHandle, SchedulerRequest};
 
 const DECISION_TARGET: &str = "forge::trigger";
@@ -27,16 +28,7 @@ pub const COMMAND_LINE_TARGET: &str = "forge::command";
 
 const MAX_RESOLVED_EVENT_SHAPES: usize = 4096;
 
-#[derive(Clone)]
-pub struct TriggerEvaluatorHandle {
-    cancel: CancelSignal,
-}
-
-impl TriggerEvaluatorHandle {
-    pub fn shutdown(self) {
-        self.cancel.cancel();
-    }
-}
+pub type TriggerEvaluatorHandle = TaskStop;
 
 pub struct TriggerEvaluator {
     bus: Arc<EventBus>,
@@ -73,16 +65,23 @@ impl TriggerEvaluator {
             cooldowns: CooldownMap::new(config.max_cooldown_entries),
             resolved: ResolvedBindings::default(),
         };
-        let cancel = CancelSignal::new();
-        let cancel_clone = cancel.clone();
-        tokio::spawn(async move { evaluator.run(cancel_clone).await });
-        TriggerEvaluatorHandle { cancel }
+        let (handle, listener) = task_stop();
+        tokio::spawn(async move {
+            evaluator.run(&listener).await;
+            listener.mark_stopped();
+        });
+        handle
     }
 
-    async fn run(mut self, cancel: CancelSignal) {
-        while !cancel.is_cancelled() {
-            let Some(event) = self.subscription.recv().await else {
-                break;
+    async fn run(mut self, stop: &StopListener) {
+        loop {
+            let event = tokio::select! {
+                biased;
+                () = stop.requested() => break,
+                received = self.subscription.recv() => match received {
+                    Some(event) => event,
+                    None => break,
+                },
             };
             self.handle(&event).await;
         }

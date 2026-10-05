@@ -813,11 +813,6 @@ impl ChatSession {
                 (support_fields::GIFTER_LOGIN): gifter_login,
                 (support_fields::GIFTER_DISPLAY_NAME): gifter_display,
             },
-            (support_fields::RECIPIENT): {
-                (support_fields::RECIPIENT_ID): null,
-                (support_fields::RECIPIENT_LOGIN): null,
-                (support_fields::RECIPIENT_DISPLAY_NAME): null,
-            },
         });
         attach_chat_payload(&mut forge_payload, chat_payload);
 

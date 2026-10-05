@@ -26,11 +26,11 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
     }
 
     fn summary(&self) -> &str {
-        "Fires when a subscription is gifted to another user"
+        "Fires when a user gifts one or more subscriptions"
     }
 
     fn search_text(&self) -> &str {
-        "twitch gift sub gifted subscription recipient"
+        "twitch gift sub gifted subscription gifter"
     }
 
     fn icon_name(&self) -> &str {
@@ -69,7 +69,6 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
             TriggerVariables::new()
                 .actor(twitch_actor(ActorRole::Principal), gifter_identity)
                 .actor(twitch_actor(ActorRole::Gifter), gifter_identity)
-                .actor(twitch_actor(ActorRole::Recipient), recipient_identity)
                 .count(CanonicalCount::GiftCount, |event| {
                     payload_read::number(event, fields::GIFT_TOTAL)
                 })
@@ -87,7 +86,7 @@ impl TriggerKindDescriptor for SupportGiftSubDescriptor {
     }
 
     fn actors(&self) -> ActorDeclaration {
-        ActorDeclaration::Actors(&[ActorRole::Gifter, ActorRole::Recipient])
+        ActorDeclaration::Actors(&[ActorRole::Gifter])
     }
 }
 
@@ -97,15 +96,6 @@ fn gifter_identity(event: &Event) -> ActorIdentity {
         fields::GIFTER_ID,
         fields::GIFTER_LOGIN,
         fields::GIFTER_DISPLAY_NAME,
-    )
-}
-
-fn recipient_identity(event: &Event) -> ActorIdentity {
-    payload_read::identity(
-        event.payload.get(fields::RECIPIENT),
-        fields::RECIPIENT_ID,
-        fields::RECIPIENT_LOGIN,
-        fields::RECIPIENT_DISPLAY_NAME,
     )
 }
 

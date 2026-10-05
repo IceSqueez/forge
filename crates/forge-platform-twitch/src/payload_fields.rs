@@ -98,10 +98,6 @@ pub(crate) mod support {
     pub(crate) const GIFTER_ID: &str = "id";
     pub(crate) const GIFTER_DISPLAY_NAME: &str = "display_name";
     pub(crate) const IS_ANONYMOUS: &str = "is_anonymous";
-    pub(crate) const RECIPIENT: &str = "recipient";
-    pub(crate) const RECIPIENT_LOGIN: &str = "login";
-    pub(crate) const RECIPIENT_ID: &str = "id";
-    pub(crate) const RECIPIENT_DISPLAY_NAME: &str = "display_name";
     pub(crate) const GIFT_TOTAL: &str = "gift_total";
     pub(crate) const BITS: &str = "bits";
 }

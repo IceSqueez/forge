@@ -719,4 +719,196 @@ pub(crate) mod tests {
             );
         }
     }
+
+    struct StoreFailsRepo(Arc<InMemRepo>);
+
+    #[async_trait]
+    impl CredentialsRepo for StoreFailsRepo {
+        async fn store(&self, _: &CredentialId, _: &str) -> Result<(), StorageError> {
+            Err(StorageError::Decryption)
+        }
+
+        async fn load(&self, id: &CredentialId) -> Result<Option<String>, StorageError> {
+            self.0.load(id).await
+        }
+
+        async fn delete(&self, id: &CredentialId) -> Result<bool, StorageError> {
+            self.0.delete(id).await
+        }
+
+        async fn list_ids(&self) -> Result<Vec<CredentialId>, StorageError> {
+            self.0.list_ids().await
+        }
+
+        async fn last_refresh(
+            &self,
+            id: &CredentialId,
+        ) -> Result<Option<OffsetDateTime>, StorageError> {
+            self.0.last_refresh(id).await
+        }
+
+        async fn mark_refreshed(&self, id: &CredentialId) -> Result<(), StorageError> {
+            self.0.mark_refreshed(id).await
+        }
+    }
+
+    const ISSUED_TTL_SECS: u64 = 14400;
+
+    async fn mount_token_endpoint(server: &MockServer, response: ResponseTemplate) {
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(response)
+            .mount(server)
+            .await;
+    }
+
+    fn issued_expiry_window(before: SystemTime) -> std::ops::RangeInclusive<SystemTime> {
+        let ttl = std::time::Duration::from_secs(ISSUED_TTL_SECS);
+        (before + ttl)..=(SystemTime::now() + ttl)
+    }
+
+    #[tokio::test]
+    async fn each_refresh_path_publishes_the_expiry_it_stored() {
+        let near_expiry = SystemTime::now() + std::time::Duration::from_secs(10);
+        for path_name in ["proactive", "retry_after_unauthorized"] {
+            let server = MockServer::start().await;
+            mount_token_endpoint(&server, rotating_token_endpoint()).await;
+            let mgr = manager_with_server(InMemRepo::seeded(&stub_cred(near_expiry)), &server);
+            let mut expiry_rx = mgr.subscribe_expiry();
+            assert_eq!(
+                *expiry_rx.borrow(),
+                None,
+                "{path_name}: nothing published yet"
+            );
+            let before = SystemTime::now();
+
+            match path_name {
+                "proactive" => {
+                    mgr.get_valid_access_token().await.unwrap();
+                }
+                _ => {
+                    mgr.refresh(&OAuthToken::new("existing_access"))
+                        .await
+                        .unwrap();
+                }
+            }
+
+            assert!(expiry_rx.has_changed().unwrap(), "{path_name}: no publish");
+            let published = expiry_rx.borrow_and_update().unwrap();
+            assert!(
+                issued_expiry_window(before).contains(&published),
+                "{path_name}: published expiry is not now plus the issued lifetime"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn refresh_without_issued_lifetime_publishes_an_unknown_expiry() {
+        let server = MockServer::start().await;
+        mount_token_endpoint(
+            &server,
+            ResponseTemplate::new(reqwest::StatusCode::OK.as_u16())
+                .set_body_json(json!({ "access_token": "new_access" })),
+        )
+        .await;
+        let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
+        let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+        let mut expiry_rx = mgr.subscribe_expiry();
+
+        mgr.refresh(&OAuthToken::new("existing_access"))
+            .await
+            .unwrap();
+
+        assert!(expiry_rx.has_changed().unwrap());
+        assert_eq!(*expiry_rx.borrow_and_update(), None);
+    }
+
+    #[tokio::test]
+    async fn refresh_that_stores_nothing_leaves_the_expiry_watch_untouched() {
+        #[derive(Clone, Copy)]
+        enum Case {
+            Rejected,
+            UpstreamDown,
+            StoreFails,
+            AlreadyRotated,
+            FreshToken,
+        }
+        let near_expiry = SystemTime::now() + std::time::Duration::from_secs(10);
+        let far_expiry = SystemTime::now() + std::time::Duration::from_secs(3600);
+        let cases = [
+            (Case::Rejected, true),
+            (Case::UpstreamDown, true),
+            (Case::StoreFails, true),
+            (Case::AlreadyRotated, false),
+            (Case::FreshToken, false),
+        ];
+
+        for (case, errors) in cases {
+            let server = MockServer::start().await;
+            let response = match case {
+                Case::Rejected => ResponseTemplate::new(reqwest::StatusCode::BAD_REQUEST.as_u16()),
+                Case::UpstreamDown => {
+                    ResponseTemplate::new(reqwest::StatusCode::SERVICE_UNAVAILABLE.as_u16())
+                }
+                _ => rotating_token_endpoint(),
+            };
+            mount_token_endpoint(&server, response).await;
+            let seeded = match case {
+                Case::FreshToken => InMemRepo::seeded(&stub_cred(far_expiry)),
+                _ => InMemRepo::seeded(&stub_cred(near_expiry)),
+            };
+            let repo: Arc<dyn CredentialsRepo> = match case {
+                Case::StoreFails => Arc::new(StoreFailsRepo(seeded)),
+                _ => seeded,
+            };
+            let mgr = manager_with_server(repo, &server);
+            let expiry_rx = mgr.subscribe_expiry();
+
+            let result = match case {
+                Case::AlreadyRotated => mgr
+                    .refresh(&OAuthToken::new("older_access"))
+                    .await
+                    .map(drop),
+                Case::FreshToken => mgr.get_valid_access_token().await.map(drop),
+                _ => mgr
+                    .refresh(&OAuthToken::new("existing_access"))
+                    .await
+                    .map(drop),
+            };
+
+            assert_eq!(result.is_err(), errors, "case did not behave as arranged");
+            assert!(!expiry_rx.has_changed().unwrap(), "an expiry was published");
+            assert_eq!(*expiry_rx.borrow(), None);
+        }
+    }
+
+    #[test]
+    fn successful_refresh_logs_no_token_text() {
+        let (_, lines) = crate::log_capture::capture_blocking(tracing::Level::TRACE, async {
+            let server = MockServer::start().await;
+            mount_token_endpoint(&server, rotating_token_endpoint()).await;
+            let cred = stub_cred(SystemTime::now() + std::time::Duration::from_secs(10));
+            let mgr = manager_with_server(InMemRepo::seeded(&cred), &server);
+            mgr.refresh(&OAuthToken::new("existing_access"))
+                .await
+                .unwrap();
+        });
+
+        let forge_lines = crate::log_capture::forge_lines(&lines);
+        assert!(
+            !forge_lines.is_empty(),
+            "the refresh must have logged something to inspect"
+        );
+        for secret in [
+            "existing_access",
+            "existing_refresh",
+            "new_access",
+            "rotated_refresh",
+        ] {
+            assert!(
+                forge_lines.iter().all(|line| !line.mentions(secret)),
+                "token text {secret} reached a log line"
+            );
+        }
+    }
 }

@@ -2262,4 +2262,124 @@ mod tests {
         );
         assert!(bundle.handle.lock().await.is_none());
     }
+
+    struct ExpiryBridgeFixture {
+        _server: wiremock::MockServer,
+        bundle: Arc<TwitchIntegrationBundle>,
+        health: HealthStream,
+    }
+
+    const ISSUED_TTL_SECS: u64 = 14400;
+    const SETTLE: Duration = Duration::from_secs(1);
+
+    async fn expiry_bridge_fixture() -> ExpiryBridgeFixture {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(reqwest::StatusCode::OK.as_u16()).set_body_json(
+                    serde_json::json!({
+                        "access_token": "new_access",
+                        "refresh_token": "rotated_refresh",
+                        "expires_in": ISSUED_TTL_SECS,
+                    }),
+                ),
+            )
+            .mount(&server)
+            .await;
+        let stale_expiry = SystemTime::now() + Duration::from_secs(10);
+        let repo: Arc<dyn CredentialsRepo> = crate::credentials_manager::tests::InMemRepo::seeded(
+            &crate::credentials_manager::tests::stub_cred(stale_expiry),
+        );
+        let (_, state_rx) = watch::channel(ChatConnectionState::Disconnected);
+        let built = TwitchIntegrationBundle::for_test(
+            Some("streamer".to_owned()),
+            state_rx,
+            SubscriptionTracker::default(),
+            Arc::clone(&repo),
+            BroadcasterTier::Standard,
+        );
+        let mut inner = Arc::into_inner(built).unwrap();
+        inner.credentials_manager = Arc::new(TwitchCredentialsManager::with_endpoint(
+            repo,
+            "test-client".to_owned(),
+            format!("{}/token", server.uri()),
+        ));
+        let bundle = Arc::new(inner);
+        TwitchIntegrationBundle::spawn_token_expiry_bridge(&bundle);
+        let health = BuiltinHealth::stream(bundle.as_ref());
+        ExpiryBridgeFixture {
+            _server: server,
+            bundle,
+            health,
+        }
+    }
+
+    async fn refresh_stale_token(
+        bundle: &TwitchIntegrationBundle,
+        failed_access: &str,
+    ) -> Option<SystemTime> {
+        bundle
+            .credentials_manager()
+            .refresh(&forge_types::OAuthToken::new(failed_access))
+            .await
+            .unwrap()
+            .expires_at
+    }
+
+    async fn next_delta(health: &mut HealthStream) -> Option<HealthDelta> {
+        tokio::time::timeout(SETTLE, health.next())
+            .await
+            .ok()
+            .flatten()
+    }
+
+    #[tokio::test]
+    async fn token_refresh_updates_the_reported_expiry_and_emits_one_api_calls_delta_per_change() {
+        let mut fx = expiry_bridge_fixture().await;
+        let mut failed_access = "existing_access";
+        for _ in 0..2 {
+            let renewed = refresh_stale_token(&fx.bundle, failed_access).await;
+            failed_access = "new_access";
+            tokio::time::pause();
+
+            let delta = next_delta(&mut fx.health).await;
+            assert_eq!(
+                delta.map(|delta| delta.index),
+                Some(API_CALLS_METRIC_INDEX),
+                "a refresh must emit an API calls delta"
+            );
+            assert!(
+                next_delta(&mut fx.health).await.is_none(),
+                "one refresh must emit exactly one delta"
+            );
+            assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), renewed);
+            tokio::time::resume();
+        }
+    }
+
+    #[tokio::test]
+    async fn token_expiry_stays_unreported_until_a_refresh_publishes_one() {
+        let mut fx = expiry_bridge_fixture().await;
+        tokio::time::pause();
+
+        assert!(next_delta(&mut fx.health).await.is_none());
+        assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), None);
+    }
+
+    #[tokio::test]
+    async fn expiry_bridge_ignores_refreshes_after_the_bundle_is_retired() {
+        let mut fx = expiry_bridge_fixture().await;
+        let before = BuiltinStatus::token_expiry(fx.bundle.as_ref());
+        fx.bundle.shutdown().await;
+
+        refresh_stale_token(&fx.bundle, "existing_access").await;
+        tokio::time::pause();
+
+        assert!(next_delta(&mut fx.health).await.is_none());
+        assert_eq!(BuiltinStatus::token_expiry(fx.bundle.as_ref()), before);
+    }
 }

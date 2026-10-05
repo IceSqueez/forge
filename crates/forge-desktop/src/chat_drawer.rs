@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use forge_components::{BadgeKind, ForgePalette, fmt_relative_time, hash_accent};
 use forge_storage::Viewer;
 use gpui::Rgba;
-use time::OffsetDateTime;
 
 use crate::chat_feed::{AuthorActivity, AuthorIndex};
 
@@ -24,7 +23,6 @@ pub(crate) struct ViewerSummary {
     pub last_seen_label: String,
     pub avatar_letter: char,
     pub avatar_color: Rgba,
-    pub watch_time: String,
     pub sub: SubStatus,
     pub follow: String,
 }
@@ -83,7 +81,6 @@ pub(crate) fn summary_from_activity(
         last_seen_label: fmt_relative_time(Some(activity.last_received_at)),
         avatar_letter,
         avatar_color: hash_accent(username, palette),
-        watch_time: DASH.to_owned(),
         sub: sub_status(activity.role),
         follow: DASH.to_owned(),
     }
@@ -96,7 +93,6 @@ pub(crate) fn enrich_with_storage(
     if let Some(v) = viewer {
         summary.message_count = v.message_count;
         summary.last_seen_label = fmt_relative_time(Some(v.last_seen_at));
-        summary.watch_time = watch_time_since(v.first_seen_at);
     }
     summary
 }
@@ -126,17 +122,6 @@ pub(crate) fn selected_summary(
             let newest = authors.newest()?;
             author_summary(newest, authors, directory, palette)
         })
-}
-
-fn watch_time_since(first_seen: OffsetDateTime) -> String {
-    let mins = (OffsetDateTime::now_utc() - first_seen)
-        .whole_minutes()
-        .max(0);
-    if mins >= 60 {
-        format!("{}h {}m", mins / 60, mins % 60)
-    } else {
-        format!("{mins} min")
-    }
 }
 
 #[cfg(test)]

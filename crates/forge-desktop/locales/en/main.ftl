@@ -1612,7 +1612,6 @@ chat_drawer_set_tts_voice = Set TTS voice...
 chat_drawer_block_tts = Block from TTS
 chat_drawer_timeout = Timeout 10 min
 chat_drawer_ban = Ban from channel
-chat_stat_watch_time = WATCH TIME
 chat_stat_messages = MESSAGES
 chat_stat_sub = SUB
 chat_stat_sub_yes = Yes

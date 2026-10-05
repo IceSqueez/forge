@@ -1438,11 +1438,6 @@ impl ChatView {
             .child(name_col);
 
         let (sub_value, sub_color) = sub_display(summary.sub, palette);
-        let watch_color = if summary.watch_time == DASH {
-            palette.text_faint
-        } else {
-            palette.text_primary
-        };
         let grid = div()
             .flex()
             .flex_col()
@@ -1451,13 +1446,6 @@ impl ChatView {
                 div()
                     .flex()
                     .gap(spacing(Spacing::Xs, density))
-                    .child(stat_cell(
-                        tr!("chat_stat_watch_time"),
-                        summary.watch_time.clone(),
-                        watch_color,
-                        palette,
-                        density,
-                    ))
                     .child(stat_cell(
                         tr!("chat_stat_messages"),
                         summary.message_count.to_string(),
@@ -1863,10 +1851,7 @@ impl ChatView {
             name_row = name_row.child(drawer_role_badge(role, BADGE_ROW, palette));
         }
 
-        let meta = format!(
-            "{} \u{b7} {} msg",
-            summary.watch_time, summary.message_count
-        );
+        let meta = format!("{} msg", summary.message_count);
         let name_col = div()
             .flex_1()
             .min_w(px(0.0))

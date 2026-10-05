@@ -38,6 +38,7 @@ use crate::globals::variant_kind_color;
 use crate::presentation::ActivePresentation;
 use crate::screen::Screen;
 use crate::sidebar::NavRequested;
+use crate::unsaved_work::UnsavedWork;
 
 const LEFT_PANE_W: Pixels = px(200.0);
 const CODE_LINE_HEIGHT: Pixels = px(19.8);
@@ -504,6 +505,7 @@ pub struct ScriptEditorView {
     open: Option<OpenScript>,
     telemetry: Option<ScriptTelemetry>,
     loading: bool,
+    saving: bool,
 
     list_width: Pixels,
     details_width: Pixels,
@@ -542,6 +544,33 @@ pub struct ScriptEditorView {
 }
 
 impl EventEmitter<NavRequested> for ScriptEditorView {}
+
+impl UnsavedWork for ScriptEditorView {
+    fn has_unsaved_work(&self, cx: &App) -> bool {
+        self.current_dirty(cx)
+    }
+
+    fn unsaved_work_name(&self) -> Option<SharedString> {
+        self.open
+            .as_ref()
+            .map(|open| SharedString::from(open.record.name.clone()))
+    }
+
+    fn start_saving_unsaved_work(&mut self, cx: &mut Context<Self>) -> bool {
+        self.save(cx);
+        self.saving
+    }
+
+    fn is_saving_unsaved_work(&self) -> bool {
+        self.saving
+    }
+
+    fn discard_unsaved_work(&mut self, cx: &mut Context<Self>) {
+        self.pending_nav = None;
+        self.revert_current(cx);
+        cx.notify();
+    }
+}
 
 impl ScriptEditorView {
     pub fn new(
@@ -605,6 +634,7 @@ impl ScriptEditorView {
             open: None,
             telemetry: None,
             loading: false,
+            saving: false,
             list_width: LEFT_PANE_W,
             details_width: DETAILS_PANE_W,
             console_height: CONSOLE_INIT_H,
@@ -1127,6 +1157,7 @@ impl ScriptEditorView {
         let repo = Arc::clone(&self.backend) as Arc<dyn ScriptRepo>;
         let registry = Arc::clone(&self.script_registry);
         let bus = Arc::clone(&self.bus);
+        self.saving = true;
         async_bridge::run_async(
             &self.rt_handle,
             async move {
@@ -1156,6 +1187,7 @@ impl ScriptEditorView {
         result: Result<(ScriptRecord, Result<(), String>), String>,
         cx: &mut Context<Self>,
     ) {
+        self.saving = false;
         match result {
             Ok((record, reload)) => {
                 let status_ok = validate_syntax(&record.body).is_ok();

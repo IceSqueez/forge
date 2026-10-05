@@ -3087,3 +3087,10 @@ donation_token_problem_service_error = { $service } відповів помил�
 donation_token_problem_unreadable = { $service } надіслав відповідь, яку forge не зміг прочитати. Спробуйте пізніше.
 donation_token_problem_storage = Не вдалося зберегти токен на цьому комп'ютері.
 donation_token_problem_local = Щось пішло не так усередині forge. Перезапустіть його і спробуйте ще раз.
+
+## Shell - leaving a screen with unsaved changes
+shell_unsaved_leave_title = Піти з незбереженими змінами?
+shell_unsaved_leave_body = На цьому екрані є правки, які так і не збережено. Збережіть їх перед виходом, відкиньте або залишіться й редагуйте далі.
+shell_unsaved_leave_cancel = Редагувати далі
+shell_unsaved_leave_save = Зберегти й вийти
+shell_unsaved_leave_discard = Відкинути

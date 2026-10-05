@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
+use crate::unsaved_work::UnsavedWork;
 
 use super::{EditorMode, OverlaysView};
 
@@ -382,18 +383,22 @@ impl OverlaysView {
         let Some(intent) = self.code.pending_leave.take() else {
             return;
         };
-        if let Some(open) = self.code.open.as_ref() {
-            let original = open.original.clone();
-            self.code
-                .editor
-                .update(cx, |area, cx| area.set_content(original, cx));
-        }
+        self.restore_open_source(cx);
         match intent {
             LeaveIntent::File(file) => self.select_file(file, cx),
             LeaveIntent::Overlay(id) => self.select(id, cx),
             LeaveIntent::Design => self.set_mode(EditorMode::Design, cx),
         }
         cx.notify();
+    }
+
+    fn restore_open_source(&mut self, cx: &mut Context<Self>) {
+        if let Some(open) = self.code.open.as_ref() {
+            let original = open.original.clone();
+            self.code
+                .editor
+                .update(cx, |area, cx| area.set_content(original, cx));
+        }
     }
 
     pub(super) fn render_code_stage(
@@ -775,6 +780,31 @@ impl OverlaysView {
                 let _ = weak.update(cx, |this, cx| this.cancel_leave(cx));
             })
             .into_any_element()
+    }
+}
+
+impl UnsavedWork for OverlaysView {
+    fn has_unsaved_work(&self, cx: &App) -> bool {
+        self.code_dirty(cx)
+    }
+
+    fn unsaved_work_name(&self) -> Option<SharedString> {
+        Some(SharedString::from(self.code.file))
+    }
+
+    fn start_saving_unsaved_work(&mut self, cx: &mut Context<Self>) -> bool {
+        self.save_source(cx);
+        self.code.saving
+    }
+
+    fn is_saving_unsaved_work(&self) -> bool {
+        self.code.saving
+    }
+
+    fn discard_unsaved_work(&mut self, cx: &mut Context<Self>) {
+        self.code.pending_leave.cancel();
+        self.restore_open_source(cx);
+        cx.notify();
     }
 }
 

@@ -9,8 +9,8 @@ use forge_runtime::dashboard::compute_stats;
 use forge_storage::{CredentialsRepo, DataProvider, GlobalsRepo, ScriptRepo, SettingsRepo};
 use forge_types::{IntegrationAvailability, IntegrationId};
 use gpui::{
-    AnyElement, AnyView, App, AppContext, AsyncApp, Context, Entity, EventEmitter, FocusHandle,
-    Window, deferred, div, prelude::*,
+    AnyElement, AnyView, App, AppContext, AsyncApp, ClickEvent, Context, Entity, EventEmitter,
+    FocusHandle, Window, deferred, div, prelude::*,
 };
 
 use crate::home_stats::HomeStats;
@@ -37,6 +37,7 @@ use crate::integration_switch::IntegrationSwitch;
 use crate::integrations::{obs_builtin_object, vtube_builtin_object};
 use crate::integrations_hub::{HubLaunch, IntegrationsHubView};
 use crate::midi_screen::MidiScreenView;
+use crate::navigation_guard::{LeaveDialogHandlers, LeaveTarget, NavigationGuard, leave_dialog};
 use crate::obs_connect::ObsConnectView;
 use crate::obs_credentials_form::ObsConnected;
 use crate::overlays_screen::{OverlaysLaunch, OverlaysView};
@@ -56,6 +57,7 @@ use crate::topics::Topics;
 use crate::triggers_screen::TriggersRegistryView;
 use crate::tts::TtsView;
 use crate::unavailable_builtin::unavailable_builtin;
+use crate::unsaved_work::{UnsavedWork, UnsavedWorkHandle};
 use crate::vtube_connect::VTubeConnectView;
 use crate::vtube_connect_form::VTubeConnected;
 
@@ -77,6 +79,24 @@ const DISCORD_BUILTIN_ID: &str = "discord";
 struct Router {
     screen: Screen,
     content: AnyView,
+    guard: NavigationGuard,
+}
+
+struct RoutedContent {
+    view: AnyView,
+    work: Option<UnsavedWorkHandle>,
+}
+
+impl From<AnyView> for RoutedContent {
+    fn from(view: AnyView) -> Self {
+        Self { view, work: None }
+    }
+}
+
+impl<V: Render> From<Entity<V>> for RoutedContent {
+    fn from(view: Entity<V>) -> Self {
+        AnyView::from(view).into()
+    }
 }
 
 pub struct AppShell {
@@ -97,7 +117,12 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> Self {
         let screen = initial_screen;
-        let content = Self::content_for(&screen, &topics, &handles, cx);
+        let RoutedContent {
+            view: content,
+            work,
+        } = Self::content_for(&screen, &topics, &handles, cx);
+        let mut guard = NavigationGuard::new(window.window_handle());
+        guard.watch(work);
         let focus = cx.focus_handle();
         let chrome = Chrome::new(
             status,
@@ -127,8 +152,19 @@ impl AppShell {
         window.focus(&focus, cx);
         cx.on_focus_lost(window, Self::restore_focus).detach();
 
+        let shell = cx.weak_entity();
+        window.on_window_should_close(cx, move |_window, cx| {
+            shell
+                .update(cx, |shell, cx| shell.allow_window_close(cx))
+                .unwrap_or(true)
+        });
+
         Self {
-            router: Router { screen, content },
+            router: Router {
+                screen,
+                content,
+                guard,
+            },
             chrome,
             focus,
             topics,
@@ -148,7 +184,7 @@ impl AppShell {
         topics: &Topics,
         handles: &Arc<RuntimeHandles>,
         cx: &mut Context<Self>,
-    ) -> AnyView {
+    ) -> RoutedContent {
         match screen {
             Screen::Home => {
                 let home_backend = Arc::clone(&handles.backend);
@@ -248,9 +284,9 @@ impl AppShell {
                 hub.into()
             }
             Screen::BuiltinDetail(id) => match Self::detail_route(id, topics, cx) {
-                DetailRoute::Disabled => Self::disabled_screen(id, topics, handles, cx),
-                DetailRoute::Failed => Self::failed_screen(id, topics, handles, cx),
-                DetailRoute::Live => Self::builtin_detail_screen(id, topics, handles, cx),
+                DetailRoute::Disabled => Self::disabled_screen(id, topics, handles, cx).into(),
+                DetailRoute::Failed => Self::failed_screen(id, topics, handles, cx).into(),
+                DetailRoute::Live => Self::builtin_detail_screen(id, topics, handles, cx).into(),
             },
             Screen::Settings(preselect) => {
                 let handles = Arc::clone(handles);
@@ -277,7 +313,7 @@ impl AppShell {
                     )
                     .with_scheduled(scheduled, cx)
                 });
-                Self::routed(view, cx)
+                Self::routed(view, cx).into()
             }
             Screen::Soundboard => {
                 let player = handles.soundboard_player.clone();
@@ -294,7 +330,7 @@ impl AppShell {
                     SoundboardView::new(player, settings_repo, rt_handle, bus, keys, cx)
                         .with_integration_switch(switch, cx)
                 });
-                Self::routed(view, cx)
+                Self::routed(view, cx).into()
             }
             Screen::Tts(preselect) => {
                 let preselect = *preselect;
@@ -318,7 +354,7 @@ impl AppShell {
                         cx,
                     )
                 });
-                Self::routed(view, cx)
+                Self::routed(view, cx).into()
             }
             Screen::Overlays => {
                 let launch = OverlaysLaunch {
@@ -345,11 +381,7 @@ impl AppShell {
                     bus: Arc::clone(&handles.bus),
                 };
                 let view = cx.new(|cx| OverlaysView::new(launch, cx));
-                cx.subscribe(&view, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
-                view.into()
+                Self::guarded(view, cx)
             }
             Screen::Server => {
                 let server = handles.server.clone();
@@ -479,11 +511,7 @@ impl AppShell {
                         cx,
                     )
                 });
-                cx.subscribe(&editor, |this, _view, event: &NavRequested, cx| {
-                    this.navigate(event.0.clone(), cx);
-                })
-                .detach();
-                editor.into()
+                Self::guarded(editor, cx)
             }
         }
     }
@@ -497,6 +525,19 @@ impl AppShell {
         })
         .detach();
         view.into()
+    }
+
+    fn guarded<V: Render + EventEmitter<NavRequested> + UnsavedWork>(
+        view: Entity<V>,
+        cx: &mut Context<Self>,
+    ) -> RoutedContent {
+        cx.observe(&view, |this, _view, cx| this.settle_pending_leave(cx))
+            .detach();
+        let work = UnsavedWorkHandle::new(view.clone());
+        RoutedContent {
+            view: Self::routed(view, cx),
+            work: Some(work),
+        }
     }
 
     fn scheduled_runs_section(
@@ -831,27 +872,86 @@ impl AppShell {
         if !is_detail_of(&self.router.screen, id) {
             return;
         }
-        self.router.content = Self::builtin_detail_screen(id, &self.topics, &self.handles, cx);
+        let content = Self::builtin_detail_screen(id, &self.topics, &self.handles, cx);
+        self.show(content.into());
         cx.notify();
     }
 
     fn rebuild_current(&mut self, cx: &mut Context<Self>) {
         let screen = self.router.screen.clone();
-        self.router.content = Self::content_for(&screen, &self.topics, &self.handles, cx);
+        let content = Self::content_for(&screen, &self.topics, &self.handles, cx);
+        self.show(content);
         cx.notify();
+    }
+
+    fn show(&mut self, content: RoutedContent) {
+        self.router.content = content.view;
+        self.router.guard.watch(content.work);
     }
 
     fn navigate(&mut self, screen: Screen, cx: &mut Context<Self>) {
         if self.router.screen == screen {
             return;
         }
+        if self.router.guard.blocks(cx) {
+            self.router.guard.ask(LeaveTarget::Screen(screen));
+            cx.notify();
+            return;
+        }
+        self.enter(screen, cx);
+    }
+
+    fn allow_window_close(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.router.guard.blocks(cx) {
+            return true;
+        }
+        self.router.guard.ask(LeaveTarget::CloseWindow);
+        cx.notify();
+        false
+    }
+
+    fn leave_to(&mut self, target: LeaveTarget, cx: &mut Context<Self>) {
+        match target {
+            LeaveTarget::Screen(screen) => self.enter(screen, cx),
+            LeaveTarget::CloseWindow => self.router.guard.close_window(cx),
+        }
+    }
+
+    fn cancel_leave(&mut self, cx: &mut Context<Self>) {
+        self.router.guard.cancel();
+        cx.notify();
+    }
+
+    fn discard_and_leave(&mut self, cx: &mut Context<Self>) {
+        if let Some(target) = self.router.guard.discard(cx) {
+            self.leave_to(target, cx);
+        }
+        cx.notify();
+    }
+
+    fn save_and_leave(&mut self, cx: &mut Context<Self>) {
+        if let Some(target) = self.router.guard.save(cx) {
+            self.leave_to(target, cx);
+        }
+        cx.notify();
+    }
+
+    fn settle_pending_leave(&mut self, cx: &mut Context<Self>) {
+        if let Some(target) = self.router.guard.settle(cx) {
+            self.leave_to(target, cx);
+            cx.notify();
+        }
+    }
+
+    fn enter(&mut self, screen: Screen, cx: &mut Context<Self>) {
         if self.router.screen == Screen::Welcome {
             first_run::spawn_record_completed(
                 Arc::clone(&self.handles.backend) as Arc<dyn SettingsRepo>,
                 &self.handles.rt_handle,
             );
         }
-        self.router.content = Self::content_for(&screen, &self.topics, &self.handles, cx);
+        let content = Self::content_for(&screen, &self.topics, &self.handles, cx);
+        self.show(content);
         self.chrome.sidebar.update(cx, |sidebar, cx| {
             sidebar.set_current(screen.clone());
             cx.notify();
@@ -882,6 +982,26 @@ impl AppShell {
 
     fn go_settings(&mut self, _: &GoSettings, _: &mut Window, cx: &mut Context<Self>) {
         self.navigate(Screen::Settings(None), cx);
+    }
+
+    fn leave_confirm(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.router.guard.is_asking() {
+            return None;
+        }
+        let palette = cx.palette();
+        let weak = cx.entity().downgrade();
+        Some(leave_dialog(
+            self.router.guard.work_name(cx),
+            &palette,
+            LeaveDialogHandlers {
+                cancel: cx.listener(|this, _: &ClickEvent, _, cx| this.cancel_leave(cx)),
+                save: cx.listener(|this, _: &ClickEvent, _, cx| this.save_and_leave(cx)),
+                discard: cx.listener(|this, _: &ClickEvent, _, cx| this.discard_and_leave(cx)),
+                dismiss: move |_window: &mut Window, cx: &mut App| {
+                    let _ = weak.update(cx, |this, cx| this.cancel_leave(cx));
+                },
+            },
+        ))
     }
 
     fn toast_host(&self, cx: &App) -> Option<AnyElement> {
@@ -1018,6 +1138,7 @@ impl Render for AppShell {
             .child(body)
             .when(!welcome, |root| root.child(self.chrome.footer.clone()));
 
-        root.children(self.toast_host(cx))
+        root.children(self.leave_confirm(cx))
+            .children(self.toast_host(cx))
     }
 }

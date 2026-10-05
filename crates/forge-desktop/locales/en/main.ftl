@@ -3003,3 +3003,10 @@ donation_token_problem_service_error = { $service } answered with an error (HTTP
 donation_token_problem_unreadable = { $service } sent an answer forge could not read. Try again later.
 donation_token_problem_storage = The token could not be stored on this computer.
 donation_token_problem_local = Something went wrong inside forge. Restart it and try again.
+
+## Shell - leaving a screen with unsaved changes
+shell_unsaved_leave_title = Leave with unsaved changes?
+shell_unsaved_leave_body = This screen has edits that were never saved. Save them before leaving, discard them, or stay to keep editing.
+shell_unsaved_leave_cancel = Keep editing
+shell_unsaved_leave_save = Save and leave
+shell_unsaved_leave_discard = Discard

@@ -43,6 +43,7 @@ pub struct ConfirmModal {
     tone: ConfirmTone,
     palette: ForgePalette,
     confirm: Option<(ElementId, SharedString, ActionHandler)>,
+    alternate: Option<(ElementId, SharedString, ActionHandler)>,
     cancel: Option<(ElementId, SharedString, ActionHandler)>,
 }
 
@@ -59,6 +60,7 @@ pub fn confirm_modal(
         tone,
         palette: *palette,
         confirm: None,
+        alternate: None,
         cancel: None,
     }
 }
@@ -83,6 +85,17 @@ impl ConfirmModal {
         handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.confirm = Some((id.into(), label.into(), Box::new(handler)));
+        self
+    }
+
+    #[must_use]
+    pub fn on_alternate(
+        mut self,
+        id: impl Into<ElementId>,
+        label: impl Into<SharedString>,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.alternate = Some((id.into(), label.into(), Box::new(handler)));
         self
     }
 
@@ -131,6 +144,7 @@ impl RenderOnce for ConfirmModal {
             tone,
             palette,
             confirm,
+            alternate,
             cancel,
         } = self;
 
@@ -190,9 +204,9 @@ impl RenderOnce for ConfirmModal {
             .child(header)
             .child(hint);
 
-        let has_actions = cancel.is_some() || confirm.is_some();
+        let has_actions = cancel.is_some() || alternate.is_some() || confirm.is_some();
         let mut actions = div().flex().items_center().gap(ACTIONS_GAP);
-        if let Some((id, label, handler)) = cancel {
+        for (id, label, handler) in [cancel, alternate].into_iter().flatten() {
             actions = actions.child(secondary_button(label, &palette).on_click(id, handler));
         }
         if let Some((id, label, handler)) = confirm {

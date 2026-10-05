@@ -799,7 +799,7 @@ impl ChatSession {
         let gift_total = event_data
             .get("total")
             .and_then(|v| v.as_i64())
-            .unwrap_or(1);
+            .unwrap_or_default();
 
         debug!(gifter_id = %gifter_id, "gift sub event received");
 

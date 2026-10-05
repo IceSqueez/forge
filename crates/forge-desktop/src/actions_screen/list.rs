@@ -663,7 +663,8 @@ impl ScreenActionsView {
                 if surviving.is_empty() {
                     continue;
                 }
-                col = col.child(self.render_group_header(index, group, palette, cx));
+                col =
+                    col.child(self.render_group_header(index, group, surviving.len(), palette, cx));
                 if !group.collapsed {
                     for action in surviving {
                         col = col.child(self.render_row(action, palette, cx));
@@ -711,6 +712,7 @@ impl ScreenActionsView {
         &self,
         index: usize,
         group: &ActionGroup,
+        shown_count: usize,
         palette: &ForgePalette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -745,7 +747,7 @@ impl ScreenActionsView {
                     .font_family(mono_family())
                     .text_size(FONT_XXS)
                     .text_color(palette.text_faint)
-                    .child(group.actions.len().to_string()),
+                    .child(shown_count.to_string()),
             )
             .into_any_element()
     }

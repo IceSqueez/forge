@@ -313,10 +313,48 @@ impl Debounced {
         F: Future<Output = Result<(), E>> + Send + 'static,
         E: Display + Send + 'static,
     {
+        self.spawn_debounced(handle, context.into(), fut, |_| {});
+    }
+
+    pub fn schedule_reporting<V, F, E>(
+        &self,
+        handle: &Handle,
+        context: impl Into<SharedString>,
+        fut: F,
+        sink: ErrorSink,
+        cx: &mut Context<V>,
+    ) where
+        V: 'static,
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.spawn_debounced(handle, context.into(), fut, move |context| {
+            let _ = tx.send(context);
+        });
+        cx.spawn(async move |_this, cx| {
+            if let Ok(message) = rx.await {
+                cx.update(|cx| {
+                    sink.report(message.to_string(), cx);
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn spawn_debounced<F, E>(
+        &self,
+        handle: &Handle,
+        context: SharedString,
+        fut: F,
+        on_failure: impl FnOnce(SharedString) + Send + 'static,
+    ) where
+        F: Future<Output = Result<(), E>> + Send + 'static,
+        E: Display + Send + 'static,
+    {
         let ticket = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let generation = Arc::clone(&self.generation);
         let delay = self.delay;
-        let context = context.into();
         handle.spawn(async move {
             tokio::time::sleep(delay).await;
             if generation.load(Ordering::SeqCst) != ticket {
@@ -324,6 +362,7 @@ impl Debounced {
             }
             if let Err(e) = fut.await {
                 tracing::warn!(error = %e, context = %context, "debounced write failed");
+                on_failure(context);
             }
         });
     }

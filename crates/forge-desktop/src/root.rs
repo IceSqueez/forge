@@ -181,6 +181,9 @@ pub fn run_boot(
                     cx.set_global(crate::presentation::ActiveLanguage(
                         handles.startup_language,
                     ));
+                    if let Some(reason) = handles.server_unavailable.clone() {
+                        cx.set_global(crate::server_unavailable::ServerUnavailable(reason.into()));
+                    }
                     platforms.update(cx, |connectivity, cx| {
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();

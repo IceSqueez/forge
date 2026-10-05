@@ -46,6 +46,7 @@ pub struct RuntimeHandles {
     pub donation_services: crate::donation_services::DonationServices,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
+    pub server_unavailable: Option<String>,
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
     pub pipeline_config: Option<forge_speak_queue::PipelineConfigHandle>,
     pub bot_accounts: forge_types::Shared<Vec<String>>,

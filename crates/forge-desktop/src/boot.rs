@@ -432,7 +432,10 @@ pub async fn build_runtime(
     });
     scheduled_runs_cell.set(scheduled_runs.clone());
 
-    let server = build_server(&backend, &bus, &action_engine).await;
+    let ServerBoot {
+        handle: server,
+        unavailable_reason: server_unavailable,
+    } = build_server(&backend, &bus, &action_engine).await;
 
     let mut overlay_kinds_mut = OverlayKindRegistry::new();
     if let Err(e) = register_builtin_kinds(&mut overlay_kinds_mut) {
@@ -546,6 +549,7 @@ pub async fn build_runtime(
         tts_registry,
         speech_output,
         speech_sink: speech_sink as Arc<dyn AudioSink>,
+        server_unavailable,
         audio_router,
         soundboard_player,
         voice_gate,
@@ -583,24 +587,46 @@ async fn build_voice_gate(
     owner
 }
 
+struct ServerBoot {
+    handle: Option<forge_server::ServerHandle>,
+    unavailable_reason: Option<String>,
+}
+
+impl ServerBoot {
+    fn running(handle: forge_server::ServerHandle) -> Self {
+        Self {
+            handle: Some(handle),
+            unavailable_reason: None,
+        }
+    }
+
+    fn unavailable(reason: String) -> Self {
+        Self {
+            handle: None,
+            unavailable_reason: Some(reason),
+        }
+    }
+}
+
 async fn build_server(
     backend: &Arc<dyn DataProvider>,
     bus: &Arc<EventBus>,
     action_engine: &ActionEngineHandle,
-) -> Option<forge_server::ServerHandle> {
+) -> ServerBoot {
     let settings = match forge_server::ServerSettings::load(backend.as_ref()).await {
         Ok(settings) => settings,
         Err(e) => {
-            eprintln!("forge-desktop: server settings load failed, leaving server off: {e}");
-            return None;
+            tracing::error!(error = %e, "server settings load failed, leaving server off");
+            return ServerBoot::unavailable(e.to_string());
         }
     };
     let bind_addr = match settings.bind_address.parse::<std::net::IpAddr>() {
         Ok(ip) => Some(std::net::SocketAddr::new(ip, settings.port)),
         Err(e) => {
-            eprintln!(
-                "forge-desktop: invalid server bind address '{}': {e}",
-                settings.bind_address
+            tracing::warn!(
+                bind_address = %settings.bind_address,
+                error = %e,
+                "invalid server bind address"
             );
             None
         }
@@ -641,16 +667,16 @@ async fn build_server(
 
     if settings.enabled && bind_addr.is_some() {
         match forge_server::start_server(build_config()).await {
-            Ok(handle) => return Some(handle),
-            Err(e) => eprintln!("forge-desktop: server failed to start, leaving it off: {e}"),
+            Ok(handle) => return ServerBoot::running(handle),
+            Err(e) => tracing::error!(error = %e, "server failed to start, leaving it off"),
         }
     }
 
     match forge_server::stopped_server(build_config()).await {
-        Ok(handle) => Some(handle),
+        Ok(handle) => ServerBoot::running(handle),
         Err(e) => {
-            eprintln!("forge-desktop: server state unavailable, leaving it off: {e}");
-            None
+            tracing::error!(error = %e, "server state unavailable, leaving it off");
+            ServerBoot::unavailable(e.to_string())
         }
     }
 }

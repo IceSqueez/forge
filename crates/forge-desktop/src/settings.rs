@@ -499,6 +499,7 @@ impl SettingsView {
             tr!("settings_theme_persist_failed"),
             cx,
         );
+        cx.refresh_windows();
         cx.notify();
     }
 
@@ -537,6 +538,7 @@ impl SettingsView {
             tr!("settings_density_persist_failed"),
             cx,
         );
+        cx.refresh_windows();
         cx.notify();
     }
 

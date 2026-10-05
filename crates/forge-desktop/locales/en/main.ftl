@@ -1183,6 +1183,7 @@ soundboard_pad_adopt_blocked = cannot be copied
 soundboard_pad_not_in_library = not in library yet
 soundboard_toast_clip_failed = { $clip }: { $error }
 soundboard_toast_clip_failed_unnamed = Sound failed: { $error }
+soundboard_persist_failed = Could not save the soundboard setting. It will revert on restart.
 soundboard_no_matches = No sounds match your filter
 soundboard_library_section = Library
 soundboard_library_import = Import
@@ -1333,7 +1334,12 @@ queues_status_held = HELD
 
 ## Queues - live-membership divergence
 
-queues_not_live_badge = NOT LIVE · RESTART
+queues_not_live_badge = NOT LIVE · APPLY
+queues_not_live_tooltip = The scheduler is not running this queue's latest settings. Click to apply them now.
+queues_apply_live_done = Queue settings applied live.
+queues_apply_live_failed = Could not apply the queue live ({ $error }). Restart forge to pick up the change.
+queues_apply_live_missing = the queue no longer exists
+queues_apply_live_not_found = the scheduler does not know this queue
 
 ## Queues - overflow pill
 
@@ -1490,6 +1496,7 @@ server_status_listening = Listening · { $clients ->
 server_status_stopped = Stopped
 server_not_running = Not running
 server_console_disabled_hint = Server is switched off
+server_unavailable_banner = The server could not start: { $reason }. Enabling it will not help until this is fixed; check the log and restart forge.
 server_console_disabled_hint_link = Enable in Settings -> WebSocket
 server_bind_address = BIND ADDRESS
 server_bind_address_loading = Reading address...

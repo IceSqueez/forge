@@ -105,6 +105,7 @@ mod screen;
 mod script_editor;
 mod server_console;
 mod server_restart;
+mod server_unavailable;
 mod settings;
 mod settings_audio;
 mod settings_audio_routing;

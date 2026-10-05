@@ -1204,6 +1204,7 @@ soundboard_pad_adopt_blocked = не копіюється
 soundboard_pad_not_in_library = ще не в бібліотеці
 soundboard_toast_clip_failed = { $clip }: { $error }
 soundboard_toast_clip_failed_unnamed = Збій звуку: { $error }
+soundboard_persist_failed = Не вдалося зберегти налаштування саундборду. Після перезапуску воно скинеться.
 soundboard_no_matches = Немає звуків за фільтром
 soundboard_library_section = Бібліотека
 soundboard_library_import = Імпорт
@@ -1358,7 +1359,12 @@ queues_status_held = УТРИМАНО
 
 ## Черги - розбіжність живого членства
 
-queues_not_live_badge = НЕ В РОБОТІ · ПЕРЕЗАПУСК
+queues_not_live_badge = НЕ В РОБОТІ · ЗАСТОСУВАТИ
+queues_not_live_tooltip = Планувальник не працює з останніми налаштуваннями цієї черги. Натисни, щоб застосувати їх зараз.
+queues_apply_live_done = Налаштування черги застосовано наживо.
+queues_apply_live_failed = Не вдалося застосувати чергу наживо ({ $error }). Перезапусти forge, щоб підхопити зміну.
+queues_apply_live_missing = черги більше не існує
+queues_apply_live_not_found = планувальник не знає цієї черги
 
 ## Черги - чіп переповнення
 
@@ -1517,6 +1523,7 @@ server_status_listening = Слухає · { $clients ->
 server_status_stopped = Зупинено
 server_not_running = Не запущено
 server_console_disabled_hint = Сервер вимкнено
+server_unavailable_banner = Сервер не вдалося запустити: { $reason }. Увімкнення не допоможе, доки це не виправлено; перевір лог і перезапусти forge.
 server_console_disabled_hint_link = Увімкнути в Налаштуваннях -> WebSocket
 server_bind_address = АДРЕСА ПРИВ'ЯЗКИ
 server_bind_address_loading = Читаємо адресу...

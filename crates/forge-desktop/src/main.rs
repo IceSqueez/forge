@@ -168,6 +168,7 @@ const FLAG_SCREEN: &str = "--screen";
 const FLAG_SELECT: &str = "--select";
 const FLAG_HELP: &str = "--help";
 const EXIT_USAGE_ERROR: i32 = 2;
+const RUNTIME_SHUTDOWN_BUDGET: std::time::Duration = std::time::Duration::from_secs(1);
 
 enum StartupRequest {
     Open(Screen),
@@ -352,7 +353,7 @@ fn main() {
     };
     let rt_handle = rt.handle().clone();
 
-    let _rt_guard = rt.enter();
+    let rt_guard = rt.enter();
 
     let application = gpui_platform::application().with_assets(IconAssets);
     let _app_nap_guard = application
@@ -445,4 +446,8 @@ fn main() {
             cx,
         );
     });
+
+    drop(rt_guard);
+    rt.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET);
+    log::set_max_level(log::LevelFilter::Off);
 }

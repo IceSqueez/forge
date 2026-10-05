@@ -159,11 +159,11 @@ mod tests {
     }
 
     #[test]
-    fn a_gift_sub_counts_the_gifts_the_wire_reports_and_falls_back_to_none_at_all() {
+    fn a_gift_sub_counts_the_gifts_the_wire_reports_and_counts_a_silent_wire_as_one() {
         for (wire_total, expected) in [
             (serde_json::json!(5), 5),
             (serde_json::json!(1), 1),
-            (serde_json::json!(null), 0),
+            (serde_json::json!(null), 1),
         ] {
             let event = gift_event(wire_total.clone());
             assert_eq!(

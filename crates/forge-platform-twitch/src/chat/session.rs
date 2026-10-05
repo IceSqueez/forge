@@ -4563,10 +4563,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_gift_sub_carries_the_number_of_gifts_and_counts_a_silent_wire_as_one() {
+    async fn a_gift_sub_carries_the_total_the_wire_reports_and_zero_when_it_is_silent() {
         for (wire, expected) in [
             (serde_json::json!({ "total": 5 }), 5),
-            (serde_json::json!({}), 1),
+            (serde_json::json!({}), 0),
         ] {
             let bus = Arc::new(PlatformEventChannel::new());
             let session = make_session(&bus);

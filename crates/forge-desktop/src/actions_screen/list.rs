@@ -1395,7 +1395,7 @@ mod tests {
                 last_step_outcomes: Vec::new(),
             };
             self.view
-                .update(cx, |view, _| view.sync_timer_membership(&detail));
+                .update(cx, |view, _| view.sync_filter_membership(&detail));
         }
     }
 

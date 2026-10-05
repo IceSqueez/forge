@@ -764,10 +764,10 @@ mod tests {
             "custom.my_event",
             json!({ "user": "alice" }),
         ));
-        let cancel = CancelSignal::new();
-        cancel.cancel();
+        let (stop, listener) = task_stop();
+        tokio::spawn(stop.stop());
 
-        let finished = tokio::time::timeout(Duration::from_secs(5), evaluator.run(cancel)).await;
+        let finished = tokio::time::timeout(Duration::from_secs(5), evaluator.run(&listener)).await;
         assert!(
             finished.is_ok(),
             "run must return once the backlog is drained"

@@ -41,3 +41,16 @@ pub enum ServerError {
     #[error("audio clip of {bytes} bytes does not fit the {budget} byte clip budget")]
     ClipBudgetExhausted { bytes: usize, budget: usize },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_invalid_display_carries_reason() {
+        let e = ServerError::AuthInvalid {
+            reason: "bad token".into(),
+        };
+        assert!(e.to_string().contains("bad token"));
+    }
+}

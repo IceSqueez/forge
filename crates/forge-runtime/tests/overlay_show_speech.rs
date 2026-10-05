@@ -529,6 +529,7 @@ async fn an_overlay_step_attributes_its_show_speech_to_the_viewer_and_event_that
                 name: "Aurora".to_owned(),
             }),
             caused_by: Some(ctx.parent_event_id),
+            ..Default::default()
         }
     );
 }

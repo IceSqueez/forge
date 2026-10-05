@@ -91,6 +91,18 @@ mod tests {
                 "badges": [],
                 "color": "#FF0000",
                 "_chat_viewer": { "id": "222", "name": "loyalfan", "first_message": true },
+                "_chat": {
+                    "platform_msg_id": "m-1",
+                    "author": "loyalfan",
+                    "author_color": "#FF0000",
+                    "segments": [
+                        { "type": "text", "text": "!quote hello there " },
+                        { "type": "emote", "id": "425618", "name": "LUL" },
+                    ],
+                    "badges": [],
+                    "is_event": false,
+                    "event_detail": null,
+                },
             }),
         )
     }
@@ -100,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shared_chat_block_publishes_the_chatter_identity_the_channel_the_line_and_the_first_message_flag()
+    fn the_shared_chat_block_publishes_the_chatter_identity_the_channel_the_line_the_first_message_flag_and_the_emotes()
      {
         let stack = chat_args(serde_json::json!("LoyalFan"));
         let expected = [
@@ -120,11 +132,15 @@ mod tests {
             );
         }
         assert_eq!(stack.get("first_message"), Some(&Variant::Bool(true)));
-        assert_eq!(stack.snapshot().len(), expected.len() + 1);
+        assert_eq!(
+            stack.get("message_emotes"),
+            Some(&Variant::Array(vec![Variant::String("LUL".to_owned())]))
+        );
+        assert_eq!(stack.snapshot().len(), expected.len() + 2);
     }
 
     #[test]
-    fn the_shared_chat_block_declares_the_canonical_names_then_the_channel_the_color_and_the_first_message_flag()
+    fn the_shared_chat_block_declares_the_canonical_names_then_the_channel_the_color_the_first_message_flag_and_the_emotes()
      {
         let declared: Vec<String> = base_chat_variables()
             .schema()
@@ -143,6 +159,7 @@ mod tests {
                 "channel",
                 "user_color",
                 "first_message",
+                "message_emotes",
             ]
         );
     }

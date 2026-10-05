@@ -190,6 +190,31 @@ mod tests {
     }
 
     #[test]
+    fn a_kick_chat_message_publishes_no_emote_codes() {
+        let event = Event::new(
+            EventSource::Kick,
+            "kick.chat.message.sent",
+            serde_json::json!({
+                "message_text": "LUL",
+                "content": "LUL",
+                forge_types::ChatPayload::KEY: {
+                    "platform_msg_id": "m-1",
+                    "author": "viewer",
+                    "author_color": null,
+                    "segments": [{ "type": "emote", "id": "1", "name": "LUL" }],
+                    "badges": [],
+                    "is_event": false,
+                    "event_detail": null,
+                },
+            }),
+        );
+
+        let stack = ChatDescriptor.build_arg_stack(&event);
+
+        assert_eq!(stack.get("message_emotes"), None);
+    }
+
+    #[test]
     fn the_login_and_the_display_name_never_swap_slots() {
         let stack = ChatDescriptor.build_arg_stack(&a_message_from_a_named_viewer());
         for (name, value) in [

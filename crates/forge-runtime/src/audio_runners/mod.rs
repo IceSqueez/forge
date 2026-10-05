@@ -317,6 +317,7 @@ mod tests {
                         name: "Bob".to_owned(),
                     }),
                     caused_by: Some(ctx.parent_event_id),
+                    ..Default::default()
                 },
             }]
         );
@@ -681,6 +682,7 @@ mod tests {
             &mut reg,
             RecordingSoundPlayer::ok(),
             RecordingDispatcher::ok(),
+            crate::TwitchEmoteLexicon::default(),
         )
         .unwrap();
         reg

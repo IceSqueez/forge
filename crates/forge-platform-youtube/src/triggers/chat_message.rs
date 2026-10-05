@@ -130,6 +130,31 @@ mod tests {
     }
 
     #[test]
+    fn a_youtube_chat_message_publishes_no_emote_codes() {
+        let event = Event::new(
+            EventSource::YouTube,
+            "youtube.chat.message",
+            serde_json::json!({
+                "message_text": "LUL",
+                "content": "LUL",
+                forge_types::ChatPayload::KEY: {
+                    "platform_msg_id": "m-1",
+                    "author": "viewer",
+                    "author_color": null,
+                    "segments": [{ "type": "emote", "id": "1", "name": "LUL" }],
+                    "badges": [],
+                    "is_event": false,
+                    "event_detail": null,
+                },
+            }),
+        );
+
+        let stack = ChatMessageDescriptor.build_arg_stack(&event);
+
+        assert_eq!(stack.get("message_emotes"), None);
+    }
+
+    #[test]
     fn a_chat_message_publishes_its_author_as_the_canonical_principal() {
         let stack = ChatMessageDescriptor.build_arg_stack(&chat_event());
         for (name, value) in [

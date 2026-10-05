@@ -112,6 +112,7 @@ fn speak_req(viewer: &str, text: &str) -> SpeakRequest {
         source_event_id: Some(EventId::new()),
         is_reward: false,
         target: None,
+        message_emotes: Default::default(),
     }
 }
 

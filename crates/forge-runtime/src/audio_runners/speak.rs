@@ -287,6 +287,7 @@ mod tests {
             SpeechOrigin {
                 viewer: Some(nova()),
                 caused_by: Some(ctx.parent_event_id),
+                ..Default::default()
             }
         );
     }
@@ -316,6 +317,75 @@ mod tests {
                 Some(nova()),
                 "wait={wait} reward={reward} lost the viewer"
             );
+        }
+    }
+
+    fn lexicon_knowing_lul() -> TwitchEmoteLexicon {
+        let lexicon = TwitchEmoteLexicon::default();
+        lexicon.learn_from(&Event::new(
+            forge_events::EventSource::Twitch,
+            "twitch.channel.chat.message",
+            serde_json::json!({
+                forge_types::ChatPayload::KEY: {
+                    "platform_msg_id": "m-1",
+                    "author": "NovaFox",
+                    "author_color": null,
+                    "segments": [{ "type": "emote", "id": "425618", "name": "LUL" }],
+                    "badges": [],
+                    "is_event": false,
+                    "event_detail": null,
+                }
+            }),
+        ));
+        lexicon
+    }
+
+    #[tokio::test]
+    async fn learned_twitch_emotes_reach_only_twitch_reward_speech() {
+        let strings = |codes: &[&str]| -> Vec<Variant> {
+            codes
+                .iter()
+                .map(|code| Variant::String((*code).to_owned()))
+                .collect()
+        };
+        for (label, platform, reward, message_emotes, text, expected) in [
+            ("twitch reward", "twitch", true, None, "LUL hi", vec!["LUL"]),
+            (
+                "twitch reward without codes",
+                "twitch",
+                true,
+                None,
+                "hi there",
+                vec![],
+            ),
+            ("kick reward", "kick", true, None, "LUL hi", vec![]),
+            (
+                "twitch chat",
+                "twitch",
+                false,
+                Some(strings(&["Kappa"])),
+                "LUL Kappa hi",
+                vec!["Kappa"],
+            ),
+        ] {
+            let speaker = Arc::new(Capturing::default());
+            let runner =
+                SpeakRunner::new(speaker.clone()).with_reward_emotes(lexicon_knowing_lul());
+            let mut stack = chat_stack().set(
+                "user_platform".to_owned(),
+                Variant::String(platform.to_owned()),
+            );
+            if reward {
+                stack = stack.set("reward.id".to_owned(), Variant::String("r-1".to_owned()));
+            }
+            if let Some(codes) = message_emotes {
+                stack = stack.set("message_emotes".to_owned(), Variant::Array(codes));
+            }
+            let ctx = make_ctx(&stack);
+
+            runner.execute(&config(text, false), &ctx).await;
+
+            assert_eq!(speaker.only().origin.message_emotes, expected, "{label}");
         }
     }
 

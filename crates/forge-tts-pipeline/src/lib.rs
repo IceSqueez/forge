@@ -749,6 +749,23 @@ mod tests {
     }
 
     #[test]
+    fn message_emotes_join_the_configured_set_on_a_copy_of_the_config() {
+        let set =
+            |codes: &[&str]| -> EmoteTokenSet { codes.iter().map(|c| (*c).to_owned()).collect() };
+        let base = PipelineConfig {
+            emote_tokens: set(&["Kappa"]),
+            strip_reward_emotes: true,
+            ..PipelineConfig::default()
+        };
+
+        let merged = base.with_message_emotes(&set(&["LUL", "Kappa"]));
+
+        assert_eq!(merged.emote_tokens.tokens, set(&["Kappa", "LUL"]).tokens);
+        assert!(merged.strip_reward_emotes);
+        assert_eq!(base.emote_tokens.tokens, set(&["Kappa"]).tokens);
+    }
+
+    #[test]
     fn emote_stripper_strips_emoji() {
         let mut config = PipelineConfig::default();
         config.emote_sources.emoji = true;

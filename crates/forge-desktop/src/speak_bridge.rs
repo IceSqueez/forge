@@ -557,6 +557,7 @@ mod tests {
         aliases: Vec<forge_voice::VoiceAlias>,
         pipeline: forge_tts_pipeline::PipelineConfig,
         bus: Arc<dyn forge_events::EventPublisher>,
+        engines: forge_tts_core::TtsRegistry,
     }
 
     impl Default for Harness {
@@ -566,6 +567,7 @@ mod tests {
                 aliases: Vec::new(),
                 pipeline: forge_tts_pipeline::PipelineConfig::default(),
                 bus: Arc::new(NullPublisher),
+                engines: forge_tts_core::TtsRegistry::new(),
             }
         }
     }
@@ -579,7 +581,7 @@ mod tests {
                 forge_voice::SynthesisDefaults::default(),
             );
             let deps = forge_speak_queue::QueueDeps {
-                registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
+                registry: Arc::new(std::sync::RwLock::new(self.engines)),
                 resolver: Arc::new(std::sync::RwLock::new(resolver)),
                 pipeline: forge_speak_queue::PipelineConfigHandle::new(self.pipeline),
                 audio_sink: Arc::new(forge_audio::NullSink),
@@ -612,6 +614,7 @@ mod tests {
         SpeechOrigin {
             viewer: Some(viewer),
             caused_by: None,
+            ..Default::default()
         }
     }
 
@@ -711,6 +714,7 @@ mod tests {
             SpeechOrigin {
                 viewer: Some(viewer("twitch", "141981764", "NovaFox")),
                 caused_by: Some(trigger),
+                ..Default::default()
             },
         )
         .await
@@ -726,6 +730,146 @@ mod tests {
             .map(|event| event.caused_by)
             .collect();
         assert_eq!(enqueued, vec![Some(trigger)]);
+    }
+
+    struct CapturingEngine {
+        id: EngineId,
+        heard: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl forge_tts_core::TtsEngine for CapturingEngine {
+        fn engine_id(&self) -> &EngineId {
+            &self.id
+        }
+
+        fn capabilities(&self) -> &forge_tts_core::EngineCapabilities {
+            static CAPS: forge_tts_core::EngineCapabilities = forge_tts_core::EngineCapabilities {
+                ssml: false,
+                neural_voices: false,
+                streaming: false,
+                custom_lexicons: false,
+            };
+            &CAPS
+        }
+
+        async fn list_voices(
+            &self,
+        ) -> Result<Vec<forge_tts_core::TtsVoice>, forge_tts_core::TtsError> {
+            Ok(vec![forge_tts_core::TtsVoice {
+                id: VoiceId("cap-1".to_owned()),
+                name: "cap-1".to_owned(),
+                locale: "en-US".to_owned(),
+                gender: forge_tts_core::VoiceGender::Neutral,
+                engine_id: self.id.clone(),
+                is_neural: false,
+                sample_rate_hint: 22_050,
+            }])
+        }
+
+        async fn synthesize(
+            &self,
+            request: forge_tts_core::SynthesisRequest,
+        ) -> Result<forge_audio::PcmBuffer, forge_tts_core::TtsError> {
+            self.heard.lock().unwrap().push(request.text);
+            Ok(forge_audio::PcmBuffer::new(vec![0i16; 4], 22_050, 1))
+        }
+    }
+
+    struct CapturingFactory(Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl forge_tts_core::TtsEngineFactory for CapturingFactory {
+        fn create(&self) -> Result<Box<dyn forge_tts_core::TtsEngine>, forge_tts_core::TtsError> {
+            Ok(Box::new(CapturingEngine {
+                id: EngineId("cap".to_owned()),
+                heard: Arc::clone(&self.0),
+            }))
+        }
+    }
+
+    fn twitch_chat_with_emote(code: &str) -> forge_events::Event {
+        forge_events::Event::new(
+            forge_events::EventSource::Twitch,
+            "twitch.channel.chat.message",
+            serde_json::json!({
+                forge_types::ChatPayload::KEY: {
+                    "platform_msg_id": "m-1",
+                    "author": "NovaFox",
+                    "author_color": null,
+                    "segments": [
+                        { "type": "emote", "id": "425618", "name": code },
+                        { "type": "text", "text": " that was funny" },
+                    ],
+                    "badges": [],
+                    "is_event": false,
+                    "event_detail": null,
+                }
+            }),
+        )
+    }
+
+    #[tokio::test]
+    async fn an_emote_seen_in_twitch_chat_is_not_read_out_of_a_later_reward() {
+        use forge_registry::{RunContext, SubActionRunner};
+        use forge_types::{ArgStack, SubActionConfig, Variant};
+
+        let bus = forge_runtime::EventBus::new(Arc::new(forge_runtime::NullEventLogRepo));
+        let lexicon = forge_runtime::TwitchEmoteLexicon::default();
+        forge_runtime::spawn_twitch_emote_learning(&bus, lexicon.clone());
+        bus.publish(twitch_chat_with_emote("LUL"));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while lexicon.codes_in("LUL").is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the chat emote was never learned");
+
+        let heard = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut engines = forge_tts_core::TtsRegistry::new();
+        engines.register(
+            EngineId("cap".to_owned()),
+            Arc::new(CapturingFactory(Arc::clone(&heard))),
+        );
+        let (handle, mut stream) = Harness {
+            pipeline: forge_tts_pipeline::PipelineConfig {
+                strip_reward_emotes: true,
+                ..Default::default()
+            },
+            engines,
+            ..Harness::default()
+        }
+        .spawn();
+        let runner =
+            forge_runtime::audio_runners::SpeakRunner::new(Arc::new(SpeakBridge::new(handle)))
+                .with_reward_emotes(lexicon);
+        let stack = ArgStack::new()
+            .set(
+                "user_id".to_owned(),
+                Variant::String("141981764".to_owned()),
+            )
+            .set(
+                "user_name".to_owned(),
+                Variant::String("NovaFox".to_owned()),
+            )
+            .set(
+                "user_platform".to_owned(),
+                Variant::String("twitch".to_owned()),
+            )
+            .set("reward.id".to_owned(), Variant::String("r-1".to_owned()));
+        let mut config = SubActionConfig::new();
+        config.insert("text".to_owned(), Variant::String("LUL hi".to_owned()));
+        config.insert("wait_for_completion".to_owned(), Variant::Bool(false));
+        let ctx = RunContext::leaf(&stack, 0, forge_types::EventId::new(), &NullPublisher);
+
+        runner.execute(&config, &ctx).await;
+        next_matching(&mut stream, |event| match event {
+            SpeakEvent::Started { .. } => Some(()),
+            _ => None,
+        })
+        .await;
+
+        assert_eq!(*heard.lock().unwrap(), vec!["hi".to_owned()]);
     }
 
     #[tokio::test]

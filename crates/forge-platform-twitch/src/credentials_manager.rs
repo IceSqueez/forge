@@ -20,6 +20,7 @@ pub struct TwitchCredentialsManager {
     repo: Arc<dyn CredentialsRepo>,
     refresher: PkceRefresher,
     refresh_guard: tokio::sync::Mutex<()>,
+    expiry_tx: tokio::sync::watch::Sender<Option<SystemTime>>,
 }
 
 impl TwitchCredentialsManager {
@@ -43,7 +44,12 @@ impl TwitchCredentialsManager {
             repo,
             refresher,
             refresh_guard: tokio::sync::Mutex::new(()),
+            expiry_tx: tokio::sync::watch::channel(None).0,
         }
+    }
+
+    pub(crate) fn subscribe_expiry(&self) -> tokio::sync::watch::Receiver<Option<SystemTime>> {
+        self.expiry_tx.subscribe()
     }
 
     pub async fn load(&self) -> Result<Option<StoredCredential>, PlatformError> {
@@ -131,6 +137,7 @@ impl TwitchCredentialsManager {
         store_credential(self.repo.as_ref(), &renewed)
             .await
             .map_err(storage_err)?;
+        self.expiry_tx.send_replace(renewed.expires_at);
         Ok(renewed)
     }
 }

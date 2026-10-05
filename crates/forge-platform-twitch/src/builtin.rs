@@ -40,6 +40,7 @@ use crate::reward_collection::REWARDS_COLLECTION;
 use crate::sub_actions::identity::{BroadcasterTier, resolve_broadcaster_tier};
 use crate::subscriptions::{SubStatus, SubscriptionTracker};
 
+const API_CALLS_METRIC_INDEX: u8 = 3;
 const VIEWER_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 pub const HELIX_BUDGET_CAPACITY: u32 = 800;
@@ -155,6 +156,7 @@ impl TwitchIntegrationBundle {
             retired: CancellationToken::new(),
         });
         Self::spawn_health_bridge(&bundle);
+        Self::spawn_token_expiry_bridge(&bundle);
         Self::spawn_viewer_poll(&bundle, transport);
         Self::spawn_identity_refresh(&bundle);
         Self::spawn_lifecycle_seed(&bundle);
@@ -209,6 +211,29 @@ impl TwitchIntegrationBundle {
                     new_value: bundle.api_calls_health_value(),
                 };
                 let _ = bundle.health_tx.send(api_calls_delta);
+            }
+        });
+    }
+
+    fn spawn_token_expiry_bridge(bundle: &Arc<Self>) {
+        let bundle = Arc::clone(bundle);
+        let mut expiry_rx = bundle.credentials_manager.subscribe_expiry();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = bundle.retired.cancelled() => break,
+                    changed = expiry_rx.changed() => if changed.is_err() { break },
+                }
+                let expiry = *expiry_rx.borrow_and_update();
+                if let Ok(mut guard) = bundle.token_expires_at.write() {
+                    *guard = expiry;
+                }
+                let delta = HealthDelta {
+                    index: API_CALLS_METRIC_INDEX,
+                    new_value: bundle.api_calls_health_value(),
+                };
+                let _ = bundle.health_tx.send(delta);
             }
         });
     }

@@ -217,8 +217,126 @@ fn resolve_credential(
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::ffi::OsString;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn overrides(pairs: &[(EndpointSurface, String)]) -> PlatformEndpoints {
+        PlatformEndpoints::resolve(|variable| {
+            pairs
+                .iter()
+                .find(|(surface, _)| surface.env_var() == variable)
+                .map(|(_, base)| OsString::from(base))
+        })
+        .unwrap()
+    }
+
+    async fn trigger_callback(auth_url: &str, code: &str) {
+        let query_value = |key: &str| {
+            auth_url
+                .split(&format!("{key}="))
+                .nth(1)
+                .unwrap()
+                .split('&')
+                .next()
+                .unwrap()
+                .replace("%3A", ":")
+                .replace("%2F", "/")
+        };
+        let url = format!(
+            "{}?code={code}&state={}",
+            query_value("redirect_uri"),
+            query_value("state")
+        );
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let _ = reqwest::Client::new().get(&url).send().await;
+        });
+    }
+
+    async fn routes_of(server: &MockServer) -> Vec<(String, String)> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.method.to_string(), r.url.path().to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn default_endpoints_keep_the_production_urls() {
+        let flow = KickAuthFlow::new(
+            &PlatformEndpoints::default(),
+            "cid".to_owned(),
+            "csec".to_owned(),
+        );
+        assert_eq!(flow.users_endpoint, "https://api.kick.com/public/v1/users");
+        assert_eq!(
+            kick_token_endpoint(&PlatformEndpoints::default()),
+            KICK_TOKEN_ENDPOINT
+        );
+    }
+
+    #[tokio::test]
+    async fn oauth_override_moves_the_authorize_url_to_the_override_host() {
+        let endpoints = overrides(&[(
+            EndpointSurface::KickOAuth,
+            "http://127.0.0.1:9/oauth".to_owned(),
+        )]);
+        let mut flow = KickAuthFlow::new(&endpoints, "cid".to_owned(), "csec".to_owned());
+        let url = flow.start().await.unwrap().auth_url;
+        assert!(
+            url.starts_with("http://127.0.0.1:9/oauth/authorize?"),
+            "{url}"
+        );
+    }
+
+    #[tokio::test]
+    async fn overrides_route_token_exchange_and_user_lookup_to_their_own_hosts() {
+        let oauth = MockServer::start().await;
+        let api = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "acc",
+                "refresh_token": "ref",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            })))
+            .mount(&oauth)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/users"))
+            .and(header("authorization", "Bearer acc"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [{"user_id": 7, "name": "streamer"}]
+            })))
+            .mount(&api)
+            .await;
+        let endpoints = overrides(&[
+            (EndpointSurface::KickOAuth, oauth.uri()),
+            (EndpointSurface::KickPublicApi, api.uri()),
+        ]);
+
+        let mut flow = KickAuthFlow::new(&endpoints, "cid".to_owned(), "csec".to_owned());
+        let auth_url = flow.start().await.unwrap().auth_url;
+        trigger_callback(&auth_url, "code123").await;
+        let bundle = flow
+            .wait_for_authorization(Duration::from_secs(2))
+            .await
+            .unwrap();
+
+        assert_eq!(bundle.user_id, 7);
+        assert_eq!(
+            routes_of(&oauth).await,
+            vec![("POST".to_owned(), "/token".to_owned())]
+        );
+        assert_eq!(
+            routes_of(&api).await,
+            vec![("GET".to_owned(), "/users".to_owned())]
+        );
+    }
 
     #[test]
     fn kick_auth_flow_yields_local_callback_variant() {
@@ -286,7 +404,11 @@ mod tests {
 
     #[tokio::test]
     async fn start_builds_authorize_url_with_kick_endpoint_and_redirect_quirk() {
-        let mut flow = KickAuthFlow::new("test_client".to_owned(), "test_secret".to_owned());
+        let mut flow = KickAuthFlow::new(
+            &PlatformEndpoints::default(),
+            "test_client".to_owned(),
+            "test_secret".to_owned(),
+        );
         let url = flow.start().await.unwrap().auth_url;
         assert!(url.starts_with(KICK_AUTHORIZE_ENDPOINT));
         assert!(url.contains("client_id=test_client"));

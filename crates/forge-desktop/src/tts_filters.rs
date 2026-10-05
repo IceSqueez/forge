@@ -2348,8 +2348,108 @@ fn is_replacement_kind(kind: &FilterRuleKind) -> bool {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
+    use std::sync::Mutex;
+
+    use forge_storage::StorageError;
+    use forge_tts_pipeline::PipelineConfig;
+    use gpui::TestAppContext;
+
     use super::*;
+    use crate::test_support::{install_presentation, pump, runtime};
+
+    #[derive(Default)]
+    struct RecordingFilters {
+        saved: Mutex<Vec<TtsPipelineSettings>>,
+    }
+
+    #[async_trait::async_trait]
+    impl TtsFiltersRepo for RecordingFilters {
+        async fn list_rules(&self) -> Result<Vec<FilterRule>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn replace_rules(&self, _: &[FilterRule]) -> Result<(), StorageError> {
+            Ok(())
+        }
+
+        async fn get_pipeline_settings(&self) -> Result<TtsPipelineSettings, StorageError> {
+            Ok(TtsPipelineSettings::default())
+        }
+
+        async fn set_pipeline_settings(
+            &self,
+            settings: &TtsPipelineSettings,
+        ) -> Result<(), StorageError> {
+            self.saved.lock().unwrap().push(settings.clone());
+            Ok(())
+        }
+    }
+
+    fn initial_config() -> PipelineConfigHandle {
+        PipelineConfigHandle::new(build_config_lenient(&[], &TtsPipelineSettings::default()))
+    }
+
+    #[gpui::test]
+    fn emote_stripping_toggles_persist_and_reach_the_live_pipeline_config(cx: &mut TestAppContext) {
+        type Live = fn(&PipelineConfig) -> bool;
+        type Saved = fn(&TtsPipelineSettings) -> bool;
+        let cases: [(OutputOpt, Saved, Live); 2] = [
+            (
+                OutputOpt::StripTwitchEmotes,
+                |s| s.strip_twitch_emotes,
+                |c| c.emote_sources.twitch,
+            ),
+            (
+                OutputOpt::StripRewardEmotes,
+                |s| s.strip_reward_emotes,
+                |c| c.strip_reward_emotes,
+            ),
+        ];
+        install_presentation(cx);
+        let rt = runtime();
+        for (opt, saved_flag, live_flag) in cases {
+            let repo = Arc::new(RecordingFilters::default());
+            let handle = initial_config();
+            let view = cx.update(|cx| {
+                cx.new(|cx| {
+                    TtsFiltersView::new(
+                        repo.clone(),
+                        Some(handle.clone()),
+                        Shared::new(Vec::new()),
+                        None,
+                        rt.handle().clone(),
+                        cx,
+                    )
+                })
+            });
+            pump(&rt);
+            cx.run_until_parked();
+
+            let loaded_on = view.read_with(cx, |v, _| v.output_flag(opt));
+            let initial_live = live_flag(&handle.load());
+            view.update(cx, |v, cx| v.toggle_output(opt, cx));
+            pump(&rt);
+            cx.run_until_parked();
+            let after_off = (
+                view.read_with(cx, |v, _| v.output_flag(opt)),
+                repo.saved.lock().unwrap().last().map(saved_flag),
+                live_flag(&handle.load()),
+            );
+            view.update(cx, |v, cx| v.toggle_output(opt, cx));
+            pump(&rt);
+            cx.run_until_parked();
+            let after_on = (
+                repo.saved.lock().unwrap().last().map(saved_flag),
+                live_flag(&handle.load()),
+            );
+
+            assert!(loaded_on && initial_live, "{}", opt.key());
+            assert_eq!(after_off, (false, Some(false), false), "{}", opt.key());
+            assert_eq!(after_on, (Some(true), true), "{}", opt.key());
+        }
+    }
 
     #[test]
     fn parse_max_duration_accepts_whole_seconds_inside_the_inclusive_range() {

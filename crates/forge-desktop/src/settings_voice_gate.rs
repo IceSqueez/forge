@@ -711,3 +711,34 @@ async fn load_devices_and_settings(
         .map_err(|e| e.to_string())?;
     Ok((devices, stored))
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::test_support::{install_presentation, runtime, test_backend};
+
+    #[gpui::test]
+    fn retrying_a_switched_off_gate_does_not_start_a_monitor(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let rt = runtime();
+        let (backend, _writes) = test_backend();
+        let owner = Arc::new(VoiceGateOwner::new(rt.handle().clone(), None));
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                SettingsVoiceGateView::new(
+                    backend,
+                    rt.handle().clone(),
+                    Arc::clone(&owner),
+                    false,
+                    cx,
+                )
+            })
+        });
+
+        view.update(cx, |view, cx| view.retry_gate(cx));
+
+        assert!(!owner.is_running());
+    }
+}

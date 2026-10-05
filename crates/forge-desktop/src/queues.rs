@@ -2051,4 +2051,149 @@ mod tests {
 
         assert_eq!(row_depth(&view, cx), Some((4, 1, 2)));
     }
+
+    fn mount_stored(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        scheduler: QueueSchedulerHandle,
+        stored: Vec<Queue>,
+    ) -> Entity<QueuesView> {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let health = cx.new(|_| QueueHealth::new());
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(move || Ok(stored.clone()));
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                QueuesView::new(
+                    health,
+                    scheduler,
+                    Arc::new(repo),
+                    Arc::new(StubActions),
+                    rt.handle().clone(),
+                    cx,
+                )
+            })
+        });
+        settle(cx, rt);
+        view
+    }
+
+    fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        for _ in 0..4 {
+            pump(rt);
+            cx.run_until_parked();
+        }
+    }
+
+    fn diverged(view: &Entity<QueuesView>, cx: &mut TestAppContext) -> Vec<QueueId> {
+        view.read_with(cx, |view, _| view.diverged.iter().copied().collect())
+    }
+
+    fn toasts(cx: &mut TestAppContext) -> Vec<(ToastKind, String)> {
+        cx.update(|cx| {
+            cx.global::<Toasts>()
+                .items()
+                .iter()
+                .map(|t| (t.kind, t.message.to_string()))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_stored_queue_the_scheduler_does_not_run_is_flagged_not_live(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (live, orphan) = (QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, queue(live));
+
+        let view = mount_stored(cx, &rt, scheduler, vec![queue(live), queue(orphan)]);
+
+        assert_eq!(diverged(&view, cx), vec![orphan]);
+    }
+
+    #[gpui::test]
+    fn applying_a_not_live_queue_registers_it_clears_the_flag_and_toasts_success(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (live, orphan) = (QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, queue(live));
+        let view = mount_stored(cx, &rt, scheduler, vec![queue(live), queue(orphan)]);
+
+        view.update(cx, |view, cx| view.apply_live(orphan, cx));
+        settle(cx, &rt);
+
+        assert_eq!(
+            (diverged(&view, cx), toasts(cx)),
+            (
+                Vec::new(),
+                vec![(ToastKind::Success, tr!("queues_apply_live_done"))]
+            )
+        );
+    }
+
+    #[gpui::test]
+    fn applying_a_queue_deleted_meanwhile_toasts_the_failure_and_stays_flagged(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (live, orphan) = (QueueId::new(), QueueId::new());
+        let scheduler = held_queue_scheduler(&rt, queue(live));
+        let view = mount_stored(cx, &rt, scheduler, vec![queue(live), queue(orphan)]);
+
+        view.update(cx, |view, cx| view.apply_live(QueueId::new(), cx));
+        settle(cx, &rt);
+
+        assert_eq!(
+            (diverged(&view, cx), toasts(cx)),
+            (
+                vec![orphan],
+                vec![(
+                    ToastKind::Error,
+                    tr!(
+                        "queues_apply_live_failed",
+                        error = tr!("queues_apply_live_missing")
+                    )
+                )]
+            )
+        );
+    }
+
+    #[test]
+    fn apply_queue_live_reconfigures_a_queue_the_scheduler_already_runs() {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, queue(id));
+        let mut changed = queue(id);
+        changed.concurrency = 3;
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list()
+            .returning(move || Ok(vec![changed.clone()]));
+
+        let outcome = rt.block_on(apply_queue_live(Arc::new(repo), scheduler.clone(), id));
+        let states = rt.block_on(scheduler.queue_states());
+
+        assert_eq!(outcome, Ok(()));
+        assert!(states.is_ok_and(|s| s.contains_key(&id)));
+    }
+
+    #[test]
+    fn apply_queue_live_reports_a_store_failure_as_text() {
+        let rt = runtime();
+        let id = QueueId::new();
+        let scheduler = held_queue_scheduler(&rt, queue(id));
+        let mut repo = MockQueueRepo::new();
+        repo.expect_list().returning(|| {
+            Err(forge_storage::StorageError::Connection {
+                reason: "disk gone".to_owned(),
+            })
+        });
+
+        let outcome = rt.block_on(apply_queue_live(Arc::new(repo), scheduler, id));
+
+        assert!(outcome.is_err_and(|message| message.contains("disk gone")));
+    }
 }

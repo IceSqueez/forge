@@ -15,3 +15,26 @@ pub(crate) fn unavailable_banner(cx: &App, palette: &ForgePalette) -> Option<Any
         .into_any_element(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+
+    use super::*;
+    use crate::presentation::ActivePresentation;
+    use crate::test_support::install_presentation;
+
+    #[gpui::test]
+    fn the_banner_is_shown_only_once_a_startup_failure_reason_is_recorded(cx: &mut TestAppContext) {
+        install_presentation(cx);
+        let shown = |cx: &mut TestAppContext| {
+            cx.update(|cx| unavailable_banner(cx, &cx.palette()).is_some())
+        };
+
+        let before = shown(cx);
+        cx.update(|cx| cx.set_global(ServerUnavailable("port in use".into())));
+        let after = shown(cx);
+
+        assert_eq!((before, after), (false, true));
+    }
+}

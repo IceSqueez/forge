@@ -299,11 +299,19 @@ impl OverlayPropertyPanel {
         self.refresh_latest(cx);
     }
 
-    fn persist_on_release(&mut self, cx: &mut App) {
+    pub(super) fn take_unsaved_config(&mut self, cx: &App) -> Option<OverlayConfig> {
         let sparse = self.pending_config(cx);
         if sparse == self.stored {
-            return;
+            return None;
         }
+        self.stored = sparse.clone();
+        Some(sparse)
+    }
+
+    fn persist_on_release(&mut self, cx: &mut App) {
+        let Some(sparse) = self.take_unsaved_config(cx) else {
+            return;
+        };
         let repo = Arc::clone(&self.repo);
         let service = self.service.clone();
         let id = self.overlay_id.clone();

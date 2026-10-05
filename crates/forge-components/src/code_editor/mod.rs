@@ -20,7 +20,7 @@ use crate::text_area::{
 };
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
-use crate::text_input::InputEvent;
+use crate::text_input::{FocusNextField, InputEvent};
 use crate::tokens::{BORDER_THIN, FONT_XS, Radius, mono_family, radius};
 
 use element::{CodeEditorElement, PAD_Y};
@@ -31,13 +31,17 @@ const INDENT_UNIT: &str = "  ";
 const LINE_HEIGHT_RATIO: f32 = 1.5;
 const ROW_CENTER: f32 = 0.5;
 const EDGE_INSET: Pixels = px(1.0);
+const SAVE_CHORD: &str = "secondary-s";
+const LEAVE_CHORD: &str = "escape";
 
-actions!(forge_code_editor, [Indent, Outdent]);
+actions!(forge_code_editor, [Indent, Outdent, SaveCode, LeaveEditor]);
 
 pub fn bind_code_editor_keys(cx: &mut App) {
     let mut bindings = editing_key_bindings(KEY_CONTEXT);
     bindings.push(KeyBinding::new("tab", Indent, Some(KEY_CONTEXT)));
     bindings.push(KeyBinding::new("shift-tab", Outdent, Some(KEY_CONTEXT)));
+    bindings.push(KeyBinding::new(SAVE_CHORD, SaveCode, Some(KEY_CONTEXT)));
+    bindings.push(KeyBinding::new(LEAVE_CHORD, LeaveEditor, Some(KEY_CONTEXT)));
     cx.bind_keys(bindings);
 }
 
@@ -78,7 +82,7 @@ impl CodeEditor {
         cx: &mut Context<Self>,
     ) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            focus_handle: cx.focus_handle().tab_stop(true),
             buffer: TextBuffer::default(),
             lines: Lines::new(language),
             geometry: Geometry::default(),
@@ -314,6 +318,15 @@ impl CodeEditor {
             self.preferred_x = None;
             self.edited(cx);
         }
+    }
+
+    fn cancel_composition(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.buffer.discard_marked() {
+            return false;
+        }
+        self.preferred_x = None;
+        self.edited(cx);
+        true
     }
 
     fn caret_moved(&mut self, cx: &mut Context<Self>) {
@@ -553,6 +566,9 @@ impl Render for CodeEditor {
         self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);
         set_caret_blinking(self, focused && window.is_visible(), cx);
+        let editor_handle = cx.entity().downgrade();
+        let leave_focus = focus.clone();
+        let stuck_focus = focus.clone();
 
         let editor = div()
             .key_context(KEY_CONTEXT)
@@ -579,6 +595,22 @@ impl Render for CodeEditor {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))
+            .on_action(move |_: &LeaveEditor, window, cx| {
+                let composing = editor_handle
+                    .update(cx, |editor, cx| editor.cancel_composition(cx))
+                    .unwrap_or(false);
+                if composing {
+                    return;
+                }
+                leave_focus.dispatch_action(&FocusNextField, window, cx);
+                cx.propagate();
+            })
+            .on_action(move |_: &FocusNextField, window, cx| {
+                window.focus_next(cx);
+                if stuck_focus.is_focused(window) {
+                    cx.propagate();
+                }
+            })
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))

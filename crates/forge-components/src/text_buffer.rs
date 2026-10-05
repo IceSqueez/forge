@@ -200,6 +200,14 @@ impl TextBuffer {
         self.marked = None;
     }
 
+    pub(crate) fn discard_marked(&mut self) -> bool {
+        let Some(range) = self.marked.take() else {
+            return false;
+        };
+        self.apply(range, "", EditKind::Standalone);
+        true
+    }
+
     pub(crate) fn move_to(&mut self, offset: usize) {
         self.selection.range = offset..offset;
         self.group_open = false;

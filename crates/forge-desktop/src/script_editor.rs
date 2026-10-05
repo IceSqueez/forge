@@ -6,9 +6,9 @@ use forge_components::highlight::Language;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, MenuItem, ModalSize,
-    OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextInput, badge,
-    body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon, inline_edit,
-    install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
+    OverlayPosition, Radius, ResizeEdge, ResizeRange, SaveCode, SearchState, Spacing, TextInput,
+    badge, body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
+    inline_edit, install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
@@ -1135,7 +1135,7 @@ impl ScriptEditorView {
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
-        if !self.current_dirty(cx) {
+        if self.saving || !self.current_dirty(cx) {
             return;
         }
         let Some(record) = self.open.as_ref().map(|o| o.record.clone()) else {
@@ -2353,8 +2353,11 @@ impl ScriptEditorView {
         row.into_any_element()
     }
 
-    fn code_area(&self, palette: &ForgePalette) -> AnyElement {
+    fn code_area(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         div()
+            .on_action(cx.listener(|this, _: &SaveCode, _, cx| {
+                this.start_saving_unsaved_work(cx);
+            }))
             .flex_1()
             .min_h_0()
             .flex()
@@ -3312,7 +3315,7 @@ impl Render for ScriptEditorView {
         let file_bar = self.file_bar(&palette, density, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let left = self.left_pane(&palette, density, cx);
-        let code = self.code_area(&palette);
+        let code = self.code_area(&palette, cx);
         let console = self.console(&palette, density, cx);
 
         let centre = div()

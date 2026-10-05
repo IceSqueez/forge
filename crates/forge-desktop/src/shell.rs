@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem::Discriminant;
 use std::sync::Arc;
 
-use forge_components::{Density, FOOTER_HEIGHT, Spacing, spacing, toast_card};
+use forge_components::{Density, FOOTER_HEIGHT, FocusNextField, Spacing, spacing, toast_card};
 use forge_events::EventPublisher;
 use forge_registry::TriggerRegistry;
 use forge_runtime::dashboard::compute_stats;
@@ -986,6 +986,14 @@ impl AppShell {
         self.navigate(Screen::Settings(None), cx);
     }
 
+    fn focus_next_stop(&mut self, _: &FocusNextField, window: &mut Window, cx: &mut Context<Self>) {
+        let before = window.focused(cx);
+        window.focus_next(cx);
+        if window.focused(cx) == before {
+            window.focus(&self.focus, cx);
+        }
+    }
+
     fn leave_confirm(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.router.guard.is_asking() {
             return None;
@@ -1131,6 +1139,7 @@ impl Render for AppShell {
             .on_action(cx.listener(Self::go_triggers))
             .on_action(cx.listener(Self::go_twitch))
             .on_action(cx.listener(Self::go_settings))
+            .on_action(cx.listener(Self::focus_next_stop))
             .size_full()
             .relative()
             .flex()

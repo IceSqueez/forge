@@ -21,9 +21,9 @@ use crate::hotkey_bindings::persisted_hotkey_combos;
 use crate::hotkey_sync::HotkeyReconciler;
 use crate::integration_supervisor::{IntegrationFactory, RunningIntegration, TaskGroup};
 use crate::integrations::{
-    BuiltinObject, NoopRateLimiter, ObsInstallSeed, VTubeInstallSeed, creds_of,
-    kick_builtin_object, publisher, spawn_chat_send_bridge, spawn_connect, spawn_event_bridge,
-    twitch_builtin_object, youtube_builtin_object,
+    BuiltinObject, ObsInstallSeed, VTubeInstallSeed, creds_of, kick_builtin_object, publisher,
+    spawn_chat_send_bridge, spawn_connect, spawn_event_bridge, twitch_builtin_object,
+    youtube_builtin_object,
 };
 use crate::obs_credentials_form::{OBS_AUTO_RECONNECT_KEY, OBS_CONNECT_ON_LAUNCH_KEY};
 use crate::vtube_connect_form::{VTUBE_AUTO_RECONNECT_KEY, VTUBE_CONNECT_ON_LAUNCH_KEY};
@@ -358,7 +358,7 @@ pub(crate) fn wire_kick(
     ));
     let sender = Arc::new(forge_platform_kick::KickSendChat::new(
         endpoints,
-        Arc::new(NoopRateLimiter),
+        Arc::clone(&rate_limiter),
     ));
     let moderation = Arc::new(forge_platform_kick::KickModeration::new(
         endpoints,

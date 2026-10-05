@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, ChatPlatform,
-    PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome, RateLimiter, SectionIcon,
+    PlatformEndpoints, QuickActions, SectionIcon,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -242,21 +241,6 @@ pub fn kick_builtin_object(
         obs_client: None,
         vtube_client: None,
     }
-}
-
-pub(crate) struct NoopRateLimiter;
-
-#[async_trait::async_trait]
-impl RateLimiter for NoopRateLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
-        Ok(RateLimitOutcome::Granted)
-    }
-
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
 pub async fn build_integrations(
@@ -604,9 +588,25 @@ mod tests {
     use super::*;
     use forge_events::EventStream;
     use forge_platform_core::{AuthFlow, ConnectionState, PlatformCapabilities};
+    use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
     use tokio::sync::{Semaphore, broadcast, mpsc};
+
+    struct NoopRateLimiter;
+
+    #[async_trait::async_trait]
+    impl RateLimiter for NoopRateLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+
+        fn remaining(&self) -> u32 {
+            u32::MAX
+        }
+
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
 
     #[derive(Debug, PartialEq)]
     enum PlatformCall {

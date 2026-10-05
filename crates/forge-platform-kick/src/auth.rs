@@ -221,6 +221,8 @@ mod tests {
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    static CALLBACK_PORT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     fn overrides(pairs: &[(EndpointSurface, String)]) -> PlatformEndpoints {
         PlatformEndpoints::resolve(|variable| {
             pairs
@@ -280,6 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn oauth_override_moves_the_authorize_url_to_the_override_host() {
+        let _port = CALLBACK_PORT_LOCK.lock().await;
         let endpoints = overrides(&[(
             EndpointSurface::KickOAuth,
             "http://127.0.0.1:9/oauth".to_owned(),
@@ -294,6 +297,7 @@ mod tests {
 
     #[tokio::test]
     async fn overrides_route_token_exchange_and_user_lookup_to_their_own_hosts() {
+        let _port = CALLBACK_PORT_LOCK.lock().await;
         let oauth = MockServer::start().await;
         let api = MockServer::start().await;
         Mock::given(method("POST"))
@@ -404,6 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_builds_authorize_url_with_kick_endpoint_and_redirect_quirk() {
+        let _port = CALLBACK_PORT_LOCK.lock().await;
         let mut flow = KickAuthFlow::new(
             &PlatformEndpoints::default(),
             "test_client".to_owned(),

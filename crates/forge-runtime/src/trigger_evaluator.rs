@@ -752,32 +752,88 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn run_dispatches_events_that_reached_the_bus_before_the_cancel() {
-        let bus = EventBus::new(Arc::new(NullEventLogRepo));
-        let fixture = fixture(Arc::clone(&bus)).await;
-        let mut sub = bus.subscribe();
-        let evaluator = fixture.evaluator(bus.subscribe_critical(TRIGGER_EVALUATOR));
+    const STOP_BOUND: Duration = Duration::from_millis(10);
 
-        bus.publish(Event::new(
+    async fn let_spawned_tasks_park() {
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    async fn count_done(sub: &mut EventSubscription, wanted: usize) -> usize {
+        let mut seen = 0;
+        while seen < wanted && collect_kind(sub, "action.done", 30).await.is_some() {
+            seen += 1;
+        }
+        seen
+    }
+
+    fn matching_event() -> Event {
+        Event::new(
             EventSource::Server,
             "custom.my_event",
             json!({ "user": "alice" }),
-        ));
-        let (stop, listener) = task_stop();
-        tokio::spawn(stop.stop());
+        )
+    }
 
-        let finished = tokio::time::timeout(Duration::from_secs(5), evaluator.run(&listener)).await;
-        assert!(
-            finished.is_ok(),
-            "run must return once the backlog is drained"
-        );
+    #[tokio::test]
+    async fn an_idle_evaluator_returns_from_stop_without_waiting_for_another_event() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let handle = fixture.spawn_evaluator();
+        let_spawned_tasks_park().await;
+        tokio::time::pause();
 
-        let done = collect_kind(&mut sub, "action.done", 30).await;
+        let stopped = tokio::time::timeout(STOP_BOUND, handle.stop()).await;
+
         assert!(
-            done.is_some(),
-            "an event published before the cancel must still reach the scheduler"
+            stopped.is_ok(),
+            "an evaluator parked on an empty bus must hear the stop"
         );
+    }
+
+    #[tokio::test]
+    async fn a_stop_heard_before_the_first_poll_still_dispatches_every_queued_event() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let mut sub = bus.subscribe();
+        let handle = fixture.spawn_evaluator();
+        bus.publish(matching_event());
+        bus.publish(matching_event());
+
+        let stopped = tokio::time::timeout(Duration::from_secs(5), handle.stop()).await;
+
+        assert_eq!((stopped.is_ok(), count_done(&mut sub, 2).await), (true, 2));
+    }
+
+    #[tokio::test]
+    async fn an_event_in_hand_when_the_stop_arrives_is_still_dispatched() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let mut sub = bus.subscribe();
+        let handle = fixture.spawn_evaluator();
+        let_spawned_tasks_park().await;
+        bus.publish(matching_event());
+        tokio::task::yield_now().await;
+
+        let stopped = tokio::time::timeout(Duration::from_secs(5), handle.stop()).await;
+
+        assert_eq!((stopped.is_ok(), count_done(&mut sub, 1).await), (true, 1));
+    }
+
+    #[tokio::test]
+    async fn run_returns_without_a_stop_once_the_bus_feeding_it_is_gone() {
+        let bus = EventBus::new(Arc::new(NullEventLogRepo));
+        let fixture = fixture(Arc::clone(&bus)).await;
+        let gone = EventBus::new(Arc::new(NullEventLogRepo));
+        let evaluator = fixture.evaluator(gone.subscribe_critical(TRIGGER_EVALUATOR));
+        drop(gone);
+        let (_stop, listener) = task_stop();
+        tokio::time::pause();
+
+        let finished = tokio::time::timeout(STOP_BOUND, evaluator.run(&listener)).await;
+
+        assert!(finished.is_ok());
     }
 
     const COMMAND_KIND: &str = "test.chat.command";

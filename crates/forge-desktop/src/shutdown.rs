@@ -163,6 +163,7 @@ impl ShutdownHandles {
 mod tests {
     use std::io::Write;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use forge_events::{Event, EventSource};
     use forge_registry::{SubActionRegistry, TriggerRegistry};
@@ -411,6 +412,15 @@ mod tests {
     struct Intake {
         timer_catalog: Arc<Catalog>,
         runs: Arc<dyn ScheduledRunRepo>,
+        evaluator_catalog: Arc<Catalog>,
+    }
+
+    fn stalled_catalog() -> Arc<Catalog> {
+        Catalog::new(
+            Arc::new(StalledActions),
+            Arc::new(MockTriggerInstanceRepo::new()),
+            CatalogRevision::new(),
+        )
     }
 
     impl Intake {
@@ -421,23 +431,35 @@ mod tests {
             Self {
                 timer_catalog: stub_catalog(),
                 runs: Arc::new(runs),
+                evaluator_catalog: stub_catalog(),
             }
         }
 
         fn stalled() -> Self {
             Self {
-                timer_catalog: Catalog::new(
-                    Arc::new(StalledActions),
-                    Arc::new(MockTriggerInstanceRepo::new()),
-                    CatalogRevision::new(),
-                ),
+                timer_catalog: stalled_catalog(),
                 runs: Arc::new(StalledRuns),
+                evaluator_catalog: stalled_catalog(),
             }
         }
 
         fn with_stalled_timer(self) -> Self {
             Self {
-                timer_catalog: Self::stalled().timer_catalog,
+                timer_catalog: stalled_catalog(),
+                ..self
+            }
+        }
+
+        fn with_stalled_runs(self) -> Self {
+            Self {
+                runs: Arc::new(StalledRuns),
+                ..self
+            }
+        }
+
+        fn with_evaluator_catalog(self, evaluator_catalog: Arc<Catalog>) -> Self {
+            Self {
+                evaluator_catalog,
                 ..self
             }
         }
@@ -505,7 +527,7 @@ mod tests {
         let trigger_evaluator = spawn_trigger_evaluator(
             Arc::clone(&bus),
             Arc::new(TriggerRegistry::new()),
-            Arc::clone(&catalog),
+            intake.evaluator_catalog,
             scheduler.clone(),
             Config::default(),
         );
@@ -553,7 +575,10 @@ mod tests {
      {
         for (intake, label) in [
             (Intake::idle as fn() -> Intake, "idle intake"),
-            (Intake::stalled, "stalled timer and scheduled runs"),
+            (
+                Intake::stalled,
+                "stalled timer, scheduled runs and trigger evaluator",
+            ),
         ] {
             let captured = Captured::default();
             let sink = captured.clone();
@@ -604,6 +629,70 @@ mod tests {
                 )
             ),
             "the scheduled runs were stopped before the timer scheduler"
+        );
+        shutting_down.abort();
+    }
+
+    struct EvaluationProbe {
+        loads: Arc<AtomicUsize>,
+        revision: CatalogRevision,
+    }
+
+    impl EvaluationProbe {
+        fn new() -> (Self, Arc<Catalog>) {
+            let loads = Arc::new(AtomicUsize::new(0));
+            let counted = Arc::clone(&loads);
+            let mut actions = MockActionRepo::new();
+            actions.expect_list().returning(move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Ok(Vec::new())
+            });
+            let revision = CatalogRevision::new();
+            let catalog = Catalog::new(
+                Arc::new(actions),
+                Arc::new(MockTriggerInstanceRepo::new()),
+                revision.clone(),
+            );
+            (Self { loads, revision }, catalog)
+        }
+
+        async fn evaluates(&self, bus: &EventBus) -> bool {
+            let before = self.loads.load(Ordering::SeqCst);
+            self.revision.advance();
+            bus.publish(Event::new(
+                EventSource::Core,
+                "probe",
+                serde_json::Value::Null,
+            ));
+            settle().await;
+            self.loads.load(Ordering::SeqCst) > before
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_trigger_evaluator_keeps_evaluating_until_the_scheduled_runs_stop_runs_out_of_budget()
+     {
+        let (probe, evaluator_catalog) = EvaluationProbe::new();
+        let bus = EventBus::new(Arc::new(RecordedEventLog::default()));
+        let handles = handles_over(
+            Arc::clone(&bus),
+            Intake::idle()
+                .with_stalled_runs()
+                .with_evaluator_catalog(evaluator_catalog),
+        );
+        settle().await;
+        let shutting_down = tokio::spawn(handles.run_graceful());
+
+        tokio::time::advance(SCHEDULED_RUNS_STOP_BUDGET / 2).await;
+        settle().await;
+        let during_scheduled_runs_stop = probe.evaluates(&bus).await;
+        tokio::time::advance(SCHEDULED_RUNS_STOP_BUDGET).await;
+        settle().await;
+        let after_scheduled_runs_stop = probe.evaluates(&bus).await;
+
+        assert_eq!(
+            (during_scheduled_runs_stop, after_scheduled_runs_stop),
+            (true, false)
         );
         shutting_down.abort();
     }
@@ -709,6 +798,7 @@ mod tests {
     fn every_step_budget_up_to_the_unwritten_row_count_fits_inside_the_graceful_budget() {
         let worst_case = TIMER_STOP_BUDGET
             + SCHEDULED_RUNS_STOP_BUDGET
+            + TRIGGER_EVALUATOR_STOP_BUDGET
             + SETTLE
             + SERVER_STOP_BUDGET
             + SPEAK_STOP_BUDGET

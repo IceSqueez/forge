@@ -713,7 +713,7 @@ mod tests {
     use forge_storage_sqlite::SqliteBackend;
 
     use crate::test_support::{Sandboxed, sandboxed_backend};
-    use forge_types::{EventId, Variant};
+    use forge_types::{EventId, Variant, unknown_chat_target_reason};
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
@@ -1472,13 +1472,43 @@ mod tests {
                 "kick",
             ),
             (
-                r#"forge::chat::whisper("myspace", "viewer", "hello")"#,
-                "myspace",
+                r#"forge::chat::whisper("YouTube", "viewer", "hello")"#,
+                "youtube",
             ),
+            (r#"forge::chat::whisper("Kick", "viewer", "hello")"#, "kick"),
         ] {
             let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
 
             assert_runtime_error_mentions(call, result, &whispers_unsupported_reason(target));
+            assert!(sent.is_empty(), "{call} published {sent:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mixed_case_chat_target_is_published_normalized_for_send_reply_and_whisper() {
+        for call in [
+            r#"forge::chat::send("Twitch", "hello")"#,
+            r#"forge::chat::reply(" TWITCH ", "msg-1", "hello")"#,
+            r#"forge::chat::whisper("Twitch", "viewer", "hello")"#,
+        ] {
+            let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
+
+            assert!(result.is_ok(), "{call} failed: {result:?}");
+            assert_eq!(sent.len(), 1, "{call}");
+            assert_eq!(sent[0].payload["target"].as_str(), Some("twitch"), "{call}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_chat_target_fails_unsent_naming_the_valid_targets() {
+        for call in [
+            r#"forge::chat::send("typo", "hello")"#,
+            r#"forge::chat::reply("typo", "msg-1", "hello")"#,
+            r#"forge::chat::whisper("typo", "viewer", "hello")"#,
+        ] {
+            let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
+
+            assert_runtime_error_mentions(call, result, &unknown_chat_target_reason("typo"));
             assert!(sent.is_empty(), "{call} published {sent:?}");
         }
     }

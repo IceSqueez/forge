@@ -82,6 +82,46 @@ mod tests {
     }
 
     #[test]
+    fn from_wire_accepts_any_case_and_padding_and_rejects_everything_else() {
+        for (raw, expected) in [
+            ("Twitch", Some(PlatformId::Twitch)),
+            (" KICK\t", Some(PlatformId::Kick)),
+            ("YouTube", Some(PlatformId::YouTube)),
+            ("youtube", Some(PlatformId::YouTube)),
+            ("", None),
+            ("   ", None),
+            ("twitc", None),
+            ("twitch2", None),
+            ("tw itch", None),
+        ] {
+            assert_eq!(PlatformId::from_wire(raw), expected, "raw {raw:?}");
+        }
+    }
+
+    #[test]
+    fn resolve_chat_target_reads_blank_as_broadcast_and_normalizes_known_platforms() {
+        for (raw, expected) in [
+            ("", None),
+            (" \t", None),
+            ("Twitch", Some(PlatformId::Twitch)),
+            ("  YOUTUBE ", Some(PlatformId::YouTube)),
+            ("kick", Some(PlatformId::Kick)),
+        ] {
+            assert_eq!(resolve_chat_target(raw), Ok(expected), "raw {raw:?}");
+        }
+    }
+
+    #[test]
+    fn resolve_chat_target_rejects_unknown_names_listing_every_valid_target() {
+        let reason = resolve_chat_target(" myspace ").unwrap_err();
+
+        assert!(reason.contains("\"myspace\""), "{reason}");
+        for valid in ["twitch", "youtube", "kick"] {
+            assert!(reason.contains(valid), "{reason}");
+        }
+    }
+
+    #[test]
     fn requested_chat_target_trims_padding_and_reads_blank_as_broadcast() {
         for (raw, expected) in [
             ("twitch", Some("twitch")),

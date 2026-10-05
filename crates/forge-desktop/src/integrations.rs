@@ -852,6 +852,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn mixed_case_target_routes_only_to_the_named_platform() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        let (kick, mut kick_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        spawn_chat_send_bridge(Arc::clone(&bus), kick, "kick", EventSource::Kick);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "target": "Twitch", "message": "cased" }),
+        ));
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "target": "kick", "message": "sentinel" }),
+        ));
+
+        assert_eq!(
+            expect_send(&mut twitch_rx).await,
+            ("twitch".to_string(), "cased".to_string())
+        );
+        assert_eq!(
+            expect_send(&mut kick_rx).await,
+            ("kick".to_string(), "sentinel".to_string()),
+            "kick must skip the request targeted at Twitch"
+        );
+    }
+
+    #[tokio::test]
     async fn blank_target_request_reaches_every_platform_bridge() {
         for blank in ["", "   "] {
             let bus = test_bus();

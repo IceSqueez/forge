@@ -3,8 +3,8 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, Density, FONT_LG, FONT_MD, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, Radius, Spacing, ToastKind, body_family, card, empty_state,
-    ghost_button_with_icon, icon, mono_family, page_frame, radius, spacing, sparkline, status_dot,
-    tr,
+    ghost_button_with_icon, icon, mono_family, page_frame, pulse_dot, radius, spacing, sparkline,
+    status_dot, tr,
 };
 use forge_registry::TriggerRegistry;
 use forge_storage::DataProvider;
@@ -443,7 +443,11 @@ impl HomeView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .child(status_dot(accent, HEALTH_LIVE_DOT))
+            .child(if connected {
+                pulse_dot("home-health-live-pulse", accent, HEALTH_LIVE_DOT).into_any_element()
+            } else {
+                status_dot(accent, HEALTH_LIVE_DOT).into_any_element()
+            })
             .child(
                 div()
                     .font_family(mono_family())
@@ -800,7 +804,11 @@ impl HomeView {
             .flex()
             .items_center()
             .gap(spacing(Spacing::Xxs, density))
-            .child(status_dot(palette.success, EVENT_LIVE_DOT))
+            .child(pulse_dot(
+                "home-events-live-pulse",
+                palette.success,
+                EVENT_LIVE_DOT,
+            ))
             .child(
                 div()
                     .font_family(mono_family())

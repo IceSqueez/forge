@@ -22,7 +22,7 @@ pub(crate) struct Selection {
     pub(crate) reversed: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Change {
     start: usize,
     removed: String,
@@ -127,6 +127,16 @@ fn spliced(text: &str, range: Range<usize>, replacement: &str) -> Arc<str> {
 }
 
 #[derive(Debug)]
+struct CompositionOrigin {
+    text: Arc<str>,
+    selection: Selection,
+    group_open: bool,
+    pushes: u64,
+    last_change: Option<Change>,
+    redo_stack: Vec<Change>,
+}
+
+#[derive(Debug)]
 pub(crate) struct TextBuffer {
     text: Arc<str>,
     selection: Selection,
@@ -134,6 +144,8 @@ pub(crate) struct TextBuffer {
     undo_stack: VecDeque<Change>,
     redo_stack: Vec<Change>,
     group_open: bool,
+    pushes: u64,
+    composition_origin: Option<CompositionOrigin>,
 }
 
 impl Default for TextBuffer {
@@ -145,6 +157,8 @@ impl Default for TextBuffer {
             undo_stack: VecDeque::new(),
             redo_stack: Vec::new(),
             group_open: false,
+            pushes: 0,
+            composition_origin: None,
         }
     }
 }
@@ -191,6 +205,7 @@ impl TextBuffer {
             reversed: false,
         };
         self.marked = None;
+        self.composition_origin = None;
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.group_open = false;
@@ -204,7 +219,12 @@ impl TextBuffer {
         let Some(range) = self.marked.take() else {
             return false;
         };
-        self.apply(range, "", EditKind::Standalone);
+        match self.composition_origin.take() {
+            Some(origin) => self.roll_back_composition(origin),
+            None => {
+                self.apply(range, "", EditKind::Standalone);
+            }
+        }
         true
     }
 
@@ -398,6 +418,9 @@ impl TextBuffer {
     ) {
         let range = self.target_range(range_utf16);
         let start = range.start;
+        if self.marked.is_none() {
+            self.composition_origin = Some(self.capture_composition_origin());
+        }
         let recorded = self.apply(range, text, EditKind::Typing);
         self.marked = (!text.is_empty()).then(|| start..start + text.len());
         if let Some(local) = selected_utf16_in_text {
@@ -437,6 +460,30 @@ impl TextBuffer {
         self.group_open = false;
         self.undo_stack.push_back(change);
         true
+    }
+
+    fn capture_composition_origin(&self) -> CompositionOrigin {
+        CompositionOrigin {
+            text: self.text.clone(),
+            selection: self.selection.clone(),
+            group_open: self.group_open,
+            pushes: self.pushes,
+            last_change: self.undo_stack.back().cloned(),
+            redo_stack: self.redo_stack.clone(),
+        }
+    }
+
+    fn roll_back_composition(&mut self, origin: CompositionOrigin) {
+        for _ in 0..self.pushes.saturating_sub(origin.pushes) {
+            self.undo_stack.pop_back();
+        }
+        if let (Some(last), Some(slot)) = (origin.last_change, self.undo_stack.back_mut()) {
+            *slot = last;
+        }
+        self.redo_stack = origin.redo_stack;
+        self.text = origin.text;
+        self.selection = origin.selection;
+        self.group_open = origin.group_open;
     }
 
     fn delete_toward(&mut self, kind: EditKind) {
@@ -507,6 +554,7 @@ impl TextBuffer {
             _ => false,
         };
         if !merged {
+            self.pushes += 1;
             self.undo_stack.push_back(Change {
                 start: range.start,
                 removed: self.text[range].to_string(),

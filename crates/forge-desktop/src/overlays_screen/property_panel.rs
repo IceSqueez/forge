@@ -1194,6 +1194,45 @@ pub(crate) mod tests {
         assert!(fixture.repo.saved().is_empty());
     }
 
+    #[gpui::test]
+    fn the_unsaved_config_is_handed_over_once_and_only_when_the_form_moved(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let edited = config(&[(HEADLINE, Variant::String(EDITED_HEADLINE.into()))]);
+        for (typed, expected) in [
+            (None, [None, None]),
+            (Some(EDITED_HEADLINE), [Some(edited), None]),
+        ] {
+            let fixture = Fixture::new(cx, OverlayConfig::new());
+            if let Some(text) = typed {
+                fixture.type_into(cx, HEADLINE, text);
+            }
+
+            let taken = [(); 2].map(|()| {
+                fixture
+                    .panel()
+                    .update(cx, |panel, cx| panel.take_unsaved_config(cx))
+            });
+
+            assert_eq!(taken, expected, "typed {typed:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_panel_torn_down_after_its_edit_was_handed_over_writes_nothing_more(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx, OverlayConfig::new());
+        fixture.type_into(cx, HEADLINE, EDITED_HEADLINE);
+        fixture
+            .panel()
+            .update(cx, |panel, cx| panel.take_unsaved_config(cx));
+
+        fixture.release(cx);
+
+        assert!(fixture.repo.saved().is_empty());
+    }
+
     const CLIP_A: &str = "clip:01J9P4S2M7Q8V3X5Y6Z7A8B9C0";
     const CLIP_B: &str = "clip:01J9P4S2M7Q8V3X5Y6Z7A8B9C1";
 

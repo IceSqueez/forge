@@ -771,6 +771,41 @@ mod tests {
     }
 
     #[test]
+    fn discarding_removes_only_a_live_composition_and_reports_whether_there_was_one() {
+        let untouched: BufferOp = |_| {};
+        let empty_composition: BufferOp = |b| b.replace_and_mark_in_utf16_range(None, "", None);
+        let live_composition: BufferOp =
+            |b| b.replace_and_mark_in_utf16_range(None, "ні", Some(2..2));
+        let committed_composition: BufferOp = |b| {
+            b.replace_and_mark_in_utf16_range(None, "ні", None);
+            b.replace_in_utf16_range(None, "ніч");
+        };
+        for (label, prepare, expected) in [
+            ("nothing composed", untouched, (false, "ab", 1)),
+            ("empty composition", empty_composition, (false, "ab", 1)),
+            ("live composition", live_composition, (true, "ab", 1)),
+            (
+                "committed composition",
+                committed_composition,
+                (false, "aнічb", 7),
+            ),
+        ] {
+            let mut buffer = loaded("ab");
+            buffer.move_to(1);
+            prepare(&mut buffer);
+
+            let discarded = buffer.discard_marked();
+
+            assert_eq!(
+                (discarded, buffer.as_str(), buffer.cursor()),
+                expected,
+                "{label}"
+            );
+            assert_eq!(buffer.marked_range(), None, "{label}");
+        }
+    }
+
+    #[test]
     fn out_of_bounds_utf16_ranges_are_clamped_to_the_text() {
         for (range, expected) in [
             (1..99, "aZ"),

@@ -812,4 +812,163 @@ mod tests {
 
         assert_eq!(kept, (19, false));
     }
+
+    const DIALOG_CONTEXT: &str = "CodeEditorTestDialog";
+    const SHELL_FALLBACK: &str = "next-field";
+    const DISMISSED: &str = "dismissed";
+    const SAVED: &str = "saved";
+
+    actions!(code_editor_tests, [Dismiss]);
+
+    #[derive(Clone, Copy)]
+    struct Surroundings {
+        neighbour: bool,
+        dialog: bool,
+    }
+
+    struct Host {
+        editor: Entity<CodeEditor>,
+        neighbour: FocusHandle,
+        surroundings: Surroundings,
+        heard: Vec<&'static str>,
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let mut content = div()
+                .size_full()
+                .on_action(cx.listener(|this, _: &SaveCode, _, _| this.heard.push(SAVED)))
+                .on_action(
+                    cx.listener(|this, _: &FocusNextField, _, _| this.heard.push(SHELL_FALLBACK)),
+                )
+                .child(self.editor.clone());
+            if self.surroundings.neighbour {
+                content = content.child(div().track_focus(&self.neighbour).child("next"));
+            }
+            let mut root = div().size_full();
+            if self.surroundings.dialog {
+                root = root
+                    .key_context(DIALOG_CONTEXT)
+                    .on_action(cx.listener(|this, _: &Dismiss, _, _| this.heard.push(DISMISSED)));
+            }
+            root.child(content)
+        }
+    }
+
+    struct Hosted {
+        host: Entity<Host>,
+        editor: Entity<CodeEditor>,
+    }
+
+    impl Hosted {
+        fn bind_keys(cx: &mut TestAppContext) {
+            cx.update(|cx| {
+                bind_code_editor_keys(cx);
+                cx.bind_keys([KeyBinding::new(LEAVE_CHORD, Dismiss, Some(DIALOG_CONTEXT))]);
+            });
+        }
+
+        fn mount(
+            cx: &mut TestAppContext,
+            surroundings: Surroundings,
+        ) -> (Self, &mut VisualTestContext) {
+            let (host, vcx) = cx.add_window_view(|_window, cx| Host {
+                editor: cx.new(|cx| CodeEditor::new(Language::Rhai, "", cx)),
+                neighbour: cx.focus_handle().tab_stop(true),
+                surroundings,
+                heard: Vec::new(),
+            });
+            vcx.update(|window, _cx| window.activate_window());
+            let editor = vcx.update(|_window, cx| host.read(cx).editor.clone());
+            vcx.update(|_window, cx| {
+                editor.update(cx, |editor, cx| editor.set_content(LOADED, cx))
+            });
+            vcx.update(|window, cx| editor.update(cx, |editor, cx| editor.focus(window, cx)));
+            vcx.run_until_parked();
+            (Self { host, editor }, vcx)
+        }
+
+        fn compose(&self, vcx: &mut VisualTestContext, preedit: &str) {
+            vcx.update(|window, cx| {
+                self.editor.update(cx, |editor, cx| {
+                    editor.replace_and_mark_text_in_range(None, preedit, None, window, cx);
+                });
+            });
+        }
+
+        fn heard(&self, vcx: &mut VisualTestContext) -> Vec<&'static str> {
+            vcx.update(|_window, cx| self.host.read(cx).heard.clone())
+        }
+
+        fn content(&self, vcx: &mut VisualTestContext) -> String {
+            vcx.update(|_window, cx| self.editor.read(cx).content().to_owned())
+        }
+
+        fn focus_on(&self, vcx: &mut VisualTestContext) -> (bool, bool) {
+            vcx.update(|window, cx| {
+                let host = self.host.read(cx);
+                (
+                    self.editor.read(cx).focus_handle.is_focused(window),
+                    host.neighbour.is_focused(window),
+                )
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn escape_during_a_composition_cancels_only_the_composition(cx: &mut TestAppContext) {
+        let surroundings = Surroundings {
+            neighbour: true,
+            dialog: true,
+        };
+        Hosted::bind_keys(cx);
+        let (hosted, vcx) = Hosted::mount(cx, surroundings);
+        hosted.compose(vcx, "ні");
+
+        vcx.simulate_keystrokes(LEAVE_CHORD);
+
+        assert_eq!(
+            (hosted.content(vcx), hosted.focus_on(vcx), hosted.heard(vcx)),
+            (LOADED.to_owned(), (true, false), Vec::new())
+        );
+    }
+
+    #[gpui::test]
+    fn escape_outside_a_composition_leaves_the_editor_and_lets_an_enclosing_escape_run(
+        cx: &mut TestAppContext,
+    ) {
+        Hosted::bind_keys(cx);
+        for (neighbour, dialog, focus, heard) in [
+            (true, false, (false, true), Vec::new()),
+            (false, false, (true, false), vec![SHELL_FALLBACK]),
+            (true, true, (false, true), vec![DISMISSED]),
+        ] {
+            let (hosted, vcx) = Hosted::mount(cx, Surroundings { neighbour, dialog });
+
+            vcx.simulate_keystrokes(LEAVE_CHORD);
+
+            assert_eq!(
+                (hosted.content(vcx), hosted.focus_on(vcx), hosted.heard(vcx)),
+                (LOADED.to_owned(), focus, heard),
+                "neighbour {neighbour}, dialog {dialog}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn the_save_chord_asks_the_enclosing_view_to_save_without_typing(cx: &mut TestAppContext) {
+        let surroundings = Surroundings {
+            neighbour: false,
+            dialog: false,
+        };
+        Hosted::bind_keys(cx);
+        let (hosted, vcx) = Hosted::mount(cx, surroundings);
+
+        vcx.simulate_keystrokes(SAVE_CHORD);
+
+        assert_eq!(
+            (hosted.content(vcx), hosted.heard(vcx)),
+            (LOADED.to_owned(), vec![SAVED])
+        );
+    }
 }

@@ -6,7 +6,7 @@ use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, LatestValues, LiveViewerAggregatorHandle, OverlayServiceHandle,
     QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, StreamLiveHandle,
-    TriggerEvaluatorHandle,
+    TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
@@ -35,6 +35,7 @@ pub struct RuntimeHandles {
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,
     pub scheduled_runs: ScheduledRunsHandle,
+    pub timer_scheduler: TimerSchedulerHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
     pub stream_live: StreamLiveHandle,
     pub builtins: BuiltinRegistry,

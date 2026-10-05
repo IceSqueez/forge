@@ -414,7 +414,7 @@ pub async fn build_runtime(
     let stream_live =
         spawn_stream_live_signal(&live_viewers, integrations.obs_install_seed.stream_output());
     let bot_accounts = load_bot_accounts(&backend).await;
-    spawn_timer_scheduler(
+    let timer_scheduler = spawn_timer_scheduler(
         Arc::clone(&bus),
         Arc::clone(&catalog),
         stream_live.clone(),
@@ -524,6 +524,7 @@ pub async fn build_runtime(
         scheduler,
         trigger_evaluator,
         scheduled_runs,
+        timer_scheduler,
         live_viewers,
         stream_live,
         builtins: integrations.builtins,

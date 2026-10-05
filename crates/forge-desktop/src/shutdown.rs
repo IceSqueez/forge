@@ -3,7 +3,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_runtime::{ActionEngineHandle, EventBus, QueueSchedulerHandle, TriggerEvaluatorHandle};
+use forge_runtime::{
+    ActionEngineHandle, EventBus, QueueSchedulerHandle, ScheduledRunsHandle, TimerSchedulerHandle,
+    TriggerEvaluatorHandle,
+};
 use forge_server::ServerHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::DataProvider;
@@ -12,18 +15,24 @@ use tokio::runtime::Runtime;
 
 use crate::runtime_handles::RuntimeHandles;
 
-const SETTLE: Duration = Duration::from_millis(30);
-const SERVER_STOP_BUDGET: Duration = Duration::from_millis(50);
+const SETTLE: Duration = Duration::from_millis(20);
+const TIMER_STOP_BUDGET: Duration = Duration::from_millis(10);
+const SCHEDULED_RUNS_STOP_BUDGET: Duration = Duration::from_millis(10);
+const SERVER_STOP_BUDGET: Duration = Duration::from_millis(40);
 const SPEAK_STOP_BUDGET: Duration = Duration::from_millis(20);
 const FLUSH_BUDGET: Duration = Duration::from_millis(60);
 const ABANDON_BUDGET: Duration = Duration::from_millis(10);
 const STORAGE_CLOSE_BUDGET: Duration = Duration::from_millis(20);
-const GRACEFUL_BUDGET: Duration = SETTLE
+const GRACEFUL_BUDGET: Duration = TIMER_STOP_BUDGET
+    .saturating_add(SCHEDULED_RUNS_STOP_BUDGET)
+    .saturating_add(SETTLE)
     .saturating_add(SERVER_STOP_BUDGET)
     .saturating_add(SPEAK_STOP_BUDGET)
     .saturating_add(FLUSH_BUDGET)
     .saturating_add(ABANDON_BUDGET)
     .saturating_add(STORAGE_CLOSE_BUDGET);
+
+const _: () = assert!(GRACEFUL_BUDGET.as_millis() < gpui::SHUTDOWN_TIMEOUT.as_millis());
 
 pub const RUNTIME_SHUTDOWN_BUDGET: Duration = Duration::from_secs(1);
 
@@ -72,6 +81,8 @@ pub struct ShutdownHandles {
     action_engine: ActionEngineHandle,
     scheduler: QueueSchedulerHandle,
     trigger_evaluator: TriggerEvaluatorHandle,
+    timer_scheduler: TimerSchedulerHandle,
+    scheduled_runs: ScheduledRunsHandle,
     server: Option<ServerHandle>,
     speak: Option<SpeakQueueHandle>,
     hotkey: Option<Arc<forge_hotkey::HotkeyClient>>,
@@ -85,6 +96,8 @@ impl ShutdownHandles {
             action_engine: handles.action_engine.clone(),
             scheduler: handles.scheduler.clone(),
             trigger_evaluator: handles.trigger_evaluator.clone(),
+            timer_scheduler: handles.timer_scheduler.clone(),
+            scheduled_runs: handles.scheduled_runs.clone(),
             server: handles.server.clone(),
             speak: handles.speak.clone(),
             hotkey: handles.hotkey_client.clone(),
@@ -102,6 +115,8 @@ impl ShutdownHandles {
         }
 
         tracing::info!("graceful shutdown: stopping intake");
+        let _ = tokio::time::timeout(TIMER_STOP_BUDGET, self.timer_scheduler.stop()).await;
+        let _ = tokio::time::timeout(SCHEDULED_RUNS_STOP_BUDGET, self.scheduled_runs.stop()).await;
         self.trigger_evaluator.shutdown();
 
         if let Some(server) = self.server {
@@ -149,11 +164,13 @@ mod tests {
     use forge_events::{Event, EventSource};
     use forge_registry::{SubActionRegistry, TriggerRegistry};
     use forge_runtime::{
-        ActionCancelRegistry, Config, QueueScheduler, spawn_action_engine, spawn_trigger_evaluator,
+        ActionCancelRegistry, CatchUpSettle, Config, QueueScheduler, ScheduledRunsParts,
+        SystemWallClock, spawn_action_engine, spawn_live_viewer_aggregator, spawn_scheduled_runs,
+        spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
     };
     use forge_storage::action::MockActionRepo;
     use forge_storage::history::MockHistoryRepo;
-    use forge_storage::{EventLogRepo, StorageError};
+    use forge_storage::{CatalogRevision, EventLogRepo, MockScheduledRunRepo, StorageError};
     use forge_types::EventId;
     use time::OffsetDateTime;
 
@@ -228,11 +245,34 @@ mod tests {
         let trigger_evaluator = spawn_trigger_evaluator(
             Arc::clone(&bus),
             Arc::new(TriggerRegistry::new()),
-            catalog,
+            Arc::clone(&catalog),
             scheduler.clone(),
             Config::default(),
         );
+        let timer_scheduler = spawn_timer_scheduler(
+            Arc::clone(&bus),
+            Arc::clone(&catalog),
+            spawn_stream_live_signal(
+                &spawn_live_viewer_aggregator(),
+                forge_obs::SwitchableObsSink::new().stream_output(),
+            ),
+            forge_types::Shared::default(),
+        );
+        let mut run_repo = MockScheduledRunRepo::new();
+        run_repo.expect_next_due().returning(|| Ok(None));
+        let scheduled_runs = spawn_scheduled_runs(ScheduledRunsParts {
+            repo: Arc::new(run_repo),
+            revision: CatalogRevision::new(),
+            catalog: Arc::clone(&catalog),
+            actions: Arc::new(MockActionRepo::new()),
+            queues: scheduler.clone(),
+            bus: Arc::clone(&bus),
+            clock: Arc::new(SystemWallClock),
+            catch_up: CatchUpSettle::immediately(),
+        });
         ShutdownHandles {
+            timer_scheduler,
+            scheduled_runs,
             bus,
             action_engine,
             scheduler,

@@ -40,6 +40,7 @@ pub mod sound_player;
 pub mod speak_dispatcher;
 pub mod stream_live;
 pub mod sub_action_runners;
+mod task_stop;
 #[cfg(test)]
 mod test_support;
 pub mod timer_scheduler;
@@ -108,7 +109,8 @@ pub use sub_action_runners::{
     CONTENT_SCHEMA_KEY, OVERLAY_SEND_KIND_ID, OVERLAY_TARGET_KEY, OverlaySendTarget, feeds_overlay,
     overlay_send_targets, register_core_sub_actions, register_scheduled_run_sub_actions,
 };
-pub use timer_scheduler::spawn_timer_scheduler;
+pub use task_stop::TaskStop;
+pub use timer_scheduler::{TimerSchedulerHandle, spawn_timer_scheduler};
 pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
 pub use twitch_emote_lexicon::{TwitchEmoteLexicon, spawn_twitch_emote_learning};

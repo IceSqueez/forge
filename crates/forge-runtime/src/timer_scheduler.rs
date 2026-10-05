@@ -14,6 +14,7 @@ use crate::chat_stream::{ChatRecord, ChatRecordMapper, event_source_to_chat_sour
 use crate::delivery::TIMER_SCHEDULER;
 use crate::own_chat_echoes::{CHAT_SENT_KIND, OwnChatEchoes};
 use crate::stream_live::StreamLiveHandle;
+use crate::task_stop::{StopListener, TaskStop, task_stop};
 use crate::triggers::{TIMER_TICK_KIND, TimerSchedule, TimerTickDescriptor};
 
 struct ArmedTimer {
@@ -57,12 +58,14 @@ struct TimerScheduler {
     bot_accounts: Shared<Vec<String>>,
 }
 
+pub type TimerSchedulerHandle = TaskStop;
+
 pub fn spawn_timer_scheduler(
     bus: Arc<EventBus>,
     catalog: Arc<Catalog>,
     stream_live: StreamLiveHandle,
     bot_accounts: Shared<Vec<String>>,
-) {
+) -> TimerSchedulerHandle {
     let chat = bus.subscribe_observer(TIMER_SCHEDULER);
     let changes = catalog.changes();
     let scheduler = TimerScheduler {
@@ -74,7 +77,12 @@ pub fn spawn_timer_scheduler(
         own_echoes: OwnChatEchoes::default(),
         bot_accounts,
     };
-    tokio::spawn(scheduler.run(changes, stream_live, chat));
+    let (handle, listener) = task_stop();
+    tokio::spawn(async move {
+        scheduler.run(changes, stream_live, chat, &listener).await;
+        listener.mark_stopped();
+    });
+    handle
 }
 
 impl TimerScheduler {
@@ -83,6 +91,7 @@ impl TimerScheduler {
         mut changes: CatalogChanges,
         mut stream_live: StreamLiveHandle,
         mut chat: EventSubscription,
+        stop: &StopListener,
     ) {
         self.reconcile().await;
         let mut catalog_open = true;
@@ -90,6 +99,8 @@ impl TimerScheduler {
         loop {
             let next_fire = self.armed.values().map(|timer| timer.next_fire).min();
             tokio::select! {
+                biased;
+                () = stop.requested() => return,
                 revision = changes.changed(), if catalog_open => match revision {
                     Some(_) => self.reconcile().await,
                     None => catalog_open = false,

@@ -10,7 +10,7 @@ All contributors and maintainers are expected to follow the [Contributor Covenan
 
 ### Prerequisites
 
-- Rust, pinned in `rust-toolchain.toml` (currently 1.98.1, with `rustfmt` and `clippy`). [rustup](https://rustup.rs/) installs it on the first build. If a tool such as mise exports `RUSTUP_TOOLCHAIN`, unset it so the pinned toolchain is used.
+- Rust, pinned in `rust-toolchain.toml` (currently 1.99.0, with `rustfmt` and `clippy`). [rustup](https://rustup.rs/) installs it on the first build. If a tool such as mise exports `RUSTUP_TOOLCHAIN`, unset it so the pinned toolchain is used.
 - On Debian / Ubuntu, the system libraries CI installs:
 
   ```bash

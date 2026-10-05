@@ -3,7 +3,7 @@
 **Your stream on autopilot.** Chat, alerts, voices and sounds from Twitch, YouTube, Kick and OBS, wired together in one local desktop app.
 
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](./LICENSE)
-[![Rust 1.98.1+](https://img.shields.io/badge/rust-1.98.1%2B-orange)](https://www.rust-lang.org/)
+[![Rust 1.99+](https://img.shields.io/badge/rust-1.99%2B-orange)](https://www.rust-lang.org/)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-green)](#install)
 
 [![Latest Release](https://img.shields.io/github/v/release/IceSqueez/forge?include_prereleases&logo=github&label=Latest&cacheSeconds=600)](https://github.com/IceSqueez/forge/releases)
@@ -158,7 +158,7 @@ forge keeps its data in your user data folder (`~/.local/share/forge` on Linux, 
 
 ## Build from source
 
-Rust is pinned in `rust-toolchain.toml` (currently 1.98.1); [rustup](https://rustup.rs/) installs it on first build.
+Rust is pinned in `rust-toolchain.toml` (currently 1.99.0); [rustup](https://rustup.rs/) installs it on first build.
 
 On Debian / Ubuntu, install the system libraries first:
 

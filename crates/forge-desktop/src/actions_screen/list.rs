@@ -79,7 +79,10 @@ impl ScreenActionsView {
 
     fn action_passes(&self, group: &ActionGroup, action: &ActionSummary) -> bool {
         let in_filter = Self::category_visible(self.filter, group.category)
-            || (self.filter == ActionsFilter::Timers && self.timer_action_ids.contains(&action.id));
+            || self
+                .filter_action_ids
+                .get(&self.filter)
+                .is_some_and(|ids| ids.contains(&action.id));
         in_filter && self.search.matches(&action.name)
     }
 

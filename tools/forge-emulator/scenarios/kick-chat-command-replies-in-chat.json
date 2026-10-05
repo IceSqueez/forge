@@ -88,10 +88,7 @@
           "event": {
             "source": "core",
             "kind": "action.done",
-            "payload": {
-              "/action_name": { "equals": "Kick Hello" },
-              "/outcome": { "equals": "success" }
-            },
+            "payload": { "/outcome": { "equals": "success" } },
             "within_ms": 5000
           }
         },

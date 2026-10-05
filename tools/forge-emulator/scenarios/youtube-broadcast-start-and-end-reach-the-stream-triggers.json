@@ -1,6 +1,6 @@
 {
   "name": "a YouTube broadcast starting and ending reach forge's stream online and offline triggers",
-  "purpose": "forge learns that a broadcast went live only from its liveBroadcasts poll (broadcastStatus=active, once a minute) and that it ended from the chatEndedEvent its chat poll returns. With the fake broadcast offline at boot, starting it must surface as one youtube.stream.online carrying the broadcast id and title and run the online action; ending it must surface as youtube.stream.offline for that broadcast and run the offline action. A chat poll after the end is answered 403 liveChatEnded, as the API documents, and forge must not treat that as a second offline.",
+  "purpose": "forge learns that a broadcast went live only from its liveBroadcasts poll (broadcastStatus=active, once a minute) and that it ended from the chatEndedEvent its chat poll returns. With the fake broadcast offline at boot, starting it must surface as one youtube.stream.online carrying the broadcast id and title and run the online action; ending it must surface as youtube.stream.offline for that broadcast and run the offline action. Once the chat has ended forge stops polling it until the next broadcast resolution, and the end must not surface as a second offline.",
   "fixture": {
     "youtube": {},
     "event_triggers": [
@@ -69,14 +69,6 @@
           }
         },
         { "caused_by": { "effect": "offline_action", "cause": "offline" } },
-        {
-          "youtube_request": {
-            "method": "GET",
-            "path": "/youtube/v3/liveChat/messages",
-            "status": 403,
-            "within_ms": 15000
-          }
-        },
         {
           "event": {
             "source": "you_tube",

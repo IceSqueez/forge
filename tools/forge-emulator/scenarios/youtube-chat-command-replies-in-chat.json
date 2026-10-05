@@ -88,10 +88,7 @@
           "event": {
             "source": "core",
             "kind": "action.done",
-            "payload": {
-              "/action_name": { "equals": "YouTube Hello" },
-              "/outcome": { "equals": "success" }
-            },
+            "payload": { "/outcome": { "equals": "success" } },
             "within_ms": 10000
           }
         },

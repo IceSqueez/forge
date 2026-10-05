@@ -6,7 +6,11 @@ use forge_components::{
     body_family, chip, empty_state, header_status, icon, mono_family, page_frame, platform_color,
     radius, spacing, status_dot, tr, with_alpha,
 };
+use std::sync::Arc;
+
 use forge_events::EventSource;
+use forge_runtime::{BusError, EventBus};
+use forge_types::EventId;
 use gpui::{
     AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, Pixels, Rgba, ScrollStrategy,
     ScrollWheelEvent, Stateful, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
@@ -75,8 +79,24 @@ pub struct EventFeedView {
     list_focus: FocusHandle,
     focused_once: bool,
     rt_handle: tokio::runtime::Handle,
+    bus: Arc<EventBus>,
+    replaying: bool,
     _log_obs: Subscription,
     _search_sub: Subscription,
+}
+
+fn parse_event_id(raw: &str) -> Option<EventId> {
+    serde_json::from_value(serde_json::Value::String(raw.to_owned())).ok()
+}
+
+fn replay_failure_message(error: &BusError) -> String {
+    match error {
+        BusError::EventNotFound(_) => tr!("event_feed_replay_not_found"),
+        BusError::Storage(e) => {
+            let detail = e.to_string();
+            tr!("event_feed_replay_failed", error = detail.as_str())
+        }
+    }
 }
 
 fn matches_query(item: &EventItem, query: &str) -> bool {
@@ -127,6 +147,7 @@ impl EventFeedView {
     pub fn new(
         log: Entity<EventLog>,
         rt_handle: tokio::runtime::Handle,
+        bus: Arc<EventBus>,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
@@ -153,6 +174,8 @@ impl EventFeedView {
             list_focus: cx.focus_handle(),
             focused_once: false,
             rt_handle,
+            bus,
+            replaying: false,
             _log_obs: log_obs,
             _search_sub: search_sub,
         };
@@ -311,7 +334,34 @@ impl EventFeedView {
         );
     }
 
-    fn replay(&mut self, _cx: &mut Context<Self>) {}
+    fn replay(&mut self, cx: &mut Context<Self>) {
+        if self.replaying {
+            return;
+        }
+        let Some(item) = self.resolved_selection(cx) else {
+            return;
+        };
+        let Some(event_id) = parse_event_id(&item.id) else {
+            cx.push_toast(ToastKind::Error, tr!("event_feed_replay_not_found"));
+            return;
+        };
+        self.replaying = true;
+        cx.notify();
+        let bus = Arc::clone(&self.bus);
+        async_bridge::run_async(
+            &self.rt_handle,
+            async move { bus.replay_and_publish(event_id).await },
+            |this, result, cx| {
+                this.replaying = false;
+                match result {
+                    Ok(()) => cx.push_toast(ToastKind::Success, tr!("event_feed_replay_success")),
+                    Err(e) => cx.push_toast(ToastKind::Error, replay_failure_message(&e)),
+                }
+                cx.notify();
+            },
+            cx,
+        );
+    }
 
     fn toggle_auto_scroll(&mut self, cx: &mut Context<Self>) {
         self.auto_scroll = !self.auto_scroll;
@@ -778,7 +828,13 @@ impl EventFeedView {
                     .child(caused_text),
             );
 
-        let replay = div()
+        let replaying = self.replaying;
+        let replay_color = if replaying {
+            palette.disabled
+        } else {
+            palette.brand
+        };
+        let mut replay = div()
             .id("event-inspector-replay")
             .w_full()
             .flex()
@@ -788,15 +844,25 @@ impl EventFeedView {
             .py(spacing(Spacing::Xs, Density::Cozy))
             .rounded(radius(Radius::Sm))
             .border(BORDER_THIN)
-            .border_color(palette.border_regular)
-            .cursor_pointer()
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.replay(cx)))
-            .child(icon(Icon::Repeat, FONT_XS, palette.brand))
+            .border_color(if replaying {
+                palette.disabled
+            } else {
+                palette.border_regular
+            });
+        replay = if replaying {
+            replay.cursor_default()
+        } else {
+            replay
+                .cursor_pointer()
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.replay(cx)))
+        };
+        let replay = replay
+            .child(icon(Icon::Repeat, FONT_XS, replay_color))
             .child(
                 div()
                     .font_family(body_family())
                     .text_size(FONT_XS)
-                    .text_color(palette.brand)
+                    .text_color(replay_color)
                     .child(tr!("widget_event_replay")),
             );
 

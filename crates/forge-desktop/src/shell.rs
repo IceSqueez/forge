@@ -246,7 +246,8 @@ impl AppShell {
             }
             Screen::EventFeed => {
                 let rt_handle = handles.rt_handle.clone();
-                cx.new(|cx| EventFeedView::new(topics.event_log.clone(), rt_handle, cx))
+                let bus = Arc::clone(&handles.bus);
+                cx.new(|cx| EventFeedView::new(topics.event_log.clone(), rt_handle, bus, cx))
                     .into()
             }
             Screen::Globals => {

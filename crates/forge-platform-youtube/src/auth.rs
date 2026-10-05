@@ -241,8 +241,77 @@ mod tests {
     use super::*;
     use forge_platform_core::AuthFlow;
     use serde_json::json;
+    use std::ffi::OsString;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn overrides(pairs: &[(EndpointSurface, String)]) -> PlatformEndpoints {
+        PlatformEndpoints::resolve(|variable| {
+            pairs
+                .iter()
+                .find(|(surface, _)| surface.env_var() == variable)
+                .map(|(_, base)| OsString::from(base))
+        })
+        .unwrap()
+    }
+
+    async fn routes_of(server: &MockServer) -> Vec<(String, String)> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| (r.method.to_string(), r.url.path().to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn default_endpoints_keep_the_production_urls() {
+        let flow = GoogleAuthFlow::new(
+            &PlatformEndpoints::default(),
+            "cid".to_owned(),
+            "csec".to_owned(),
+        );
+        assert_eq!(flow.refresh_config().token_endpoint, GOOGLE_TOKEN_ENDPOINT);
+        assert_eq!(
+            flow.channels_endpoint(),
+            "https://www.googleapis.com/youtube/v3/channels"
+        );
+    }
+
+    #[tokio::test]
+    async fn overrides_route_token_exchange_and_channel_lookup_to_their_own_hosts() {
+        let oauth = MockServer::start().await;
+        let api = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(token_success_body()))
+            .mount(&oauth)
+            .await;
+        mount_channel_mock(&api).await;
+        let endpoints = overrides(&[
+            (EndpointSurface::YouTubeOAuth, oauth.uri()),
+            (EndpointSurface::YouTubeDataApi, api.uri()),
+        ]);
+
+        let mut flow = GoogleAuthFlow::new(&endpoints, "cid".to_owned(), "csec".to_owned());
+        let auth_url = flow.start().await.unwrap().auth_url;
+        trigger_callback(&auth_url, "code123").await;
+        let bundle = flow
+            .wait_for_authorization(Duration::from_secs(2))
+            .await
+            .unwrap();
+
+        assert_eq!(bundle.channel_id, "UCtest123");
+        assert_eq!(
+            routes_of(&oauth).await,
+            vec![("POST".to_owned(), "/token".to_owned())]
+        );
+        assert_eq!(
+            routes_of(&api).await,
+            vec![("GET".to_owned(), "/channels".to_owned())]
+        );
+    }
 
     fn token_success_body() -> serde_json::Value {
         json!({

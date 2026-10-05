@@ -584,6 +584,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn both_file_routes_forbid_the_browser_from_sniffing_the_served_type() {
+        let root = tempfile::tempdir().expect("tempdir");
+        overlay_root_with_an_asset(root.path()).await;
+        let fixture = serve(
+            false,
+            CORS_MIRRORS_ANY_ORIGIN,
+            root.path().to_path_buf(),
+            MemSettings::new(),
+        )
+        .await;
+        let (ticket, _outcome) = fixture.offer().await;
+        let overlay_path = format!("/overlays/{OVERLAY_IDENTITY}/{OVERLAY_ASSET}");
+
+        for (route, path) in [
+            ("overlay file", overlay_path.as_str()),
+            ("audio clip", ticket.clip_path()),
+        ] {
+            let response = fixture.fetch(path).await;
+
+            assert_eq!(response.status(), StatusCode::OK, "{route}");
+            assert_eq!(
+                header_of(&response, reqwest::header::X_CONTENT_TYPE_OPTIONS),
+                "nosniff",
+                "{route}"
+            );
+        }
+
+        fixture.handle.abort();
+    }
+
+    #[tokio::test]
     async fn the_audio_routes_echo_the_same_cross_origin_headers_as_the_overlay_route() {
         for (mode, any_origin) in [
             ("mirroring every origin", true),

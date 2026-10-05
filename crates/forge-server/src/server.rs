@@ -1061,34 +1061,6 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn stop_disconnects_clients_within_timeout() {
-        use tokio_tungstenite::connect_async;
-
-        let (handle, addr) = make_server(false, MemCreds::new()).await;
-
-        let ws_url = format!("ws://{}/ws/v1/", addr);
-        let (mut ws_stream, _) = connect_async(&ws_url).await.expect("ws connect");
-
-        handle.stop().await.expect("stop");
-
-        let close_msg = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            futures_util::StreamExt::next(&mut ws_stream),
-        )
-        .await
-        .expect("timeout waiting for close")
-        .expect("stream ended without message");
-
-        assert!(
-            matches!(
-                close_msg.expect("ws error"),
-                tokio_tungstenite::tungstenite::Message::Close(_)
-            ),
-            "expected Close frame from server"
-        );
-    }
-
-    #[tokio::test]
     async fn stop_is_idempotent_on_repeated_calls() {
         let (handle, _addr) = make_server(false, MemCreds::new()).await;
         handle.stop().await.expect("first stop");
@@ -2028,5 +2000,53 @@ pub(crate) mod tests {
 
         assert_still_serving(&mut page, "an overlay session").await;
         handle.abort();
+    }
+
+    #[tokio::test]
+    async fn a_socket_that_joins_after_shutdown_is_signalled_is_closed_at_once() {
+        let creds = MemCreds::new();
+        let auth = AuthState::load(false, &*creds).await.expect("auth load");
+        let state = make_app_state(auth, creds as Arc<dyn CredentialsRepo>);
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(true);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("local addr");
+        let app = super::build_router(state, shutdown_rx)
+            .into_make_service_with_connect_info::<crate::listener::PeerInfo>();
+        let serving = tokio::spawn(async move {
+            axum::serve(crate::listener::GuardedListener::new(listener), app).await
+        });
+        let mut late = open_ws(addr).await;
+
+        let first = next_message(&mut late).await;
+
+        assert!(
+            matches!(first, Some(ClientMessage::Close(_))),
+            "a socket admitted after shutdown was left open: {first:?}"
+        );
+        serving.abort();
+    }
+
+    #[tokio::test]
+    async fn stop_and_restart_close_every_connected_socket() {
+        for (lifecycle, restart) in [("stop", false), ("restart", true)] {
+            let (handle, _new_port) = make_server_targeting_a_free_port().await;
+            let boot_addr = handle.bind_addr().await;
+            let mut first = open_ws(boot_addr).await;
+            let mut second = open_ws(boot_addr).await;
+
+            if restart {
+                handle.restart().await.expect("restart");
+            } else {
+                handle.stop().await.expect("stop");
+            }
+
+            for (who, socket) in [("first", &mut first), ("second", &mut second)] {
+                assert!(
+                    matches!(next_message(socket).await, Some(ClientMessage::Close(_))),
+                    "{lifecycle} left the {who} socket open"
+                );
+            }
+            handle.abort();
+        }
     }
 }

@@ -61,6 +61,8 @@ enum OutputOpt {
     ReadName,
     EmoteWord,
     Sanitize,
+    StripTwitchEmotes,
+    StripRewardEmotes,
 }
 
 impl OutputOpt {
@@ -69,6 +71,8 @@ impl OutputOpt {
             OutputOpt::ReadName => "name",
             OutputOpt::EmoteWord => "emote",
             OutputOpt::Sanitize => "sanitize",
+            OutputOpt::StripTwitchEmotes => "strip-twitch-emotes",
+            OutputOpt::StripRewardEmotes => "strip-reward-emotes",
         }
     }
 }
@@ -666,6 +670,8 @@ impl TtsFiltersView {
             OutputOpt::ReadName => self.settings.output_read_display_name_first,
             OutputOpt::EmoteWord => self.settings.output_emote_to_word,
             OutputOpt::Sanitize => self.settings.output_sanitize_punctuation,
+            OutputOpt::StripTwitchEmotes => self.settings.strip_twitch_emotes,
+            OutputOpt::StripRewardEmotes => self.settings.strip_reward_emotes,
         }
     }
 
@@ -677,6 +683,8 @@ impl TtsFiltersView {
             OutputOpt::ReadName => self.settings.output_read_display_name_first = value,
             OutputOpt::EmoteWord => self.settings.output_emote_to_word = value,
             OutputOpt::Sanitize => self.settings.output_sanitize_punctuation = value,
+            OutputOpt::StripTwitchEmotes => self.settings.strip_twitch_emotes = value,
+            OutputOpt::StripRewardEmotes => self.settings.strip_reward_emotes = value,
         }
         self.after_change(cx);
     }
@@ -1509,7 +1517,7 @@ impl TtsFiltersView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let rows: [(OutputOpt, SharedString, SharedString, bool); 3] = [
+        let rows: [(OutputOpt, SharedString, SharedString, bool); 5] = [
             (
                 OutputOpt::ReadName,
                 tr!("tts_filters_output_read_name").into(),
@@ -1527,6 +1535,18 @@ impl TtsFiltersView {
                 tr!("tts_filters_output_sanitize").into(),
                 tr!("tts_filters_output_sanitize_meta").into(),
                 self.settings.output_sanitize_punctuation,
+            ),
+            (
+                OutputOpt::StripTwitchEmotes,
+                tr!("tts_filters_output_strip_twitch_emotes").into(),
+                tr!("tts_filters_output_strip_twitch_emotes_meta").into(),
+                self.settings.strip_twitch_emotes,
+            ),
+            (
+                OutputOpt::StripRewardEmotes,
+                tr!("tts_filters_output_strip_reward_emotes").into(),
+                tr!("tts_filters_output_strip_reward_emotes_meta").into(),
+                self.settings.strip_reward_emotes,
             ),
         ];
 

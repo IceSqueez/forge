@@ -950,6 +950,10 @@ tts_filters_output_emote = Емоція → слово
 tts_filters_output_emote_meta = перетворити :pog: → "pog"
 tts_filters_output_sanitize = Прибирати повтори пунктуації
 tts_filters_output_sanitize_meta = "!!!" → "!"
+tts_filters_output_strip_twitch_emotes = Прибирати емоції Twitch
+tts_filters_output_strip_twitch_emotes_meta = видаляти назви емоцій Twitch перед озвученням
+tts_filters_output_strip_reward_emotes = Прибирати емоції нагород
+tts_filters_output_strip_reward_emotes_meta = видаляти назви емоцій із нагород за бали каналу
 tts_filters_output_max_duration_meta = після { $secs }с
 tts_filters_output_lang_meta = обирати голос за мовою повідомлення
 
@@ -2062,6 +2066,7 @@ settings_voice_gate_state_off = Вимкнено
 settings_voice_gate_state_inactive = Слухає - мовлення не виявлено
 settings_voice_gate_state_active = Виявлено мовлення - чергу утримано
 settings_voice_gate_state_unavailable = Мікрофон недоступний: { $error }
+settings_voice_gate_retry = Повторити
 settings_voice_gate_persist_error = Не вдалося зберегти налаштування голосового гейта: { $error }
 
 ## Script editor - API docs panel

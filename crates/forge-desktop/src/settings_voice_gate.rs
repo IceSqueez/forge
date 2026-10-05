@@ -8,7 +8,7 @@ use forge_audio::{
 use forge_components::{
     BORDER_THIN, Density, FONT_SM, FONT_XS, FONT_XXS, ForgePalette, Icon, InputEvent, Radius,
     Spacing, TextInput, body_family, drive_overlay_focus, dropdown, dropdown_list, dropdown_row,
-    icon, mono_family, radius, setting_row, spacing, toggle, tr, with_alpha,
+    ghost_button, icon, mono_family, radius, setting_row, spacing, toggle, tr, with_alpha,
 };
 use forge_storage::{DataProvider, SettingsRepo, VoiceGateSettings};
 use gpui::{
@@ -251,6 +251,15 @@ impl SettingsVoiceGateView {
             |this, result, cx| this.apply_persist_result(result, cx),
             cx,
         );
+        self.read_gate(cx);
+        self.ensure_ticker(cx);
+    }
+
+    fn retry_gate(&mut self, cx: &mut Context<Self>) {
+        if !self.enabled {
+            return;
+        }
+        self.owner.start(self.config());
         self.read_gate(cx);
         self.ensure_ticker(cx);
     }
@@ -564,7 +573,7 @@ impl SettingsVoiceGateView {
         )
     }
 
-    fn state_line(&self, palette: &ForgePalette) -> impl IntoElement {
+    fn state_line(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> impl IntoElement {
         let (text, color) = match &self.gate_state {
             None => (tr!("settings_voice_gate_state_off"), palette.text_muted),
             Some(VoiceGateState::Inactive) => (
@@ -579,12 +588,25 @@ impl SettingsVoiceGateView {
                 palette.random,
             ),
         };
-        div()
+        let unavailable = matches!(self.gate_state, Some(VoiceGateState::Unavailable(_)));
+        let mut line = div()
             .px(spacing(Spacing::Md, Density::Cozy))
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, Density::Cozy))
             .font_family(body_family())
             .text_size(FONT_XS)
             .text_color(color)
-            .child(text)
+            .child(text);
+        if unavailable {
+            line = line.child(
+                ghost_button(tr!("settings_voice_gate_retry"), palette).on_click(
+                    "settings-voice-gate-retry",
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.retry_gate(cx)),
+                ),
+            );
+        }
+        line
     }
 }
 
@@ -619,7 +641,7 @@ impl Render for SettingsVoiceGateView {
             .child(self.device_section(&palette, density, cx))
             .child(self.threshold_row(&palette, density, cx))
             .child(self.hold_row(&palette, density))
-            .child(self.state_line(&palette));
+            .child(self.state_line(&palette, cx));
 
         if let Some(message) = &self.persist_error {
             content = content.child(

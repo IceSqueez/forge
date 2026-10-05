@@ -931,6 +931,10 @@ tts_filters_output_emote = Emote → word
 tts_filters_output_emote_meta = convert :pog: → "pog"
 tts_filters_output_sanitize = Strip repeated punctuation
 tts_filters_output_sanitize_meta = "!!!" → "!"
+tts_filters_output_strip_twitch_emotes = Strip Twitch emotes
+tts_filters_output_strip_twitch_emotes_meta = remove Twitch emote names before speaking
+tts_filters_output_strip_reward_emotes = Strip reward emotes
+tts_filters_output_strip_reward_emotes_meta = remove emote names from channel point redemptions
 tts_filters_output_max_duration_meta = after { $secs }s
 tts_filters_output_lang_meta = pick voice per message language
 
@@ -2015,6 +2019,7 @@ settings_voice_gate_state_off = Off
 settings_voice_gate_state_inactive = Listening - no speech detected
 settings_voice_gate_state_active = Speech detected - queue held
 settings_voice_gate_state_unavailable = Microphone unavailable: { $error }
+settings_voice_gate_retry = Retry
 settings_voice_gate_persist_error = Failed to save voice gate settings: { $error }
 
 ## Script editor - API docs panel

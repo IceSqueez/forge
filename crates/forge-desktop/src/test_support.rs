@@ -37,20 +37,26 @@ pub(crate) struct TestBackend {
     values: Mutex<HashMap<String, String>>,
     writes: UnboundedSender<SettingWrite>,
     overlays: Option<Arc<dyn OverlayRepo>>,
+    scripts: Option<Arc<dyn ScriptRepo>>,
 }
 
 pub(crate) fn test_backend() -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
-    backend_over(None)
+    backend_over(None, None)
+}
+
+pub(crate) fn test_backend_with_scripts(scripts: Arc<dyn ScriptRepo>) -> Arc<TestBackend> {
+    backend_over(None, Some(scripts)).0
 }
 
 pub(crate) fn test_backend_with_overlays(
     overlays: Arc<dyn OverlayRepo>,
 ) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
-    backend_over(Some(overlays))
+    backend_over(Some(overlays), None)
 }
 
 fn backend_over(
     overlays: Option<Arc<dyn OverlayRepo>>,
+    scripts: Option<Arc<dyn ScriptRepo>>,
 ) -> (Arc<TestBackend>, UnboundedReceiver<SettingWrite>) {
     let (writes, rx) = unbounded_channel();
     (
@@ -58,6 +64,7 @@ fn backend_over(
             values: Mutex::new(HashMap::new()),
             writes,
             overlays,
+            scripts,
         }),
         rx,
     )
@@ -168,54 +175,67 @@ impl UserGlobalsRepo for TestBackend {
     }
 }
 
+impl TestBackend {
+    fn scripts(&self) -> &Arc<dyn ScriptRepo> {
+        self.scripts
+            .as_ref()
+            .unwrap_or_else(|| unreachable!("scripts are out of scope for the settings pane"))
+    }
+}
+
 #[async_trait::async_trait]
 impl ScriptRepo for TestBackend {
-    async fn get(&self, _: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+    async fn get(&self, id: ScriptId) -> Result<Option<ScriptRecord>, StorageError> {
+        self.scripts().get(id).await
     }
 
-    async fn get_by_name(&self, _: &str) -> Result<Option<ScriptRecord>, StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+    async fn get_by_name(&self, name: &str) -> Result<Option<ScriptRecord>, StorageError> {
+        self.scripts().get_by_name(name).await
     }
 
-    async fn save(&self, _: ScriptRecord) -> Result<(), StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+    async fn save(&self, record: ScriptRecord) -> Result<(), StorageError> {
+        self.scripts().save(record).await
     }
 
-    async fn delete(&self, _: ScriptId) -> Result<bool, StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+    async fn delete(&self, id: ScriptId) -> Result<bool, StorageError> {
+        self.scripts().delete(id).await
     }
 
     async fn list(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+        self.scripts().list().await
     }
 
     async fn list_enabled(&self) -> Result<Vec<ScriptRecord>, StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+        self.scripts().list_enabled().await
     }
 
     async fn record_execution(
         &self,
-        _: ScriptId,
-        _: OffsetDateTime,
-        _: u64,
-        _: ExecutionStatus,
+        id: ScriptId,
+        at: OffsetDateTime,
+        duration_ms: u64,
+        status: ExecutionStatus,
     ) -> Result<(), StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+        self.scripts()
+            .record_execution(id, at, duration_ms, status)
+            .await
     }
 
-    async fn telemetry(&self, _: ScriptId) -> Result<ScriptTelemetry, StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+    async fn telemetry(&self, id: ScriptId) -> Result<ScriptTelemetry, StorageError> {
+        self.scripts().telemetry(id).await
     }
 
-    async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
-        unreachable!("scripts are out of scope for the settings pane")
+    async fn prune_executions_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
+        self.scripts().prune_executions_before(cutoff).await
     }
 }
 
 #[async_trait::async_trait]
 impl DataProvider for TestBackend {
     fn action_repo(&self) -> Arc<dyn ActionRepo> {
+        if self.scripts.is_some() {
+            return Arc::new(StubActions);
+        }
         unreachable!("the settings pane reaches no sub-repo")
     }
 

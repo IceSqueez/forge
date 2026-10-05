@@ -3769,4 +3769,225 @@ mod tests {
             );
         }
     }
+
+    mod unsaved_work {
+        use forge_components::{Density, ThemeId};
+        use forge_storage::script::MockScriptRepo;
+        use forge_storage::{Language, StorageError};
+        use forge_types::IntegrationId;
+        use gpui::{AnyWindowHandle, AppContext, TestAppContext};
+
+        use super::*;
+        use crate::i18n::install_language;
+        use crate::navigation_guard::{LeaveTarget, NavigationGuard};
+        use crate::presentation::Presentation;
+        use crate::test_support::{StubEventLog, pump, runtime, test_backend_with_scripts};
+        use crate::unsaved_work::UnsavedWorkHandle;
+
+        const SAVED_BODY: &str = "let greeting = \"hi\";";
+        const EDITED_BODY: &str = "let greeting = \"hello\";";
+        const BROKEN_BODY: &str = "let greeting = ;";
+
+        struct NothingDisabled;
+
+        impl IntegrationAvailability for NothingDisabled {
+            fn is_disabled(&self, _: &IntegrationId) -> bool {
+                false
+            }
+        }
+
+        struct Blank;
+
+        impl Render for Blank {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div()
+            }
+        }
+
+        enum Store {
+            Accepts,
+            Fails,
+            NeverCalled,
+        }
+
+        fn repo(store: Store) -> MockScriptRepo {
+            let mut repo = MockScriptRepo::new();
+            repo.expect_list().returning(|| Ok(Vec::new()));
+            repo.expect_telemetry().returning(|_| {
+                Err(StorageError::NotFound {
+                    key: "telemetry".to_owned(),
+                })
+            });
+            match store {
+                Store::Accepts => {
+                    repo.expect_save().times(1).returning(|_| Ok(()));
+                }
+                Store::Fails => {
+                    repo.expect_save().times(1).returning(|_| {
+                        Err(StorageError::Connection {
+                            reason: "disk full".to_owned(),
+                        })
+                    });
+                }
+                Store::NeverCalled => {
+                    repo.expect_save().never();
+                }
+            }
+            repo
+        }
+
+        fn record() -> ScriptRecord {
+            let now = OffsetDateTime::now_utc();
+            ScriptRecord {
+                id: ScriptId::new(),
+                name: "greet".to_owned(),
+                body: SAVED_BODY.to_owned(),
+                contract: ScriptContract::default(),
+                body_hash: content_hash(SAVED_BODY),
+                enabled: true,
+                created_at: now,
+                last_modified: now,
+            }
+        }
+
+        struct Rig {
+            rt: tokio::runtime::Runtime,
+            view: Entity<ScriptEditorView>,
+            guard: NavigationGuard,
+        }
+
+        impl Rig {
+            fn mount(cx: &mut TestAppContext, store: Store) -> Self {
+                install_language(Language::En);
+                cx.update(|cx| {
+                    cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+                });
+                let rt = runtime();
+                let bus = {
+                    let _entered = rt.enter();
+                    EventBus::new(Arc::new(StubEventLog))
+                };
+                let backend = test_backend_with_scripts(Arc::new(repo(store)));
+                let handle = rt.handle().clone();
+                let view = cx.new(|cx| {
+                    ScriptEditorView::new(
+                        backend,
+                        Arc::new(ScriptRegistry::new()),
+                        bus,
+                        Arc::new(NothingDisabled),
+                        handle,
+                        cx,
+                    )
+                });
+                view.update(cx, |view, cx| view.apply_script_opened(Ok(record()), cx));
+                let window: AnyWindowHandle = cx.add_window(|_, _| Blank).into();
+                let mut guard = NavigationGuard::new(window);
+                guard.watch(Some(UnsavedWorkHandle::new(view.clone())));
+                let rig = Self { rt, view, guard };
+                rig.settle(cx);
+                rig
+            }
+
+            fn settle(&self, cx: &mut TestAppContext) {
+                pump(&self.rt);
+                cx.run_until_parked();
+            }
+
+            fn type_body(&self, body: &str, cx: &mut TestAppContext) {
+                let body = body.to_owned();
+                self.view.update(cx, |view, cx| {
+                    view.code_input
+                        .update(cx, |area, cx| area.set_content(body, cx));
+                });
+                cx.run_until_parked();
+            }
+
+            fn body(&self, cx: &mut TestAppContext) -> String {
+                self.view
+                    .read_with(cx, |view, cx| view.code_input.read(cx).content().to_owned())
+            }
+
+            fn unsaved(&self, cx: &mut TestAppContext) -> bool {
+                self.view
+                    .read_with(cx, |view, cx| view.has_unsaved_work(cx))
+            }
+
+            fn saving(&self, cx: &mut TestAppContext) -> bool {
+                self.view
+                    .read_with(cx, |view, _| view.is_saving_unsaved_work())
+            }
+
+            fn save_and_leave(&mut self, cx: &mut TestAppContext) -> Option<LeaveTarget> {
+                self.guard.ask(LeaveTarget::Screen(Screen::Home));
+                cx.update(|cx| self.guard.save(cx))
+            }
+        }
+
+        #[gpui::test]
+        fn only_an_edit_of_the_open_script_counts_as_unsaved(cx: &mut TestAppContext) {
+            let rig = Rig::mount(cx, Store::NeverCalled);
+            let opened = rig.unsaved(cx);
+
+            rig.type_body(EDITED_BODY, cx);
+            let edited = rig.unsaved(cx);
+
+            assert_eq!((opened, edited), (false, true));
+        }
+
+        #[gpui::test]
+        fn discard_restores_the_saved_body(cx: &mut TestAppContext) {
+            let mut rig = Rig::mount(cx, Store::NeverCalled);
+            rig.type_body(EDITED_BODY, cx);
+            rig.guard.ask(LeaveTarget::Screen(Screen::Home));
+
+            let released = cx.update(|cx| rig.guard.discard(cx));
+            cx.run_until_parked();
+
+            assert_eq!(
+                (released, rig.body(cx), rig.unsaved(cx)),
+                (
+                    Some(LeaveTarget::Screen(Screen::Home)),
+                    SAVED_BODY.to_owned(),
+                    false
+                )
+            );
+        }
+
+        #[gpui::test]
+        fn a_syntax_error_refuses_save_and_leave_without_storing(cx: &mut TestAppContext) {
+            let mut rig = Rig::mount(cx, Store::NeverCalled);
+            rig.type_body(BROKEN_BODY, cx);
+
+            let released = rig.save_and_leave(cx);
+            rig.settle(cx);
+
+            assert_eq!(
+                (released, rig.unsaved(cx), rig.body(cx)),
+                (None, true, BROKEN_BODY.to_owned())
+            );
+        }
+
+        #[gpui::test]
+        fn save_and_leave_follows_the_stored_outcome(cx: &mut TestAppContext) {
+            for (store, expected) in [
+                (Store::Accepts, Some(LeaveTarget::Screen(Screen::Home))),
+                (Store::Fails, None),
+            ] {
+                let mut rig = Rig::mount(cx, store);
+                rig.type_body(EDITED_BODY, cx);
+
+                let on_click = rig.save_and_leave(cx);
+                let storing = rig.saving(cx);
+                let while_storing = cx.update(|cx| rig.guard.settle(cx));
+                rig.settle(cx);
+                let settled = cx.update(|cx| rig.guard.settle(cx));
+
+                assert_eq!(
+                    (on_click, storing, while_storing, rig.saving(cx), settled),
+                    (None, true, None, false, expected.clone()),
+                    "{expected:?}"
+                );
+            }
+        }
+    }
 }

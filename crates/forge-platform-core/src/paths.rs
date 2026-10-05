@@ -10,6 +10,8 @@ const APP_DIR_NAME: &str = "forge";
 
 const MEDIA_DIR_NAME: &str = "media";
 
+const ASSETS_DIR_NAME: &str = "assets";
+
 pub const BACKUPS_DIR_NAME: &str = "backups";
 
 #[allow(clippy::expect_used)]
@@ -40,6 +42,10 @@ pub fn overlays_dir() -> PathBuf {
 
 pub fn media_dir() -> PathBuf {
     data_dir().join(MEDIA_DIR_NAME)
+}
+
+pub fn assets_dir() -> PathBuf {
+    data_dir().join(ASSETS_DIR_NAME)
 }
 
 #[cfg(test)]

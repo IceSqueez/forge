@@ -1,4 +1,5 @@
 use super::editor::{step_glyph, sub_category_color};
+use super::files_root_note::files_root_note;
 use super::*;
 use crate::async_bridge;
 use crate::config_field_label::localized_label;
@@ -964,6 +965,9 @@ impl EditSubActionForm {
             .py(spacing(Spacing::Sm, Density::Cozy))
             .max_h(SUB_MODAL_MAX_H)
             .overflow_y_scroll()
+            .when(self.category == Some(SubActionCategory::Files), |body| {
+                body.child(files_root_note(palette))
+            })
             .child(grid)
             .child(advanced);
 

@@ -54,7 +54,7 @@ impl SubActionRunner for CoreFileListRunner {
         vec![
             FormField::Text {
                 key: "path",
-                label: "Directory Path (relative to assets/)",
+                label: "Directory Path (relative to the files folder)",
                 placeholder: "logs/",
             },
             FormField::Text {

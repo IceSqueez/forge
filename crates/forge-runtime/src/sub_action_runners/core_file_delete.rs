@@ -44,7 +44,7 @@ impl SubActionRunner for CoreFileDeleteRunner {
         vec![
             FormField::Text {
                 key: "path",
-                label: "File Path (relative to assets/)",
+                label: "File Path (relative to the files folder)",
                 placeholder: "output/data.txt",
             },
             FormField::Toggle {

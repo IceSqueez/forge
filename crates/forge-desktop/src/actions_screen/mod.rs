@@ -39,6 +39,7 @@ mod branch;
 mod collection_choices;
 mod delete_confirm_count;
 mod editor;
+mod files_root_note;
 mod integration_gating;
 mod list;
 mod nav;

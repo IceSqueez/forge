@@ -352,6 +352,17 @@ pub(crate) fn message_field() -> SectionedField {
     )
 }
 
+pub(crate) fn chat_platform_field() -> SectionedField {
+    in_section(
+        ConfigSection::Content,
+        FormField::Text {
+            key: PLATFORM,
+            label: "Platform",
+            placeholder: "twitch",
+        },
+    )
+}
+
 pub(crate) fn label_field() -> SectionedField {
     in_section(
         ConfigSection::Content,

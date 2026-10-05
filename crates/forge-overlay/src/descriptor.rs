@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use forge_registry::FormField;
-use forge_types::Variant;
+use forge_types::{ArgStack, Variant};
 
 use crate::assets::PageAssets;
 use crate::base;
@@ -59,6 +59,9 @@ pub trait OverlayKindDescriptor: Send + Sync {
     }
     fn look_fields(&self) -> Vec<SectionedField> {
         Vec::new()
+    }
+    fn implied_content(&self, _args: &ArgStack) -> OverlayConfig {
+        OverlayConfig::new()
     }
     fn default_display_secs(&self) -> i64 {
         base::DEFAULT_DISPLAY_SECS

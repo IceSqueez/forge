@@ -1,3 +1,5 @@
+use forge_types::{ActorRole, ActorSlot, ArgStack, CanonicalVariable, PlatformId, Variant};
+
 use crate::assets::PageAssets;
 use crate::config;
 use crate::descriptor::{
@@ -83,6 +85,7 @@ impl OverlayKindDescriptor for ChatOverlayKind {
         defaults.insert(config::AUTHOR_COLOR.to_owned(), config::text("#89dceb"));
         defaults.insert(config::BADGES.to_owned(), config::text(""));
         defaults.insert(config::MESSAGE.to_owned(), config::text("%message_text%"));
+        defaults.insert(config::PLATFORM.to_owned(), config::text(""));
         defaults
     }
 
@@ -92,10 +95,21 @@ impl OverlayKindDescriptor for ChatOverlayKind {
             config::author_color_field(),
             config::badges_field(),
             config::message_field(),
+            config::chat_platform_field(),
         ];
         fields.extend(config::shared_style_fields());
         fields.push(config::position_field("Newest message at"));
         fields
+    }
+
+    fn implied_content(&self, args: &ArgStack) -> OverlayConfig {
+        let sender_platform = CanonicalVariable::actor(ActorRole::Principal, ActorSlot::Platform);
+        args.get(sender_platform.name())
+            .and_then(Variant::as_str)
+            .and_then(|raw| PlatformId::from_wire(raw.trim()))
+            .map(|platform| (config::PLATFORM.to_owned(), config::text(platform.as_str())))
+            .into_iter()
+            .collect()
     }
 
     fn page_assets(&self) -> PageAssets {

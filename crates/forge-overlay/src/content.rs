@@ -10,6 +10,7 @@ pub fn delivered_content(
     args: &ArgStack,
 ) -> OverlayConfig {
     let configured = effective_overlay_config(descriptor, stored);
+    let implied = descriptor.implied_content(args);
 
     descriptor
         .config_fields()
@@ -21,7 +22,11 @@ pub fn delivered_content(
                 .get(key)
                 .filter(|value| !is_blank(value))
                 .or_else(|| configured.get(key))?;
-            Some((key.to_owned(), expanded(value, args)))
+            let delivered = match (expanded(value, args), implied.get(key)) {
+                (blank, Some(implied)) if is_blank(&blank) => implied.clone(),
+                (delivered, _) => delivered,
+            };
+            Some((key.to_owned(), delivered))
         })
         .collect()
 }

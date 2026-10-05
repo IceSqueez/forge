@@ -646,6 +646,7 @@ impl AppShell {
                 twitch_slot,
                 kick_slot,
                 youtube_slot,
+                handles.endpoints.clone(),
                 obs_install_seed,
                 vtube_install_seed,
                 connectivity,

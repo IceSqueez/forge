@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use forge_overlay::OverlayKindRegistry;
+use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
     ActionEngineHandle, EventBus, LatestValues, LiveViewerAggregatorHandle, OverlayServiceHandle,
@@ -58,4 +59,5 @@ pub struct RuntimeHandles {
     pub voice_gate: Arc<VoiceGateOwner>,
     pub stay_awake: forge_awake::StayAwake,
     pub first_run: crate::first_run::FirstRun,
+    pub endpoints: PlatformEndpoints,
 }

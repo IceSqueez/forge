@@ -163,7 +163,7 @@ impl ConnectFlow {
             "starting twitch device flow"
         );
         let handle: TwitchFlowHandle = Arc::new(tokio::sync::Mutex::new(Some(
-            TwitchAuthFlow::new(&forge_platform_core::PlatformEndpoints::default(), cid),
+            TwitchAuthFlow::new(&self.endpoints, cid),
         )));
         self.twitch_flow = Some(Arc::clone(&handle));
         self.twitch_device = Some(TwitchDeviceState::starting());
@@ -1028,6 +1028,7 @@ mod tests {
             twitch_slot: None,
             kick_slot: None,
             youtube_slot: None,
+            endpoints: forge_platform_core::PlatformEndpoints::default(),
         };
         let flow = cx.new(|cx| ConnectFlow::new(launch, cx));
         let outcome = TwitchAuthOutcome {

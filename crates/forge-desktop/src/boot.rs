@@ -550,6 +550,7 @@ pub async fn build_runtime(
         voice_gate,
         stay_awake,
         first_run,
+        endpoints,
     })
 }
 

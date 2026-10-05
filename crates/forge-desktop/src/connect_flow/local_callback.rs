@@ -6,6 +6,7 @@ use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Radius, Spacing, body_family,
     icon, mono_family, pulse_dot, radius, spacing, spinner, tr, with_alpha,
 };
+use forge_platform_core::PlatformEndpoints;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{
@@ -60,11 +61,7 @@ impl ConnectFlow {
                     return;
                 };
                 let handle = Arc::new(tokio::sync::Mutex::new(Some(
-                    forge_platform_youtube::GoogleAuthFlow::new(
-                        &forge_platform_core::PlatformEndpoints::default(),
-                        cid,
-                        csec,
-                    ),
+                    forge_platform_youtube::GoogleAuthFlow::new(&self.endpoints, cid, csec),
                 )));
                 self.youtube_flow = Some(Arc::clone(&handle));
                 self.spawn_start(cancel, async move { start_youtube_oauth(handle).await }, cx);
@@ -153,9 +150,12 @@ impl ConnectFlow {
                     return;
                 };
                 let wait_cancel = cancel.clone();
+                let endpoints = self.endpoints.clone();
                 self.spawn_wait(
                     cancel,
-                    async move { wait_for_kick_authorization(flow, credentials, wait_cancel).await },
+                    async move {
+                        wait_for_kick_authorization(flow, credentials, endpoints, wait_cancel).await
+                    },
                     cx,
                 );
             }
@@ -1018,6 +1018,7 @@ async fn wait_for_youtube_authorization(
 async fn wait_for_kick_authorization(
     flow_handle: KickFlowHandle,
     credentials_repo: Arc<dyn CredentialsRepo>,
+    endpoints: PlatformEndpoints,
     cancel: CancellationToken,
 ) -> Result<(), String> {
     let mut flow = {
@@ -1036,12 +1037,8 @@ async fn wait_for_kick_authorization(
     let Some((cid, csec)) = forge_platform_kick::client_credentials() else {
         return Err("Kick OAuth client credentials are not configured".to_owned());
     };
-    let manager = forge_platform_kick::KickCredentialsManager::new(
-        &forge_platform_core::PlatformEndpoints::default(),
-        credentials_repo,
-        cid,
-        csec,
-    );
+    let manager =
+        forge_platform_kick::KickCredentialsManager::new(&endpoints, credentials_repo, cid, csec);
     manager
         .save_from_bundle(bundle)
         .await

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use forge_components::{
     Density, ForgePalette, PlatformKind, Spacing, platform_color, platform_hero, spacing, tr,
 };
+use forge_platform_core::PlatformEndpoints;
 use forge_storage::CredentialsRepo;
 use forge_types::PlatformId;
 use gpui::{AnyElement, Context, EventEmitter, Rgba, Window, div, prelude::*, px};
@@ -32,6 +33,7 @@ pub struct ConnectFlowLaunch {
     pub twitch_slot: Option<IntegrationSlot>,
     pub kick_slot: Option<IntegrationSlot>,
     pub youtube_slot: Option<IntegrationSlot>,
+    pub endpoints: PlatformEndpoints,
 }
 
 pub struct ConnectFlow {
@@ -42,6 +44,7 @@ pub struct ConnectFlow {
     twitch_slot: Option<IntegrationSlot>,
     kick_slot: Option<IntegrationSlot>,
     youtube_slot: Option<IntegrationSlot>,
+    endpoints: PlatformEndpoints,
     phase: LocalCallbackFlowPhase,
     auth_url: Option<String>,
     error: Option<String>,
@@ -73,6 +76,7 @@ impl ConnectFlow {
             twitch_slot,
             kick_slot,
             youtube_slot,
+            endpoints,
         } = launch;
 
         if platform == PlatformId::Twitch {
@@ -90,6 +94,7 @@ impl ConnectFlow {
             twitch_slot,
             kick_slot,
             youtube_slot,
+            endpoints,
             phase: LocalCallbackFlowPhase::Idle,
             auth_url: None,
             error: None,

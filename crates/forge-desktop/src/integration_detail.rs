@@ -9,8 +9,8 @@ use forge_obs::ObsClient;
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
     CapabilityFlags, CollectionId, ConnectionState, ControlFailure, DetailSection, HeaderAction,
-    HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, QuickAction, QuickActions,
-    SectionIcon,
+    HealthDelta, HealthMetric, HealthValue, HeroBadge, HeroBadgeTone, PlatformEndpoints,
+    QuickAction, QuickActions, SectionIcon,
 };
 use forge_registry::TriggerRegistry;
 use forge_runtime::{ActionEngineHandle, EventBus, LiveViewerAggregatorHandle, LiveViewerCount};
@@ -78,6 +78,7 @@ pub struct IntegrationDetail {
     trigger_registry: Arc<TriggerRegistry>,
     bus: Arc<dyn EventPublisher>,
     twitch_slot: Option<IntegrationSlot>,
+    endpoints: PlatformEndpoints,
     kick_slot: Option<IntegrationSlot>,
     youtube_slot: Option<IntegrationSlot>,
     obs_install_seed: ObsInstallSeed,
@@ -173,6 +174,7 @@ impl IntegrationDetail {
         twitch_slot: Option<IntegrationSlot>,
         kick_slot: Option<IntegrationSlot>,
         youtube_slot: Option<IntegrationSlot>,
+        endpoints: PlatformEndpoints,
         obs_install_seed: ObsInstallSeed,
         vtube_install_seed: VTubeInstallSeed,
         connectivity: Entity<PlatformConnectivity>,
@@ -253,6 +255,7 @@ impl IntegrationDetail {
             twitch_slot,
             kick_slot,
             youtube_slot,
+            endpoints,
             obs_install_seed,
             vtube_install_seed,
             connect: None,
@@ -322,6 +325,7 @@ impl IntegrationDetail {
             twitch_slot: self.twitch_slot.clone(),
             kick_slot: self.kick_slot.clone(),
             youtube_slot: self.youtube_slot.clone(),
+            endpoints: self.endpoints.clone(),
         };
         let view = cx.new(|cx| ConnectFlow::new(launch, cx));
         let subs = vec![

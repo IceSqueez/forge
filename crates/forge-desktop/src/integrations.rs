@@ -1461,6 +1461,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    forge_platform_core::PlatformEndpoints::default(),
                     ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
                     VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
                     connectivity,

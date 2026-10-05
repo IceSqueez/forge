@@ -74,7 +74,7 @@ impl ConnectFlow {
                     return;
                 };
                 let handle = Arc::new(tokio::sync::Mutex::new(Some(
-                    forge_platform_kick::KickAuthFlow::new(cid, csec),
+                    forge_platform_kick::KickAuthFlow::new(&self.endpoints, cid, csec),
                 )));
                 self.kick_flow = Some(Arc::clone(&handle));
                 self.spawn_start(cancel, async move { start_kick_oauth(handle).await }, cx);

@@ -8,11 +8,12 @@ use time::OffsetDateTime;
 
 pub const KICK_AUTHORIZE_ENDPOINT: &str = "https://id.kick.com/oauth/authorize";
 pub const KICK_TOKEN_ENDPOINT: &str = "https://id.kick.com/oauth/token";
-pub const KICK_USERS_ENDPOINT: &str = "https://api.kick.com/public/v1/users";
 
 pub const KICK_OAUTH_CALLBACK_PORT: u16 = 53127;
 
+const KICK_AUTHORIZE_PATH: &str = "/authorize";
 const KICK_TOKEN_PATH: &str = "/token";
+const KICK_USERS_PATH: &str = "/users";
 
 const KICK_SCOPES: &[&str] = &[
     "user:read",
@@ -64,13 +65,17 @@ pub struct KickAuthFlow {
 }
 
 impl KickAuthFlow {
-    pub fn new(client_id: String, client_secret: String) -> Self {
+    pub fn new(endpoints: &PlatformEndpoints, client_id: String, client_secret: String) -> Self {
+        let oauth_base = endpoints.base_url(EndpointSurface::KickOAuth);
         Self::with_endpoints(
             client_id,
             client_secret,
-            KICK_AUTHORIZE_ENDPOINT.to_owned(),
-            KICK_TOKEN_ENDPOINT.to_owned(),
-            KICK_USERS_ENDPOINT.to_owned(),
+            format!("{oauth_base}{KICK_AUTHORIZE_PATH}"),
+            kick_token_endpoint(endpoints),
+            format!(
+                "{}{KICK_USERS_PATH}",
+                endpoints.base_url(EndpointSurface::KickPublicApi)
+            ),
         )
     }
 

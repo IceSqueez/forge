@@ -47,6 +47,7 @@ mod tests {
     use super::*;
     use crate::config;
     use crate::kinds::alert::AlertOverlayKind;
+    use crate::kinds::chat::ChatOverlayKind;
 
     fn args(pairs: &[(&str, &str)]) -> ArgStack {
         pairs.iter().fold(ArgStack::new(), |stack, (name, value)| {
@@ -136,5 +137,59 @@ mod tests {
             "1000 for Nova",
             "the overlay's own wording expanded against a different stack than the step's"
         );
+    }
+
+    #[test]
+    fn the_chat_platform_follows_the_sender_unless_the_wording_is_set() {
+        let rows: [(&str, &str, &str, &str, &str); 11] = [
+            ("twitch", "", "", "twitch", "twitch sender"),
+            ("youtube", "", "", "youtube", "youtube sender"),
+            ("kick", "", "", "kick", "kick sender"),
+            (" kick ", "", "", "kick", "padded wire id"),
+            ("donatello", "", "", "", "unsupported platform"),
+            ("you_tube", "", "", "", "near-miss spelling"),
+            ("", "", "", "", "empty platform argument"),
+            ("kick", "youtube", "", "youtube", "explicit step value"),
+            ("twitch", "", "kick", "kick", "explicit saved overlay value"),
+            ("kick", "%user_platform%", "", "kick", "step token"),
+            ("twitch", "", "%user_platform%", "twitch", "saved token"),
+        ];
+        for (sender, supplied, stored, expected, label) in rows {
+            let content = delivered_content(
+                &ChatOverlayKind,
+                &one(config::PLATFORM, stored),
+                &one(config::PLATFORM, supplied),
+                &args(&[("user_platform", sender)]),
+            );
+
+            assert_eq!(text_at(&content, config::PLATFORM), expected, "{label}");
+        }
+    }
+
+    #[test]
+    fn the_chat_platform_is_empty_when_the_event_carries_no_sender_platform() {
+        let content = delivered_content(
+            &ChatOverlayKind,
+            &OverlayConfig::new(),
+            &OverlayConfig::new(),
+            &ArgStack::new(),
+        );
+
+        assert_eq!(
+            content.get(config::PLATFORM),
+            Some(&Variant::String(String::new()))
+        );
+    }
+
+    #[test]
+    fn a_kind_without_implied_content_never_gains_a_platform_field() {
+        let content = delivered_content(
+            &AlertOverlayKind,
+            &OverlayConfig::new(),
+            &OverlayConfig::new(),
+            &args(&[("user_platform", "kick")]),
+        );
+
+        assert!(!content.contains_key(config::PLATFORM));
     }
 }

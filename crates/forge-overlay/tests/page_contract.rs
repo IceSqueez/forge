@@ -295,3 +295,13 @@ fn a_look_lists_its_own_config_keys_in_descriptor_order_without_the_ones_the_run
         "no builtin look carries a runtime-applied key, so the exclusion went unexercised"
     );
 }
+
+#[test]
+fn the_chat_look_declares_the_platform_content_key() {
+    let reg = registry();
+    let chat = reg
+        .get("overlay.chat")
+        .expect("the chat kind is registered");
+
+    assert!(look_contract(chat).content_keys.contains(&"platform"));
+}

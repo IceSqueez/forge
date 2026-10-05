@@ -34,6 +34,7 @@ const EXPECTED_SAMPLE_CONTENT: &[(&str, &[(&str, &str)])] = &[
             ("author_color", "#89dceb"),
             ("badges", ""),
             ("message", "hey, great stream!"),
+            ("platform", ""),
         ],
     ),
     ("overlay.frame", &[("headline", ""), ("subline", "LIVE")]),

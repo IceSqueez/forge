@@ -132,8 +132,8 @@ mod tests {
     use time::{Duration, OffsetDateTime};
 
     use super::{
-        DASH, SubStatus, ViewerDirectory, author_summary, drawer_matches, enrich_with_storage,
-        selected_summary, sub_status, watch_time_since,
+        SubStatus, ViewerDirectory, author_summary, drawer_matches, enrich_with_storage,
+        selected_summary, sub_status,
     };
     use crate::chat_feed::{ChatFeed, ChatMessage};
 
@@ -264,7 +264,6 @@ mod tests {
         let messages = [msg("alice", vec![BadgeKind::Subscriber])];
         let summary = synthesize_from_chat("alice", &messages).unwrap();
         assert_eq!(summary.message_count, 1);
-        assert_eq!(summary.watch_time, DASH);
 
         let now = OffsetDateTime::now_utc();
         let stored = viewer(
@@ -276,7 +275,6 @@ mod tests {
         let enriched = enrich_with_storage(summary, Some(&stored));
 
         assert_eq!(enriched.message_count, 99);
-        assert_eq!(enriched.watch_time, "2h 0m");
         assert_eq!(enriched.last_seen_label, "fmt_relative_days");
         assert_eq!(enriched.role, Some(BadgeKind::Subscriber));
         assert!(enriched.sub == SubStatus::Subscribed);
@@ -291,7 +289,6 @@ mod tests {
         let enriched = enrich_with_storage(summary, ViewerDirectory::new(vec![other]).get("alice"));
 
         assert_eq!(enriched.message_count, 1);
-        assert_eq!(enriched.watch_time, DASH);
         assert_eq!(enriched.last_seen_label, "fmt_relative_seconds");
     }
 
@@ -424,18 +421,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(summary.username, "carol");
-    }
-
-    #[test]
-    fn watch_time_since_formats_minutes_and_hours() {
-        let now = OffsetDateTime::now_utc();
-        let cases = [(0, "0 min"), (30, "30 min"), (60, "1h 0m"), (150, "2h 30m")];
-        for (mins_ago, expected) in cases {
-            assert_eq!(
-                watch_time_since(now - Duration::minutes(mins_ago)),
-                expected,
-                "mins_ago={mins_ago}"
-            );
-        }
     }
 }

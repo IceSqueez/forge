@@ -58,6 +58,26 @@ pub struct EmoteTokenSet {
     pub tokens: HashSet<String>,
 }
 
+impl EmoteTokenSet {
+    pub fn is_empty(&self) -> bool {
+        self.tokens.is_empty()
+    }
+
+    pub fn merged_with(&self, other: &EmoteTokenSet) -> EmoteTokenSet {
+        EmoteTokenSet {
+            tokens: self.tokens.union(&other.tokens).cloned().collect(),
+        }
+    }
+}
+
+impl FromIterator<String> for EmoteTokenSet {
+    fn from_iter<I: IntoIterator<Item = String>>(iter: I) -> Self {
+        Self {
+            tokens: iter.into_iter().collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ReplacementRule {
     Text {
@@ -167,6 +187,13 @@ impl PipelineConfig {
             blocklist_mode,
             output,
             strip_reward_emotes,
+        }
+    }
+
+    pub fn with_message_emotes(&self, message_emotes: &EmoteTokenSet) -> PipelineConfig {
+        PipelineConfig {
+            emote_tokens: self.emote_tokens.merged_with(message_emotes),
+            ..self.clone()
         }
     }
 }

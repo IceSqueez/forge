@@ -9,6 +9,7 @@ pub mod form;
 pub mod io;
 pub mod kind_platform_contract;
 pub mod merge;
+pub mod message_emotes;
 pub mod refinement;
 pub mod registry;
 pub mod run_context;
@@ -34,6 +35,7 @@ pub use form::{CodeLanguage, FormField};
 pub use io::{ProducedVariable, SubActionIo};
 pub use kind_platform_contract::KindPlatformContract;
 pub use merge::effective_config;
+pub use message_emotes::{MESSAGE_EMOTES_VARIABLE, chat_emote_codes, message_emote_codes};
 pub use refinement::{FormRefinement, FormSchemaSource, refined_fields};
 pub use registry::{
     OwnedSubActionRegistration, OwnedTriggerRegistration, SubActionRegistry, TriggerRegistry,

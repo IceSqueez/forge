@@ -64,6 +64,7 @@ impl SpeakBridge {
             source_event_id: origin.caused_by,
             is_reward,
             target,
+            message_emotes: origin.message_emotes.into_iter().collect(),
         };
         self.handle
             .send(SpeakCommand::Enqueue(request))

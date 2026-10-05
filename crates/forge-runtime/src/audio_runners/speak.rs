@@ -5,17 +5,41 @@ use forge_registry::{
     FormField, RegistryError, RunContext, StepTimer, SubActionCategory, SubActionConfigExt,
     SubActionRunner,
 };
-use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
+use forge_types::{
+    ArgStack, PlatformId, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant,
+};
 
 use crate::speak_dispatcher::{SpeakDispatcher, SpeechOrigin};
+use crate::twitch_emote_lexicon::TwitchEmoteLexicon;
 
 pub struct SpeakRunner {
     speak: Arc<dyn SpeakDispatcher>,
+    reward_emotes: TwitchEmoteLexicon,
 }
 
 impl SpeakRunner {
     pub fn new(speak: Arc<dyn SpeakDispatcher>) -> Self {
-        Self { speak }
+        Self {
+            speak,
+            reward_emotes: TwitchEmoteLexicon::default(),
+        }
+    }
+
+    pub fn with_reward_emotes(mut self, lexicon: TwitchEmoteLexicon) -> Self {
+        self.reward_emotes = lexicon;
+        self
+    }
+
+    fn add_learned_reward_emotes(&self, origin: &mut SpeechOrigin, text: &str) {
+        let from_twitch = origin
+            .viewer
+            .as_ref()
+            .is_some_and(|viewer| viewer.platform == PlatformId::Twitch.as_str());
+        if from_twitch {
+            origin
+                .message_emotes
+                .extend(self.reward_emotes.codes_in(text));
+        }
     }
 }
 
@@ -96,7 +120,10 @@ impl SubActionRunner for SpeakRunner {
         let voice_alias = config.str("voice_alias").map(|s| s.to_owned());
 
         let is_reward = ctx.arg_stack.get("reward.id").is_some();
-        let origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
+        let mut origin = SpeechOrigin::from_args(ctx.arg_stack, Some(ctx.parent_event_id));
+        if is_reward {
+            self.add_learned_reward_emotes(&mut origin, &text);
+        }
         let wait_for_completion = config.bool("wait_for_completion").unwrap_or(true);
         let dispatch_result = if wait_for_completion {
             self.speak

@@ -8,7 +8,9 @@ use forge_components::{
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_speak_queue::{
+    EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
+};
 use forge_storage::SettingsRepo;
 use forge_tts_core::{TtsRegistry, TtsVoice};
 use gpui::{
@@ -1296,6 +1298,7 @@ fn test_speak_request(text: String, speaker_name: String) -> SpeakRequest {
         source_event_id: None,
         is_reward: false,
         target: None,
+        message_emotes: EmoteTokenSet::default(),
     }
 }
 

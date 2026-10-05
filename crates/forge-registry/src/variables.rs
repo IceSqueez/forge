@@ -8,6 +8,7 @@ use forge_types::{
 
 use crate::descriptor::TriggerKindDescriptor;
 use crate::first_chatter::{first_message_declaration, is_first_chat_message};
+use crate::message_emotes::{chat_emote_codes, message_emotes_declaration};
 
 const CANONICAL_CLASS: u8 = 0;
 const EVENT_SPECIFIC_CLASS: u8 = 1;
@@ -185,6 +186,17 @@ impl TriggerVariables {
     pub fn first_chat_message(self) -> Self {
         self.event_specific(first_message_declaration(), |event| {
             Variant::Bool(is_first_chat_message(event))
+        })
+    }
+
+    pub fn message_emotes(self) -> Self {
+        self.event_specific(message_emotes_declaration(), |event| {
+            Variant::Array(
+                chat_emote_codes(event)
+                    .into_iter()
+                    .map(Variant::String)
+                    .collect(),
+            )
         })
     }
 

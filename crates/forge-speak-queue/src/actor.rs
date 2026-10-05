@@ -126,7 +126,12 @@ async fn run_synthesis(
     deps: SynthTaskDeps,
     recent_messages: Vec<String>,
 ) -> SynthTaskResult {
-    let pipeline_cfg = deps.pipeline.load();
+    let configured = deps.pipeline.load();
+    let pipeline_cfg = if req.message_emotes.is_empty() {
+        configured
+    } else {
+        Arc::new(configured.with_message_emotes(&req.message_emotes))
+    };
 
     let reward_stripped;
     let text_for_pipeline: &str = if req.is_reward && pipeline_cfg.strip_reward_emotes {

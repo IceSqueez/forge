@@ -6,7 +6,9 @@ use forge_components::{
     avatar_tile, body_family, card, empty_state, hash_accent, icon, mono_family, radius,
     section_label, slider, spacing, status_dot, toggle, tr,
 };
-use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_speak_queue::{
+    EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
+};
 use forge_storage::{CredentialId, CredentialsRepo, EngineParams, SettingsRepo};
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceGender, VoiceId};
 use forge_voice::SynthesisDefaults;
@@ -318,6 +320,7 @@ impl TtsEnginesView {
             source_event_id: None,
             is_reward: false,
             target: None,
+            message_emotes: EmoteTokenSet::default(),
         };
         async_bridge::report_failure(
             &self.rt_handle,

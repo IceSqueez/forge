@@ -45,6 +45,7 @@ mod test_support;
 pub mod timer_scheduler;
 pub mod trigger_evaluator;
 pub mod triggers;
+pub mod twitch_emote_lexicon;
 pub mod viewer_tracker;
 
 pub use action_cancel::ActionCancelRegistry;
@@ -110,4 +111,5 @@ pub use sub_action_runners::{
 pub use timer_scheduler::spawn_timer_scheduler;
 pub use trigger_evaluator::{COMMAND_LINE_TARGET, TriggerEvaluatorHandle, spawn_trigger_evaluator};
 pub use triggers::register_core_triggers;
+pub use twitch_emote_lexicon::{TwitchEmoteLexicon, spawn_twitch_emote_learning};
 pub use viewer_tracker::spawn_viewer_tracker;

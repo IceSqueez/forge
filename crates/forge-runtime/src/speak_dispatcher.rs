@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use forge_registry::CancelSignal;
+use forge_registry::{CancelSignal, message_emote_codes};
 use forge_types::{ActorRole, ActorSlot, ArgStack, CanonicalVariable, EventId, Variant};
 use tokio::sync::watch;
 
@@ -32,6 +32,7 @@ pub struct SpeakingViewer {
 pub struct SpeechOrigin {
     pub viewer: Option<SpeakingViewer>,
     pub caused_by: Option<EventId>,
+    pub message_emotes: Vec<String>,
 }
 
 impl SpeechOrigin {
@@ -39,6 +40,7 @@ impl SpeechOrigin {
         Self {
             viewer: principal_viewer(args),
             caused_by,
+            message_emotes: message_emote_codes(args),
         }
     }
 }

@@ -33,6 +33,7 @@ pub(super) fn base_chat_variables() -> TriggerVariables {
             |event| Variant::String(text_field(event, fields::COLOR)),
         )
         .first_chat_message()
+        .message_emotes()
 }
 
 fn chatter_identity(event: &Event) -> ActorIdentity {

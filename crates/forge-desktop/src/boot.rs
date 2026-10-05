@@ -14,11 +14,12 @@ use forge_runtime::{
     OverlayConnectListener, OverlayFrameSink, OverlayMediaLibrary, OverlayServiceCell,
     OverlayServiceHandle, QueueScheduler, ScheduledRunsCell, ScheduledRunsParts, SchedulerCell,
     ScriptRegistry, ScriptScheduling, SoundPlayer, SpeakDispatcher, SystemWallClock,
-    register_audio_sub_actions, register_core_sub_actions, register_core_triggers,
-    register_donation_sub_actions, register_latest_sub_actions, register_scheduled_run_sub_actions,
-    spawn_action_engine, spawn_chat_history_persistence, spawn_event_log_bridge,
-    spawn_latest_overlay_feed, spawn_latest_projector, spawn_live_viewer_aggregator,
-    spawn_scheduled_runs, spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
+    TwitchEmoteLexicon, register_audio_sub_actions, register_core_sub_actions,
+    register_core_triggers, register_donation_sub_actions, register_latest_sub_actions,
+    register_scheduled_run_sub_actions, spawn_action_engine, spawn_chat_history_persistence,
+    spawn_event_log_bridge, spawn_latest_overlay_feed, spawn_latest_projector,
+    spawn_live_viewer_aggregator, spawn_scheduled_runs, spawn_stream_live_signal,
+    spawn_timer_scheduler, spawn_trigger_evaluator, spawn_twitch_emote_learning,
     spawn_viewer_tracker,
 };
 use forge_soundboard::{
@@ -323,10 +324,13 @@ pub async fn build_runtime(
     soundboard_player.install_settings_store(Arc::clone(&soundboard_settings_repo));
     match speak_dispatcher {
         Some(dispatcher) => {
+            let reward_emotes = TwitchEmoteLexicon::default();
+            spawn_twitch_emote_learning(&bus, reward_emotes.clone());
             if let Err(e) = register_audio_sub_actions(
                 &mut sub_action_reg,
                 Arc::clone(&soundboard_player) as Arc<dyn SoundPlayer>,
                 dispatcher,
+                reward_emotes,
             ) {
                 eprintln!("forge-desktop: audio sub-action runner registration failed: {e}");
             }

@@ -9,7 +9,9 @@ use forge_components::{
     primary_button, primary_button_with_icon, radius, secondary_button, segment, segmented,
     spacing, status_dot, toggle, toolbar_row, tr, virtual_table, with_alpha,
 };
-use forge_speak_queue::{Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest};
+use forge_speak_queue::{
+    EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
+};
 use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
 use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
@@ -796,6 +798,7 @@ impl VoiceAliasesView {
                 source_event_id: None,
                 is_reward: false,
                 target: None,
+                message_emotes: EmoteTokenSet::default(),
             };
             if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
                 eprintln!("forge-desktop: voice alias preview failed: {e}");

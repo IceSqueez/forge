@@ -7,8 +7,8 @@ use forge_components::{
     radio_row_label, radius, spacing, toggle, tr, with_alpha,
 };
 use forge_speak_queue::{
-    PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
-    build_config_lenient, build_config_strict,
+    EmoteTokenSet, PipelineConfigHandle, Priority, RequestId, SpeakCommand, SpeakQueueHandle,
+    SpeakRequest, build_config_lenient, build_config_strict,
 };
 use forge_storage::{
     BlocklistMode, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings,
@@ -939,6 +939,7 @@ impl TtsFiltersView {
                 source_event_id: None,
                 is_reward: false,
                 target: None,
+                message_emotes: EmoteTokenSet::default(),
             };
             if let Err(e) = handle.send(SpeakCommand::Enqueue(request)).await {
                 eprintln!("forge-desktop: filter preview speak failed: {e}");

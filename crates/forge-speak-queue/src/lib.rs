@@ -15,6 +15,7 @@ pub use forge_audio::PlaybackTarget;
 use forge_audio::TargetedSinkFactory;
 pub use forge_tts_core::TtsError;
 use forge_tts_core::{EngineId, TtsRegistry, TtsVoice, VoiceId};
+pub use forge_tts_pipeline::EmoteTokenSet;
 use forge_types::Shared;
 use forge_voice::{AliasId, AssignmentStrategy, SynthesisDefaults, VoiceAlias, VoiceAliasResolver};
 
@@ -52,6 +53,7 @@ pub struct SpeakRequest {
     pub source_event_id: Option<forge_types::EventId>,
     pub is_reward: bool,
     pub target: Option<PlaybackTarget>,
+    pub message_emotes: EmoteTokenSet,
 }
 
 #[derive(Debug)]

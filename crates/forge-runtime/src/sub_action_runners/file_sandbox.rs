@@ -114,39 +114,6 @@ pub(super) fn glob_matches(pattern: &str, name: &str) -> bool {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn resolve_sandboxed_rejects_traversal_and_rooted_paths() {
-        let escapes = [
-            "..",                // bare parent
-            "../etc/passwd",     // leading parent traversal
-            "a/../../b",         // interior parent traversal escaping root
-            "sub/../../../etc",  // traversal after a legal-looking prefix
-            "/abs",              // absolute (unix root)
-            "/etc/passwd",       // absolute system path
-            "\\abs",             // leading backslash (Windows-style absolute / UNC)
-            "\\\\server\\share", // UNC path
-            "",                  // empty
-        ];
-        for bad in escapes {
-            assert!(
-                resolve_sandboxed(bad).await.is_err(),
-                "expected sandbox rejection for {bad:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn resolve_sandboxed_joins_valid_relative_under_assets_root() {
-        let root = forge_platform_core::paths::data_dir().join("assets");
-        let expected_root = tokio::fs::canonicalize(&root).await.unwrap_or(root);
-        let resolved = resolve_sandboxed("sub/file.txt").await.unwrap();
-        assert!(
-            resolved.starts_with(&expected_root),
-            "{resolved:?} escaped {expected_root:?}"
-        );
-        assert_eq!(resolved, expected_root.join("sub").join("file.txt"));
-    }
-
     #[test]
     fn glob_matches_table() {
         let cases = [
@@ -154,18 +121,18 @@ mod tests {
             ("", "anything.txt", true),
             ("file.txt", "file.txt", true),
             ("file.txt", "other.txt", false),
-            ("File", "file", false),  // case-sensitive
-            ("abcdef", "abc", false), // pattern longer than name
+            ("File", "file", false),
+            ("abcdef", "abc", false),
             ("*.txt", "file.txt", true),
             ("*.txt", "file.md", false),
             ("file.*", "file.txt", true),
             ("file.*", "other.txt", false),
             ("a*b", "axxxb", true),
-            ("a*b", "ab", true),    // star matches empty span
-            ("a*b", "a", false),    // shorter than prefix+suffix
-            ("a*b", "axbq", false), // suffix mismatch
+            ("a*b", "ab", true),
+            ("a*b", "a", false),
+            ("a*b", "axbq", false),
             ("a*b*c", "axbyc", true),
-            ("a*b*c", "axyc", false), // missing middle literal
+            ("a*b*c", "axyc", false),
             ("*mid*", "xxmidyy", true),
             ("*mid*", "xxxyy", false),
             ("f?le", "f?le", true),

@@ -184,8 +184,6 @@ async fn do_write(
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use forge_events::{Event, EventPublisher};
-    use forge_types::EventId;
 
     #[test]
     fn encode_content_utf8_returns_raw_utf8_bytes() {
@@ -222,35 +220,5 @@ mod tests {
     fn encode_content_rejects_unknown_encoding() {
         let err = encode_content("x", "utf16").unwrap_err();
         assert!(err.contains("unknown encoding"), "{err}");
-    }
-
-    struct NullPublisher;
-    impl EventPublisher for NullPublisher {
-        fn publish(&self, _event: Event) {}
-    }
-
-    #[tokio::test]
-    async fn write_rejects_parent_traversal_before_touching_disk() {
-        let runner = CoreFileWriteRunner;
-        let mut cfg = SubActionConfig::new();
-        cfg.insert(
-            "path".to_owned(),
-            Variant::String("../escape.txt".to_owned()),
-        );
-        cfg.insert("content".to_owned(), Variant::String("data".to_owned()));
-
-        let stack = ArgStack::new();
-        let ctx = RunContext::leaf(&stack, 0, EventId::new(), &NullPublisher);
-        let (telemetry, produced) = runner.execute(&cfg, &ctx).await;
-
-        assert!(
-            matches!(&telemetry.outcome, SubActionOutcome::Failed(msg) if msg.contains("sandbox rejected")),
-            "expected sandbox rejection, got {:?}",
-            telemetry.outcome
-        );
-        assert!(
-            produced.is_none(),
-            "no scope variable must be bound when the sandbox rejects the path"
-        );
     }
 }

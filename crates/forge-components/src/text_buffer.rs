@@ -853,6 +853,77 @@ mod tests {
         }
     }
 
+    type BufferSetup = fn() -> TextBuffer;
+
+    fn history_signature(
+        buffer: &mut TextBuffer,
+    ) -> (String, Range<usize>, bool, Vec<String>, Vec<String>) {
+        let text = buffer.as_str().to_string();
+        let selection = buffer.selected_range().clone();
+        let reversed = buffer.is_reversed();
+        let undone = undo_trail(buffer);
+        let mut redone = Vec::new();
+        while buffer.redo() {
+            redone.push(buffer.as_str().to_string());
+        }
+        (text, selection, reversed, undone, redone)
+    }
+
+    #[test]
+    fn discarding_a_composition_restores_text_selection_and_history_exactly() {
+        let fresh: BufferSetup = || {
+            let mut b = loaded("ab");
+            b.move_to(1);
+            b
+        };
+        let fresh_after_history: BufferSetup = || {
+            let mut b = typed("ab");
+            b.move_to(1);
+            b
+        };
+        let merged_into_open_group: BufferSetup = || typed("ab");
+        let with_redo_pending: BufferSetup = || {
+            let mut b = typed("ab cd");
+            b.undo();
+            b
+        };
+        let compose_once: BufferOp = |b| b.replace_and_mark_in_utf16_range(None, "ні", Some(2..2));
+        let compose_in_steps: BufferOp = |b| {
+            b.replace_and_mark_in_utf16_range(None, "н", Some(1..1));
+            b.replace_and_mark_in_utf16_range(None, "ні", Some(2..2));
+            b.replace_and_mark_in_utf16_range(None, "ніч", Some(3..3));
+        };
+        let no_composition: BufferOp = |_| {};
+        for (label, setup, compose, expected_discard) in [
+            ("fresh", fresh, compose_once, true),
+            ("after history", fresh_after_history, compose_once, true),
+            (
+                "open typing group",
+                merged_into_open_group,
+                compose_once,
+                true,
+            ),
+            ("pending redo", with_redo_pending, compose_once, true),
+            ("several updates", fresh, compose_in_steps, true),
+            (
+                "several updates in group",
+                merged_into_open_group,
+                compose_in_steps,
+                true,
+            ),
+            ("no composition", fresh_after_history, no_composition, false),
+        ] {
+            let expected = history_signature(&mut setup());
+            let mut buffer = setup();
+            compose(&mut buffer);
+
+            let discarded = buffer.discard_marked();
+
+            assert_eq!(discarded, expected_discard, "{label}");
+            assert_eq!(history_signature(&mut buffer), expected, "{label}");
+        }
+    }
+
     #[test]
     fn out_of_bounds_utf16_ranges_are_clamped_to_the_text() {
         for (range, expected) in [

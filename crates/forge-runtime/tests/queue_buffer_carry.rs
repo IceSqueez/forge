@@ -55,12 +55,6 @@ impl ActionRepo for MemoryActionRepo {
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError> {
         Ok(self.actions.lock().unwrap().remove(&id).is_some())
     }
-    async fn list_by_group<'a>(
-        &'a self,
-        _group: Option<&'a str>,
-    ) -> Result<Vec<Action>, StorageError> {
-        Ok(Vec::new())
-    }
     async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
         Ok(ActionTelemetry::default())
     }

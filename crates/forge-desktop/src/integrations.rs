@@ -589,7 +589,7 @@ pub(crate) fn spawn_connect(
 mod tests {
     use super::*;
     use forge_events::EventStream;
-    use forge_platform_core::{AuthFlow, ConnectionState, PlatformCapabilities};
+    use forge_platform_core::ConnectionState;
     use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
@@ -601,10 +601,6 @@ mod tests {
     impl RateLimiter for NoopRateLimiter {
         async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
             Ok(RateLimitOutcome::Granted)
-        }
-
-        fn remaining(&self) -> u32 {
-            u32::MAX
         }
 
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
@@ -628,8 +624,6 @@ mod tests {
         sends: mpsc::UnboundedSender<PlatformCall>,
         gate: Option<Arc<Semaphore>>,
         failure: Option<String>,
-        auth: AuthFlow,
-        caps: PlatformCapabilities,
     }
 
     impl RecordingPlatform {
@@ -660,19 +654,6 @@ mod tests {
                 sends: tx,
                 gate,
                 failure,
-                auth: AuthFlow::None {
-                    reason: String::new(),
-                },
-                caps: PlatformCapabilities {
-                    can_send_chat: true,
-                    can_moderate: false,
-                    can_subscribe_events: false,
-                    can_polls: false,
-                    can_predictions: false,
-                    can_channel_points: false,
-                    limited: false,
-                    limited_reason: None,
-                },
             });
             (platform, rx)
         }
@@ -691,15 +672,6 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ChatPlatform for RecordingPlatform {
-        fn platform_id(&self) -> &'static str {
-            "mock"
-        }
-        fn auth_flow(&self) -> &AuthFlow {
-            &self.auth
-        }
-        fn capabilities(&self) -> &PlatformCapabilities {
-            &self.caps
-        }
         fn connection_state(&self) -> ConnectionState {
             ConnectionState::Connected
         }

@@ -85,13 +85,6 @@ async fn archive_hides_global_across_read_surface_and_lists_it_in_archived() {
             .all(|e| e.name != "secret"),
         "list() must exclude the archived global"
     );
-
-    let archived = repo.list_archived().await.expect("list_archived");
-    let entry = archived
-        .iter()
-        .find(|e| e.name == "secret")
-        .expect("archived global must appear in list_archived");
-    assert_eq!(entry.value, Variant::Int(42), "value survives archiving");
 }
 
 #[tokio::test]
@@ -115,14 +108,6 @@ async fn restore_returns_archived_global_to_visibility() {
             .iter()
             .any(|e| e.name == "item"),
         "restored global reappears in list()"
-    );
-    assert!(
-        repo.list_archived()
-            .await
-            .expect("list_archived")
-            .iter()
-            .all(|e| e.name != "item"),
-        "restored global must leave list_archived"
     );
 }
 
@@ -148,14 +133,6 @@ async fn set_on_archived_global_resurrects_it_with_new_value() {
             .iter()
             .any(|e| e.name == "dup"),
         "resurrected global reappears in list()"
-    );
-    assert!(
-        repo.list_archived()
-            .await
-            .expect("list_archived")
-            .iter()
-            .all(|e| e.name != "dup"),
-        "resurrected global must leave list_archived"
     );
 }
 

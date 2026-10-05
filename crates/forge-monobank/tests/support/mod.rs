@@ -121,10 +121,6 @@ impl RateLimiter for ScriptedLimiter {
         Ok(self.outcome)
     }
 
-    fn remaining(&self) -> u32 {
-        u32::from(self.outcome == RateLimitOutcome::Granted)
-    }
-
     async fn observe_remote_throttle(&self, retry_after: Duration) {
         self.throttles.lock().unwrap().push(retry_after);
     }

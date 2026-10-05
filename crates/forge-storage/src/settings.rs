@@ -278,18 +278,6 @@ pub trait SettingsRepo: Send + Sync {
             .await
     }
 
-    async fn density(&self) -> Result<Density, StorageError> {
-        match self.get_string(reserved_keys::DENSITY).await? {
-            Some(s) => Ok(s.parse().unwrap_or_default()),
-            None => Ok(Density::default()),
-        }
-    }
-
-    async fn set_density(&self, density: Density) -> Result<(), StorageError> {
-        self.set_string(reserved_keys::DENSITY, &density.to_string())
-            .await
-    }
-
     async fn get_theme(&self) -> Result<Option<String>, StorageError> {
         self.get_string(reserved_keys::THEME).await
     }

@@ -3,15 +3,14 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints,
-    PlatformError, connection_state_changed_event,
+    ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
+    connection_state_changed_event,
 };
 use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
-use crate::auth::youtube_auth_flow;
 use crate::chat_poller::YoutubeChatPoller;
 use crate::credentials_manager::YoutubeCredentialsManager;
 use crate::event_channel::PlatformEventChannel;
@@ -24,7 +23,6 @@ const PLATFORM_ID: &str = "youtube";
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
 
 pub struct YoutubePlatform {
-    auth_flow: AuthFlow,
     endpoints: PlatformEndpoints,
     capabilities: PlatformCapabilities,
     channel_id: String,
@@ -56,7 +54,6 @@ impl YoutubePlatform {
         );
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
-            auth_flow: youtube_auth_flow(),
             endpoints: endpoints.clone(),
             capabilities: youtube_capabilities(),
             channel_id,
@@ -87,18 +84,6 @@ impl YoutubePlatform {
 
 #[async_trait]
 impl ChatPlatform for YoutubePlatform {
-    fn platform_id(&self) -> &'static str {
-        PLATFORM_ID
-    }
-
-    fn auth_flow(&self) -> &AuthFlow {
-        &self.auth_flow
-    }
-
-    fn capabilities(&self) -> &PlatformCapabilities {
-        &self.capabilities
-    }
-
     fn connection_state(&self) -> ConnectionState {
         *self.state.lock().unwrap_or_else(|p| p.into_inner())
     }

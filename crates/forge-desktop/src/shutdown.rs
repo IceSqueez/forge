@@ -302,13 +302,6 @@ mod tests {
             std::future::pending().await
         }
 
-        async fn list_by_group<'a>(
-            &'a self,
-            _: Option<&'a str>,
-        ) -> Result<Vec<Action>, StorageError> {
-            std::future::pending().await
-        }
-
         async fn telemetry(&self, _: ActionId) -> Result<ActionTelemetry, StorageError> {
             std::future::pending().await
         }

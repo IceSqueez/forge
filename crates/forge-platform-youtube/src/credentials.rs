@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
-use time::{Date, OffsetDateTime};
+use time::OffsetDateTime;
 
 pub const CREDENTIAL_KEY: &str = "youtube:broadcaster";
-
-pub const QUOTA_KEY: &str = "youtube:quota";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct YoutubeCredentials {
@@ -15,25 +13,6 @@ pub struct YoutubeCredentials {
     #[serde(default)]
     pub channel_handle: Option<String>,
     pub expires_at: OffsetDateTime,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct YoutubeQuotaState {
-    pub used_today: u32,
-    pub peak_seen: u32,
-    pub reset_at: OffsetDateTime,
-    pub last_reset_date: Date,
-}
-
-impl Default for YoutubeQuotaState {
-    fn default() -> Self {
-        Self {
-            used_today: 0,
-            peak_seen: 0,
-            reset_at: OffsetDateTime::UNIX_EPOCH,
-            last_reset_date: Date::MIN,
-        }
-    }
 }
 
 #[cfg(test)]

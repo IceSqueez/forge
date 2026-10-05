@@ -35,7 +35,7 @@ pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
 pub use channel_lookup::YoutubeChannelLookup;
 pub use chat_platform::YoutubePlatform;
 pub use chat_poller::YoutubeChatPoller;
-pub use credentials::{CREDENTIAL_KEY, QUOTA_KEY, YoutubeCredentials, YoutubeQuotaState};
+pub use credentials::{CREDENTIAL_KEY, YoutubeCredentials};
 pub use credentials_manager::YoutubeCredentialsManager;
 pub use integration::YOUTUBE_INTEGRATION;
 pub use live_chat_id::LiveChatIdHandle;

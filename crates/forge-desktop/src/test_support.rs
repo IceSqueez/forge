@@ -305,10 +305,6 @@ impl DataProvider for TestBackend {
         unreachable!("the settings pane reaches no catalog")
     }
 
-    async fn schema_version(&self) -> Result<u32, StorageError> {
-        unreachable!("the settings pane never reads the schema version")
-    }
-
     async fn export(&self, _: &std::path::Path) -> Result<(), StorageError> {
         unreachable!("the settings pane never exports")
     }
@@ -410,10 +406,6 @@ impl ActionRepo for StubActions {
 
     async fn delete(&self, _: ActionId) -> Result<bool, StorageError> {
         unreachable!("the settings pane never deletes an action")
-    }
-
-    async fn list_by_group<'a>(&'a self, _: Option<&'a str>) -> Result<Vec<Action>, StorageError> {
-        Ok(Vec::new())
     }
 
     async fn telemetry(&self, _: ActionId) -> Result<ActionTelemetry, StorageError> {

@@ -22,10 +22,6 @@ impl RateLimiter for GrantLimiter {
         Ok(RateLimitOutcome::Granted)
     }
 
-    fn remaining(&self) -> u32 {
-        120
-    }
-
     async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 

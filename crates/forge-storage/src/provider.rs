@@ -38,8 +38,6 @@ pub trait DataProvider:
 
     fn scheduled_run_revision(&self) -> CatalogRevision;
 
-    async fn schema_version(&self) -> Result<u32, StorageError>;
-
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
 
     async fn shutdown(&self);

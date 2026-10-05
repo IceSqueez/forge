@@ -45,16 +45,6 @@ impl RateLimiter for SynthesisRateLimiter {
         }
     }
 
-    fn remaining(&self) -> u32 {
-        match self.next_allowed.try_lock() {
-            Ok(guard) => match *guard {
-                None => 1,
-                Some(f) => u32::from(Instant::now() >= f),
-            },
-            Err(_) => 1,
-        }
-    }
-
     async fn observe_remote_throttle(&self, retry_after: Duration) {
         let mut guard = self.next_allowed.lock().await;
         *guard = Some(Instant::now() + retry_after);
@@ -101,19 +91,5 @@ mod tests {
         lim.observe_remote_throttle(Duration::from_secs(90)).await;
         let outcome = lim.acquire(1).await.unwrap();
         assert_eq!(outcome, RateLimitOutcome::Exhausted);
-    }
-
-    #[tokio::test]
-    async fn remaining_is_one_when_granted() {
-        let lim = SynthesisRateLimiter::new();
-        assert_eq!(lim.remaining(), 1);
-    }
-
-    #[tokio::test]
-    async fn remaining_is_zero_when_throttled() {
-        tokio::time::pause();
-        let lim = SynthesisRateLimiter::new();
-        lim.observe_remote_throttle(Duration::from_secs(10)).await;
-        assert_eq!(lim.remaining(), 0);
     }
 }

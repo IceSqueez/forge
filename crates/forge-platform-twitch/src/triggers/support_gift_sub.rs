@@ -104,7 +104,7 @@ fn gifter_identity(event: &Event) -> ActorIdentity {
 mod tests {
     use super::*;
 
-    fn gift_event(gift_total: serde_json::Value, recipient: serde_json::Value) -> Event {
+    fn gift_event(gift_total: serde_json::Value) -> Event {
         Event::new(
             EventSource::Twitch,
             "channel.subscription.gift",
@@ -117,16 +117,12 @@ mod tests {
                     "login": "generous_viewer",
                     "display_name": "GenerousViewer",
                 },
-                "recipient": recipient,
             }),
         )
     }
 
     fn as_twitch_sends_it() -> Event {
-        gift_event(
-            serde_json::json!(5),
-            serde_json::json!({ "id": null, "login": null, "display_name": null }),
-        )
+        gift_event(serde_json::json!(5))
     }
 
     #[test]
@@ -169,7 +165,7 @@ mod tests {
             (serde_json::json!(1), 1),
             (serde_json::json!(null), 0),
         ] {
-            let event = gift_event(wire_total.clone(), serde_json::json!({}));
+            let event = gift_event(wire_total.clone());
             assert_eq!(
                 SupportGiftSubDescriptor
                     .build_arg_stack(&event)
@@ -181,38 +177,22 @@ mod tests {
     }
 
     #[test]
-    fn a_gift_sub_leaves_the_recipient_block_empty_because_twitch_names_no_recipient() {
+    fn a_gift_sub_declares_the_gifter_and_the_total_but_no_recipient_variables() {
+        let declared: Vec<String> = SupportGiftSubDescriptor
+            .variables()
+            .unwrap()
+            .declarations()
+            .into_iter()
+            .map(|variable| variable.declared.name)
+            .collect();
+        for name in ["gifter_id", "gifter_name", "gift_count"] {
+            assert!(declared.iter().any(|d| d == name), "missing '{name}'");
+        }
+        assert!(
+            declared.iter().all(|d| !d.starts_with("recipient_")),
+            "{declared:?}"
+        );
         let stack = SupportGiftSubDescriptor.build_arg_stack(&as_twitch_sends_it());
-        for name in ["recipient_id", "recipient_name", "recipient_login"] {
-            assert_eq!(
-                stack.get(name),
-                Some(&Variant::String(String::new())),
-                "'{name}'"
-            );
-        }
-        assert_eq!(
-            stack.get("recipient_platform"),
-            Some(&Variant::String("twitch".to_owned()))
-        );
-    }
-
-    #[test]
-    fn a_named_recipient_reaches_the_recipient_block() {
-        let event = gift_event(
-            serde_json::json!(1),
-            serde_json::json!({ "id": "444", "login": "lucky_one", "display_name": "LuckyOne" }),
-        );
-        let stack = SupportGiftSubDescriptor.build_arg_stack(&event);
-        for (name, value) in [
-            ("recipient_id", "444"),
-            ("recipient_name", "LuckyOne"),
-            ("recipient_login", "lucky_one"),
-        ] {
-            assert_eq!(
-                stack.get(name),
-                Some(&Variant::String(value.to_owned())),
-                "'{name}'"
-            );
-        }
+        assert_eq!(stack.get("recipient_id"), None);
     }
 }

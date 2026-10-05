@@ -5230,7 +5230,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gift_sub_event_reports_recipient_identity_as_null() {
+    async fn gift_sub_event_carries_no_recipient_block() {
         let bus = Arc::new(PlatformEventChannel::new());
         let session = make_session(&bus);
         let mut sub = bus.subscribe();
@@ -5252,12 +5252,7 @@ mod tests {
 
         assert_eq!(ev.kind, "twitch.channel.subscription.gift");
         assert_eq!(ev.payload["gifter"]["login"].as_str(), Some("santa"));
-        assert!(
-            ev.payload["recipient"]["id"].is_null(),
-            "gift-sub events carry no per-recipient identity; must be null, not empty string"
-        );
-        assert!(ev.payload["recipient"]["login"].is_null());
-        assert!(ev.payload["recipient"]["display_name"].is_null());
+        assert!(ev.payload.get("recipient").is_none());
     }
 
     #[tokio::test]

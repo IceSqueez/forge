@@ -994,7 +994,11 @@ fn take_from_queues(
 }
 
 fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -> (String, u32) {
-    let estimated_secs = ((req.text.chars().count() as u32) / 15).max(1);
+    let spoken_secs = ((req.text.chars().count() as u32) / 15).max(1);
+    let estimated_secs = match deps.pipeline.load().output.max_duration_secs {
+        Some(cap_secs) => spoken_secs.min(cap_secs),
+        None => spoken_secs,
+    };
     let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
     let preview = match resolve_with_overrides(&guard, req, catalog, None) {
         ResolveResult::Speak {

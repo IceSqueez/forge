@@ -270,6 +270,74 @@ mod tests {
         );
     }
 
+    fn teardown_with_stuck_blocking_task() -> (QuitTeardown, std::sync::mpsc::Sender<()>) {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .build()
+            .unwrap();
+        let (release, parked) = std::sync::mpsc::channel::<()>();
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
+        runtime.spawn_blocking(move || {
+            started_tx.send(()).unwrap();
+            let _ = parked.recv();
+        });
+        started_rx.recv().unwrap();
+        (QuitTeardown(Some(runtime)), release)
+    }
+
+    #[test]
+    fn finish_returns_within_the_runtime_budget_despite_a_stuck_blocking_task_and_silences_logging()
+    {
+        let (teardown, release) = teardown_with_stuck_blocking_task();
+        log::set_max_level(log::LevelFilter::Info);
+        let started = std::time::Instant::now();
+
+        teardown.finish();
+
+        let elapsed = started.elapsed();
+        release.send(()).unwrap();
+        assert!(
+            elapsed < RUNTIME_SHUTDOWN_BUDGET + Duration::from_secs(2),
+            "{elapsed:?}"
+        );
+        assert_eq!(log::max_level(), log::LevelFilter::Off);
+    }
+
+    #[test]
+    fn finish_without_a_claimed_runtime_returns_immediately() {
+        let started = std::time::Instant::now();
+
+        QuitTeardown(None).finish();
+
+        assert!(started.elapsed() < RUNTIME_SHUTDOWN_BUDGET);
+    }
+
+    #[gpui::test]
+    fn claim_takes_the_runtime_out_of_the_slot_only_on_macos_and_only_once(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let slot = RuntimeSlot::new(
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap(),
+        );
+        cx.update(|cx| cx.set_global(slot.clone()));
+
+        let (first, second) = cx.update(|cx| (QuitTeardown::claim(cx), QuitTeardown::claim(cx)));
+
+        let macos = cfg!(target_os = "macos");
+        assert_eq!(first.0.is_some(), macos);
+        assert!(second.0.is_none());
+        assert_eq!(slot.take().is_some(), !macos);
+    }
+
+    #[gpui::test]
+    fn claim_without_an_installed_slot_yields_nothing(cx: &mut gpui::TestAppContext) {
+        let claimed = cx.update(|cx| QuitTeardown::claim(cx));
+
+        assert!(claimed.0.is_none());
+    }
+
     #[test]
     fn every_step_budget_up_to_the_unwritten_row_count_fits_inside_the_graceful_budget() {
         let worst_case =

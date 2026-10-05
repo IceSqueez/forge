@@ -2282,14 +2282,30 @@ mod tests {
             .unwrap_or(0)
     }
 
-    async fn advance_until_chat_polled(server: &MockServer) {
+    type TokenSource =
+        Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+
+    fn counting_token_source() -> (TokenSource, Arc<std::sync::atomic::AtomicUsize>) {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&calls);
+        let source: TokenSource = Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async { Ok("test-token".to_owned()) })
+        });
+        (source, calls)
+    }
+
+    async fn yield_until(mut reached: impl FnMut() -> bool, what: &str) {
         let started = std::time::Instant::now();
-        while request_count(server, "/liveChat/messages").await == 0 {
-            assert!(
-                started.elapsed() < POLLER_WALL_BUDGET,
-                "poller never polled the chat"
-            );
-            tokio::time::sleep(POLLER_CHECK_STEP).await;
+        while !reached() {
+            assert!(started.elapsed() < POLLER_WALL_BUDGET, "{what}");
+            tokio::task::yield_now().await;
+        }
+    }
+
+    async fn yield_repeatedly() {
+        for _ in 0..256 {
+            tokio::task::yield_now().await;
         }
     }
 
@@ -2318,39 +2334,53 @@ mod tests {
                 .mount(&server)
                 .await;
 
-            let (poller, _rx) = make_poller_with_receiver(&server);
+            let (token_source, token_calls) = counting_token_source();
+            let live_chat_id = LiveChatIdHandle::new();
+            let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+            let poller = YoutubeChatPoller::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                token_source,
+                tx,
+                "UCtest".to_owned(),
+                live_chat_id.clone(),
+                ActiveBroadcastIdHandle::new(),
+                make_quota(),
+            )
+            .with_api_base(server.uri());
             let cancel = CancellationToken::new();
             let cancel_clone = cancel.clone();
             let join = tokio::spawn(async move { poller.run(cancel_clone).await });
+            let calls = || token_calls.load(std::sync::atomic::Ordering::SeqCst);
 
-            advance_until_chat_polled(&server).await;
-            tokio::time::sleep(Duration::from_secs(BROADCAST_CADENCE_SECS - 5)).await;
+            yield_until(
+                || (calls() >= 2 && live_chat_id.get().is_none()) || calls() >= 3,
+                "poller never finished the ended chat poll",
+            )
+            .await;
+            tokio::time::advance(Duration::from_secs(BROADCAST_CADENCE_SECS - 1)).await;
+            yield_repeatedly().await;
+            let token_calls_before_cadence = calls();
             let chat_polls_before_cadence = request_count(&server, "/liveChat/messages").await;
             let discoveries_before_cadence = request_count(&server, "/liveBroadcasts").await;
 
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            let started = std::time::Instant::now();
-            while request_count(&server, "/liveBroadcasts").await < 2
-                && started.elapsed() < POLLER_WALL_BUDGET
-            {
-                tokio::time::sleep(POLLER_CHECK_STEP).await;
-            }
-            let discoveries_after_cadence = request_count(&server, "/liveBroadcasts").await;
+            tokio::time::advance(Duration::from_secs(1)).await;
+            yield_until(
+                || calls() >= 3,
+                "discovery did not resume after the cadence",
+            )
+            .await;
 
             cancel.cancel();
             join.await.unwrap().unwrap();
 
             assert_eq!(
-                chat_polls_before_cadence, 1,
-                "{label}: ended chat re-polled"
-            );
-            assert_eq!(
-                discoveries_before_cadence, 1,
-                "{label}: discovery ran before the cadence elapsed"
-            );
-            assert_eq!(
-                discoveries_after_cadence, 2,
-                "{label}: discovery did not resume after the cadence"
+                (
+                    token_calls_before_cadence,
+                    chat_polls_before_cadence,
+                    discoveries_before_cadence
+                ),
+                (2, 1, 1),
+                "{label}: (token fetches, chat polls, discoveries) one second before the cadence"
             );
         }
     }

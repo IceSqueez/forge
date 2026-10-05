@@ -350,6 +350,7 @@ mod tests {
         revision: CatalogRevision,
         live_reports: UnboundedSender<ViewerReport>,
         next_message: u32,
+        stop: TimerSchedulerHandle,
         _viewers: LiveViewerAggregatorHandle,
         _obs: Arc<SwitchableObsSink>,
     }
@@ -395,7 +396,7 @@ mod tests {
 
         let bus = EventBus::new(Arc::new(NullEventLogRepo));
         let ticks = bus.subscribe();
-        spawn_timer_scheduler(Arc::clone(&bus), catalog, stream_live, Shared::default());
+        let stop = spawn_timer_scheduler(Arc::clone(&bus), catalog, stream_live, Shared::default());
         let rig = Rig {
             bus,
             ticks,
@@ -404,6 +405,7 @@ mod tests {
             revision,
             live_reports,
             next_message: 0,
+            stop,
             _viewers: viewers,
             _obs: obs,
         };
@@ -510,6 +512,31 @@ mod tests {
 
     fn addressed_instance(tick: &Event) -> serde_json::Value {
         tick.payload["instance_id"].clone()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn no_tick_is_published_once_stop_returns() {
+        let mut rig = rig(vec![Timer::every(10).instance()]).await;
+        let before_stop = rig.tick_count_over(10 * MINUTE).await;
+
+        tokio::time::timeout(SECOND, rig.stop.clone().stop())
+            .await
+            .expect("stop never returned");
+
+        let after_stop = rig.tick_count_over(60 * MINUTE).await;
+        assert_eq!((before_stop, after_stop), (1, 0));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stop_returns_without_waiting_for_an_armed_timer_to_come_due() {
+        let rig = rig(vec![Timer::every(10).instance()]).await;
+        let asked = Instant::now();
+
+        tokio::time::timeout(SECOND, rig.stop.clone().stop())
+            .await
+            .expect("stop never returned");
+
+        assert_eq!(asked.elapsed(), Duration::ZERO);
     }
 
     #[tokio::test(start_paused = true)]

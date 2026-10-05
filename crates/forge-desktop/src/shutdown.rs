@@ -163,15 +163,25 @@ mod tests {
 
     use forge_events::{Event, EventSource};
     use forge_registry::{SubActionRegistry, TriggerRegistry};
+    use forge_runtime::triggers::TIMER_TICK_KIND;
     use forge_runtime::{
-        ActionCancelRegistry, CatchUpSettle, Config, QueueScheduler, ScheduledRunsParts,
-        SystemWallClock, spawn_action_engine, spawn_live_viewer_aggregator, spawn_scheduled_runs,
-        spawn_stream_live_signal, spawn_timer_scheduler, spawn_trigger_evaluator,
+        ActionCancelRegistry, Catalog, CatchUpSettle, Config, HandOff, QueueScheduler,
+        ScheduleError, ScheduledRunsParts, SystemWallClock, spawn_action_engine,
+        spawn_live_viewer_aggregator, spawn_scheduled_runs, spawn_stream_live_signal,
+        spawn_timer_scheduler, spawn_trigger_evaluator,
     };
     use forge_storage::action::MockActionRepo;
     use forge_storage::history::MockHistoryRepo;
-    use forge_storage::{CatalogRevision, EventLogRepo, MockScheduledRunRepo, StorageError};
-    use forge_types::EventId;
+    use forge_storage::trigger_instance::MockTriggerInstanceRepo;
+    use forge_storage::{
+        ActionRepo, ActionTelemetry, CatalogRevision, EventLogRepo, ExecutionStatus,
+        MockScheduledRunRepo, ScheduledRun, ScheduledRunId, ScheduledRunPlacement,
+        ScheduledRunRepo, ScheduledRunSpec, StorageError,
+    };
+    use forge_types::{
+        Action, ActionId, EventId, ExecutionMode, PermissionRung, PlatformScope, QueueId,
+        TriggerConfig, TriggerInstance, TriggerInstanceId, Variant,
+    };
     use time::OffsetDateTime;
 
     use super::*;
@@ -231,7 +241,254 @@ mod tests {
         }
     }
 
-    fn handles_over(bus: Arc<EventBus>) -> ShutdownHandles {
+    #[derive(Default)]
+    struct RecordedEventLog(Mutex<Vec<String>>);
+
+    impl RecordedEventLog {
+        fn kinds(&self) -> Vec<String> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl EventLogRepo for RecordedEventLog {
+        async fn insert(&self, event: &Event) -> Result<(), StorageError> {
+            self.0.lock().unwrap().push(event.kind.clone());
+            Ok(())
+        }
+
+        async fn get(&self, _: EventId) -> Result<Option<Event>, StorageError> {
+            Ok(None)
+        }
+
+        async fn recent(&self, _: usize) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn recent_since(
+            &self,
+            _: usize,
+            _: Option<EventId>,
+        ) -> Result<Vec<Event>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    struct StalledActions;
+
+    #[async_trait::async_trait]
+    impl ActionRepo for StalledActions {
+        async fn list(&self) -> Result<Vec<Action>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn get(&self, _: ActionId) -> Result<Option<Action>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn save(&self, _: &Action) -> Result<(), StorageError> {
+            std::future::pending().await
+        }
+
+        async fn delete(&self, _: ActionId) -> Result<bool, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn list_by_group<'a>(
+            &'a self,
+            _: Option<&'a str>,
+        ) -> Result<Vec<Action>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn telemetry(&self, _: ActionId) -> Result<ActionTelemetry, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn record_execution(
+            &self,
+            _: ActionId,
+            _: OffsetDateTime,
+            _: u64,
+            _: ExecutionStatus,
+        ) -> Result<(), StorageError> {
+            std::future::pending().await
+        }
+
+        async fn prune_executions_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            std::future::pending().await
+        }
+    }
+
+    struct StalledRuns;
+
+    #[async_trait::async_trait]
+    impl ScheduledRunRepo for StalledRuns {
+        async fn schedule(
+            &self,
+            _: &ScheduledRunSpec,
+        ) -> Result<ScheduledRunPlacement, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn get(&self, _: ScheduledRunId) -> Result<Option<ScheduledRun>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn list_pending(&self) -> Result<Vec<ScheduledRun>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn list_due(&self, _: OffsetDateTime) -> Result<Vec<ScheduledRun>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn fail_unreadable_due(
+            &self,
+            _: OffsetDateTime,
+            _: &str,
+        ) -> Result<Vec<ScheduledRunId>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn next_due(&self) -> Result<Option<OffsetDateTime>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn claim(
+            &self,
+            _: ScheduledRunId,
+            _: OffsetDateTime,
+        ) -> Result<Option<ScheduledRun>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn cancel(&self, _: ScheduledRunId, _: OffsetDateTime) -> Result<bool, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn cancel_by_key(&self, _: &str, _: OffsetDateTime) -> Result<bool, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn settle(
+            &self,
+            _: ScheduledRunId,
+            _: forge_storage::ScheduledRunOutcome,
+            _: Option<String>,
+            _: OffsetDateTime,
+        ) -> Result<bool, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn list_recent_resolved(&self, _: usize) -> Result<Vec<ScheduledRun>, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn prune_resolved_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn count_pending(&self) -> Result<u64, StorageError> {
+            std::future::pending().await
+        }
+
+        async fn count_pending_for_action(&self, _: ActionId) -> Result<u64, StorageError> {
+            std::future::pending().await
+        }
+    }
+
+    const TIMER_MINUTES: u64 = 10;
+    const TIMER_INTERVAL: Duration = Duration::from_secs(TIMER_MINUTES * 60);
+
+    struct Intake {
+        timer_catalog: Arc<Catalog>,
+        runs: Arc<dyn ScheduledRunRepo>,
+    }
+
+    impl Intake {
+        fn idle() -> Self {
+            let mut runs = MockScheduledRunRepo::new();
+            runs.expect_next_due().returning(|| Ok(None));
+            runs.expect_get().returning(|_| Ok(None));
+            Self {
+                timer_catalog: stub_catalog(),
+                runs: Arc::new(runs),
+            }
+        }
+
+        fn stalled() -> Self {
+            Self {
+                timer_catalog: Catalog::new(
+                    Arc::new(StalledActions),
+                    Arc::new(MockTriggerInstanceRepo::new()),
+                    CatalogRevision::new(),
+                ),
+                runs: Arc::new(StalledRuns),
+            }
+        }
+
+        fn with_stalled_timer(self) -> Self {
+            Self {
+                timer_catalog: Self::stalled().timer_catalog,
+                ..self
+            }
+        }
+
+        fn with_armed_timer(self) -> Self {
+            let action = Action {
+                id: ActionId::new(),
+                name: "timed".to_owned(),
+                group: None,
+                queue_id: QueueId::new(),
+                enabled: true,
+                concurrent: false,
+                bypass_pause: false,
+                execution_mode: ExecutionMode::Sequential,
+                description: None,
+                sub_actions: vec![],
+            };
+            let mut overrides = TriggerConfig::new();
+            overrides.insert(
+                "interval_minutes".to_owned(),
+                Variant::Int(i64::try_from(TIMER_MINUTES).unwrap()),
+            );
+            let timer = TriggerInstance {
+                id: TriggerInstanceId::new(),
+                kind_id: TIMER_TICK_KIND.to_owned(),
+                name: "timer".to_owned(),
+                overrides,
+                enabled: true,
+                user_defined: true,
+                platform_scope: PlatformScope::Any,
+                cooldown_secs: 0,
+                cooldown_global: true,
+                permission_rung: PermissionRung::Everyone,
+            };
+            let mut actions = MockActionRepo::new();
+            actions
+                .expect_list()
+                .returning(move || Ok(vec![action.clone()]));
+            let mut instances = MockTriggerInstanceRepo::new();
+            instances
+                .expect_list_for_action()
+                .returning(move |_| Ok(vec![timer.clone()]));
+            Self {
+                timer_catalog: Catalog::new(
+                    Arc::new(actions),
+                    Arc::new(instances),
+                    CatalogRevision::new(),
+                ),
+                ..self
+            }
+        }
+    }
+
+    fn handles_over(bus: Arc<EventBus>, intake: Intake) -> ShutdownHandles {
         let catalog = stub_catalog();
         let action_engine = spawn_action_engine(
             Arc::clone(&bus),
@@ -251,17 +508,15 @@ mod tests {
         );
         let timer_scheduler = spawn_timer_scheduler(
             Arc::clone(&bus),
-            Arc::clone(&catalog),
+            intake.timer_catalog,
             spawn_stream_live_signal(
                 &spawn_live_viewer_aggregator(),
                 forge_obs::SwitchableObsSink::new().stream_output(),
             ),
             forge_types::Shared::default(),
         );
-        let mut run_repo = MockScheduledRunRepo::new();
-        run_repo.expect_next_due().returning(|| Ok(None));
         let scheduled_runs = spawn_scheduled_runs(ScheduledRunsParts {
-            repo: Arc::new(run_repo),
+            repo: intake.runs,
             revision: CatalogRevision::new(),
             catalog: Arc::clone(&catalog),
             actions: Arc::new(MockActionRepo::new()),
@@ -284,30 +539,99 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_flush_that_outlasts_its_budget_logs_the_rows_left_unwritten_once() {
-        let captured = Captured::default();
-        let sink = captured.clone();
-        let _logs = tracing::subscriber::set_default(
-            tracing_subscriber::fmt()
-                .with_ansi(false)
-                .with_writer(move || sink.clone())
-                .finish(),
-        );
-        let bus = EventBus::new(Arc::new(StuckEventLog));
-        EventBus::spawn_flush_task(Arc::clone(&bus));
-        let handles = handles_over(Arc::clone(&bus));
-        for kind in ["a", "b", "c"] {
-            bus.publish(Event::new(EventSource::Core, kind, serde_json::Value::Null));
+    async fn settle() {
+        for _ in 0..64 {
+            tokio::task::yield_now().await;
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_flush_that_outlasts_its_budget_logs_the_rows_left_unwritten_once_even_behind_stalled_intake()
+     {
+        for (intake, label) in [
+            (Intake::idle as fn() -> Intake, "idle intake"),
+            (Intake::stalled, "stalled timer and scheduled runs"),
+        ] {
+            let captured = Captured::default();
+            let sink = captured.clone();
+            let _logs = tracing::subscriber::set_default(
+                tracing_subscriber::fmt()
+                    .with_ansi(false)
+                    .with_writer(move || sink.clone())
+                    .finish(),
+            );
+            let bus = EventBus::new(Arc::new(StuckEventLog));
+            EventBus::spawn_flush_task(Arc::clone(&bus));
+            let handles = handles_over(Arc::clone(&bus), intake());
+            for kind in ["a", "b", "c"] {
+                bus.publish(Event::new(EventSource::Core, kind, serde_json::Value::Null));
+            }
+
+            handles.run_graceful().await;
+
+            let lines = captured.lines_containing("flush budget ran out");
+            assert!(
+                matches!(lines.as_slice(), [only] if only.contains("rows=3")),
+                "{label}: {lines:?}"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn scheduled_runs_keep_serving_until_the_timer_stop_finishes_or_runs_out_of_budget() {
+        let bus = EventBus::new(Arc::new(RecordedEventLog::default()));
+        let handles = handles_over(Arc::clone(&bus), Intake::idle().with_stalled_timer());
+        let probe = handles.scheduled_runs.clone();
+        settle().await;
+        let shutting_down = tokio::spawn(handles.run_graceful());
+
+        tokio::time::advance(TIMER_STOP_BUDGET / 2).await;
+        settle().await;
+        let during_timer_stop = probe.run_now(ScheduledRunId::new(1)).await;
+        tokio::time::advance(TIMER_STOP_BUDGET).await;
+        settle().await;
+        let after_timer_stop = probe.run_now(ScheduledRunId::new(1)).await;
+
+        assert!(
+            matches!(
+                (during_timer_stop, after_timer_stop),
+                (
+                    Ok(HandOff::NotPending),
+                    Err(ScheduleError::SchedulerStopped)
+                )
+            ),
+            "the scheduled runs were stopped before the timer scheduler"
+        );
+        shutting_down.abort();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_tick_fired_before_shutdown_is_flushed_and_none_fires_after() {
+        let log = Arc::new(RecordedEventLog::default());
+        let bus = EventBus::new(Arc::clone(&log) as Arc<dyn EventLogRepo>);
+        EventBus::spawn_flush_task(Arc::clone(&bus));
+        let handles = handles_over(Arc::clone(&bus), Intake::idle().with_armed_timer());
+        let mut ticks = bus.subscribe();
+        settle().await;
+        tokio::time::advance(TIMER_INTERVAL).await;
+        settle().await;
 
         handles.run_graceful().await;
+        tokio::time::advance(TIMER_INTERVAL * 3).await;
+        settle().await;
 
-        let lines = captured.lines_containing("flush budget ran out");
-        assert!(
-            matches!(lines.as_slice(), [only] if only.contains("rows=3")),
-            "{lines:?}"
-        );
+        let logged = log
+            .kinds()
+            .iter()
+            .filter(|kind| kind.as_str() == TIMER_TICK_KIND)
+            .count();
+        let mut published = 0;
+        while let Ok(Some(event)) = ticks.try_recv() {
+            if event.kind == TIMER_TICK_KIND {
+                published += 1;
+            }
+        }
+        assert_eq!((logged, published), (1, 1));
     }
 
     fn teardown_with_stuck_blocking_task() -> (QuitTeardown, std::sync::mpsc::Sender<()>) {
@@ -380,8 +704,13 @@ mod tests {
 
     #[test]
     fn every_step_budget_up_to_the_unwritten_row_count_fits_inside_the_graceful_budget() {
-        let worst_case =
-            SETTLE + SERVER_STOP_BUDGET + SPEAK_STOP_BUDGET + FLUSH_BUDGET + ABANDON_BUDGET;
+        let worst_case = TIMER_STOP_BUDGET
+            + SCHEDULED_RUNS_STOP_BUDGET
+            + SETTLE
+            + SERVER_STOP_BUDGET
+            + SPEAK_STOP_BUDGET
+            + FLUSH_BUDGET
+            + ABANDON_BUDGET;
 
         assert!(
             worst_case <= GRACEFUL_BUDGET,

@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,6 +7,8 @@ use forge_runtime::{ActionEngineHandle, EventBus, QueueSchedulerHandle, TriggerE
 use forge_server::ServerHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
 use forge_storage::DataProvider;
+use gpui::{App, Global};
+use tokio::runtime::Runtime;
 
 use crate::runtime_handles::RuntimeHandles;
 
@@ -20,6 +24,48 @@ const GRACEFUL_BUDGET: Duration = SETTLE
     .saturating_add(FLUSH_BUDGET)
     .saturating_add(ABANDON_BUDGET)
     .saturating_add(STORAGE_CLOSE_BUDGET);
+
+pub const RUNTIME_SHUTDOWN_BUDGET: Duration = Duration::from_secs(1);
+
+#[derive(Clone)]
+pub struct RuntimeSlot(Rc<RefCell<Option<Runtime>>>);
+
+impl Global for RuntimeSlot {}
+
+impl RuntimeSlot {
+    pub fn new(runtime: Runtime) -> Self {
+        Self(Rc::new(RefCell::new(Some(runtime))))
+    }
+
+    pub fn take(&self) -> Option<Runtime> {
+        self.0.borrow_mut().take()
+    }
+}
+
+pub fn silence_logging() {
+    log::set_max_level(log::LevelFilter::Off);
+}
+
+pub struct QuitTeardown(Option<Runtime>);
+
+impl QuitTeardown {
+    pub fn claim(cx: &App) -> Self {
+        if cfg!(target_os = "macos") {
+            Self(cx.try_global::<RuntimeSlot>().and_then(RuntimeSlot::take))
+        } else {
+            Self(None)
+        }
+    }
+
+    pub fn finish(self) {
+        let Some(runtime) = self.0 else {
+            return;
+        };
+        let _ =
+            std::thread::spawn(move || runtime.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET)).join();
+        silence_logging();
+    }
+}
 
 pub struct ShutdownHandles {
     bus: Arc<EventBus>,

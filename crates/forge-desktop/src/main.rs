@@ -149,8 +149,8 @@ use forge_components::{
 };
 use forge_platform_core::paths;
 use gpui::{
-    App, AppContext, Bounds, Pixels, SharedString, TitlebarOptions, WindowBounds, WindowOptions,
-    point, px, size,
+    App, AppContext, Bounds, Pixels, QuitMode, SharedString, TitlebarOptions, WindowBounds,
+    WindowOptions, point, px, size,
 };
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
@@ -159,6 +159,7 @@ use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 use crate::screen::Screen;
 use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
+use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::sidebar::SIDEBAR_MAX;
 use crate::titlebar::TITLEBAR_HEIGHT;
 
@@ -168,7 +169,6 @@ const FLAG_SCREEN: &str = "--screen";
 const FLAG_SELECT: &str = "--select";
 const FLAG_HELP: &str = "--help";
 const EXIT_USAGE_ERROR: i32 = 2;
-const RUNTIME_SHUTDOWN_BUDGET: std::time::Duration = std::time::Duration::from_secs(1);
 
 enum StartupRequest {
     Open(Screen),
@@ -353,14 +353,20 @@ fn main() {
     };
     let rt_handle = rt.handle().clone();
 
-    let rt_guard = rt.enter();
+    let guard_handle = rt_handle.clone();
+    let rt_guard = guard_handle.enter();
+    let runtime_slot = RuntimeSlot::new(rt);
+    let slot_for_app = runtime_slot.clone();
 
-    let application = gpui_platform::application().with_assets(IconAssets);
+    let application = gpui_platform::application()
+        .with_assets(IconAssets)
+        .with_quit_mode(QuitMode::LastWindowClosed);
     let _app_nap_guard = application
         .background_executor()
         .prevent_app_nap("forge drives a live stream from the background");
 
     application.run(move |cx: &mut App| {
+        cx.set_global(slot_for_app);
         if let Err(err) = cx
             .text_system()
             .add_fonts(forge_components::embedded_fonts())
@@ -448,6 +454,8 @@ fn main() {
     });
 
     drop(rt_guard);
-    rt.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET);
-    log::set_max_level(log::LevelFilter::Off);
+    if let Some(rt) = runtime_slot.take() {
+        rt.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET);
+    }
+    silence_logging();
 }

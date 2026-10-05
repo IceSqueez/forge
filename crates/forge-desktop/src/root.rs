@@ -217,13 +217,15 @@ pub fn run_boot(
                     let mut shutdown =
                         Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
                     let stay_awake = handles.stay_awake.clone();
-                    App::on_app_quit(cx, move |_cx| {
+                    App::on_app_quit(cx, move |cx| {
                         stay_awake.release();
                         let taken = shutdown.take();
+                        let teardown = crate::shutdown::QuitTeardown::claim(cx);
                         async move {
                             if let Some(handles) = taken {
                                 handles.run_graceful().await;
                             }
+                            teardown.finish();
                         }
                     })
                     .detach();

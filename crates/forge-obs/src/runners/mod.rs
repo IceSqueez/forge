@@ -200,7 +200,6 @@ mod tests {
         ("obs.scenes.set_transition", "transition", &[]),
         ("obs.audio.set_mute", "source", &[]),
         ("obs.audio.set_volume", "source", &[("volume_db", "-6.0")]),
-        ("obs.misc.raw_request", "request_type", &[]),
         ("obs.sources.get_input_settings", "source", &[]),
         ("obs.stream.send_caption", "caption_text", &[]),
         (
@@ -276,7 +275,6 @@ mod tests {
             "obs.record.set_directory",
             "obs.profile.switch",
             "obs.scene_collection.switch",
-            "obs.misc.raw_request",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

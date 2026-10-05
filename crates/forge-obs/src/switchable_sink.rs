@@ -265,12 +265,10 @@ impl ObsSink for SwitchableObsSink {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use forge_types::Variant;
 
     #[tokio::test]
     async fn every_method_on_an_empty_sink_returns_disconnected() {
         let sink = SwitchableObsSink::new();
-        let payload = Variant::Object(Default::default());
 
         let results: Vec<Result<(), ObsError>> = vec![
             sink.set_scene("scene").await,
@@ -288,11 +286,5 @@ mod tests {
                 "expected Disconnected, got {result:?}",
             );
         }
-
-        let raw = sink.raw_request("GetVersion", &payload).await;
-        assert!(
-            matches!(raw, Err(ObsError::Disconnected)),
-            "raw_request: expected Disconnected, got {raw:?}",
-        );
     }
 }

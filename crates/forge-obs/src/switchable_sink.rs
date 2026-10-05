@@ -102,15 +102,6 @@ impl ObsSink for SwitchableObsSink {
         client.stop_stream().await
     }
 
-    async fn raw_request(
-        &self,
-        request_type: &str,
-        payload: &Variant,
-    ) -> Result<Variant, ObsError> {
-        let client = self.get()?;
-        client.raw_request(request_type, payload).await
-    }
-
     async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
         let client = self.get()?;
         client.set_preview_scene(scene).await

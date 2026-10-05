@@ -529,7 +529,9 @@ pub(crate) fn spawn_chat_send_bridge(
                 .get("target")
                 .and_then(|v| v.as_str())
                 .and_then(requested_chat_target);
-            if requested.is_some_and(|requested| requested != target) {
+            if requested.is_some_and(|requested| {
+                PlatformId::from_wire(requested).is_none_or(|platform| platform.as_str() != target)
+            }) {
                 continue;
             }
             let Some(message) = event

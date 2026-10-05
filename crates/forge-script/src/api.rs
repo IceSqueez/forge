@@ -6,9 +6,9 @@ use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
 use forge_types::{
     EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader,
-    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, PlatformId,
-    REPLY_PARENT_FIELD, SCRIPT_LOG_TARGET, ScriptId, Variant, WHISPER_RECIPIENT_FIELD,
-    integration_disabled_reason, requested_chat_target, whispers_unsupported_reason,
+    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, REPLY_PARENT_FIELD,
+    SCRIPT_LOG_TARGET, ScriptId, Variant, WHISPER_RECIPIENT_FIELD, integration_disabled_reason,
+    resolve_chat_target, whispers_unsupported_reason,
 };
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
@@ -434,19 +434,19 @@ fn admit_broadcast(
     }
 }
 
-fn admit_chat_target<'a>(
+fn admit_chat_target(
     integrations: Option<&dyn IntegrationAvailability>,
-    raw: &'a str,
-) -> Result<Option<&'a str>, Box<EvalAltResult>> {
-    let Some(target) = requested_chat_target(raw) else {
+    raw: &str,
+) -> Result<Option<&'static str>, Box<EvalAltResult>> {
+    let Some(platform) = resolve_chat_target(raw)? else {
         admit_broadcast(integrations)?;
         return Ok(None);
     };
-    let integration = IntegrationId::new(target);
+    let integration = IntegrationId::from_static(platform.as_str());
     if integrations.is_some_and(|integrations| integrations.is_disabled(&integration)) {
         return Err(integration_disabled_reason(&integration).into());
     }
-    Ok(Some(target))
+    Ok(Some(platform.as_str()))
 }
 
 fn admit_whisper_broadcast(
@@ -461,21 +461,24 @@ fn admit_whisper_broadcast(
     }
 }
 
-fn admit_whisper_target<'a>(
+fn admit_whisper_target(
     integrations: Option<&dyn IntegrationAvailability>,
-    raw: &'a str,
-) -> Result<Option<&'a str>, Box<EvalAltResult>> {
-    let Some(target) = requested_chat_target(raw) else {
+    raw: &str,
+) -> Result<Option<&'static str>, Box<EvalAltResult>> {
+    let Some(platform) = resolve_chat_target(raw)? else {
         admit_whisper_broadcast(integrations)?;
         return Ok(None);
     };
-    if !PlatformId::from_wire(target).is_some_and(PlatformId::supports_whispers) {
-        return Err(whispers_unsupported_reason(target).into());
+    if !platform.supports_whispers() {
+        return Err(whispers_unsupported_reason(platform.as_str()).into());
     }
-    admit_chat_target(integrations, target)
+    admit_chat_target(integrations, platform.as_str())
 }
 
-fn chat_request_payload(target: Option<&str>, mut payload: serde_json::Value) -> serde_json::Value {
+fn chat_request_payload(
+    target: Option<&'static str>,
+    mut payload: serde_json::Value,
+) -> serde_json::Value {
     if let (Some(target), Some(fields)) = (target, payload.as_object_mut()) {
         fields.insert("target".to_owned(), target.into());
     }

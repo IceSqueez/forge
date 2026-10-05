@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_types::{
     ArgStack, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON, SubActionConfig, SubActionTelemetry,
-    Variant, requested_chat_target,
+    Variant, resolve_chat_target,
 };
 
 const DEFAULT_TARGET: &str = "twitch";
@@ -76,7 +76,10 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         config: &SubActionConfig,
         arg_stack: &ArgStack,
     ) -> Option<IntegrationId> {
-        requested_chat_target(&resolved_target(config, arg_stack)).map(IntegrationId::new)
+        resolve_chat_target(&resolved_target(config, arg_stack))
+            .ok()
+            .flatten()
+            .map(|platform| IntegrationId::from_static(platform.as_str()))
     }
 
     async fn execute(
@@ -90,12 +93,13 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             .arg_stack
             .interpolate(config.str("message").unwrap_or_default());
         let resolved = resolved_target(config, ctx.arg_stack);
-        let payload = match requested_chat_target(&resolved) {
-            Some(target) => serde_json::json!({
-                "target": target,
+        let payload = match resolve_chat_target(&resolved) {
+            Err(reason) => return (timer.failed(reason), None),
+            Ok(Some(platform)) => serde_json::json!({
+                "target": platform.as_str(),
                 "message": message,
             }),
-            None => {
+            Ok(None) => {
                 let none_enabled = ctx
                     .executor
                     .integration_availability()

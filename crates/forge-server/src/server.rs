@@ -547,11 +547,22 @@ pub(crate) mod tests {
         (handle, new_port)
     }
 
+    const RESERVED_PORT_FLOOR: u16 = 20_000;
+    const RESERVED_PORT_SPAN: u16 = 10_000;
+
     async fn reserve_a_free_port() -> u16 {
-        let probe = TcpListener::bind("127.0.0.1:0").await.expect("probe bind");
-        let port = probe.local_addr().expect("probe addr").port();
-        drop(probe);
-        port
+        static NEXT_OFFSET: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
+        loop {
+            let offset =
+                NEXT_OFFSET.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % RESERVED_PORT_SPAN;
+            let port = RESERVED_PORT_FLOOR + offset;
+            if TcpListener::bind(format!("{LOOPBACK}:{port}"))
+                .await
+                .is_ok()
+            {
+                return port;
+            }
+        }
     }
 
     fn loopback_config(

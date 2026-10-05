@@ -718,7 +718,8 @@ mod tests {
 
     #[test]
     fn twitch_auth_flow_is_device_code_grant() {
-        let AuthFlow::DeviceCode { scopes, .. } = twitch_auth_flow() else {
+        let AuthFlow::DeviceCode { scopes, .. } = twitch_auth_flow(&PlatformEndpoints::default())
+        else {
             panic!("twitch must use the device-code auth flow");
         };
         assert!(!scopes.is_empty(), "device grant must request scopes");

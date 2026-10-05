@@ -54,6 +54,7 @@ fn unconfigured_endpoints_reach_the_production_services_over_tls() {
             EndpointSurface::TwitchEventSubSocket,
             "wss://eventsub.wss.twitch.tv/ws",
         ),
+        (EndpointSurface::TwitchOAuth, "https://id.twitch.tv/oauth2"),
         (
             EndpointSurface::KickPublicApi,
             "https://api.kick.com/public/v1",

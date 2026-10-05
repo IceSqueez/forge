@@ -6487,7 +6487,11 @@ mod tests {
         watch::Receiver<ChatConnectionState>,
         oneshot::Sender<()>,
     ) {
-        let manager = Arc::new(TwitchCredentialsManager::new(repo, "client".to_owned()));
+        let manager = Arc::new(TwitchCredentialsManager::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            repo,
+            "client".to_owned(),
+        ));
         let publisher: Arc<dyn EventPublisher> = bus.clone();
         ChatSession::new(
             manager,
@@ -7765,7 +7769,11 @@ mod tests {
             Some(endpoint) => {
                 TwitchCredentialsManager::with_endpoint(repo, "client".to_owned(), endpoint)
             }
-            None => TwitchCredentialsManager::new(repo, "client".to_owned()),
+            None => TwitchCredentialsManager::new(
+                &forge_platform_core::PlatformEndpoints::default(),
+                repo,
+                "client".to_owned(),
+            ),
         };
         ChatSession::new(
             Arc::new(manager),
@@ -7789,6 +7797,7 @@ mod tests {
     ) -> (crate::chat::TwitchChat, Arc<PlatformEventChannel>) {
         let bus = Arc::new(PlatformEventChannel::new());
         let manager = Arc::new(TwitchCredentialsManager::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             Arc::new(MockCreds::with_identity()),
             "client".to_owned(),
         ));
@@ -7925,6 +7934,7 @@ mod tests {
     ) -> Arc<crate::builtin::TwitchIntegrationBundle> {
         let creds: Arc<dyn forge_storage::CredentialsRepo> = Arc::new(MockCreds::with_identity());
         let manager = Arc::new(TwitchCredentialsManager::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             Arc::clone(&creds),
             "client".to_owned(),
         ));

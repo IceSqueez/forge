@@ -271,6 +271,7 @@ mod tests {
             },
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 creds,
                 "test-client".to_owned(),
             )),

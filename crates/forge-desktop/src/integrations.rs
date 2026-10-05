@@ -1535,6 +1535,7 @@ mod tests {
     ) {
         let creds = creds_of(backend);
         let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+            &PlatformEndpoints::default(),
             Arc::clone(&creds),
             "test-client".to_owned(),
         ));

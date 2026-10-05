@@ -48,7 +48,7 @@ impl TwitchPlatform {
         lifecycle: TwitchLifecycle,
     ) -> Self {
         Self {
-            auth_flow: twitch_auth_flow(),
+            auth_flow: twitch_auth_flow(&config.endpoints),
             capabilities: PlatformCapabilities {
                 can_send_chat: true,
                 can_moderate: true,

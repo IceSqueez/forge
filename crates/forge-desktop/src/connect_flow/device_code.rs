@@ -162,8 +162,9 @@ impl ConnectFlow {
             id_prefix = &cid[..cid.len().min(6)],
             "starting twitch device flow"
         );
-        let handle: TwitchFlowHandle =
-            Arc::new(tokio::sync::Mutex::new(Some(TwitchAuthFlow::new(cid))));
+        let handle: TwitchFlowHandle = Arc::new(tokio::sync::Mutex::new(Some(
+            TwitchAuthFlow::new(&forge_platform_core::PlatformEndpoints::default(), cid),
+        )));
         self.twitch_flow = Some(Arc::clone(&handle));
         self.twitch_device = Some(TwitchDeviceState::starting());
         async_bridge::run_async(

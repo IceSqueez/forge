@@ -437,6 +437,7 @@ impl TwitchIntegrationBundle {
         let (health_tx, _) = broadcast::channel(16);
         let (viewer_report_tx, _) = watch::channel(ViewerReport::Absent);
         let credentials_manager = Arc::new(TwitchCredentialsManager::new(
+            &forge_platform_core::PlatformEndpoints::default(),
             Arc::clone(&creds),
             "test-client".to_owned(),
         ));

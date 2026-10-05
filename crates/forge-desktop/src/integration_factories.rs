@@ -58,6 +58,7 @@ pub(crate) fn wire_twitch(
     let creds = creds_of(backend);
     let lifecycle = forge_platform_twitch::TwitchLifecycle::new();
     let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+        endpoints,
         Arc::clone(&creds),
         client_id.clone(),
     ));

@@ -8,7 +8,7 @@ use axum::routing::{get, post};
 use serde::Deserialize;
 
 use crate::audio_clips::ClipOutcome;
-use crate::routes::overlays::cors_header_value;
+use crate::routes::overlays::{NOSNIFF, cors_header_value};
 use crate::server::AppState;
 
 const CLIP_PATH_PREFIX: &str = "/audio/v1/clip/";
@@ -54,6 +54,10 @@ async fn serve_clip(
         HeaderValue::from_static(payload.media_type.as_str()),
     );
     response_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(NO_STORE));
+    response_headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static(NOSNIFF),
+    );
 
     (StatusCode::OK, response_headers, Body::from(payload.bytes)).into_response()
 }

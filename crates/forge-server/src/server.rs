@@ -7,7 +7,7 @@ use axum::http::{Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router, middleware};
+use axum::{Extension, Json, Router, middleware};
 use tokio::net::TcpListener;
 
 use forge_runtime::{ActionEngineHandle, EventBus};
@@ -214,7 +214,7 @@ fn misdirected_response() -> Response {
         .into_response()
 }
 
-fn build_router(state: AppState) -> Router {
+fn build_router(state: AppState, shutdown: tokio::sync::watch::Receiver<bool>) -> Router {
     let host_guard = middleware::from_fn_with_state(state.clone(), host_middleware);
     let api_routes = api_v1::router()
         .route_layer(middleware::from_fn_with_state(
@@ -224,7 +224,7 @@ fn build_router(state: AppState) -> Router {
         .route_layer(host_guard.clone());
 
     Router::new()
-        .route("/ws/v1/", get(ws::ws_handler))
+        .route("/ws/v1/", get(ws::ws_handler).layer(Extension(shutdown)))
         .nest("/api/v1", api_routes)
         .route(
             "/overlays/{*path}",
@@ -247,7 +247,8 @@ pub fn serve_on_with_shutdown(
     tokio::sync::watch::Sender<bool>,
 ) {
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
-    let app = build_router(state).into_make_service_with_connect_info::<PeerInfo>();
+    let app =
+        build_router(state, shutdown_rx.clone()).into_make_service_with_connect_info::<PeerInfo>();
     let listener = GuardedListener::new(listener);
     let join = tokio::spawn(async move {
         let result = axum::serve(listener, app)

@@ -2027,6 +2027,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn enqueue_estimate_is_capped_by_the_maximum_duration() {
+        const SECS_OF_SPEECH: usize = 20;
+        let text = "a".repeat(SECS_OF_SPEECH * 15);
+        for (text, cap, expected) in [
+            (text.as_str(), None, 20),
+            (text.as_str(), Some(5), 5),
+            (text.as_str(), Some(19), 19),
+            (text.as_str(), Some(20), 20),
+            (text.as_str(), Some(21), 20),
+            (text.as_str(), Some(600), 20),
+            ("hi", Some(5), 1),
+            ("hi", None, 1),
+        ] {
+            let deps = minimal_deps();
+            let mut cfg = forge_tts_pipeline::PipelineConfig::default();
+            cfg.output.max_duration_secs = cap;
+            deps.pipeline.swap(cfg);
+            let req = request("nova", text, Priority::Normal);
+
+            let (_, estimated_secs) = enqueue_preview(&req, &deps, &[]);
+
+            assert_eq!(estimated_secs, expected, "len {} cap {cap:?}", text.len());
+        }
+    }
+
     #[tokio::test]
     async fn reward_emote_strip_fires_only_when_reward_and_toggle_both_set() {
         for (is_reward, strip_reward_emotes, expected) in [

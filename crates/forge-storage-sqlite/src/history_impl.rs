@@ -260,14 +260,4 @@ impl HistoryRepo for SqliteHistoryRepo {
         }
         Ok(out)
     }
-
-    async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        let cutoff_ms = to_epoch_ms(cutoff);
-        let result = sqlx::query("DELETE FROM action_history WHERE started_at < ?")
-            .bind(cutoff_ms)
-            .execute(self.db.writer())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-        Ok(result.rows_affected())
-    }
 }

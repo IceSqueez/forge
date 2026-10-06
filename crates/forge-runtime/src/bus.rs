@@ -55,10 +55,6 @@ impl EventLogRepo for NullEventLogRepo {
     ) -> Result<Vec<Event>, StorageError> {
         Ok(Vec::new())
     }
-
-    async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
-    }
 }
 
 pub struct EventBus {

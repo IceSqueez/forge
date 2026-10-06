@@ -40,7 +40,6 @@ pub trait HistoryRepo: Send + Sync {
         &self,
         since: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError>;
-    async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 
 #[cfg(test)]

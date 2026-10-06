@@ -243,17 +243,6 @@ impl EventLogRepo for SqliteEventLogRepo {
             .map(|r| decode_row(r).map_err(StorageError::from))
             .collect()
     }
-
-    async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-        let cutoff_secs = to_epoch_secs(cutoff);
-        let result = sqlx::query("DELETE FROM event_log WHERE timestamp < ?")
-            .bind(cutoff_secs)
-            .execute(self.db.writer())
-            .await
-            .map_err(SqliteStorageError::Sqlx)?;
-
-        Ok(result.rows_affected())
-    }
 }
 
 #[cfg(test)]

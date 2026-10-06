@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_events::Event;
 use forge_types::EventId;
-use time::OffsetDateTime;
 
 use crate::settings::reserved_keys;
 use crate::{SettingsRepo, StorageError};
@@ -28,8 +27,6 @@ pub trait EventLogRepo: Send + Sync {
         limit: usize,
         since: Option<EventId>,
     ) -> Result<Vec<Event>, StorageError>;
-
-    async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError>;
 }
 
 pub const DEFAULT_EVENT_LOG_RETENTION_DAYS: u32 = 7;

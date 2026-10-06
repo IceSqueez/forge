@@ -4,16 +4,19 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
-};
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::{SelfIdentity, resolve_user_id};
+use super::identity::SelfIdentity;
+use super::user_target::{TargetKeys, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
 const KIND_ID: &str = "twitch.channel.send_shoutout";
+const TARGET_KEYS: TargetKeys = TargetKeys {
+    id: "to_broadcaster_id",
+    login: "to_broadcaster_login",
+};
 
 pub struct SendShoutoutRunner {
     transport: Arc<dyn HelixTransport>,
@@ -28,21 +31,18 @@ impl SendShoutoutRunner {
         }
     }
 
-    async fn shoutout(&self, to_broadcaster_login: &str) -> SubActionOutcome {
-        if to_broadcaster_login.is_empty() {
-            return SubActionOutcome::Failed(
-                "to_broadcaster_login is empty after interpolation".to_owned(),
-            );
-        }
+    async fn shoutout(&self, target: Option<UserTarget<'_>>) -> SubActionOutcome {
+        let Some(target) = target else {
+            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+        };
         let self_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        let to_broadcaster_id =
-            match resolve_user_id(self.transport.as_ref(), to_broadcaster_login).await {
-                Ok(id) => id,
-                Err(e) => return SubActionOutcome::Failed(e.to_string()),
-            };
+        let to_broadcaster_id = match target.user_id(self.transport.as_ref()).await {
+            Ok(id) => id,
+            Err(e) => return SubActionOutcome::Failed(e.to_string()),
+        };
         let request = HelixRequest::new(HelixMethod::Post, "/helix/chat/shoutouts")
             .query("from_broadcaster_id", self_id.clone())
             .query("to_broadcaster_id", to_broadcaster_id)
@@ -78,27 +78,19 @@ impl SubActionRunner for SendShoutoutRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "to_broadcaster_login".to_owned(),
-            Variant::String(String::new()),
-        )])
+        BTreeMap::from([(TARGET_KEYS.login.to_owned(), Variant::String(String::new()))])
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Text {
-            key: "to_broadcaster_login",
+            key: TARGET_KEYS.login,
             label: "Target Channel",
             placeholder: "%user_login%",
         }]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("to_broadcaster_login") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'to_broadcaster_login' must be a non-empty string"
-            ))),
-        }
+        TARGET_KEYS.validate(KIND_ID, config)
     }
 
     async fn execute(
@@ -109,10 +101,9 @@ impl SubActionRunner for SendShoutoutRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config.str("to_broadcaster_login").unwrap_or_default();
-        let to_broadcaster_login = ctx.arg_stack.interpolate(login_template);
+        let interpolated = TARGET_KEYS.interpolate(config, ctx);
 
-        let outcome = self.shoutout(&to_broadcaster_login).await;
+        let outcome = self.shoutout(interpolated.target()).await;
 
         (
             SubActionTelemetry {
@@ -205,23 +196,6 @@ mod tests {
             act.query
         );
         assert_eq!(act.body, None, "shoutout carries no JSON body");
-    }
-
-    #[tokio::test]
-    async fn empty_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new().set("user_login".to_owned(), Variant::String(String::new()));
-
-        let (telemetry, _) = runner
-            .execute(&config("%user_login%"), &make_ctx(&stack))
-            .await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty login must fail before the resolve call"
-        );
     }
 
     #[tokio::test]

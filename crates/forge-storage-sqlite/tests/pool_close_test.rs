@@ -105,3 +105,40 @@ async fn closing_twice_is_harmless() {
 
     assert_eq!(row_count(&db).await, ROWS);
 }
+
+const CYCLES: usize = 40;
+
+fn shm_of(db: &Path) -> PathBuf {
+    db.with_extension("db-shm")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn close_removes_wal_and_shm_files_on_every_open_write_close_cycle() {
+    let mut leftovers = Vec::new();
+    for cycle in 0..CYCLES {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("forge.db");
+        let pools = connect_pools(&format!("sqlite://{}", db.display()))
+            .await
+            .unwrap();
+        apply_migrations(pools.writer()).await.unwrap();
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('k', 'v')")
+            .execute(pools.writer())
+            .await
+            .unwrap();
+        let _: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM settings")
+            .fetch_one(pools.reader())
+            .await
+            .unwrap();
+
+        pools.close().await;
+
+        if wal_of(&db).exists() || shm_of(&db).exists() {
+            leftovers.push(cycle);
+        }
+    }
+    assert!(
+        leftovers.is_empty(),
+        "wal/shm files survived close in cycles {leftovers:?}"
+    );
+}

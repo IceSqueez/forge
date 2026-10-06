@@ -420,17 +420,15 @@ mod tests {
     fn mount_history(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
+        key: AuthorKey,
         repo: MockChatHistoryRepo,
         live: Vec<ChatMessage>,
     ) -> (Entity<ChatFeed>, Entity<ViewerHistory>) {
         let feed = cx.new(|_| feed_of(live));
-        let history =
-            cx.new(|_| ViewerHistory::new(feed.clone(), Arc::new(repo), rt.handle().clone()));
+        let history = cx.new(|cx| {
+            ViewerHistory::new(key, feed.clone(), Arc::new(repo), rt.handle().clone(), cx)
+        });
         (feed, history)
-    }
-
-    fn show(cx: &mut TestAppContext, history: &Entity<ViewerHistory>, key: Option<AuthorKey>) {
-        history.update(cx, |history, cx| history.show(key, cx));
     }
 
     fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
@@ -594,9 +592,8 @@ mod tests {
             line("b9", 40, BOB),
             line("m5", 50, ANN),
         ];
-        let (_feed, history) = mount_history(cx, &rt, repo, live);
+        let (_feed, history) = mount_history(cx, &rt, key_of(ANN), repo, live);
 
-        show(cx, &history, Some(key_of(ANN)));
         settle(cx, &rt);
 
         assert_eq!(loaded_ids(cx, &history), ["m5", "m3", "m1"]);
@@ -605,13 +602,14 @@ mod tests {
     #[gpui::test]
     fn a_viewer_known_only_by_name_needs_an_id_instead_of_loading(cx: &mut TestAppContext) {
         let rt = runtime();
-        let (_feed, history) = mount_history(cx, &rt, MockChatHistoryRepo::new(), vec![]);
-
-        show(
+        let (_feed, history) = mount_history(
             cx,
-            &history,
-            Some(AuthorKey::by_name(Platform::Kick, "ann")),
+            &rt,
+            AuthorKey::by_name(Platform::Kick, "ann"),
+            MockChatHistoryRepo::new(),
+            vec![],
         );
+
         settle(cx, &rt);
 
         assert!(matches!(state(cx, &history), HistoryState::NeedsViewerId));
@@ -627,35 +625,18 @@ mod tests {
                     reason: "closed".into(),
                 })
             });
-        let (_feed, history) = mount_history(cx, &rt, repo, vec![line("m1", 10, ANN)]);
+        let (_feed, history) = mount_history(cx, &rt, key_of(ANN), repo, vec![line("m1", 10, ANN)]);
 
-        show(cx, &history, Some(key_of(ANN)));
         settle(cx, &rt);
 
         assert!(matches!(state(cx, &history), HistoryState::Failed));
     }
 
     #[gpui::test]
-    fn a_load_result_for_a_viewer_no_longer_shown_is_ignored(cx: &mut TestAppContext) {
-        let rt = runtime();
-        let repo = repo_serving(vec![(ANN, vec![]), (BOB, vec![])]);
-        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
-        show(cx, &history, Some(key_of(ANN)));
-        show(cx, &history, Some(key_of(BOB)));
-
-        history.update(cx, |history, cx| {
-            history.apply_loaded(&key_of(ANN), Some(vec![stored("m1", 10, ANN)]), cx);
-        });
-
-        assert!(matches!(state(cx, &history), HistoryState::Loading));
-    }
-
-    #[gpui::test]
     fn lines_the_viewer_sends_while_open_are_added_once_newest_first(cx: &mut TestAppContext) {
         let rt = runtime();
         let repo = repo_serving(vec![(ANN, vec![])]);
-        let (feed, history) = mount_history(cx, &rt, repo, vec![line("", 10, ANN)]);
-        show(cx, &history, Some(key_of(ANN)));
+        let (feed, history) = mount_history(cx, &rt, key_of(ANN), repo, vec![line("", 10, ANN)]);
         settle(cx, &rt);
 
         feed.update(cx, |feed, cx| {
@@ -675,10 +656,10 @@ mod tests {
         let (feed, history) = mount_history(
             cx,
             &rt,
+            key_of(ANN),
             repo,
             vec![line("m1", 10, ANN), line("m2", 20, ANN)],
         );
-        show(cx, &history, Some(key_of(ANN)));
         settle(cx, &rt);
 
         feed.update(cx, |feed, cx| {
@@ -699,9 +680,8 @@ mod tests {
         )]);
         let mut moderated = line("m1", 10, ANN);
         moderated.moderated = true;
-        let (_feed, history) = mount_history(cx, &rt, repo, vec![moderated]);
+        let (_feed, history) = mount_history(cx, &rt, key_of(ANN), repo, vec![moderated]);
 
-        show(cx, &history, Some(key_of(ANN)));
         settle(cx, &rt);
 
         assert_eq!(loaded_moderated_ids(cx, &history), ["m1"]);
@@ -755,54 +735,6 @@ mod tests {
         }
     }
 
-    #[gpui::test]
-    fn switching_viewers_resets_to_loading_before_the_new_viewers_lines_arrive(
-        cx: &mut TestAppContext,
-    ) {
-        let rt = runtime();
-        let repo = repo_serving(vec![
-            (ANN, vec![stored("a1", 10, ANN)]),
-            (BOB, vec![stored("b1", 20, BOB)]),
-        ]);
-        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
-        show(cx, &history, Some(key_of(ANN)));
-        settle(cx, &rt);
-
-        show(cx, &history, Some(key_of(BOB)));
-
-        assert!(matches!(state(cx, &history), HistoryState::Loading));
-    }
-
-    #[gpui::test]
-    fn switching_viewers_replaces_the_previous_viewers_lines(cx: &mut TestAppContext) {
-        let rt = runtime();
-        let repo = repo_serving(vec![
-            (ANN, vec![stored("a1", 10, ANN)]),
-            (BOB, vec![stored("b1", 20, BOB)]),
-        ]);
-        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
-        show(cx, &history, Some(key_of(ANN)));
-        settle(cx, &rt);
-
-        show(cx, &history, Some(key_of(BOB)));
-        settle(cx, &rt);
-
-        assert_eq!(loaded_ids(cx, &history), ["b1"]);
-    }
-
-    #[gpui::test]
-    fn clearing_the_viewer_hides_a_loaded_history(cx: &mut TestAppContext) {
-        let rt = runtime();
-        let repo = repo_serving(vec![(ANN, vec![stored("a1", 10, ANN)])]);
-        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
-        show(cx, &history, Some(key_of(ANN)));
-        settle(cx, &rt);
-
-        show(cx, &history, None);
-
-        assert!(matches!(state(cx, &history), HistoryState::Hidden));
-    }
-
     fn chatter(ix: usize, viewer_id: &str) -> ChatMessage {
         let mut chatter = message(ix, false);
         chatter.author_id = Some(viewer_id.to_owned().into());
@@ -836,7 +768,7 @@ mod tests {
 
     fn dialog_viewer(cx: &mut TestAppContext, view: &Entity<ChatView>) -> Option<AuthorKey> {
         let dialog = open_dialog(cx, view)?;
-        dialog.read_with(cx, |history, _| history.key.clone())
+        Some(dialog.read_with(cx, |history, _| history.key.clone()))
     }
 
     fn open_history_for(cx: &mut TestAppContext, view: &Entity<ChatView>, viewer_id: &str) {

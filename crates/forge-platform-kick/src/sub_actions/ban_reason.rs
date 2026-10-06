@@ -33,7 +33,14 @@ pub(super) fn validate(kind_id: &str, config: &SubActionConfig) -> Result<(), Re
 pub(super) fn resolve(config: &SubActionConfig, ctx: &RunContext<'_>) -> Option<String> {
     config
         .str(REASON_KEY)
-        .map(|template| ctx.arg_stack.interpolate(template).trim().to_owned())
+        .map(|template| {
+            ctx.arg_stack
+                .interpolate(template)
+                .trim()
+                .chars()
+                .take(REASON_MAX_CHARS)
+                .collect::<String>()
+        })
         .filter(|reason| !reason.is_empty())
 }
 

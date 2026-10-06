@@ -369,11 +369,8 @@ impl ChatView {
         let feed = self.feed.clone();
         let repo = Arc::clone(&self.chat_history_repo);
         let rt_handle = self.rt_handle.clone();
-        let view = cx.new(|cx| {
-            let mut history = ViewerHistory::new(feed, repo, rt_handle).titled(viewer_name);
-            history.show(Some(key), cx);
-            history
-        });
+        let view =
+            cx.new(|cx| ViewerHistory::new(key, feed, repo, rt_handle, cx).titled(viewer_name));
         let dismissed = cx.subscribe(&view, Self::on_viewer_history_dismissed);
         self.viewer_history = Some(ViewerHistoryHost {
             view,

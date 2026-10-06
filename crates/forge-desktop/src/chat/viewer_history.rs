@@ -23,7 +23,6 @@ const HISTORY_MAX_H: Pixels = px(420.0);
 
 #[derive(Clone, Debug)]
 enum HistoryState {
-    Hidden,
     NeedsViewerId,
     Loading,
     Failed,
@@ -37,11 +36,11 @@ pub(crate) struct ViewerHistory {
     repo: Arc<dyn ChatHistoryRepo>,
     rt_handle: tokio::runtime::Handle,
     viewer_name: SharedString,
-    key: Option<AuthorKey>,
+    key: AuthorKey,
     state: HistoryState,
     scanned_through: u64,
     _load: Option<Task<()>>,
-    _feed_obs: Option<Subscription>,
+    _feed_obs: Subscription,
 }
 
 impl EventEmitter<ViewerHistoryDismissed> for ViewerHistory {}
@@ -120,21 +119,29 @@ fn merge_newest_first(
 
 impl ViewerHistory {
     pub fn new(
+        key: AuthorKey,
         feed: Entity<ChatFeed>,
         repo: Arc<dyn ChatHistoryRepo>,
         rt_handle: tokio::runtime::Handle,
+        cx: &mut Context<Self>,
     ) -> Self {
-        Self {
+        let feed_obs = cx.observe(&feed, |this, _feed, cx| this.absorb_live(cx));
+        let mut history = Self {
             feed,
             repo,
             rt_handle,
             viewer_name: SharedString::default(),
-            key: None,
-            state: HistoryState::Hidden,
+            key,
+            state: HistoryState::NeedsViewerId,
             scanned_through: 0,
             _load: None,
-            _feed_obs: None,
+            _feed_obs: feed_obs,
+        };
+        if let Some(query) = history_query(&history.key) {
+            history.state = HistoryState::Loading;
+            history.spawn_load(query, cx);
         }
+        history
     }
 
     #[must_use]
@@ -143,30 +150,7 @@ impl ViewerHistory {
         self
     }
 
-    pub fn show(&mut self, key: Option<AuthorKey>, cx: &mut Context<Self>) {
-        if self.key == key {
-            self.absorb_live(cx);
-            return;
-        }
-        self.key = key.clone();
-        self._load = None;
-        self._feed_obs = key
-            .is_some()
-            .then(|| cx.observe(&self.feed, |this, _feed, cx| this.absorb_live(cx)));
-        self.state = match key {
-            None => HistoryState::Hidden,
-            Some(key) => match history_query(&key) {
-                None => HistoryState::NeedsViewerId,
-                Some(query) => {
-                    self.spawn_load(key, query, cx);
-                    HistoryState::Loading
-                }
-            },
-        };
-        cx.notify();
-    }
-
-    fn spawn_load(&mut self, key: AuthorKey, query: ChatAuthorKey, cx: &mut Context<Self>) {
+    fn spawn_load(&mut self, query: ChatAuthorKey, cx: &mut Context<Self>) {
         let repo = Arc::clone(&self.repo);
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
@@ -184,29 +168,20 @@ impl ViewerHistory {
                 }
                 Err(_) => None,
             };
-            this.update(cx, |this, cx| this.apply_loaded(&key, rows, cx))
-                .ok();
+            this.update(cx, |this, cx| this.apply_loaded(rows, cx)).ok();
         }));
     }
 
-    fn apply_loaded(
-        &mut self,
-        key: &AuthorKey,
-        rows: Option<Vec<UnifiedChatRow>>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.key.as_ref() != Some(key) {
-            return;
-        }
+    fn apply_loaded(&mut self, rows: Option<Vec<UnifiedChatRow>>, cx: &mut Context<Self>) {
         self._load = None;
         let feed = self.feed.read(cx);
         self.state = match rows {
             None => HistoryState::Failed,
             Some(rows) => {
                 let stored = rows.iter().map(ChatMessage::from_row).collect();
-                let live = feed_messages_by(feed, key, feed.start_seq());
+                let live = feed_messages_by(feed, &self.key, feed.start_seq());
                 let mut merged = merge_newest_first(stored, live, HISTORY_LOAD_CAP);
-                mark_moderated(&mut merged, &moderated_ids_by(feed, key));
+                mark_moderated(&mut merged, &moderated_ids_by(feed, &self.key));
                 HistoryState::Loaded(merged)
             }
         };
@@ -215,13 +190,13 @@ impl ViewerHistory {
     }
 
     fn absorb_live(&mut self, cx: &mut Context<Self>) {
-        let (Some(key), HistoryState::Loaded(known)) = (&self.key, &mut self.state) else {
+        let HistoryState::Loaded(known) = &mut self.state else {
             return;
         };
         let feed = self.feed.read(cx);
-        let arrived = feed_messages_by(feed, key, self.scanned_through);
+        let arrived = feed_messages_by(feed, &self.key, self.scanned_through);
         self.scanned_through = feed.end_seq();
-        let remarked = mark_moderated(known, &moderated_ids_by(feed, key));
+        let remarked = mark_moderated(known, &moderated_ids_by(feed, &self.key));
         if arrived.is_empty() && !remarked {
             return;
         }
@@ -276,7 +251,6 @@ impl ViewerHistory {
 
     fn render_body(&self, palette: &ForgePalette, density: Density) -> AnyElement {
         match &self.state {
-            HistoryState::Hidden => div().into_any_element(),
             HistoryState::NeedsViewerId => {
                 Self::render_note(tr!("chat_drawer_history_needs_id"), palette.text_faint)
             }
@@ -308,9 +282,6 @@ impl ViewerHistory {
 
 impl Render for ViewerHistory {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let Some(key) = self.key.as_ref() else {
-            return div().into_any_element();
-        };
         let palette = cx.palette();
         let density = cx.density();
         let card = modal(
@@ -320,7 +291,7 @@ impl Render for ViewerHistory {
         )
         .size(ModalSize::Md)
         .header_icon(Icon::History, palette.brand)
-        .subtitle(platform_display_name(key.platform))
+        .subtitle(platform_display_name(self.key.platform))
         .on_close(
             "chat-viewer-history-close",
             cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss(cx)),

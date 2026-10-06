@@ -62,24 +62,46 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         rows.into_iter().map(decode_alias_row).collect()
     }
 
-    async fn upsert(&self, alias: &VoiceAlias) -> Result<(), StorageError> {
+    async fn upsert(&self, alias: &VoiceAlias) -> Result<VoiceAlias, StorageError> {
         let state_str = match alias.state {
             AliasState::Active => "Active",
             AliasState::Blocked => "Blocked",
         };
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let viewer_holder: Option<(String,)> =
+            sqlx::query_as("SELECT id FROM voice_aliases WHERE viewer_id = ?")
+                .bind(&alias.viewer_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        let stored_id = match viewer_holder {
+            Some((holder_id,)) if holder_id != alias.id.0 => {
+                let id_is_stored: Option<(i64,)> =
+                    sqlx::query_as("SELECT 1 FROM voice_aliases WHERE id = ?")
+                        .bind(&alias.id.0)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(SqliteStorageError::Sqlx)?;
+                if id_is_stored.is_some() {
+                    return Err(StorageError::AliasViewerTaken);
+                }
+                AliasId(holder_id)
+            }
+            _ => alias.id.clone(),
+        };
+
         sqlx::query(
             "INSERT INTO voice_aliases
                 (id, viewer_id, viewer_name, engine_id, voice_id,
                  pitch_semitones, rate_multiplier, state, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-             ON CONFLICT(viewer_id) DO UPDATE SET
-                viewer_name     = excluded.viewer_name,
-                engine_id       = excluded.engine_id,
-                voice_id        = excluded.voice_id,
-                pitch_semitones = excluded.pitch_semitones,
-                rate_multiplier = excluded.rate_multiplier,
-                state           = excluded.state,
-                updated_at      = excluded.updated_at
              ON CONFLICT(id) DO UPDATE SET
                 viewer_id       = excluded.viewer_id,
                 viewer_name     = excluded.viewer_name,
@@ -90,7 +112,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
                 state           = excluded.state,
                 updated_at      = excluded.updated_at",
         )
-        .bind(&alias.id.0)
+        .bind(&stored_id.0)
         .bind(&alias.viewer_id)
         .bind(&alias.viewer_name)
         .bind(&alias.engine_id.0)
@@ -98,10 +120,15 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         .bind(alias.pitch_semitones.map(f64::from))
         .bind(alias.rate_multiplier.map(f64::from))
         .bind(state_str)
-        .execute(self.db.writer())
+        .execute(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
-        Ok(())
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(VoiceAlias {
+            id: stored_id,
+            ..alias.clone()
+        })
     }
 
     async fn delete(&self, id: &AliasId) -> Result<(), StorageError> {

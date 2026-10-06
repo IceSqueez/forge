@@ -1132,6 +1132,7 @@ tts_aliases_form_blocked_note = Не озвучувати - налаштуван
 
 tts_aliases_delete_title = Видалити голосовий аліас?
 tts_aliases_delete_body = { $viewer } повернеться до типової стратегії призначення голосу.
+tts_aliases_viewer_taken = Цей глядач уже має голосовий псевдонім - редагуйте його.
 common_delete = Видалити
 common_undo = Відмінити
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_components::{
     BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
     ForgePalette, Icon, InputEvent, OverlayPosition, PlatformKind, Radius, SearchState, Spacing,
-    TextInput, avatar_tile, badge, body_family, card, column, confirm_modal, data_table,
+    TextInput, ToastKind, avatar_tile, badge, body_family, card, column, confirm_modal, data_table,
     empty_state, field_label, hash_accent, icon, modal, mono_family, overlay, platform_color,
     primary_button, primary_button_with_icon, radius, secondary_button, segment, segmented,
     spacing, status_dot, toggle, toolbar_row, tr, virtual_table, with_alpha,
@@ -12,7 +12,9 @@ use forge_components::{
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
-use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
+use forge_storage::{
+    AliasId, AssignmentStrategy, StorageError, ViewerRepo, VoiceAlias, VoiceAliasRepo,
+};
 use forge_voice::{AliasState, EngineId, VoiceId};
 use gpui::{
     AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
@@ -21,6 +23,7 @@ use gpui::{
 
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
 
 const SEARCH_W: Pixels = px(240.0);
 const MODAL_W: Pixels = px(440.0);
@@ -737,7 +740,7 @@ impl VoiceAliasesView {
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.upsert(&alias).await.map_err(|e| e.to_string())?;
+                let stored = repo.upsert(&alias).await?;
                 if let Some(handle) = speak.as_ref()
                     && replaces_existing
                     && let Err(e) = handle
@@ -747,25 +750,28 @@ impl VoiceAliasesView {
                     eprintln!("forge-desktop: voice alias hot-reload (replace) failed: {e}");
                 }
                 if let Some(handle) = speak
-                    && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
+                    && let Err(e) = handle.send(SpeakCommand::SetAlias(stored)).await
                 {
                     eprintln!("forge-desktop: voice alias hot-reload failed: {e}");
                 }
-                repo.list().await.map_err(|e| e.to_string())
+                repo.list().await
             },
             |this, result, cx| match result {
                 Ok(aliases) => {
                     this.apply_aliases(aliases, cx);
                     this.close_form(cx);
                 }
-                Err(message) => {
+                Err(error) => {
                     if let Some(form) = this.form.as_ref() {
                         form.update(cx, |f, cx| {
                             f.saving = false;
                             cx.notify();
                         });
                     }
-                    this.on_repo_error(&message, cx);
+                    if matches!(error, StorageError::AliasViewerTaken) {
+                        cx.push_toast(ToastKind::Error, tr!("tts_aliases_viewer_taken"));
+                    }
+                    this.on_repo_error(&error.to_string(), cx);
                 }
             },
             cx,

@@ -1111,6 +1111,7 @@ tts_aliases_form_blocked_note = Never speak - voice settings do not apply.
 
 tts_aliases_delete_title = Delete voice alias?
 tts_aliases_delete_body = { $viewer } will fall back to the default voice assignment strategy.
+tts_aliases_viewer_taken = This viewer already has a voice alias - edit that one instead.
 common_delete = Delete
 common_undo = Undo
 

@@ -8,7 +8,7 @@ use crate::StorageError;
 #[async_trait]
 pub trait VoiceAliasRepo: Send + Sync {
     async fn list(&self) -> Result<Vec<VoiceAlias>, StorageError>;
-    async fn upsert(&self, alias: &VoiceAlias) -> Result<(), StorageError>;
+    async fn upsert(&self, alias: &VoiceAlias) -> Result<VoiceAlias, StorageError>;
     async fn delete(&self, id: &AliasId) -> Result<(), StorageError>;
     async fn find_by_viewer(&self, viewer_id: &str) -> Result<Option<VoiceAlias>, StorageError>;
     async fn get_strategy(&self) -> Result<AssignmentStrategy, StorageError>;

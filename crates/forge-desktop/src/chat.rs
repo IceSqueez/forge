@@ -910,9 +910,9 @@ impl ChatView {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
             let outcome = async move {
-                repo.upsert(&alias).await.map_err(|e| e.to_string())?;
+                let stored = repo.upsert(&alias).await.map_err(|e| e.to_string())?;
                 if let Some(handle) = speak
-                    && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
+                    && let Err(e) = handle.send(SpeakCommand::SetAlias(stored)).await
                 {
                     tracing::warn!(error = %e, "voice alias hot-reload failed");
                 }

@@ -1,6 +1,8 @@
 pub mod active_broadcast_id;
 pub mod ad_break;
 pub mod auth;
+mod ban_ledger;
+mod ban_list;
 pub mod builtin;
 pub mod channel_lookup;
 pub mod chat_platform;
@@ -36,7 +38,7 @@ pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
 pub use channel_lookup::YoutubeChannelLookup;
 pub use chat_platform::YoutubePlatform;
 pub use chat_poller::YoutubeChatPoller;
-pub use credentials::{CREDENTIAL_KEY, YoutubeCredentials};
+pub use credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
 pub use credentials_manager::YoutubeCredentialsManager;
 pub use integration::YOUTUBE_INTEGRATION;
 pub use live_chat_id::LiveChatIdHandle;

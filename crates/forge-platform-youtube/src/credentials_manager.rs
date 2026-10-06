@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 use time::{Duration, OffsetDateTime};
 
 use crate::auth::{ChannelsListResponse, GoogleAuthFlow, YoutubeAuthBundle};
-use crate::credentials::{CREDENTIAL_KEY, YoutubeCredentials};
+use crate::credentials::{CREDENTIAL_KEY, YoutubeBroadcaster, YoutubeCredentials};
 
 const PLATFORM: &str = "youtube";
 const REFRESH_BUFFER: Duration = Duration::seconds(REFRESH_BUFFER_SECS as i64);
@@ -42,6 +42,14 @@ impl YoutubeCredentialsManager {
         };
         let creds: YoutubeCredentials = serde_json::from_str(&json)?;
         Ok(Some(creds))
+    }
+
+    pub async fn broadcaster(&self) -> Result<YoutubeBroadcaster, PlatformError> {
+        let creds = self.load().await?.ok_or_else(reauth_err)?;
+        Ok(YoutubeBroadcaster {
+            channel_id: creds.channel_id,
+            channel_title: creds.channel_title,
+        })
     }
 
     pub async fn save_from_bundle(&self, bundle: YoutubeAuthBundle) -> Result<(), PlatformError> {

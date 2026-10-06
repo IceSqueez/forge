@@ -6,6 +6,7 @@ use forge_platform_core::{
     ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
     connection_state_changed_event,
 };
+use forge_storage::BanLedgerRepo;
 use futures::future::BoxFuture;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
@@ -32,6 +33,7 @@ pub struct YoutubePlatform {
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
     quota: Arc<tokio::sync::Mutex<QuotaState>>,
+    ban_ledger: Arc<dyn BanLedgerRepo>,
     state: Arc<Mutex<ConnectionState>>,
     state_tx: watch::Sender<ConnectionState>,
     cancel: Mutex<Option<CancellationToken>>,
@@ -45,6 +47,7 @@ impl YoutubePlatform {
         live_chat_id: LiveChatIdHandle,
         active_broadcast_id: ActiveBroadcastIdHandle,
         quota: Arc<tokio::sync::Mutex<QuotaState>>,
+        ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         let sender = YoutubeSendChat::new(
             endpoints,
@@ -63,6 +66,7 @@ impl YoutubePlatform {
             live_chat_id,
             active_broadcast_id,
             quota,
+            ban_ledger,
             state: Arc::new(Mutex::new(ConnectionState::Disconnected)),
             state_tx,
             cancel: Mutex::new(None),
@@ -71,6 +75,14 @@ impl YoutubePlatform {
 
     pub fn active_broadcast_id(&self) -> ActiveBroadcastIdHandle {
         self.active_broadcast_id.clone()
+    }
+
+    pub(crate) fn channel_id(&self) -> &str {
+        &self.channel_id
+    }
+
+    pub(crate) fn ban_ledger(&self) -> &Arc<dyn BanLedgerRepo> {
+        &self.ban_ledger
     }
 
     pub(crate) fn endpoints(&self) -> &PlatformEndpoints {
@@ -118,6 +130,7 @@ impl ChatPlatform for YoutubePlatform {
             self.live_chat_id.clone(),
             self.active_broadcast_id.clone(),
             Arc::clone(&self.quota),
+            Arc::clone(&self.ban_ledger),
         );
 
         let exit_state = Arc::clone(&self.state);

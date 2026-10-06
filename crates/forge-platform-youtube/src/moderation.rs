@@ -1,13 +1,16 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use forge_platform_core::{
     DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError,
 };
+use forge_storage::{BanLedgerEntry, BanLedgerKey, BanLedgerRepo, BanOrigin, StorageError};
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
+use time::OffsetDateTime;
 use tokio::sync::Mutex;
 
+use crate::ban_ledger::{ban_ledger_key, expiry_after};
+use crate::credentials::YoutubeBroadcaster;
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::quota_state::{QuotaState, today_pacific};
 
@@ -15,15 +18,20 @@ const BAN_COST: u32 = 50;
 const MODERATOR_COST: u32 = 50;
 const MODERATOR_LIST_COST: u32 = 1;
 const MODERATOR_LIST_PAGE_SIZE: &str = "50";
+const BANNED_OUTSIDE_FORGE: &str =
+    "unban - this ban was issued outside forge, lift it in YouTube Studio";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+type BroadcasterSource =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
 
 pub struct YoutubeModeration {
     client: reqwest::Client,
     access_token_source: TokenSource,
+    broadcaster_source: BroadcasterSource,
     live_chat_id: LiveChatIdHandle,
     quota: Arc<Mutex<QuotaState>>,
-    ban_ids: Mutex<HashMap<String, String>>,
+    ban_ledger: Arc<dyn BanLedgerRepo>,
     api_base: String,
 }
 
@@ -31,15 +39,18 @@ impl YoutubeModeration {
     pub fn new(
         endpoints: &PlatformEndpoints,
         access_token_source: TokenSource,
+        broadcaster_source: BroadcasterSource,
         live_chat_id: LiveChatIdHandle,
         quota: Arc<Mutex<QuotaState>>,
+        ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
             access_token_source,
+            broadcaster_source,
             live_chat_id,
             quota,
-            ban_ids: Mutex::new(HashMap::new()),
+            ban_ledger,
             api_base: endpoints
                 .base_url(EndpointSurface::YouTubeDataApi)
                 .to_owned(),
@@ -55,10 +66,7 @@ impl YoutubeModeration {
 
     pub async fn ban(&self, channel_id: &str) -> Result<(), PlatformError> {
         let ban_id = self.insert_ban(channel_id, None).await?;
-        self.ban_ids
-            .lock()
-            .await
-            .insert(channel_id.to_owned(), ban_id);
+        self.record_issued_ban(channel_id, ban_id, None).await;
         Ok(())
     }
 
@@ -68,23 +76,22 @@ impl YoutubeModeration {
         duration_seconds: u32,
     ) -> Result<(), PlatformError> {
         let ban_id = self.insert_ban(channel_id, Some(duration_seconds)).await?;
-        self.ban_ids
-            .lock()
-            .await
-            .insert(channel_id.to_owned(), ban_id);
+        self.record_issued_ban(channel_id, ban_id, Some(duration_seconds))
+            .await;
         Ok(())
     }
 
     pub async fn unban(&self, channel_id: &str) -> Result<(), PlatformError> {
+        let broadcaster = (self.broadcaster_source)().await?;
+        let key = ban_ledger_key(&broadcaster.channel_id, channel_id);
         let ban_id = self
-            .ban_ids
-            .lock()
+            .ban_ledger
+            .get(&key, OffsetDateTime::now_utc())
             .await
-            .get(channel_id)
-            .cloned()
+            .map_err(ledger_failure)?
+            .and_then(|entry| entry.platform_ban_id)
             .ok_or_else(|| PlatformError::Unsupported {
-                feature: "unban - ban id unknown for this channel (ban not issued in this session)"
-                    .to_owned(),
+                feature: BANNED_OUTSIDE_FORGE.to_owned(),
             })?;
 
         {
@@ -108,11 +115,61 @@ impl YoutubeModeration {
             })?;
 
         let status = resp.status();
-        if status == StatusCode::OK || status == StatusCode::NO_CONTENT {
-            self.ban_ids.lock().await.remove(channel_id);
+        if status == StatusCode::OK
+            || status == StatusCode::NO_CONTENT
+            || status == StatusCode::NOT_FOUND
+        {
+            self.forget_ban(&key).await;
             return Ok(());
         }
         Err(self.map_failure(resp).await)
+    }
+
+    async fn record_issued_ban(
+        &self,
+        viewer_channel_id: &str,
+        ban_id: Option<String>,
+        duration_seconds: Option<u32>,
+    ) {
+        let broadcaster = match (self.broadcaster_source)().await {
+            Ok(broadcaster) => broadcaster,
+            Err(error) => {
+                tracing::warn!(
+                    error = %crate::error_shape::redact_platform_error(&error),
+                    "issued youtube ban not recorded in the ban ledger"
+                );
+                return;
+            }
+        };
+        let key = ban_ledger_key(&broadcaster.channel_id, viewer_channel_id);
+        let banned_at = OffsetDateTime::now_utc();
+        let known_name = match self.ban_ledger.get(&key, banned_at).await {
+            Ok(stored) => stored.map(|entry| entry.viewer_name),
+            Err(error) => {
+                tracing::warn!(%error, "youtube ban ledger lookup failed");
+                None
+            }
+        };
+        let entry = BanLedgerEntry {
+            key,
+            viewer_name: known_name.unwrap_or_else(|| viewer_channel_id.to_owned()),
+            reason: None,
+            moderator: Some(broadcaster.channel_title).filter(|title| !title.is_empty()),
+            banned_at,
+            expires_at: duration_seconds
+                .and_then(|seconds| expiry_after(banned_at, u64::from(seconds))),
+            platform_ban_id: ban_id,
+            origin: BanOrigin::IssuedByForge,
+        };
+        if let Err(error) = self.ban_ledger.upsert(&entry, banned_at).await {
+            tracing::warn!(%error, "issued youtube ban not recorded in the ban ledger");
+        }
+    }
+
+    async fn forget_ban(&self, key: &BanLedgerKey) {
+        if let Err(error) = self.ban_ledger.remove(key).await {
+            tracing::warn!(%error, "lifted youtube ban not removed from the ban ledger");
+        }
     }
 
     pub async fn add_moderator(&self, channel_id: &str) -> Result<(), PlatformError> {
@@ -270,7 +327,7 @@ impl YoutubeModeration {
         &self,
         channel_id: &str,
         duration_seconds: Option<u32>,
-    ) -> Result<String, PlatformError> {
+    ) -> Result<Option<String>, PlatformError> {
         let live_chat_id = self
             .live_chat_id
             .get()
@@ -315,12 +372,11 @@ impl YoutubeModeration {
                 resp.json().await.map_err(|e| PlatformError::Network {
                     reason: e.without_url().to_string(),
                 })?;
-            let ban_id = body
+            return Ok(body
                 .get("id")
                 .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_owned();
-            return Ok(ban_id);
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned));
         }
         Err(self.map_failure(resp).await)
     }
@@ -354,6 +410,10 @@ impl YoutubeModeration {
             },
         }
     }
+}
+
+fn ledger_failure(error: StorageError) -> PlatformError {
+    PlatformError::Io(std::io::Error::other(error))
 }
 
 #[cfg(test)]

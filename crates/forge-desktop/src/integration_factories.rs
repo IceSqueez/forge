@@ -9,7 +9,7 @@ use forge_platform_core::{
 use forge_registry::SubActionRegistry;
 use forge_runtime::EventBus;
 use forge_storage::{
-    CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
+    BanLedgerRepo, CredentialsRepo, DataProvider, SettingsRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo, get_bool_setting, has_credentials_for,
 };
 use forge_types::{IntegrationId, PlatformId};
@@ -175,6 +175,7 @@ pub(crate) struct YoutubeFactory {
     live_chat_id: forge_platform_youtube::LiveChatIdHandle,
     active_broadcast: forge_platform_youtube::ActiveBroadcastIdHandle,
     quota: Arc<tokio::sync::Mutex<forge_platform_youtube::QuotaState>>,
+    ban_ledger: Arc<dyn BanLedgerRepo>,
 }
 
 pub(crate) fn wire_youtube(
@@ -195,6 +196,7 @@ pub(crate) fn wire_youtube(
     let quota = Arc::new(tokio::sync::Mutex::new(
         forge_platform_youtube::QuotaState::default(),
     ));
+    let ban_ledger = backend.ban_ledger_repo();
 
     let token_source = || {
         let manager = Arc::clone(&manager);
@@ -209,11 +211,20 @@ pub(crate) fn wire_youtube(
         live_chat_id.clone(),
         Arc::clone(&quota),
     ));
+    let broadcaster_source = {
+        let manager = Arc::clone(&manager);
+        Arc::new(move || {
+            let manager = Arc::clone(&manager);
+            Box::pin(async move { manager.broadcaster().await }) as BoxFuture<'static, _>
+        })
+    };
     let moderation = Arc::new(forge_platform_youtube::YoutubeModeration::new(
         endpoints,
         token_source(),
+        broadcaster_source,
         live_chat_id.clone(),
         Arc::clone(&quota),
+        Arc::clone(&ban_ledger),
     ));
     let metadata = Arc::new(forge_platform_youtube::YoutubeStreamMetadata::new(
         endpoints,
@@ -264,6 +275,7 @@ pub(crate) fn wire_youtube(
         live_chat_id,
         active_broadcast,
         quota,
+        ban_ledger,
     })
 }
 
@@ -288,6 +300,7 @@ impl IntegrationFactory for YoutubeFactory {
             self.live_chat_id.clone(),
             self.active_broadcast.clone(),
             Arc::clone(&self.quota),
+            Arc::clone(&self.ban_ledger),
         ));
         let chat_platform: Arc<dyn ChatPlatform> = Arc::clone(&platform) as _;
         let (bundle, _health_tx) = forge_platform_youtube::YoutubeIntegrationBundle::new(

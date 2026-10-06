@@ -15,6 +15,12 @@ pub struct YoutubeCredentials {
     pub expires_at: OffsetDateTime,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YoutubeBroadcaster {
+    pub channel_id: String,
+    pub channel_title: String,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {

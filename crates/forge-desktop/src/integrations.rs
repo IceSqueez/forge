@@ -232,8 +232,8 @@ pub fn youtube_builtin_object(
         collections: None,
         obs_client: None,
         vtube_client: None,
-        follow: Some(bundle as Arc<dyn FollowLookup>),
-        ban_list: None,
+        follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
+        ban_list: Some(bundle as Arc<dyn BanListSource>),
     }
 }
 

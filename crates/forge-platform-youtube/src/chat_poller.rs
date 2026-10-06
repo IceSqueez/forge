@@ -3,16 +3,19 @@ use std::time::Duration;
 
 use forge_events::{Event, EventSource};
 use forge_platform_core::{DedupSet, EndpointSurface, PlatformEndpoints, PlatformError};
+use forge_storage::BanLedgerRepo;
 use forge_types::{
     ChatEventDetail, ChatPayload, ChatSegment, ChatViewer, ModerationMarks, UserBadge,
 };
 use futures::future::BoxFuture;
 use reqwest::StatusCode;
+use time::OffsetDateTime;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use crate::active_broadcast_id::ActiveBroadcastIdHandle;
+use crate::ban_ledger::{USER_BANNED_EVENT_TYPE, observed_ban};
 use crate::live_chat_id::LiveChatIdHandle;
 use crate::payload_fields::{
     ban as ban_fields, chat as chat_fields, chat_mod as chat_mod_fields, entity,
@@ -45,9 +48,11 @@ pub struct YoutubeChatPoller {
     quota_tracker: Arc<Mutex<QuotaState>>,
     live_chat_id: LiveChatIdHandle,
     active_broadcast_id: ActiveBroadcastIdHandle,
+    ban_ledger: Arc<dyn BanLedgerRepo>,
 }
 
 impl YoutubeChatPoller {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoints: &PlatformEndpoints,
         access_token_source: Arc<
@@ -58,6 +63,7 @@ impl YoutubeChatPoller {
         live_chat_id: LiveChatIdHandle,
         active_broadcast_id: ActiveBroadcastIdHandle,
         quota_tracker: Arc<Mutex<QuotaState>>,
+        ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -70,6 +76,7 @@ impl YoutubeChatPoller {
             quota_tracker,
             live_chat_id,
             active_broadcast_id,
+            ban_ledger,
         }
     }
 
@@ -283,10 +290,13 @@ impl YoutubeChatPoller {
                         }
                         continue;
                     }
-                    if let Some(event) = self.build_event(item, &mut dedup)
-                        && self.bus_sender.send(event).is_err()
-                    {
-                        return Ok(());
+                    if let Some(event) = self.build_event(item, &mut dedup) {
+                        if item_type(item) == USER_BANNED_EVENT_TYPE {
+                            self.record_observed_ban(item).await;
+                        }
+                        if self.bus_sender.send(event).is_err() {
+                            return Ok(());
+                        }
                     }
                 }
 
@@ -314,6 +324,16 @@ impl YoutubeChatPoller {
                 ) => {}
                 () = cancel.cancelled() => return Ok(()),
             }
+        }
+    }
+
+    async fn record_observed_ban(&self, item: &serde_json::Value) {
+        let now = OffsetDateTime::now_utc();
+        let Some(entry) = observed_ban(item, &self.channel_id, now) else {
+            return;
+        };
+        if let Err(error) = self.ban_ledger.upsert(&entry, now).await {
+            tracing::warn!(%error, "observed youtube ban not recorded in the ban ledger");
         }
     }
 
@@ -733,7 +753,7 @@ impl YoutubeChatPoller {
                 ))
             }
 
-            "userBannedEvent" => {
+            USER_BANNED_EVENT_TYPE => {
                 let banned_details = snippet.get("userBannedDetails");
                 let banned_user = banned_details.and_then(|d| d.get("bannedUserDetails"));
                 let target_display_name = non_empty(

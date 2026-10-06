@@ -367,8 +367,11 @@ returns every message added since the `pageToken` it issued, a `nextPageToken` a
 `pollingIntervalMillis`; ending the broadcast adds a `chatEndedEvent` and `offlineAt`, after which
 the chat list and inserts answer 403 `liveChatEnded`. A `textMessageEvent` insert is echoed back
 into the chat as the channel owner, as YouTube does. The fake also models `videos` (viewer count,
-title) and `channels` for the seeded channel; any other request is answered 404 and counted as
-unexpected.
+title) and `channels` for the seeded channel. `subscriptions` answers from `fakes.youtube.subscribers`
+(`channel_id`, `subscribed_at`, optional `private`): a `channelId` + `forChannelId` lookup for the
+seeded channel returns that viewer's subscription with `subscribed_at` as its `publishedAt`, a
+`private` viewer answers 403 `subscriptionForbidden`, and anyone else gets an empty list. Any other
+request is answered 404 and counted as unexpected.
 
 forge resolves the broadcast once a minute, so a broadcast started after boot can take up to a
 minute to reach it; it learns the end from the chat poll. Steps: `youtube_chat_polled` waits for a

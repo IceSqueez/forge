@@ -11,7 +11,7 @@ use forge_emulator::fixture::{REDACTED, YouTubeAccount};
 use forge_emulator::youtube::{
     FakeYouTube, FakeYouTubeConfig, FakeYouTubeSetup, LIVE_BROADCASTS_PATH,
     LIVE_CHAT_MESSAGES_PATH, TOKEN_PATH, YouTubeChatter, YouTubeCredentialCheck,
-    YouTubeRefreshAnswer, YouTubeRequest,
+    YouTubeRefreshAnswer, YouTubeRequest, YouTubeSubscriber,
 };
 use forge_events::Event;
 use forge_platform_core::{EndpointSurface, PlatformEndpoints, PlatformError, ViewerReport};
@@ -660,6 +660,118 @@ async fn channel_list_finds_only_the_seeded_channel() {
             "{key}={value}"
         );
     }
+}
+
+fn subscriber(channel_id: &str, private: bool) -> YouTubeSubscriber {
+    YouTubeSubscriber {
+        channel_id: channel_id.to_owned(),
+        subscribed_at: "2023-04-05T06:07:08Z".to_owned(),
+        private,
+    }
+}
+
+#[tokio::test]
+async fn subscription_list_answers_from_the_seeded_subscribers_of_this_channel() {
+    let public = "UCpublicSubscriber000001";
+    let private = "UCprivateSubscriber00001";
+    let fake = start(FakeYouTubeSetup {
+        subscribers: vec![subscriber(public, false), subscriber(private, true)],
+        ..FakeYouTubeSetup::default()
+    })
+    .await;
+    let channel_id = YouTubeAccount::default().channel_id;
+    let cases = [
+        (
+            "public subscriber",
+            public,
+            channel_id.as_str(),
+            200,
+            Some(1),
+            "",
+        ),
+        (
+            "private subscriber",
+            private,
+            channel_id.as_str(),
+            403,
+            None,
+            "subscriptionForbidden",
+        ),
+        (
+            "unknown viewer",
+            "UCnotSubscribed000000001",
+            channel_id.as_str(),
+            200,
+            Some(0),
+            "",
+        ),
+        (
+            "another channel",
+            public,
+            "UCsomeoneElse00000000001",
+            200,
+            Some(0),
+            "",
+        ),
+    ];
+    for (label, viewer, for_channel, status, items, expected_reason) in cases {
+        let (got_status, body) = get(
+            &fake,
+            "/subscriptions",
+            &[
+                ("part", "snippet"),
+                ("channelId", viewer),
+                ("forChannelId", for_channel),
+            ],
+        )
+        .await;
+
+        assert_eq!(
+            (
+                got_status,
+                body["items"].as_array().map(Vec::len),
+                reason(&body)
+            ),
+            (status, items, expected_reason),
+            "{label}"
+        );
+    }
+    assert_eq!(fake.ledger().unexpected_requests().count(), 0);
+}
+
+#[tokio::test]
+async fn subscription_item_carries_the_seeded_date_and_both_channels() {
+    let viewer = "UCpublicSubscriber000001";
+    let fake = start(FakeYouTubeSetup {
+        subscribers: vec![subscriber(viewer, false)],
+        ..FakeYouTubeSetup::default()
+    })
+    .await;
+    let channel_id = YouTubeAccount::default().channel_id;
+
+    let (_, body) = get(
+        &fake,
+        "/subscriptions",
+        &[
+            ("part", "snippet"),
+            ("channelId", viewer),
+            ("forChannelId", channel_id.as_str()),
+        ],
+    )
+    .await;
+
+    assert_eq!(
+        (
+            body.pointer("/items/0/snippet/publishedAt"),
+            body.pointer("/items/0/snippet/channelId"),
+            body.pointer("/items/0/snippet/resourceId/channelId"),
+        ),
+        (
+            Some(&json!("2023-04-05T06:07:08Z")),
+            Some(&json!(viewer)),
+            Some(&json!(channel_id)),
+        )
+    );
 }
 
 #[tokio::test]

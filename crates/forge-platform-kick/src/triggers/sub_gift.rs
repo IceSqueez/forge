@@ -220,4 +220,16 @@ mod tests {
         );
         assert_eq!(stack.get("count"), Some(&Variant::Int(3)));
     }
+
+    #[test]
+    fn a_batch_the_wire_gives_no_count_still_counts_one_gift() {
+        for payload in [json!({ "count": null }), json!({})] {
+            let stack = SubGiftDescriptor.build_arg_stack(&gift_event(payload.clone()));
+            assert_eq!(
+                stack.get("gift_count"),
+                Some(&Variant::Int(1)),
+                "payload {payload}"
+            );
+        }
+    }
 }

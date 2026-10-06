@@ -299,11 +299,19 @@ impl OverlayPropertyPanel {
         self.refresh_latest(cx);
     }
 
-    fn persist_on_release(&mut self, cx: &mut App) {
+    pub(super) fn take_unsaved_config(&mut self, cx: &App) -> Option<OverlayConfig> {
         let sparse = self.pending_config(cx);
         if sparse == self.stored {
-            return;
+            return None;
         }
+        self.stored = sparse.clone();
+        Some(sparse)
+    }
+
+    fn persist_on_release(&mut self, cx: &mut App) {
+        let Some(sparse) = self.take_unsaved_config(cx) else {
+            return;
+        };
         let repo = Arc::clone(&self.repo);
         let service = self.service.clone();
         let id = self.overlay_id.clone();
@@ -1180,6 +1188,45 @@ pub(crate) mod tests {
     #[gpui::test]
     fn a_panel_torn_down_over_an_untouched_form_writes_nothing(cx: &mut gpui::TestAppContext) {
         let mut fixture = Fixture::new(cx, config(&[(ELEMENT_WIDTH, Variant::Int(600))]));
+
+        fixture.release(cx);
+
+        assert!(fixture.repo.saved().is_empty());
+    }
+
+    #[gpui::test]
+    fn the_unsaved_config_is_handed_over_once_and_only_when_the_form_moved(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let edited = config(&[(HEADLINE, Variant::String(EDITED_HEADLINE.into()))]);
+        for (typed, expected) in [
+            (None, [None, None]),
+            (Some(EDITED_HEADLINE), [Some(edited), None]),
+        ] {
+            let fixture = Fixture::new(cx, OverlayConfig::new());
+            if let Some(text) = typed {
+                fixture.type_into(cx, HEADLINE, text);
+            }
+
+            let taken = [(); 2].map(|()| {
+                fixture
+                    .panel()
+                    .update(cx, |panel, cx| panel.take_unsaved_config(cx))
+            });
+
+            assert_eq!(taken, expected, "typed {typed:?}");
+        }
+    }
+
+    #[gpui::test]
+    fn a_panel_torn_down_after_its_edit_was_handed_over_writes_nothing_more(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut fixture = Fixture::new(cx, OverlayConfig::new());
+        fixture.type_into(cx, HEADLINE, EDITED_HEADLINE);
+        fixture
+            .panel()
+            .update(cx, |panel, cx| panel.take_unsaved_config(cx));
 
         fixture.release(cx);
 

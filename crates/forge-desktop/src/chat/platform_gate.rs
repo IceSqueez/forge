@@ -1,6 +1,7 @@
 use super::*;
 use crate::home_stats::Integration;
 use crate::integration_lifecycle::IntegrationLifecycle;
+use crate::integration_supervisor::LifecycleState;
 
 pub(crate) fn platform_integration(platform: Platform) -> Integration {
     match platform {
@@ -44,6 +45,18 @@ impl ChatView {
         }
     }
 
+    pub(crate) fn platform_running(&self, platform: Platform, cx: &App) -> bool {
+        match &self.lifecycle {
+            Some(lifecycle) => {
+                lifecycle
+                    .read(cx)
+                    .state_of(&platform_integration(platform).builtin_id())
+                    == LifecycleState::Running
+            }
+            None => true,
+        }
+    }
+
     pub(crate) fn filter_offered(&self, filter: PlatformFilter, cx: &App) -> bool {
         match filter {
             PlatformFilter::All => true,
@@ -56,6 +69,7 @@ impl ChatView {
             self.platform_filter = PlatformFilter::All;
             self.reset_chat_list(cx);
         }
+        self.request_selected_follow(cx);
         cx.notify();
     }
 }

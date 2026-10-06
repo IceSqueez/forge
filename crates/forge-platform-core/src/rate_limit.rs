@@ -20,7 +20,6 @@ pub struct RateLimitUsage {
 #[async_trait]
 pub trait RateLimiter: Send + Sync {
     async fn acquire(&self, weight: u32) -> Result<RateLimitOutcome, PlatformError>;
-    fn remaining(&self) -> u32;
     async fn observe_remote_throttle(&self, retry_after: Duration);
 
     fn usage(&self) -> RateLimitUsage {
@@ -141,15 +140,6 @@ impl RateLimiter for TokenBucketRateLimiter {
         }
     }
 
-    fn remaining(&self) -> u32 {
-        let now = Instant::now();
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        self.current_tokens(&state, now) as u32
-    }
-
     async fn observe_remote_throttle(&self, retry_after: Duration) {
         let now = Instant::now();
         let mut state = self
@@ -240,20 +230,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remaining_decreases_after_acquires() {
-        let rl = limiter(10, Duration::from_secs(60));
-        let before = rl.remaining();
-        rl.acquire(1).await.unwrap();
-        rl.acquire(1).await.unwrap();
-        rl.acquire(1).await.unwrap();
-        let after = rl.remaining();
-        assert!(
-            after < before,
-            "remaining should drop after acquires: before={before}, after={after}"
-        );
-    }
-
-    #[tokio::test]
     async fn zero_refill_window_never_regenerates_tokens() {
         let rl = limiter(1, Duration::ZERO);
         assert!(matches!(
@@ -310,9 +286,6 @@ mod tests {
     impl RateLimiter for NoIntrospectionLimiter {
         async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
             Ok(RateLimitOutcome::Granted)
-        }
-        fn remaining(&self) -> u32 {
-            u32::MAX
         }
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }

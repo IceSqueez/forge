@@ -6,9 +6,9 @@ use forge_events::{Event, EventPublisher, EventSource};
 use forge_storage::GlobalsRepo;
 use forge_types::{
     EventId, IntegrationAvailability, IntegrationId, LatestScope, LatestValueReader,
-    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, PlatformId,
-    REPLY_PARENT_FIELD, SCRIPT_LOG_TARGET, ScriptId, Variant, WHISPER_RECIPIENT_FIELD,
-    integration_disabled_reason, requested_chat_target, whispers_unsupported_reason,
+    NO_CHAT_PLATFORM_ENABLED_REASON, NO_WHISPER_PLATFORM_ENABLED_REASON, REPLY_PARENT_FIELD,
+    SCRIPT_LOG_TARGET, ScriptId, Variant, WHISPER_RECIPIENT_FIELD, integration_disabled_reason,
+    resolve_chat_target, whispers_unsupported_reason,
 };
 use rhai::{EvalAltResult, ImmutableString, Module, Position};
 use tokio::runtime::Handle;
@@ -434,19 +434,19 @@ fn admit_broadcast(
     }
 }
 
-fn admit_chat_target<'a>(
+fn admit_chat_target(
     integrations: Option<&dyn IntegrationAvailability>,
-    raw: &'a str,
-) -> Result<Option<&'a str>, Box<EvalAltResult>> {
-    let Some(target) = requested_chat_target(raw) else {
+    raw: &str,
+) -> Result<Option<&'static str>, Box<EvalAltResult>> {
+    let Some(platform) = resolve_chat_target(raw)? else {
         admit_broadcast(integrations)?;
         return Ok(None);
     };
-    let integration = IntegrationId::new(target);
+    let integration = IntegrationId::from_static(platform.as_str());
     if integrations.is_some_and(|integrations| integrations.is_disabled(&integration)) {
         return Err(integration_disabled_reason(&integration).into());
     }
-    Ok(Some(target))
+    Ok(Some(platform.as_str()))
 }
 
 fn admit_whisper_broadcast(
@@ -461,21 +461,24 @@ fn admit_whisper_broadcast(
     }
 }
 
-fn admit_whisper_target<'a>(
+fn admit_whisper_target(
     integrations: Option<&dyn IntegrationAvailability>,
-    raw: &'a str,
-) -> Result<Option<&'a str>, Box<EvalAltResult>> {
-    let Some(target) = requested_chat_target(raw) else {
+    raw: &str,
+) -> Result<Option<&'static str>, Box<EvalAltResult>> {
+    let Some(platform) = resolve_chat_target(raw)? else {
         admit_whisper_broadcast(integrations)?;
         return Ok(None);
     };
-    if !PlatformId::from_wire(target).is_some_and(PlatformId::supports_whispers) {
-        return Err(whispers_unsupported_reason(target).into());
+    if !platform.supports_whispers() {
+        return Err(whispers_unsupported_reason(platform.as_str()).into());
     }
-    admit_chat_target(integrations, target)
+    admit_chat_target(integrations, platform.as_str())
 }
 
-fn chat_request_payload(target: Option<&str>, mut payload: serde_json::Value) -> serde_json::Value {
+fn chat_request_payload(
+    target: Option<&'static str>,
+    mut payload: serde_json::Value,
+) -> serde_json::Value {
     if let (Some(target), Some(fields)) = (target, payload.as_object_mut()) {
         fields.insert("target".to_owned(), target.into());
     }
@@ -710,7 +713,7 @@ mod tests {
     use forge_storage_sqlite::SqliteBackend;
 
     use crate::test_support::{Sandboxed, sandboxed_backend};
-    use forge_types::{EventId, Variant};
+    use forge_types::{EventId, Variant, unknown_chat_target_reason};
     use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
@@ -1469,13 +1472,43 @@ mod tests {
                 "kick",
             ),
             (
-                r#"forge::chat::whisper("myspace", "viewer", "hello")"#,
-                "myspace",
+                r#"forge::chat::whisper("YouTube", "viewer", "hello")"#,
+                "youtube",
             ),
+            (r#"forge::chat::whisper("Kick", "viewer", "hello")"#, "kick"),
         ] {
             let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
 
             assert_runtime_error_mentions(call, result, &whispers_unsupported_reason(target));
+            assert!(sent.is_empty(), "{call} published {sent:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mixed_case_chat_target_is_published_normalized_for_send_reply_and_whisper() {
+        for call in [
+            r#"forge::chat::send("Twitch", "hello")"#,
+            r#"forge::chat::reply(" TWITCH ", "msg-1", "hello")"#,
+            r#"forge::chat::whisper("Twitch", "viewer", "hello")"#,
+        ] {
+            let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
+
+            assert!(result.is_ok(), "{call} failed: {result:?}");
+            assert_eq!(sent.len(), 1, "{call}");
+            assert_eq!(sent[0].payload["target"].as_str(), Some("twitch"), "{call}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unknown_chat_target_fails_unsent_naming_the_valid_targets() {
+        for call in [
+            r#"forge::chat::send("typo", "hello")"#,
+            r#"forge::chat::reply("typo", "msg-1", "hello")"#,
+            r#"forge::chat::whisper("typo", "viewer", "hello")"#,
+        ] {
+            let (result, sent) = eval_gated(SwitchableAvailability::default(), call).await;
+
+            assert_runtime_error_mentions(call, result, &unknown_chat_target_reason("typo"));
             assert!(sent.is_empty(), "{call} published {sent:?}");
         }
     }

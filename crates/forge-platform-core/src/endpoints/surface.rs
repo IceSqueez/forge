@@ -2,6 +2,7 @@
 pub enum EndpointSurface {
     TwitchApi,
     TwitchEventSubSocket,
+    TwitchOAuth,
     KickPublicApi,
     KickChannelApi,
     KickChatSocket,
@@ -29,9 +30,10 @@ impl EndpointProtocol {
 }
 
 impl EndpointSurface {
-    pub const ALL: [EndpointSurface; 11] = [
+    pub const ALL: [EndpointSurface; 12] = [
         Self::TwitchApi,
         Self::TwitchEventSubSocket,
+        Self::TwitchOAuth,
         Self::KickPublicApi,
         Self::KickChannelApi,
         Self::KickChatSocket,
@@ -47,6 +49,7 @@ impl EndpointSurface {
         match self {
             Self::TwitchApi => "FORGE_TWITCH_API_BASE_URL",
             Self::TwitchEventSubSocket => "FORGE_TWITCH_EVENTSUB_WS_URL",
+            Self::TwitchOAuth => "FORGE_TWITCH_OAUTH_BASE_URL",
             Self::KickPublicApi => "FORGE_KICK_API_BASE_URL",
             Self::KickChannelApi => "FORGE_KICK_CHANNEL_API_BASE_URL",
             Self::KickChatSocket => "FORGE_KICK_CHAT_WS_BASE_URL",
@@ -63,6 +66,7 @@ impl EndpointSurface {
         match self {
             Self::TwitchApi => "https://api.twitch.tv",
             Self::TwitchEventSubSocket => "wss://eventsub.wss.twitch.tv/ws",
+            Self::TwitchOAuth => "https://id.twitch.tv/oauth2",
             Self::KickPublicApi => "https://api.kick.com/public/v1",
             Self::KickChannelApi => "https://kick.com/api/v2",
             Self::KickChatSocket => "wss://ws-us2.pusher.com/app",
@@ -78,6 +82,7 @@ impl EndpointSurface {
     pub(crate) const fn protocol(self) -> EndpointProtocol {
         match self {
             Self::TwitchApi
+            | Self::TwitchOAuth
             | Self::KickPublicApi
             | Self::KickChannelApi
             | Self::KickOAuth

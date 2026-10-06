@@ -19,6 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::chat_platform::YoutubePlatform;
 use crate::credentials_manager::YoutubeCredentialsManager;
+use crate::follow_lookup::YoutubeFollowLookup;
 use crate::quota_state::QuotaState;
 use crate::triggers::channel_member::SupportNewMemberDescriptor;
 use crate::triggers::channel_member_milestone::SupportMemberMilestoneDescriptor;
@@ -64,6 +65,7 @@ pub struct YoutubeIntegrationBundle {
     platform: Arc<YoutubePlatform>,
     credentials_manager: Arc<YoutubeCredentialsManager>,
     quota: Arc<tokio::sync::Mutex<QuotaState>>,
+    follow_lookup: YoutubeFollowLookup,
     viewer_report_tx: watch::Sender<ViewerReport>,
     viewer_report_rx: watch::Receiver<ViewerReport>,
     state_rx: watch::Receiver<ConnectionState>,
@@ -90,6 +92,12 @@ impl YoutubeIntegrationBundle {
                     as futures::future::BoxFuture<'static, _>
             })
         };
+        let follow_lookup = YoutubeFollowLookup::new(
+            platform.endpoints(),
+            token_source.clone(),
+            Arc::clone(&quota),
+            channel_id.clone(),
+        );
         let retired = CancellationToken::new();
         let viewer_poll = YoutubeViewerPoll::new(
             platform.endpoints(),
@@ -116,6 +124,7 @@ impl YoutubeIntegrationBundle {
             platform,
             credentials_manager,
             quota,
+            follow_lookup,
             viewer_report_tx,
             viewer_report_rx,
             state_rx,
@@ -235,6 +244,10 @@ impl YoutubeIntegrationBundle {
 
     pub(crate) fn platform(&self) -> &Arc<YoutubePlatform> {
         &self.platform
+    }
+
+    pub(crate) fn follow_lookup(&self) -> &YoutubeFollowLookup {
+        &self.follow_lookup
     }
 
     fn quota_metric(&self) -> HealthMetric {

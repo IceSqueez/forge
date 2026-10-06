@@ -994,7 +994,11 @@ fn take_from_queues(
 }
 
 fn enqueue_preview(req: &SpeakRequest, deps: &QueueDeps, catalog: &[TtsVoice]) -> (String, u32) {
-    let estimated_secs = ((req.text.chars().count() as u32) / 15).max(1);
+    let spoken_secs = ((req.text.chars().count() as u32) / 15).max(1);
+    let estimated_secs = match deps.pipeline.load().output.max_duration_secs {
+        Some(cap_secs) => spoken_secs.min(cap_secs),
+        None => spoken_secs,
+    };
     let guard = deps.resolver.read().unwrap_or_else(|e| e.into_inner());
     let preview = match resolve_with_overrides(&guard, req, catalog, None) {
         ResolveResult::Speak {
@@ -2020,6 +2024,32 @@ mod tests {
         forge_tts_pipeline::PipelineConfig {
             emote_tokens,
             ..Default::default()
+        }
+    }
+
+    #[test]
+    fn enqueue_estimate_is_capped_by_the_maximum_duration() {
+        const SECS_OF_SPEECH: usize = 20;
+        let text = "a".repeat(SECS_OF_SPEECH * 15);
+        for (text, cap, expected) in [
+            (text.as_str(), None, 20),
+            (text.as_str(), Some(5), 5),
+            (text.as_str(), Some(19), 19),
+            (text.as_str(), Some(20), 20),
+            (text.as_str(), Some(21), 20),
+            (text.as_str(), Some(600), 20),
+            ("hi", Some(5), 1),
+            ("hi", None, 1),
+        ] {
+            let deps = minimal_deps();
+            let mut cfg = forge_tts_pipeline::PipelineConfig::default();
+            cfg.output.max_duration_secs = cap;
+            deps.pipeline.swap(cfg);
+            let req = request("nova", text, Priority::Normal);
+
+            let (_, estimated_secs) = enqueue_preview(&req, &deps, &[]);
+
+            assert_eq!(estimated_secs, expected, "len {} cap {cap:?}", text.len());
         }
     }
 

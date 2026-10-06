@@ -8,6 +8,7 @@ use crate::error::SqliteStorageError;
 
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const JOURNAL_SIZE_LIMIT_BYTES: &str = "67108864";
+const SHUTDOWN_CHECKPOINT_WAIT: Duration = Duration::from_millis(8);
 const WRITER_CONNECTIONS: u32 = 1;
 const SHARED_POOL_CONNECTIONS: u32 = 4;
 const MIN_READER_CONNECTIONS: u32 = 2;
@@ -34,11 +35,38 @@ impl SqlitePools {
     }
 
     pub async fn close(&self) {
+        self.truncate_wal().await;
         if let Some(checkpointer) = &self.checkpointer {
             checkpointer.close().await;
         }
         self.reader.close().await;
         self.writer.close().await;
+    }
+}
+
+impl SqlitePools {
+    async fn truncate_wal(&self) {
+        let Ok(mut conn) = self.writer.acquire().await else {
+            return;
+        };
+        let bounded = sqlx::query(sqlx::AssertSqlSafe(format!(
+            "PRAGMA busy_timeout = {}",
+            SHUTDOWN_CHECKPOINT_WAIT.as_millis()
+        )))
+        .execute(&mut *conn)
+        .await;
+        if bounded.is_err() {
+            return;
+        }
+        match sqlx::query_as::<_, (i64, i64, i64)>("PRAGMA wal_checkpoint(TRUNCATE)")
+            .fetch_one(&mut *conn)
+            .await
+        {
+            Ok((0, _, _)) => {}
+            Ok(_) => tracing::warn!("shutdown WAL truncate was outlasted by readers"),
+            Err(e) => tracing::warn!(error = %e, "shutdown WAL truncate failed"),
+        }
+        conn.close_on_drop();
     }
 }
 

@@ -367,8 +367,11 @@ returns every message added since the `pageToken` it issued, a `nextPageToken` a
 `pollingIntervalMillis`; ending the broadcast adds a `chatEndedEvent` and `offlineAt`, after which
 the chat list and inserts answer 403 `liveChatEnded`. A `textMessageEvent` insert is echoed back
 into the chat as the channel owner, as YouTube does. The fake also models `videos` (viewer count,
-title) and `channels` for the seeded channel; any other request is answered 404 and counted as
-unexpected.
+title) and `channels` for the seeded channel. `subscriptions` answers from `fakes.youtube.subscribers`
+(`channel_id`, `subscribed_at`, optional `private`): a `channelId` + `forChannelId` lookup for the
+seeded channel returns that viewer's subscription with `subscribed_at` as its `publishedAt`, a
+`private` viewer answers 403 `subscriptionForbidden`, and anyone else gets an empty list. Any other
+request is answered 404 and counted as unexpected.
 
 forge resolves the broadcast once a minute, so a broadcast started after boot can take up to a
 minute to reach it; it learns the end from the chat poll. Steps: `youtube_chat_polled` waits for a
@@ -533,6 +536,12 @@ by default, a missing `broadcaster_id` answers 400 and another broadcaster's id 
 fires the goal-progress trigger before any observer is attached, so the scenario binds it to a
 goal overlay and opens the page afterwards: the retained content, flagged `synced true`, is the
 proof. A `session_reconnect` then must not request the goals a second time.
+
+`GET /helix/channels/followers` answers from the `channel.follow` events the run injected: each
+one records its `user_id`, `user_login`, `user_name` and `followed_at`, and a repeat follow by the
+same user replaces the earlier row. `user_id` narrows the answer to that viewer and `first` caps
+the rows (newest first). A missing `broadcaster_id` answers 400; another broadcaster's id answers
+200 with no rows, as Twitch does for a token without moderator access to that channel.
 
 `go-live-pings-the-discord-role.json` follows a `stream.online` notification to a Discord
 webhook post and judges the post's `allowed_mentions`: the role ping is parsed and

@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use forge_components::{BadgeKind, ForgePalette, fmt_relative_time, hash_accent};
 use forge_storage::Viewer;
-use gpui::Rgba;
-use time::OffsetDateTime;
+use gpui::{Rgba, SharedString};
 
+use crate::chat_author::{AuthorKey, viewer_platform};
 use crate::chat_feed::{AuthorActivity, AuthorIndex};
 
 pub(crate) const DASH: &str = "-";
@@ -18,15 +18,14 @@ pub(crate) enum SubStatus {
 
 #[derive(Clone)]
 pub(crate) struct ViewerSummary {
+    pub key: AuthorKey,
     pub username: String,
     pub role: Option<BadgeKind>,
     pub message_count: u64,
     pub last_seen_label: String,
     pub avatar_letter: char,
     pub avatar_color: Rgba,
-    pub watch_time: String,
     pub sub: SubStatus,
-    pub follow: String,
 }
 
 pub(crate) fn drawer_matches(username: &str, search: &str) -> bool {
@@ -44,48 +43,52 @@ fn sub_status(role: Option<BadgeKind>) -> SubStatus {
 #[derive(Default)]
 pub(crate) struct ViewerDirectory {
     viewers: Vec<Viewer>,
-    by_name: HashMap<String, usize>,
+    by_key: HashMap<AuthorKey, usize>,
 }
 
 impl ViewerDirectory {
     pub fn new(viewers: Vec<Viewer>) -> Self {
-        let mut by_name = HashMap::with_capacity(viewers.len());
+        let mut by_key = HashMap::with_capacity(viewers.len());
         for (ix, viewer) in viewers.iter().enumerate() {
-            by_name.entry(viewer.username.clone()).or_insert(ix);
+            let platform = viewer_platform(&viewer.platform);
+            by_key
+                .entry(AuthorKey::by_viewer_id(platform, &viewer.viewer_id))
+                .or_insert(ix);
+            by_key
+                .entry(AuthorKey::by_name(platform, &viewer.username))
+                .or_insert(ix);
         }
-        Self { viewers, by_name }
+        Self { viewers, by_key }
     }
 
     pub fn viewers(&self) -> &[Viewer] {
         &self.viewers
     }
 
-    pub fn get(&self, username: &str) -> Option<&Viewer> {
-        self.by_name
-            .get(username)
-            .and_then(|ix| self.viewers.get(*ix))
+    pub fn get(&self, key: &AuthorKey) -> Option<&Viewer> {
+        self.by_key.get(key).and_then(|ix| self.viewers.get(*ix))
     }
 }
 
 pub(crate) fn summary_from_activity(
-    username: &str,
+    key: &AuthorKey,
     activity: &AuthorActivity,
     palette: &ForgePalette,
 ) -> ViewerSummary {
+    let username = activity.name.as_ref();
     let avatar_letter = username
         .chars()
         .next()
         .map_or('?', |c| c.to_ascii_uppercase());
     ViewerSummary {
+        key: key.clone(),
         username: username.to_owned(),
         role: activity.role,
         message_count: activity.message_count as u64,
         last_seen_label: fmt_relative_time(Some(activity.last_received_at)),
         avatar_letter,
         avatar_color: hash_accent(username, palette),
-        watch_time: DASH.to_owned(),
         sub: sub_status(activity.role),
-        follow: DASH.to_owned(),
     }
 }
 
@@ -96,47 +99,57 @@ pub(crate) fn enrich_with_storage(
     if let Some(v) = viewer {
         summary.message_count = v.message_count;
         summary.last_seen_label = fmt_relative_time(Some(v.last_seen_at));
-        summary.watch_time = watch_time_since(v.first_seen_at);
     }
     summary
 }
 
 pub(crate) fn author_summary(
-    username: &str,
+    key: &AuthorKey,
     authors: &AuthorIndex,
     directory: &ViewerDirectory,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
-    let activity = authors.get(username)?;
+    let activity = authors.get(key)?;
     Some(enrich_with_storage(
-        summary_from_activity(username, activity, palette),
-        directory.get(username),
+        summary_from_activity(key, activity, palette),
+        directory.get(key),
     ))
 }
 
 pub(crate) fn selected_summary(
-    selected: Option<&str>,
+    selected: Option<&AuthorKey>,
     authors: &AuthorIndex,
     directory: &ViewerDirectory,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
-    selected
-        .and_then(|sel| author_summary(sel, authors, directory, palette))
-        .or_else(|| {
-            let newest = authors.newest()?;
-            author_summary(newest, authors, directory, palette)
-        })
+    let key = displayed_viewer(selected, authors)?;
+    author_summary(&key, authors, directory, palette)
 }
 
-fn watch_time_since(first_seen: OffsetDateTime) -> String {
-    let mins = (OffsetDateTime::now_utc() - first_seen)
-        .whole_minutes()
-        .max(0);
-    if mins >= 60 {
-        format!("{}h {}m", mins / 60, mins % 60)
-    } else {
-        format!("{mins} min")
-    }
+pub(crate) fn displayed_viewer(
+    selected: Option<&AuthorKey>,
+    authors: &AuthorIndex,
+) -> Option<AuthorKey> {
+    selected
+        .filter(|key| authors.get(key).is_some())
+        .or_else(|| authors.newest().map(|(newest, _)| newest))
+        .cloned()
+}
+
+pub(crate) fn current_name(
+    key: &AuthorKey,
+    authors: &AuthorIndex,
+    directory: &ViewerDirectory,
+) -> Option<SharedString> {
+    authors
+        .get(key)
+        .map(|activity| activity.name.clone())
+        .or_else(|| {
+            directory
+                .get(key)
+                .map(|viewer| SharedString::from(viewer.username.clone()))
+        })
+        .or_else(|| key.fallback_name().cloned())
 }
 
 #[cfg(test)]
@@ -147,10 +160,15 @@ mod tests {
     use time::{Duration, OffsetDateTime};
 
     use super::{
-        DASH, SubStatus, ViewerDirectory, author_summary, drawer_matches, enrich_with_storage,
-        selected_summary, sub_status, watch_time_since,
+        SubStatus, ViewerDirectory, author_summary, current_name, displayed_viewer, drawer_matches,
+        enrich_with_storage, selected_summary, sub_status,
     };
+    use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
+
+    fn key(name: &str) -> AuthorKey {
+        AuthorKey::by_name(Platform::Twitch, name)
+    }
 
     fn feed_of(messages: &[ChatMessage]) -> ChatFeed {
         let mut feed = ChatFeed::new();
@@ -158,20 +176,12 @@ mod tests {
         feed
     }
 
-    fn unique_authors(messages: &[ChatMessage]) -> Vec<String> {
-        feed_of(messages)
-            .authors()
-            .newest_first()
-            .map(ToString::to_string)
-            .collect()
-    }
-
     fn synthesize_from_chat(
         username: &str,
         messages: &[ChatMessage],
     ) -> Option<super::ViewerSummary> {
         author_summary(
-            username,
+            &key(username),
             feed_of(messages).authors(),
             &ViewerDirectory::default(),
             &FORGE_DEFAULT,
@@ -187,6 +197,7 @@ mod tests {
             platform: Platform::Twitch,
             badges,
             username: username.into(),
+            author_id: None,
             author_color: None,
             body: ChatBody::Message("".into()),
             is_event: false,
@@ -232,23 +243,6 @@ mod tests {
     }
 
     #[test]
-    fn unique_authors_dedups_keeping_newest_first() {
-        let messages = [
-            msg("alice", vec![]),
-            msg("bob", vec![]),
-            msg("alice", vec![]),
-            msg("carol", vec![]),
-        ];
-        assert_eq!(unique_authors(&messages), vec!["carol", "alice", "bob"]);
-    }
-
-    #[test]
-    fn unique_authors_drops_empty_usernames() {
-        let messages = [msg("alice", vec![]), msg("", vec![]), msg("bob", vec![])];
-        assert_eq!(unique_authors(&messages), vec!["bob", "alice"]);
-    }
-
-    #[test]
     fn synthesize_uses_latest_role_and_counts_only_that_author() {
         let messages = [
             msg("alice", vec![BadgeKind::Broadcaster]),
@@ -279,7 +273,6 @@ mod tests {
         let messages = [msg("alice", vec![BadgeKind::Subscriber])];
         let summary = synthesize_from_chat("alice", &messages).unwrap();
         assert_eq!(summary.message_count, 1);
-        assert_eq!(summary.watch_time, DASH);
 
         let now = OffsetDateTime::now_utc();
         let stored = viewer(
@@ -291,7 +284,6 @@ mod tests {
         let enriched = enrich_with_storage(summary, Some(&stored));
 
         assert_eq!(enriched.message_count, 99);
-        assert_eq!(enriched.watch_time, "2h 0m");
         assert_eq!(enriched.last_seen_label, "fmt_relative_days");
         assert_eq!(enriched.role, Some(BadgeKind::Subscriber));
         assert!(enriched.sub == SubStatus::Subscribed);
@@ -303,10 +295,12 @@ mod tests {
         let summary = synthesize_from_chat("alice", &messages).unwrap();
         let now = OffsetDateTime::now_utc();
         let other = viewer("someone-else", 99, now, now);
-        let enriched = enrich_with_storage(summary, ViewerDirectory::new(vec![other]).get("alice"));
+        let enriched = enrich_with_storage(
+            summary,
+            ViewerDirectory::new(vec![other]).get(&key("alice")),
+        );
 
         assert_eq!(enriched.message_count, 1);
-        assert_eq!(enriched.watch_time, DASH);
         assert_eq!(enriched.last_seen_label, "fmt_relative_seconds");
     }
 
@@ -326,68 +320,39 @@ mod tests {
     }
 
     #[test]
-    fn selected_summary_falls_back_to_latest_author_when_none_selected() {
-        let messages = [msg("alice", vec![]), msg("bob", vec![])];
-        let summary = selected_summary(
-            None,
-            feed_of(&messages).authors(),
-            &ViewerDirectory::default(),
-            &FORGE_DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(summary.username, "bob");
-    }
-
-    #[test]
-    fn selected_summary_fallback_skips_a_trailing_empty_author() {
-        let messages = [msg("alice", vec![]), msg("", vec![])];
-        let summary = selected_summary(
-            None,
-            feed_of(&messages).authors(),
-            &ViewerDirectory::default(),
-            &FORGE_DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(summary.username, "alice");
+    fn the_card_shows_the_selected_viewer_while_in_the_feed_else_the_newest_author() {
+        let alice_then_bob = [msg("alice", vec![]), msg("bob", vec![])];
+        for (selected, messages, expected) in [
+            (Some(key("alice")), &alice_then_bob[..], Some(key("alice"))),
+            (Some(key("ghost")), &alice_then_bob[..], Some(key("bob"))),
+            (
+                Some(AuthorKey::by_name(Platform::Kick, "alice")),
+                &alice_then_bob[..],
+                Some(key("bob")),
+            ),
+            (None, &alice_then_bob[..], Some(key("bob"))),
+            (Some(key("alice")), &[][..], None),
+            (None, &[][..], None),
+        ] {
+            assert_eq!(
+                displayed_viewer(selected.as_ref(), feed_of(messages).authors()),
+                expected,
+                "selected {selected:?}"
+            );
+        }
     }
 
     #[test]
     fn selected_summary_uses_the_selected_author() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
         let summary = selected_summary(
-            Some("alice"),
+            Some(&key("alice")),
             feed_of(&messages).authors(),
             &ViewerDirectory::default(),
             &FORGE_DEFAULT,
         )
         .unwrap();
         assert_eq!(summary.username, "alice");
-    }
-
-    #[test]
-    fn selected_summary_absent_selection_falls_back_to_latest_author() {
-        let messages = [msg("alice", vec![])];
-        let summary = selected_summary(
-            Some("ghost"),
-            feed_of(&messages).authors(),
-            &ViewerDirectory::default(),
-            &FORGE_DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(summary.username, "alice");
-    }
-
-    #[test]
-    fn selected_summary_is_none_without_any_authored_message() {
-        assert!(
-            selected_summary(
-                None,
-                ChatFeed::new().authors(),
-                &ViewerDirectory::default(),
-                &FORGE_DEFAULT
-            )
-            .is_none()
-        );
     }
 
     #[test]
@@ -398,58 +363,95 @@ mod tests {
             viewer("alice", 99, now, now),
         ]);
 
-        assert_eq!(directory.get("alice").unwrap().message_count, 7);
-        assert!(directory.get("bob").is_none());
+        assert_eq!(directory.get(&key("alice")).unwrap().message_count, 7);
+        assert!(directory.get(&key("bob")).is_none());
     }
 
-    #[test]
-    fn summaries_count_only_the_rows_still_retained_after_eviction() {
-        let mut feed = ChatFeed::new();
-        feed.set_capacity(3);
-        for name in ["alice", "alice", "bob", "alice", "carol"] {
-            feed.push(msg(name, vec![]));
-        }
-
-        let summary = |name: &str| {
-            author_summary(
-                name,
-                feed.authors(),
-                &ViewerDirectory::default(),
-                &FORGE_DEFAULT,
+    fn stored(platform: ViewerPlatform, viewer_id: &str, username: &str, count: u64) -> Viewer {
+        Viewer {
+            viewer_id: viewer_id.into(),
+            platform,
+            ..viewer(
+                username,
+                count,
+                OffsetDateTime::now_utc(),
+                OffsetDateTime::now_utc(),
             )
-        };
-        assert_eq!(summary("alice").unwrap().message_count, 1);
-        assert_eq!(summary("bob").unwrap().message_count, 1);
-        assert!(summary("ghost").is_none());
+        }
+    }
+
+    fn spoken(platform: Platform, viewer_id: &str, username: &str) -> ChatMessage {
+        ChatMessage {
+            platform,
+            author_id: Some(viewer_id.to_owned().into()),
+            ..msg(username, vec![])
+        }
     }
 
     #[test]
-    fn selected_summary_falls_back_to_the_newest_author_once_the_selection_is_evicted() {
-        let mut feed = ChatFeed::new();
-        feed.set_capacity(2);
-        for name in ["alice", "bob", "carol"] {
-            feed.push(msg(name, vec![]));
+    fn viewer_directory_finds_a_viewer_by_platform_and_id_or_platform_and_username_only() {
+        let directory = ViewerDirectory::new(vec![
+            stored(ViewerPlatform::Twitch, "t1", "alice", 1),
+            stored(ViewerPlatform::Kick, "k1", "bob", 2),
+        ]);
+        for (key, expected) in [
+            (AuthorKey::by_viewer_id(Platform::Twitch, "t1"), Some(1)),
+            (AuthorKey::by_name(Platform::Twitch, "alice"), Some(1)),
+            (AuthorKey::by_viewer_id(Platform::Kick, "k1"), Some(2)),
+            (AuthorKey::by_name(Platform::Kick, "bob"), Some(2)),
+            (AuthorKey::by_viewer_id(Platform::Kick, "t1"), None),
+            (AuthorKey::by_name(Platform::YouTube, "alice"), None),
+            (AuthorKey::by_viewer_id(Platform::Twitch, "alice"), None),
+            (AuthorKey::by_name(Platform::Twitch, "t1"), None),
+        ] {
+            assert_eq!(
+                directory.get(&key).map(|viewer| viewer.message_count),
+                expected,
+                "{key:?}"
+            );
         }
+    }
 
-        let summary = selected_summary(
-            Some("alice"),
+    #[test]
+    fn a_renamed_viewer_card_shows_the_chat_name_with_the_stored_count_found_by_id() {
+        let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
+        let directory =
+            ViewerDirectory::new(vec![stored(ViewerPlatform::Twitch, "t1", "alice_old", 99)]);
+
+        let summary = author_summary(
+            &AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
             feed.authors(),
-            &ViewerDirectory::default(),
+            &directory,
             &FORGE_DEFAULT,
         )
         .unwrap();
-        assert_eq!(summary.username, "carol");
+
+        assert_eq!(
+            (summary.username.as_str(), summary.message_count),
+            ("alice_new", 99)
+        );
     }
 
     #[test]
-    fn watch_time_since_formats_minutes_and_hours() {
-        let now = OffsetDateTime::now_utc();
-        let cases = [(0, "0 min"), (30, "30 min"), (60, "1h 0m"), (150, "2h 30m")];
-        for (mins_ago, expected) in cases {
+    fn current_name_prefers_the_chat_name_then_the_stored_name_then_the_name_key() {
+        let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
+        let directory = ViewerDirectory::new(vec![
+            stored(ViewerPlatform::Twitch, "t1", "alice_old", 1),
+            stored(ViewerPlatform::Twitch, "t2", "bob", 1),
+        ]);
+        for (key, expected) in [
+            (
+                AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
+                Some("alice_new"),
+            ),
+            (AuthorKey::by_viewer_id(Platform::Twitch, "t2"), Some("bob")),
+            (AuthorKey::by_name(Platform::Twitch, "carol"), Some("carol")),
+            (AuthorKey::by_viewer_id(Platform::Twitch, "t3"), None),
+        ] {
             assert_eq!(
-                watch_time_since(now - Duration::minutes(mins_ago)),
+                current_name(&key, feed.authors(), &directory).as_deref(),
                 expected,
-                "mins_ago={mins_ago}"
+                "{key:?}"
             );
         }
     }

@@ -12,20 +12,20 @@ use forge_components::{
     menu_item, mono_family, page_frame, platform_color, radius, spacing, status_dot, tr,
 };
 use forge_runtime::ActionEngineHandle;
-use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
-use forge_storage::{Viewer, ViewerRepo, VoiceAliasRepo};
+use forge_speak_queue::SpeakQueueHandle;
+use forge_storage::{ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
 use forge_types::{Shared, SubActionStep, Variant, is_bot_account};
-use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, FontWeight, ListAlignment, ListState,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, ListAlignment, ListState,
     MouseButton, MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div,
     list, prelude::*, px, uniform_list,
 };
 
 use crate::async_bridge;
+use crate::chat_author::AuthorKey;
 use crate::chat_drawer::{
-    DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, drawer_matches,
-    selected_summary,
+    DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, current_name,
+    displayed_viewer, drawer_matches, selected_summary,
 };
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::home_stats::HomeStats;
@@ -37,8 +37,16 @@ use crate::window_presence::PresenceGate;
 mod composer;
 mod platform_gate;
 mod send_plan;
+mod viewer_actions;
+mod viewer_follow;
+mod viewer_history;
+mod viewer_tts;
 
 pub use composer::ChatComposer;
+use viewer_actions::{ViewerAction, ViewerTarget};
+use viewer_follow::{FollowLookups, follow_display};
+use viewer_history::{ViewerHistory, ViewerHistoryDismissed};
+use viewer_tts::TtsVoiceHost;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -61,76 +69,11 @@ const BADGE_DETAIL: Pixels = px(9.0);
 const BADGE_ROW: Pixels = px(8.5);
 const VIEWER_REFRESH: Duration = Duration::from_secs(15);
 const INFINITY_GLYPH: &str = "\u{221e}";
+const DISABLED_OPACITY: f32 = 0.5;
 const DRAWER_TIMEOUT_SECONDS: i64 = 600;
 const CTX_TIMEOUT_10M: i64 = 600;
 const CTX_TIMEOUT_1H: i64 = 3600;
 const CTX_TIMEOUT_2W: i64 = 1_209_600;
-
-fn build_shoutout_step(login: &str) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "to_broadcaster_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    SubActionStep {
-        kind_id: "twitch.channel.send_shoutout".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Shoutout {login}")),
-    }
-}
-
-fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "to_user_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    config.insert("message".to_owned(), Variant::String(message.to_owned()));
-    SubActionStep {
-        kind_id: "twitch.chat.send_whisper".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Whisper {login}")),
-    }
-}
-
-fn build_timeout_step(login: &str, seconds: i64) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "target_user_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    config.insert("duration_seconds".to_owned(), Variant::Int(seconds));
-    SubActionStep {
-        kind_id: "twitch.moderation.timeout_user".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Timeout {login}")),
-    }
-}
-
-fn build_ban_step(login: &str) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "target_user_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    SubActionStep {
-        kind_id: "twitch.moderation.ban_user".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Ban {login}")),
-    }
-}
 
 fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> SubActionStep {
     let mut config = BTreeMap::new();
@@ -149,19 +92,6 @@ fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> S
     }
 }
 
-fn blocked_alias(viewer: &str) -> VoiceAlias {
-    VoiceAlias {
-        id: AliasId::new(),
-        viewer_id: viewer.to_owned(),
-        viewer_name: viewer.to_owned(),
-        engine_id: EngineId(String::new()),
-        voice_id: VoiceId(String::new()),
-        pitch_semitones: None,
-        rate_multiplier: None,
-        state: AliasState::Blocked,
-    }
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PlatformFilter {
     All,
@@ -171,9 +101,8 @@ pub(crate) enum PlatformFilter {
 #[derive(Clone)]
 struct UserMenuTarget {
     position: Point<Pixels>,
-    username: String,
+    viewer: ViewerTarget,
     message_id: String,
-    platform: Platform,
 }
 
 #[derive(Clone)]
@@ -236,9 +165,13 @@ pub struct ChatView {
     drawer_width: Pixels,
     drawer_search: SearchState,
     drawer_menu_open: Option<Point<Pixels>>,
-    selected_viewer: Option<String>,
+    selected_viewer: Option<AuthorKey>,
+    follows: FollowLookups,
+    chat_history_repo: Arc<dyn ChatHistoryRepo>,
+    viewer_history: Option<ViewerHistoryHost>,
+    tts_voice: Option<TtsVoiceHost>,
     viewers: ViewerDirectory,
-    drawer_names: Vec<SharedString>,
+    drawer_keys: Vec<AuthorKey>,
     whisper_open: bool,
     whisper_input: Entity<TextInput>,
     reply_target: Option<ReplyTarget>,
@@ -257,6 +190,11 @@ pub struct ChatView {
     _lifecycle_obs: Option<Subscription>,
 }
 
+struct ViewerHistoryHost {
+    view: Entity<ViewerHistory>,
+    _dismissed: Subscription,
+}
+
 fn platform_display_name(platform: Platform) -> &'static str {
     match platform {
         Platform::Twitch => "Twitch",
@@ -272,6 +210,7 @@ impl ChatView {
         home_stats: Entity<HomeStats>,
         rt_handle: tokio::runtime::Handle,
         viewer_repo: Arc<dyn ViewerRepo>,
+        chat_history_repo: Arc<dyn ChatHistoryRepo>,
         action_engine: ActionEngineHandle,
         voice_alias_repo: Arc<dyn VoiceAliasRepo>,
         speak: Option<SpeakQueueHandle>,
@@ -334,8 +273,12 @@ impl ChatView {
             drawer_search,
             drawer_menu_open: None,
             selected_viewer: None,
+            follows: FollowLookups::default(),
+            chat_history_repo,
+            viewer_history: None,
+            tts_voice: None,
             viewers: ViewerDirectory::default(),
-            drawer_names: Vec::new(),
+            drawer_keys: Vec::new(),
             whisper_open: false,
             whisper_input,
             reply_target: None,
@@ -355,7 +298,7 @@ impl ChatView {
         };
         this.rebuild_visible(cx);
         this.chat_list.reset(this.visible.len());
-        this.refresh_drawer_names(cx);
+        this.refresh_drawer_keys(cx);
         this
     }
 
@@ -412,7 +355,31 @@ impl ChatView {
             self.unread = self.unread.saturating_add(arrived);
         }
         self.last_seen_seq = end;
-        self.refresh_drawer_names(cx);
+        self.refresh_drawer_keys(cx);
+        cx.notify();
+    }
+
+    fn open_viewer_history(&mut self, key: AuthorKey, viewer_name: String, cx: &mut Context<Self>) {
+        let feed = self.feed.clone();
+        let repo = Arc::clone(&self.chat_history_repo);
+        let rt_handle = self.rt_handle.clone();
+        let view =
+            cx.new(|cx| ViewerHistory::new(key, feed, repo, rt_handle, cx).titled(viewer_name));
+        let dismissed = cx.subscribe(&view, Self::on_viewer_history_dismissed);
+        self.viewer_history = Some(ViewerHistoryHost {
+            view,
+            _dismissed: dismissed,
+        });
+        cx.notify();
+    }
+
+    fn on_viewer_history_dismissed(
+        &mut self,
+        _view: Entity<ViewerHistory>,
+        _event: &ViewerHistoryDismissed,
+        cx: &mut Context<Self>,
+    ) {
+        self.viewer_history = None;
         cx.notify();
     }
 
@@ -457,15 +424,15 @@ impl ChatView {
         self.last_seen_seq = self.feed.read(cx).end_seq();
     }
 
-    fn refresh_drawer_names(&mut self, cx: &mut Context<Self>) {
+    fn refresh_drawer_keys(&mut self, cx: &mut Context<Self>) {
         let search = self.drawer_search.query();
-        self.drawer_names = self
+        self.drawer_keys = self
             .feed
             .read(cx)
             .authors()
             .newest_first()
-            .filter(|name| drawer_matches(name, search))
-            .cloned()
+            .filter(|(_, activity)| drawer_matches(&activity.name, search))
+            .map(|(key, _)| key.clone())
             .collect();
     }
 
@@ -505,8 +472,9 @@ impl ChatView {
         }
     }
 
-    fn open_viewer(&mut self, username: SharedString, cx: &mut Context<Self>) {
-        self.selected_viewer = Some(username.to_string());
+    fn open_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+        self.selected_viewer = Some(key);
+        self.request_selected_follow(cx);
         cx.notify();
     }
 
@@ -517,14 +485,22 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         if self.drawer_search.on_changed(event) {
-            self.refresh_drawer_names(cx);
+            self.refresh_drawer_keys(cx);
             cx.notify();
         }
     }
 
-    fn select_viewer(&mut self, username: String, cx: &mut Context<Self>) {
-        self.selected_viewer = Some(username);
+    fn select_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+        self.selected_viewer = Some(key);
+        self.request_selected_follow(cx);
         cx.notify();
+    }
+
+    fn displayed_target(&self, cx: &App) -> Option<ViewerTarget> {
+        let authors = self.feed.read(cx).authors();
+        let key = displayed_viewer(self.selected_viewer.as_ref(), authors)?;
+        let name = current_name(&key, authors, &self.viewers)?;
+        Some(ViewerTarget::new(&key, name.to_string()))
     }
 
     fn toggle_drawer_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
@@ -543,9 +519,22 @@ impl ChatView {
         }
     }
 
+    fn run_viewer_action(
+        &self,
+        target: &ViewerTarget,
+        action: ViewerAction,
+        toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(step) = target.step(&action) {
+            self.dispatch_quick_action(step, target.builtin_id(), target.label(&action), toast, cx);
+        }
+    }
+
     fn dispatch_quick_action(
         &self,
         step: SubActionStep,
+        builtin_id: String,
         label: String,
         toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
         cx: &mut Context<Self>,
@@ -553,8 +542,7 @@ impl ChatView {
         let engine = self.action_engine.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let outcome =
-                async_bridge::run_quick_step(engine, step, "twitch".to_owned(), label).await;
+            let outcome = async_bridge::run_quick_step(engine, step, builtin_id, label).await;
             let _ = tx.send(outcome);
         });
         cx.spawn(async move |this, cx| {
@@ -569,16 +557,11 @@ impl ChatView {
         .detach();
     }
 
-    fn shoutout_viewer(&mut self, cx: &mut Context<Self>) {
+    fn shoutout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_viewer.clone() else {
-            cx.notify();
-            return;
-        };
-        let step = build_shoutout_step(&login);
-        self.dispatch_quick_action(
-            step,
-            format!("Shoutout {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Shoutout,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_shoutout_sent")),
                 Err(e) => (
@@ -591,16 +574,13 @@ impl ChatView {
         cx.notify();
     }
 
-    fn timeout_viewer(&mut self, cx: &mut Context<Self>) {
+    fn timeout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_viewer.clone() else {
-            cx.notify();
-            return;
-        };
-        let step = build_timeout_step(&login, DRAWER_TIMEOUT_SECONDS);
-        self.dispatch_quick_action(
-            step,
-            format!("Timeout {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Timeout {
+                seconds: DRAWER_TIMEOUT_SECONDS,
+            },
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_timeout_sent")),
                 Err(e) => (
@@ -613,16 +593,11 @@ impl ChatView {
         cx.notify();
     }
 
-    fn ban_viewer(&mut self, cx: &mut Context<Self>) {
+    fn ban_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_viewer.clone() else {
-            cx.notify();
-            return;
-        };
-        let step = build_ban_step(&login);
-        self.dispatch_quick_action(
-            step,
-            format!("Ban {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Ban,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
                 Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
@@ -635,16 +610,14 @@ impl ChatView {
     fn open_user_menu(
         &mut self,
         position: Point<Pixels>,
-        username: String,
+        viewer: ViewerTarget,
         message_id: String,
-        platform: Platform,
         cx: &mut Context<Self>,
     ) {
         self.user_menu = Some(UserMenuTarget {
             position,
-            username,
+            viewer,
             message_id,
-            platform,
         });
         cx.notify();
     }
@@ -661,11 +634,9 @@ impl ChatView {
             cx.notify();
             return;
         };
-        let login = target.username;
-        let step = build_timeout_step(&login, seconds);
-        self.dispatch_quick_action(
-            step,
-            format!("Timeout {login}"),
+        self.run_viewer_action(
+            &target.viewer,
+            ViewerAction::Timeout { seconds },
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_ctx_timeout_sent")),
                 Err(e) => (
@@ -683,11 +654,9 @@ impl ChatView {
             cx.notify();
             return;
         };
-        let login = target.username;
-        let step = build_ban_step(&login);
-        self.dispatch_quick_action(
-            step,
-            format!("Ban {login}"),
+        self.run_viewer_action(
+            &target.viewer,
+            ViewerAction::Ban,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
                 Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
@@ -702,12 +671,12 @@ impl ChatView {
             cx.notify();
             return;
         };
-        if target.platform != Platform::Twitch {
+        if target.viewer.platform != Platform::Twitch {
             cx.notify();
             return;
         }
         self.reply_target = Some(ReplyTarget {
-            username: target.username,
+            username: target.viewer.name,
             message_id: target.message_id,
         });
         self.reply_input.update(cx, |input, cx| {
@@ -737,6 +706,9 @@ impl ChatView {
         let username = target.username;
         self.dispatch_quick_action(
             step,
+            platform_gate::platform_integration(Platform::Twitch)
+                .id_str()
+                .to_owned(),
             format!("Reply to {username}"),
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_reply_sent")),
@@ -767,11 +739,11 @@ impl ChatView {
     ) -> Option<AnyElement> {
         let target = self.user_menu.as_ref()?;
         let position = target.position;
-        let login = target.username.clone();
-        let can_reply = target.platform == Platform::Twitch;
+        let viewer = &target.viewer;
+        let can_reply = viewer.platform == Platform::Twitch;
         let view = cx.entity();
 
-        let mut items = vec![menu_header(SharedString::from(login))];
+        let mut items = vec![menu_header(SharedString::from(viewer.name.clone()))];
         if can_reply {
             items.push(
                 menu_item(
@@ -782,53 +754,64 @@ impl ChatView {
                 .icon(Icon::MessageCircle)
                 .into(),
             );
-            items.push(menu_divider());
         }
-        items.push(
-            menu_item(
+        let timeouts = [
+            (
                 "chat-ctx-timeout-10m",
                 tr!("chat_ctx_timeout_10m"),
-                cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.ctx_timeout_viewer(CTX_TIMEOUT_10M, cx)
-                }),
-            )
-            .icon(Icon::Clock)
-            .into(),
-        );
-        items.push(
-            menu_item(
+                CTX_TIMEOUT_10M,
+                None,
+            ),
+            (
                 "chat-ctx-timeout-1h",
                 tr!("chat_ctx_timeout_1h"),
-                cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.ctx_timeout_viewer(CTX_TIMEOUT_1H, cx)
-                }),
-            )
-            .icon(Icon::Clock)
-            .into(),
-        );
-        items.push(
-            menu_item(
+                CTX_TIMEOUT_1H,
+                None,
+            ),
+            (
                 "chat-ctx-timeout-2w",
                 tr!("chat_ctx_timeout_2w"),
-                cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.ctx_timeout_viewer(CTX_TIMEOUT_2W, cx)
+                CTX_TIMEOUT_2W,
+                Some(palette.warning),
+            ),
+        ];
+        let mut moderation = Vec::new();
+        for (id, label, seconds, color) in timeouts {
+            if !viewer.supports(&ViewerAction::Timeout { seconds }) {
+                continue;
+            }
+            let mut item = menu_item(
+                id,
+                label,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.ctx_timeout_viewer(seconds, cx)
                 }),
             )
-            .icon(Icon::Clock)
-            .color(palette.warning)
-            .into(),
-        );
-        items.push(menu_divider());
-        items.push(
-            menu_item(
-                "chat-ctx-ban",
-                tr!("chat_ctx_ban"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.ctx_ban_viewer(cx)),
-            )
-            .icon(Icon::BellOff)
-            .color(palette.random)
-            .into(),
-        );
+            .icon(Icon::Clock);
+            if let Some(color) = color {
+                item = item.color(color);
+            }
+            moderation.push(item.into());
+        }
+        if viewer.supports(&ViewerAction::Ban) {
+            if !moderation.is_empty() {
+                moderation.push(menu_divider());
+            }
+            moderation.push(
+                menu_item(
+                    "chat-ctx-ban",
+                    tr!("chat_ctx_ban"),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.ctx_ban_viewer(cx)),
+                )
+                .icon(Icon::BellOff)
+                .color(palette.random)
+                .into(),
+            );
+        }
+        if can_reply && !moderation.is_empty() {
+            items.push(menu_divider());
+        }
+        items.extend(moderation);
 
         Some(
             context_menu(position, palette)
@@ -840,10 +823,9 @@ impl ChatView {
         )
     }
 
-    fn open_whisper(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.selected_viewer.is_none() {
-            return;
-        }
+    fn open_whisper(&mut self, key: AuthorKey, window: &mut Window, cx: &mut Context<Self>) {
+        self.selected_viewer = Some(key);
+        self.request_selected_follow(cx);
         self.drawer_menu_open = None;
         self.whisper_open = true;
         self.whisper_input.update(cx, |input, cx| {
@@ -860,7 +842,7 @@ impl ChatView {
     }
 
     fn send_whisper(&mut self, cx: &mut Context<Self>) {
-        let Some(login) = self.selected_viewer.clone() else {
+        let Some(target) = self.displayed_target(cx) else {
             return;
         };
         let message = self.whisper_input.read(cx).content().trim().to_owned();
@@ -869,10 +851,9 @@ impl ChatView {
         }
         self.whisper_open = false;
         self.whisper_input.update(cx, |input, cx| input.clear(cx));
-        let step = build_whisper_step(&login, &message);
-        self.dispatch_quick_action(
-            step,
-            format!("Whisper {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Whisper(message),
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_whisper_sent")),
                 Err(e) => (
@@ -896,45 +877,6 @@ impl ChatView {
             InputEvent::Cancelled => self.cancel_whisper(cx),
             InputEvent::Changed(_) | InputEvent::Blurred(_) => {}
         }
-    }
-
-    fn block_tts_viewer(&mut self, cx: &mut Context<Self>) {
-        self.drawer_menu_open = None;
-        let Some(viewer) = self.selected_viewer.clone() else {
-            cx.notify();
-            return;
-        };
-        let alias = blocked_alias(&viewer);
-        let repo = Arc::clone(&self.voice_alias_repo);
-        let speak = self.speak.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        self.rt_handle.spawn(async move {
-            let outcome = async move {
-                repo.upsert(&alias).await.map_err(|e| e.to_string())?;
-                if let Some(handle) = speak
-                    && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
-                {
-                    tracing::warn!(error = %e, "voice alias hot-reload failed");
-                }
-                Ok::<(), String>(())
-            }
-            .await;
-            let _ = tx.send(outcome);
-        });
-        cx.spawn(async move |this, cx| {
-            let outcome = rx
-                .await
-                .unwrap_or_else(|_| Err("dispatch cancelled".to_owned()));
-            let _ = this.update(cx, |_this, cx| match outcome {
-                Ok(()) => cx.push_toast(ToastKind::Success, tr!("chat_drawer_block_tts_sent")),
-                Err(e) => cx.push_toast(
-                    ToastKind::Error,
-                    tr!("chat_drawer_block_tts_failed", error = e),
-                ),
-            });
-        })
-        .detach();
-        cx.notify();
     }
 
     fn jump_to_latest(&mut self, cx: &mut Context<Self>) {
@@ -1158,17 +1100,19 @@ impl ChatView {
                 moderated: msg.moderated,
                 reply: msg.reply.clone(),
             };
-            let username = msg.username.clone();
+            let author_key = msg.author_key();
             let menu_view = view.clone();
-            let menu_username = msg.username.clone();
+            let menu_target = author_key
+                .as_ref()
+                .map(|key| ViewerTarget::new(key, msg.username.to_string()));
             let menu_message_id = msg.id.clone();
-            let menu_platform = msg.platform;
-            let has_user = !msg.username.is_empty();
             let view = view.clone();
             let row = chat_row(&pal, data).on_username_click(
                 (gpui::ElementId::from("chat-username"), msg.id.clone()),
                 move |_: &ClickEvent, _, app| {
-                    view.update(app, |this, cx| this.open_viewer(username.clone(), cx));
+                    if let Some(key) = author_key.clone() {
+                        view.update(app, |this, cx| this.open_viewer(key, cx));
+                    }
                 },
             );
             let mut framed = div().pb(row_gap);
@@ -1180,15 +1124,15 @@ impl ChatView {
                 )));
             }
             framed = framed.child(row);
-            if has_user {
+            if let Some(menu_target) = menu_target {
                 framed = framed.on_mouse_down(
                     MouseButton::Right,
                     move |event: &MouseDownEvent, _window, app| {
                         let position = event.position;
-                        let login = menu_username.to_string();
+                        let viewer = menu_target.clone();
                         let message_id = menu_message_id.to_string();
                         menu_view.update(app, |this, cx| {
-                            this.open_user_menu(position, login, message_id, menu_platform, cx)
+                            this.open_user_menu(position, viewer, message_id, cx)
                         });
                     },
                 );
@@ -1273,18 +1217,18 @@ impl ChatView {
     ) -> impl IntoElement + use<> {
         let authors = self.feed.read(cx).authors();
         let total = authors.len();
-        let shown = self.drawer_names.len();
+        let shown = self.drawer_keys.len();
         let detail = selected_summary(
-            self.selected_viewer.as_deref(),
+            self.selected_viewer.as_ref(),
             authors,
             &self.viewers,
             palette,
         );
-        let selected_name = detail.as_ref().map(|d| d.username.clone());
+        let selected_key = detail.as_ref().map(|d| d.key.clone());
 
         let header = self.render_drawer_header(total, shown, palette, density);
         let detail_el = self.render_selected_detail(detail, palette, density, cx);
-        let list_el = self.render_viewer_list(selected_name, shown, palette, density, cx);
+        let list_el = self.render_viewer_list(selected_key, shown, palette, density, cx);
 
         let panel = div()
             .w(self.drawer_width)
@@ -1438,33 +1382,37 @@ impl ChatView {
             .child(name_col);
 
         let (sub_value, sub_color) = sub_display(summary.sub, palette);
-        let watch_color = if summary.watch_time == DASH {
-            palette.text_faint
-        } else {
-            palette.text_primary
-        };
+        let follow = follow_display(
+            summary.key.platform,
+            summary.role,
+            self.follows.status_of(&summary.key),
+            palette,
+        );
+        let tile_hover = palette.surface_overlay;
+        let history_key = summary.key.clone();
+        let history_name = summary.username.clone();
         let grid = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(
-                div()
-                    .flex()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(stat_cell(
-                        tr!("chat_stat_watch_time"),
-                        summary.watch_time.clone(),
-                        watch_color,
-                        palette,
-                        density,
-                    ))
-                    .child(stat_cell(
+                div().flex().gap(spacing(Spacing::Xs, density)).child(
+                    stat_cell(
                         tr!("chat_stat_messages"),
                         summary.message_count.to_string(),
                         palette.text_primary,
                         palette,
                         density,
+                    )
+                    .id("chat-drawer-messages")
+                    .cursor_pointer()
+                    .hover(move |style| style.bg(tile_hover))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _, cx| {
+                            this.open_viewer_history(history_key.clone(), history_name.clone(), cx)
+                        },
                     )),
+                ),
             )
             .child(
                 div()
@@ -1477,15 +1425,21 @@ impl ChatView {
                         palette,
                         density,
                     ))
-                    .child(stat_cell(
-                        tr!("chat_stat_follow"),
-                        summary.follow.clone(),
-                        palette.text_faint,
-                        palette,
-                        density,
-                    )),
+                    .children(follow.map(|(follow_value, follow_color)| {
+                        stat_cell(
+                            tr!("chat_stat_follow"),
+                            follow_value,
+                            follow_color,
+                            palette,
+                            density,
+                        )
+                    })),
             );
 
+        let target = ViewerTarget::new(&summary.key, summary.username.clone());
+        let can_whisper = target.supports(&ViewerAction::Whisper(String::new()));
+        let shoutout_target = target.clone();
+        let whisper_key = summary.key.clone();
         let actions = div()
             .flex()
             .gap(spacing(Spacing::Xs, density))
@@ -1493,22 +1447,27 @@ impl ChatView {
                 "chat-drawer-shoutout",
                 Icon::Bolt,
                 tr!("chat_drawer_shoutout"),
+                target.supports(&ViewerAction::Shoutout),
                 palette,
                 density,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.shoutout_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.shoutout_viewer(shoutout_target.clone(), cx)
+                }),
             ))
             .child(drawer_ghost_button(
                 "chat-drawer-whisper",
                 Icon::MessageCircle,
                 tr!("chat_drawer_whisper"),
+                can_whisper,
                 palette,
                 density,
-                cx.listener(|this, _: &ClickEvent, window, cx| this.open_whisper(window, cx)),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.open_whisper(whisper_key.clone(), window, cx)
+                }),
             ))
-            .child(self.render_drawer_menu(palette, cx));
+            .child(self.render_drawer_menu(&summary.key, &target, palette, cx));
 
-        let whisper = self
-            .whisper_open
+        let whisper = (self.whisper_open && can_whisper)
             .then(|| self.render_whisper_compose(summary.username.clone(), palette, density, cx));
 
         frame
@@ -1693,52 +1652,84 @@ impl ChatView {
             .child(card)
     }
 
-    fn render_drawer_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+    fn render_drawer_menu(
+        &self,
+        key: &AuthorKey,
+        target: &ViewerTarget,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let view = cx.entity();
+        let shoutout_target = target.clone();
+        let whisper_key = key.clone();
+        let block_target = target.clone();
+        let voice_target = target.clone();
+        let has_tts_key = target.tts_alias_key().is_some();
+        let timeout_target = target.clone();
+        let ban_target = target.clone();
         let items = vec![
             menu_item(
                 "chat-drawer-menu-shoutout",
                 tr!("chat_drawer_shoutout"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.shoutout_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.shoutout_viewer(shoutout_target.clone(), cx)
+                }),
             )
             .icon(Icon::Flag)
+            .disabled(!target.supports(&ViewerAction::Shoutout))
             .into(),
             menu_item(
                 "chat-drawer-menu-whisper",
                 tr!("chat_drawer_whisper"),
-                cx.listener(|this, _: &ClickEvent, window, cx| this.open_whisper(window, cx)),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.open_whisper(whisper_key.clone(), window, cx)
+                }),
             )
             .icon(Icon::MessageCircle)
+            .disabled(!target.supports(&ViewerAction::Whisper(String::new())))
             .into(),
             menu_item(
                 "chat-drawer-menu-tts-voice",
                 tr!("chat_drawer_set_tts_voice"),
-                cx.listener(|_, _: &ClickEvent, _, _| {}),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.open_tts_voice(voice_target.clone(), window, cx)
+                }),
             )
             .icon(Icon::Pencil)
-            .disabled(true)
+            .disabled(!has_tts_key)
             .into(),
             menu_divider(),
             menu_item(
                 "chat-drawer-menu-block-tts",
                 tr!("chat_drawer_block_tts"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.block_tts_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.block_tts_viewer(block_target.clone(), cx)
+                }),
             )
             .color(palette.warning)
+            .disabled(!has_tts_key)
             .into(),
             menu_item(
                 "chat-drawer-menu-timeout",
                 tr!("chat_drawer_timeout"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.timeout_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.timeout_viewer(timeout_target.clone(), cx)
+                }),
             )
             .color(palette.warning)
+            .disabled(!target.supports(&ViewerAction::Timeout {
+                seconds: DRAWER_TIMEOUT_SECONDS,
+            }))
             .into(),
             menu_item(
                 "chat-drawer-menu-ban",
                 tr!("chat_drawer_ban"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.ban_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.ban_viewer(ban_target.clone(), cx)
+                }),
             )
             .color(palette.random)
+            .disabled(!target.supports(&ViewerAction::Ban))
             .into(),
         ];
 
@@ -1760,7 +1751,7 @@ impl ChatView {
 
     fn render_viewer_list(
         &self,
-        selected_name: Option<String>,
+        selected_key: Option<AuthorKey>,
         shown: usize,
         palette: &ForgePalette,
         density: Density,
@@ -1792,12 +1783,12 @@ impl ChatView {
                 cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                     let mut rows = Vec::with_capacity(range.len());
                     for ix in range {
-                        let Some(summary) = this.drawer_names.get(ix).and_then(|name| {
-                            author_summary(name, this.feed.read(cx).authors(), &this.viewers, &pal)
+                        let Some(summary) = this.drawer_keys.get(ix).and_then(|key| {
+                            author_summary(key, this.feed.read(cx).authors(), &this.viewers, &pal)
                         }) else {
                             continue;
                         };
-                        let is_sel = selected_name.as_deref() == Some(summary.username.as_str());
+                        let is_sel = selected_key.as_ref() == Some(&summary.key);
                         rows.push(
                             this.render_viewer_row(summary, is_sel, &pal, density, cx)
                                 .into_any_element(),
@@ -1828,8 +1819,8 @@ impl ChatView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let username = summary.username.clone();
-        let row_id = SharedString::from(format!("chat-drawer-row-{}", summary.username));
+        let key = summary.key.clone();
+        let row_id = summary.key.element_id("chat-drawer-row");
         let stripe = if is_sel {
             palette.brand
         } else {
@@ -1863,10 +1854,7 @@ impl ChatView {
             name_row = name_row.child(drawer_role_badge(role, BADGE_ROW, palette));
         }
 
-        let meta = format!(
-            "{} \u{b7} {} msg",
-            summary.watch_time, summary.message_count
-        );
+        let meta = format!("{} msg", summary.message_count);
         let name_col = div()
             .flex_1()
             .min_w(px(0.0))
@@ -1900,9 +1888,9 @@ impl ChatView {
             .border_l(ROW_STRIPE)
             .border_color(stripe)
             .cursor_pointer()
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.select_viewer(username.clone(), cx)
-            }))
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_viewer(key.clone(), cx)),
+            )
             .child(avatar)
             .child(name_col)
             .child(last_seen);
@@ -1946,7 +1934,7 @@ fn stat_cell(
     color: Rgba,
     palette: &ForgePalette,
     density: Density,
-) -> impl IntoElement {
+) -> Div {
     div()
         .flex_1()
         .flex()
@@ -1987,6 +1975,7 @@ fn drawer_ghost_button(
     id: &'static str,
     glyph: Icon,
     label: impl Into<SharedString>,
+    enabled: bool,
     palette: &ForgePalette,
     density: Density,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -1996,7 +1985,7 @@ fn drawer_ghost_button(
     let surf = palette.surface_overlay;
     let text = palette.text_secondary;
     let text_hover = palette.text_primary;
-    div()
+    let button = div()
         .id(id)
         .flex_1()
         .flex()
@@ -2008,9 +1997,6 @@ fn drawer_ghost_button(
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(border)
-        .cursor_pointer()
-        .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
-        .on_click(handler)
         .child(icon(glyph, DRAWER_ICON, text))
         .child(
             div()
@@ -2018,7 +2004,15 @@ fn drawer_ghost_button(
                 .text_size(FONT_XS)
                 .text_color(text)
                 .child(label.into()),
-        )
+        );
+    if enabled {
+        button
+            .cursor_pointer()
+            .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
+            .on_click(handler)
+    } else {
+        button.opacity(DISABLED_OPACITY)
+    }
 }
 
 fn body_export_text(body: &ChatBody) -> String {
@@ -2107,6 +2101,8 @@ impl Render for ChatView {
             .bg(palette.base)
             .child(frame)
             .children(user_menu)
+            .children(self.viewer_history.as_ref().map(|host| host.view.clone()))
+            .children(self.tts_voice.as_ref().map(|host| host.view.clone()))
     }
 }
 
@@ -2118,23 +2114,29 @@ mod tests {
     use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
     use forge_registry::SubActionRegistry;
     use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
+    use forge_storage::Language;
+    use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::viewer::MockViewerRepo;
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
     use forge_types::EventId;
-    use gpui::{AppContext as _, Entity, TestAppContext};
+    use gpui::{App, AppContext as _, Context, Entity, TestAppContext, VisualTestContext};
     use time::OffsetDateTime;
 
     use super::{ChatView, PlatformFilter};
     use crate::chat_feed::{ChatFeed, ChatMessage};
     use crate::home_stats::{HomeStats, Integration};
+    use crate::i18n::install_language;
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::integration_supervisor::{LifecycleState, LifecycleStates};
-    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, switch_lifecycle};
+    use crate::test_support::{
+        StubActions, StubEventLog, StubHistory, install_presentation, runtime, switch_lifecycle,
+    };
+    use crate::toasts::Toasts;
 
     const CAP: usize = 5;
     const OVERFLOW: usize = 8;
 
-    fn message(ix: usize, is_bot: bool) -> ChatMessage {
+    pub(super) fn message(ix: usize, is_bot: bool) -> ChatMessage {
         ChatMessage {
             id: format!("m{ix}").into(),
             event_id: EventId::new(),
@@ -2143,6 +2145,7 @@ mod tests {
             platform: Platform::Twitch,
             badges: vec![],
             username: format!("user{ix}").into(),
+            author_id: None,
             author_color: None,
             body: ChatBody::Message("hi".into()),
             is_event: false,
@@ -2152,24 +2155,28 @@ mod tests {
         }
     }
 
-    fn mount(
+    pub(super) fn mount(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
     ) -> (Entity<ChatFeed>, Entity<ChatView>) {
-        mount_gated(cx, rt, None)
+        mount_gated(cx, rt, None, MockChatHistoryRepo::new())
     }
 
-    fn mount_gated(
+    pub(super) fn mount_with_chat_history(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
-        lifecycle: Option<Entity<IntegrationLifecycle>>,
+        chat_history: MockChatHistoryRepo,
     ) -> (Entity<ChatFeed>, Entity<ChatView>) {
-        let _enter = rt.enter();
-        let feed = cx.new(|_| {
-            let mut feed = ChatFeed::new();
-            feed.set_capacity(CAP);
-            feed
-        });
+        mount_gated(cx, rt, None, chat_history)
+    }
+
+    fn new_view(
+        feed: Entity<ChatFeed>,
+        rt: &tokio::runtime::Runtime,
+        chat_history: MockChatHistoryRepo,
+        voice_aliases: MockVoiceAliasRepo,
+        cx: &mut Context<ChatView>,
+    ) -> ChatView {
         let home_stats = cx.new(|_| HomeStats::new());
         let mut viewers = MockViewerRepo::new();
         viewers.expect_list().returning(|| Ok(Vec::new()));
@@ -2181,17 +2188,43 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
         );
+        ChatView::new(
+            feed,
+            home_stats,
+            rt.handle().clone(),
+            Arc::new(viewers),
+            Arc::new(chat_history),
+            engine,
+            Arc::new(voice_aliases),
+            None,
+            forge_types::Shared::default(),
+            FORGE_DEFAULT,
+            cx,
+        )
+    }
+
+    fn capped_feed(cx: &mut App) -> Entity<ChatFeed> {
+        cx.new(|_| {
+            let mut feed = ChatFeed::new();
+            feed.set_capacity(CAP);
+            feed
+        })
+    }
+
+    pub(super) fn mount_gated(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        lifecycle: Option<Entity<IntegrationLifecycle>>,
+        chat_history: MockChatHistoryRepo,
+    ) -> (Entity<ChatFeed>, Entity<ChatView>) {
+        let _enter = rt.enter();
+        let feed = cx.update(capped_feed);
         let view = cx.new(|cx| {
-            let view = ChatView::new(
+            let view = new_view(
                 feed.clone(),
-                home_stats,
-                rt.handle().clone(),
-                Arc::new(viewers),
-                engine,
-                Arc::new(MockVoiceAliasRepo::new()),
-                None,
-                forge_types::Shared::default(),
-                FORGE_DEFAULT,
+                rt,
+                chat_history,
+                MockVoiceAliasRepo::new(),
                 cx,
             );
             match lifecycle {
@@ -2202,7 +2235,31 @@ mod tests {
         (feed, view)
     }
 
-    fn push_each(cx: &mut TestAppContext, feed: &Entity<ChatFeed>, messages: Vec<ChatMessage>) {
+    pub(super) fn mount_in_window<'a>(
+        cx: &'a mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        voice_aliases: MockVoiceAliasRepo,
+    ) -> (Entity<ChatView>, &'a mut VisualTestContext) {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let _enter = rt.enter();
+        let feed = cx.update(capped_feed);
+        let (view, vcx) = cx.add_window_view(|_window, cx| {
+            new_view(feed, rt, MockChatHistoryRepo::new(), voice_aliases, cx)
+        });
+        vcx.update(|window, cx| {
+            window.activate_window();
+            forge_components::bind_text_input_keys(cx);
+        });
+        (view, vcx)
+    }
+
+    pub(super) fn push_each(
+        cx: &mut TestAppContext,
+        feed: &Entity<ChatFeed>,
+        messages: Vec<ChatMessage>,
+    ) {
         for message in messages {
             feed.update(cx, |feed, cx| {
                 feed.push(message);
@@ -2255,7 +2312,7 @@ mod tests {
         assert_eq!(list_len, expected.len());
     }
 
-    fn chat_states(entries: &[(Integration, LifecycleState)]) -> LifecycleStates {
+    pub(super) fn chat_states(entries: &[(Integration, LifecycleState)]) -> LifecycleStates {
         entries
             .iter()
             .map(|(integration, state)| (integration.builtin_id(), state.clone()))
@@ -2295,7 +2352,7 @@ mod tests {
                 (Integration::Kick, LifecycleState::Disabled),
             ]))
         });
-        let (_feed, view) = mount_gated(cx, &rt, Some(lifecycle));
+        let (_feed, view) = mount_gated(cx, &rt, Some(lifecycle), MockChatHistoryRepo::new());
 
         assert_eq!(offered(cx, &view), [true, true, true, false]);
     }
@@ -2310,7 +2367,8 @@ mod tests {
                 (Integration::Kick, LifecycleState::Running),
             ]))
         });
-        let (_feed, view) = mount_gated(cx, rt, Some(lifecycle.clone()));
+        let (_feed, view) =
+            mount_gated(cx, rt, Some(lifecycle.clone()), MockChatHistoryRepo::new());
         view.update(cx, |view, cx| {
             view.set_platform_filter(PlatformFilter::Single(Platform::Kick), cx)
         });

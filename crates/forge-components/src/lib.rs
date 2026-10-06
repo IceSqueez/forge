@@ -67,7 +67,7 @@ pub use chat_row::{
     BadgeKind, ChatBody, ChatRow, ChatRowView, Platform, badge_color, badge_label, chat_row,
 };
 pub use chip::{Chip, ChipGlyph, chip};
-pub use code_editor::{CodeEditor, bind_code_editor_keys};
+pub use code_editor::{CodeEditor, SaveCode, bind_code_editor_keys};
 pub use confirm::{ConfirmModal, ConfirmTone, confirm_modal};
 pub use confirm_state::Confirm;
 pub use data::{
@@ -130,7 +130,8 @@ pub use status::{badge, connection_status_badge, pulse_dot, status_dot};
 pub use syntax_color::{highlighted_text, syntax_runs, token_color};
 pub use text_area::{TextArea, bind_text_area_keys};
 pub use text_input::{
-    InputEvent, TextInput, bind_text_input_keys, search_input, search_input_on_surface,
+    FocusNextField, InputEvent, TextInput, bind_text_input_keys, search_input,
+    search_input_on_surface,
 };
 pub use toast::{ToastAction, ToastCard, ToastData, ToastKind, toast_card};
 pub use toggle::{Toggle, toggle};

@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 
+use forge_components::FocusNextField;
 use gpui::{App, KeyBinding, Keystroke, actions};
 
 pub const SHELL_CONTEXT: &str = "ForgeShell";
 pub const LIST_CONTEXT: &str = "ForgeList";
+const NEXT_FIELD_CHORD: &str = "tab";
 
 actions!(
     forge_shell,
@@ -214,7 +216,11 @@ fn key_bindings_for(entry_id: &str, chord: &str) -> Vec<KeyBinding> {
 }
 
 fn bind_shell(cx: &mut App, overrides: &HashMap<String, String>) {
-    let mut bindings = Vec::new();
+    let mut bindings = vec![KeyBinding::new(
+        NEXT_FIELD_CHORD,
+        FocusNextField,
+        Some(SHELL_CONTEXT),
+    )];
     for entry in SHORTCUTS {
         if let Some(chord) = effective_chord(overrides, entry) {
             bindings.extend(key_bindings_for(entry.id, chord));

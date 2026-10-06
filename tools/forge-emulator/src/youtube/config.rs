@@ -13,6 +13,15 @@ pub enum YouTubeRefreshAnswer {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct YouTubeSubscriber {
+    pub channel_id: String,
+    pub subscribed_at: String,
+    #[serde(default)]
+    pub private: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct FakeYouTubeSetup {
     pub live_at_boot: bool,
@@ -22,6 +31,7 @@ pub struct FakeYouTubeSetup {
     pub concurrent_viewers: u64,
     pub polling_interval_ms: u64,
     pub refresh: YouTubeRefreshAnswer,
+    pub subscribers: Vec<YouTubeSubscriber>,
 }
 
 impl Default for FakeYouTubeSetup {
@@ -34,6 +44,7 @@ impl Default for FakeYouTubeSetup {
             concurrent_viewers: 42,
             polling_interval_ms: 3000,
             refresh: YouTubeRefreshAnswer::Accept,
+            subscribers: Vec::new(),
         }
     }
 }
@@ -52,6 +63,7 @@ pub struct FakeYouTubeConfig {
     pub concurrent_viewers: u64,
     pub polling_interval_ms: u64,
     pub refresh: YouTubeRefreshAnswer,
+    pub subscribers: Vec<YouTubeSubscriber>,
 }
 
 impl FakeYouTubeConfig {
@@ -69,6 +81,7 @@ impl FakeYouTubeConfig {
             concurrent_viewers: setup.concurrent_viewers,
             polling_interval_ms: setup.polling_interval_ms,
             refresh: setup.refresh,
+            subscribers: setup.subscribers.clone(),
         }
     }
 }
@@ -94,6 +107,7 @@ impl fmt::Debug for FakeYouTubeConfig {
             .field("concurrent_viewers", &self.concurrent_viewers)
             .field("polling_interval_ms", &self.polling_interval_ms)
             .field("refresh", &self.refresh)
+            .field("subscribers", &self.subscribers)
             .finish()
     }
 }

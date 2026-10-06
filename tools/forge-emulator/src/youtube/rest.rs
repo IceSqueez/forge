@@ -18,6 +18,7 @@ pub(crate) const OAUTH_PREFIX: &str = "/oauth2";
 
 pub const LIVE_CHAT_MESSAGES_PATH: &str = "/youtube/v3/liveChat/messages";
 pub const LIVE_BROADCASTS_PATH: &str = "/youtube/v3/liveBroadcasts";
+pub const SUBSCRIPTIONS_PATH: &str = "/youtube/v3/subscriptions";
 pub const TOKEN_PATH: &str = "/oauth2/token";
 
 const REFRESH_GRANT: &str = "refresh_token";
@@ -26,6 +27,7 @@ const TOKEN_SCOPE: &str = "https://www.googleapis.com/auth/youtube.force-ssl";
 const PAGE_TOKEN_PREFIX: &str = "emulator-page-";
 const LIVE_CHAT_DOMAIN: &str = "youtube.liveChat";
 const GLOBAL_DOMAIN: &str = "global";
+const SUBSCRIPTION_DOMAIN: &str = "youtube.subscription";
 const INVALID_CREDENTIALS: &str = "Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential. See https://developers.google.com/identity/sign-in/web/devconsole-project.";
 const UNMODELED_INSERT: &str = "The fake YouTube models only textMessageEvent inserts.";
 const REVOKED_GRANT: &str = "Token has been expired or revoked.";
@@ -37,6 +39,7 @@ enum Route {
     ListBroadcasts,
     ListVideos,
     ListChannels,
+    ListSubscriptions,
     Token,
 }
 
@@ -51,6 +54,7 @@ fn locate(method: &Method, path: &str) -> (YouTubeSurface, Option<Route>) {
             ("GET", "/liveBroadcasts") => Some(Route::ListBroadcasts),
             ("GET", "/videos") => Some(Route::ListVideos),
             ("GET", "/channels") => Some(Route::ListChannels),
+            ("GET", "/subscriptions") => Some(Route::ListSubscriptions),
             _ => None,
         };
         return (YouTubeSurface::DataApi, route);
@@ -258,6 +262,7 @@ fn serve(
             StatusCode::OK,
             list("youtube#channelListResponse", channels(config, query)),
         ),
+        Route::ListSubscriptions => subscriptions(config, query),
         Route::Token => refresh(inner, config, body),
     }
 }
@@ -516,6 +521,57 @@ fn channels(config: &FakeYouTubeConfig, query: &[(String, String)]) -> Vec<Value
             ),
         ],
     )]
+}
+
+fn subscriptions(config: &FakeYouTubeConfig, query: &[(String, String)]) -> (StatusCode, Value) {
+    let for_this_channel = query_value(query, "forChannelId") == Some(config.channel_id.as_str());
+    let subscriber = query_value(query, "channelId")
+        .filter(|_| for_this_channel)
+        .and_then(|viewer| {
+            config
+                .subscribers
+                .iter()
+                .find(|subscriber| subscriber.channel_id == viewer)
+        });
+    let Some(subscriber) = subscriber else {
+        return (
+            StatusCode::OK,
+            list("youtube#subscriptionListResponse", Vec::new()),
+        );
+    };
+    if subscriber.private {
+        return google_error(
+            StatusCode::FORBIDDEN,
+            SUBSCRIPTION_DOMAIN,
+            "subscriptionForbidden",
+            "The requester is not allowed to access the requested subscriptions.",
+        );
+    }
+    let mut base = Map::new();
+    base.insert("kind".to_owned(), json!("youtube#subscription"));
+    base.insert("etag".to_owned(), json!("emulator-subscription-etag"));
+    base.insert(
+        "id".to_owned(),
+        json!(format!("emulator-subscription-{}", subscriber.channel_id)),
+    );
+    let item = with_parts(
+        base,
+        &parts(query),
+        vec![(
+            "snippet",
+            json!({
+                "publishedAt": subscriber.subscribed_at,
+                "title": config.channel_title,
+                "description": "",
+                "resourceId": { "kind": "youtube#channel", "channelId": config.channel_id },
+                "channelId": subscriber.channel_id
+            }),
+        )],
+    );
+    (
+        StatusCode::OK,
+        list("youtube#subscriptionListResponse", vec![item]),
+    )
 }
 
 fn refresh(

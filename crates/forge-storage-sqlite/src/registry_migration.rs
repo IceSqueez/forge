@@ -220,17 +220,6 @@ fn map_sub_action_variant(
         "ObsStopRecord" => ("obs.record.stop".to_owned(), BTreeMap::new()),
         "ObsStartStream" => ("obs.stream.start".to_owned(), BTreeMap::new()),
         "ObsStopStream" => ("obs.stream.stop".to_owned(), BTreeMap::new()),
-        "ObsRaw" => {
-            let mut config = BTreeMap::new();
-            insert_str(&mut config, fields, "request_type");
-            if let Some(data) = fields.get("request_data")
-                && !data.is_null()
-            {
-                let s = serde_json::to_string(data).unwrap_or_else(|_| String::new());
-                config.insert("request_data".to_owned(), Variant::String(s));
-            }
-            ("obs.misc.raw_request".to_owned(), config)
-        }
         "PlaySound" => {
             let mut config = BTreeMap::new();
             insert_str(&mut config, fields, "clip_id");

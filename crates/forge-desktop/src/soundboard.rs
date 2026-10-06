@@ -31,7 +31,7 @@ use gpui::{
 };
 use time::OffsetDateTime;
 
-use crate::async_bridge::{self, BridgeFlow, drain_events};
+use crate::async_bridge::{self, BridgeFlow, ErrorSink, drain_events};
 use crate::clip_editor::{ClipDraft, ClipEditor, ClipEditorEvent, ClipEditorLaunch};
 use crate::clip_key_state::{ClipKeyState, PadKey, canonical_combo, changes_registrations};
 use crate::clip_messages::{clip_refusal_message, failure_message};
@@ -668,11 +668,13 @@ impl SoundboardView {
             .update_settings(|settings| settings.enabled = !settings.enabled);
         let repo = Arc::clone(&self.settings_repo);
         let value = self.settings.enabled;
-        self.rt_handle.spawn(async move {
-            if let Err(e) = set_soundboard_enabled(repo.as_ref(), value).await {
-                tracing::warn!(error = %e, "failed to persist soundboard enabled");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { set_soundboard_enabled(repo.as_ref(), value).await },
+            ErrorSink::Toast,
+            tr!("soundboard_persist_failed"),
+            cx,
+        );
         cx.notify();
     }
 
@@ -682,11 +684,13 @@ impl SoundboardView {
             .update_settings(|settings| settings.also_headphones = !settings.also_headphones);
         let repo = Arc::clone(&self.settings_repo);
         let value = self.settings.also_headphones;
-        self.rt_handle.spawn(async move {
-            if let Err(e) = set_soundboard_also_headphones(repo.as_ref(), value).await {
-                tracing::warn!(error = %e, "failed to persist soundboard headphones");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { set_soundboard_also_headphones(repo.as_ref(), value).await },
+            ErrorSink::Toast,
+            tr!("soundboard_persist_failed"),
+            cx,
+        );
         cx.notify();
     }
 
@@ -696,10 +700,12 @@ impl SoundboardView {
             .player
             .update_settings(|settings| settings.master_volume = value);
         let repo = Arc::clone(&self.settings_repo);
-        self.master_volume_debounce.schedule(
+        self.master_volume_debounce.schedule_reporting(
             &self.rt_handle,
-            "soundboard master volume",
+            tr!("soundboard_persist_failed"),
             async move { set_soundboard_master_volume(repo.as_ref(), value).await },
+            ErrorSink::Toast,
+            cx,
         );
         cx.notify();
     }
@@ -711,11 +717,13 @@ impl SoundboardView {
             .update_settings(|settings| settings.output_device_id = chosen);
         self.device_menu_open = false;
         let repo = Arc::clone(&self.settings_repo);
-        self.rt_handle.spawn(async move {
-            if let Err(e) = set_soundboard_output_device(repo.as_ref(), device_id).await {
-                tracing::warn!(error = %e, "failed to persist soundboard output device");
-            }
-        });
+        async_bridge::report_failure(
+            &self.rt_handle,
+            async move { set_soundboard_output_device(repo.as_ref(), device_id).await },
+            ErrorSink::Toast,
+            tr!("soundboard_persist_failed"),
+            cx,
+        );
         cx.notify();
     }
 

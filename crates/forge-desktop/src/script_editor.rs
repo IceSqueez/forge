@@ -6,9 +6,9 @@ use forge_components::highlight::Language;
 use forge_components::{
     BORDER_THIN, BreadcrumbCrumb, CodeEditor, Confirm, ConfirmTone, Density, FONT_SM, FONT_XS,
     FONT_XXS, ForgePalette, Icon, InlineEdit, InlineEditEvent, InputEvent, MenuItem, ModalSize,
-    OverlayPosition, Radius, ResizeEdge, ResizeRange, SearchState, Spacing, TextInput, badge,
-    body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon, inline_edit,
-    install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
+    OverlayPosition, Radius, ResizeEdge, ResizeRange, SaveCode, SearchState, Spacing, TextInput,
+    badge, body_family, confirm_modal, context_menu, fmt_relative_time, ghost_button, icon,
+    inline_edit, install_resize, menu_divider, menu_item, modal, mono_family, overlay, page_frame,
     primary_button, radius, spacing, status_dot, tr, with_alpha,
 };
 use forge_events::{Event, EventPublisher};
@@ -1135,7 +1135,7 @@ impl ScriptEditorView {
     }
 
     fn save(&mut self, cx: &mut Context<Self>) {
-        if !self.current_dirty(cx) {
+        if self.saving || !self.current_dirty(cx) {
             return;
         }
         let Some(record) = self.open.as_ref().map(|o| o.record.clone()) else {
@@ -2353,8 +2353,11 @@ impl ScriptEditorView {
         row.into_any_element()
     }
 
-    fn code_area(&self, palette: &ForgePalette) -> AnyElement {
+    fn code_area(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         div()
+            .on_action(cx.listener(|this, _: &SaveCode, _, cx| {
+                this.start_saving_unsaved_work(cx);
+            }))
             .flex_1()
             .min_h_0()
             .flex()
@@ -3312,7 +3315,7 @@ impl Render for ScriptEditorView {
         let file_bar = self.file_bar(&palette, density, cx);
         let toolbar = self.toolbar(&palette, density, cx);
         let left = self.left_pane(&palette, density, cx);
-        let code = self.code_area(&palette);
+        let code = self.code_area(&palette, cx);
         let console = self.console(&palette, density, cx);
 
         let centre = div()
@@ -3772,6 +3775,9 @@ mod tests {
 
     mod unsaved_work {
         use forge_components::{Density, ThemeId};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use forge_components::bind_code_editor_keys;
         use forge_storage::script::MockScriptRepo;
         use forge_storage::{Language, StorageError};
         use forge_types::IntegrationId;
@@ -3798,6 +3804,14 @@ mod tests {
 
         struct Blank;
 
+        struct Hosting(Entity<ScriptEditorView>);
+
+        impl Render for Hosting {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                div().size_full().child(self.0.clone())
+            }
+        }
+
         impl Render for Blank {
             fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
                 div()
@@ -3808,6 +3822,7 @@ mod tests {
             Accepts,
             Fails,
             NeverCalled,
+            Counted(Arc<AtomicUsize>),
         }
 
         fn repo(store: Store) -> MockScriptRepo {
@@ -3831,6 +3846,12 @@ mod tests {
                 }
                 Store::NeverCalled => {
                     repo.expect_save().never();
+                }
+                Store::Counted(stores) => {
+                    repo.expect_save().returning(move |_| {
+                        stores.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    });
                 }
             }
             repo
@@ -3988,6 +4009,43 @@ mod tests {
                     "{expected:?}"
                 );
             }
+        }
+
+        #[gpui::test]
+        fn a_save_asked_for_while_one_is_storing_is_ignored(cx: &mut TestAppContext) {
+            let stores = Arc::new(AtomicUsize::new(0));
+            let rig = Rig::mount(cx, Store::Counted(Arc::clone(&stores)));
+            rig.type_body(EDITED_BODY, cx);
+
+            let asked = [(); 2].map(|()| {
+                rig.view
+                    .update(cx, |view, cx| view.start_saving_unsaved_work(cx))
+            });
+            rig.settle(cx);
+
+            assert_eq!(
+                (asked, stores.load(Ordering::SeqCst), rig.unsaved(cx)),
+                ([true, true], 1, false)
+            );
+        }
+
+        #[gpui::test]
+        fn the_save_chord_in_the_code_editor_stores_the_edited_script(cx: &mut TestAppContext) {
+            let stores = Arc::new(AtomicUsize::new(0));
+            let rig = Rig::mount(cx, Store::Counted(Arc::clone(&stores)));
+            rig.type_body(EDITED_BODY, cx);
+            cx.update(bind_code_editor_keys);
+            let hosted = rig.view.clone();
+            let window = cx.add_window(|_, _| Hosting(hosted));
+            let vcx = &mut gpui::VisualTestContext::from_window(window.into(), cx);
+            let editor = vcx.update(|_window, cx| rig.view.read(cx).code_input.clone());
+            vcx.update(|window, cx| editor.update(cx, |editor, cx| editor.focus(window, cx)));
+            vcx.run_until_parked();
+
+            vcx.simulate_keystrokes("secondary-s");
+            rig.settle(cx);
+
+            assert_eq!((stores.load(Ordering::SeqCst), rig.unsaved(cx)), (1, false));
         }
     }
 }

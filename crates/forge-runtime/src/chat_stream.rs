@@ -2,7 +2,8 @@ use std::collections::{HashMap, VecDeque};
 
 use forge_events::{Event, EventSource};
 use forge_types::{
-    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, UnifiedChatRow,
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, ChatViewer,
+    UnifiedChatRow,
 };
 use time::OffsetDateTime;
 
@@ -90,6 +91,7 @@ fn try_map_chat_event(
         source,
         received_at: ev.timestamp,
         author: payload.author,
+        author_id: ChatViewer::read(&ev.payload).map(|viewer| viewer.id),
         author_color,
         body_segments: payload.segments,
         badges: payload.badges,
@@ -155,6 +157,38 @@ mod tests {
             (row.id.as_str(), row.source, row.event_id, row.received_at),
             ("msg-1", ChatSource::Twitch, event.id, event.timestamp)
         );
+    }
+
+    #[test]
+    fn a_chat_row_takes_its_author_id_from_a_well_formed_viewer_block_only() {
+        let viewer_blocks = [
+            (
+                Some(serde_json::json!({ "id": "v-1", "name": "Bob" })),
+                Some("v-1"),
+            ),
+            (Some(serde_json::json!({ "id": "", "name": "Bob" })), None),
+            (Some(serde_json::json!({ "id": 7, "name": "Bob" })), None),
+            (None, None),
+        ];
+
+        for source in [EventSource::Twitch, EventSource::YouTube, EventSource::Kick] {
+            for (block, expected) in &viewer_blocks {
+                let mut event = chat_event(source, "msg");
+                if let Some(block) = block {
+                    event.payload[ChatViewer::KEY] = block.clone();
+                }
+
+                let Some(ChatRecord::Row(row)) = ChatRecordMapper::default().map(&event) else {
+                    panic!("{source:?} with viewer block {block:?} must still map to a row");
+                };
+
+                assert_eq!(
+                    row.author_id.as_deref(),
+                    *expected,
+                    "{source:?} with viewer block {block:?}"
+                );
+            }
+        }
     }
 
     #[test]

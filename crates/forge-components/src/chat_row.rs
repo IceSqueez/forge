@@ -113,7 +113,7 @@ pub fn badge_label(kind: BadgeKind) -> &'static str {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
     Twitch,
     YouTube,

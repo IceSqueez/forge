@@ -136,8 +136,16 @@ async fn seeded_twitch_access_token_is_served_without_entering_the_refresh_path(
     let (dir, report) = seed_fresh(&Fixture::chat_command_mvp()).await;
     let backend = Arc::new(reopen(dir.path()).await);
     let client_id = report.twitch.expect("mvp fixture seeds twitch").client_id;
-    let manager =
-        TwitchCredentialsManager::new(Arc::clone(&backend) as Arc<dyn CredentialsRepo>, client_id);
+    let unroutable_oauth = forge_platform_core::PlatformEndpoints::resolve(|variable| {
+        (variable == forge_platform_core::EndpointSurface::TwitchOAuth.env_var())
+            .then(|| std::ffi::OsString::from("http://127.0.0.1:9/oauth2"))
+    })
+    .unwrap();
+    let manager = TwitchCredentialsManager::new(
+        &unroutable_oauth,
+        Arc::clone(&backend) as Arc<dyn CredentialsRepo>,
+        client_id,
+    );
     let served = manager.get_valid_access_token().await;
     backend.shutdown().await;
 

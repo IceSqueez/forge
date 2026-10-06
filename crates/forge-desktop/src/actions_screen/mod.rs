@@ -113,6 +113,11 @@ const CHIP_RADIUS: Pixels = px(6.0);
 const BRANCH_GLYPH: Pixels = px(11.0);
 const CASE_MATCH_W: Pixels = px(160.0);
 
+const TRIGGER_FILTERS: [(ActionsFilter, TriggerCategory); 2] = [
+    (ActionsFilter::Timers, TriggerCategory::Timer),
+    (ActionsFilter::Points, TriggerCategory::ChannelPoints),
+];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ActionCategory {
     Chat,
@@ -121,7 +126,7 @@ enum ActionCategory {
     Other,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum ActionsFilter {
     All,
     Chat,
@@ -203,7 +208,7 @@ pub struct ScreenActionsView {
     tree_width: Pixels,
     loading: bool,
     groups: Vec<ActionGroup>,
-    timer_action_ids: HashSet<ActionId>,
+    filter_action_ids: HashMap<ActionsFilter, HashSet<ActionId>>,
     filter: ActionsFilter,
     search: SearchState,
     selected: Option<ActionId>,
@@ -292,7 +297,7 @@ impl ScreenActionsView {
             tree_width: LEFT_PANEL_W,
             loading: true,
             groups: Vec::new(),
-            timer_action_ids: HashSet::new(),
+            filter_action_ids: HashMap::new(),
             filter: ActionsFilter::All,
             search,
             selected: preselect,
@@ -433,7 +438,7 @@ impl ScreenActionsView {
             }
         }
         self.groups = groups;
-        self.reload_timer_actions(cx);
+        self.reload_filter_actions(cx);
 
         if let Some(selected) = self.selected {
             if self.find(selected).is_some() {
@@ -451,47 +456,59 @@ impl ScreenActionsView {
         cx.notify();
     }
 
-    fn timer_kind_ids(&self) -> HashSet<String> {
+    fn filter_by_kind_id(&self) -> HashMap<String, ActionsFilter> {
         self.trigger_registry
             .all()
-            .filter(|d| d.category() == TriggerCategory::Timer)
-            .map(|d| d.id().to_owned())
+            .filter_map(|d| {
+                let filter = TRIGGER_FILTERS
+                    .iter()
+                    .find(|(_, category)| *category == d.category())
+                    .map(|(filter, _)| *filter)?;
+                Some((d.id().to_owned(), filter))
+            })
             .collect()
     }
 
-    fn reload_timer_actions(&self, cx: &mut Context<Self>) {
-        let timer_kinds = self.timer_kind_ids();
+    fn reload_filter_actions(&self, cx: &mut Context<Self>) {
+        let filter_by_kind = self.filter_by_kind_id();
         let repo = Arc::clone(&self.trigger_instance_repo);
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                actions_with_trigger_kinds(&*repo, &timer_kinds)
+                actions_by_trigger_filter(&*repo, &filter_by_kind)
                     .await
                     .map_err(|e| e.to_string())
             },
             |this, result, cx| match result {
-                Ok(ids) => this.apply_timer_actions(ids, cx),
+                Ok(ids) => this.apply_filter_actions(ids, cx),
                 Err(message) => this.on_repo_error(&message, cx),
             },
             cx,
         );
     }
 
-    fn apply_timer_actions(&mut self, ids: HashSet<ActionId>, cx: &mut Context<Self>) {
-        self.timer_action_ids = ids;
+    fn apply_filter_actions(
+        &mut self,
+        ids: HashMap<ActionsFilter, HashSet<ActionId>>,
+        cx: &mut Context<Self>,
+    ) {
+        self.filter_action_ids = ids;
         cx.notify();
     }
 
-    fn sync_timer_membership(&mut self, detail: &ActionDetail) {
-        let timer_kinds = self.timer_kind_ids();
-        let has_timer = detail
-            .trigger_instances
-            .iter()
-            .any(|instance| timer_kinds.contains(&instance.kind_id));
-        if has_timer {
-            self.timer_action_ids.insert(detail.action.id);
-        } else {
-            self.timer_action_ids.remove(&detail.action.id);
+    fn sync_filter_membership(&mut self, detail: &ActionDetail) {
+        let filter_by_kind = self.filter_by_kind_id();
+        for (filter, _) in TRIGGER_FILTERS {
+            let has_trigger = detail
+                .trigger_instances
+                .iter()
+                .any(|instance| filter_by_kind.get(&instance.kind_id) == Some(&filter));
+            let members = self.filter_action_ids.entry(filter).or_default();
+            if has_trigger {
+                members.insert(detail.action.id);
+            } else {
+                members.remove(&detail.action.id);
+            }
         }
     }
 
@@ -553,7 +570,7 @@ impl ScreenActionsView {
         if self.selected != Some(id) {
             return;
         }
-        self.sync_timer_membership(&detail);
+        self.sync_filter_membership(&detail);
         self.detail = Some(detail);
         self.sync_case_fields(cx);
         self.recompute_step_health();
@@ -753,17 +770,20 @@ fn group_actions(actions: Vec<Action>) -> Vec<ActionGroup> {
         .collect()
 }
 
-async fn actions_with_trigger_kinds(
+async fn actions_by_trigger_filter(
     repo: &dyn TriggerInstanceRepo,
-    kind_ids: &HashSet<String>,
-) -> Result<HashSet<ActionId>, StorageError> {
-    let mut action_ids = HashSet::new();
+    filter_by_kind: &HashMap<String, ActionsFilter>,
+) -> Result<HashMap<ActionsFilter, HashSet<ActionId>>, StorageError> {
+    let mut members: HashMap<ActionsFilter, HashSet<ActionId>> = HashMap::new();
     for instance in repo.list_all().await? {
-        if kind_ids.contains(&instance.kind_id) {
-            action_ids.extend(repo.actions_using(instance.id).await?);
+        if let Some(filter) = filter_by_kind.get(&instance.kind_id) {
+            members
+                .entry(*filter)
+                .or_default()
+                .extend(repo.actions_using(instance.id).await?);
         }
     }
-    Ok(action_ids)
+    Ok(members)
 }
 
 fn category_from_group_name(name: &str) -> ActionCategory {

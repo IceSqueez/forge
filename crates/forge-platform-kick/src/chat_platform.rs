@@ -3,12 +3,11 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{Event, EventPublisher, EventStream};
 use forge_platform_core::{
-    AuthFlow, ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints,
-    PlatformError, RateLimiter, connection_state_changed_event,
+    ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
+    RateLimiter, connection_state_changed_event,
 };
 use tokio::sync::{mpsc, watch};
 
-use crate::auth::kick_auth_flow;
 use crate::capabilities::kick_capabilities;
 use crate::chat::{KickChat, KickChatHandle};
 use crate::credentials_manager::KickCredentialsManager;
@@ -20,7 +19,6 @@ const PLATFORM_ID: &str = "kick";
 const CHAT_FORWARD_CAPACITY: usize = 256;
 
 pub struct KickPlatform {
-    auth_flow: AuthFlow,
     capabilities: PlatformCapabilities,
     events: Arc<PlatformEventChannel>,
     credentials_manager: Arc<KickCredentialsManager>,
@@ -39,7 +37,6 @@ impl KickPlatform {
     ) -> Self {
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
-            auth_flow: kick_auth_flow(),
             capabilities: kick_capabilities(),
             events: Arc::new(PlatformEventChannel::new()),
             credentials_manager,
@@ -73,18 +70,6 @@ impl KickPlatform {
 
 #[async_trait]
 impl ChatPlatform for KickPlatform {
-    fn platform_id(&self) -> &'static str {
-        PLATFORM_ID
-    }
-
-    fn auth_flow(&self) -> &AuthFlow {
-        &self.auth_flow
-    }
-
-    fn capabilities(&self) -> &PlatformCapabilities {
-        &self.capabilities
-    }
-
     fn connection_state(&self) -> ConnectionState {
         self.handle
             .lock()
@@ -255,9 +240,6 @@ mod tests {
         async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
             Ok(RateLimitOutcome::Granted)
         }
-        fn remaining(&self) -> u32 {
-            60
-        }
         async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
     }
 
@@ -266,9 +248,6 @@ mod tests {
     impl RateLimiter for ExhaustedLimiter {
         async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
             Ok(RateLimitOutcome::Exhausted)
-        }
-        fn remaining(&self) -> u32 {
-            0
         }
         async fn observe_remote_throttle(&self, _retry_after: StdDuration) {}
     }

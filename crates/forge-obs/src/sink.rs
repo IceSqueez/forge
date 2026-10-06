@@ -31,9 +31,6 @@ pub trait ObsSink: Send + Sync {
 
     async fn stop_stream(&self) -> Result<(), ObsError>;
 
-    async fn raw_request(&self, request_type: &str, payload: &Variant)
-    -> Result<Variant, ObsError>;
-
     async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError>;
 
     async fn set_current_scene_transition(&self, name: &str) -> Result<(), ObsError>;

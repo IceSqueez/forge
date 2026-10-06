@@ -1290,6 +1290,7 @@ impl Render for SettingsWebSocketView {
                     .text_color(palette.text_muted)
                     .child(tr!("settings_ws_subtitle")),
             )
+            .children(crate::server_unavailable::unavailable_banner(cx, &palette))
             .child(setting_row(
                 tr!("settings_ws_enable_label"),
                 Some(tr!("settings_ws_enable_description").into()),

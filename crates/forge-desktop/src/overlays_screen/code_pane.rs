@@ -1,8 +1,8 @@
 use forge_components::highlight::Language;
 use forge_components::{
     BORDER_THIN, CodeEditor, Confirm, ConfirmTone, FONT_XS, FONT_XXS, ForgePalette, Icon,
-    InputEvent, OverlayPosition, body_family, confirm_modal, empty_state, ghost_button_with_icon,
-    icon, mono_family, overlay, primary_button_with_icon, status_dot, tr,
+    InputEvent, OverlayPosition, SaveCode, body_family, confirm_modal, empty_state,
+    ghost_button_with_icon, icon, mono_family, overlay, primary_button_with_icon, status_dot, tr,
 };
 use forge_overlay::{MediaIssue, OVERRIDABLE_FILES, sizing_notice_pending};
 use forge_storage::{OverlayDefinition, OverlayId};
@@ -416,7 +416,7 @@ impl OverlaysView {
             .bg(palette.base)
             .child(self.render_file_tabs(definition, palette, cx))
             .child(self.render_escape_hint(palette, cx))
-            .child(self.render_editor(palette))
+            .child(self.render_editor(palette, cx))
             .child(self.render_code_footer(definition, palette))
             .into_any_element()
     }
@@ -610,8 +610,11 @@ impl OverlaysView {
         row.into_any_element()
     }
 
-    fn render_editor(&self, palette: &ForgePalette) -> AnyElement {
+    fn render_editor(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
         let frame = div()
+            .on_action(cx.listener(|this, _: &SaveCode, _, cx| {
+                this.start_saving_unsaved_work(cx);
+            }))
             .flex_1()
             .min_h(px(0.0))
             .w_full()

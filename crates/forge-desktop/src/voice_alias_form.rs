@@ -133,7 +133,7 @@ impl AliasValues {
     pub(crate) fn of(alias: &VoiceAlias) -> Self {
         let blocked = matches!(alias.state, AliasState::Blocked);
         Self {
-            engine: (!blocked).then(|| alias.engine_id.0.clone()),
+            engine: Some(alias.engine_id.0.clone()),
             voice: alias.voice_id.0.clone(),
             pitch: fmt_field(alias.pitch_semitones),
             rate: fmt_field(alias.rate_multiplier),

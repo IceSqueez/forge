@@ -290,7 +290,7 @@ impl VoiceAliasesView {
             platform: row.platform,
         };
         let values = AliasValues {
-            engine: (!row.blocked).then(|| row.engine_id.clone()),
+            engine: Some(row.engine_id.clone()),
             voice: row.voice_id.clone(),
             pitch: fmt_field(row.pitch_semitones),
             rate: fmt_field(row.rate_multiplier),

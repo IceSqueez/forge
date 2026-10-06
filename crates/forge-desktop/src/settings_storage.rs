@@ -494,8 +494,205 @@ fn info_row(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
-    use super::{parse_limit, parse_retention_days};
+    use std::sync::Arc;
+
+    use forge_events::{Event, EventSource};
+    use forge_runtime::{EventBus, spawn_chat_history_persistence};
+    use forge_storage::chat_history::MockChatHistoryRepo;
+    use forge_storage::{DataProvider, SettingsRepo, chat_history_per_viewer_limit};
+    use forge_types::{ChatPayload, ModerationMarks};
+    use gpui::{AppContext, Entity, TestAppContext};
+    use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
+    use tokio::time::{Duration, timeout};
+
+    use super::{
+        PerViewerChoice, SettingsStorageView, parse_limit, parse_per_viewer_limit,
+        parse_retention_days, per_viewer_choice,
+    };
+    use crate::test_support::{
+        SettingWrite, TestBackend, install_presentation, pump, quiet_bus, runtime, test_backend,
+    };
+
+    const RECV_TIMEOUT: Duration = Duration::from_secs(5);
+
+    #[test]
+    fn per_viewer_choice_marks_a_preset_only_when_it_matches_and_custom_is_not_chosen() {
+        for (limit, custom_selected, expected) in [
+            (25, false, PerViewerChoice::Preset(25)),
+            (50, false, PerViewerChoice::Preset(50)),
+            (100, false, PerViewerChoice::Preset(100)),
+            (75, false, PerViewerChoice::Custom),
+            (1, false, PerViewerChoice::Custom),
+            (50, true, PerViewerChoice::Custom),
+        ] {
+            assert_eq!(
+                per_viewer_choice(limit, custom_selected),
+                expected,
+                "limit={limit} custom_selected={custom_selected}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_per_viewer_limit_accepts_exactly_the_range_storage_honours() {
+        for (raw, expected) in [
+            ("0", None),
+            ("1", Some(1)),
+            ("10000", Some(10_000)),
+            ("10001", None),
+            (" 250 ", Some(250)),
+            ("abc", None),
+            ("", None),
+            ("-1", None),
+            ("2.5", None),
+        ] {
+            assert_eq!(
+                parse_per_viewer_limit(raw),
+                expected,
+                "parse_per_viewer_limit({raw:?})"
+            );
+        }
+    }
+
+    struct Rig {
+        rt: tokio::runtime::Runtime,
+        backend: Arc<TestBackend>,
+        writes: UnboundedReceiver<SettingWrite>,
+        bus: Arc<EventBus>,
+        retained_at: UnboundedReceiver<usize>,
+        view: Entity<SettingsStorageView>,
+    }
+
+    fn rig(cx: &mut TestAppContext) -> Rig {
+        install_presentation(cx);
+        let rt = runtime();
+        let (backend, writes) = test_backend();
+        let bus = quiet_bus(&rt);
+        let (retained_tx, retained_at) = unbounded_channel();
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_append_batch().returning(|_| Ok(()));
+        repo.expect_apply_retention()
+            .returning(move |_, per_viewer| {
+                retained_tx.send(per_viewer).unwrap();
+                Ok(0)
+            });
+        let retention = rt.block_on(async {
+            spawn_chat_history_persistence(
+                Arc::clone(&bus),
+                Arc::new(repo),
+                Arc::clone(&backend) as Arc<dyn SettingsRepo>,
+            )
+        });
+        pump(&rt);
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                SettingsStorageView::new(
+                    Arc::clone(&backend) as Arc<dyn DataProvider>,
+                    rt.handle().clone(),
+                    retention,
+                    cx,
+                )
+            })
+        });
+        pump(&rt);
+        cx.run_until_parked();
+        Rig {
+            rt,
+            backend,
+            writes,
+            bus,
+            retained_at,
+            view,
+        }
+    }
+
+    fn chat_message() -> Event {
+        let payload = ChatPayload {
+            platform_msg_id: "m1".to_string(),
+            author: "bob".to_string(),
+            author_color: None,
+            segments: vec![],
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        };
+        Event::new(
+            EventSource::Twitch,
+            "chat.message",
+            serde_json::json!({ (ChatPayload::KEY): payload }),
+        )
+    }
+
+    impl Rig {
+        fn next_retention_limit(&mut self) -> usize {
+            let bus = Arc::clone(&self.bus);
+            let retained_at = &mut self.retained_at;
+            self.rt.block_on(async move {
+                bus.publish(chat_message());
+                timeout(RECV_TIMEOUT, retained_at.recv())
+                    .await
+                    .unwrap()
+                    .unwrap()
+            })
+        }
+
+        fn stored_limit(&self) -> u32 {
+            self.rt
+                .block_on(chat_history_per_viewer_limit(self.backend.as_ref()))
+                .unwrap()
+        }
+
+        fn shown_input(&self, cx: &mut TestAppContext) -> String {
+            self.view.read_with(cx, |view, cx| {
+                view.per_viewer_input.read(cx).content().to_owned()
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn choosing_a_preset_persists_it_and_retains_the_next_written_batch_at_it(
+        cx: &mut TestAppContext,
+    ) {
+        let mut rig = rig(cx);
+
+        rig.view
+            .update(cx, |view, cx| view.select_per_viewer_preset(25, cx));
+        pump(&rig.rt);
+
+        assert_eq!((rig.stored_limit(), rig.next_retention_limit()), (25, 25));
+    }
+
+    #[gpui::test]
+    fn committing_a_custom_value_applies_a_valid_one_and_restores_an_invalid_one(
+        cx: &mut TestAppContext,
+    ) {
+        for (typed, shown, written) in [
+            (" 250 ", "250", Some("250")),
+            ("10001", "50", None),
+            ("abc", "50", None),
+        ] {
+            let mut rig = rig(cx);
+            rig.view.update(cx, |view, cx| {
+                view.select_custom_per_viewer(cx);
+                view.per_viewer_input
+                    .update(cx, |input, cx| input.set_content(typed.to_owned(), cx));
+                view.commit_custom_per_viewer(cx);
+            });
+            pump(&rig.rt);
+
+            assert_eq!(
+                (
+                    rig.shown_input(cx),
+                    rig.writes.try_recv().ok().map(|(_, value)| value)
+                ),
+                (shown.to_owned(), written.map(str::to_owned)),
+                "typed {typed:?}"
+            );
+        }
+    }
 
     #[test]
     fn parse_limit_accepts_positive_integers_and_rejects_everything_else() {

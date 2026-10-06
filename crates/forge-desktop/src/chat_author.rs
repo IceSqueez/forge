@@ -67,3 +67,57 @@ pub fn viewer_platform(platform: &ViewerPlatform) -> Platform {
         ViewerPlatform::Kick => Platform::Kick,
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use std::collections::HashSet;
+
+    use forge_components::Platform;
+    use gpui::SharedString;
+
+    use super::{AuthorHandle, AuthorKey};
+
+    #[test]
+    fn resolve_prefers_a_non_empty_viewer_id_and_needs_a_name() {
+        for (viewer_id, name, expected) in [
+            (
+                Some("u1"),
+                "alice",
+                Some(AuthorHandle::ViewerId("u1".into())),
+            ),
+            (None, "alice", Some(AuthorHandle::Name("alice".into()))),
+            (Some(""), "alice", Some(AuthorHandle::Name("alice".into()))),
+            (Some("u1"), "", None),
+            (None, "", None),
+        ] {
+            let viewer_id = viewer_id.map(SharedString::from);
+            let resolved = AuthorKey::resolve(
+                Platform::Kick,
+                viewer_id.as_ref(),
+                &SharedString::from(name),
+            );
+            assert_eq!(
+                resolved,
+                expected.map(|handle| AuthorKey {
+                    platform: Platform::Kick,
+                    handle,
+                }),
+                "viewer_id={viewer_id:?} name={name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn element_ids_differ_across_platform_and_handle_kind_for_the_same_text() {
+        let keys = [
+            AuthorKey::by_viewer_id(Platform::Twitch, "alice"),
+            AuthorKey::by_name(Platform::Twitch, "alice"),
+            AuthorKey::by_viewer_id(Platform::Kick, "alice"),
+            AuthorKey::by_name(Platform::Kick, "alice"),
+            AuthorKey::by_name(Platform::YouTube, "alice"),
+        ];
+        let ids: HashSet<SharedString> = keys.iter().map(|key| key.element_id("row")).collect();
+        assert_eq!(ids.len(), keys.len());
+    }
+}

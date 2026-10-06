@@ -156,8 +156,8 @@ mod tests {
     use time::{Duration, OffsetDateTime};
 
     use super::{
-        SubStatus, ViewerDirectory, author_summary, drawer_matches, enrich_with_storage,
-        selected_summary, sub_status,
+        SubStatus, ViewerDirectory, author_summary, current_name, drawer_matches,
+        enrich_with_storage, selected_summary, sub_status,
     };
     use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
@@ -170,14 +170,6 @@ mod tests {
         let mut feed = ChatFeed::new();
         feed.seed(messages.to_vec());
         feed
-    }
-
-    fn unique_authors(messages: &[ChatMessage]) -> Vec<String> {
-        feed_of(messages)
-            .authors()
-            .newest_first()
-            .map(|(_, activity)| activity.name.to_string())
-            .collect()
     }
 
     fn synthesize_from_chat(
@@ -244,23 +236,6 @@ mod tests {
                 "username={username:?} search={search:?}"
             );
         }
-    }
-
-    #[test]
-    fn unique_authors_dedups_keeping_newest_first() {
-        let messages = [
-            msg("alice", vec![]),
-            msg("bob", vec![]),
-            msg("alice", vec![]),
-            msg("carol", vec![]),
-        ];
-        assert_eq!(unique_authors(&messages), vec!["carol", "alice", "bob"]);
-    }
-
-    #[test]
-    fn unique_authors_drops_empty_usernames() {
-        let messages = [msg("alice", vec![]), msg("", vec![]), msg("bob", vec![])];
-        assert_eq!(unique_authors(&messages), vec!["bob", "alice"]);
     }
 
     #[test]
@@ -354,19 +329,6 @@ mod tests {
     }
 
     #[test]
-    fn selected_summary_fallback_skips_a_trailing_empty_author() {
-        let messages = [msg("alice", vec![]), msg("", vec![])];
-        let summary = selected_summary(
-            None,
-            feed_of(&messages).authors(),
-            &ViewerDirectory::default(),
-            &FORGE_DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(summary.username, "alice");
-    }
-
-    #[test]
     fn selected_summary_uses_the_selected_author() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
         let summary = selected_summary(
@@ -417,42 +379,92 @@ mod tests {
         assert!(directory.get(&key("bob")).is_none());
     }
 
-    #[test]
-    fn summaries_count_only_the_rows_still_retained_after_eviction() {
-        let mut feed = ChatFeed::new();
-        feed.set_capacity(3);
-        for name in ["alice", "alice", "bob", "alice", "carol"] {
-            feed.push(msg(name, vec![]));
-        }
-
-        let summary = |name: &str| {
-            author_summary(
-                &key(name),
-                feed.authors(),
-                &ViewerDirectory::default(),
-                &FORGE_DEFAULT,
+    fn stored(platform: ViewerPlatform, viewer_id: &str, username: &str, count: u64) -> Viewer {
+        Viewer {
+            viewer_id: viewer_id.into(),
+            platform,
+            ..viewer(
+                username,
+                count,
+                OffsetDateTime::now_utc(),
+                OffsetDateTime::now_utc(),
             )
-        };
-        assert_eq!(summary("alice").unwrap().message_count, 1);
-        assert_eq!(summary("bob").unwrap().message_count, 1);
-        assert!(summary("ghost").is_none());
+        }
+    }
+
+    fn spoken(platform: Platform, viewer_id: &str, username: &str) -> ChatMessage {
+        ChatMessage {
+            platform,
+            author_id: Some(viewer_id.to_owned().into()),
+            ..msg(username, vec![])
+        }
     }
 
     #[test]
-    fn selected_summary_falls_back_to_the_newest_author_once_the_selection_is_evicted() {
-        let mut feed = ChatFeed::new();
-        feed.set_capacity(2);
-        for name in ["alice", "bob", "carol"] {
-            feed.push(msg(name, vec![]));
+    fn viewer_directory_finds_a_viewer_by_platform_and_id_or_platform_and_username_only() {
+        let directory = ViewerDirectory::new(vec![
+            stored(ViewerPlatform::Twitch, "t1", "alice", 1),
+            stored(ViewerPlatform::Kick, "k1", "bob", 2),
+        ]);
+        for (key, expected) in [
+            (AuthorKey::by_viewer_id(Platform::Twitch, "t1"), Some(1)),
+            (AuthorKey::by_name(Platform::Twitch, "alice"), Some(1)),
+            (AuthorKey::by_viewer_id(Platform::Kick, "k1"), Some(2)),
+            (AuthorKey::by_name(Platform::Kick, "bob"), Some(2)),
+            (AuthorKey::by_viewer_id(Platform::Kick, "t1"), None),
+            (AuthorKey::by_name(Platform::YouTube, "alice"), None),
+            (AuthorKey::by_viewer_id(Platform::Twitch, "alice"), None),
+            (AuthorKey::by_name(Platform::Twitch, "t1"), None),
+        ] {
+            assert_eq!(
+                directory.get(&key).map(|viewer| viewer.message_count),
+                expected,
+                "{key:?}"
+            );
         }
+    }
 
-        let summary = selected_summary(
-            Some(&key("alice")),
+    #[test]
+    fn a_renamed_viewer_card_shows_the_chat_name_with_the_stored_count_found_by_id() {
+        let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
+        let directory =
+            ViewerDirectory::new(vec![stored(ViewerPlatform::Twitch, "t1", "alice_old", 99)]);
+
+        let summary = author_summary(
+            &AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
             feed.authors(),
-            &ViewerDirectory::default(),
+            &directory,
             &FORGE_DEFAULT,
         )
         .unwrap();
-        assert_eq!(summary.username, "carol");
+
+        assert_eq!(
+            (summary.username.as_str(), summary.message_count),
+            ("alice_new", 99)
+        );
+    }
+
+    #[test]
+    fn current_name_prefers_the_chat_name_then_the_stored_name_then_the_name_key() {
+        let feed = feed_of(&[spoken(Platform::Twitch, "t1", "alice_new")]);
+        let directory = ViewerDirectory::new(vec![
+            stored(ViewerPlatform::Twitch, "t1", "alice_old", 1),
+            stored(ViewerPlatform::Twitch, "t2", "bob", 1),
+        ]);
+        for (key, expected) in [
+            (
+                AuthorKey::by_viewer_id(Platform::Twitch, "t1"),
+                Some("alice_new"),
+            ),
+            (AuthorKey::by_viewer_id(Platform::Twitch, "t2"), Some("bob")),
+            (AuthorKey::by_name(Platform::Twitch, "carol"), Some("carol")),
+            (AuthorKey::by_viewer_id(Platform::Twitch, "t3"), None),
+        ] {
+            assert_eq!(
+                current_name(&key, feed.authors(), &directory).as_deref(),
+                expected,
+                "{key:?}"
+            );
+        }
     }
 }

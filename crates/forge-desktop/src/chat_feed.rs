@@ -577,11 +577,14 @@ mod tests {
     use forge_events::{Event, EventSource};
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-        ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow, UserBadge,
+        ChatSegment, ChatSource, ChatViewer, EventId, ModerationMarks, UnifiedChatRow, UserBadge,
     };
     use time::OffsetDateTime;
 
+    use gpui::SharedString;
+
     use super::{ChatFeed, ChatMessage, FeedGap, badge_kind, event_body};
+    use crate::chat_author::AuthorKey;
 
     fn message_with(event_id: EventId, body: ChatBody) -> ChatMessage {
         ChatMessage {
@@ -1093,6 +1096,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn message_from_event_takes_the_author_id_from_the_attached_viewer_only() {
+        let mut with_viewer = chat_event(None);
+        ChatViewer::new("u42", "bob").attach(&mut with_viewer.payload);
+        for (event, expected) in [
+            (with_viewer, Some(SharedString::from("u42"))),
+            (chat_event(None), None),
+        ] {
+            let message = ChatFeed::message_from_event(&event).unwrap();
+            assert_eq!(message.author_id, expected);
+        }
+    }
+
     fn authored(id: &str, username: &str, badges: Vec<BadgeKind>, at: i64) -> ChatMessage {
         ChatMessage {
             id: id.to_owned().into(),
@@ -1279,30 +1295,29 @@ mod tests {
     type Recomputed = (String, usize, u64, Option<BadgeKind>, OffsetDateTime);
 
     fn recomputed_authors(feed: &ChatFeed) -> Vec<Recomputed> {
-        let mut by_name: std::collections::HashMap<String, Recomputed> =
+        let mut by_key: std::collections::HashMap<AuthorKey, Recomputed> =
             std::collections::HashMap::new();
         for (offset, message) in feed.messages().iter().enumerate() {
-            if message.username.is_empty() {
+            let Some(key) = message.author_key() else {
                 continue;
-            }
+            };
             let seq = feed.start_seq() + offset as u64;
-            let entry = by_name
-                .entry(message.username.to_string())
-                .or_insert_with(|| {
-                    (
-                        message.username.to_string(),
-                        0,
-                        0,
-                        None,
-                        message.received_at,
-                    )
-                });
+            let entry = by_key.entry(key).or_insert_with(|| {
+                (
+                    message.username.to_string(),
+                    0,
+                    0,
+                    None,
+                    message.received_at,
+                )
+            });
+            entry.0 = message.username.to_string();
             entry.1 += 1;
             entry.2 = seq;
             entry.3 = message.badges.first().copied();
             entry.4 = message.received_at;
         }
-        let mut authors: Vec<Recomputed> = by_name.into_values().collect();
+        let mut authors: Vec<Recomputed> = by_key.into_values().collect();
         authors.sort_by_key(|a| std::cmp::Reverse(a.2));
         authors
     }
@@ -1325,6 +1340,8 @@ mod tests {
     #[test]
     fn author_index_matches_a_from_scratch_scan_after_any_push_evict_seed_sequence() {
         const NAMES: [&str; 6] = ["alice", "bob", "carol", "dave", "Alice", ""];
+        const VIEWER_IDS: [Option<&str>; 4] = [None, Some("u1"), Some("u2"), Some("")];
+        const PLATFORMS: [Platform; 2] = [Platform::Twitch, Platform::Kick];
         const BADGES: [BadgeKind; 3] =
             [BadgeKind::Moderator, BadgeKind::Vip, BadgeKind::Subscriber];
         for seed in 1..=24_u64 {
@@ -1338,7 +1355,12 @@ mod tests {
                     0 => vec![],
                     n => vec![BADGES[n as usize - 1]],
                 };
-                authored(&format!("m{at}"), name, badges, at)
+                ChatMessage {
+                    platform: PLATFORMS[rng.below(PLATFORMS.len() as u64) as usize],
+                    author_id: VIEWER_IDS[rng.below(VIEWER_IDS.len() as u64) as usize]
+                        .map(SharedString::from),
+                    ..authored(&format!("m{at}"), name, badges, at)
+                }
             };
             for step in 0..300 {
                 match rng.below(20) {

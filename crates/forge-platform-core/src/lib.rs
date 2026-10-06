@@ -10,6 +10,7 @@ pub mod donation;
 pub mod donation_test;
 pub mod endpoints;
 pub mod error;
+pub mod follow_lookup;
 pub mod integration;
 pub mod live_viewers;
 pub mod net;
@@ -46,6 +47,7 @@ pub use donation_test::{
 };
 pub use endpoints::{EndpointRefusal, EndpointSurface, PlatformEndpoints};
 pub use error::{HTTP_UNAUTHORIZED, NON_HTTP_STATUS, PlatformError};
+pub use follow_lookup::{FollowLookup, FollowStatus};
 pub use integration::{ConnectionAffordance, IntegrationCategory, IntegrationDeclaration};
 pub use live_viewers::{LiveViewerSource, ViewerReport, ViewerReportStream};
 pub use net::is_private_or_special;

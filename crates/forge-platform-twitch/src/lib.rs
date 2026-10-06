@@ -10,6 +10,7 @@ pub mod credentials;
 pub mod credentials_manager;
 mod custom_rewards;
 mod event_channel;
+mod follow_lookup;
 pub mod helix;
 pub mod integration;
 mod lifecycle;

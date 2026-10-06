@@ -160,6 +160,38 @@ mod tests {
     }
 
     #[test]
+    fn a_chat_row_takes_its_author_id_from_a_well_formed_viewer_block_only() {
+        let viewer_blocks = [
+            (
+                Some(serde_json::json!({ "id": "v-1", "name": "Bob" })),
+                Some("v-1"),
+            ),
+            (Some(serde_json::json!({ "id": "", "name": "Bob" })), None),
+            (Some(serde_json::json!({ "id": 7, "name": "Bob" })), None),
+            (None, None),
+        ];
+
+        for source in [EventSource::Twitch, EventSource::YouTube, EventSource::Kick] {
+            for (block, expected) in &viewer_blocks {
+                let mut event = chat_event(source, "msg");
+                if let Some(block) = block {
+                    event.payload[ChatViewer::KEY] = block.clone();
+                }
+
+                let Some(ChatRecord::Row(row)) = ChatRecordMapper::default().map(&event) else {
+                    panic!("{source:?} with viewer block {block:?} must still map to a row");
+                };
+
+                assert_eq!(
+                    row.author_id.as_deref(),
+                    *expected,
+                    "{source:?} with viewer block {block:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn events_that_are_not_chat_rows_or_marks_map_to_nothing() {
         let unrelated = [
             Event::new(

@@ -510,6 +510,222 @@ mod tests {
         assert_eq!(unwritten, Some(3));
     }
 
+    fn by(id: &str, source: ChatSource, viewer: Option<&str>) -> ChatRecord {
+        let ChatRecord::Row(mut written) = row(id, source, "name", OffsetDateTime::now_utc())
+        else {
+            unreachable!("row always builds a chat row");
+        };
+        written.author_id = viewer.map(str::to_string);
+        ChatRecord::Row(written)
+    }
+
+    fn key(source: ChatSource, viewer: &str) -> ChatAuthorKey {
+        ChatAuthorKey {
+            source,
+            author_id: viewer.to_string(),
+        }
+    }
+
+    async fn retained_authors(batch: Vec<ChatRecord>) -> Vec<ChatAuthorKey> {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_append_batch().returning(|_| Ok(()));
+        repo.expect_apply_retention()
+            .times(1)
+            .returning(move |authors, _| {
+                tx.send(authors.to_vec()).unwrap();
+                Ok(0)
+            });
+        let mut sink = sink_over(Arc::new(repo), &EventBus::new(Arc::new(NullEventLogRepo)));
+
+        flush(&mut sink, batch).await;
+
+        rx.try_recv().unwrap()
+    }
+
+    #[tokio::test]
+    async fn retention_covers_each_distinct_viewer_of_the_written_batch_once() {
+        let authors = retained_authors(vec![
+            by("a", ChatSource::Twitch, Some("u1")),
+            by("b", ChatSource::Twitch, Some("u1")),
+            by("c", ChatSource::Kick, Some("u1")),
+            by("d", ChatSource::YouTube, Some("u2")),
+            by("e", ChatSource::Twitch, None),
+        ])
+        .await;
+
+        assert_eq!(
+            (authors.len(), authors.into_iter().collect::<HashSet<_>>()),
+            (
+                3,
+                HashSet::from([
+                    key(ChatSource::Twitch, "u1"),
+                    key(ChatSource::Kick, "u1"),
+                    key(ChatSource::YouTube, "u2"),
+                ])
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn a_batch_without_viewer_ids_still_runs_retention_for_the_authorless_bound() {
+        let authors = retained_authors(vec![
+            by("a", ChatSource::Twitch, None),
+            by("b", ChatSource::Kick, None),
+        ])
+        .await;
+
+        assert!(authors.is_empty(), "{} viewer keys", authors.len());
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Outcome {
+        Succeeds,
+        Fails,
+        Stalls,
+    }
+
+    async fn settle(outcome: Outcome) -> Result<(), StorageError> {
+        match outcome {
+            Outcome::Succeeds => Ok(()),
+            Outcome::Fails => Err(StorageError::Connection {
+                reason: "disk full".to_string(),
+            }),
+            Outcome::Stalls => std::future::pending().await,
+        }
+    }
+
+    struct ScriptedRepo {
+        append: Outcome,
+        first_retention: Outcome,
+        appended: std::sync::Mutex<Vec<Vec<String>>>,
+        retentions: std::sync::atomic::AtomicUsize,
+    }
+
+    impl ScriptedRepo {
+        fn new(append: Outcome, first_retention: Outcome) -> Arc<Self> {
+            Arc::new(Self {
+                append,
+                first_retention,
+                appended: std::sync::Mutex::new(Vec::new()),
+                retentions: std::sync::atomic::AtomicUsize::new(0),
+            })
+        }
+
+        fn retention_runs(&self) -> usize {
+            self.retentions.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ChatHistoryRepo for ScriptedRepo {
+        async fn append(&self, row: &UnifiedChatRow) -> Result<(), StorageError> {
+            self.append_batch(std::slice::from_ref(row)).await
+        }
+
+        async fn append_batch(&self, rows: &[UnifiedChatRow]) -> Result<(), StorageError> {
+            self.appended
+                .lock()
+                .unwrap()
+                .push(rows.iter().map(|row| row.id.clone()).collect());
+            settle(self.append).await
+        }
+
+        async fn list_recent(&self, _: usize) -> Result<Vec<UnifiedChatRow>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn list_recent_messages_by_author(
+            &self,
+            _: &ChatAuthorKey,
+            _: usize,
+        ) -> Result<Vec<UnifiedChatRow>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn apply_retention(
+            &self,
+            _: &[ChatAuthorKey],
+            _: usize,
+        ) -> Result<u64, StorageError> {
+            let nth = self
+                .retentions
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let outcome = if nth == 0 {
+                self.first_retention
+            } else {
+                Outcome::Succeeds
+            };
+            settle(outcome).await.map(|()| 0)
+        }
+
+        async fn mark_message_deleted(&self, _: &str) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn mark_user_messages_moderated(
+            &self,
+            _: ChatSource,
+            _: &str,
+            _: bool,
+        ) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+
+        async fn clear_platform(&self, _: ChatSource) -> Result<u64, StorageError> {
+            Ok(0)
+        }
+    }
+
+    fn unwritten(bus: &EventBus) -> Option<u64> {
+        bus.loss_report()
+            .into_iter()
+            .find(|entry| entry.consumer == CHAT_HISTORY)
+            .map(|entry| entry.loss.unwritten)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn no_retention_runs_after_a_failed_or_stalled_append() {
+        for append in [Outcome::Fails, Outcome::Stalls] {
+            let repo = ScriptedRepo::new(append, Outcome::Succeeds);
+            let mut sink = sink_over(repo.clone(), &EventBus::new(Arc::new(NullEventLogRepo)));
+
+            flush(&mut sink, vec![by("m", ChatSource::Twitch, Some("u1"))]).await;
+
+            assert_eq!(repo.retention_runs(), 0, "append {append:?}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_or_stalled_retention_is_skipped_and_the_next_batch_is_still_written() {
+        for retention in [Outcome::Fails, Outcome::Stalls] {
+            let bus = EventBus::new(Arc::new(NullEventLogRepo));
+            let repo = ScriptedRepo::new(Outcome::Succeeds, retention);
+            let mut sink = sink_over(repo.clone(), &bus);
+
+            flush(&mut sink, vec![by("first", ChatSource::Twitch, Some("u1"))]).await;
+            flush(
+                &mut sink,
+                vec![by("second", ChatSource::Twitch, Some("u1"))],
+            )
+            .await;
+
+            assert_eq!(
+                (
+                    repo.appended.lock().unwrap().clone(),
+                    repo.retention_runs(),
+                    unwritten(&bus).unwrap_or(0),
+                ),
+                (
+                    vec![vec!["first".to_string()], vec!["second".to_string()]],
+                    2,
+                    0,
+                ),
+                "retention {retention:?}"
+            );
+        }
+    }
+
     struct StuckAppends {
         appending: Arc<tokio::sync::Notify>,
     }

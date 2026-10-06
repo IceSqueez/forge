@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, ChatPlatform,
-    PlatformEndpoints, PlatformError, QuickActions, RateLimitOutcome, RateLimiter, SectionIcon,
+    FollowLookup, PlatformEndpoints, QuickActions, SectionIcon,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -40,6 +39,7 @@ pub struct BuiltinObject {
     pub collections: Option<Arc<dyn BuiltinCollections>>,
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
     pub vtube_client: Option<Arc<forge_vtube::VTubeClient>>,
+    pub follow: Option<Arc<dyn FollowLookup>>,
 }
 
 #[derive(Clone, Default)]
@@ -179,6 +179,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         collections: None,
         obs_client: None,
         vtube_client: Some(client),
+        follow: None,
     }
 }
 
@@ -193,6 +194,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         collections: None,
         obs_client: Some(client),
         vtube_client: None,
+        follow: None,
     }
 }
 
@@ -206,9 +208,10 @@ pub fn twitch_builtin_object(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
-        collections: Some(bundle as Arc<dyn BuiltinCollections>),
+        collections: Some(Arc::clone(&bundle) as Arc<dyn BuiltinCollections>),
         obs_client: None,
         vtube_client: None,
+        follow: Some(bundle as Arc<dyn FollowLookup>),
     }
 }
 
@@ -221,10 +224,11 @@ pub fn youtube_builtin_object(
         health: bundle.clone(),
         content: bundle.clone(),
         quick: bundle.clone(),
-        control: Some(bundle as Arc<dyn BuiltinControl>),
+        control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: None,
         obs_client: None,
         vtube_client: None,
+        follow: Some(bundle as Arc<dyn FollowLookup>),
     }
 }
 
@@ -241,22 +245,8 @@ pub fn kick_builtin_object(
         collections: None,
         obs_client: None,
         vtube_client: None,
+        follow: None,
     }
-}
-
-pub(crate) struct NoopRateLimiter;
-
-#[async_trait::async_trait]
-impl RateLimiter for NoopRateLimiter {
-    async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
-        Ok(RateLimitOutcome::Granted)
-    }
-
-    fn remaining(&self) -> u32 {
-        u32::MAX
-    }
-
-    async fn observe_remote_throttle(&self, _retry_after: Duration) {}
 }
 
 pub async fn build_integrations(
@@ -545,7 +535,9 @@ pub(crate) fn spawn_chat_send_bridge(
                 .get("target")
                 .and_then(|v| v.as_str())
                 .and_then(requested_chat_target);
-            if requested.is_some_and(|requested| requested != target) {
+            if requested.is_some_and(|requested| {
+                PlatformId::from_wire(requested).is_none_or(|platform| platform.as_str() != target)
+            }) {
                 continue;
             }
             let Some(message) = event
@@ -603,10 +595,22 @@ pub(crate) fn spawn_connect(
 mod tests {
     use super::*;
     use forge_events::EventStream;
-    use forge_platform_core::{AuthFlow, ConnectionState, PlatformCapabilities};
+    use forge_platform_core::ConnectionState;
+    use forge_platform_core::{PlatformError, RateLimitOutcome, RateLimiter};
     use forge_runtime::NullEventLogRepo;
     use std::time::Duration;
     use tokio::sync::{Semaphore, broadcast, mpsc};
+
+    struct NoopRateLimiter;
+
+    #[async_trait::async_trait]
+    impl RateLimiter for NoopRateLimiter {
+        async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
+            Ok(RateLimitOutcome::Granted)
+        }
+
+        async fn observe_remote_throttle(&self, _retry_after: Duration) {}
+    }
 
     #[derive(Debug, PartialEq)]
     enum PlatformCall {
@@ -626,8 +630,6 @@ mod tests {
         sends: mpsc::UnboundedSender<PlatformCall>,
         gate: Option<Arc<Semaphore>>,
         failure: Option<String>,
-        auth: AuthFlow,
-        caps: PlatformCapabilities,
     }
 
     impl RecordingPlatform {
@@ -658,19 +660,6 @@ mod tests {
                 sends: tx,
                 gate,
                 failure,
-                auth: AuthFlow::None {
-                    reason: String::new(),
-                },
-                caps: PlatformCapabilities {
-                    can_send_chat: true,
-                    can_moderate: false,
-                    can_subscribe_events: false,
-                    can_polls: false,
-                    can_predictions: false,
-                    can_channel_points: false,
-                    limited: false,
-                    limited_reason: None,
-                },
             });
             (platform, rx)
         }
@@ -689,15 +678,6 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ChatPlatform for RecordingPlatform {
-        fn platform_id(&self) -> &'static str {
-            "mock"
-        }
-        fn auth_flow(&self) -> &AuthFlow {
-            &self.auth
-        }
-        fn capabilities(&self) -> &PlatformCapabilities {
-            &self.caps
-        }
         fn connection_state(&self) -> ConnectionState {
             ConnectionState::Connected
         }
@@ -846,6 +826,35 @@ mod tests {
             expect_send(&mut kick_rx).await,
             ("kick".to_string(), "sentinel".to_string()),
             "kick must skip the request padded-targeted at twitch"
+        );
+    }
+
+    #[tokio::test]
+    async fn mixed_case_target_routes_only_to_the_named_platform() {
+        let bus = test_bus();
+        let (twitch, mut twitch_rx) = RecordingPlatform::spawn();
+        let (kick, mut kick_rx) = RecordingPlatform::spawn();
+        spawn_chat_send_bridge(Arc::clone(&bus), twitch, "twitch", EventSource::Twitch);
+        spawn_chat_send_bridge(Arc::clone(&bus), kick, "kick", EventSource::Kick);
+        tokio::task::yield_now().await;
+
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "target": "Twitch", "message": "cased" }),
+        ));
+        bus.publish(request(
+            EventSource::Rhai,
+            serde_json::json!({ "target": "kick", "message": "sentinel" }),
+        ));
+
+        assert_eq!(
+            expect_send(&mut twitch_rx).await,
+            ("twitch".to_string(), "cased".to_string())
+        );
+        assert_eq!(
+            expect_send(&mut kick_rx).await,
+            ("kick".to_string(), "sentinel".to_string()),
+            "kick must skip the request targeted at Twitch"
         );
     }
 
@@ -1434,6 +1443,7 @@ mod tests {
                 collections: None,
                 obs_client: None,
                 vtube_client: None,
+                follow: None,
             };
             let bus = EventBus::new(Arc::new(StubEventLog));
             let engine = spawn_action_engine(
@@ -1461,6 +1471,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    forge_platform_core::PlatformEndpoints::default(),
                     ObsInstallSeed::new(forge_obs::SwitchableObsSink::new()),
                     VTubeInstallSeed::new(forge_vtube::SwitchableVTubeSink::new()),
                     connectivity,
@@ -1535,6 +1546,7 @@ mod tests {
     ) {
         let creds = creds_of(backend);
         let manager = Arc::new(forge_platform_twitch::TwitchCredentialsManager::new(
+            &PlatformEndpoints::default(),
             Arc::clone(&creds),
             "test-client".to_owned(),
         ));

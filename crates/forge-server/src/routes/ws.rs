@@ -4,12 +4,14 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use axum::Extension;
 use axum::Json;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, close_code};
 use axum::extract::{ConnectInfo, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::watch;
 
 use crate::auth::AuthState;
 use crate::bus_adapter::{ClientFilterSet, WsFrame, dropped_notification};
@@ -29,6 +31,7 @@ const PRE_AUTH_WINDOW: Duration = Duration::from_secs(10);
 pub async fn ws_handler(
     upgrade: WebSocketUpgrade,
     State(state): State<AppState>,
+    Extension(shutdown): Extension<watch::Receiver<bool>>,
     ConnectInfo(peer): ConnectInfo<PeerInfo>,
     headers: HeaderMap,
 ) -> Response {
@@ -57,7 +60,7 @@ pub async fn ws_handler(
         .max_frame_size(MAX_MESSAGE_BYTES)
         .on_upgrade(move |socket| async move {
             peer.mark_upgraded();
-            handle_socket(socket, state, peer.addr, user_agent).await;
+            handle_socket(socket, state, shutdown, peer.addr, user_agent).await;
         })
 }
 
@@ -84,6 +87,7 @@ fn origin_rejected_response() -> Response {
 async fn handle_socket(
     mut socket: WebSocket,
     state: AppState,
+    mut shutdown: watch::Receiver<bool>,
     addr: SocketAddr,
     user_agent: Option<String>,
 ) {
@@ -134,6 +138,11 @@ async fn handle_socket(
 
     loop {
         tokio::select! {
+            () = shutdown_signalled(&mut shutdown) => {
+                let _ = socket.send(Message::Close(None)).await;
+                break;
+            }
+
             Ok(()) = policy_changes.changed() => {
                 if !state.auth.admits_session(client.bearer_generation(), overlay_session) {
                     let _ = socket
@@ -264,6 +273,10 @@ async fn handle_socket(
 
     state.bus_adapter.unregister_client(handle.id).await;
     state.server_info.unregister(handle.id).await;
+}
+
+async fn shutdown_signalled(shutdown: &mut watch::Receiver<bool>) {
+    let _ = shutdown.wait_for(|stopping| *stopping).await;
 }
 
 fn message_limit(client: &WsClient, auth: &AuthState) -> usize {

@@ -4,10 +4,12 @@ use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-    ChatSource, EventId, UnifiedChatRow, UserBadge,
+    ChatSource, ChatViewer, EventId, UnifiedChatRow, UserBadge,
 };
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
+
+use crate::chat_author::AuthorKey;
 
 pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
 
@@ -23,6 +25,7 @@ pub struct ChatMessage {
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
     pub username: SharedString,
+    pub author_id: Option<SharedString>,
     pub author_color: Option<Rgba>,
     pub body: ChatBody,
     pub is_event: bool,
@@ -32,6 +35,10 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
+    pub fn author_key(&self) -> Option<AuthorKey> {
+        AuthorKey::resolve(self.platform, self.author_id.as_ref(), &self.username)
+    }
+
     pub fn matches_query(&self, query: &str) -> bool {
         if query.is_empty() {
             return true;
@@ -65,6 +72,7 @@ impl ChatMessage {
             platform: platform_of(row.source),
             badges: row.badges.iter().filter_map(badge_kind).collect(),
             username: row.author.clone().into(),
+            author_id: row.author_id.clone().map(SharedString::from),
             author_color: row.author_color.map(rgb_channels),
             body: event_body(row),
             is_event: row.is_event,
@@ -75,8 +83,9 @@ impl ChatMessage {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct AuthorActivity {
+    pub name: SharedString,
     pub message_count: usize,
     pub last_seq: u64,
     pub role: Option<BadgeKind>,
@@ -85,44 +94,49 @@ pub struct AuthorActivity {
 
 #[derive(Default)]
 pub struct AuthorIndex {
-    by_name: HashMap<SharedString, AuthorActivity>,
-    by_recency: BTreeMap<u64, SharedString>,
+    by_key: HashMap<AuthorKey, AuthorActivity>,
+    by_recency: BTreeMap<u64, AuthorKey>,
 }
 
 impl AuthorIndex {
-    pub fn get(&self, username: &str) -> Option<&AuthorActivity> {
-        self.by_name.get(username)
+    pub fn get(&self, key: &AuthorKey) -> Option<&AuthorActivity> {
+        self.by_key.get(key)
     }
 
     pub fn len(&self) -> usize {
-        self.by_name.len()
+        self.by_key.len()
     }
 
-    pub fn newest_first(&self) -> impl Iterator<Item = &SharedString> {
-        self.by_recency.values().rev()
+    pub fn newest_first(&self) -> impl Iterator<Item = (&AuthorKey, &AuthorActivity)> {
+        self.by_recency
+            .values()
+            .rev()
+            .filter_map(|key| self.by_key.get(key).map(|activity| (key, activity)))
     }
 
-    pub fn newest(&self) -> Option<&SharedString> {
-        self.by_recency.values().next_back()
+    pub fn newest(&self) -> Option<(&AuthorKey, &AuthorActivity)> {
+        self.newest_first().next()
     }
 
     fn record(&mut self, seq: u64, message: &ChatMessage) {
-        if message.username.is_empty() {
+        let Some(key) = message.author_key() else {
             return;
-        }
+        };
         let role = message.badges.first().copied();
-        match self.by_name.get_mut(&message.username) {
+        match self.by_key.get_mut(&key) {
             Some(activity) => {
                 self.by_recency.remove(&activity.last_seq);
+                activity.name = message.username.clone();
                 activity.message_count += 1;
                 activity.last_seq = seq;
                 activity.role = role;
                 activity.last_received_at = message.received_at;
             }
             None => {
-                self.by_name.insert(
-                    message.username.clone(),
+                self.by_key.insert(
+                    key.clone(),
                     AuthorActivity {
+                        name: message.username.clone(),
                         message_count: 1,
                         last_seq: seq,
                         role,
@@ -131,17 +145,20 @@ impl AuthorIndex {
                 );
             }
         }
-        self.by_recency.insert(seq, message.username.clone());
+        self.by_recency.insert(seq, key);
     }
 
     fn forget_oldest(&mut self, message: &ChatMessage) {
-        let Some(activity) = self.by_name.get_mut(&message.username) else {
+        let Some(key) = message.author_key() else {
+            return;
+        };
+        let Some(activity) = self.by_key.get_mut(&key) else {
             return;
         };
         activity.message_count = activity.message_count.saturating_sub(1);
         if activity.message_count == 0 {
             self.by_recency.remove(&activity.last_seq);
-            self.by_name.remove(&message.username);
+            self.by_key.remove(&key);
         }
     }
 }
@@ -438,6 +455,7 @@ fn row_from_payload(source: ChatSource, event: &Event, payload: ChatPayload) -> 
         source,
         received_at: event.timestamp,
         author: payload.author,
+        author_id: ChatViewer::read(&event.payload).map(|viewer| viewer.id),
         author_color,
         body_segments: payload.segments,
         badges: payload.badges,
@@ -559,11 +577,14 @@ mod tests {
     use forge_events::{Event, EventSource};
     use forge_types::{
         ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-        ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow, UserBadge,
+        ChatSegment, ChatSource, ChatViewer, EventId, ModerationMarks, UnifiedChatRow, UserBadge,
     };
     use time::OffsetDateTime;
 
+    use gpui::SharedString;
+
     use super::{ChatFeed, ChatMessage, FeedGap, badge_kind, event_body};
+    use crate::chat_author::AuthorKey;
 
     fn message_with(event_id: EventId, body: ChatBody) -> ChatMessage {
         ChatMessage {
@@ -574,6 +595,7 @@ mod tests {
             platform: Platform::Twitch,
             badges: vec![],
             username: "user".into(),
+            author_id: None,
             author_color: None,
             body,
             is_event: false,
@@ -631,6 +653,7 @@ mod tests {
             source: ChatSource::Twitch,
             received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
             author: "user".to_string(),
+            author_id: None,
             author_color: None,
             body_segments: segments,
             badges,
@@ -1073,6 +1096,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn message_from_event_takes_the_author_id_from_the_attached_viewer_only() {
+        let mut with_viewer = chat_event(None);
+        ChatViewer::new("u42", "bob").attach(&mut with_viewer.payload);
+        for (event, expected) in [
+            (with_viewer, Some(SharedString::from("u42"))),
+            (chat_event(None), None),
+        ] {
+            let message = ChatFeed::message_from_event(&event).unwrap();
+            assert_eq!(message.author_id, expected);
+        }
+    }
+
     fn authored(id: &str, username: &str, badges: Vec<BadgeKind>, at: i64) -> ChatMessage {
         ChatMessage {
             id: id.to_owned().into(),
@@ -1259,30 +1295,29 @@ mod tests {
     type Recomputed = (String, usize, u64, Option<BadgeKind>, OffsetDateTime);
 
     fn recomputed_authors(feed: &ChatFeed) -> Vec<Recomputed> {
-        let mut by_name: std::collections::HashMap<String, Recomputed> =
+        let mut by_key: std::collections::HashMap<AuthorKey, Recomputed> =
             std::collections::HashMap::new();
         for (offset, message) in feed.messages().iter().enumerate() {
-            if message.username.is_empty() {
+            let Some(key) = message.author_key() else {
                 continue;
-            }
+            };
             let seq = feed.start_seq() + offset as u64;
-            let entry = by_name
-                .entry(message.username.to_string())
-                .or_insert_with(|| {
-                    (
-                        message.username.to_string(),
-                        0,
-                        0,
-                        None,
-                        message.received_at,
-                    )
-                });
+            let entry = by_key.entry(key).or_insert_with(|| {
+                (
+                    message.username.to_string(),
+                    0,
+                    0,
+                    None,
+                    message.received_at,
+                )
+            });
+            entry.0 = message.username.to_string();
             entry.1 += 1;
             entry.2 = seq;
             entry.3 = message.badges.first().copied();
             entry.4 = message.received_at;
         }
-        let mut authors: Vec<Recomputed> = by_name.into_values().collect();
+        let mut authors: Vec<Recomputed> = by_key.into_values().collect();
         authors.sort_by_key(|a| std::cmp::Reverse(a.2));
         authors
     }
@@ -1290,10 +1325,9 @@ mod tests {
     fn indexed_authors(feed: &ChatFeed) -> Vec<Recomputed> {
         feed.authors()
             .newest_first()
-            .map(|name| {
-                let activity = feed.authors().get(name).unwrap();
+            .map(|(_, activity)| {
                 (
-                    name.to_string(),
+                    activity.name.to_string(),
                     activity.message_count,
                     activity.last_seq,
                     activity.role,
@@ -1306,6 +1340,8 @@ mod tests {
     #[test]
     fn author_index_matches_a_from_scratch_scan_after_any_push_evict_seed_sequence() {
         const NAMES: [&str; 6] = ["alice", "bob", "carol", "dave", "Alice", ""];
+        const VIEWER_IDS: [Option<&str>; 4] = [None, Some("u1"), Some("u2"), Some("")];
+        const PLATFORMS: [Platform; 2] = [Platform::Twitch, Platform::Kick];
         const BADGES: [BadgeKind; 3] =
             [BadgeKind::Moderator, BadgeKind::Vip, BadgeKind::Subscriber];
         for seed in 1..=24_u64 {
@@ -1319,7 +1355,12 @@ mod tests {
                     0 => vec![],
                     n => vec![BADGES[n as usize - 1]],
                 };
-                authored(&format!("m{at}"), name, badges, at)
+                ChatMessage {
+                    platform: PLATFORMS[rng.below(PLATFORMS.len() as u64) as usize],
+                    author_id: VIEWER_IDS[rng.below(VIEWER_IDS.len() as u64) as usize]
+                        .map(SharedString::from),
+                    ..authored(&format!("m{at}"), name, badges, at)
+                }
             };
             for step in 0..300 {
                 match rng.below(20) {
@@ -1341,7 +1382,9 @@ mod tests {
                     "seed={seed} step={step}"
                 );
                 assert_eq!(
-                    feed.authors().newest().map(ToString::to_string),
+                    feed.authors()
+                        .newest()
+                        .map(|(_, activity)| activity.name.to_string()),
                     recomputed_authors(&feed).first().map(|a| a.0.clone()),
                     "seed={seed} step={step}"
                 );

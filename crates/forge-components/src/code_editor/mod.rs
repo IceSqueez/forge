@@ -20,7 +20,7 @@ use crate::text_area::{
 };
 use crate::text_buffer::{EditKind, TextBuffer};
 use crate::text_edit::{offset_to_utf16, range_from_utf16, range_to_utf16};
-use crate::text_input::InputEvent;
+use crate::text_input::{FocusNextField, InputEvent};
 use crate::tokens::{BORDER_THIN, FONT_XS, Radius, mono_family, radius};
 
 use element::{CodeEditorElement, PAD_Y};
@@ -31,13 +31,17 @@ const INDENT_UNIT: &str = "  ";
 const LINE_HEIGHT_RATIO: f32 = 1.5;
 const ROW_CENTER: f32 = 0.5;
 const EDGE_INSET: Pixels = px(1.0);
+const SAVE_CHORD: &str = "secondary-s";
+const LEAVE_CHORD: &str = "escape";
 
-actions!(forge_code_editor, [Indent, Outdent]);
+actions!(forge_code_editor, [Indent, Outdent, SaveCode, LeaveEditor]);
 
 pub fn bind_code_editor_keys(cx: &mut App) {
     let mut bindings = editing_key_bindings(KEY_CONTEXT);
     bindings.push(KeyBinding::new("tab", Indent, Some(KEY_CONTEXT)));
     bindings.push(KeyBinding::new("shift-tab", Outdent, Some(KEY_CONTEXT)));
+    bindings.push(KeyBinding::new(SAVE_CHORD, SaveCode, Some(KEY_CONTEXT)));
+    bindings.push(KeyBinding::new(LEAVE_CHORD, LeaveEditor, Some(KEY_CONTEXT)));
     cx.bind_keys(bindings);
 }
 
@@ -78,7 +82,7 @@ impl CodeEditor {
         cx: &mut Context<Self>,
     ) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            focus_handle: cx.focus_handle().tab_stop(true),
             buffer: TextBuffer::default(),
             lines: Lines::new(language),
             geometry: Geometry::default(),
@@ -314,6 +318,15 @@ impl CodeEditor {
             self.preferred_x = None;
             self.edited(cx);
         }
+    }
+
+    fn cancel_composition(&mut self, cx: &mut Context<Self>) -> bool {
+        if !self.buffer.discard_marked() {
+            return false;
+        }
+        self.preferred_x = None;
+        self.edited(cx);
+        true
     }
 
     fn caret_moved(&mut self, cx: &mut Context<Self>) {
@@ -553,6 +566,9 @@ impl Render for CodeEditor {
         self.caret.watch(&focus, window, cx);
         let focused = focus.is_focused(window);
         set_caret_blinking(self, focused && window.is_visible(), cx);
+        let editor_handle = cx.entity().downgrade();
+        let leave_focus = focus.clone();
+        let stuck_focus = focus.clone();
 
         let editor = div()
             .key_context(KEY_CONTEXT)
@@ -579,6 +595,22 @@ impl Render for CodeEditor {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::undo))
             .on_action(cx.listener(Self::redo))
+            .on_action(move |_: &LeaveEditor, window, cx| {
+                let composing = editor_handle
+                    .update(cx, |editor, cx| editor.cancel_composition(cx))
+                    .unwrap_or(false);
+                if composing {
+                    return;
+                }
+                leave_focus.dispatch_action(&FocusNextField, window, cx);
+                cx.propagate();
+            })
+            .on_action(move |_: &FocusNextField, window, cx| {
+                window.focus_next(cx);
+                if stuck_focus.is_focused(window) {
+                    cx.propagate();
+                }
+            })
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
@@ -779,5 +811,164 @@ mod tests {
         });
 
         assert_eq!(kept, (19, false));
+    }
+
+    const DIALOG_CONTEXT: &str = "CodeEditorTestDialog";
+    const SHELL_FALLBACK: &str = "next-field";
+    const DISMISSED: &str = "dismissed";
+    const SAVED: &str = "saved";
+
+    actions!(code_editor_tests, [Dismiss]);
+
+    #[derive(Clone, Copy)]
+    struct Surroundings {
+        neighbour: bool,
+        dialog: bool,
+    }
+
+    struct Host {
+        editor: Entity<CodeEditor>,
+        neighbour: FocusHandle,
+        surroundings: Surroundings,
+        heard: Vec<&'static str>,
+    }
+
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            let mut content = div()
+                .size_full()
+                .on_action(cx.listener(|this, _: &SaveCode, _, _| this.heard.push(SAVED)))
+                .on_action(
+                    cx.listener(|this, _: &FocusNextField, _, _| this.heard.push(SHELL_FALLBACK)),
+                )
+                .child(self.editor.clone());
+            if self.surroundings.neighbour {
+                content = content.child(div().track_focus(&self.neighbour).child("next"));
+            }
+            let mut root = div().size_full();
+            if self.surroundings.dialog {
+                root = root
+                    .key_context(DIALOG_CONTEXT)
+                    .on_action(cx.listener(|this, _: &Dismiss, _, _| this.heard.push(DISMISSED)));
+            }
+            root.child(content)
+        }
+    }
+
+    struct Hosted {
+        host: Entity<Host>,
+        editor: Entity<CodeEditor>,
+    }
+
+    impl Hosted {
+        fn bind_keys(cx: &mut TestAppContext) {
+            cx.update(|cx| {
+                bind_code_editor_keys(cx);
+                cx.bind_keys([KeyBinding::new(LEAVE_CHORD, Dismiss, Some(DIALOG_CONTEXT))]);
+            });
+        }
+
+        fn mount(
+            cx: &mut TestAppContext,
+            surroundings: Surroundings,
+        ) -> (Self, &mut VisualTestContext) {
+            let (host, vcx) = cx.add_window_view(|_window, cx| Host {
+                editor: cx.new(|cx| CodeEditor::new(Language::Rhai, "", cx)),
+                neighbour: cx.focus_handle().tab_stop(true),
+                surroundings,
+                heard: Vec::new(),
+            });
+            vcx.update(|window, _cx| window.activate_window());
+            let editor = vcx.update(|_window, cx| host.read(cx).editor.clone());
+            vcx.update(|_window, cx| {
+                editor.update(cx, |editor, cx| editor.set_content(LOADED, cx))
+            });
+            vcx.update(|window, cx| editor.update(cx, |editor, cx| editor.focus(window, cx)));
+            vcx.run_until_parked();
+            (Self { host, editor }, vcx)
+        }
+
+        fn compose(&self, vcx: &mut VisualTestContext, preedit: &str) {
+            vcx.update(|window, cx| {
+                self.editor.update(cx, |editor, cx| {
+                    editor.replace_and_mark_text_in_range(None, preedit, None, window, cx);
+                });
+            });
+        }
+
+        fn heard(&self, vcx: &mut VisualTestContext) -> Vec<&'static str> {
+            vcx.update(|_window, cx| self.host.read(cx).heard.clone())
+        }
+
+        fn content(&self, vcx: &mut VisualTestContext) -> String {
+            vcx.update(|_window, cx| self.editor.read(cx).content().to_owned())
+        }
+
+        fn focus_on(&self, vcx: &mut VisualTestContext) -> (bool, bool) {
+            vcx.update(|window, cx| {
+                let host = self.host.read(cx);
+                (
+                    self.editor.read(cx).focus_handle.is_focused(window),
+                    host.neighbour.is_focused(window),
+                )
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn escape_during_a_composition_cancels_only_the_composition(cx: &mut TestAppContext) {
+        let surroundings = Surroundings {
+            neighbour: true,
+            dialog: true,
+        };
+        Hosted::bind_keys(cx);
+        let (hosted, vcx) = Hosted::mount(cx, surroundings);
+        hosted.compose(vcx, "ні");
+
+        vcx.simulate_keystrokes(LEAVE_CHORD);
+
+        assert_eq!(
+            (hosted.content(vcx), hosted.focus_on(vcx), hosted.heard(vcx)),
+            (LOADED.to_owned(), (true, false), Vec::new())
+        );
+    }
+
+    #[gpui::test]
+    fn escape_outside_a_composition_leaves_the_editor_and_lets_an_enclosing_escape_run(
+        cx: &mut TestAppContext,
+    ) {
+        Hosted::bind_keys(cx);
+        for (neighbour, dialog, focus, heard) in [
+            (true, false, (false, true), Vec::new()),
+            (false, false, (true, false), vec![SHELL_FALLBACK]),
+            (true, true, (false, true), vec![DISMISSED]),
+        ] {
+            let (hosted, vcx) = Hosted::mount(cx, Surroundings { neighbour, dialog });
+
+            vcx.simulate_keystrokes(LEAVE_CHORD);
+
+            assert_eq!(
+                (hosted.content(vcx), hosted.focus_on(vcx), hosted.heard(vcx)),
+                (LOADED.to_owned(), focus, heard),
+                "neighbour {neighbour}, dialog {dialog}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn the_save_chord_asks_the_enclosing_view_to_save_without_typing(cx: &mut TestAppContext) {
+        let surroundings = Surroundings {
+            neighbour: false,
+            dialog: false,
+        };
+        Hosted::bind_keys(cx);
+        let (hosted, vcx) = Hosted::mount(cx, surroundings);
+
+        vcx.simulate_keystrokes(SAVE_CHORD);
+
+        assert_eq!(
+            (hosted.content(vcx), hosted.heard(vcx)),
+            (LOADED.to_owned(), vec![SAVED])
+        );
     }
 }

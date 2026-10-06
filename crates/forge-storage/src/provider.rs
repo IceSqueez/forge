@@ -9,7 +9,7 @@ use crate::{
     TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 50;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 51;
 
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 
@@ -37,8 +37,6 @@ pub trait DataProvider:
     fn catalog_revision(&self) -> CatalogRevision;
 
     fn scheduled_run_revision(&self) -> CatalogRevision;
-
-    async fn schema_version(&self) -> Result<u32, StorageError>;
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError>;
 

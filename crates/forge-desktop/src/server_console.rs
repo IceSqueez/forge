@@ -1488,6 +1488,7 @@ impl Render for ServerConsoleView {
             .gap(spacing(Spacing::Sm, density))
             .py(spacing(Spacing::Md, density))
             .px(spacing(Spacing::Lg, density))
+            .children(crate::server_unavailable::unavailable_banner(cx, &palette))
             .child(self.credentials_card(&palette, density, cx))
             .child(self.stats_grid(&palette, density))
             .child(self.throughput_card(&palette, density))

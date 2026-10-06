@@ -839,9 +839,6 @@ mod tests {
             async fn acquire(&self, _: u32) -> Result<RateLimitOutcome, PlatformError> {
                 Ok(RateLimitOutcome::Granted)
             }
-            fn remaining(&self) -> u32 {
-                60
-            }
             async fn observe_remote_throttle(&self, _: StdDuration) {}
         }
 

@@ -70,6 +70,7 @@ jiff = { version = "0.2", default-features = false, features = [
 ulid = { version = "3.0", features = ["serde"] }
 
 tracing = { version = "0.1" }
+log = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = { version = "0.2" }
 

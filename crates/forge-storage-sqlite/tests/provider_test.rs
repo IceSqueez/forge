@@ -8,14 +8,6 @@ mod common;
 const TEST_KEY: [u8; 32] = [0xab; 32];
 
 #[tokio::test]
-async fn schema_version_is_at_least_2_after_all_migrations() {
-    let backend = common::sandboxed_backend("sqlite::memory:", TEST_KEY).await;
-
-    let version = backend.schema_version().await.expect("schema_version");
-    assert!(version >= 2, "expected at least 2 applied migrations");
-}
-
-#[tokio::test]
 async fn dataprovider_action_repo_accessor_is_reachable() {
     use forge_types::{Action, ActionId};
 

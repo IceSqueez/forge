@@ -7,6 +7,7 @@ use super::clock::WallClock;
 use super::hand_off::HandOff;
 use super::request::{ScheduleError, ScheduleRequest, ScheduledPlacement, normalized_key};
 use super::waiting::{WaitingForQueueWatch, WaitingRuns};
+use crate::task_stop::TaskStop;
 
 pub(super) enum Command {
     Schedule(
@@ -25,6 +26,7 @@ pub struct ScheduledRunsHandle {
     repo: Arc<dyn ScheduledRunRepo>,
     clock: Arc<dyn WallClock>,
     waiting: watch::Receiver<WaitingRuns>,
+    stop: TaskStop,
 }
 
 impl ScheduledRunsHandle {
@@ -33,13 +35,19 @@ impl ScheduledRunsHandle {
         repo: Arc<dyn ScheduledRunRepo>,
         clock: Arc<dyn WallClock>,
         waiting: watch::Receiver<WaitingRuns>,
+        stop: TaskStop,
     ) -> Self {
         Self {
             commands,
             repo,
             clock,
             waiting,
+            stop,
         }
+    }
+
+    pub async fn stop(self) {
+        self.stop.stop().await;
     }
 
     pub fn watch_waiting_for_queue(&self) -> WaitingForQueueWatch {

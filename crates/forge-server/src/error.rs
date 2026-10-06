@@ -12,9 +12,6 @@ pub enum ServerError {
     #[error("authentication rejected: {reason}")]
     AuthInvalid { reason: String },
 
-    #[error("path traversal blocked: {requested}")]
-    PathTraversal { requested: String },
-
     #[error("unknown request method: {request}")]
     UnknownRequest { request: String },
 
@@ -55,14 +52,5 @@ mod tests {
             reason: "bad token".into(),
         };
         assert!(e.to_string().contains("bad token"));
-    }
-
-    #[test]
-    fn path_traversal_display_carries_requested_path() {
-        let path = "../etc/passwd".to_owned();
-        let e = ServerError::PathTraversal {
-            requested: path.clone(),
-        };
-        assert!(e.to_string().contains(&path));
     }
 }

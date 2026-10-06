@@ -10,6 +10,7 @@ pub mod credentials;
 pub mod credentials_manager;
 pub(crate) mod error_shape;
 mod event_channel;
+mod follow_lookup;
 pub mod integration;
 pub mod live_chat_id;
 #[cfg(test)]
@@ -35,7 +36,7 @@ pub use builtin::{YoutubeIntegrationBundle, register_youtube_triggers};
 pub use channel_lookup::YoutubeChannelLookup;
 pub use chat_platform::YoutubePlatform;
 pub use chat_poller::YoutubeChatPoller;
-pub use credentials::{CREDENTIAL_KEY, QUOTA_KEY, YoutubeCredentials, YoutubeQuotaState};
+pub use credentials::{CREDENTIAL_KEY, YoutubeCredentials};
 pub use credentials_manager::YoutubeCredentialsManager;
 pub use integration::YOUTUBE_INTEGRATION;
 pub use live_chat_id::LiveChatIdHandle;

@@ -8,7 +8,6 @@ mod query_input_settings;
 mod query_record_status;
 mod query_scene_list;
 mod query_stream_status;
-mod raw_request;
 mod record_pause;
 mod record_resume;
 mod record_set_active;
@@ -56,7 +55,6 @@ pub use query_input_settings::QueryInputSettingsRunner;
 pub use query_record_status::QueryRecordStatusRunner;
 pub use query_scene_list::QuerySceneListRunner;
 pub use query_stream_status::QueryStreamStatusRunner;
-pub use raw_request::RawRequestRunner;
 pub use record_pause::RecordPauseRunner;
 pub use record_resume::RecordResumeRunner;
 pub use record_set_active::RecordSetActiveRunner;
@@ -138,10 +136,7 @@ pub fn register_obs_sub_actions(
     reg.register(Box::new(CaptureScreenshotRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(RecordSetDirectoryRunner::new(Arc::clone(&sink))))?;
     reg.register(Box::new(ProfileSwitchRunner::new(Arc::clone(&sink))))?;
-    reg.register(Box::new(SceneCollectionSwitchRunner::new(Arc::clone(
-        &sink,
-    ))))?;
-    reg.register(Box::new(RawRequestRunner::new(sink)))?;
+    reg.register(Box::new(SceneCollectionSwitchRunner::new(sink)))?;
     Ok(())
 }
 
@@ -205,7 +200,6 @@ mod tests {
         ("obs.scenes.set_transition", "transition", &[]),
         ("obs.audio.set_mute", "source", &[]),
         ("obs.audio.set_volume", "source", &[("volume_db", "-6.0")]),
-        ("obs.misc.raw_request", "request_type", &[]),
         ("obs.sources.get_input_settings", "source", &[]),
         ("obs.stream.send_caption", "caption_text", &[]),
         (
@@ -281,7 +275,6 @@ mod tests {
             "obs.record.set_directory",
             "obs.profile.switch",
             "obs.scene_collection.switch",
-            "obs.misc.raw_request",
         ] {
             assert!(reg.get(id).is_some(), "missing runner: {id}");
         }

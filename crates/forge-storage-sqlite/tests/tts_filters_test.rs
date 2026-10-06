@@ -1,8 +1,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use forge_storage::{
-    BlocklistMode, DataProvider, EXPECTED_SCHEMA_VERSION, FilterRule, FilterRuleKind,
-    TtsFiltersRepo, TtsPipelineSettings, UrlMode,
+    BlocklistMode, DataProvider, FilterRule, FilterRuleKind, TtsFiltersRepo, TtsPipelineSettings,
+    UrlMode,
 };
 use forge_storage_sqlite::{SqliteBackend, SqliteTtsFiltersRepo, apply_migrations};
 
@@ -60,16 +60,6 @@ fn blocklist_rule(id: &str, pos: u32, mode: BlocklistMode) -> FilterRule {
             mode,
         },
     }
-}
-
-#[tokio::test]
-async fn schema_version_equals_expected_after_migrations() {
-    let b = backend().await;
-    let version = b.schema_version().await.expect("schema_version");
-    assert_eq!(
-        version, EXPECTED_SCHEMA_VERSION,
-        "schema_version must equal EXPECTED_SCHEMA_VERSION ({EXPECTED_SCHEMA_VERSION})"
-    );
 }
 
 #[tokio::test]

@@ -45,6 +45,7 @@ pub use money::{CurrencyCode, MICROS_PER_MAJOR_UNIT, MoneyAmount, MoneyError};
 pub use permission_rung::{PermissionRung, PermissionRungError};
 pub use platform::{
     PlatformId, REPLY_PARENT_FIELD, WHISPER_RECIPIENT_FIELD, requested_chat_target,
+    resolve_chat_target, unknown_chat_target_reason,
 };
 pub use platform_scope::{PlatformScope, PlatformScopeError};
 pub use queue::Queue;

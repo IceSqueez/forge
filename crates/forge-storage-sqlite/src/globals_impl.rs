@@ -276,18 +276,6 @@ impl GlobalsRepo for SqliteGlobalsRepo {
         Ok(result.rows_affected() > 0)
     }
 
-    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        let rows: Vec<GlobalRow> = sqlx::query_as(
-            "SELECT name, value, persisted, reads, writes, created_at, last_modified \
-             FROM globals WHERE archived_at IS NOT NULL",
-        )
-        .fetch_all(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        decode_entries(rows)
-    }
-
     async fn storage_bytes(&self) -> Result<u64, StorageError> {
         let bytes: i64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(LENGTH(name) + LENGTH(value)), 0) FROM globals",

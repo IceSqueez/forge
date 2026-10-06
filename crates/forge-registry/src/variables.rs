@@ -205,7 +205,7 @@ impl TriggerVariables {
         F: Fn(&Event) -> i64 + Send + Sync + 'static,
     {
         self.canonical(CanonicalVariable::Count(count), move |event| {
-            Variant::Int(read(event))
+            Variant::Int(read(event).max(count.floor()))
         })
     }
 

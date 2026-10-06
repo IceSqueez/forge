@@ -74,10 +74,6 @@ pub trait GlobalsRepo: Send + Sync {
         Err(StorageError::NotReady)
     }
 
-    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        Ok(Vec::new())
-    }
-
     async fn storage_bytes(&self) -> Result<u64, StorageError>;
 
     async fn last_save_at(&self) -> Result<Option<OffsetDateTime>, StorageError>;

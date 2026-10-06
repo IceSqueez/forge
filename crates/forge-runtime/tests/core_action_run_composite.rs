@@ -67,12 +67,6 @@ impl ActionRepo for MockActionRepo {
     async fn delete(&self, _id: ActionId) -> Result<bool, StorageError> {
         Ok(false)
     }
-    async fn list_by_group<'a>(
-        &'a self,
-        _group: Option<&'a str>,
-    ) -> Result<Vec<Action>, StorageError> {
-        Ok(vec![])
-    }
     async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
         Ok(ActionTelemetry::default())
     }

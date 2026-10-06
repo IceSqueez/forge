@@ -706,3 +706,93 @@ async fn whisper_requests_twitch_would_refuse_are_refused() {
         assert_eq!(status, expected, "from {from:?} to {to:?} with {body}");
     }
 }
+
+#[tokio::test]
+async fn channel_followers_answers_from_the_injected_follows() {
+    let fake = start().await;
+    let (_socket, session_id) = connect_to(fake.eventsub_ws_url()).await;
+    subscribe(&fake, "channel.follow", &session_id).await;
+    let follow = |user_id: &str, login: &str, followed_at: &str| {
+        json!({
+            "user_id": user_id,
+            "user_login": login,
+            "user_name": login,
+            "broadcaster_user_id": "100000001",
+            "broadcaster_user_login": "streamer",
+            "broadcaster_user_name": "streamer",
+            "followed_at": followed_at,
+        })
+    };
+    for event in [
+        follow("200000042", "alice", "2024-01-02T03:04:05Z"),
+        follow("200000043", "bob", "2024-02-03T04:05:06Z"),
+        follow("200000042", "alice", "2025-06-07T08:09:10Z"),
+    ] {
+        fake.inject_notification("channel.follow", event)
+            .await
+            .unwrap();
+    }
+    let client = reqwest::Client::new();
+    let owner = TwitchAccount::default().user_id;
+    let cases = [
+        (
+            format!("?broadcaster_id={owner}&user_id=200000042&first=1"),
+            reqwest::StatusCode::OK,
+            vec![("200000042", "2025-06-07T08:09:10Z")],
+        ),
+        (
+            format!("?broadcaster_id={owner}&user_id=200000099&first=1"),
+            reqwest::StatusCode::OK,
+            vec![],
+        ),
+        (
+            format!("?broadcaster_id={owner}"),
+            reqwest::StatusCode::OK,
+            vec![
+                ("200000042", "2025-06-07T08:09:10Z"),
+                ("200000043", "2024-02-03T04:05:06Z"),
+            ],
+        ),
+        (
+            format!("?broadcaster_id={owner}&first=1"),
+            reqwest::StatusCode::OK,
+            vec![("200000042", "2025-06-07T08:09:10Z")],
+        ),
+        (
+            "?broadcaster_id=999&user_id=200000042".to_owned(),
+            reqwest::StatusCode::OK,
+            vec![],
+        ),
+        (
+            "?user_id=200000042".to_owned(),
+            reqwest::StatusCode::BAD_REQUEST,
+            vec![],
+        ),
+    ];
+
+    for (query, expected_status, expected_rows) in &cases {
+        let url = format!("{}/helix/channels/followers{query}", fake.api_base_url());
+        let response = authorized(&client, reqwest::Method::GET, url)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let body: Value = response.json().await.unwrap();
+        let rows: Vec<(&str, &str)> = body["data"]
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| {
+                        (
+                            row["user_id"].as_str().unwrap(),
+                            row["followed_at"].as_str().unwrap(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(status, *expected_status, "query {query:?}");
+        assert_eq!(&rows, expected_rows, "query {query:?}");
+    }
+    assert_eq!(fake.ledger().unexpected_requests().count(), 0);
+}

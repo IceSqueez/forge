@@ -115,6 +115,7 @@ impl Forge {
             bus,
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
+                &config.endpoints,
                 Arc::clone(&creds),
                 account.client_id.clone(),
             )),
@@ -133,6 +134,7 @@ impl Forge {
     fn start_chat(&self) -> TwitchChatHandle {
         TwitchChat::new(
             Arc::new(TwitchCredentialsManager::new(
+                &self.config.endpoints,
                 Arc::clone(&self.creds),
                 self.config.client_id.clone(),
             )),

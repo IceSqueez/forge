@@ -159,6 +159,8 @@ pub struct UnifiedChatRow {
     #[serde(with = "time::serde::rfc3339")]
     pub received_at: OffsetDateTime,
     pub author: String,
+    #[serde(default)]
+    pub author_id: Option<String>,
     pub author_color: Option<[u8; 3]>,
     pub body_segments: Vec<ChatSegment>,
     pub badges: Vec<UserBadge>,
@@ -175,6 +177,7 @@ impl fmt::Debug for UnifiedChatRow {
             .field("source", &self.source)
             .field("received_at", &self.received_at)
             .field("author", &Redacted)
+            .field("author_id", &self.author_id.as_ref().map(|_| Redacted))
             .field("author_color", &self.author_color)
             .field("body_segments", &self.body_segments)
             .field("badges", &self.badges)
@@ -441,6 +444,7 @@ mod tests {
             source: ChatSource::Twitch,
             received_at: OffsetDateTime::now_utc(),
             author: "testuser".to_string(),
+            author_id: None,
             author_color: None,
             body_segments: segments,
             badges: vec![],
@@ -591,6 +595,7 @@ mod tests {
 
     const AUTHOR: &str = "SENTINEL_AUTHOR";
     const BODY: &str = "SENTINEL_BODY";
+    const AUTHOR_ID: &str = "SENTINEL_AUTHOR_ID";
 
     fn payload_with_planted_content() -> ChatPayload {
         ChatPayload {
@@ -624,6 +629,7 @@ mod tests {
             },
         ]);
         row.author = AUTHOR.to_string();
+        row.author_id = Some(AUTHOR_ID.to_string());
         row
     }
 

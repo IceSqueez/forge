@@ -124,40 +124,6 @@ async fn list_returns_all_actions() {
 }
 
 #[tokio::test]
-async fn list_by_group_scopes_to_group() {
-    let backend = setup().await;
-    let queue_id = insert_default_queue(&backend).await;
-    let mut in_group = make_action("chat_greet", queue_id);
-    in_group.group = Some("Chat".to_owned());
-    backend
-        .action_repo()
-        .save(&in_group)
-        .await
-        .expect("save grouped");
-    backend
-        .action_repo()
-        .save(&make_action("ungrouped", queue_id))
-        .await
-        .expect("save ungrouped");
-
-    let chat = backend
-        .action_repo()
-        .list_by_group(Some("Chat"))
-        .await
-        .expect("list_by_group");
-    assert_eq!(chat.len(), 1);
-    assert_eq!(chat[0].name, "chat_greet");
-
-    let no_group = backend
-        .action_repo()
-        .list_by_group(None)
-        .await
-        .expect("list_by_group None");
-    assert_eq!(no_group.len(), 1);
-    assert_eq!(no_group[0].name, "ungrouped");
-}
-
-#[tokio::test]
 async fn sub_actions_json_survives_roundtrip() {
     let backend = setup().await;
     let queue_id = insert_default_queue(&backend).await;

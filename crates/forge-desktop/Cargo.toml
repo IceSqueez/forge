@@ -72,6 +72,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
+log = { workspace = true }
 ulid = { workspace = true }
 unic-langid = { workspace = true }
 

@@ -72,6 +72,7 @@ impl<P: DonationIntegration + 'static> IntegrationFactory for DonationFactory<P>
             obs_client: None,
             vtube_client: None,
             follow: None,
+            ban_list: None,
         };
         Ok(RunningIntegration::idle()
             .with_object(object)

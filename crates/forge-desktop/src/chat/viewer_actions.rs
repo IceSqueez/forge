@@ -11,6 +11,7 @@ const TWITCH_SHOUTOUT_KIND: &str = "twitch.channel.send_shoutout";
 const TWITCH_WHISPER_KIND: &str = "twitch.chat.send_whisper";
 const TWITCH_TIMEOUT_KIND: &str = "twitch.moderation.timeout_user";
 const TWITCH_BAN_KIND: &str = "twitch.moderation.ban_user";
+const TWITCH_UNBAN_KIND: &str = "twitch.moderation.unban_user";
 const YOUTUBE_TIMEOUT_KIND: &str = "youtube.moderation.timeout_user";
 const YOUTUBE_BAN_KIND: &str = "youtube.moderation.ban_user";
 const KICK_TIMEOUT_KIND: &str = "kick.moderation.timeout";
@@ -31,6 +32,7 @@ pub(crate) enum ViewerAction {
     Whisper(String),
     Timeout { seconds: i64 },
     Ban,
+    Unban,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,6 +79,7 @@ impl ViewerTarget {
             ViewerAction::Whisper(_) => format!("Whisper {name}"),
             ViewerAction::Timeout { .. } => format!("Timeout {name}"),
             ViewerAction::Ban => format!("Ban {name}"),
+            ViewerAction::Unban => format!("Unban {name}"),
         }
     }
 
@@ -133,6 +136,10 @@ impl ViewerTarget {
                 TWITCH_BAN_KIND,
                 BTreeMap::from([(TWITCH_MODERATION_TARGET_KEY.to_owned(), id)]),
             )),
+            ViewerAction::Unban => Some((
+                TWITCH_UNBAN_KIND,
+                BTreeMap::from([(TWITCH_MODERATION_TARGET_KEY.to_owned(), id)]),
+            )),
         }
     }
 
@@ -155,7 +162,7 @@ impl ViewerTarget {
                     )
                 }),
             ViewerAction::Ban => Some((YOUTUBE_BAN_KIND, BTreeMap::from([channel]))),
-            ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,
+            ViewerAction::Shoutout | ViewerAction::Whisper(_) | ViewerAction::Unban => None,
         }
     }
 
@@ -183,7 +190,7 @@ impl ViewerTarget {
                 ))
             }
             ViewerAction::Ban => Some((KICK_BAN_KIND, BTreeMap::from([user]))),
-            ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,
+            ViewerAction::Shoutout | ViewerAction::Whisper(_) | ViewerAction::Unban => None,
         }
     }
 }

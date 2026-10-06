@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
-    BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, ChatPlatform,
-    FollowLookup, PlatformEndpoints, QuickActions, SectionIcon,
+    BanListSource, BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth,
+    BuiltinStatus, ChatPlatform, FollowLookup, PlatformEndpoints, QuickActions, SectionIcon,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -40,6 +40,7 @@ pub struct BuiltinObject {
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
     pub vtube_client: Option<Arc<forge_vtube::VTubeClient>>,
     pub follow: Option<Arc<dyn FollowLookup>>,
+    pub ban_list: Option<Arc<dyn BanListSource>>,
 }
 
 #[derive(Clone, Default)]
@@ -180,6 +181,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         obs_client: None,
         vtube_client: Some(client),
         follow: None,
+        ban_list: None,
     }
 }
 
@@ -195,6 +197,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         obs_client: Some(client),
         vtube_client: None,
         follow: None,
+        ban_list: None,
     }
 }
 
@@ -211,7 +214,8 @@ pub fn twitch_builtin_object(
         collections: Some(Arc::clone(&bundle) as Arc<dyn BuiltinCollections>),
         obs_client: None,
         vtube_client: None,
-        follow: Some(bundle as Arc<dyn FollowLookup>),
+        follow: Some(Arc::clone(&bundle) as Arc<dyn FollowLookup>),
+        ban_list: Some(bundle as Arc<dyn BanListSource>),
     }
 }
 
@@ -229,6 +233,7 @@ pub fn youtube_builtin_object(
         obs_client: None,
         vtube_client: None,
         follow: Some(bundle as Arc<dyn FollowLookup>),
+        ban_list: None,
     }
 }
 
@@ -246,6 +251,7 @@ pub fn kick_builtin_object(
         obs_client: None,
         vtube_client: None,
         follow: None,
+        ban_list: None,
     }
 }
 

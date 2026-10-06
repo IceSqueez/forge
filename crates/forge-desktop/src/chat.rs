@@ -34,6 +34,9 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 use crate::window_presence::PresenceGate;
 
+mod ban_labels;
+mod banned_panel;
+mod banned_tab;
 mod composer;
 mod platform_gate;
 mod send_plan;
@@ -42,6 +45,7 @@ mod viewer_follow;
 mod viewer_history;
 mod viewer_tts;
 
+use banned_tab::BannedHost;
 pub use composer::ChatComposer;
 use viewer_actions::{ViewerAction, ViewerTarget};
 use viewer_follow::{FollowLookups, follow_display};
@@ -188,6 +192,7 @@ pub struct ChatView {
     _reply_sub: Subscription,
     lifecycle: Option<Entity<IntegrationLifecycle>>,
     _lifecycle_obs: Option<Subscription>,
+    banned: BannedHost,
 }
 
 struct ViewerHistoryHost {
@@ -295,6 +300,7 @@ impl ChatView {
             _reply_sub: reply_sub,
             lifecycle: None,
             _lifecycle_obs: None,
+            banned: BannedHost::default(),
         };
         this.rebuild_visible(cx);
         this.chat_list.reset(this.visible.len());
@@ -2052,9 +2058,11 @@ impl Render for ChatView {
         let density = cx.density();
 
         let header_right = self.render_header_right();
-        let filter_left = self.render_filter_left(&palette, density, cx);
-        let filter_right = self.render_filter_right(&palette, cx);
-        let chat_area = self.render_chat_area(&palette, density, cx);
+        let tabs = self.render_tabs(&palette, cx);
+        let banned_panel = self.banned.panel().cloned();
+        let feed_tab = banned_panel.is_none();
+        let filter_left = feed_tab.then(|| self.render_filter_left(&palette, density, cx));
+        let filter_right = feed_tab.then(|| self.render_filter_right(&palette, cx));
         let drawer = self.render_drawer(&palette, density, cx);
         let user_menu = self.render_user_menu(&palette, cx);
         let reply_compose = self
@@ -2062,24 +2070,39 @@ impl Render for ChatView {
             .clone()
             .map(|target| self.render_reply_compose(target.username, &palette, density, cx));
 
+        let main_column = match banned_panel {
+            Some(panel) => div()
+                .flex_1()
+                .min_h(px(0.0))
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .child(panel),
+            None => div()
+                .flex_1()
+                .min_h(px(0.0))
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .child(self.render_chat_area(&palette, density, cx))
+                .children(reply_compose)
+                .child(self.composer.clone()),
+        };
         let body = div()
             .flex_1()
             .min_h(px(0.0))
             .flex()
             .flex_row()
             .overflow_hidden()
-            .child(
-                div()
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .flex()
-                    .flex_col()
-                    .overflow_hidden()
-                    .child(chat_area)
-                    .children(reply_compose)
-                    .child(self.composer.clone()),
-            )
+            .child(main_column)
             .child(drawer);
+
+        let subheader_left = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(tabs)
+            .children(filter_left);
 
         let frame = page_frame(
             vec![
@@ -2089,8 +2112,8 @@ impl Render for ChatView {
             &palette,
         )
         .header_right(header_right)
-        .subheader_left(filter_left)
-        .subheader_right(filter_right)
+        .subheader_left(subheader_left)
+        .subheader_right(div().children(filter_right))
         .density(density)
         .body(body);
 

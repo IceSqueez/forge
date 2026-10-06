@@ -683,6 +683,7 @@ impl IntegrationFactory for DiscordFactory {
             obs_client: None,
             vtube_client: None,
             follow: None,
+            ban_list: None,
         }))
     }
 }
@@ -754,6 +755,7 @@ impl IntegrationFactory for MidiFactory {
             obs_client: None,
             vtube_client: None,
             follow: None,
+            ban_list: None,
         };
         let sink = Arc::clone(&self.sink);
         let teardown = Box::pin(async move {
@@ -843,6 +845,7 @@ impl IntegrationFactory for HotkeyFactory {
             obs_client: None,
             vtube_client: None,
             follow: None,
+            ban_list: None,
         };
         let teardown = Box::pin(async move {
             if let Err(e) = client.disable().await {

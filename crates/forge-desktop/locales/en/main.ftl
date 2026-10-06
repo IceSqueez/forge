@@ -1648,6 +1648,26 @@ chat_reply_title = Replying to @{ $recipient }
 chat_reply_placeholder = Type a reply...
 chat_reply_sent = Reply sent
 chat_reply_failed = Reply failed: { $error }
+chat_tab_feed = Feed
+chat_tab_banned = Banned
+chat_banned_col_viewer = Viewer
+chat_banned_col_reason = Reason
+chat_banned_col_moderator = Moderator
+chat_banned_col_banned = Banned
+chat_banned_col_expires = Expires
+chat_banned_permanent = Permanent
+chat_banned_until = until { $time }
+chat_banned_unban = Unban
+chat_banned_unban_failed = Unban failed: { $error }
+chat_banned_outside_forge = Banned outside forge - lift it in the platform's own tools
+chat_banned_loading = Loading bans...
+chat_banned_empty = No active bans
+chat_banned_load_more = Load more
+chat_banned_retry = Retry
+chat_banned_no_platform = No connected platform offers a ban list
+chat_banned_not_connected = Not connected
+chat_banned_missing_permission = Missing permission - reconnect to grant it
+chat_banned_try_later = Could not load bans - try again later
 
 ## Event Feed - page header / filters
 

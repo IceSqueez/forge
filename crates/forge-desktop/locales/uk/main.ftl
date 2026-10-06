@@ -1686,6 +1686,26 @@ chat_reply_title = Відповідь для @{ $recipient }
 chat_reply_placeholder = Введіть відповідь...
 chat_reply_sent = Відповідь надіслано
 chat_reply_failed = Помилка відповіді: { $error }
+chat_tab_feed = Стрічка
+chat_tab_banned = Заблоковані
+chat_banned_col_viewer = Глядач
+chat_banned_col_reason = Причина
+chat_banned_col_moderator = Модератор
+chat_banned_col_banned = Бан
+chat_banned_col_expires = Діє до
+chat_banned_permanent = Назавжди
+chat_banned_until = до { $time }
+chat_banned_unban = Розбанити
+chat_banned_unban_failed = Не вдалося розбанити: { $error }
+chat_banned_outside_forge = Забанено поза forge - зніміть бан у інструментах самої платформи
+chat_banned_loading = Завантаження банів...
+chat_banned_empty = Активних банів немає
+chat_banned_load_more = Завантажити ще
+chat_banned_retry = Повторити
+chat_banned_no_platform = Жодна підключена платформа не надає список банів
+chat_banned_not_connected = Не підключено
+chat_banned_missing_permission = Бракує дозволу - підключіться знову, щоб надати його
+chat_banned_try_later = Не вдалося завантажити бани - спробуйте пізніше
 
 ## Стрічка подій - заголовок / фільтри
 

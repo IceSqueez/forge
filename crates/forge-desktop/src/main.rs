@@ -8,6 +8,7 @@ mod awake_state;
 mod boot;
 mod builtin_sections;
 mod chat;
+mod chat_author;
 mod chat_drawer;
 mod chat_feed;
 mod chat_feed_bridge;

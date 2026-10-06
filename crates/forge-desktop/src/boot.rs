@@ -177,7 +177,7 @@ pub async fn build_runtime(
     let bus = EventBus::new(backend.event_log_repo());
     EventBus::spawn_flush_task(Arc::clone(&bus));
     spawn_event_log_bridge(Arc::clone(&bus));
-    spawn_chat_history_persistence(
+    let chat_history_retention = spawn_chat_history_persistence(
         Arc::clone(&bus),
         backend.chat_history_repo(),
         Arc::clone(&settings_repo),
@@ -530,6 +530,7 @@ pub async fn build_runtime(
         timer_scheduler,
         live_viewers,
         stream_live,
+        chat_history_retention,
         builtins: integrations.builtins,
         integrations: supervisor,
         obs_install_seed: integrations.obs_install_seed,

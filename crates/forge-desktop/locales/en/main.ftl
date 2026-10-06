@@ -271,8 +271,9 @@ credentials_key_loss_toast =
         [one] The credentials key was missing - { $count } saved login can't be read. Sign in again on the Platforms screens.
        *[other] The credentials key was missing - { $count } saved logins can't be read. Sign in again on the Platforms screens.
     }
-settings_storage_keep_limit_label = Chat history keep limit
-settings_storage_keep_limit_hint = How many chat messages to retain in the database.
+settings_storage_per_viewer_limit_label = Chat history per viewer
+settings_storage_per_viewer_limit_hint = How many of each viewer's latest chat messages to keep in the database.
+settings_storage_per_viewer_limit_custom = Custom
 settings_storage_display_limit_label = Chat history shown on open
 settings_storage_display_limit_hint = How many recent messages the chat shows; older ones drop off. Takes effect after a restart.
 settings_storage_retention_label = Event log retention

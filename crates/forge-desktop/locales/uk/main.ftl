@@ -281,8 +281,9 @@ credentials_key_loss_toast =
         [many] Ключ облікових даних зник - { $count } збережених входів неможливо прочитати. Увійдіть знову на екранах платформ.
        *[other] Ключ облікових даних зник - { $count } збережених входів неможливо прочитати. Увійдіть знову на екранах платформ.
     }
-settings_storage_keep_limit_label = Ліміт зберігання історії чату
-settings_storage_keep_limit_hint = Скільки повідомлень чату зберігати в базі даних.
+settings_storage_per_viewer_limit_label = Історія чату на глядача
+settings_storage_per_viewer_limit_hint = Скільки останніх повідомлень кожного глядача зберігати в базі даних.
+settings_storage_per_viewer_limit_custom = Своє
 settings_storage_display_limit_label = Показувати при відкритті чату
 settings_storage_display_limit_hint = Скільки останніх повідомлень показує чат; старіші зникають. Діє після перезапуску.
 settings_storage_retention_label = Зберігання журналу подій

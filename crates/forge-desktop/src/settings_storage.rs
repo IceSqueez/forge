@@ -5,19 +5,20 @@ use std::time::Duration;
 use forge_components::{
     Density, FONT_LG, FONT_SM, ForgePalette, Icon, InputEvent, Spacing, TextInput, ToastAction,
     ToastKind, body_family, card, field_hint, field_title, icon, mono_family, primary_button,
-    spacing, tr,
+    segment, segmented, spacing, tr,
 };
+use forge_runtime::ChatHistoryRetentionHandle;
 use forge_storage::{
     DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider, MAX_EVENT_LOG_RETENTION_DAYS,
-    MIN_EVENT_LOG_RETENTION_DAYS, SettingsRepo, chat_history_display_limit,
-    chat_history_per_viewer_limit, clamp_chat_history_per_viewer_limit, event_log_retention_days,
-    set_chat_history_display_limit, set_chat_history_per_viewer_limit,
+    DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    MAX_EVENT_LOG_RETENTION_DAYS, MIN_CHAT_HISTORY_PER_VIEWER_LIMIT, MIN_EVENT_LOG_RETENTION_DAYS,
+    SettingsRepo, chat_history_display_limit, chat_history_per_viewer_limit,
+    event_log_retention_days, set_chat_history_display_limit, set_chat_history_per_viewer_limit,
     set_event_log_retention_days,
 };
 use gpui::{
-    ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div, prelude::*,
-    px,
+    ClickEvent, Context, Entity, FontWeight, Pixels, SharedString, Subscription, Window, div,
+    prelude::*, px,
 };
 
 use crate::async_bridge;
@@ -26,17 +27,35 @@ use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
+const LIMIT_INPUT_MAX_W: Pixels = px(200.0);
+const PER_VIEWER_PRESETS: [u32; 3] = [25, 50, 100];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PerViewerChoice {
+    Preset(u32),
+    Custom,
+}
+
+pub(crate) fn per_viewer_choice(limit: u32, custom_selected: bool) -> PerViewerChoice {
+    if !custom_selected && PER_VIEWER_PRESETS.contains(&limit) {
+        PerViewerChoice::Preset(limit)
+    } else {
+        PerViewerChoice::Custom
+    }
+}
 
 pub struct SettingsStorageView {
     backend: Arc<dyn DataProvider>,
     rt_handle: tokio::runtime::Handle,
+    retention: ChatHistoryRetentionHandle,
 
-    store_limit: u32,
+    per_viewer_limit: u32,
+    custom_selected: bool,
     display_limit: u32,
     retention_days: u32,
     backing_up: bool,
 
-    store_input: Entity<TextInput>,
+    per_viewer_input: Entity<TextInput>,
     display_input: Entity<TextInput>,
     retention_input: Entity<TextInput>,
     _subs: Vec<Subscription>,
@@ -46,10 +65,11 @@ impl SettingsStorageView {
     pub fn new(
         backend: Arc<dyn DataProvider>,
         rt_handle: tokio::runtime::Handle,
+        retention: ChatHistoryRetentionHandle,
         cx: &mut Context<Self>,
     ) -> Self {
         let palette = cx.palette();
-        let store_input = cx.new(|cx| {
+        let per_viewer_input = cx.new(|cx| {
             TextInput::new(DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT.to_string(), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
@@ -66,9 +86,9 @@ impl SettingsStorageView {
         });
 
         let subs = vec![
-            cx.subscribe(&store_input, |this, _input, event: &InputEvent, cx| {
+            cx.subscribe(&per_viewer_input, |this, _input, event: &InputEvent, cx| {
                 if matches!(event, InputEvent::Submitted(_) | InputEvent::Blurred(_)) {
-                    this.commit_store(cx);
+                    this.commit_custom_per_viewer(cx);
                 }
             }),
             cx.subscribe(&display_input, |this, _input, event: &InputEvent, cx| {
@@ -86,11 +106,13 @@ impl SettingsStorageView {
         let mut view = Self {
             backend,
             rt_handle,
-            store_limit: DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
+            retention,
+            per_viewer_limit: DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
+            custom_selected: false,
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
             retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
             backing_up: false,
-            store_input,
+            per_viewer_input,
             display_input,
             retention_input,
             _subs: subs,
@@ -111,12 +133,13 @@ impl SettingsStorageView {
 
     fn apply_loaded(&mut self, result: Result<(u32, u32, u32), String>, cx: &mut Context<Self>) {
         match result {
-            Ok((store, display, retention)) => {
-                self.store_limit = store;
+            Ok((per_viewer, display, retention)) => {
+                self.per_viewer_limit = per_viewer;
+                self.custom_selected = false;
                 self.display_limit = display;
                 self.retention_days = retention;
-                self.store_input
-                    .update(cx, |i, cx| i.set_content(store.to_string(), cx));
+                self.per_viewer_input
+                    .update(cx, |i, cx| i.set_content(per_viewer.to_string(), cx));
                 self.display_input
                     .update(cx, |i, cx| i.set_content(display.to_string(), cx));
                 self.retention_input
@@ -129,27 +152,104 @@ impl SettingsStorageView {
         cx.notify();
     }
 
-    fn commit_store(&mut self, cx: &mut Context<Self>) {
-        match parse_limit(self.store_input.read(cx).content()) {
+    fn select_per_viewer_preset(&mut self, limit: u32, cx: &mut Context<Self>) {
+        self.custom_selected = false;
+        self.per_viewer_input
+            .update(cx, |i, cx| i.set_content(limit.to_string(), cx));
+        self.apply_per_viewer_limit(limit);
+        cx.notify();
+    }
+
+    fn select_custom_per_viewer(&mut self, cx: &mut Context<Self>) {
+        self.custom_selected = true;
+        cx.notify();
+    }
+
+    fn commit_custom_per_viewer(&mut self, cx: &mut Context<Self>) {
+        match parse_per_viewer_limit(self.per_viewer_input.read(cx).content()) {
             Some(value) => {
-                let value = clamp_chat_history_per_viewer_limit(value);
-                self.store_limit = value;
-                self.store_input
+                self.per_viewer_input
                     .update(cx, |i, cx| i.set_content(value.to_string(), cx));
-                let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
-                self.rt_handle.spawn(async move {
-                    if let Err(e) = set_chat_history_per_viewer_limit(repo.as_ref(), value).await {
-                        tracing::warn!(error = %e, "failed to persist chat history per-viewer limit");
-                    }
-                });
+                self.apply_per_viewer_limit(value);
             }
             None => {
-                let restore = self.store_limit.to_string();
-                self.store_input
+                let restore = self.per_viewer_limit.to_string();
+                self.per_viewer_input
                     .update(cx, |i, cx| i.set_content(restore, cx));
             }
         }
         cx.notify();
+    }
+
+    fn apply_per_viewer_limit(&mut self, limit: u32) {
+        if self.per_viewer_limit == limit {
+            return;
+        }
+        self.per_viewer_limit = limit;
+        self.retention.set_per_viewer_limit(limit);
+        let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
+        self.rt_handle.spawn(async move {
+            if let Err(e) = set_chat_history_per_viewer_limit(repo.as_ref(), limit).await {
+                tracing::warn!(error = %e, "failed to persist chat history per-viewer limit");
+            }
+        });
+    }
+
+    fn per_viewer_field(
+        &self,
+        palette: &ForgePalette,
+        density: Density,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let choice = per_viewer_choice(self.per_viewer_limit, self.custom_selected);
+        let mut segments: Vec<_> = PER_VIEWER_PRESETS
+            .iter()
+            .map(|&limit| {
+                segment(
+                    SharedString::from(format!("settings-storage-per-viewer-{limit}")),
+                    limit.to_string(),
+                    choice == PerViewerChoice::Preset(limit),
+                    cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.select_per_viewer_preset(limit, cx)
+                    }),
+                )
+            })
+            .collect();
+        segments.push(segment(
+            "settings-storage-per-viewer-custom",
+            tr!("settings_storage_per_viewer_limit_custom"),
+            choice == PerViewerChoice::Custom,
+            cx.listener(|this, _: &ClickEvent, _, cx| this.select_custom_per_viewer(cx)),
+        ));
+
+        let mut controls = div()
+            .flex()
+            .items_center()
+            .gap(spacing(Spacing::Sm, density))
+            .child(segmented(segments, palette));
+        if choice == PerViewerChoice::Custom {
+            controls = controls.child(
+                div()
+                    .w(LIMIT_INPUT_MAX_W)
+                    .min_w(LIMIT_INPUT_MAX_W)
+                    .max_w(LIMIT_INPUT_MAX_W)
+                    .child(self.per_viewer_input.clone()),
+            );
+        }
+
+        div()
+            .flex()
+            .flex_col()
+            .gap(spacing(Spacing::Xs, density))
+            .child(field_title(
+                tr!("settings_storage_per_viewer_limit_label"),
+                palette,
+            ))
+            .child(field_hint(
+                tr!("settings_storage_per_viewer_limit_hint"),
+                palette,
+            ))
+            .child(controls)
     }
 
     fn commit_display(&mut self, cx: &mut Context<Self>) {
@@ -255,7 +355,7 @@ impl SettingsStorageView {
             .gap(spacing(Spacing::Xs, density))
             .child(field_title(label, palette))
             .child(field_hint(hint, palette))
-            .child(div().max_w(px(200.0)).child(input))
+            .child(div().max_w(LIMIT_INPUT_MAX_W).child(input))
     }
 }
 
@@ -288,13 +388,7 @@ impl Render for SettingsStorageView {
             ))
             .child(backup_btn)
             .child(field_hint(tr!("settings_storage_backup_hint"), &palette))
-            .child(self.limit_field(
-                tr!("settings_storage_keep_limit_label"),
-                tr!("settings_storage_keep_limit_hint"),
-                self.store_input.clone(),
-                &palette,
-                density,
-            ))
+            .child(self.per_viewer_field(&palette, density, cx))
             .child(self.limit_field(
                 tr!("settings_storage_display_limit_label"),
                 tr!("settings_storage_display_limit_hint"),
@@ -324,7 +418,7 @@ impl Render for SettingsStorageView {
 }
 
 async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<(u32, u32, u32), String> {
-    let store = chat_history_per_viewer_limit(repo.as_ref())
+    let per_viewer = chat_history_per_viewer_limit(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
     let display = chat_history_display_limit(repo.as_ref())
@@ -333,11 +427,17 @@ async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<(u32, u32, u32), Str
     let retention = event_log_retention_days(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
-    Ok((store, display, retention))
+    Ok((per_viewer, display, retention))
 }
 
 fn parse_limit(raw: &str) -> Option<u32> {
     raw.trim().parse::<u32>().ok().filter(|v| *v >= 1)
+}
+
+fn parse_per_viewer_limit(raw: &str) -> Option<u32> {
+    raw.trim().parse::<u32>().ok().filter(|v| {
+        (MIN_CHAT_HISTORY_PER_VIEWER_LIMIT..=MAX_CHAT_HISTORY_PER_VIEWER_LIMIT).contains(v)
+    })
 }
 
 fn parse_retention_days(raw: &str) -> Option<u32> {

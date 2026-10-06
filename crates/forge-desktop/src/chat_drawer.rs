@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use forge_components::{BadgeKind, ForgePalette, fmt_relative_time, hash_accent};
 use forge_storage::Viewer;
-use gpui::Rgba;
+use gpui::{Rgba, SharedString};
 
+use crate::chat_author::{AuthorKey, viewer_platform};
 use crate::chat_feed::{AuthorActivity, AuthorIndex};
 
 pub(crate) const DASH: &str = "-";
@@ -17,6 +18,7 @@ pub(crate) enum SubStatus {
 
 #[derive(Clone)]
 pub(crate) struct ViewerSummary {
+    pub key: AuthorKey,
     pub username: String,
     pub role: Option<BadgeKind>,
     pub message_count: u64,
@@ -42,39 +44,45 @@ fn sub_status(role: Option<BadgeKind>) -> SubStatus {
 #[derive(Default)]
 pub(crate) struct ViewerDirectory {
     viewers: Vec<Viewer>,
-    by_name: HashMap<String, usize>,
+    by_key: HashMap<AuthorKey, usize>,
 }
 
 impl ViewerDirectory {
     pub fn new(viewers: Vec<Viewer>) -> Self {
-        let mut by_name = HashMap::with_capacity(viewers.len());
+        let mut by_key = HashMap::with_capacity(viewers.len());
         for (ix, viewer) in viewers.iter().enumerate() {
-            by_name.entry(viewer.username.clone()).or_insert(ix);
+            let platform = viewer_platform(&viewer.platform);
+            by_key
+                .entry(AuthorKey::by_viewer_id(platform, &viewer.viewer_id))
+                .or_insert(ix);
+            by_key
+                .entry(AuthorKey::by_name(platform, &viewer.username))
+                .or_insert(ix);
         }
-        Self { viewers, by_name }
+        Self { viewers, by_key }
     }
 
     pub fn viewers(&self) -> &[Viewer] {
         &self.viewers
     }
 
-    pub fn get(&self, username: &str) -> Option<&Viewer> {
-        self.by_name
-            .get(username)
-            .and_then(|ix| self.viewers.get(*ix))
+    pub fn get(&self, key: &AuthorKey) -> Option<&Viewer> {
+        self.by_key.get(key).and_then(|ix| self.viewers.get(*ix))
     }
 }
 
 pub(crate) fn summary_from_activity(
-    username: &str,
+    key: &AuthorKey,
     activity: &AuthorActivity,
     palette: &ForgePalette,
 ) -> ViewerSummary {
+    let username = activity.name.as_ref();
     let avatar_letter = username
         .chars()
         .next()
         .map_or('?', |c| c.to_ascii_uppercase());
     ViewerSummary {
+        key: key.clone(),
         username: username.to_owned(),
         role: activity.role,
         message_count: activity.message_count as u64,
@@ -98,30 +106,46 @@ pub(crate) fn enrich_with_storage(
 }
 
 pub(crate) fn author_summary(
-    username: &str,
+    key: &AuthorKey,
     authors: &AuthorIndex,
     directory: &ViewerDirectory,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
-    let activity = authors.get(username)?;
+    let activity = authors.get(key)?;
     Some(enrich_with_storage(
-        summary_from_activity(username, activity, palette),
-        directory.get(username),
+        summary_from_activity(key, activity, palette),
+        directory.get(key),
     ))
 }
 
 pub(crate) fn selected_summary(
-    selected: Option<&str>,
+    selected: Option<&AuthorKey>,
     authors: &AuthorIndex,
     directory: &ViewerDirectory,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
     selected
-        .and_then(|sel| author_summary(sel, authors, directory, palette))
+        .and_then(|key| author_summary(key, authors, directory, palette))
         .or_else(|| {
-            let newest = authors.newest()?;
+            let (newest, _) = authors.newest()?;
             author_summary(newest, authors, directory, palette)
         })
+}
+
+pub(crate) fn current_name(
+    key: &AuthorKey,
+    authors: &AuthorIndex,
+    directory: &ViewerDirectory,
+) -> Option<SharedString> {
+    authors
+        .get(key)
+        .map(|activity| activity.name.clone())
+        .or_else(|| {
+            directory
+                .get(key)
+                .map(|viewer| SharedString::from(viewer.username.clone()))
+        })
+        .or_else(|| key.fallback_name().cloned())
 }
 
 #[cfg(test)]

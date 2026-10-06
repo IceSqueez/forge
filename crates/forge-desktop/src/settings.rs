@@ -237,7 +237,12 @@ impl SettingsView {
             )
         });
         let storage = cx.new(|cx| {
-            SettingsStorageView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+            SettingsStorageView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                handles.chat_history_retention.clone(),
+                cx,
+            )
         });
         let diagnostics = cx.new(|cx| {
             SettingsDiagnosticsView::new(

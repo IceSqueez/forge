@@ -4,9 +4,9 @@ use forge_overlay::OverlayKindRegistry;
 use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, EventBus, LatestValues, LiveViewerAggregatorHandle, OverlayServiceHandle,
-    QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, StreamLiveHandle,
-    TimerSchedulerHandle, TriggerEvaluatorHandle,
+    ActionEngineHandle, ChatHistoryRetentionHandle, EventBus, LatestValues,
+    LiveViewerAggregatorHandle, OverlayServiceHandle, QueueSchedulerHandle, ScheduledRunsHandle,
+    ScriptRegistry, StreamLiveHandle, TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
@@ -38,6 +38,7 @@ pub struct RuntimeHandles {
     pub timer_scheduler: TimerSchedulerHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
     pub stream_live: StreamLiveHandle,
+    pub chat_history_retention: ChatHistoryRetentionHandle,
     pub builtins: BuiltinRegistry,
     pub integrations: IntegrationSupervisor,
     pub obs_install_seed: ObsInstallSeed,

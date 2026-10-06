@@ -23,8 +23,9 @@ use gpui::{
 };
 
 use crate::async_bridge;
+use crate::chat_author::AuthorKey;
 use crate::chat_drawer::{
-    DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, drawer_matches,
+    DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, current_name, drawer_matches,
     selected_summary,
 };
 use crate::chat_feed::{ChatFeed, ChatMessage};
@@ -236,9 +237,9 @@ pub struct ChatView {
     drawer_width: Pixels,
     drawer_search: SearchState,
     drawer_menu_open: Option<Point<Pixels>>,
-    selected_viewer: Option<String>,
+    selected_viewer: Option<AuthorKey>,
     viewers: ViewerDirectory,
-    drawer_names: Vec<SharedString>,
+    drawer_keys: Vec<AuthorKey>,
     whisper_open: bool,
     whisper_input: Entity<TextInput>,
     reply_target: Option<ReplyTarget>,
@@ -335,7 +336,7 @@ impl ChatView {
             drawer_menu_open: None,
             selected_viewer: None,
             viewers: ViewerDirectory::default(),
-            drawer_names: Vec::new(),
+            drawer_keys: Vec::new(),
             whisper_open: false,
             whisper_input,
             reply_target: None,
@@ -355,7 +356,7 @@ impl ChatView {
         };
         this.rebuild_visible(cx);
         this.chat_list.reset(this.visible.len());
-        this.refresh_drawer_names(cx);
+        this.refresh_drawer_keys(cx);
         this
     }
 
@@ -412,7 +413,7 @@ impl ChatView {
             self.unread = self.unread.saturating_add(arrived);
         }
         self.last_seen_seq = end;
-        self.refresh_drawer_names(cx);
+        self.refresh_drawer_keys(cx);
         cx.notify();
     }
 
@@ -457,15 +458,15 @@ impl ChatView {
         self.last_seen_seq = self.feed.read(cx).end_seq();
     }
 
-    fn refresh_drawer_names(&mut self, cx: &mut Context<Self>) {
+    fn refresh_drawer_keys(&mut self, cx: &mut Context<Self>) {
         let search = self.drawer_search.query();
-        self.drawer_names = self
+        self.drawer_keys = self
             .feed
             .read(cx)
             .authors()
             .newest_first()
-            .filter(|name| drawer_matches(name, search))
-            .cloned()
+            .filter(|(_, activity)| drawer_matches(&activity.name, search))
+            .map(|(key, _)| key.clone())
             .collect();
     }
 
@@ -505,8 +506,8 @@ impl ChatView {
         }
     }
 
-    fn open_viewer(&mut self, username: SharedString, cx: &mut Context<Self>) {
-        self.selected_viewer = Some(username.to_string());
+    fn open_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+        self.selected_viewer = Some(key);
         cx.notify();
     }
 
@@ -517,14 +518,19 @@ impl ChatView {
         cx: &mut Context<Self>,
     ) {
         if self.drawer_search.on_changed(event) {
-            self.refresh_drawer_names(cx);
+            self.refresh_drawer_keys(cx);
             cx.notify();
         }
     }
 
-    fn select_viewer(&mut self, username: String, cx: &mut Context<Self>) {
-        self.selected_viewer = Some(username);
+    fn select_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
+        self.selected_viewer = Some(key);
         cx.notify();
+    }
+
+    fn selected_login(&self, cx: &App) -> Option<String> {
+        let key = self.selected_viewer.as_ref()?;
+        current_name(key, self.feed.read(cx).authors(), &self.viewers).map(|name| name.to_string())
     }
 
     fn toggle_drawer_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
@@ -571,7 +577,7 @@ impl ChatView {
 
     fn shoutout_viewer(&mut self, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_viewer.clone() else {
+        let Some(login) = self.selected_login(cx) else {
             cx.notify();
             return;
         };
@@ -593,7 +599,7 @@ impl ChatView {
 
     fn timeout_viewer(&mut self, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_viewer.clone() else {
+        let Some(login) = self.selected_login(cx) else {
             cx.notify();
             return;
         };
@@ -615,7 +621,7 @@ impl ChatView {
 
     fn ban_viewer(&mut self, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_viewer.clone() else {
+        let Some(login) = self.selected_login(cx) else {
             cx.notify();
             return;
         };
@@ -860,7 +866,7 @@ impl ChatView {
     }
 
     fn send_whisper(&mut self, cx: &mut Context<Self>) {
-        let Some(login) = self.selected_viewer.clone() else {
+        let Some(login) = self.selected_login(cx) else {
             return;
         };
         let message = self.whisper_input.read(cx).content().trim().to_owned();
@@ -900,7 +906,7 @@ impl ChatView {
 
     fn block_tts_viewer(&mut self, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(viewer) = self.selected_viewer.clone() else {
+        let Some(viewer) = self.selected_login(cx) else {
             cx.notify();
             return;
         };
@@ -1158,7 +1164,7 @@ impl ChatView {
                 moderated: msg.moderated,
                 reply: msg.reply.clone(),
             };
-            let username = msg.username.clone();
+            let author_key = msg.author_key();
             let menu_view = view.clone();
             let menu_username = msg.username.clone();
             let menu_message_id = msg.id.clone();
@@ -1168,7 +1174,9 @@ impl ChatView {
             let row = chat_row(&pal, data).on_username_click(
                 (gpui::ElementId::from("chat-username"), msg.id.clone()),
                 move |_: &ClickEvent, _, app| {
-                    view.update(app, |this, cx| this.open_viewer(username.clone(), cx));
+                    if let Some(key) = author_key.clone() {
+                        view.update(app, |this, cx| this.open_viewer(key, cx));
+                    }
                 },
             );
             let mut framed = div().pb(row_gap);
@@ -1273,18 +1281,18 @@ impl ChatView {
     ) -> impl IntoElement + use<> {
         let authors = self.feed.read(cx).authors();
         let total = authors.len();
-        let shown = self.drawer_names.len();
+        let shown = self.drawer_keys.len();
         let detail = selected_summary(
-            self.selected_viewer.as_deref(),
+            self.selected_viewer.as_ref(),
             authors,
             &self.viewers,
             palette,
         );
-        let selected_name = detail.as_ref().map(|d| d.username.clone());
+        let selected_key = detail.as_ref().map(|d| d.key.clone());
 
         let header = self.render_drawer_header(total, shown, palette, density);
         let detail_el = self.render_selected_detail(detail, palette, density, cx);
-        let list_el = self.render_viewer_list(selected_name, shown, palette, density, cx);
+        let list_el = self.render_viewer_list(selected_key, shown, palette, density, cx);
 
         let panel = div()
             .w(self.drawer_width)
@@ -1748,7 +1756,7 @@ impl ChatView {
 
     fn render_viewer_list(
         &self,
-        selected_name: Option<String>,
+        selected_key: Option<AuthorKey>,
         shown: usize,
         palette: &ForgePalette,
         density: Density,
@@ -1780,12 +1788,12 @@ impl ChatView {
                 cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
                     let mut rows = Vec::with_capacity(range.len());
                     for ix in range {
-                        let Some(summary) = this.drawer_names.get(ix).and_then(|name| {
-                            author_summary(name, this.feed.read(cx).authors(), &this.viewers, &pal)
+                        let Some(summary) = this.drawer_keys.get(ix).and_then(|key| {
+                            author_summary(key, this.feed.read(cx).authors(), &this.viewers, &pal)
                         }) else {
                             continue;
                         };
-                        let is_sel = selected_name.as_deref() == Some(summary.username.as_str());
+                        let is_sel = selected_key.as_ref() == Some(&summary.key);
                         rows.push(
                             this.render_viewer_row(summary, is_sel, &pal, density, cx)
                                 .into_any_element(),
@@ -1816,8 +1824,8 @@ impl ChatView {
         density: Density,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let username = summary.username.clone();
-        let row_id = SharedString::from(format!("chat-drawer-row-{}", summary.username));
+        let key = summary.key.clone();
+        let row_id = summary.key.element_id("chat-drawer-row");
         let stripe = if is_sel {
             palette.brand
         } else {
@@ -1885,9 +1893,9 @@ impl ChatView {
             .border_l(ROW_STRIPE)
             .border_color(stripe)
             .cursor_pointer()
-            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                this.select_viewer(username.clone(), cx)
-            }))
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, _, cx| this.select_viewer(key.clone(), cx)),
+            )
             .child(avatar)
             .child(name_col)
             .child(last_seen);

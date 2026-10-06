@@ -4,10 +4,12 @@ use forge_components::{BadgeKind, ChatBody, Platform, tr};
 use forge_events::{Event, EventSource};
 use forge_types::{
     ChatEventDetail, ChatModerationAction, ChatModerationPayload, ChatPayload, ChatReply,
-    ChatSource, EventId, UnifiedChatRow, UserBadge,
+    ChatSource, ChatViewer, EventId, UnifiedChatRow, UserBadge,
 };
 use gpui::{Rgba, SharedString};
 use time::OffsetDateTime;
+
+use crate::chat_author::AuthorKey;
 
 pub use forge_storage::DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT as DEFAULT_DISPLAY_LIMIT;
 
@@ -23,6 +25,7 @@ pub struct ChatMessage {
     pub platform: Platform,
     pub badges: Vec<BadgeKind>,
     pub username: SharedString,
+    pub author_id: Option<SharedString>,
     pub author_color: Option<Rgba>,
     pub body: ChatBody,
     pub is_event: bool,
@@ -32,6 +35,10 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
+    pub fn author_key(&self) -> Option<AuthorKey> {
+        AuthorKey::resolve(self.platform, self.author_id.as_ref(), &self.username)
+    }
+
     pub fn matches_query(&self, query: &str) -> bool {
         if query.is_empty() {
             return true;
@@ -65,6 +72,7 @@ impl ChatMessage {
             platform: platform_of(row.source),
             badges: row.badges.iter().filter_map(badge_kind).collect(),
             username: row.author.clone().into(),
+            author_id: row.author_id.clone().map(SharedString::from),
             author_color: row.author_color.map(rgb_channels),
             body: event_body(row),
             is_event: row.is_event,
@@ -75,8 +83,9 @@ impl ChatMessage {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct AuthorActivity {
+    pub name: SharedString,
     pub message_count: usize,
     pub last_seq: u64,
     pub role: Option<BadgeKind>,
@@ -85,44 +94,49 @@ pub struct AuthorActivity {
 
 #[derive(Default)]
 pub struct AuthorIndex {
-    by_name: HashMap<SharedString, AuthorActivity>,
-    by_recency: BTreeMap<u64, SharedString>,
+    by_key: HashMap<AuthorKey, AuthorActivity>,
+    by_recency: BTreeMap<u64, AuthorKey>,
 }
 
 impl AuthorIndex {
-    pub fn get(&self, username: &str) -> Option<&AuthorActivity> {
-        self.by_name.get(username)
+    pub fn get(&self, key: &AuthorKey) -> Option<&AuthorActivity> {
+        self.by_key.get(key)
     }
 
     pub fn len(&self) -> usize {
-        self.by_name.len()
+        self.by_key.len()
     }
 
-    pub fn newest_first(&self) -> impl Iterator<Item = &SharedString> {
-        self.by_recency.values().rev()
+    pub fn newest_first(&self) -> impl Iterator<Item = (&AuthorKey, &AuthorActivity)> {
+        self.by_recency
+            .values()
+            .rev()
+            .filter_map(|key| self.by_key.get(key).map(|activity| (key, activity)))
     }
 
-    pub fn newest(&self) -> Option<&SharedString> {
-        self.by_recency.values().next_back()
+    pub fn newest(&self) -> Option<(&AuthorKey, &AuthorActivity)> {
+        self.newest_first().next()
     }
 
     fn record(&mut self, seq: u64, message: &ChatMessage) {
-        if message.username.is_empty() {
+        let Some(key) = message.author_key() else {
             return;
-        }
+        };
         let role = message.badges.first().copied();
-        match self.by_name.get_mut(&message.username) {
+        match self.by_key.get_mut(&key) {
             Some(activity) => {
                 self.by_recency.remove(&activity.last_seq);
+                activity.name = message.username.clone();
                 activity.message_count += 1;
                 activity.last_seq = seq;
                 activity.role = role;
                 activity.last_received_at = message.received_at;
             }
             None => {
-                self.by_name.insert(
-                    message.username.clone(),
+                self.by_key.insert(
+                    key.clone(),
                     AuthorActivity {
+                        name: message.username.clone(),
                         message_count: 1,
                         last_seq: seq,
                         role,
@@ -131,17 +145,20 @@ impl AuthorIndex {
                 );
             }
         }
-        self.by_recency.insert(seq, message.username.clone());
+        self.by_recency.insert(seq, key);
     }
 
     fn forget_oldest(&mut self, message: &ChatMessage) {
-        let Some(activity) = self.by_name.get_mut(&message.username) else {
+        let Some(key) = message.author_key() else {
+            return;
+        };
+        let Some(activity) = self.by_key.get_mut(&key) else {
             return;
         };
         activity.message_count = activity.message_count.saturating_sub(1);
         if activity.message_count == 0 {
             self.by_recency.remove(&activity.last_seq);
-            self.by_name.remove(&message.username);
+            self.by_key.remove(&key);
         }
     }
 }
@@ -438,7 +455,7 @@ fn row_from_payload(source: ChatSource, event: &Event, payload: ChatPayload) -> 
         source,
         received_at: event.timestamp,
         author: payload.author,
-        author_id: None,
+        author_id: ChatViewer::read(&event.payload).map(|viewer| viewer.id),
         author_color,
         body_segments: payload.segments,
         badges: payload.badges,

@@ -542,8 +542,10 @@ mod tests {
     const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
     #[test]
-    fn per_viewer_choice_marks_a_preset_only_when_it_matches_and_custom_is_not_chosen() {
+    fn per_viewer_choice_is_unlimited_for_zero_a_preset_on_match_and_custom_when_chosen() {
         for (limit, custom_selected, expected) in [
+            (0, false, PerViewerChoice::Unlimited),
+            (0, true, PerViewerChoice::Custom),
             (25, false, PerViewerChoice::Preset(25)),
             (50, false, PerViewerChoice::Preset(50)),
             (100, false, PerViewerChoice::Preset(100)),
@@ -716,6 +718,29 @@ mod tests {
                 "typed {typed:?}"
             );
         }
+    }
+
+    #[gpui::test]
+    fn committing_a_custom_zero_selects_unlimited_and_stops_per_viewer_trimming(
+        cx: &mut TestAppContext,
+    ) {
+        let mut rig = rig(cx);
+
+        rig.view.update(cx, |view, cx| {
+            view.select_custom_per_viewer(cx);
+            view.per_viewer_input
+                .update(cx, |input, cx| input.set_content("0".to_owned(), cx));
+            view.commit_custom_per_viewer(cx);
+        });
+        pump(&rig.rt);
+
+        let choice = rig.view.read_with(cx, |view, _| {
+            per_viewer_choice(view.per_viewer_limit, view.custom_selected)
+        });
+        assert_eq!(
+            (choice, rig.stored_limit(), rig.next_retention_limit()),
+            (PerViewerChoice::Unlimited, 0, 0)
+        );
     }
 
     #[test]

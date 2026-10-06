@@ -162,7 +162,7 @@ mod tests {
     use time::{Duration, OffsetDateTime};
 
     use super::{
-        SubStatus, ViewerDirectory, author_summary, current_name, drawer_matches,
+        SubStatus, ViewerDirectory, author_summary, current_name, displayed_viewer, drawer_matches,
         enrich_with_storage, selected_summary, sub_status,
     };
     use crate::chat_author::AuthorKey;
@@ -322,16 +322,26 @@ mod tests {
     }
 
     #[test]
-    fn selected_summary_falls_back_to_latest_author_when_none_selected() {
-        let messages = [msg("alice", vec![]), msg("bob", vec![])];
-        let summary = selected_summary(
-            None,
-            feed_of(&messages).authors(),
-            &ViewerDirectory::default(),
-            &FORGE_DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(summary.username, "bob");
+    fn the_card_shows_the_selected_viewer_while_in_the_feed_else_the_newest_author() {
+        let alice_then_bob = [msg("alice", vec![]), msg("bob", vec![])];
+        for (selected, messages, expected) in [
+            (Some(key("alice")), &alice_then_bob[..], Some(key("alice"))),
+            (Some(key("ghost")), &alice_then_bob[..], Some(key("bob"))),
+            (
+                Some(AuthorKey::by_name(Platform::Kick, "alice")),
+                &alice_then_bob[..],
+                Some(key("bob")),
+            ),
+            (None, &alice_then_bob[..], Some(key("bob"))),
+            (Some(key("alice")), &[][..], None),
+            (None, &[][..], None),
+        ] {
+            assert_eq!(
+                displayed_viewer(selected.as_ref(), feed_of(messages).authors()),
+                expected,
+                "selected {selected:?}"
+            );
+        }
     }
 
     #[test]
@@ -345,32 +355,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(summary.username, "alice");
-    }
-
-    #[test]
-    fn selected_summary_absent_selection_falls_back_to_latest_author() {
-        let messages = [msg("alice", vec![])];
-        let summary = selected_summary(
-            Some(&key("ghost")),
-            feed_of(&messages).authors(),
-            &ViewerDirectory::default(),
-            &FORGE_DEFAULT,
-        )
-        .unwrap();
-        assert_eq!(summary.username, "alice");
-    }
-
-    #[test]
-    fn selected_summary_is_none_without_any_authored_message() {
-        assert!(
-            selected_summary(
-                None,
-                ChatFeed::new().authors(),
-                &ViewerDirectory::default(),
-                &FORGE_DEFAULT
-            )
-            .is_none()
-        );
     }
 
     #[test]

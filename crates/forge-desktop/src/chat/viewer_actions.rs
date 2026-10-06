@@ -171,3 +171,254 @@ impl ViewerTarget {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use forge_components::Platform;
+    use forge_types::Variant;
+
+    use super::{ViewerAction, ViewerTarget};
+    use crate::chat_author::AuthorKey;
+
+    const ONE_WEEK_SECONDS: i64 = 604_800;
+    const TWO_WEEKS_SECONDS: i64 = 1_209_600;
+    const ONE_DAY_SECONDS: i64 = 86_400;
+
+    fn by_id(platform: Platform, viewer_id: &str) -> ViewerTarget {
+        ViewerTarget::new(&AuthorKey::by_viewer_id(platform, viewer_id), "alice")
+    }
+
+    fn by_name(platform: Platform, name: &str) -> ViewerTarget {
+        ViewerTarget::new(&AuthorKey::by_name(platform, name), name)
+    }
+
+    fn text(value: &str) -> Variant {
+        Variant::String(value.to_owned())
+    }
+
+    fn config(entries: &[(&str, Variant)]) -> BTreeMap<String, Variant> {
+        entries
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect()
+    }
+
+    fn kind_and_config(
+        target: &ViewerTarget,
+        action: &ViewerAction,
+    ) -> Option<(String, BTreeMap<String, Variant>)> {
+        target.step(action).map(|step| (step.kind_id, step.config))
+    }
+
+    fn every_action() -> [ViewerAction; 4] {
+        [
+            ViewerAction::Shoutout,
+            ViewerAction::Whisper("hi".to_owned()),
+            ViewerAction::Timeout { seconds: 600 },
+            ViewerAction::Ban,
+        ]
+    }
+
+    #[test]
+    fn each_platform_builds_its_own_moderation_step_against_the_viewer_identity_it_needs() {
+        let ten_minutes = ViewerAction::Timeout { seconds: 600 };
+        for (target, action, kind, expected) in [
+            (
+                by_id(Platform::Twitch, "1001"),
+                ViewerAction::Shoutout,
+                "twitch.channel.send_shoutout",
+                config(&[("to_broadcaster_login", text("alice"))]),
+            ),
+            (
+                by_id(Platform::Twitch, "1001"),
+                ViewerAction::Whisper("hi there".to_owned()),
+                "twitch.chat.send_whisper",
+                config(&[
+                    ("to_user_login", text("alice")),
+                    ("message", text("hi there")),
+                ]),
+            ),
+            (
+                by_id(Platform::Twitch, "1001"),
+                ten_minutes.clone(),
+                "twitch.moderation.timeout_user",
+                config(&[
+                    ("target_user_login", text("alice")),
+                    ("duration_seconds", Variant::Int(600)),
+                ]),
+            ),
+            (
+                by_name(Platform::Twitch, "alice"),
+                ViewerAction::Ban,
+                "twitch.moderation.ban_user",
+                config(&[("target_user_login", text("alice"))]),
+            ),
+            (
+                by_id(Platform::YouTube, "UCabc"),
+                ten_minutes.clone(),
+                "youtube.moderation.timeout_user",
+                config(&[
+                    ("channel_id", text("UCabc")),
+                    ("duration_seconds", Variant::Int(600)),
+                ]),
+            ),
+            (
+                by_id(Platform::YouTube, "UCabc"),
+                ViewerAction::Ban,
+                "youtube.moderation.ban_user",
+                config(&[("channel_id", text("UCabc"))]),
+            ),
+            (
+                by_id(Platform::Kick, "4242"),
+                ten_minutes,
+                "kick.moderation.timeout",
+                config(&[
+                    ("user_id", text("4242")),
+                    ("duration_minutes", Variant::Int(10)),
+                ]),
+            ),
+            (
+                by_id(Platform::Kick, "4242"),
+                ViewerAction::Ban,
+                "kick.moderation.ban",
+                config(&[("user_id", text("4242"))]),
+            ),
+        ] {
+            assert_eq!(
+                kind_and_config(&target, &action),
+                Some((kind.to_owned(), expected)),
+                "{:?} {action:?}",
+                target.platform
+            );
+        }
+    }
+
+    #[test]
+    fn a_viewer_without_the_identity_its_platform_needs_gets_no_step_for_any_action() {
+        for target in [
+            by_name(Platform::YouTube, "alice"),
+            by_name(Platform::Kick, "alice"),
+            by_id(Platform::YouTube, ""),
+            by_id(Platform::Kick, "alice"),
+            by_id(Platform::Kick, "-5"),
+            by_id(Platform::Kick, ""),
+            by_name(Platform::Twitch, ""),
+        ] {
+            for action in every_action() {
+                assert_eq!(
+                    (target.step(&action), target.supports(&action)),
+                    (None, false),
+                    "{target:?} {action:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shoutout_and_whisper_are_offered_only_on_twitch() {
+        for (target, offered) in [
+            (by_id(Platform::Twitch, "1001"), true),
+            (by_id(Platform::YouTube, "UCabc"), false),
+            (by_id(Platform::Kick, "4242"), false),
+        ] {
+            assert_eq!(
+                [
+                    target.supports(&ViewerAction::Shoutout),
+                    target.supports(&ViewerAction::Whisper("hi".to_owned())),
+                ],
+                [offered, offered],
+                "{:?}",
+                target.platform
+            );
+        }
+    }
+
+    #[test]
+    fn a_timeout_step_exists_only_within_each_platforms_duration_bounds() {
+        for (target, seconds, expected) in [
+            (by_id(Platform::Twitch, "1001"), -1, None),
+            (by_id(Platform::Twitch, "1001"), 0, None),
+            (
+                by_id(Platform::Twitch, "1001"),
+                1,
+                Some(("duration_seconds", 1)),
+            ),
+            (
+                by_id(Platform::Twitch, "1001"),
+                TWO_WEEKS_SECONDS,
+                Some(("duration_seconds", TWO_WEEKS_SECONDS)),
+            ),
+            (by_id(Platform::Twitch, "1001"), TWO_WEEKS_SECONDS + 1, None),
+            (by_id(Platform::YouTube, "UCabc"), 0, None),
+            (
+                by_id(Platform::YouTube, "UCabc"),
+                1,
+                Some(("duration_seconds", 1)),
+            ),
+            (
+                by_id(Platform::YouTube, "UCabc"),
+                ONE_DAY_SECONDS,
+                Some(("duration_seconds", ONE_DAY_SECONDS)),
+            ),
+            (by_id(Platform::YouTube, "UCabc"), ONE_DAY_SECONDS + 1, None),
+            (by_id(Platform::Kick, "4242"), -1, None),
+            (by_id(Platform::Kick, "4242"), 0, None),
+            (
+                by_id(Platform::Kick, "4242"),
+                1,
+                Some(("duration_minutes", 1)),
+            ),
+            (
+                by_id(Platform::Kick, "4242"),
+                60,
+                Some(("duration_minutes", 1)),
+            ),
+            (
+                by_id(Platform::Kick, "4242"),
+                61,
+                Some(("duration_minutes", 2)),
+            ),
+            (
+                by_id(Platform::Kick, "4242"),
+                600,
+                Some(("duration_minutes", 10)),
+            ),
+            (
+                by_id(Platform::Kick, "4242"),
+                ONE_WEEK_SECONDS,
+                Some(("duration_minutes", 10_080)),
+            ),
+            (by_id(Platform::Kick, "4242"), ONE_WEEK_SECONDS + 1, None),
+            (by_id(Platform::Kick, "4242"), TWO_WEEKS_SECONDS, None),
+            (by_id(Platform::Kick, "4242"), i64::MAX, None),
+        ] {
+            let duration = target
+                .step(&ViewerAction::Timeout { seconds })
+                .and_then(|step| {
+                    step.config
+                        .into_iter()
+                        .find(|(key, _)| key.starts_with("duration_"))
+                });
+            assert_eq!(
+                duration,
+                expected.map(|(key, value)| (key.to_owned(), Variant::Int(value))),
+                "{:?} {seconds}s",
+                target.platform
+            );
+        }
+    }
+
+    #[test]
+    fn the_step_runs_on_the_integration_of_the_viewers_platform() {
+        for (target, builtin) in [
+            (by_name(Platform::Twitch, "alice"), "twitch"),
+            (by_id(Platform::YouTube, "UCabc"), "youtube"),
+            (by_id(Platform::Kick, "4242"), "kick"),
+        ] {
+            assert_eq!(target.builtin_id(), builtin);
+        }
+    }
+}

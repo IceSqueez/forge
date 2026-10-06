@@ -583,6 +583,38 @@ mod tests {
         assert!(authors.is_empty(), "{} viewer keys", authors.len());
     }
 
+    #[tokio::test]
+    async fn an_unlimited_limit_retains_no_viewer_keys_until_a_number_is_set_again() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_append_batch().returning(|_| Ok(()));
+        repo.expect_apply_retention()
+            .returning(move |authors, per_viewer| {
+                tx.send((authors.to_vec(), per_viewer)).unwrap();
+                Ok(0)
+            });
+        let (per_viewer, per_viewer_limit) = watch::channel(None);
+        let handle = ChatHistoryRetentionHandle {
+            per_viewer: Arc::new(per_viewer),
+        };
+        let mut sink = ChatHistorySink {
+            per_viewer_limit,
+            ..sink_over(Arc::new(repo), &EventBus::new(Arc::new(NullEventLogRepo)))
+        };
+
+        let mut retained = Vec::new();
+        for limit in [UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, 25] {
+            handle.set_per_viewer_limit(limit);
+            flush(&mut sink, vec![by("m", ChatSource::Twitch, Some("u1"))]).await;
+            retained.push(rx.try_recv().unwrap());
+        }
+
+        assert_eq!(
+            retained,
+            vec![(Vec::new(), 0), (vec![key(ChatSource::Twitch, "u1")], 25),]
+        );
+    }
+
     #[derive(Debug, Clone, Copy)]
     enum Outcome {
         Succeeds,

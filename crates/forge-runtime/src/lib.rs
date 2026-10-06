@@ -58,7 +58,7 @@ pub use bridge::bus_subscription;
 pub use bus::{BusError, Delivery, EventBus, EventSubscription, NullEventLogRepo};
 pub use catalog::{Catalog, CatalogBinding, CatalogSnapshot};
 pub use chain::{ChainEngine, ChainRun, ChainScope};
-pub use chat_history_persistence::spawn_chat_history_persistence;
+pub use chat_history_persistence::{ChatHistoryRetentionHandle, spawn_chat_history_persistence};
 pub use condition::{ConditionError, ConditionGate};
 pub use config::Config;
 pub use delivery::CriticalSubscription;

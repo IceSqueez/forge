@@ -2,7 +2,8 @@ use std::collections::{HashMap, VecDeque};
 
 use forge_events::{Event, EventSource};
 use forge_types::{
-    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, UnifiedChatRow,
+    ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, ChatViewer,
+    UnifiedChatRow,
 };
 use time::OffsetDateTime;
 
@@ -90,7 +91,7 @@ fn try_map_chat_event(
         source,
         received_at: ev.timestamp,
         author: payload.author,
-        author_id: None,
+        author_id: ChatViewer::read(&ev.payload).map(|viewer| viewer.id),
         author_color,
         body_segments: payload.segments,
         badges: payload.badges,

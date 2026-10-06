@@ -191,4 +191,90 @@ mod tests {
         );
         assert!(request.body.is_none(), "unban sends no body");
     }
+
+    #[tokio::test]
+    async fn execute_counts_a_400_saying_the_user_is_not_banned_as_success() {
+        let bad_request = |body: &str| HelixError::Http {
+            status: reqwest::StatusCode::BAD_REQUEST.as_u16(),
+            body: body.to_owned(),
+        };
+        let cases = [
+            "{\"error\":\"Bad Request\",\"status\":400,\"message\":\"The user is not banned or in a timeout.\"}",
+            "user is not banned",
+            "USER IS NOT BANNED",
+            "Пользователь not Banned",
+        ];
+
+        for body in cases {
+            let (_transport, runner) =
+                runner_with(vec![users_fixture("555"), Err(bad_request(body))]);
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&config("target"), &make_ctx(&stack)).await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success, "{body:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_fails_on_any_other_unban_error() {
+        let http = |status: reqwest::StatusCode, body: &str| HelixError::Http {
+            status: status.as_u16(),
+            body: body.to_owned(),
+        };
+        let cases = [
+            (
+                "400 without the marker",
+                http(
+                    reqwest::StatusCode::BAD_REQUEST,
+                    "Missing required parameter user_id",
+                ),
+            ),
+            (
+                "400 with an empty body",
+                http(reqwest::StatusCode::BAD_REQUEST, ""),
+            ),
+            (
+                "400 with the words apart",
+                http(reqwest::StatusCode::BAD_REQUEST, "not a banned word"),
+            ),
+            (
+                "404 saying not banned",
+                http(reqwest::StatusCode::NOT_FOUND, "user is not banned"),
+            ),
+            (
+                "422 saying not banned",
+                http(
+                    reqwest::StatusCode::UNPROCESSABLE_ENTITY,
+                    "user is not banned",
+                ),
+            ),
+            (
+                "500 saying not banned",
+                http(
+                    reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                    "user is not banned",
+                ),
+            ),
+            (
+                "transport saying not banned",
+                HelixError::Transport("user is not banned".to_owned()),
+            ),
+            ("reauth required", HelixError::ReauthRequired),
+            ("rate limited", HelixError::RateLimited),
+        ];
+
+        for (label, error) in cases {
+            let (_transport, runner) = runner_with(vec![users_fixture("555"), Err(error)]);
+            let stack = ArgStack::new();
+
+            let (telemetry, _) = runner.execute(&config("target"), &make_ctx(&stack)).await;
+
+            assert!(
+                matches!(telemetry.outcome, SubActionOutcome::Failed(_)),
+                "{label}: {:?}",
+                telemetry.outcome
+            );
+        }
+    }
 }

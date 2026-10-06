@@ -392,4 +392,67 @@ mod tests {
 
         assert_eq!(rows(repo.as_ref()).await, [row("a", "v2", "voice")]);
     }
+
+    #[tokio::test]
+    async fn upsert_moving_an_alias_onto_a_viewer_held_by_another_alias_is_refused_and_changes_nothing()
+     {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("a", "v1", "voice-a"))
+            .await
+            .expect("upsert a");
+        repo.upsert(&alias("b", "v2", "voice-b"))
+            .await
+            .expect("upsert b");
+
+        let result = repo.upsert(&alias("a", "v2", "voice-edited")).await;
+
+        assert!(matches!(result, Err(StorageError::AliasViewerTaken)));
+        assert_eq!(
+            rows(repo.as_ref()).await,
+            [row("a", "v1", "voice-a"), row("b", "v2", "voice-b")]
+        );
+    }
+
+    #[tokio::test]
+    async fn upsert_under_a_fresh_id_returns_the_stored_id_with_the_callers_fields() {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("stored", "v1", "old-voice"))
+            .await
+            .expect("first upsert");
+        let edit = VoiceAlias {
+            viewer_name: "renamed".into(),
+            engine_id: EngineId("espeak".into()),
+            pitch_semitones: Some(-3.0),
+            rate_multiplier: Some(1.5),
+            state: AliasState::Blocked,
+            ..alias("fresh", "v1", "new-voice")
+        };
+
+        let returned = repo.upsert(&edit).await.expect("second upsert");
+
+        assert_eq!(
+            (
+                returned.id.0.as_str(),
+                returned.viewer_id.as_str(),
+                returned.viewer_name.as_str(),
+                returned.engine_id.0.as_str(),
+                returned.voice_id.0.as_str(),
+                returned.pitch_semitones,
+                returned.rate_multiplier,
+                returned.state,
+            ),
+            (
+                "stored",
+                "v1",
+                "renamed",
+                "espeak",
+                "new-voice",
+                Some(-3.0),
+                Some(1.5),
+                AliasState::Blocked,
+            )
+        );
+    }
 }

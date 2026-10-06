@@ -1452,8 +1452,157 @@ fn fmt_field(value: Option<f32>) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
+    use std::time::Duration;
+
+    use forge_components::ThemeId;
+    use forge_storage::{DataProvider, Language};
+    use gpui::TestAppContext;
+
     use super::*;
+    use crate::i18n::install_language;
+    use crate::presentation::Presentation;
+    use crate::test_support::{Sandboxed, error_toasts, runtime, sandboxed_backend};
+    use crate::toasts::Toasts;
+
+    const TEST_KEY: [u8; 32] = [0x5a; 32];
+    const SETTLE_ROUNDS: usize = 2000;
+
+    struct NullPublisher;
+
+    impl forge_events::EventPublisher for NullPublisher {
+        fn publish(&self, _: forge_events::Event) {}
+    }
+
+    struct Fixture {
+        _backend: Sandboxed<forge_storage_sqlite::SqliteBackend>,
+        resolver: Arc<std::sync::RwLock<forge_voice::VoiceAliasResolver>>,
+        view: Entity<VoiceAliasesView>,
+    }
+
+    fn keyed(id: &str, viewer_id: &str, voice: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId(id.to_owned()),
+            voice_id: VoiceId(voice.to_owned()),
+            ..stored_alias(viewer_id, viewer_id)
+        }
+    }
+
+    fn mount(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        seeded: Vec<VoiceAlias>,
+    ) -> Fixture {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let backend = rt.block_on(sandboxed_backend("sqlite::memory:", TEST_KEY));
+        let repo = backend.voice_alias_repo();
+        for alias in &seeded {
+            rt.block_on(repo.upsert(alias)).expect("seed alias");
+        }
+        let resolver = Arc::new(std::sync::RwLock::new(
+            forge_voice::VoiceAliasResolver::new(
+                seeded,
+                AssignmentStrategy::DeterministicByName,
+                forge_voice::IgnoreProfile::default(),
+                forge_voice::SynthesisDefaults::default(),
+            ),
+        ));
+        let deps = forge_speak_queue::QueueDeps {
+            registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
+            resolver: Arc::clone(&resolver),
+            pipeline: forge_speak_queue::PipelineConfigHandle::new(
+                forge_tts_pipeline::PipelineConfig::default(),
+            ),
+            audio_sink: Arc::new(forge_audio::NullSink),
+            event_bus: Arc::new(NullPublisher),
+            disabled_engines: std::collections::HashSet::new(),
+            engine_gains: std::collections::HashMap::new(),
+        };
+        let (speak, _events) = rt.block_on(async {
+            forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps)
+        });
+        let viewer_repo = backend.viewer_repo();
+        let view = cx.update(|cx| {
+            cx.new(|cx| {
+                VoiceAliasesView::new(repo, viewer_repo, Some(speak), rt.handle().clone(), cx)
+            })
+        });
+        Fixture {
+            _backend: backend,
+            resolver,
+            view,
+        }
+    }
+
+    fn settle(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        done: impl Fn(&mut TestAppContext) -> bool,
+    ) {
+        for _ in 0..SETTLE_ROUNDS {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            if done(cx) {
+                return;
+            }
+        }
+        panic!("the save never settled");
+    }
+
+    fn live_alias_for(fixture: &Fixture, viewer_id: &str) -> Option<VoiceAlias> {
+        fixture
+            .resolver
+            .read()
+            .expect("resolver lock")
+            .aliases
+            .iter()
+            .find(|alias| alias.viewer_id == viewer_id)
+            .cloned()
+    }
+
+    #[gpui::test]
+    fn saving_under_a_fresh_id_hot_reloads_the_alias_with_the_stored_id(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let fixture = mount(cx, &rt, vec![keyed("stored", "twitch:alice", "old-voice")]);
+
+        fixture.view.update(cx, |view, cx| {
+            view.persist(keyed("fresh", "twitch:alice", "new-voice"), cx)
+        });
+        settle(cx, &rt, |_| {
+            live_alias_for(&fixture, "twitch:alice")
+                .is_some_and(|alias| alias.voice_id.0 == "new-voice")
+        });
+
+        let live = live_alias_for(&fixture, "twitch:alice").expect("live alias");
+        assert_eq!(live.id.0, "stored");
+    }
+
+    #[gpui::test]
+    fn saving_an_alias_onto_a_viewer_held_by_another_alias_shows_an_error_toast(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let fixture = mount(
+            cx,
+            &rt,
+            vec![
+                keyed("a", "twitch:alice", "voice-a"),
+                keyed("b", "twitch:bob", "voice-b"),
+            ],
+        );
+
+        fixture.view.update(cx, |view, cx| {
+            view.persist(keyed("a", "twitch:bob", "voice-edited"), cx)
+        });
+        settle(cx, &rt, |cx| cx.update(|cx| error_toasts(cx)) > 0);
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+    }
 
     fn stored_alias(viewer_id: &str, viewer_name: &str) -> VoiceAlias {
         VoiceAlias {

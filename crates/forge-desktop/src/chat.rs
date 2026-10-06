@@ -2181,13 +2181,22 @@ mod tests {
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
     ) -> (Entity<ChatFeed>, Entity<ChatView>) {
-        mount_gated(cx, rt, None)
+        mount_gated(cx, rt, None, MockChatHistoryRepo::new())
+    }
+
+    pub(super) fn mount_with_chat_history(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        chat_history: MockChatHistoryRepo,
+    ) -> (Entity<ChatFeed>, Entity<ChatView>) {
+        mount_gated(cx, rt, None, chat_history)
     }
 
     fn mount_gated(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
         lifecycle: Option<Entity<IntegrationLifecycle>>,
+        chat_history: MockChatHistoryRepo,
     ) -> (Entity<ChatFeed>, Entity<ChatView>) {
         let _enter = rt.enter();
         let feed = cx.new(|_| {
@@ -2212,7 +2221,7 @@ mod tests {
                 home_stats,
                 rt.handle().clone(),
                 Arc::new(viewers),
-                Arc::new(MockChatHistoryRepo::new()),
+                Arc::new(chat_history),
                 engine,
                 Arc::new(MockVoiceAliasRepo::new()),
                 None,
@@ -2325,7 +2334,7 @@ mod tests {
                 (Integration::Kick, LifecycleState::Disabled),
             ]))
         });
-        let (_feed, view) = mount_gated(cx, &rt, Some(lifecycle));
+        let (_feed, view) = mount_gated(cx, &rt, Some(lifecycle), MockChatHistoryRepo::new());
 
         assert_eq!(offered(cx, &view), [true, true, true, false]);
     }
@@ -2340,7 +2349,8 @@ mod tests {
                 (Integration::Kick, LifecycleState::Running),
             ]))
         });
-        let (_feed, view) = mount_gated(cx, rt, Some(lifecycle.clone()));
+        let (_feed, view) =
+            mount_gated(cx, rt, Some(lifecycle.clone()), MockChatHistoryRepo::new());
         view.update(cx, |view, cx| {
             view.set_platform_filter(PlatformFilter::Single(Platform::Kick), cx)
         });

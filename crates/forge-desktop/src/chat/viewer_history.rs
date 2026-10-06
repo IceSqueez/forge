@@ -345,7 +345,9 @@ impl Render for ViewerHistory {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use forge_components::{ChatBody, Platform};
     use forge_storage::chat_history::MockChatHistoryRepo;
@@ -356,8 +358,10 @@ mod tests {
 
     use super::{
         HISTORY_LOAD_CAP, HistoryState, ViewerHistory, feed_messages_by, history_query,
-        merge_newest_first,
+        mark_moderated, merge_newest_first, moderated_ids_by,
     };
+    use crate::chat::ChatView;
+    use crate::chat::tests::{message, mount_with_chat_history, push_each};
     use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
     use crate::test_support::{pump, runtime};
@@ -591,6 +595,20 @@ mod tests {
         }
     }
 
+    fn loaded_moderated_ids(
+        cx: &mut TestAppContext,
+        history: &Entity<ViewerHistory>,
+    ) -> Vec<String> {
+        match state(cx, history) {
+            HistoryState::Loaded(messages) => messages
+                .iter()
+                .filter(|m| m.moderated)
+                .map(|m| m.id.to_string())
+                .collect(),
+            other => panic!("expected a loaded history, got {other:?}"),
+        }
+    }
+
     #[gpui::test]
     fn a_viewer_with_an_id_shows_stored_and_live_lines_newest_first_without_duplicates(
         cx: &mut TestAppContext,
@@ -662,22 +680,108 @@ mod tests {
     }
 
     #[gpui::test]
-    fn showing_the_same_viewer_again_adds_only_the_lines_that_arrived_since(
-        cx: &mut TestAppContext,
-    ) {
+    fn lines_the_viewer_sends_while_open_are_added_once_newest_first(cx: &mut TestAppContext) {
         let rt = runtime();
         let repo = repo_serving(vec![(ANN, vec![])]);
         let (feed, history) = mount_history(cx, &rt, repo, vec![line("", 10, ANN)]);
         show(cx, &history, Some(key_of(ANN)));
         settle(cx, &rt);
 
-        feed.update(cx, |feed, _| {
+        feed.update(cx, |feed, cx| {
             feed.push(line("m2", 20, ANN));
             feed.push(line("b3", 30, BOB));
+            cx.notify();
         });
-        show(cx, &history, Some(key_of(ANN)));
+        cx.run_until_parked();
 
         assert_eq!(loaded_ids(cx, &history), ["m2", ""]);
+    }
+
+    #[gpui::test]
+    fn a_line_moderated_in_the_feed_while_open_dims_in_the_history(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let repo = repo_serving(vec![(ANN, vec![])]);
+        let (feed, history) = mount_history(
+            cx,
+            &rt,
+            repo,
+            vec![line("m1", 10, ANN), line("m2", 20, ANN)],
+        );
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        feed.update(cx, |feed, cx| {
+            feed.mark_deleted("m1");
+            cx.notify();
+        });
+        cx.run_until_parked();
+
+        assert_eq!(loaded_moderated_ids(cx, &history), ["m1"]);
+    }
+
+    #[gpui::test]
+    fn a_stored_line_already_moderated_in_the_feed_loads_dimmed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let repo = repo_serving(vec![(
+            ANN,
+            vec![stored("m2", 20, ANN), stored("m1", 10, ANN)],
+        )]);
+        let mut moderated = line("m1", 10, ANN);
+        moderated.moderated = true;
+        let (_feed, history) = mount_history(cx, &rt, repo, vec![moderated]);
+
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        assert_eq!(loaded_moderated_ids(cx, &history), ["m1"]);
+    }
+
+    #[test]
+    fn moderated_ids_by_collects_only_the_viewers_moderated_lines_that_carry_an_id() {
+        let moderated = |mut message: ChatMessage| {
+            message.moderated = true;
+            message
+        };
+        let feed = feed_of(vec![
+            moderated(line("m1", 1, ANN)),
+            line("m2", 2, ANN),
+            moderated(line("b1", 3, BOB)),
+            moderated(line("", 4, ANN)),
+            moderated(line("y1", 5, (Platform::YouTube, Some("42"), "ann"))),
+        ]);
+
+        let found = moderated_ids_by(&feed, &key_of(ANN));
+
+        assert_eq!(found, HashSet::from(["m1".into()]));
+    }
+
+    #[test]
+    fn mark_moderated_dims_only_shown_lines_whose_id_was_moderated() {
+        let mut shown = vec![line("m1", 1, ANN), line("m2", 2, ANN)];
+
+        let changed = mark_moderated(&mut shown, &HashSet::from(["m1".into(), "x9".into()]));
+
+        assert!(changed);
+        assert_eq!(
+            shown.iter().map(|m| m.moderated).collect::<Vec<_>>(),
+            [true, false]
+        );
+    }
+
+    #[test]
+    fn mark_moderated_reports_no_change_when_nothing_is_newly_moderated() {
+        let mut already = line("m1", 1, ANN);
+        already.moderated = true;
+        let cases: [(&str, Vec<ChatMessage>, Vec<&str>); 3] = [
+            ("no moderated ids", vec![line("m1", 1, ANN)], vec![]),
+            ("id not shown", vec![line("m1", 1, ANN)], vec!["x9"]),
+            ("already dimmed", vec![already], vec!["m1"]),
+        ];
+        for (name, mut shown, ids) in cases {
+            let ids: HashSet<_> = ids.into_iter().map(Into::into).collect();
+
+            assert!(!mark_moderated(&mut shown, &ids), "{name}");
+        }
     }
 
     #[gpui::test]
@@ -726,5 +830,136 @@ mod tests {
         show(cx, &history, None);
 
         assert!(matches!(state(cx, &history), HistoryState::Hidden));
+    }
+
+    fn chatter(ix: usize, viewer_id: &str) -> ChatMessage {
+        let mut chatter = message(ix, false);
+        chatter.author_id = Some(viewer_id.to_owned().into());
+        chatter
+    }
+
+    fn viewer(viewer_id: &str) -> AuthorKey {
+        AuthorKey::by_viewer_id(Platform::Twitch, viewer_id)
+    }
+
+    fn counting_repo() -> (MockChatHistoryRepo, Arc<AtomicUsize>) {
+        let queries = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&queries);
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_list_recent_messages_by_author()
+            .returning(move |_, _| {
+                counter.fetch_add(1, Ordering::SeqCst);
+                Ok(vec![])
+            });
+        (repo, queries)
+    }
+
+    fn open_dialog(
+        cx: &mut TestAppContext,
+        view: &Entity<ChatView>,
+    ) -> Option<Entity<ViewerHistory>> {
+        view.read_with(cx, |view, _| {
+            view.viewer_history.as_ref().map(|host| host.view.clone())
+        })
+    }
+
+    fn dialog_viewer(cx: &mut TestAppContext, view: &Entity<ChatView>) -> Option<AuthorKey> {
+        let dialog = open_dialog(cx, view)?;
+        dialog.read_with(cx, |history, _| history.key.clone())
+    }
+
+    fn open_history_for(cx: &mut TestAppContext, view: &Entity<ChatView>, viewer_id: &str) {
+        view.update(cx, |view, cx| {
+            view.open_viewer_history(viewer(viewer_id), "user0".to_owned(), cx);
+        });
+    }
+
+    #[gpui::test]
+    fn opening_the_history_shows_a_dialog_for_that_viewer(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (repo, _queries) = counting_repo();
+        let (feed, view) = mount_with_chat_history(cx, &rt, repo);
+        push_each(cx, &feed, vec![chatter(0, "10"), chatter(1, "11")]);
+
+        open_history_for(cx, &view, "10");
+        settle(cx, &rt);
+
+        assert_eq!(dialog_viewer(cx, &view), Some(viewer("10")));
+    }
+
+    #[gpui::test]
+    fn opening_the_history_queries_storage_once(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (repo, queries) = counting_repo();
+        let (feed, view) = mount_with_chat_history(cx, &rt, repo);
+        push_each(cx, &feed, vec![chatter(0, "10")]);
+
+        open_history_for(cx, &view, "10");
+        settle(cx, &rt);
+
+        assert_eq!(queries.load(Ordering::SeqCst), 1);
+    }
+
+    #[gpui::test]
+    fn no_storage_query_happens_while_the_history_dialog_is_closed(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (repo, queries) = counting_repo();
+        let (feed, view) = mount_with_chat_history(cx, &rt, repo);
+
+        push_each(cx, &feed, vec![chatter(0, "10"), chatter(1, "11")]);
+        view.update(cx, |view, cx| view.open_viewer(viewer("10"), cx));
+        view.update(cx, |view, cx| view.select_viewer(viewer("11"), cx));
+        push_each(cx, &feed, vec![chatter(2, "12")]);
+        settle(cx, &rt);
+
+        assert_eq!(
+            (queries.load(Ordering::SeqCst), dialog_viewer(cx, &view)),
+            (0, None)
+        );
+    }
+
+    #[gpui::test]
+    fn dismissing_the_history_dialog_closes_it_and_drops_the_history(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (repo, _queries) = counting_repo();
+        let (feed, view) = mount_with_chat_history(cx, &rt, repo);
+        push_each(cx, &feed, vec![chatter(0, "10")]);
+        open_history_for(cx, &view, "10");
+        settle(cx, &rt);
+        let dialog = open_dialog(cx, &view).unwrap();
+        let released = dialog.downgrade();
+
+        dialog.update(cx, |history, cx| history.dismiss(cx));
+        drop(dialog);
+        cx.run_until_parked();
+
+        assert_eq!(
+            (
+                open_dialog(cx, &view).is_none(),
+                released.upgrade().is_none()
+            ),
+            (true, true)
+        );
+    }
+
+    #[gpui::test]
+    fn the_open_history_stays_on_its_viewer_when_the_card_shows_someone_else(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (repo, queries) = counting_repo();
+        let (feed, view) = mount_with_chat_history(cx, &rt, repo);
+        push_each(cx, &feed, vec![chatter(0, "10")]);
+        open_history_for(cx, &view, "10");
+        settle(cx, &rt);
+
+        view.update(cx, |view, cx| view.select_viewer(viewer("11"), cx));
+        push_each(cx, &feed, vec![chatter(1, "11")]);
+        settle(cx, &rt);
+
+        assert_eq!(
+            (dialog_viewer(cx, &view), queries.load(Ordering::SeqCst)),
+            (Some(viewer("10")), 1)
+        );
     }
 }

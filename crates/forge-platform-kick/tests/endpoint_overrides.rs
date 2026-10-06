@@ -14,7 +14,8 @@ use forge_platform_kick::{
     ChannelInfoFetcher, KickAuthBundle, KickCategories, KickChannel, KickChat,
     KickCredentialsManager, KickModeration, KickPlatform, KickRewards, KickSendChat,
 };
-use forge_storage::{CredentialId, CredentialsRepo, StorageError};
+use forge_storage::ban_ledger::MockBanLedgerRepo;
+use forge_storage::{BanLedgerRepo, CredentialId, CredentialsRepo, StorageError};
 use futures_util::StreamExt;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -92,6 +93,15 @@ fn limiter() -> Arc<dyn RateLimiter> {
     Arc::new(GrantLimiter)
 }
 
+fn ban_ledger() -> Arc<dyn BanLedgerRepo> {
+    let mut ledger = MockBanLedgerRepo::new();
+    ledger.expect_get().returning(|_, _| Ok(None));
+    ledger
+        .expect_upsert()
+        .returning(|entry, _| Ok(entry.clone()));
+    Arc::new(ledger)
+}
+
 async fn received_routes(server: &MockServer) -> Vec<(String, String)> {
     server
         .received_requests()
@@ -117,8 +127,8 @@ async fn public_api_override_carries_every_rest_client_to_the_override_host() {
     let sender = KickSendChat::new(&endpoints, limiter());
     sender.send("hi", "tok", 7, false).await.ok();
     sender.delete("msg-1", "tok").await.ok();
-    KickModeration::new(&endpoints, limiter())
-        .ban(9, 7, "tok")
+    KickModeration::new(&endpoints, limiter(), ban_ledger())
+        .ban(9, 7, None, "tok")
         .await
         .ok();
     KickChannel::new(&endpoints, limiter())
@@ -329,7 +339,7 @@ async fn platform_carries_its_overrides_into_the_chat_session_and_the_sender() {
         })
         .await
         .unwrap();
-    let platform = KickPlatform::new(&endpoints, Arc::new(manager), limiter());
+    let platform = KickPlatform::new(&endpoints, Arc::new(manager), limiter(), ban_ledger());
 
     platform.connect().await.unwrap();
     platform.send_message("streamer", "hello").await.unwrap();

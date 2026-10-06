@@ -1,5 +1,7 @@
 pub mod auth;
 mod ban_ledger;
+#[cfg(test)]
+mod ban_ledger_test_support;
 mod ban_list;
 pub mod builtin;
 pub mod capabilities;

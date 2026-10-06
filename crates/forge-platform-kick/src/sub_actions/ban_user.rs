@@ -189,6 +189,7 @@ mod tests {
         let client = KickModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             Arc::new(GrantLimiter),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
         BanUserRunner::new(Arc::new(client), token_source(), broadcaster_id_source(42))
@@ -237,6 +238,7 @@ mod tests {
             Arc::new(KickModeration::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 Arc::new(GrantLimiter),
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             )),
             token_source(),
             broadcaster_id_source(42),

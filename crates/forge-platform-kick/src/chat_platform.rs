@@ -291,6 +291,7 @@ mod tests {
             &forge_platform_core::PlatformEndpoints::default(),
             manager,
             limiter,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
     }
 

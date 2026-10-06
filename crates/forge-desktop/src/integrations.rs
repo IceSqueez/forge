@@ -1658,6 +1658,7 @@ mod tests {
                 moderation: Arc::new(kick::KickModeration::new(
                     &forge_platform_core::PlatformEndpoints::default(),
                     Arc::clone(&limiter),
+                    Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
                 )),
                 channel: Arc::new(kick::KickChannel::new(
                     &forge_platform_core::PlatformEndpoints::default(),

@@ -857,6 +857,7 @@ mod tests {
                 &forge_platform_core::PlatformEndpoints::default(),
                 manager.clone(),
                 Arc::new(GrantLimiter),
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             ));
             let (viewer_tx, viewer_rx) = watch::channel(ViewerReport::Absent);
             let (auth_tx, auth_rx) = watch::channel(PollerAuth::Authorized);
@@ -1050,6 +1051,7 @@ mod tests {
                     moderation: Arc::new(KickModeration::new(
                         &forge_platform_core::PlatformEndpoints::default(),
                         Arc::clone(&limiter),
+                        crate::ban_ledger_test_support::MemoryBanLedger::shared(),
                     )),
                     channel: Arc::new(KickChannel::new(
                         &forge_platform_core::PlatformEndpoints::default(),

@@ -250,6 +250,7 @@ mod tests {
         KickModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             Arc::new(GrantLimiter),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri())
     }
@@ -271,7 +272,7 @@ mod tests {
                 .mount(&server)
                 .await;
 
-            let result = moderation_on(&server).ban(99, 42, "tok").await;
+            let result = moderation_on(&server).ban(99, 42, None, "tok").await;
             assert!(result.is_ok(), "status {status} must map to Ok");
 
             let body = last_body(&server).await;
@@ -295,7 +296,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = moderation_on(&server).timeout(99, 42, 15, "tok").await;
+        let result = moderation_on(&server)
+            .timeout(99, 42, 15, None, "tok")
+            .await;
         assert!(result.is_ok());
 
         let body = last_body(&server).await;
@@ -327,7 +330,10 @@ mod tests {
                 .mount(&server)
                 .await;
 
-            let err = moderation_on(&server).ban(99, 42, "tok").await.unwrap_err();
+            let err = moderation_on(&server)
+                .ban(99, 42, None, "tok")
+                .await
+                .unwrap_err();
             assert!(
                 matches!(err, PlatformError::Auth { .. }),
                 "status {status} must map to Auth, got {err:?}"
@@ -343,7 +349,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let err = moderation_on(&server).ban(99, 42, "tok").await.unwrap_err();
+        let err = moderation_on(&server)
+            .ban(99, 42, None, "tok")
+            .await
+            .unwrap_err();
         assert!(matches!(
             err,
             PlatformError::RateLimited {
@@ -363,9 +372,10 @@ mod tests {
         let client = KickModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             Arc::new(ExhaustedLimiter),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
-        let err = client.ban(99, 42, "tok").await.unwrap_err();
+        let err = client.ban(99, 42, None, "tok").await.unwrap_err();
 
         assert!(matches!(err, PlatformError::RateLimitExhausted));
         assert!(

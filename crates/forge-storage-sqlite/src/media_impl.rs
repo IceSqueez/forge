@@ -1,6 +1,7 @@
 use std::io::Read as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use forge_storage::{
@@ -18,6 +19,7 @@ const BLOB_FILE_EXTENSION_SEPARATOR: char = '.';
 const INCOMING_FILE_PREFIX: &str = ".incoming-";
 const INCOMING_NONCE_BYTES: usize = 8;
 const IMPORT_SNIFF_WINDOW_BYTES: u64 = 4096;
+const STALE_INCOMING_AGE: Duration = Duration::from_hours(1);
 
 fn content_digest(bytes: &[u8]) -> [u8; MEDIA_CONTENT_DIGEST_BYTES] {
     let mut hasher = Sha256::new();
@@ -71,6 +73,44 @@ fn write_blob(root: &Path, format: MediaFormat, bytes: &[u8]) -> std::io::Result
     }
 
     Ok(id)
+}
+
+fn is_stale_incoming(entry: &std::fs::DirEntry, now: SystemTime) -> bool {
+    let is_incoming = entry
+        .file_name()
+        .to_str()
+        .is_some_and(|name| name.starts_with(INCOMING_FILE_PREFIX));
+    if !is_incoming {
+        return false;
+    }
+    entry
+        .metadata()
+        .ok()
+        .filter(std::fs::Metadata::is_file)
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| now.duration_since(modified).ok())
+        .is_some_and(|age| age >= STALE_INCOMING_AGE)
+}
+
+fn remove_stale_incoming(root: &Path) -> std::io::Result<usize> {
+    let entries = match std::fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
+
+    let now = SystemTime::now();
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        if !is_stale_incoming(&entry, now) {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => removed += 1,
+            Err(error) => tracing::warn!(%error, "stale media staging file could not be removed"),
+        }
+    }
+    Ok(removed)
 }
 
 fn read_import(source: &Path) -> Result<(String, Vec<u8>), StorageError> {
@@ -175,6 +215,14 @@ impl SqliteMediaRepo {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub async fn sweep_stale_incoming(&self) -> Result<usize, StorageError> {
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || remove_stale_incoming(&root))
+            .await
+            .map_err(task_failure)?
+            .map_err(StorageError::Io)
     }
 
     async fn index(

@@ -32,6 +32,16 @@ use crate::{
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
 
+fn spawn_stale_incoming_sweep(media: Arc<SqliteMediaRepo>) {
+    tokio::spawn(async move {
+        match media.sweep_stale_incoming().await {
+            Ok(0) => {}
+            Ok(removed) => tracing::info!(removed, "stale media staging files removed"),
+            Err(error) => tracing::warn!(%error, "stale media staging sweep failed"),
+        }
+    });
+}
+
 async fn report_stranded_credentials(
     pool: &SqlitePools,
     credentials: &SqliteCredentialsRepo,
@@ -181,6 +191,9 @@ impl SqliteBackend {
             },
         );
 
+        let media = Arc::new(SqliteMediaRepo::new(pool.clone(), media_root));
+        spawn_stale_incoming_sweep(Arc::clone(&media));
+
         Self {
             globals: SqliteGlobalsRepo::new(pool.clone()),
             user_globals: SqliteUserGlobalsRepo::new(pool.clone()),
@@ -210,7 +223,7 @@ impl SqliteBackend {
             tts_filters: Arc::new(SqliteTtsFiltersRepo::new(pool.clone())),
             chat_history: Arc::new(SqliteChatHistoryRepo::new(pool.clone())),
             overlay: Arc::new(SqliteOverlayRepo::new(pool.clone())),
-            media: Arc::new(SqliteMediaRepo::new(pool.clone(), media_root)),
+            media,
             donation: Arc::new(SqliteDonationRepo::new(pool.clone())),
             latest_value: Arc::new(SqliteLatestValueRepo::new(pool.clone())),
             ban_ledger: Arc::new(SqliteBanLedgerRepo::new(pool.clone())),

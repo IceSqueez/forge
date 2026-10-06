@@ -266,3 +266,429 @@ impl Render for ViewerHistory {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use std::sync::Arc;
+
+    use forge_components::{ChatBody, Platform};
+    use forge_storage::chat_history::MockChatHistoryRepo;
+    use forge_storage::{ChatAuthorKey, StorageError};
+    use forge_types::{ChatSegment, ChatSource, EventId, ModerationMarks, UnifiedChatRow};
+    use gpui::{AppContext as _, Entity, TestAppContext};
+    use time::OffsetDateTime;
+
+    use super::{
+        HISTORY_LOAD_CAP, HistoryState, ViewerHistory, feed_messages_by, history_query,
+        merge_newest_first,
+    };
+    use crate::chat::ChatView;
+    use crate::chat::tests::{message, mount, push_each};
+    use crate::chat_author::AuthorKey;
+    use crate::chat_feed::{ChatFeed, ChatMessage};
+    use crate::test_support::{pump, runtime};
+
+    type Author = (Platform, Option<&'static str>, &'static str);
+
+    const ANN: Author = (Platform::Twitch, Some("42"), "ann");
+    const BOB: Author = (Platform::Twitch, Some("7"), "bob");
+
+    fn key_of((platform, id, name): Author) -> AuthorKey {
+        match id {
+            Some(id) => AuthorKey::by_viewer_id(platform, id),
+            None => AuthorKey::by_name(platform, name),
+        }
+    }
+
+    fn line(id: &str, at: i64, (platform, author_id, name): Author) -> ChatMessage {
+        ChatMessage {
+            id: id.to_owned().into(),
+            event_id: EventId::new(),
+            timestamp: "00:00:00".into(),
+            received_at: OffsetDateTime::from_unix_timestamp(at).unwrap(),
+            platform,
+            badges: vec![],
+            username: name.into(),
+            author_id: author_id.map(Into::into),
+            author_color: None,
+            body: ChatBody::Message("hi".into()),
+            is_event: false,
+            is_bot: false,
+            moderated: false,
+            reply: None,
+        }
+    }
+
+    fn stored(id: &str, at: i64, (_, author_id, name): Author) -> UnifiedChatRow {
+        UnifiedChatRow {
+            id: id.to_owned(),
+            event_id: EventId::new(),
+            source: ChatSource::Twitch,
+            received_at: OffsetDateTime::from_unix_timestamp(at).unwrap(),
+            author: name.to_owned(),
+            author_id: author_id.map(str::to_owned),
+            author_color: None,
+            body_segments: vec![ChatSegment::Text {
+                text: "hi".to_owned(),
+            }],
+            badges: vec![],
+            is_event: false,
+            event_detail: None,
+            moderation: ModerationMarks::default(),
+        }
+    }
+
+    fn ids(messages: &[ChatMessage]) -> Vec<String> {
+        messages.iter().map(|m| m.id.to_string()).collect()
+    }
+
+    fn feed_of(messages: Vec<ChatMessage>) -> ChatFeed {
+        let mut feed = ChatFeed::new();
+        for message in messages {
+            feed.push(message);
+        }
+        feed
+    }
+
+    fn query_of((_, author_id, _): Author) -> ChatAuthorKey {
+        ChatAuthorKey {
+            source: ChatSource::Twitch,
+            author_id: author_id.unwrap().to_owned(),
+        }
+    }
+
+    fn repo_serving(entries: Vec<(Author, Vec<UnifiedChatRow>)>) -> MockChatHistoryRepo {
+        let mut repo = MockChatHistoryRepo::new();
+        for (author, rows) in entries {
+            let query = query_of(author);
+            repo.expect_list_recent_messages_by_author()
+                .withf(move |asked, limit| *asked == query && *limit == HISTORY_LOAD_CAP)
+                .returning(move |_, _| Ok(rows.clone()));
+        }
+        repo
+    }
+
+    fn mount_history(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        repo: MockChatHistoryRepo,
+        live: Vec<ChatMessage>,
+    ) -> (Entity<ChatFeed>, Entity<ViewerHistory>) {
+        let feed = cx.new(|_| feed_of(live));
+        let history =
+            cx.new(|_| ViewerHistory::new(feed.clone(), Arc::new(repo), rt.handle().clone()));
+        (feed, history)
+    }
+
+    fn show(cx: &mut TestAppContext, history: &Entity<ViewerHistory>, key: Option<AuthorKey>) {
+        history.update(cx, |history, cx| history.show(key, cx));
+    }
+
+    fn settle(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        cx.run_until_parked();
+        pump(rt);
+        cx.run_until_parked();
+    }
+
+    fn state(cx: &mut TestAppContext, history: &Entity<ViewerHistory>) -> HistoryState {
+        history.read_with(cx, |history, _| history.state.clone())
+    }
+
+    fn loaded_ids(cx: &mut TestAppContext, history: &Entity<ViewerHistory>) -> Vec<String> {
+        match state(cx, history) {
+            HistoryState::Loaded(messages) => ids(&messages),
+            other => panic!("expected a loaded history, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn history_query_asks_by_viewer_id_on_the_viewers_platform_and_skips_name_only_keys() {
+        let cases = [
+            (
+                AuthorKey::by_viewer_id(Platform::Twitch, "42"),
+                Some((ChatSource::Twitch, "42")),
+            ),
+            (
+                AuthorKey::by_viewer_id(Platform::YouTube, "UCx"),
+                Some((ChatSource::YouTube, "UCx")),
+            ),
+            (
+                AuthorKey::by_viewer_id(Platform::Kick, "9"),
+                Some((ChatSource::Kick, "9")),
+            ),
+            (AuthorKey::by_name(Platform::Kick, "ann"), None),
+        ];
+        for (key, expected) in cases {
+            let expected = expected.map(|(source, id)| ChatAuthorKey {
+                source,
+                author_id: id.to_owned(),
+            });
+            assert_eq!(history_query(&key), expected, "{key:?}");
+        }
+    }
+
+    #[test]
+    fn feed_messages_by_keeps_only_the_viewers_chat_lines_newest_first() {
+        let mut event = line("e1", 3, ANN);
+        event.is_event = true;
+        let same_id_elsewhere = line("y1", 4, (Platform::YouTube, Some("42"), "ann"));
+        let feed = feed_of(vec![
+            line("m1", 1, ANN),
+            line("b1", 2, BOB),
+            event,
+            same_id_elsewhere,
+            line("m2", 5, ANN),
+        ]);
+
+        let found = feed_messages_by(&feed, &key_of(ANN), feed.start_seq());
+
+        assert_eq!(ids(&found), ["m2", "m1"]);
+    }
+
+    #[test]
+    fn feed_messages_by_scans_from_the_given_seq_inclusive() {
+        let feed = feed_of(vec![
+            line("m0", 0, ANN),
+            line("m1", 1, ANN),
+            line("m2", 2, ANN),
+        ]);
+        let cases: [(u64, &[&str]); 4] = [
+            (0, &["m2", "m1", "m0"]),
+            (1, &["m2", "m1"]),
+            (2, &["m2"]),
+            (3, &[]),
+        ];
+        for (from_seq, expected) in cases {
+            let found = feed_messages_by(&feed, &key_of(ANN), from_seq);
+            assert_eq!(ids(&found), expected, "from seq {from_seq}");
+        }
+    }
+
+    #[test]
+    fn merge_drops_an_arrived_message_whose_id_is_already_known() {
+        let merged = merge_newest_first(
+            vec![line("m1", 10, ANN)],
+            vec![line("m1", 10, ANN), line("m2", 20, ANN)],
+            HISTORY_LOAD_CAP,
+        );
+
+        assert_eq!(ids(&merged), ["m2", "m1"]);
+    }
+
+    #[test]
+    fn merge_never_treats_messages_without_an_id_as_duplicates() {
+        let merged = merge_newest_first(
+            vec![line("", 10, ANN)],
+            vec![line("", 20, ANN)],
+            HISTORY_LOAD_CAP,
+        );
+
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn merge_orders_both_inputs_together_newest_first() {
+        let merged = merge_newest_first(
+            vec![line("k3", 30, ANN), line("k1", 10, ANN)],
+            vec![line("a4", 40, ANN), line("a2", 20, ANN)],
+            HISTORY_LOAD_CAP,
+        );
+
+        assert_eq!(ids(&merged), ["a4", "k3", "a2", "k1"]);
+    }
+
+    #[test]
+    fn merge_keeps_only_the_newest_messages_up_to_the_cap() {
+        const CAP: usize = 3;
+        for total in [CAP - 1, CAP, CAP + 1] {
+            let all: Vec<ChatMessage> = (0..total)
+                .map(|ix| line(&format!("m{ix}"), ix as i64, ANN))
+                .collect();
+            let (known, arrived) = all.split_at(total / 2);
+
+            let merged = merge_newest_first(known.to_vec(), arrived.to_vec(), CAP);
+
+            let expected: Vec<String> = (0..total)
+                .rev()
+                .take(CAP)
+                .map(|ix| format!("m{ix}"))
+                .collect();
+            assert_eq!(ids(&merged), expected, "{total} messages");
+        }
+    }
+
+    #[gpui::test]
+    fn a_viewer_with_an_id_shows_stored_and_live_lines_newest_first_without_duplicates(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let repo = repo_serving(vec![(
+            ANN,
+            vec![stored("m3", 30, ANN), stored("m1", 10, ANN)],
+        )]);
+        let live = vec![
+            line("m1", 10, ANN),
+            line("b9", 40, BOB),
+            line("m5", 50, ANN),
+        ];
+        let (_feed, history) = mount_history(cx, &rt, repo, live);
+
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        assert_eq!(loaded_ids(cx, &history), ["m5", "m3", "m1"]);
+    }
+
+    #[gpui::test]
+    fn a_viewer_known_only_by_name_needs_an_id_instead_of_loading(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (_feed, history) = mount_history(cx, &rt, MockChatHistoryRepo::new(), vec![]);
+
+        show(
+            cx,
+            &history,
+            Some(AuthorKey::by_name(Platform::Kick, "ann")),
+        );
+        settle(cx, &rt);
+
+        assert!(matches!(state(cx, &history), HistoryState::NeedsViewerId));
+    }
+
+    #[gpui::test]
+    fn a_failed_load_shows_the_failed_state(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let mut repo = MockChatHistoryRepo::new();
+        repo.expect_list_recent_messages_by_author()
+            .returning(|_, _| {
+                Err(StorageError::Connection {
+                    reason: "closed".into(),
+                })
+            });
+        let (_feed, history) = mount_history(cx, &rt, repo, vec![line("m1", 10, ANN)]);
+
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        assert!(matches!(state(cx, &history), HistoryState::Failed));
+    }
+
+    #[gpui::test]
+    fn a_load_result_for_a_viewer_no_longer_shown_is_ignored(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let repo = repo_serving(vec![(ANN, vec![]), (BOB, vec![])]);
+        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
+        show(cx, &history, Some(key_of(ANN)));
+        show(cx, &history, Some(key_of(BOB)));
+
+        history.update(cx, |history, cx| {
+            history.apply_loaded(&key_of(ANN), Some(vec![stored("m1", 10, ANN)]), cx);
+        });
+
+        assert!(matches!(state(cx, &history), HistoryState::Loading));
+    }
+
+    #[gpui::test]
+    fn showing_the_same_viewer_again_adds_only_the_lines_that_arrived_since(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let repo = repo_serving(vec![(ANN, vec![])]);
+        let (feed, history) = mount_history(cx, &rt, repo, vec![line("", 10, ANN)]);
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        feed.update(cx, |feed, _| {
+            feed.push(line("m2", 20, ANN));
+            feed.push(line("b3", 30, BOB));
+        });
+        show(cx, &history, Some(key_of(ANN)));
+
+        assert_eq!(loaded_ids(cx, &history), ["m2", ""]);
+    }
+
+    #[gpui::test]
+    fn switching_viewers_resets_to_loading_before_the_new_viewers_lines_arrive(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let repo = repo_serving(vec![
+            (ANN, vec![stored("a1", 10, ANN)]),
+            (BOB, vec![stored("b1", 20, BOB)]),
+        ]);
+        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        show(cx, &history, Some(key_of(BOB)));
+
+        assert!(matches!(state(cx, &history), HistoryState::Loading));
+    }
+
+    #[gpui::test]
+    fn switching_viewers_replaces_the_previous_viewers_lines(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let repo = repo_serving(vec![
+            (ANN, vec![stored("a1", 10, ANN)]),
+            (BOB, vec![stored("b1", 20, BOB)]),
+        ]);
+        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        show(cx, &history, Some(key_of(BOB)));
+        settle(cx, &rt);
+
+        assert_eq!(loaded_ids(cx, &history), ["b1"]);
+    }
+
+    #[gpui::test]
+    fn clearing_the_viewer_hides_a_loaded_history(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let repo = repo_serving(vec![(ANN, vec![stored("a1", 10, ANN)])]);
+        let (_feed, history) = mount_history(cx, &rt, repo, vec![]);
+        show(cx, &history, Some(key_of(ANN)));
+        settle(cx, &rt);
+
+        show(cx, &history, None);
+
+        assert!(matches!(state(cx, &history), HistoryState::Hidden));
+    }
+
+    fn shown_key(cx: &mut TestAppContext, view: &Entity<ChatView>) -> Option<AuthorKey> {
+        let history = view.read_with(cx, |view, _| view.viewer_history.clone());
+        history.read_with(cx, |history, _| history.key.clone())
+    }
+
+    #[gpui::test]
+    fn without_a_selection_the_history_follows_the_newest_chatter(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let (feed, view) = mount(cx, &rt);
+
+        push_each(cx, &feed, vec![message(0, false), message(1, false)]);
+
+        assert_eq!(
+            shown_key(cx, &view),
+            Some(AuthorKey::by_name(Platform::Twitch, "user1"))
+        );
+    }
+
+    #[gpui::test]
+    fn picking_a_viewer_points_the_history_at_that_viewer(cx: &mut TestAppContext) {
+        type Pick = fn(&mut ChatView, AuthorKey, &mut gpui::Context<ChatView>);
+        let picks: [(&str, Pick); 2] = [
+            ("open_viewer", ChatView::open_viewer),
+            ("select_viewer", ChatView::select_viewer),
+        ];
+        for (name, pick) in picks {
+            let rt = runtime();
+            let (feed, view) = mount(cx, &rt);
+            push_each(cx, &feed, vec![message(0, false), message(1, false)]);
+            let first = AuthorKey::by_name(Platform::Twitch, "user0");
+
+            view.update(cx, |view, cx| pick(view, first.clone(), cx));
+
+            assert_eq!(shown_key(cx, &view), Some(first), "{name}");
+        }
+    }
+}

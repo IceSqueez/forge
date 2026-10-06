@@ -2127,7 +2127,7 @@ mod tests {
     const CAP: usize = 5;
     const OVERFLOW: usize = 8;
 
-    fn message(ix: usize, is_bot: bool) -> ChatMessage {
+    pub(super) fn message(ix: usize, is_bot: bool) -> ChatMessage {
         ChatMessage {
             id: format!("m{ix}").into(),
             event_id: EventId::new(),
@@ -2146,7 +2146,7 @@ mod tests {
         }
     }
 
-    fn mount(
+    pub(super) fn mount(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
     ) -> (Entity<ChatFeed>, Entity<ChatView>) {
@@ -2197,7 +2197,11 @@ mod tests {
         (feed, view)
     }
 
-    fn push_each(cx: &mut TestAppContext, feed: &Entity<ChatFeed>, messages: Vec<ChatMessage>) {
+    pub(super) fn push_each(
+        cx: &mut TestAppContext,
+        feed: &Entity<ChatFeed>,
+        messages: Vec<ChatMessage>,
+    ) {
         for message in messages {
             feed.update(cx, |feed, cx| {
                 feed.push(message);

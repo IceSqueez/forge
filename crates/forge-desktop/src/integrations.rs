@@ -246,12 +246,12 @@ pub fn kick_builtin_object(
         health: bundle.clone(),
         content: bundle.clone(),
         quick: bundle.clone(),
-        control: Some(bundle as Arc<dyn BuiltinControl>),
+        control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: None,
         obs_client: None,
         vtube_client: None,
         follow: None,
-        ban_list: None,
+        ban_list: Some(bundle as Arc<dyn BanListSource>),
     }
 }
 

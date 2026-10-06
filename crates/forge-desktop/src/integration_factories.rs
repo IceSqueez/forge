@@ -365,10 +365,12 @@ pub(crate) fn wire_kick(
         KICK_API_BUDGET_CAPACITY,
         KICK_API_BUDGET_WINDOW,
     ));
+    let ban_ledger = backend.ban_ledger_repo();
     let platform = Arc::new(forge_platform_kick::KickPlatform::new(
         endpoints,
         Arc::clone(&manager),
         Arc::clone(&rate_limiter),
+        Arc::clone(&ban_ledger),
     ));
     let sender = Arc::new(forge_platform_kick::KickSendChat::new(
         endpoints,
@@ -377,6 +379,7 @@ pub(crate) fn wire_kick(
     let moderation = Arc::new(forge_platform_kick::KickModeration::new(
         endpoints,
         Arc::clone(&rate_limiter),
+        ban_ledger,
     ));
     let channel = Arc::new(forge_platform_kick::KickChannel::new(
         endpoints,

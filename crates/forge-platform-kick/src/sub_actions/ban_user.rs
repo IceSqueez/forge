@@ -12,6 +12,7 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use futures::future::BoxFuture;
 use time::OffsetDateTime;
 
+use super::ban_reason;
 use crate::moderation::KickModeration;
 
 const KIND_ID: &str = "kick.moderation.ban";
@@ -68,24 +69,33 @@ impl SubActionRunner for BanUserRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([("user_id".to_owned(), Variant::String(String::new()))])
+        BTreeMap::from([
+            ("user_id".to_owned(), Variant::String(String::new())),
+            ban_reason::default_entry(),
+        ])
     }
 
     fn config_fields(&self) -> Vec<FormField> {
-        vec![FormField::Text {
-            key: "user_id",
-            label: "Target User ID",
-            placeholder: "%user_id%",
-        }]
+        vec![
+            FormField::Text {
+                key: "user_id",
+                label: "Target User ID",
+                placeholder: "%user_id%",
+            },
+            ban_reason::form_field(),
+        ]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
         match config.get("user_id") {
-            Some(Variant::String(s)) if !s.is_empty() => Ok(()),
-            _ => Err(RegistryError::InvalidConfig(format!(
-                "{KIND_ID}: 'user_id' must be a non-empty string"
-            ))),
+            Some(Variant::String(s)) if !s.is_empty() => {}
+            _ => {
+                return Err(RegistryError::InvalidConfig(format!(
+                    "{KIND_ID}: 'user_id' must be a non-empty string"
+                )));
+            }
         }
+        ban_reason::validate(KIND_ID, config)
     }
 
     async fn execute(
@@ -98,6 +108,7 @@ impl SubActionRunner for BanUserRunner {
 
         let template = config.str("user_id").unwrap_or_default();
         let resolved = ctx.arg_stack.interpolate(template);
+        let reason = ban_reason::resolve(config, ctx);
 
         let outcome = match resolved.parse::<u64>() {
             Err(_) => {
@@ -109,7 +120,7 @@ impl SubActionRunner for BanUserRunner {
                     Err(e) => SubActionOutcome::Failed(format!("broadcaster id error: {e}")),
                     Ok(broadcaster_user_id) => match self
                         .client
-                        .ban(target_id, broadcaster_user_id, &token)
+                        .ban(target_id, broadcaster_user_id, reason.as_deref(), &token)
                         .await
                     {
                         Ok(()) => SubActionOutcome::Success,

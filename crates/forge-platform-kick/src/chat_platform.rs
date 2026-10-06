@@ -6,7 +6,10 @@ use forge_platform_core::{
     ChatPlatform, ConnectionState, PlatformCapabilities, PlatformEndpoints, PlatformError,
     RateLimiter, connection_state_changed_event,
 };
+use forge_storage::BanLedgerRepo;
 use tokio::sync::{mpsc, watch};
+
+use crate::ban_ledger::{USER_BANNED_EVENT_KIND, observed_ban};
 
 use crate::capabilities::kick_capabilities;
 use crate::chat::{KickChat, KickChatHandle};
@@ -25,6 +28,7 @@ pub struct KickPlatform {
     endpoints: PlatformEndpoints,
     http: reqwest::Client,
     sender: KickSendChat,
+    ban_ledger: Arc<dyn BanLedgerRepo>,
     handle: Mutex<Option<KickChatHandle>>,
     state_tx: watch::Sender<ConnectionState>,
 }
@@ -34,6 +38,7 @@ impl KickPlatform {
         endpoints: &PlatformEndpoints,
         credentials_manager: Arc<KickCredentialsManager>,
         rate_limiter: Arc<dyn RateLimiter>,
+        ban_ledger: Arc<dyn BanLedgerRepo>,
     ) -> Self {
         let (state_tx, _) = watch::channel(ConnectionState::Disconnected);
         Self {
@@ -43,6 +48,7 @@ impl KickPlatform {
             endpoints: endpoints.clone(),
             http: reqwest::Client::new(),
             sender: KickSendChat::new(endpoints, rate_limiter),
+            ban_ledger,
             handle: Mutex::new(None),
             state_tx,
         }
@@ -50,6 +56,10 @@ impl KickPlatform {
 
     pub(crate) fn state_receiver(&self) -> watch::Receiver<ConnectionState> {
         self.state_tx.subscribe()
+    }
+
+    pub(crate) fn ban_ledger(&self) -> &Arc<dyn BanLedgerRepo> {
+        &self.ban_ledger
     }
 
     async fn send_credentials(&self) -> Result<(String, u64), PlatformError> {
@@ -65,6 +75,19 @@ impl KickPlatform {
         })?;
         let token = self.credentials_manager.get_valid_access_token().await?;
         Ok((token, creds.user_id))
+    }
+}
+
+async fn record_observed_ban(
+    ban_ledger: &dyn BanLedgerRepo,
+    broadcaster_user_id: u64,
+    event: &Event,
+) {
+    let Some(entry) = observed_ban(&event.payload, broadcaster_user_id, event.timestamp) else {
+        return;
+    };
+    if let Err(error) = ban_ledger.upsert(&entry, event.timestamp).await {
+        tracing::warn!(%error, "observed kick ban not recorded in the ban ledger");
     }
 }
 
@@ -98,8 +121,13 @@ impl ChatPlatform for KickPlatform {
             .map_err(map_connect_error)?;
 
         let forward_events = self.events.clone();
+        let ban_ledger = Arc::clone(&self.ban_ledger);
+        let broadcaster_user_id = creds.user_id;
         tokio::spawn(async move {
             while let Some(event) = chat_rx.recv().await {
+                if event.kind == USER_BANNED_EVENT_KIND {
+                    record_observed_ban(ban_ledger.as_ref(), broadcaster_user_id, &event).await;
+                }
                 forward_events.publish(event);
             }
         });

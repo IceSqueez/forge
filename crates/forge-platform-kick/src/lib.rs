@@ -1,4 +1,6 @@
 pub mod auth;
+mod ban_ledger;
+mod ban_list;
 pub mod builtin;
 pub mod capabilities;
 pub mod categories;

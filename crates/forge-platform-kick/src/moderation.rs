@@ -4,21 +4,31 @@ use forge_platform_core::{
     DEFAULT_RETRY_AFTER_SECS, EndpointSurface, PlatformEndpoints, PlatformError, RateLimiter,
     acquire_or_wait,
 };
+use forge_storage::{BanLedgerKey, BanLedgerRepo};
 use reqwest::StatusCode;
+use time::{Duration, OffsetDateTime};
+
+use crate::ban_ledger::{ban_ledger_key, issued_ban, timeout_term_minutes};
 
 const BANS_PATH: &str = "/moderation/bans";
 
 pub struct KickModeration {
     client: reqwest::Client,
     limiter: Arc<dyn RateLimiter>,
+    ban_ledger: Arc<dyn BanLedgerRepo>,
     bans_endpoint: String,
 }
 
 impl KickModeration {
-    pub fn new(endpoints: &PlatformEndpoints, limiter: Arc<dyn RateLimiter>) -> Self {
+    pub fn new(
+        endpoints: &PlatformEndpoints,
+        limiter: Arc<dyn RateLimiter>,
+        ban_ledger: Arc<dyn BanLedgerRepo>,
+    ) -> Self {
         Self {
             client: reqwest::Client::new(),
             limiter,
+            ban_ledger,
             bans_endpoint: format!(
                 "{}{BANS_PATH}",
                 endpoints.base_url(EndpointSurface::KickPublicApi)
@@ -36,25 +46,14 @@ impl KickModeration {
         &self,
         target_user_id: u64,
         broadcaster_user_id: u64,
+        reason: Option<&str>,
         token: &str,
     ) -> Result<(), PlatformError> {
-        self.acquire_slot().await?;
-
-        let response = self
-            .client
-            .post(&self.bans_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&serde_json::json!({
-                "broadcaster_user_id": broadcaster_user_id,
-                "user_id": target_user_id,
-            }))
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        map_moderation_response(response).await
+        self.post_ban(target_user_id, broadcaster_user_id, None, reason, token)
+            .await?;
+        self.record_issued_ban(target_user_id, broadcaster_user_id, None, reason)
+            .await;
+        Ok(())
     }
 
     pub async fn timeout(
@@ -62,26 +61,25 @@ impl KickModeration {
         target_user_id: u64,
         broadcaster_user_id: u64,
         duration_minutes: u32,
+        reason: Option<&str>,
         token: &str,
     ) -> Result<(), PlatformError> {
-        self.acquire_slot().await?;
-
-        let response = self
-            .client
-            .post(&self.bans_endpoint)
-            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
-            .json(&serde_json::json!({
-                "broadcaster_user_id": broadcaster_user_id,
-                "user_id": target_user_id,
-                "duration": duration_minutes,
-            }))
-            .send()
-            .await
-            .map_err(|e| PlatformError::Network {
-                reason: e.without_url().to_string(),
-            })?;
-
-        map_moderation_response(response).await
+        self.post_ban(
+            target_user_id,
+            broadcaster_user_id,
+            Some(duration_minutes),
+            reason,
+            token,
+        )
+        .await?;
+        self.record_issued_ban(
+            target_user_id,
+            broadcaster_user_id,
+            Some(timeout_term_minutes(duration_minutes)),
+            reason,
+        )
+        .await;
+        Ok(())
     }
 
     pub async fn unban(
@@ -106,7 +104,83 @@ impl KickModeration {
                 reason: e.without_url().to_string(),
             })?;
 
+        map_moderation_response(response).await?;
+        self.forget_ban(&ban_ledger_key(
+            broadcaster_user_id,
+            &target_user_id.to_string(),
+        ))
+        .await;
+        Ok(())
+    }
+
+    async fn post_ban(
+        &self,
+        target_user_id: u64,
+        broadcaster_user_id: u64,
+        duration_minutes: Option<u32>,
+        reason: Option<&str>,
+        token: &str,
+    ) -> Result<(), PlatformError> {
+        self.acquire_slot().await?;
+
+        let mut body = serde_json::json!({
+            "broadcaster_user_id": broadcaster_user_id,
+            "user_id": target_user_id,
+        });
+        if let Some(minutes) = duration_minutes {
+            body["duration"] = serde_json::Value::from(minutes);
+        }
+        if let Some(reason) = reason {
+            body["reason"] = serde_json::Value::from(reason);
+        }
+
+        let response = self
+            .client
+            .post(&self.bans_endpoint)
+            .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network {
+                reason: e.without_url().to_string(),
+            })?;
+
         map_moderation_response(response).await
+    }
+
+    async fn record_issued_ban(
+        &self,
+        target_user_id: u64,
+        broadcaster_user_id: u64,
+        term: Option<Duration>,
+        reason: Option<&str>,
+    ) {
+        let viewer_id = target_user_id.to_string();
+        let key = ban_ledger_key(broadcaster_user_id, &viewer_id);
+        let banned_at = OffsetDateTime::now_utc();
+        let known_name = match self.ban_ledger.get(&key, banned_at).await {
+            Ok(stored) => stored.map(|entry| entry.viewer_name),
+            Err(error) => {
+                tracing::warn!(%error, "kick ban ledger lookup failed");
+                None
+            }
+        };
+        let entry = issued_ban(
+            key,
+            known_name.unwrap_or(viewer_id),
+            reason.map(str::to_owned),
+            banned_at,
+            term,
+        );
+        if let Err(error) = self.ban_ledger.upsert(&entry, banned_at).await {
+            tracing::warn!(%error, "issued kick ban not recorded in the ban ledger");
+        }
+    }
+
+    async fn forget_ban(&self, key: &BanLedgerKey) {
+        if let Err(error) = self.ban_ledger.remove(key).await {
+            tracing::warn!(%error, "lifted kick ban not removed from the ban ledger");
+        }
     }
 
     async fn acquire_slot(&self) -> Result<(), PlatformError> {

@@ -10,6 +10,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, info, warn};
 
+use crate::ban_ledger::USER_BANNED_EVENT_KIND;
 use crate::channel_info::ChannelInfoFetcher;
 use crate::error::KickError;
 use crate::normalize;
@@ -395,7 +396,7 @@ pub(crate) fn build_event(event_name: &str, payload: serde_json::Value) -> Optio
             normalize::chat_message_deleted(&payload),
         ),
         "App\\Events\\UserBannedEvent" => (
-            "kick.moderation.banned",
+            USER_BANNED_EVENT_KIND,
             normalize::moderation_banned(&payload),
         ),
         "App\\Events\\SubscriptionEvent" => (

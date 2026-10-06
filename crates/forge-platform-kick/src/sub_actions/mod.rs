@@ -1,4 +1,5 @@
 mod accept_redemption;
+mod ban_reason;
 mod ban_user;
 mod create_reward;
 mod delete_message;

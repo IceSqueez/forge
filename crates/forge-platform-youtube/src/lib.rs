@@ -10,6 +10,7 @@ pub mod credentials;
 pub mod credentials_manager;
 pub(crate) mod error_shape;
 mod event_channel;
+mod follow_lookup;
 pub mod integration;
 pub mod live_chat_id;
 #[cfg(test)]

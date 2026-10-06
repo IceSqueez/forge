@@ -554,7 +554,7 @@ impl ChatView {
         cx.spawn(async move |this, cx| {
             let outcome = rx
                 .await
-                .unwrap_or_else(|_| Err("dispatch cancelled".to_owned()));
+                .unwrap_or_else(|_| Err(tr!("chat_dispatch_cancelled")));
             let _ = this.update(cx, |_this, cx| {
                 let (kind, message) = toast(outcome);
                 cx.push_toast(kind, message);

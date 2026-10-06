@@ -39,7 +39,11 @@ impl ChatView {
 
     pub(crate) fn set_tab(&mut self, tab: ChatTab, cx: &mut Context<Self>) {
         self.banned.tab = tab;
-        if tab == ChatTab::Banned && self.banned.panel.is_none() {
+        if let Some(panel) = &self.banned.panel {
+            panel.update(cx, |panel, cx| {
+                panel.set_visible(tab == ChatTab::Banned, cx)
+            });
+        } else if tab == ChatTab::Banned {
             let builtins = self.banned.builtins.clone();
             let lifecycle = self.lifecycle.clone();
             let bus = self.banned.bus.clone();

@@ -276,10 +276,13 @@ pub fn hero_card(
 }
 
 pub fn disclaimer_block(id: &IntegrationId, palette: &ForgePalette) -> Option<AnyElement> {
+    disclaimer_line(id, palette).map(|line| div().mb(DISCLAIMER_MB).child(line).into_any_element())
+}
+
+pub fn disclaimer_line(id: &IntegrationId, palette: &ForgePalette) -> Option<AnyElement> {
     let disclaimer = disclaimer_of(id)?;
     Some(
         div()
-            .mb(DISCLAIMER_MB)
             .flex()
             .items_start()
             .gap(DISCLAIMER_GAP)

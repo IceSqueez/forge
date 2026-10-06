@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use forge_components::{
     BORDER_THIN, Density, FONT_XS, FONT_XXS, ForgePalette, Icon, Platform, PlatformKind, Radius,
@@ -25,6 +25,7 @@ use super::platform_display_name;
 use super::platform_gate::platform_integration;
 use super::viewer_actions::{ViewerAction, ViewerTarget};
 use crate::async_bridge::{self, EventBatch};
+use crate::integration_disabled::disclaimer_line;
 use crate::integration_lifecycle::IntegrationLifecycle;
 use crate::integration_supervisor::LifecycleState;
 use crate::integrations::BuiltinRegistry;
@@ -32,6 +33,7 @@ use crate::presentation::ActivePresentation;
 use crate::scheduled_run_labels::system_offset_at;
 
 const BAN_RELIST_DEBOUNCE: Duration = Duration::from_millis(750);
+pub(crate) const UNBAN_RELIST_SUPPRESSION: Duration = Duration::from_secs(5);
 const PLATFORM_ORDER: [Platform; 3] = [Platform::Twitch, Platform::YouTube, Platform::Kick];
 const GROUP_DOT: Pixels = px(6.0);
 const NAME_COLUMN_W: Pixels = px(160.0);
@@ -39,7 +41,6 @@ const MODERATOR_COLUMN_W: Pixels = px(130.0);
 const BANNED_AT_COLUMN_W: Pixels = px(90.0);
 const EXPIRY_COLUMN_W: Pixels = px(170.0);
 const UNBAN_COLUMN_W: Pixels = px(84.0);
-const DISPATCH_CANCELLED: &str = "dispatch cancelled";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum UnbanState {
@@ -111,6 +112,45 @@ impl ListResult {
     }
 }
 
+pub(crate) fn lists_only_what_forge_saw(platform: Platform) -> bool {
+    match platform {
+        Platform::Twitch => false,
+        Platform::YouTube | Platform::Kick => true,
+    }
+}
+
+pub(crate) async fn list_pages(
+    source: &dyn BanListSource,
+    after: Option<BanPageToken>,
+    depth: usize,
+) -> ListResult {
+    let mut rows: Vec<BanRow> = Vec::new();
+    let mut token = after;
+    for fetched in 0..depth.max(1) {
+        match ListResult::of(source.list_bans(token.as_ref()).await) {
+            ListResult::Page { rows: page, next } => {
+                for row in page {
+                    if !rows
+                        .iter()
+                        .any(|known| known.entry.viewer_id == row.entry.viewer_id)
+                    {
+                        rows.push(row);
+                    }
+                }
+                token = next;
+                if token.is_none() {
+                    break;
+                }
+            }
+            ListResult::Unavailable(reason) if fetched == 0 => {
+                return ListResult::Unavailable(reason);
+            }
+            ListResult::Unavailable(_) => break,
+        }
+    }
+    ListResult::Page { rows, next: token }
+}
+
 pub(crate) struct BanGroup {
     pub platform: Platform,
     pub status: GroupStatus,
@@ -118,6 +158,9 @@ pub(crate) struct BanGroup {
     pub next: Option<BanPageToken>,
     pub loading_more: bool,
     pub more_failed: Option<BanListUnavailable>,
+    pub stale: bool,
+    pub pages: usize,
+    pub recently_unbanned: Vec<(String, Instant)>,
     request_id: u64,
     _request: Option<Task<()>>,
     _relist: Option<Task<()>>,
@@ -132,6 +175,9 @@ impl BanGroup {
             next: None,
             loading_more: false,
             more_failed: None,
+            stale: false,
+            pages: 1,
+            recently_unbanned: Vec::new(),
             request_id: 0,
             _request: None,
             _relist: None,
@@ -172,6 +218,22 @@ impl BanGroup {
         }
     }
 
+    pub(crate) fn without_recent_unbans(&mut self, result: ListResult, now: Instant) -> ListResult {
+        self.recently_unbanned.retain(|(_, until)| *until > now);
+        match result {
+            ListResult::Page { mut rows, next } => {
+                rows.retain(|row| {
+                    !self
+                        .recently_unbanned
+                        .iter()
+                        .any(|(viewer_id, _)| *viewer_id == row.entry.viewer_id)
+                });
+                ListResult::Page { rows, next }
+            }
+            unavailable @ ListResult::Unavailable(_) => unavailable,
+        }
+    }
+
     fn apply(&mut self, appending: bool, result: ListResult) {
         self.loading_more = false;
         match (result, appending) {
@@ -179,6 +241,7 @@ impl BanGroup {
                 self.append_rows(rows);
                 self.next = next;
                 self.more_failed = None;
+                self.pages += 1;
             }
             (ListResult::Page { rows, next }, false) => {
                 self.replace_rows(rows);
@@ -193,6 +256,7 @@ impl BanGroup {
                 self.rows.clear();
                 self.next = None;
                 self.more_failed = None;
+                self.pages = 1;
                 self.status = GroupStatus::Unavailable(reason);
             }
         }
@@ -205,6 +269,7 @@ pub struct BannedPanel {
     rt_handle: tokio::runtime::Handle,
     action_engine: ActionEngineHandle,
     groups: Vec<BanGroup>,
+    visible: bool,
     last_request: u64,
     _bus_watch: Option<Task<()>>,
     _lifecycle_obs: Option<Subscription>,
@@ -229,6 +294,7 @@ impl BannedPanel {
             rt_handle,
             action_engine,
             groups: Vec::new(),
+            visible: true,
             last_request: 0,
             _bus_watch: bus_watch,
             _lifecycle_obs: lifecycle_obs,
@@ -293,20 +359,74 @@ impl BannedPanel {
         self.groups.retain(|group| shown.contains(&group.platform));
         for platform in shown {
             if self.group_mut(platform).is_none() {
+                self.relist(platform, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    pub fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        self.visible = visible;
+        if visible {
+            let stale: Vec<Platform> = self
+                .groups
+                .iter()
+                .filter(|group| group.stale)
+                .map(|group| group.platform)
+                .collect();
+            for platform in stale {
                 self.list_group(platform, None, cx);
             }
         }
         cx.notify();
     }
 
+    fn relist(&mut self, platform: Platform, cx: &mut Context<Self>) {
+        if self.visible {
+            self.list_group(platform, None, cx);
+        } else if self.source_for(platform).is_some() {
+            self.ensure_group(platform).stale = true;
+        }
+    }
+
     fn schedule_relist(&mut self, platform: Platform, cx: &mut Context<Self>) {
+        if !self.visible {
+            self.relist(platform, cx);
+            return;
+        }
         let task = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(BAN_RELIST_DEBOUNCE).await;
-            let _ = this.update(cx, |this, cx| this.list_group(platform, None, cx));
+            let _ = this.update(cx, |this, cx| this.relist(platform, cx));
         });
         if let Some(group) = self.group_mut(platform) {
             group._relist = Some(task);
         }
+    }
+
+    fn ensure_group(&mut self, platform: Platform) -> &mut BanGroup {
+        let rank = |platform: Platform| {
+            PLATFORM_ORDER
+                .iter()
+                .position(|candidate| *candidate == platform)
+                .unwrap_or(PLATFORM_ORDER.len())
+        };
+        let index = match self
+            .groups
+            .iter()
+            .position(|group| group.platform == platform)
+        {
+            Some(index) => index,
+            None => {
+                let index = self
+                    .groups
+                    .iter()
+                    .take_while(|group| rank(group.platform) < rank(platform))
+                    .count();
+                self.groups.insert(index, BanGroup::new(platform));
+                index
+            }
+        };
+        &mut self.groups[index]
     }
 
     fn list_group(
@@ -323,11 +443,15 @@ impl BannedPanel {
         self.last_request += 1;
         let request_id = self.last_request;
         let appending = after.is_some();
+        let depth = match self.group_mut(platform) {
+            Some(group) if !appending => group.pages,
+            _ => 1,
+        };
 
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let outcome = source.list_bans(after.as_ref()).await;
-            let _ = tx.send(ListResult::of(outcome));
+            let result = list_pages(source.as_ref(), after, depth).await;
+            let _ = tx.send(result);
         });
         let request = cx.spawn(async move |this, cx| {
             if let Ok(result) = rx.await {
@@ -337,32 +461,16 @@ impl BannedPanel {
             }
         });
 
-        if self.group_mut(platform).is_none() {
-            let position = PLATFORM_ORDER
-                .iter()
-                .position(|candidate| *candidate == platform)
-                .unwrap_or(PLATFORM_ORDER.len());
-            let index = self
-                .groups
-                .iter()
-                .take_while(|group| {
-                    PLATFORM_ORDER
-                        .iter()
-                        .position(|candidate| *candidate == group.platform)
-                        .unwrap_or(PLATFORM_ORDER.len())
-                        < position
-                })
-                .count();
-            self.groups.insert(index, BanGroup::new(platform));
-        }
-        if let Some(group) = self.group_mut(platform) {
-            group.request_id = request_id;
-            group.loading_more = appending;
-            if !appending && group.status != GroupStatus::Loaded {
+        let group = self.ensure_group(platform);
+        group.request_id = request_id;
+        group.loading_more = appending;
+        if !appending {
+            group.stale = false;
+            if group.status != GroupStatus::Loaded {
                 group.status = GroupStatus::Loading;
             }
-            group._request = Some(request);
         }
+        group._request = Some(request);
         cx.notify();
     }
 
@@ -374,12 +482,14 @@ impl BannedPanel {
         result: ListResult,
         cx: &mut Context<Self>,
     ) {
+        let now = cx.background_executor().now();
         let Some(group) = self.group_mut(platform) else {
             return;
         };
         if group.request_id != request_id {
             return;
         }
+        let result = group.without_recent_unbans(result, now);
         group.apply(appending, result);
         cx.notify();
     }
@@ -429,7 +539,7 @@ impl BannedPanel {
         cx.spawn(async move |this, cx| {
             let outcome = rx
                 .await
-                .unwrap_or_else(|_| Err(DISPATCH_CANCELLED.to_owned()));
+                .unwrap_or_else(|_| Err(tr!("chat_dispatch_cancelled")));
             let _ = this.update(cx, |this, cx| {
                 this.apply_unban(platform, &viewer_id, outcome, cx);
             });
@@ -445,11 +555,17 @@ impl BannedPanel {
         outcome: Result<(), String>,
         cx: &mut Context<Self>,
     ) {
+        let now = cx.background_executor().now();
         let Some(group) = self.group_mut(platform) else {
             return;
         };
         match outcome {
-            Ok(()) => group.rows.retain(|row| row.entry.viewer_id != viewer_id),
+            Ok(()) => {
+                group.rows.retain(|row| row.entry.viewer_id != viewer_id);
+                group
+                    .recently_unbanned
+                    .push((viewer_id.to_owned(), now + UNBAN_RELIST_SUPPRESSION));
+            }
             Err(error) => {
                 if let Some(row) = group.row_mut(viewer_id) {
                     row.unban = UnbanState::Failed(error);
@@ -507,6 +623,38 @@ impl BannedPanel {
                     .child(count),
             )
             .into_any_element()
+    }
+
+    fn render_group_notes(
+        platform: Platform,
+        palette: &ForgePalette,
+        density: Density,
+    ) -> Option<AnyElement> {
+        let disclaimer = disclaimer_line(&platform_integration(platform).builtin_id(), palette);
+        let seen_note = lists_only_what_forge_saw(platform).then(|| {
+            div()
+                .font_family(body_family())
+                .text_size(FONT_XXS)
+                .text_color(palette.text_faint)
+                .child(tr!("chat_banned_seen_by_forge"))
+                .into_any_element()
+        });
+        if disclaimer.is_none() && seen_note.is_none() {
+            return None;
+        }
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(spacing(Spacing::Xxs, density))
+                .px(spacing(Spacing::Sm, density))
+                .py(spacing(Spacing::Xs, density))
+                .border_b(BORDER_THIN)
+                .border_color(palette.border_regular)
+                .children(seen_note)
+                .children(disclaimer)
+                .into_any_element(),
+        )
     }
 
     fn render_column_header(palette: &ForgePalette, density: Density) -> AnyElement {
@@ -752,6 +900,7 @@ impl Render for BannedPanel {
                     .bg(palette.shell)
                     .overflow_hidden()
                     .child(Self::render_group_header(group, &palette, density))
+                    .children(Self::render_group_notes(group.platform, &palette, density))
                     .child(self.render_group_body(group, &palette, density, cx))
                     .into_any_element()
             })

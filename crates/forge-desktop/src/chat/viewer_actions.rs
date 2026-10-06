@@ -14,8 +14,10 @@ const TWITCH_BAN_KIND: &str = "twitch.moderation.ban_user";
 const TWITCH_UNBAN_KIND: &str = "twitch.moderation.unban_user";
 const YOUTUBE_TIMEOUT_KIND: &str = "youtube.moderation.timeout_user";
 const YOUTUBE_BAN_KIND: &str = "youtube.moderation.ban_user";
+const YOUTUBE_UNBAN_KIND: &str = "youtube.moderation.unban_user";
 const KICK_TIMEOUT_KIND: &str = "kick.moderation.timeout";
 const KICK_BAN_KIND: &str = "kick.moderation.ban";
+const KICK_UNBAN_KIND: &str = "kick.moderation.unban";
 
 const TWITCH_SHOUTOUT_TARGET_KEY: &str = "to_broadcaster_id";
 const TWITCH_WHISPER_TARGET_KEY: &str = "to_user_id";
@@ -162,7 +164,8 @@ impl ViewerTarget {
                     )
                 }),
             ViewerAction::Ban => Some((YOUTUBE_BAN_KIND, BTreeMap::from([channel]))),
-            ViewerAction::Shoutout | ViewerAction::Whisper(_) | ViewerAction::Unban => None,
+            ViewerAction::Unban => Some((YOUTUBE_UNBAN_KIND, BTreeMap::from([channel]))),
+            ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,
         }
     }
 
@@ -190,7 +193,8 @@ impl ViewerTarget {
                 ))
             }
             ViewerAction::Ban => Some((KICK_BAN_KIND, BTreeMap::from([user]))),
-            ViewerAction::Shoutout | ViewerAction::Whisper(_) | ViewerAction::Unban => None,
+            ViewerAction::Unban => Some((KICK_UNBAN_KIND, BTreeMap::from([user]))),
+            ViewerAction::Shoutout | ViewerAction::Whisper(_) => None,
         }
     }
 }

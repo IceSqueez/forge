@@ -176,6 +176,9 @@ async fn do_write(
     file.write_all(&bytes)
         .await
         .map_err(|e| format!("write failed: {e}"))?;
+    file.flush()
+        .await
+        .map_err(|e| format!("write failed: {e}"))?;
 
     Ok(bytes.len() as u64)
 }

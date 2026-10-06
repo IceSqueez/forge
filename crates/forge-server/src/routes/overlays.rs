@@ -11,6 +11,7 @@ use crate::protocol::mime_for_extension;
 use crate::server::AppState;
 
 const OVERLAY_ENTRY_DOCUMENT: &str = "index.html";
+pub(crate) const NOSNIFF: &str = "nosniff";
 const ANY_ORIGIN: &str = "*";
 const SELF_SCHEME: &str = "http://";
 
@@ -48,6 +49,10 @@ pub async fn serve_overlay_file(
             response_headers.insert(header::CONTENT_LENGTH, HeaderValue::from(served.len));
             response_headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, cors_value);
             response_headers.insert(header::VARY, HeaderValue::from_name(header::ORIGIN));
+            response_headers.insert(
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static(NOSNIFF),
+            );
             if is_generated_media_path(&path) {
                 response_headers.insert(header::CACHE_CONTROL, generated_media_cache_control());
             }

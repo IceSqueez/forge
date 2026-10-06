@@ -62,17 +62,48 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         rows.into_iter().map(decode_alias_row).collect()
     }
 
-    async fn upsert(&self, alias: &VoiceAlias) -> Result<(), StorageError> {
+    async fn upsert(&self, alias: &VoiceAlias) -> Result<VoiceAlias, StorageError> {
         let state_str = match alias.state {
             AliasState::Active => "Active",
             AliasState::Blocked => "Blocked",
         };
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let viewer_holder: Option<(String,)> =
+            sqlx::query_as("SELECT id FROM voice_aliases WHERE viewer_id = ?")
+                .bind(&alias.viewer_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(SqliteStorageError::Sqlx)?;
+
+        let stored_id = match viewer_holder {
+            Some((holder_id,)) if holder_id != alias.id.0 => {
+                let id_is_stored: Option<(i64,)> =
+                    sqlx::query_as("SELECT 1 FROM voice_aliases WHERE id = ?")
+                        .bind(&alias.id.0)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(SqliteStorageError::Sqlx)?;
+                if id_is_stored.is_some() {
+                    return Err(StorageError::AliasViewerTaken);
+                }
+                AliasId(holder_id)
+            }
+            _ => alias.id.clone(),
+        };
+
         sqlx::query(
             "INSERT INTO voice_aliases
                 (id, viewer_id, viewer_name, engine_id, voice_id,
                  pitch_semitones, rate_multiplier, state, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
              ON CONFLICT(id) DO UPDATE SET
+                viewer_id       = excluded.viewer_id,
                 viewer_name     = excluded.viewer_name,
                 engine_id       = excluded.engine_id,
                 voice_id        = excluded.voice_id,
@@ -81,7 +112,7 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
                 state           = excluded.state,
                 updated_at      = excluded.updated_at",
         )
-        .bind(&alias.id.0)
+        .bind(&stored_id.0)
         .bind(&alias.viewer_id)
         .bind(&alias.viewer_name)
         .bind(&alias.engine_id.0)
@@ -89,10 +120,15 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
         .bind(alias.pitch_semitones.map(f64::from))
         .bind(alias.rate_multiplier.map(f64::from))
         .bind(state_str)
-        .execute(self.db.writer())
+        .execute(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
-        Ok(())
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+        Ok(VoiceAlias {
+            id: stored_id,
+            ..alias.clone()
+        })
     }
 
     async fn delete(&self, id: &AliasId) -> Result<(), StorageError> {
@@ -289,17 +325,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upsert_and_list() {
-        let backend = open().await;
-        let repo = backend.voice_alias_repo();
-        let alias = sample_alias();
-        repo.upsert(&alias).await.expect("upsert");
-        let all = repo.list().await.expect("list");
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].viewer_id, alias.viewer_id);
-    }
-
-    #[tokio::test]
     async fn delete_removes_alias() {
         let backend = open().await;
         let repo = backend.voice_alias_repo();
@@ -308,5 +333,126 @@ mod tests {
         repo.delete(&alias.id).await.expect("delete");
         let found = repo.find_by_viewer(&alias.viewer_id).await.expect("find");
         assert!(found.is_none());
+    }
+
+    fn alias(id: &str, viewer_id: &str, voice: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId(id.into()),
+            viewer_id: viewer_id.into(),
+            voice_id: VoiceId(voice.into()),
+            ..sample_alias()
+        }
+    }
+
+    async fn rows(repo: &dyn VoiceAliasRepo) -> Vec<(String, String, String)> {
+        let mut rows: Vec<(String, String, String)> = repo
+            .list()
+            .await
+            .expect("list")
+            .into_iter()
+            .map(|a| (a.id.0, a.viewer_id, a.voice_id.0))
+            .collect();
+        rows.sort();
+        rows
+    }
+
+    fn row(id: &str, viewer_id: &str, voice: &str) -> (String, String, String) {
+        (id.into(), viewer_id.into(), voice.into())
+    }
+
+    #[tokio::test]
+    async fn upsert_for_a_known_viewer_under_a_fresh_id_updates_the_stored_alias_in_place() {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("stored", "v1", "old-voice"))
+            .await
+            .expect("first upsert");
+
+        repo.upsert(&alias("fresh", "v1", "new-voice"))
+            .await
+            .expect("second upsert");
+
+        assert_eq!(
+            rows(repo.as_ref()).await,
+            [row("stored", "v1", "new-voice")]
+        );
+    }
+
+    #[tokio::test]
+    async fn upsert_by_id_with_a_new_viewer_key_moves_the_alias_to_that_key() {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("a", "v1", "voice"))
+            .await
+            .expect("first upsert");
+
+        repo.upsert(&alias("a", "v2", "voice"))
+            .await
+            .expect("rename upsert");
+
+        assert_eq!(rows(repo.as_ref()).await, [row("a", "v2", "voice")]);
+    }
+
+    #[tokio::test]
+    async fn upsert_moving_an_alias_onto_a_viewer_held_by_another_alias_is_refused_and_changes_nothing()
+     {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("a", "v1", "voice-a"))
+            .await
+            .expect("upsert a");
+        repo.upsert(&alias("b", "v2", "voice-b"))
+            .await
+            .expect("upsert b");
+
+        let result = repo.upsert(&alias("a", "v2", "voice-edited")).await;
+
+        assert!(matches!(result, Err(StorageError::AliasViewerTaken)));
+        assert_eq!(
+            rows(repo.as_ref()).await,
+            [row("a", "v1", "voice-a"), row("b", "v2", "voice-b")]
+        );
+    }
+
+    #[tokio::test]
+    async fn upsert_under_a_fresh_id_returns_the_stored_id_with_the_callers_fields() {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("stored", "v1", "old-voice"))
+            .await
+            .expect("first upsert");
+        let edit = VoiceAlias {
+            viewer_name: "renamed".into(),
+            engine_id: EngineId("espeak".into()),
+            pitch_semitones: Some(-3.0),
+            rate_multiplier: Some(1.5),
+            state: AliasState::Blocked,
+            ..alias("fresh", "v1", "new-voice")
+        };
+
+        let returned = repo.upsert(&edit).await.expect("second upsert");
+
+        assert_eq!(
+            (
+                returned.id.0.as_str(),
+                returned.viewer_id.as_str(),
+                returned.viewer_name.as_str(),
+                returned.engine_id.0.as_str(),
+                returned.voice_id.0.as_str(),
+                returned.pitch_semitones,
+                returned.rate_multiplier,
+                returned.state,
+            ),
+            (
+                "stored",
+                "v1",
+                "renamed",
+                "espeak",
+                "new-voice",
+                Some(-3.0),
+                Some(1.5),
+                AliasState::Blocked,
+            )
+        );
     }
 }

@@ -10,6 +10,7 @@ pub mod credentials;
 pub mod credentials_manager;
 mod custom_rewards;
 mod event_channel;
+mod follow_lookup;
 pub mod helix;
 pub mod integration;
 mod lifecycle;
@@ -22,8 +23,8 @@ pub mod subscriptions;
 pub mod triggers;
 
 pub use auth::{
-    DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TWITCH_DEVICE_ENDPOINT, TWITCH_TOKEN_ENDPOINT,
-    TwitchAuthBundle, TwitchAuthFlow, UserInfo, client_id, twitch_auth_flow,
+    DeviceCodeInfo, TWITCH_BROADCASTER_SCOPES, TwitchAuthBundle, TwitchAuthFlow, UserInfo,
+    client_id, twitch_auth_flow,
 };
 pub use builtin::{
     ChatSessionConfig, HELIX_BUDGET_CAPACITY, HELIX_BUDGET_WINDOW, TwitchIntegrationBundle,

@@ -19,6 +19,7 @@ use super::state::{Outbox, Shared};
 use crate::EmulatorError;
 
 const CHAT_MESSAGE_SUBSCRIPTION: &str = "channel.chat.message";
+const FOLLOW_SUBSCRIPTION: &str = "channel.follow";
 const SOCKET_PATH: &str = "/ws";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 
@@ -123,6 +124,9 @@ impl FakeTwitch {
         subscription_type: &str,
         event: Value,
     ) -> Result<usize, EmulatorError> {
+        if subscription_type == FOLLOW_SUBSCRIPTION {
+            self.shared.mutate(|inner| inner.remember_follow(&event));
+        }
         let deliveries = self
             .shared
             .read(|inner| inner.notification_deliveries(subscription_type, &event));

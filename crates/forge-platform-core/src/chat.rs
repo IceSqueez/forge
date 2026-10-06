@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use forge_events::{Event, EventSource, EventStream};
 use serde::{Deserialize, Serialize};
 
-use crate::{AuthFlow, PlatformCapabilities, PlatformError};
+use crate::PlatformError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -66,9 +66,6 @@ impl AtomicConnectionState {
 
 #[async_trait]
 pub trait ChatPlatform: Send + Sync {
-    fn platform_id(&self) -> &'static str;
-    fn auth_flow(&self) -> &AuthFlow;
-    fn capabilities(&self) -> &PlatformCapabilities;
     fn connection_state(&self) -> ConnectionState;
     async fn connect(&self) -> Result<(), PlatformError>;
     async fn disconnect(&self) -> Result<(), PlatformError>;
@@ -125,27 +122,12 @@ mod tests {
     }
 
     struct PlainOnlyPlatform {
-        auth: AuthFlow,
-        caps: PlatformCapabilities,
         sent: std::sync::Mutex<Vec<(String, String)>>,
     }
 
     impl PlainOnlyPlatform {
         fn new() -> Self {
             Self {
-                auth: AuthFlow::None {
-                    reason: String::new(),
-                },
-                caps: PlatformCapabilities {
-                    can_send_chat: true,
-                    can_moderate: false,
-                    can_subscribe_events: false,
-                    can_polls: false,
-                    can_predictions: false,
-                    can_channel_points: false,
-                    limited: false,
-                    limited_reason: None,
-                },
                 sent: std::sync::Mutex::new(Vec::new()),
             }
         }
@@ -157,15 +139,6 @@ mod tests {
 
     #[async_trait]
     impl ChatPlatform for PlainOnlyPlatform {
-        fn platform_id(&self) -> &'static str {
-            "plain"
-        }
-        fn auth_flow(&self) -> &AuthFlow {
-            &self.auth
-        }
-        fn capabilities(&self) -> &PlatformCapabilities {
-            &self.caps
-        }
         fn connection_state(&self) -> ConnectionState {
             ConnectionState::Connected
         }

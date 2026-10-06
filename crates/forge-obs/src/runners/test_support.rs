@@ -36,9 +36,6 @@ impl ObsSink for MockSink {
     async fn stop_stream(&self) -> Result<(), ObsError> {
         Ok(())
     }
-    async fn raw_request(&self, _: &str, _: &Variant) -> Result<Variant, ObsError> {
-        Ok(Variant::Object(BTreeMap::new()))
-    }
     async fn set_preview_scene(&self, _: &str) -> Result<(), ObsError> {
         Ok(())
     }
@@ -234,9 +231,6 @@ impl ObsSink for RecordingSink {
     }
     async fn stop_stream(&self) -> Result<(), ObsError> {
         self.record("stop_stream".to_owned())
-    }
-    async fn raw_request(&self, request_type: &str, _: &Variant) -> Result<Variant, ObsError> {
-        self.record_query(format!("raw_request({request_type})"))
     }
     async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
         self.record(format!("set_preview_scene({scene})"))

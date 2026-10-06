@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use forge_overlay::OverlayKindRegistry;
+use forge_platform_core::PlatformEndpoints;
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{
-    ActionEngineHandle, EventBus, LatestValues, LiveViewerAggregatorHandle, OverlayServiceHandle,
-    QueueSchedulerHandle, ScheduledRunsHandle, ScriptRegistry, StreamLiveHandle,
-    TriggerEvaluatorHandle,
+    ActionEngineHandle, ChatHistoryRetentionHandle, EventBus, LatestValues,
+    LiveViewerAggregatorHandle, OverlayServiceHandle, QueueSchedulerHandle, ScheduledRunsHandle,
+    ScriptRegistry, StreamLiveHandle, TimerSchedulerHandle, TriggerEvaluatorHandle,
 };
 use forge_storage::{CredentialsKeyLoss, DataProvider, Language};
 
@@ -34,8 +35,10 @@ pub struct RuntimeHandles {
     pub scheduler: QueueSchedulerHandle,
     pub trigger_evaluator: TriggerEvaluatorHandle,
     pub scheduled_runs: ScheduledRunsHandle,
+    pub timer_scheduler: TimerSchedulerHandle,
     pub live_viewers: LiveViewerAggregatorHandle,
     pub stream_live: StreamLiveHandle,
+    pub chat_history_retention: ChatHistoryRetentionHandle,
     pub builtins: BuiltinRegistry,
     pub integrations: IntegrationSupervisor,
     pub obs_install_seed: ObsInstallSeed,
@@ -44,6 +47,7 @@ pub struct RuntimeHandles {
     pub donation_services: crate::donation_services::DonationServices,
     pub midi_sink: Arc<forge_midi::SwitchableMidiSink>,
     pub server: Option<forge_server::ServerHandle>,
+    pub server_unavailable: Option<String>,
     pub speak: Option<forge_speak_queue::SpeakQueueHandle>,
     pub pipeline_config: Option<forge_speak_queue::PipelineConfigHandle>,
     pub bot_accounts: forge_types::Shared<Vec<String>>,
@@ -58,4 +62,5 @@ pub struct RuntimeHandles {
     pub voice_gate: Arc<VoiceGateOwner>,
     pub stay_awake: forge_awake::StayAwake,
     pub first_run: crate::first_run::FirstRun,
+    pub endpoints: PlatformEndpoints,
 }

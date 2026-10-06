@@ -408,10 +408,6 @@ impl DataProvider for TestDataProvider {
         self.scheduled_run_revision.clone()
     }
 
-    async fn schema_version(&self) -> Result<u32, StorageError> {
-        Ok(0)
-    }
-
     async fn export(&self, _path: &Path) -> Result<(), StorageError> {
         Ok(())
     }

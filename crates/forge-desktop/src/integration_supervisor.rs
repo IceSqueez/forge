@@ -603,6 +603,7 @@ mod tests {
                     collections: None,
                     obs_client: None,
                     vtube_client: None,
+                    follow: None,
                 });
             }
             Ok(running)

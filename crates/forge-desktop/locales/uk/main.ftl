@@ -281,8 +281,11 @@ credentials_key_loss_toast =
         [many] Ключ облікових даних зник - { $count } збережених входів неможливо прочитати. Увійдіть знову на екранах платформ.
        *[other] Ключ облікових даних зник - { $count } збережених входів неможливо прочитати. Увійдіть знову на екранах платформ.
     }
-settings_storage_keep_limit_label = Ліміт зберігання історії чату
-settings_storage_keep_limit_hint = Скільки повідомлень чату зберігати в базі даних.
+settings_storage_per_viewer_limit_label = Історія чату на глядача
+settings_storage_per_viewer_limit_hint = Скільки останніх повідомлень кожного глядача зберігати в базі даних.
+settings_storage_per_viewer_limit_custom = Своє
+settings_storage_per_viewer_limit_unlimited = Без ліміту
+settings_storage_per_viewer_limit_unlimited_hint = База даних росте без обмежень.
 settings_storage_display_limit_label = Показувати при відкритті чату
 settings_storage_display_limit_hint = Скільки останніх повідомлень показує чат; старіші зникають. Діє після перезапуску.
 settings_storage_retention_label = Зберігання журналу подій
@@ -950,6 +953,10 @@ tts_filters_output_emote = Емоція → слово
 tts_filters_output_emote_meta = перетворити :pog: → "pog"
 tts_filters_output_sanitize = Прибирати повтори пунктуації
 tts_filters_output_sanitize_meta = "!!!" → "!"
+tts_filters_output_strip_twitch_emotes = Прибирати емоції Twitch
+tts_filters_output_strip_twitch_emotes_meta = видаляти назви емоцій Twitch перед озвученням
+tts_filters_output_strip_reward_emotes = Прибирати емоції нагород
+tts_filters_output_strip_reward_emotes_meta = видаляти назви емоцій із нагород за бали каналу
 tts_filters_output_max_duration_meta = після { $secs }с
 tts_filters_output_lang_meta = обирати голос за мовою повідомлення
 
@@ -1128,6 +1135,7 @@ tts_aliases_form_blocked_note = Не озвучувати - налаштуван
 
 tts_aliases_delete_title = Видалити голосовий аліас?
 tts_aliases_delete_body = { $viewer } повернеться до типової стратегії призначення голосу.
+tts_aliases_viewer_taken = Цей глядач уже має голосовий псевдонім - редагуйте його.
 common_delete = Видалити
 common_undo = Відмінити
 
@@ -1200,6 +1208,7 @@ soundboard_pad_adopt_blocked = не копіюється
 soundboard_pad_not_in_library = ще не в бібліотеці
 soundboard_toast_clip_failed = { $clip }: { $error }
 soundboard_toast_clip_failed_unnamed = Збій звуку: { $error }
+soundboard_persist_failed = Не вдалося зберегти налаштування саундборду. Після перезапуску воно скинеться.
 soundboard_no_matches = Немає звуків за фільтром
 soundboard_library_section = Бібліотека
 soundboard_library_import = Імпорт
@@ -1354,7 +1363,12 @@ queues_status_held = УТРИМАНО
 
 ## Черги - розбіжність живого членства
 
-queues_not_live_badge = НЕ В РОБОТІ · ПЕРЕЗАПУСК
+queues_not_live_badge = НЕ В РОБОТІ · ЗАСТОСУВАТИ
+queues_not_live_tooltip = Планувальник не працює з останніми налаштуваннями цієї черги. Натисни, щоб застосувати їх зараз.
+queues_apply_live_done = Налаштування черги застосовано наживо.
+queues_apply_live_failed = Не вдалося застосувати чергу наживо ({ $error }). Перезапусти forge, щоб підхопити зміну.
+queues_apply_live_missing = черги більше не існує
+queues_apply_live_not_found = планувальник не знає цієї черги
 
 ## Черги - чіп переповнення
 
@@ -1513,6 +1527,7 @@ server_status_listening = Слухає · { $clients ->
 server_status_stopped = Зупинено
 server_not_running = Не запущено
 server_console_disabled_hint = Сервер вимкнено
+server_unavailable_banner = Сервер не вдалося запустити: { $reason }. Увімкнення не допоможе, доки це не виправлено; перевір лог і перезапусти forge.
 server_console_disabled_hint_link = Увімкнути в Налаштуваннях -> WebSocket
 server_bind_address = АДРЕСА ПРИВ'ЯЗКИ
 server_bind_address_loading = Читаємо адресу...
@@ -1639,11 +1654,16 @@ chat_drawer_set_tts_voice = Встановити голос TTS...
 chat_drawer_block_tts = Заблокувати TTS
 chat_drawer_timeout = Таймаут 10 хв
 chat_drawer_ban = Заблокувати в каналі
-chat_stat_watch_time = ЧАС ПЕРЕГЛЯДУ
 chat_stat_messages = ПОВІДОМЛЕННЯ
 chat_stat_sub = ПІДПИСКА
 chat_stat_sub_yes = Так
 chat_stat_follow = ФОЛОУ
+chat_follow_not_following = Не фоловить
+chat_follow_hidden = Приховано
+chat_drawer_history_loading = Завантаження повідомлень...
+chat_drawer_history_empty = Немає збережених повідомлень
+chat_drawer_history_needs_id = Для історії потрібен id глядача
+chat_drawer_history_failed = Не вдалося завантажити історію повідомлень
 chat_drawer_shoutout_sent = Shoutout надіслано
 chat_drawer_shoutout_failed = Помилка shoutout: { $error }
 chat_drawer_whisper_sent = Шепіт надіслано
@@ -1654,6 +1674,8 @@ chat_drawer_ban_sent = Глядача забанено
 chat_drawer_ban_failed = Помилка бану: { $error }
 chat_drawer_block_tts_sent = Глядача заблоковано в TTS
 chat_drawer_block_tts_failed = Помилка блокування TTS: { $error }
+chat_drawer_tts_voice_saved = Голос TTS збережено
+chat_drawer_tts_voice_failed = Не вдалося встановити голос TTS: { $error }
 chat_ctx_timeout_10m = Таймаут 10 хв
 chat_ctx_timeout_1h = Таймаут 1 година
 chat_ctx_timeout_2w = Таймаут 2 тижні
@@ -1676,6 +1698,9 @@ event_feed_filter_obs = OBS { $n }
 event_feed_filter_errors = Помилки { $n }
 event_feed_export_success = Стрічку подій експортовано до { $path }
 event_feed_export_failed = Не вдалося експортувати стрічку подій: { $error }
+event_feed_replay_success = Подію відтворено
+event_feed_replay_not_found = Цієї події вже немає в журналі подій, її не можна відтворити.
+event_feed_replay_failed = Не вдалося відтворити подію: { $error }
 event_feed_no_events = Подій ще немає - системна активність з'явиться тут в реальному часі.
 event_feed_no_filter_match = Жодна подія не відповідає активному фільтру.
 event_feed_inspector_title = Інспектор подій
@@ -2059,6 +2084,7 @@ settings_voice_gate_state_off = Вимкнено
 settings_voice_gate_state_inactive = Слухає - мовлення не виявлено
 settings_voice_gate_state_active = Виявлено мовлення - чергу утримано
 settings_voice_gate_state_unavailable = Мікрофон недоступний: { $error }
+settings_voice_gate_retry = Повторити
 settings_voice_gate_persist_error = Не вдалося зберегти налаштування голосового гейта: { $error }
 
 ## Script editor - API docs panel

@@ -8,6 +8,7 @@ mod awake_state;
 mod boot;
 mod builtin_sections;
 mod chat;
+mod chat_author;
 mod chat_drawer;
 mod chat_feed;
 mod chat_feed_bridge;
@@ -105,6 +106,7 @@ mod screen;
 mod script_editor;
 mod server_console;
 mod server_restart;
+mod server_unavailable;
 mod settings;
 mod settings_audio;
 mod settings_audio_routing;
@@ -136,6 +138,8 @@ mod tts_filters;
 mod unavailable_builtin;
 mod unsaved_work;
 mod update_check;
+mod voice_alias_form;
+mod voice_alias_store;
 mod voice_aliases;
 mod voice_gate;
 mod vtube_catalog_options;
@@ -149,8 +153,8 @@ use forge_components::{
 };
 use forge_platform_core::paths;
 use gpui::{
-    App, AppContext, Bounds, Pixels, SharedString, TitlebarOptions, WindowBounds, WindowOptions,
-    point, px, size,
+    App, AppContext, Bounds, Pixels, QuitMode, SharedString, TitlebarOptions, WindowBounds,
+    WindowOptions, point, px, size,
 };
 
 use crate::actions::{bind_list_keys, register_shell_key_bindings};
@@ -159,6 +163,7 @@ use crate::presentation::Presentation;
 use crate::root::{RootView, run_boot};
 use crate::screen::Screen;
 use crate::settings::{NAV_WIDTH, PANE_MIN_WIDTH};
+use crate::shutdown::{RUNTIME_SHUTDOWN_BUDGET, RuntimeSlot, silence_logging};
 use crate::sidebar::SIDEBAR_MAX;
 use crate::titlebar::TITLEBAR_HEIGHT;
 
@@ -352,14 +357,20 @@ fn main() {
     };
     let rt_handle = rt.handle().clone();
 
-    let _rt_guard = rt.enter();
+    let guard_handle = rt_handle.clone();
+    let rt_guard = guard_handle.enter();
+    let runtime_slot = RuntimeSlot::new(rt);
+    let slot_for_app = runtime_slot.clone();
 
-    let application = gpui_platform::application().with_assets(IconAssets);
+    let application = gpui_platform::application()
+        .with_assets(IconAssets)
+        .with_quit_mode(QuitMode::LastWindowClosed);
     let _app_nap_guard = application
         .background_executor()
         .prevent_app_nap("forge drives a live stream from the background");
 
     application.run(move |cx: &mut App| {
+        cx.set_global(slot_for_app);
         if let Err(err) = cx
             .text_system()
             .add_fonts(forge_components::embedded_fonts())
@@ -445,4 +456,10 @@ fn main() {
             cx,
         );
     });
+
+    drop(rt_guard);
+    if let Some(rt) = runtime_slot.take() {
+        rt.shutdown_timeout(RUNTIME_SHUTDOWN_BUDGET);
+    }
+    silence_logging();
 }

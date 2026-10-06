@@ -271,8 +271,11 @@ credentials_key_loss_toast =
         [one] The credentials key was missing - { $count } saved login can't be read. Sign in again on the Platforms screens.
        *[other] The credentials key was missing - { $count } saved logins can't be read. Sign in again on the Platforms screens.
     }
-settings_storage_keep_limit_label = Chat history keep limit
-settings_storage_keep_limit_hint = How many chat messages to retain in the database.
+settings_storage_per_viewer_limit_label = Chat history per viewer
+settings_storage_per_viewer_limit_hint = How many of each viewer's latest chat messages to keep in the database.
+settings_storage_per_viewer_limit_custom = Custom
+settings_storage_per_viewer_limit_unlimited = Unlimited
+settings_storage_per_viewer_limit_unlimited_hint = The database grows without limit.
 settings_storage_display_limit_label = Chat history shown on open
 settings_storage_display_limit_hint = How many recent messages the chat shows; older ones drop off. Takes effect after a restart.
 settings_storage_retention_label = Event log retention
@@ -931,6 +934,10 @@ tts_filters_output_emote = Emote → word
 tts_filters_output_emote_meta = convert :pog: → "pog"
 tts_filters_output_sanitize = Strip repeated punctuation
 tts_filters_output_sanitize_meta = "!!!" → "!"
+tts_filters_output_strip_twitch_emotes = Strip Twitch emotes
+tts_filters_output_strip_twitch_emotes_meta = remove Twitch emote names before speaking
+tts_filters_output_strip_reward_emotes = Strip reward emotes
+tts_filters_output_strip_reward_emotes_meta = remove emote names from channel point redemptions
 tts_filters_output_max_duration_meta = after { $secs }s
 tts_filters_output_lang_meta = pick voice per message language
 
@@ -1107,6 +1114,7 @@ tts_aliases_form_blocked_note = Never speak - voice settings do not apply.
 
 tts_aliases_delete_title = Delete voice alias?
 tts_aliases_delete_body = { $viewer } will fall back to the default voice assignment strategy.
+tts_aliases_viewer_taken = This viewer already has a voice alias - edit that one instead.
 common_delete = Delete
 common_undo = Undo
 
@@ -1179,6 +1187,7 @@ soundboard_pad_adopt_blocked = cannot be copied
 soundboard_pad_not_in_library = not in library yet
 soundboard_toast_clip_failed = { $clip }: { $error }
 soundboard_toast_clip_failed_unnamed = Sound failed: { $error }
+soundboard_persist_failed = Could not save the soundboard setting. It will revert on restart.
 soundboard_no_matches = No sounds match your filter
 soundboard_library_section = Library
 soundboard_library_import = Import
@@ -1329,7 +1338,12 @@ queues_status_held = HELD
 
 ## Queues - live-membership divergence
 
-queues_not_live_badge = NOT LIVE · RESTART
+queues_not_live_badge = NOT LIVE · APPLY
+queues_not_live_tooltip = The scheduler is not running this queue's latest settings. Click to apply them now.
+queues_apply_live_done = Queue settings applied live.
+queues_apply_live_failed = Could not apply the queue live ({ $error }). Restart forge to pick up the change.
+queues_apply_live_missing = the queue no longer exists
+queues_apply_live_not_found = the scheduler does not know this queue
 
 ## Queues - overflow pill
 
@@ -1486,6 +1500,7 @@ server_status_listening = Listening · { $clients ->
 server_status_stopped = Stopped
 server_not_running = Not running
 server_console_disabled_hint = Server is switched off
+server_unavailable_banner = The server could not start: { $reason }. Enabling it will not help until this is fixed; check the log and restart forge.
 server_console_disabled_hint_link = Enable in Settings -> WebSocket
 server_bind_address = BIND ADDRESS
 server_bind_address_loading = Reading address...
@@ -1601,11 +1616,16 @@ chat_drawer_set_tts_voice = Set TTS voice...
 chat_drawer_block_tts = Block from TTS
 chat_drawer_timeout = Timeout 10 min
 chat_drawer_ban = Ban from channel
-chat_stat_watch_time = WATCH TIME
 chat_stat_messages = MESSAGES
 chat_stat_sub = SUB
 chat_stat_sub_yes = Yes
 chat_stat_follow = FOLLOW
+chat_follow_not_following = Not following
+chat_follow_hidden = Hidden
+chat_drawer_history_loading = Loading messages...
+chat_drawer_history_empty = No saved messages
+chat_drawer_history_needs_id = History needs a viewer id
+chat_drawer_history_failed = Could not load message history
 chat_drawer_shoutout_sent = Shoutout sent
 chat_drawer_shoutout_failed = Shoutout failed: { $error }
 chat_drawer_whisper_sent = Whisper sent
@@ -1616,6 +1636,8 @@ chat_drawer_ban_sent = Viewer banned
 chat_drawer_ban_failed = Ban failed: { $error }
 chat_drawer_block_tts_sent = Viewer blocked from TTS
 chat_drawer_block_tts_failed = Block from TTS failed: { $error }
+chat_drawer_tts_voice_saved = TTS voice saved
+chat_drawer_tts_voice_failed = Set TTS voice failed: { $error }
 chat_ctx_timeout_10m = Timeout 10 min
 chat_ctx_timeout_1h = Timeout 1 hour
 chat_ctx_timeout_2w = Timeout 2 weeks
@@ -1638,6 +1660,9 @@ event_feed_filter_obs = OBS { $n }
 event_feed_filter_errors = Errors { $n }
 event_feed_export_success = Exported event feed to { $path }
 event_feed_export_failed = Event feed export failed: { $error }
+event_feed_replay_success = Event replayed
+event_feed_replay_not_found = That event is no longer in the event log and cannot be replayed.
+event_feed_replay_failed = Event replay failed: { $error }
 event_feed_no_events = No events yet - system activity appears here in real time.
 event_feed_no_filter_match = No events match the active filter.
 event_feed_inspector_title = Event inspector
@@ -2012,6 +2037,7 @@ settings_voice_gate_state_off = Off
 settings_voice_gate_state_inactive = Listening - no speech detected
 settings_voice_gate_state_active = Speech detected - queue held
 settings_voice_gate_state_unavailable = Microphone unavailable: { $error }
+settings_voice_gate_retry = Retry
 settings_voice_gate_persist_error = Failed to save voice gate settings: { $error }
 
 ## Script editor - API docs panel

@@ -33,10 +33,6 @@ pub trait ActionRepo: Send + Sync {
     async fn get(&self, id: ActionId) -> Result<Option<Action>, StorageError>;
     async fn save(&self, action: &Action) -> Result<(), StorageError>;
     async fn delete(&self, id: ActionId) -> Result<bool, StorageError>;
-    async fn list_by_group<'a>(
-        &'a self,
-        group: Option<&'a str>,
-    ) -> Result<Vec<Action>, StorageError>;
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError>;
     async fn record_execution(
         &self,
@@ -107,10 +103,6 @@ pub trait ActionRepo: Send + Sync {
 
     async fn restore(&self, _id: ActionId) -> Result<bool, StorageError> {
         Err(StorageError::NotReady)
-    }
-
-    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
-        Ok(Vec::new())
     }
 }
 

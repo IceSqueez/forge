@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -39,7 +39,7 @@ use forge_types::{
 use tempfile::TempDir;
 use time::OffsetDateTime;
 use tokio::runtime::Handle;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Notify, mpsc, oneshot};
 use tokio::time::{Instant, timeout};
 
 const DEADLINE: Duration = Duration::from_secs(5);
@@ -1230,6 +1230,12 @@ impl WallClock for MidPassResume {
 enum RepoHook {
     ArmOnFirstListDue(Arc<MidPassResume>),
     SetModeOnFirstClaim(QueueSchedulerHandle, QueueId, QueueMode),
+    HoldFirstClaim(HeldClaim),
+}
+
+struct HeldClaim {
+    entered: Mutex<Option<oneshot::Sender<()>>>,
+    release: Arc<Notify>,
 }
 
 struct HookedRepo {
@@ -1296,6 +1302,14 @@ impl ScheduledRunRepo for HookedRepo {
             && !self.fired.swap(true, Ordering::SeqCst)
         {
             queues.set_mode(*queue_id, *mode).await.unwrap();
+        }
+        if let RepoHook::HoldFirstClaim(held) = &self.hook
+            && !self.fired.swap(true, Ordering::SeqCst)
+        {
+            if let Some(entered) = held.entered.lock().unwrap().take() {
+                let _ = entered.send(());
+            }
+            held.release.notified().await;
         }
         self.inner.claim(id, claimed_at).await
     }
@@ -1636,4 +1650,98 @@ async fn a_run_waiting_on_a_paused_queue_is_rechecked_no_faster_than_the_wall_cl
 
     let observed = reads.load(Ordering::SeqCst);
     assert!((2..=cadence_passes).contains(&observed), "{observed} reads");
+}
+
+#[tokio::test]
+async fn schedule_and_run_now_report_a_stopped_scheduler_once_stop_returns() {
+    let harness = Harness::new().await;
+    let action = harness.action(|_| {}).await;
+    let pending = harness.place(&spec(action.id, base() + FIVE_MINUTES)).await;
+    let handle = harness.start(CatchUpSettle::immediately());
+    timeout(DEADLINE, handle.clone().stop())
+        .await
+        .expect("stop never returned");
+
+    let refusals = [
+        handle.schedule(request(action.id)).await.map(|_| ()),
+        handle.run_now(pending).await.map(|_| ()),
+    ];
+
+    let kinds: Vec<_> = refusals
+        .iter()
+        .map(|refusal| refusal.as_ref().map_err(error_kind))
+        .collect();
+    assert_eq!(kinds, [Err("scheduler_stopped"), Err("scheduler_stopped")]);
+}
+
+#[tokio::test]
+async fn a_stop_requested_before_the_first_pass_leaves_an_overdue_run_pending() {
+    let harness = Harness::new().await;
+    let action = harness.action(|_| {}).await;
+    let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+
+    timeout(DEADLINE, harness.start(CatchUpSettle::immediately()).stop())
+        .await
+        .expect("stop never returned");
+
+    assert_eq!(harness.row(id).await.state, ScheduledRunState::Pending);
+}
+
+#[tokio::test]
+async fn a_stop_during_a_hand_off_returns_only_after_the_run_is_dispatched() {
+    let harness = Harness::new().await;
+    let action = harness.action(|_| {}).await;
+    let id = harness.place(&overdue(action.id, FIVE_MINUTES)).await;
+    let (entered_tx, entered) = oneshot::channel();
+    let release = Arc::new(Notify::new());
+    let repo = HookedRepo::wrap(
+        harness.repo(),
+        RepoHook::HoldFirstClaim(HeldClaim {
+            entered: Mutex::new(Some(entered_tx)),
+            release: Arc::clone(&release),
+        }),
+    );
+    let handle = harness.start_with(repo, Arc::new(FixedClock));
+    timeout(DEADLINE, entered)
+        .await
+        .expect("the pass never reached the claim")
+        .unwrap();
+    let stopping = tokio::spawn(handle.stop());
+    for _ in 0..64 {
+        tokio::task::yield_now().await;
+    }
+    let returned_while_held = stopping.is_finished();
+
+    release.notify_one();
+
+    timeout(DEADLINE, stopping)
+        .await
+        .expect("stop never returned")
+        .unwrap();
+    assert_eq!(
+        (returned_while_held, harness.row(id).await.state),
+        (false, ScheduledRunState::Dispatched)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_returns_without_waiting_for_the_next_due_time() {
+    let mut repo = MockScheduledRunRepo::new();
+    repo.expect_next_due()
+        .returning(|| Ok(Some(base() + FIVE_MINUTES)));
+    let handle = spawn_scheduled_runs(mock_parts(
+        repo,
+        CatalogRevision::new(),
+        CatchUpSettle::immediately(),
+    ));
+    for _ in 0..64 {
+        tokio::task::yield_now().await;
+    }
+    let asked = Instant::now();
+
+    timeout(DEADLINE, handle.stop())
+        .await
+        .expect("stop never returned");
+
+    assert_eq!(asked.elapsed(), Duration::ZERO);
 }

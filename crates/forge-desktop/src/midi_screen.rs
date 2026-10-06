@@ -1805,13 +1805,6 @@ mod tests {
             Err(StorageError::NotReady)
         }
 
-        async fn list_by_group<'a>(
-            &'a self,
-            _group: Option<&'a str>,
-        ) -> Result<Vec<Action>, StorageError> {
-            Err(StorageError::NotReady)
-        }
-
         async fn telemetry(&self, _id: ActionId) -> Result<ActionTelemetry, StorageError> {
             Err(StorageError::NotReady)
         }

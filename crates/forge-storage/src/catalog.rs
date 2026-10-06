@@ -167,13 +167,6 @@ impl ActionRepo for RevisingActionRepo {
             .await
     }
 
-    async fn list_by_group<'a>(
-        &'a self,
-        group: Option<&'a str>,
-    ) -> Result<Vec<Action>, StorageError> {
-        self.inner.list_by_group(group).await
-    }
-
     async fn telemetry(&self, id: ActionId) -> Result<ActionTelemetry, StorageError> {
         self.inner.telemetry(id).await
     }
@@ -248,10 +241,6 @@ impl ActionRepo for RevisingActionRepo {
         self.revision
             .after(async move { inner.restore(id).await })
             .await
-    }
-
-    async fn list_archived(&self) -> Result<Vec<Action>, StorageError> {
-        self.inner.list_archived().await
     }
 }
 
@@ -367,10 +356,6 @@ impl TriggerInstanceRepo for RevisingTriggerInstanceRepo {
         self.revision
             .after(async move { inner.restore(id).await })
             .await
-    }
-
-    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
-        self.inner.list_archived().await
     }
 }
 

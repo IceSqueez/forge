@@ -2586,6 +2586,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "jiff",
+ "log",
  "open",
  "rand 0.10.3",
  "regex",

@@ -140,10 +140,6 @@ impl SqliteBackend {
         Ok(pool)
     }
 
-    pub fn shutdown_retention_pruner(&self) {
-        self.shutdown.notify_one();
-    }
-
     fn signal_setting_changed(&self, key: &str) {
         if key == reserved_keys::EVENT_LOG_RETENTION_DAYS {
             self.retention_window_changed.notify_one();
@@ -300,10 +296,6 @@ impl GlobalsRepo for SqliteBackend {
 
     async fn restore(&self, name: &str) -> Result<bool, StorageError> {
         self.globals.restore(name).await
-    }
-
-    async fn list_archived(&self) -> Result<Vec<GlobalEntry>, StorageError> {
-        self.globals.list_archived().await
     }
 
     async fn storage_bytes(&self) -> Result<u64, StorageError> {
@@ -577,10 +569,6 @@ impl DataProvider for SqliteBackend {
 
     fn scheduled_run_revision(&self) -> CatalogRevision {
         self.scheduled_run_revision.clone()
-    }
-
-    async fn schema_version(&self) -> Result<u32, StorageError> {
-        Ok(crate::migrations::applied_version(self.pool.reader()).await?)
     }
 
     async fn export(&self, path: &std::path::Path) -> Result<(), StorageError> {

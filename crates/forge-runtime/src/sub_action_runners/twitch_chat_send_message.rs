@@ -6,7 +6,7 @@ use forge_registry::{
 };
 use forge_types::{
     ArgStack, IntegrationId, NO_CHAT_PLATFORM_ENABLED_REASON, SubActionConfig, SubActionTelemetry,
-    Variant, requested_chat_target,
+    Variant, resolve_chat_target,
 };
 
 const DEFAULT_TARGET: &str = "twitch";
@@ -76,7 +76,10 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
         config: &SubActionConfig,
         arg_stack: &ArgStack,
     ) -> Option<IntegrationId> {
-        requested_chat_target(&resolved_target(config, arg_stack)).map(IntegrationId::new)
+        resolve_chat_target(&resolved_target(config, arg_stack))
+            .ok()
+            .flatten()
+            .map(|platform| IntegrationId::from_static(platform.as_str()))
     }
 
     async fn execute(
@@ -90,12 +93,13 @@ impl SubActionRunner for TwitchChatSendMessageRunner {
             .arg_stack
             .interpolate(config.str("message").unwrap_or_default());
         let resolved = resolved_target(config, ctx.arg_stack);
-        let payload = match requested_chat_target(&resolved) {
-            Some(target) => serde_json::json!({
-                "target": target,
+        let payload = match resolve_chat_target(&resolved) {
+            Err(reason) => return (timer.failed(reason), None),
+            Ok(Some(platform)) => serde_json::json!({
+                "target": platform.as_str(),
                 "message": message,
             }),
-            None => {
+            Ok(None) => {
                 let none_enabled = ctx
                     .executor
                     .integration_availability()
@@ -125,7 +129,7 @@ mod tests {
 
     use forge_events::EventPublisher;
     use forge_registry::{CancelSignal, ControlCell, TelemetrySink};
-    use forge_types::{EventId, SubActionOutcome};
+    use forge_types::{EventId, SubActionOutcome, unknown_chat_target_reason};
 
     use super::*;
     use crate::integration_gate::{GatedLeafExecutor, IntegrationGate};
@@ -198,6 +202,9 @@ mod tests {
             (Some("youtube"), Some("youtube")),
             (Some("%platform%"), Some("kick")),
             (Some("  kick \t"), Some("kick")),
+            (Some("Twitch"), Some("twitch")),
+            (Some("%platform%"), Some("kick")),
+            (Some("myspace"), None),
             (None, Some("twitch")),
             (Some(""), None),
             (Some("   "), None),
@@ -256,6 +263,77 @@ mod tests {
         assert_eq!(outcome, SubActionOutcome::Success);
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0]["target"].as_str(), Some("kick"));
+    }
+
+    #[tokio::test]
+    async fn an_unknown_target_fails_with_the_valid_targets_and_publishes_nothing() {
+        let (outcome, sent) = run_gated(Some("myspace"), IntegrationGate::new()).await;
+
+        assert_eq!(
+            outcome,
+            SubActionOutcome::Failed(unknown_chat_target_reason("myspace"))
+        );
+        assert!(sent.is_empty(), "published {sent:?}");
+    }
+
+    #[tokio::test]
+    async fn a_mixed_case_target_is_published_normalized() {
+        let (outcome, sent) = run_gated(Some("Twitch"), IntegrationGate::new()).await;
+
+        assert_eq!(outcome, SubActionOutcome::Success);
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["target"].as_str(), Some("twitch"));
+    }
+
+    #[tokio::test]
+    async fn a_mixed_case_platform_argument_is_published_normalized() {
+        let publisher = CapturingPublisher::default();
+        let args = ArgStack::new().set("platform".to_owned(), Variant::String("Kick".to_owned()));
+        let ctx = RunContext::leaf(&args, 0, EventId::new(), &publisher);
+
+        let (telemetry, _) = TwitchChatSendMessageRunner
+            .execute(&config_with_target(Some("%platform%")), &ctx)
+            .await;
+
+        assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+        let sent = publisher.sent_requests();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["target"].as_str(), Some("kick"));
+    }
+
+    #[tokio::test]
+    async fn a_mixed_case_target_naming_a_disabled_platform_keeps_the_disabled_outcome() {
+        let publisher = CapturingPublisher::default();
+        let gate = gate_disabling(&["twitch"]);
+        let executor = GatedLeafExecutor::new(gate.clone(), CancelSignal::new());
+        let args = ArgStack::new();
+        let config = config_with_target(Some("Twitch"));
+        let ctx = RunContext {
+            arg_stack: &args,
+            index: 0,
+            parent_event_id: EventId::new(),
+            publisher: &publisher,
+            executor: &executor,
+            cancel: CancelSignal::new(),
+            control: ControlCell::new(),
+            telemetry: TelemetrySink::new(),
+        };
+        let owner = TwitchChatSendMessageRunner.targeted_integration(&config, &args);
+
+        let (telemetry, _) = crate::integration_gate::run_gated_step(
+            &gate,
+            owner.as_ref(),
+            &ctx,
+            "twitch.chat.send_message",
+            TwitchChatSendMessageRunner.execute(&config, &ctx),
+        )
+        .await;
+
+        assert_eq!(
+            telemetry.outcome,
+            SubActionOutcome::IntegrationDisabled(IntegrationId::from_static("twitch"))
+        );
+        assert!(publisher.sent_requests().is_empty());
     }
 
     #[tokio::test]

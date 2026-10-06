@@ -3,13 +3,12 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use forge_events::{EventPublisher, EventStream};
 use forge_platform_core::{
-    AuthFlow, ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities, PlatformError,
+    ChatPlatform, ConnectionState, NON_HTTP_STATUS, PlatformCapabilities, PlatformError,
     RateLimiter,
 };
 use forge_storage::CredentialsRepo;
 use tokio::sync::OnceCell;
 
-use crate::auth::twitch_auth_flow;
 use crate::builtin::ChatSessionConfig;
 use crate::chat::{
     ChatSendError, TwitchChat, TwitchChatHandle, WhisperError, send_chat, send_chat_reply,
@@ -25,7 +24,6 @@ use crate::subscriptions::SubscriptionTracker;
 const PLATFORM_ID: &str = "twitch";
 
 pub struct TwitchPlatform {
-    auth_flow: AuthFlow,
     capabilities: PlatformCapabilities,
     config: ChatSessionConfig,
     events: Arc<PlatformEventChannel>,
@@ -48,7 +46,6 @@ impl TwitchPlatform {
         lifecycle: TwitchLifecycle,
     ) -> Self {
         Self {
-            auth_flow: twitch_auth_flow(),
             capabilities: PlatformCapabilities {
                 can_send_chat: true,
                 can_moderate: true,
@@ -114,18 +111,6 @@ impl TwitchPlatform {
 
 #[async_trait]
 impl ChatPlatform for TwitchPlatform {
-    fn platform_id(&self) -> &'static str {
-        PLATFORM_ID
-    }
-
-    fn auth_flow(&self) -> &AuthFlow {
-        &self.auth_flow
-    }
-
-    fn capabilities(&self) -> &PlatformCapabilities {
-        &self.capabilities
-    }
-
     fn connection_state(&self) -> ConnectionState {
         let snapshot = self
             .handle
@@ -271,6 +256,7 @@ mod tests {
             },
             Arc::clone(&creds),
             Arc::new(TwitchCredentialsManager::new(
+                &forge_platform_core::PlatformEndpoints::default(),
                 creds,
                 "test-client".to_owned(),
             )),

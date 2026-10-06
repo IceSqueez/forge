@@ -237,7 +237,12 @@ impl SettingsView {
             )
         });
         let storage = cx.new(|cx| {
-            SettingsStorageView::new(Arc::clone(&handles.backend), handles.rt_handle.clone(), cx)
+            SettingsStorageView::new(
+                Arc::clone(&handles.backend),
+                handles.rt_handle.clone(),
+                handles.chat_history_retention.clone(),
+                cx,
+            )
         });
         let diagnostics = cx.new(|cx| {
             SettingsDiagnosticsView::new(
@@ -499,6 +504,7 @@ impl SettingsView {
             tr!("settings_theme_persist_failed"),
             cx,
         );
+        cx.refresh_windows();
         cx.notify();
     }
 
@@ -537,6 +543,7 @@ impl SettingsView {
             tr!("settings_density_persist_failed"),
             cx,
         );
+        cx.refresh_windows();
         cx.notify();
     }
 

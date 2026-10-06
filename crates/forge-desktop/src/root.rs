@@ -181,6 +181,9 @@ pub fn run_boot(
                     cx.set_global(crate::presentation::ActiveLanguage(
                         handles.startup_language,
                     ));
+                    if let Some(reason) = handles.server_unavailable.clone() {
+                        cx.set_global(crate::server_unavailable::ServerUnavailable(reason.into()));
+                    }
                     platforms.update(cx, |connectivity, cx| {
                         connectivity.seed_from_builtins(&handles.builtins);
                         cx.notify();
@@ -217,13 +220,15 @@ pub fn run_boot(
                     let mut shutdown =
                         Some(crate::shutdown::ShutdownHandles::from_handles(&handles));
                     let stay_awake = handles.stay_awake.clone();
-                    cx.on_app_quit(move |_root, _cx| {
+                    App::on_app_quit(cx, move |cx| {
                         stay_awake.release();
                         let taken = shutdown.take();
+                        let teardown = crate::shutdown::QuitTeardown::claim(cx);
                         async move {
                             if let Some(handles) = taken {
                                 handles.run_graceful().await;
                             }
+                            teardown.finish();
                         }
                     })
                     .detach();

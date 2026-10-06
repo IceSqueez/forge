@@ -191,10 +191,6 @@ mod tests {
             Ok(RateLimitOutcome::Granted)
         }
 
-        fn remaining(&self) -> u32 {
-            120
-        }
-
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
@@ -204,10 +200,6 @@ mod tests {
     impl RateLimiter for ExhaustedLimiter {
         async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
             Ok(RateLimitOutcome::Exhausted)
-        }
-
-        fn remaining(&self) -> u32 {
-            0
         }
 
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}

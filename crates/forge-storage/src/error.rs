@@ -29,6 +29,9 @@ pub enum StorageError {
     #[error("name '{name}' is already in use")]
     NameCollision { name: String },
 
+    #[error("this viewer already has a different voice alias")]
+    AliasViewerTaken,
+
     #[error("global '{name}' has type {actual}, expected numeric")]
     TypeMismatch { name: String, actual: String },
 

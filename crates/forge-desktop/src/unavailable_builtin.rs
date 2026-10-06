@@ -124,5 +124,6 @@ pub fn unavailable_builtin(id: &IntegrationId) -> BuiltinObject {
         collections: None,
         obs_client: None,
         vtube_client: None,
+        follow: None,
     }
 }

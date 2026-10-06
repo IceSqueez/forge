@@ -303,10 +303,6 @@ mod tests {
             Ok(RateLimitOutcome::Granted)
         }
 
-        fn remaining(&self) -> u32 {
-            u32::MAX
-        }
-
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
@@ -316,10 +312,6 @@ mod tests {
     impl RateLimiter for ExhaustedLimiter {
         async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
             Ok(RateLimitOutcome::Exhausted)
-        }
-
-        fn remaining(&self) -> u32 {
-            0
         }
 
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
@@ -344,10 +336,6 @@ mod tests {
             }
         }
 
-        fn remaining(&self) -> u32 {
-            u32::MAX
-        }
-
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
     }
 
@@ -361,10 +349,6 @@ mod tests {
             Ok(RateLimitOutcome::Throttled {
                 wait_for: self.wait_for,
             })
-        }
-
-        fn remaining(&self) -> u32 {
-            0
         }
 
         async fn observe_remote_throttle(&self, _retry_after: Duration) {}
@@ -386,10 +370,6 @@ mod tests {
     impl RateLimiter for RecordingLimiter {
         async fn acquire(&self, _weight: u32) -> Result<RateLimitOutcome, PlatformError> {
             Ok(RateLimitOutcome::Granted)
-        }
-
-        fn remaining(&self) -> u32 {
-            u32::MAX
         }
 
         async fn observe_remote_throttle(&self, retry_after: Duration) {

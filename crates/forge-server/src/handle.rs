@@ -314,20 +314,6 @@ impl ServerHandle {
             }
         });
     }
-
-    pub async fn await_shutdown(self) -> Result<(), ServerError> {
-        let mut guard = self.inner.lock().await;
-        let join = match guard.join.take() {
-            Some(j) => j,
-            None => return Ok(()),
-        };
-        drop(guard);
-        match join.await {
-            Ok(result) => result,
-            Err(join_err) if join_err.is_cancelled() => Ok(()),
-            Err(join_err) => Err(ServerError::Io(std::io::Error::other(join_err))),
-        }
-    }
 }
 
 #[cfg(test)]

@@ -442,8 +442,6 @@ async fn enabled_flag_writes_report_a_missing_or_archived_action() {
         assert_eq!(repo.toggle_enabled(id).await.expect("toggle"), None);
         assert!(!repo.set_enabled(id, false).await.expect("set"));
     }
-    let stored = repo.list_archived().await.expect("archived");
-    assert!(stored.iter().any(|a| a.id == archived.id && a.enabled));
 }
 
 #[tokio::test]

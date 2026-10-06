@@ -568,6 +568,20 @@ impl OverlaysView {
         cx.notify();
     }
 
+    fn release_panel(&mut self, cx: &mut Context<Self>) {
+        let Some(open) = self.panel.take() else {
+            return;
+        };
+        let (id, unsaved) = open.view.update(cx, |panel, cx| {
+            (panel.overlay_id().clone(), panel.take_unsaved_config(cx))
+        });
+        if let Some(config) = unsaved
+            && self.index_of(&id).is_some()
+        {
+            self.save_config(id, config, cx);
+        }
+    }
+
     fn sync_panel(&mut self, cx: &mut Context<Self>) {
         let target = self
             .selected_definition()
@@ -575,7 +589,7 @@ impl OverlaysView {
             .cloned();
 
         let Some(definition) = target else {
-            self.panel = None;
+            self.release_panel(cx);
             return;
         };
         if self.panel.as_ref().is_some_and(|open| {
@@ -587,7 +601,7 @@ impl OverlaysView {
             return;
         }
         let Some(descriptor) = self.kinds.get(&definition.kind_id) else {
-            self.panel = None;
+            self.release_panel(cx);
             return;
         };
 
@@ -611,6 +625,7 @@ impl OverlaysView {
         let issues = self.issues_of(&definition.id).to_vec();
         let base = self.base_launch(descriptor, &definition.id);
         let latest = self.latest.clone();
+        self.release_panel(cx);
         let view = cx.new(|cx| OverlayPropertyPanel::new(launch, cx));
         view.update(cx, |panel, cx| {
             panel.set_media_issues(issues, cx);

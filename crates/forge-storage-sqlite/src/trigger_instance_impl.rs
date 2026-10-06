@@ -373,23 +373,6 @@ impl TriggerInstanceRepo for SqliteTriggerInstanceRepo {
 
         Ok(result.rows_affected() > 0)
     }
-
-    async fn list_archived(&self) -> Result<Vec<TriggerInstance>, StorageError> {
-        let rows: Vec<InstanceRow> = sqlx::query_as(
-            "SELECT id, kind_id, name, overrides, enabled, user_defined, platform_scope,
-                    cooldown_secs, cooldown_global, permission_rung
-             FROM trigger_instances
-             WHERE archived_at IS NOT NULL
-             ORDER BY user_defined ASC, name ASC",
-        )
-        .fetch_all(self.db.reader())
-        .await
-        .map_err(SqliteStorageError::Sqlx)?;
-
-        rows.into_iter()
-            .map(|row| decode_row(row).map_err(StorageError::from))
-            .collect()
-    }
 }
 
 #[cfg(test)]

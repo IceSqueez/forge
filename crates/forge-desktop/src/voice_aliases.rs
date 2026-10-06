@@ -2,28 +2,34 @@ use std::future::Future;
 use std::sync::Arc;
 
 use forge_components::{
-    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_SM, FONT_XS, FONT_XXS,
-    ForgePalette, Icon, InputEvent, OverlayPosition, PlatformKind, Radius, SearchState, Spacing,
-    TextInput, avatar_tile, badge, body_family, card, column, confirm_modal, data_table,
-    empty_state, field_label, hash_accent, icon, modal, mono_family, overlay, platform_color,
-    primary_button, primary_button_with_icon, radius, secondary_button, segment, segmented,
-    spacing, status_dot, toggle, toolbar_row, tr, virtual_table, with_alpha,
+    BORDER_THIN, ColumnWidth, Confirm, ConfirmTone, DataRow, Density, FONT_XS, FONT_XXS,
+    ForgePalette, Icon, OverlayPosition, Radius, SearchState, Spacing, ToastKind, avatar_tile,
+    badge, body_family, card, column, confirm_modal, data_table, empty_state, hash_accent, icon,
+    mono_family, overlay, platform_color, primary_button_with_icon, radius, segment, segmented,
+    spacing, status_dot, toolbar_row, tr, virtual_table, with_alpha,
 };
 use forge_speak_queue::{
     EmoteTokenSet, Priority, RequestId, SpeakCommand, SpeakQueueHandle, SpeakRequest,
 };
-use forge_storage::{AliasId, AssignmentStrategy, ViewerRepo, VoiceAlias, VoiceAliasRepo};
-use forge_voice::{AliasState, EngineId, VoiceId};
+use forge_storage::{
+    AliasId, AssignmentStrategy, StorageError, ViewerRepo, VoiceAlias, VoiceAliasRepo,
+};
+use forge_voice::AliasState;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, EventEmitter, FontWeight, Pixels, Rgba,
-    SharedString, Subscription, UniformListScrollHandle, Window, div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, FontWeight, Pixels, Rgba, SharedString, Subscription,
+    UniformListScrollHandle, Window, div, prelude::*, px,
 };
 
 use crate::async_bridge;
 use crate::presentation::ActivePresentation;
+use crate::toasts::PushToast;
+use crate::voice_alias_form::{
+    AliasForm, AliasFormEvent, AliasIdentity, AliasValues, PlatformScope, alias_key, fmt_field,
+    split_alias_key,
+};
+use crate::voice_alias_store::save_alias;
 
 const SEARCH_W: Pixels = px(240.0);
-const MODAL_W: Pixels = px(440.0);
 const ACTIONS_W: Pixels = px(90.0);
 const AVATAR: Pixels = px(22.0);
 const TABLE_RADIUS: Pixels = px(8.0);
@@ -83,69 +89,6 @@ impl StrategyChoice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PlatformScope {
-    Any,
-    Twitch,
-    YouTube,
-    Kick,
-}
-
-impl PlatformScope {
-    const ALL: [PlatformScope; 4] = [
-        PlatformScope::Any,
-        PlatformScope::Twitch,
-        PlatformScope::YouTube,
-        PlatformScope::Kick,
-    ];
-
-    fn token(self) -> Option<&'static str> {
-        match self {
-            PlatformScope::Any => None,
-            PlatformScope::Twitch => Some("twitch"),
-            PlatformScope::YouTube => Some("youtube"),
-            PlatformScope::Kick => Some("kick"),
-        }
-    }
-
-    fn from_token(token: &str) -> Option<PlatformScope> {
-        PlatformScope::ALL
-            .into_iter()
-            .find(|scope| scope.token() == Some(token))
-    }
-
-    fn label(self) -> String {
-        match self {
-            PlatformScope::Any => tr!("tts_aliases_platform_any"),
-            PlatformScope::Twitch => "Twitch".to_owned(),
-            PlatformScope::YouTube => "YouTube".to_owned(),
-            PlatformScope::Kick => "Kick".to_owned(),
-        }
-    }
-
-    fn kind(self) -> Option<PlatformKind> {
-        match self {
-            PlatformScope::Any => None,
-            PlatformScope::Twitch => Some(PlatformKind::Twitch),
-            PlatformScope::YouTube => Some(PlatformKind::YouTube),
-            PlatformScope::Kick => Some(PlatformKind::Kick),
-        }
-    }
-}
-
-fn split_alias_key(key: &str) -> (PlatformScope, &str) {
-    key.split_once(':')
-        .and_then(|(token, name)| PlatformScope::from_token(token).map(|scope| (scope, name)))
-        .unwrap_or((PlatformScope::Any, key))
-}
-
-fn alias_key(scope: PlatformScope, name: &str) -> String {
-    match scope.token() {
-        Some(token) => format!("{token}:{name}"),
-        None => name.to_owned(),
-    }
-}
-
 struct AliasRow {
     id: AliasId,
     viewer_id: String,
@@ -158,336 +101,6 @@ struct AliasRow {
     pitch_semitones: Option<f32>,
     rate_multiplier: Option<f32>,
     blocked: bool,
-}
-
-struct EngineOption {
-    id: &'static str,
-    label: &'static str,
-}
-
-const ENGINE_OPTIONS: [EngineOption; 4] = [
-    EngineOption {
-        id: "piper",
-        label: "Piper",
-    },
-    EngineOption {
-        id: "espeak-ng",
-        label: "eSpeak-NG",
-    },
-    EngineOption {
-        id: "polly",
-        label: "Amazon Polly",
-    },
-    EngineOption {
-        id: "elevenlabs",
-        label: "ElevenLabs",
-    },
-];
-
-enum AliasFormEvent {
-    Submit(VoiceAlias),
-    Cancel,
-}
-
-struct AliasForm {
-    editing: Option<AliasId>,
-    platform: PlatformScope,
-    viewer: Entity<TextInput>,
-    voice: Entity<TextInput>,
-    pitch: Entity<TextInput>,
-    rate: Entity<TextInput>,
-    engine: Option<String>,
-    blocked: bool,
-    saving: bool,
-    _subs: Vec<Subscription>,
-}
-
-impl EventEmitter<AliasFormEvent> for AliasForm {}
-
-impl AliasForm {
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        editing: Option<AliasId>,
-        platform: PlatformScope,
-        viewer: &str,
-        engine: Option<String>,
-        voice: &str,
-        pitch: &str,
-        rate: &str,
-        blocked: bool,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let palette = cx.palette();
-        let viewer = text_field(
-            tr!("tts_aliases_form_viewer_placeholder"),
-            viewer,
-            palette,
-            cx,
-        );
-        let voice = text_field(
-            tr!("tts_aliases_form_voice_placeholder"),
-            voice,
-            palette,
-            cx,
-        );
-        let pitch = text_field(
-            tr!("tts_aliases_form_pitch_placeholder"),
-            pitch,
-            palette,
-            cx,
-        );
-        let rate = text_field(tr!("tts_aliases_form_rate_placeholder"), rate, palette, cx);
-
-        let mut subs = Vec::new();
-        subs.push(cx.subscribe(
-            &viewer,
-            |this, _input, event: &InputEvent, cx| match event {
-                InputEvent::Submitted(_) => this.submit(cx),
-                InputEvent::Changed(_) => cx.notify(),
-                InputEvent::Cancelled => this.cancel(cx),
-                InputEvent::Blurred(_) => {}
-            },
-        ));
-        for field in [&voice, &pitch, &rate] {
-            subs.push(
-                cx.subscribe(field, |this, _input, event: &InputEvent, cx| match event {
-                    InputEvent::Changed(_) => cx.notify(),
-                    InputEvent::Cancelled => this.cancel(cx),
-                    InputEvent::Submitted(_) => this.submit(cx),
-                    InputEvent::Blurred(_) => {}
-                }),
-            );
-        }
-
-        AliasForm {
-            editing,
-            platform,
-            viewer,
-            voice,
-            pitch,
-            rate,
-            engine,
-            blocked,
-            saving: false,
-            _subs: subs,
-        }
-    }
-
-    fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        self.viewer.update(cx, |f, cx| f.focus(window, cx));
-    }
-
-    fn set_engine(&mut self, id: &'static str, cx: &mut Context<Self>) {
-        self.engine = Some(id.to_owned());
-        cx.notify();
-    }
-
-    fn set_platform(&mut self, platform: PlatformScope, cx: &mut Context<Self>) {
-        self.platform = platform;
-        cx.notify();
-    }
-
-    fn toggle_blocked(&mut self, cx: &mut Context<Self>) {
-        self.blocked = !self.blocked;
-        cx.notify();
-    }
-
-    fn is_saveable(&self, cx: &App) -> bool {
-        !self.saving && !self.viewer.read(cx).content().trim().is_empty()
-    }
-
-    fn submit(&mut self, cx: &mut Context<Self>) {
-        if !self.is_saveable(cx) {
-            return;
-        }
-        let alias = form_to_alias(self, cx);
-        cx.emit(AliasFormEvent::Submit(alias));
-    }
-
-    fn cancel(&mut self, cx: &mut Context<Self>) {
-        cx.emit(AliasFormEvent::Cancel);
-    }
-}
-
-impl Render for AliasForm {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = cx.palette();
-        let density = cx.density();
-        let title = if self.editing.is_some() {
-            tr!("tts_aliases_form_title_edit")
-        } else {
-            tr!("tts_aliases_form_title_assign")
-        };
-
-        let viewer_field = form_field(
-            tr!("tts_aliases_form_viewer_label"),
-            self.viewer.clone(),
-            &palette,
-            density,
-        );
-
-        let platform_segments = PlatformScope::ALL
-            .into_iter()
-            .map(|scope| {
-                segment(
-                    SharedString::from(format!(
-                        "va-form-platform-{}",
-                        scope.token().unwrap_or("any")
-                    )),
-                    scope.label(),
-                    self.platform == scope,
-                    cx.listener(move |this, _: &ClickEvent, _, cx| this.set_platform(scope, cx)),
-                )
-            })
-            .collect();
-        let platform_field = labelled(
-            tr!("tts_aliases_form_platform_label"),
-            div().flex().child(segmented(platform_segments, &palette)),
-            &palette,
-            density,
-        );
-
-        let block_row = div()
-            .flex()
-            .items_center()
-            .gap(spacing(Spacing::Sm, density))
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap(spacing(Spacing::Xxs, density))
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_SM)
-                            .text_color(palette.text_primary)
-                            .child(tr!("tts_aliases_form_block_label")),
-                    )
-                    .child(
-                        div()
-                            .font_family(body_family())
-                            .text_size(FONT_XS)
-                            .text_color(palette.text_muted)
-                            .child(tr!("tts_aliases_form_block_desc")),
-                    ),
-            )
-            .child(toggle(self.blocked, &palette).on_click(
-                "va-form-block",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_blocked(cx)),
-            ));
-
-        let config: AnyElement = if self.blocked {
-            div()
-                .font_family(mono_family())
-                .text_size(FONT_SM)
-                .text_color(palette.text_faint)
-                .child(tr!("tts_aliases_form_blocked_note"))
-                .into_any_element()
-        } else {
-            let engine_segments = ENGINE_OPTIONS
-                .iter()
-                .map(|opt| {
-                    let active = self.engine.as_deref() == Some(opt.id);
-                    let id = opt.id;
-                    segment(
-                        SharedString::from(format!("va-form-eng-{id}")),
-                        opt.label,
-                        active,
-                        cx.listener(move |this, _: &ClickEvent, _, cx| this.set_engine(id, cx)),
-                    )
-                })
-                .collect();
-            let chips = segmented(engine_segments, &palette).wrap(spacing(Spacing::Xxs, density));
-            let engine_block = labelled(
-                tr!("tts_aliases_form_engine_label"),
-                chips,
-                &palette,
-                density,
-            );
-            let voice_block = form_field(
-                tr!("tts_aliases_form_voice_label"),
-                self.voice.clone(),
-                &palette,
-                density,
-            );
-            let pitch_block = form_field(
-                tr!("tts_aliases_form_pitch_label"),
-                self.pitch.clone(),
-                &palette,
-                density,
-            );
-            let rate_block = form_field(
-                tr!("tts_aliases_form_rate_label"),
-                self.rate.clone(),
-                &palette,
-                density,
-            );
-            div()
-                .flex()
-                .flex_col()
-                .gap(spacing(Spacing::Sm, density))
-                .child(engine_block)
-                .child(voice_block)
-                .child(
-                    div()
-                        .flex()
-                        .gap(spacing(Spacing::Sm, density))
-                        .child(div().flex_1().child(pitch_block))
-                        .child(div().flex_1().child(rate_block)),
-                )
-                .into_any_element()
-        };
-
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Sm, density))
-            .child(platform_field)
-            .child(viewer_field)
-            .child(block_row)
-            .child(config);
-
-        let save_label = if self.editing.is_some() {
-            tr!("common_save")
-        } else {
-            tr!("tts_aliases_form_create")
-        };
-        let footer = div()
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(secondary_button(tr!("common_cancel"), &palette).on_click(
-                "va-form-cancel",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-            ))
-            .child(
-                primary_button(save_label, &palette)
-                    .disabled(!self.is_saveable(cx))
-                    .on_click(
-                        "va-form-save",
-                        cx.listener(|this, _: &ClickEvent, _, cx| this.submit(cx)),
-                    ),
-            );
-
-        let card = modal(title, body, &palette)
-            .width(MODAL_W)
-            .footer(footer)
-            .on_close(
-                "va-form-close",
-                cx.listener(|this, _: &ClickEvent, _, cx| this.cancel(cx)),
-            );
-
-        let view = cx.entity();
-        overlay(card, &palette)
-            .position(OverlayPosition::Center)
-            .busy(self.saving)
-            .on_dismiss("va-form-scrim", move |_window, cx| {
-                view.update(cx, |this, cx| this.cancel(cx));
-            })
-            .into_any_element()
-    }
 }
 
 pub struct VoiceAliasesView {
@@ -662,39 +275,33 @@ impl VoiceAliasesView {
     }
 
     fn open_assign(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let form =
-            cx.new(|cx| AliasForm::new(None, PlatformScope::Any, "", None, "", "", "", false, cx));
-        form.update(cx, |f, cx| f.focus(window, cx));
-        self._form_sub = Some(cx.subscribe(&form, Self::on_form_event));
-        self.form = Some(form);
-        cx.notify();
+        let form = cx.new(|cx| AliasForm::new(None, None, false, AliasValues::default(), cx));
+        self.mount_form(form, window, cx);
     }
 
     fn open_edit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self.aliases.get(index) else {
             return;
         };
+        let id_keyed = row.viewer_id != alias_key(row.platform, &row.viewer_name);
+        let identity = AliasIdentity {
+            key: row.viewer_id.clone(),
+            name: row.viewer_name.clone(),
+            platform: row.platform,
+        };
+        let values = AliasValues {
+            engine: Some(row.engine_id.clone()),
+            voice: row.voice_id.clone(),
+            pitch: fmt_field(row.pitch_semitones),
+            rate: fmt_field(row.rate_multiplier),
+            blocked: row.blocked,
+        };
         let id = row.id.clone();
-        let platform = row.platform;
-        let viewer = row.viewer_name.clone();
-        let engine = (!row.blocked).then(|| row.engine_id.clone());
-        let voice = row.voice_id.clone();
-        let pitch = fmt_field(row.pitch_semitones);
-        let rate = fmt_field(row.rate_multiplier);
-        let blocked = row.blocked;
-        let form = cx.new(|cx| {
-            AliasForm::new(
-                Some(id),
-                platform,
-                &viewer,
-                engine,
-                &voice,
-                &pitch,
-                &rate,
-                blocked,
-                cx,
-            )
-        });
+        let form = cx.new(|cx| AliasForm::new(Some(id), Some(identity), id_keyed, values, cx));
+        self.mount_form(form, window, cx);
+    }
+
+    fn mount_form(&mut self, form: Entity<AliasForm>, window: &mut Window, cx: &mut Context<Self>) {
         form.update(cx, |f, cx| f.focus(window, cx));
         self._form_sub = Some(cx.subscribe(&form, Self::on_form_event));
         self.form = Some(form);
@@ -721,10 +328,7 @@ impl VoiceAliasesView {
 
     fn persist(&mut self, alias: VoiceAlias, cx: &mut Context<Self>) {
         if let Some(form) = self.form.as_ref() {
-            form.update(cx, |f, cx| {
-                f.saving = true;
-                cx.notify();
-            });
+            form.update(cx, |f, cx| f.set_saving(true, cx));
         }
         cx.notify();
 
@@ -733,39 +337,26 @@ impl VoiceAliasesView {
         let replaces_existing = self
             .form
             .as_ref()
-            .is_some_and(|form| form.read(cx).editing.is_some());
+            .is_some_and(|form| form.read(cx).is_editing());
         async_bridge::run_async(
             &self.rt_handle,
             async move {
-                repo.upsert(&alias).await.map_err(|e| e.to_string())?;
-                if let Some(handle) = speak.as_ref()
-                    && replaces_existing
-                    && let Err(e) = handle
-                        .send(SpeakCommand::RemoveAlias(alias.id.clone()))
-                        .await
-                {
-                    eprintln!("forge-desktop: voice alias hot-reload (replace) failed: {e}");
-                }
-                if let Some(handle) = speak
-                    && let Err(e) = handle.send(SpeakCommand::SetAlias(alias)).await
-                {
-                    eprintln!("forge-desktop: voice alias hot-reload failed: {e}");
-                }
-                repo.list().await.map_err(|e| e.to_string())
+                save_alias(repo.as_ref(), speak.as_ref(), &alias, replaces_existing).await?;
+                repo.list().await
             },
             |this, result, cx| match result {
                 Ok(aliases) => {
                     this.apply_aliases(aliases, cx);
                     this.close_form(cx);
                 }
-                Err(message) => {
+                Err(error) => {
                     if let Some(form) = this.form.as_ref() {
-                        form.update(cx, |f, cx| {
-                            f.saving = false;
-                            cx.notify();
-                        });
+                        form.update(cx, |f, cx| f.set_saving(false, cx));
                     }
-                    this.on_repo_error(&message, cx);
+                    if matches!(error, StorageError::AliasViewerTaken) {
+                        cx.push_toast(ToastKind::Error, tr!("tts_aliases_viewer_taken"));
+                    }
+                    this.on_repo_error(&error.to_string(), cx);
                 }
             },
             cx,
@@ -1306,43 +897,6 @@ fn platform_badge(
         )
 }
 
-fn labelled(
-    label: impl Into<SharedString>,
-    control: impl IntoElement,
-    palette: &ForgePalette,
-    density: Density,
-) -> impl IntoElement {
-    field_label(palette, label, control)
-        .tone(palette.text_muted)
-        .size(FONT_XS)
-        .density(density)
-}
-
-fn form_field(
-    label: impl Into<SharedString>,
-    input: Entity<TextInput>,
-    palette: &ForgePalette,
-    density: Density,
-) -> impl IntoElement {
-    labelled(label, input, palette, density)
-}
-
-fn text_field(
-    placeholder: impl Into<SharedString>,
-    initial: &str,
-    palette: ForgePalette,
-    cx: &mut Context<AliasForm>,
-) -> Entity<TextInput> {
-    let initial = initial.to_owned();
-    cx.new(|cx| {
-        let mut input = TextInput::new(placeholder, cx).with_palette(palette);
-        if !initial.is_empty() {
-            input.set_content(initial, cx);
-        }
-        input
-    })
-}
-
 fn row_from_alias(a: VoiceAlias) -> AliasRow {
     let engine = a.engine_id.0;
     let engine_label = engine_display_label(&engine);
@@ -1366,28 +920,6 @@ fn row_from_alias(a: VoiceAlias) -> AliasRow {
         pitch_semitones: a.pitch_semitones,
         rate_multiplier: a.rate_multiplier,
         blocked: matches!(a.state, AliasState::Blocked),
-    }
-}
-
-fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
-    let viewer = form.viewer.read(cx).content().trim().to_owned();
-    let engine = form.engine.clone().unwrap_or_default();
-    let voice = form.voice.read(cx).content().trim().to_owned();
-    let pitch = form.pitch.read(cx).content().trim().parse::<f32>().ok();
-    let rate = form.rate.read(cx).content().trim().parse::<f32>().ok();
-    VoiceAlias {
-        id: form.editing.clone().unwrap_or_default(),
-        viewer_id: alias_key(form.platform, &viewer),
-        viewer_name: viewer,
-        engine_id: EngineId(engine.trim().to_owned()),
-        voice_id: VoiceId(voice),
-        pitch_semitones: pitch,
-        rate_multiplier: rate,
-        state: if form.blocked {
-            AliasState::Blocked
-        } else {
-            AliasState::Active
-        },
     }
 }
 
@@ -1441,13 +973,176 @@ fn fmt_rate(value: Option<f32>, blocked: bool) -> String {
         .unwrap_or_else(|| "1.0x".to_owned())
 }
 
-fn fmt_field(value: Option<f32>) -> String {
-    value.map(|v| format!("{v}")).unwrap_or_default()
-}
-
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
+    use std::time::Duration;
+
+    use forge_components::ThemeId;
+    use forge_storage::{DataProvider, Language};
+    use forge_voice::{EngineId, VoiceId};
+    use gpui::{TestAppContext, VisualTestContext};
+
     use super::*;
+    use crate::i18n::install_language;
+    use crate::presentation::Presentation;
+    use crate::test_support::{
+        LiveAliases, Sandboxed, alias_shape, error_toasts, live_alias, runtime, sandboxed_backend,
+        spawn_speak_queue,
+    };
+    use crate::toasts::Toasts;
+
+    const TEST_KEY: [u8; 32] = [0x5a; 32];
+    const SETTLE_ROUNDS: usize = 2000;
+
+    struct Fixture {
+        backend: Sandboxed<forge_storage_sqlite::SqliteBackend>,
+        resolver: LiveAliases,
+        view: Entity<VoiceAliasesView>,
+    }
+
+    struct Services {
+        backend: Sandboxed<forge_storage_sqlite::SqliteBackend>,
+        speak: forge_speak_queue::SpeakQueueHandle,
+        resolver: LiveAliases,
+    }
+
+    impl Services {
+        fn view(
+            &self,
+            rt: &tokio::runtime::Runtime,
+            cx: &mut Context<VoiceAliasesView>,
+        ) -> VoiceAliasesView {
+            VoiceAliasesView::new(
+                self.backend.voice_alias_repo(),
+                self.backend.viewer_repo(),
+                Some(self.speak.clone()),
+                rt.handle().clone(),
+                cx,
+            )
+        }
+
+        fn into_fixture(self, view: Entity<VoiceAliasesView>) -> Fixture {
+            Fixture {
+                backend: self.backend,
+                resolver: self.resolver,
+                view,
+            }
+        }
+    }
+
+    fn keyed(id: &str, viewer_id: &str, voice: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId(id.to_owned()),
+            voice_id: VoiceId(voice.to_owned()),
+            ..stored_alias(viewer_id, viewer_id)
+        }
+    }
+
+    fn services(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        seeded: Vec<VoiceAlias>,
+    ) -> Services {
+        install_language(Language::En);
+        cx.update(|cx| {
+            cx.set_global(Presentation::new(ThemeId::ForgeDefault, Density::Cozy));
+            cx.set_global(Toasts::new());
+        });
+        let backend = rt.block_on(sandboxed_backend("sqlite::memory:", TEST_KEY));
+        let repo = backend.voice_alias_repo();
+        for alias in &seeded {
+            rt.block_on(repo.upsert(alias)).expect("seed alias");
+        }
+        let (speak, _events, resolver) = rt.block_on(async { spawn_speak_queue(seeded) });
+        Services {
+            backend,
+            speak,
+            resolver,
+        }
+    }
+
+    fn mount(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        seeded: Vec<VoiceAlias>,
+    ) -> Fixture {
+        let services = services(cx, rt, seeded);
+        let view = cx.update(|cx| cx.new(|cx| services.view(rt, cx)));
+        services.into_fixture(view)
+    }
+
+    fn mount_in_window<'a>(
+        cx: &'a mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        seeded: Vec<VoiceAlias>,
+    ) -> (Fixture, &'a mut VisualTestContext) {
+        let services = services(cx, rt, seeded);
+        let (view, vcx) = cx.add_window_view(|_window, cx| services.view(rt, cx));
+        vcx.update(|window, cx| {
+            window.activate_window();
+            forge_components::bind_text_input_keys(cx);
+        });
+        (services.into_fixture(view), vcx)
+    }
+
+    fn settle(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        done: impl Fn(&mut TestAppContext) -> bool,
+    ) {
+        for _ in 0..SETTLE_ROUNDS {
+            rt.block_on(async { tokio::time::sleep(Duration::from_millis(1)).await });
+            cx.run_until_parked();
+            if done(cx) {
+                return;
+            }
+        }
+        panic!("the save never settled");
+    }
+
+    fn live_alias_for(fixture: &Fixture, viewer_id: &str) -> Option<VoiceAlias> {
+        live_alias(&fixture.resolver, viewer_id)
+    }
+
+    #[gpui::test]
+    fn saving_under_a_fresh_id_hot_reloads_the_alias_with_the_stored_id(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let fixture = mount(cx, &rt, vec![keyed("stored", "twitch:alice", "old-voice")]);
+
+        fixture.view.update(cx, |view, cx| {
+            view.persist(keyed("fresh", "twitch:alice", "new-voice"), cx)
+        });
+        settle(cx, &rt, |_| {
+            live_alias_for(&fixture, "twitch:alice")
+                .is_some_and(|alias| alias.voice_id.0 == "new-voice")
+        });
+
+        let live = live_alias_for(&fixture, "twitch:alice").expect("live alias");
+        assert_eq!(live.id.0, "stored");
+    }
+
+    #[gpui::test]
+    fn saving_an_alias_onto_a_viewer_held_by_another_alias_shows_an_error_toast(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let fixture = mount(
+            cx,
+            &rt,
+            vec![
+                keyed("a", "twitch:alice", "voice-a"),
+                keyed("b", "twitch:bob", "voice-b"),
+            ],
+        );
+
+        fixture.view.update(cx, |view, cx| {
+            view.persist(keyed("a", "twitch:bob", "voice-edited"), cx)
+        });
+        settle(cx, &rt, |cx| cx.update(|cx| error_toasts(cx)) > 0);
+
+        assert_eq!(cx.update(|cx| error_toasts(cx)), 1);
+    }
 
     fn stored_alias(viewer_id: &str, viewer_name: &str) -> VoiceAlias {
         VoiceAlias {
@@ -1462,22 +1157,91 @@ mod tests {
         }
     }
 
-    #[test]
-    fn alias_key_round_trips_through_split_for_every_platform_scope() {
-        for scope in PlatformScope::ALL {
-            for name in ["Alice", "Зірка", "user_42"] {
-                let key = alias_key(scope, name);
+    #[gpui::test]
+    fn editing_a_row_locks_the_viewer_only_when_the_alias_is_keyed_by_viewer_id(
+        cx: &mut TestAppContext,
+    ) {
+        for (viewer_id, viewer_name, saved_under) in [
+            ("twitch:141981764", "alice", "twitch:141981764"),
+            ("twitch:alice", "alice", "twitch:alicex"),
+        ] {
+            let rt = runtime();
+            let seeded = VoiceAlias {
+                id: AliasId("a1".to_owned()),
+                ..stored_alias(viewer_id, viewer_name)
+            };
+            let (fixture, vcx) = mount_in_window(cx, &rt, vec![seeded]);
+            let view = fixture.view.clone();
+            settle(vcx, &rt, |cx| {
+                view.read_with(cx, |view, _| !view.aliases.is_empty())
+            });
 
-                assert_eq!(split_alias_key(&key), (scope, name), "{key:?}");
-            }
+            vcx.update(|window, cx| view.update(cx, |view, cx| view.open_edit(0, window, cx)));
+            vcx.run_until_parked();
+            vcx.simulate_input("x");
+            vcx.simulate_keystrokes("enter");
+            let repo = fixture.backend.voice_alias_repo();
+            let saved = || {
+                rt.block_on(repo.list())
+                    .expect("list")
+                    .into_iter()
+                    .map(|alias| (alias.viewer_id, alias.voice_id.0))
+                    .collect::<Vec<_>>()
+            };
+            settle(vcx, &rt, |_| {
+                saved()
+                    .iter()
+                    .any(|(id, voice)| id != viewer_id || voice != "amy")
+            });
+
+            assert_eq!(
+                saved().into_iter().map(|(id, _)| id).collect::<Vec<_>>(),
+                [saved_under],
+                "{viewer_id:?}"
+            );
         }
     }
 
-    #[test]
-    fn split_alias_key_keeps_an_unknown_prefix_as_part_of_a_bare_name() {
-        for key in ["discord:Alice", ":Alice", "Twitch:Alice"] {
-            assert_eq!(split_alias_key(key), (PlatformScope::Any, key), "{key:?}");
-        }
+    #[gpui::test]
+    fn editing_a_blocked_row_saves_it_still_blocked_with_its_engine_voice_pitch_and_rate(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let seeded = VoiceAlias {
+            id: AliasId("a1".to_owned()),
+            engine_id: EngineId("elevenlabs".to_owned()),
+            pitch_semitones: Some(-2.5),
+            rate_multiplier: Some(1.25),
+            state: AliasState::Blocked,
+            ..stored_alias("twitch:alice", "alice")
+        };
+        let (fixture, vcx) = mount_in_window(cx, &rt, vec![seeded.clone()]);
+        let view = fixture.view.clone();
+        settle(vcx, &rt, |cx| {
+            view.read_with(cx, |view, _| !view.aliases.is_empty())
+        });
+
+        vcx.update(|window, cx| view.update(cx, |view, cx| view.open_edit(0, window, cx)));
+        vcx.run_until_parked();
+        vcx.simulate_input("x");
+        vcx.simulate_keystrokes("enter");
+        let repo = fixture.backend.voice_alias_repo();
+        let saved = || rt.block_on(repo.list()).expect("list");
+        settle(vcx, &rt, |_| {
+            saved()
+                .iter()
+                .any(|alias| alias.viewer_id == "twitch:alicex")
+        });
+
+        let renamed = VoiceAlias {
+            viewer_id: "twitch:alicex".to_owned(),
+            viewer_name: "alicex".to_owned(),
+            ..seeded
+        };
+        assert_eq!(
+            saved().iter().map(alias_shape).collect::<Vec<_>>(),
+            [alias_shape(&renamed)]
+        );
     }
 
     #[test]

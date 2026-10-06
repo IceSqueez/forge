@@ -18,9 +18,6 @@ use crate::{synth, voices};
 
 #[allow(dead_code)]
 pub(crate) enum StaRequest {
-    ListVoices {
-        tx: tokio::sync::oneshot::Sender<Result<Vec<TtsVoice>, SapiError>>,
-    },
     Synthesize {
         voice_id: VoiceId,
         req: SynthesisRequest,
@@ -79,10 +76,6 @@ fn sta_worker_main(
 
     while let Ok(req) = rx.recv() {
         match req {
-            StaRequest::ListVoices { tx } => {
-                let v: Vec<TtsVoice> = tokens.iter().map(|(v, _)| v.clone()).collect();
-                let _ = tx.send(Ok(v));
-            }
             StaRequest::Synthesize { voice_id, req, tx } => {
                 let result = synthesize_on_sta(&voice, &tokens, voice_id, req);
                 let _ = tx.send(result);

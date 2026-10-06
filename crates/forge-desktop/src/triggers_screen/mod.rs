@@ -71,17 +71,25 @@ enum Platform {
     Youtube,
     Kick,
     Obs,
+    Vtube,
+    Midi,
+    Hotkey,
+    Donation,
     Timer,
     Script,
     Core,
 }
 
 impl Platform {
-    const ORDER: [Platform; 7] = [
+    const ORDER: [Platform; 11] = [
         Platform::Twitch,
         Platform::Youtube,
         Platform::Kick,
         Platform::Obs,
+        Platform::Vtube,
+        Platform::Midi,
+        Platform::Hotkey,
+        Platform::Donation,
         Platform::Timer,
         Platform::Script,
         Platform::Core,
@@ -93,6 +101,10 @@ impl Platform {
             "youtube" => Some(Platform::Youtube),
             "kick" => Some(Platform::Kick),
             "obs" => Some(Platform::Obs),
+            "vtube" => Some(Platform::Vtube),
+            "midi" => Some(Platform::Midi),
+            "hotkey" => Some(Platform::Hotkey),
+            "donation" => Some(Platform::Donation),
             "timer" => Some(Platform::Timer),
             "script" | "rhai" => Some(Platform::Script),
             "core" => Some(Platform::Core),
@@ -106,6 +118,10 @@ impl Platform {
             Platform::Youtube => "YouTube",
             Platform::Kick => "Kick",
             Platform::Obs => "OBS",
+            Platform::Vtube => "VTube",
+            Platform::Midi => "MIDI",
+            Platform::Hotkey => "Hotkey",
+            Platform::Donation => "Donation",
             Platform::Timer => "Timer",
             Platform::Script => "Script",
             Platform::Core => "Core",
@@ -118,6 +134,10 @@ impl Platform {
             Platform::Youtube => "YouTube".to_owned(),
             Platform::Kick => "Kick".to_owned(),
             Platform::Obs => "OBS".to_owned(),
+            Platform::Vtube => "VTube".to_owned(),
+            Platform::Midi => "MIDI".to_owned(),
+            Platform::Hotkey => tr!("triggers_filter_hotkey"),
+            Platform::Donation => tr!("trigger_cat_donations"),
             Platform::Timer => tr!("triggers_platform_timer"),
             Platform::Script => tr!("triggers_platform_script"),
             Platform::Core => tr!("triggers_platform_core"),
@@ -129,7 +149,10 @@ impl Platform {
             Platform::Twitch => platform_color(PlatformKind::Twitch, palette),
             Platform::Youtube => platform_color(PlatformKind::YouTube, palette),
             Platform::Kick => platform_color(PlatformKind::Kick, palette),
-            Platform::Obs => palette.accent_teal,
+            Platform::Obs | Platform::Vtube => palette.accent_teal,
+            Platform::Midi => palette.random,
+            Platform::Hotkey => palette.warning,
+            Platform::Donation => palette.success,
             Platform::Timer => palette.warning,
             Platform::Script => palette.bits,
             Platform::Core => palette.info,
@@ -554,6 +577,7 @@ async fn load_rows(repo: &dyn TriggerInstanceRepo) -> Result<Vec<TriggerInstance
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use forge_components::{Density, ThemeId};
     use forge_storage::MockTriggerInstanceRepo;
@@ -567,6 +591,51 @@ mod tests {
     };
 
     const TWITCH_CHAT: &str = "twitch.chat";
+
+    #[test]
+    fn a_kind_id_maps_to_its_source_chip_by_prefix() {
+        for (kind_id, expected) in [
+            ("twitch.chat", Some(Platform::Twitch)),
+            ("youtube.super_chat", Some(Platform::Youtube)),
+            ("kick.chat", Some(Platform::Kick)),
+            ("obs.scene_changed", Some(Platform::Obs)),
+            ("vtube.model_loaded", Some(Platform::Vtube)),
+            ("midi.note_on", Some(Platform::Midi)),
+            ("hotkey.pressed", Some(Platform::Hotkey)),
+            ("donation.received", Some(Platform::Donation)),
+            ("timer.tick", Some(Platform::Timer)),
+            ("script.exec", Some(Platform::Script)),
+            ("rhai.exec", Some(Platform::Script)),
+            ("core.startup", Some(Platform::Core)),
+            ("twitch", Some(Platform::Twitch)),
+            ("discord.message", None),
+            ("Twitch.chat", None),
+            ("", None),
+        ] {
+            assert!(Platform::from_kind_id(kind_id) == expected, "{kind_id:?}");
+        }
+    }
+
+    #[test]
+    fn every_registered_trigger_kind_has_a_source_chip() {
+        let mut registry = forge_registry::TriggerRegistry::new();
+        forge_runtime::register_core_triggers(&mut registry).unwrap();
+        forge_platform_twitch::register_twitch_triggers(&mut registry).unwrap();
+        forge_obs::register_obs_triggers(&mut registry).unwrap();
+        forge_vtube::register_vtube_triggers(&mut registry).unwrap();
+        forge_midi::register_midi_triggers(&mut registry).unwrap();
+        forge_hotkey::register_hotkey_triggers(&mut registry).unwrap();
+        forge_platform_youtube::register_youtube_triggers(&mut registry).unwrap();
+        forge_platform_kick::register_kick_triggers(&mut registry).unwrap();
+
+        let chipless: Vec<&str> = registry
+            .all()
+            .map(|descriptor| descriptor.id())
+            .filter(|kind_id| Platform::from_kind_id(kind_id).is_none())
+            .collect();
+
+        assert!(chipless.is_empty(), "kinds without a chip: {chipless:?}");
+    }
 
     fn twitch() -> IntegrationId {
         IntegrationId::new("twitch")

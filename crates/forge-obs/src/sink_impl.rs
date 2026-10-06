@@ -153,16 +153,6 @@ impl ObsSink for ObsClient {
             .await
     }
 
-    async fn raw_request(
-        &self,
-        _request_type: &str,
-        _payload: &Variant,
-    ) -> Result<Variant, ObsError> {
-        Err(ObsError::Protocol(
-            "raw_request not supported by obws 0.15".to_owned(),
-        ))
-    }
-
     async fn set_preview_scene(&self, scene: &str) -> Result<(), ObsError> {
         let session = self.active_session().await?;
         session

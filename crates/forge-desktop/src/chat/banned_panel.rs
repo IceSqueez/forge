@@ -2024,7 +2024,7 @@ pub(super) mod tests {
     }
 
     #[gpui::test]
-    fn showing_again_relists_only_the_groups_that_went_stale(cx: &mut TestAppContext) {
+    fn showing_again_relists_the_stale_groups_and_the_ledger_backed_ones(cx: &mut TestAppContext) {
         let rt = runtime();
         let twitch = FakeBans::answering(vec![outcome(&["1"], None), outcome(&["2"], None)]);
         let kick = FakeBans::answering(Vec::new());
@@ -2043,7 +2043,7 @@ pub(super) mod tests {
         set_visible(cx, &panel, true);
         settle(cx, &rt);
 
-        assert_eq!((twitch.calls(), kick.calls()), (2, 1));
+        assert_eq!((twitch.calls(), kick.calls()), (2, 2));
         assert_eq!(twitch_ids(cx, &panel), ["2"]);
         assert!(!group_of(cx, &panel, Platform::Twitch, |group| group.stale));
     }

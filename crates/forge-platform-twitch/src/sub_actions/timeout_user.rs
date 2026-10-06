@@ -10,9 +10,14 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::{SelfIdentity, resolve_user_id};
+use super::identity::SelfIdentity;
+use super::user_target::{TargetKeys, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
+const TARGET_KEYS: TargetKeys = TargetKeys {
+    id: "target_user_id",
+    login: "target_user_login",
+};
 const KIND_ID: &str = "twitch.moderation.timeout_user";
 const DEFAULT_DURATION_SECONDS: i64 = 600;
 const MIN_DURATION_SECONDS: i64 = 1;
@@ -31,17 +36,20 @@ impl TimeoutUserRunner {
         }
     }
 
-    async fn timeout(&self, target_login: &str, reason: &str, duration: i64) -> SubActionOutcome {
-        if target_login.is_empty() {
-            return SubActionOutcome::Failed(
-                "target_user_login is empty after interpolation".to_owned(),
-            );
-        }
+    async fn timeout(
+        &self,
+        target: Option<UserTarget<'_>>,
+        reason: &str,
+        duration: i64,
+    ) -> SubActionOutcome {
+        let Some(target) = target else {
+            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+        };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        let target_user_id = match resolve_user_id(self.transport.as_ref(), target_login).await {
+        let target_user_id = match target.user_id(self.transport.as_ref()).await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
@@ -85,10 +93,7 @@ impl SubActionRunner for TimeoutUserRunner {
 
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([
-            (
-                "target_user_login".to_owned(),
-                Variant::String(String::new()),
-            ),
+            (TARGET_KEYS.login.to_owned(), Variant::String(String::new())),
             ("reason".to_owned(), Variant::String(String::new())),
             (
                 "duration_seconds".to_owned(),
@@ -100,7 +105,7 @@ impl SubActionRunner for TimeoutUserRunner {
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Text {
-                key: "target_user_login",
+                key: TARGET_KEYS.login,
                 label: "Target Username",
                 placeholder: "%user_login%",
             },
@@ -119,14 +124,7 @@ impl SubActionRunner for TimeoutUserRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("target_user_login") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'target_user_login' must be a non-empty string"
-                )));
-            }
-        }
+        TARGET_KEYS.validate(KIND_ID, config)?;
         if let Some(Variant::String(r)) = config.get("reason")
             && r.chars().count() > 500
         {
@@ -152,8 +150,7 @@ impl SubActionRunner for TimeoutUserRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config.str("target_user_login").unwrap_or_default();
-        let target_login = ctx.arg_stack.interpolate(login_template);
+        let interpolated = TARGET_KEYS.interpolate(config, ctx);
         let reason = config
             .str("reason")
             .map(|s| ctx.arg_stack.interpolate(s))
@@ -170,7 +167,7 @@ impl SubActionRunner for TimeoutUserRunner {
             .filter(|&d| (MIN_DURATION_SECONDS..=MAX_DURATION_SECONDS).contains(&d))
             .unwrap_or(DEFAULT_DURATION_SECONDS);
 
-        let outcome = self.timeout(&target_login, &reason, duration).await;
+        let outcome = self.timeout(interpolated.target(), &reason, duration).await;
 
         (
             SubActionTelemetry {

@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::helix::{HelixError, HelixMethod, HelixRequest, HelixTransport};
-use crate::sub_actions::identity::resolve_user_id;
+use crate::sub_actions::user_target::UserTarget;
 
 const WHISPERS_PATH: &str = "/helix/whispers";
 const MAX_WHISPER_CHARS: usize = 500;
@@ -24,16 +24,26 @@ pub(crate) async fn send_whisper(
     to_user_login: &str,
     message: &str,
 ) -> Result<(), WhisperError> {
-    if to_user_login.is_empty() {
+    let recipient = (!to_user_login.is_empty()).then_some(UserTarget::Login(to_user_login));
+    send_whisper_to(transport, from_user_id, recipient, message).await
+}
+
+pub(crate) async fn send_whisper_to(
+    transport: &dyn HelixTransport,
+    from_user_id: &str,
+    recipient: Option<UserTarget<'_>>,
+    message: &str,
+) -> Result<(), WhisperError> {
+    let Some(recipient) = recipient else {
         return Err(WhisperError::EmptyRecipient);
-    }
+    };
     if message.is_empty() {
         return Err(WhisperError::EmptyMessage);
     }
     if message.chars().count() > MAX_WHISPER_CHARS {
         return Err(WhisperError::MessageTooLong);
     }
-    let to_user_id = resolve_user_id(transport, to_user_login).await?;
+    let to_user_id = recipient.user_id(transport).await?;
     let request = HelixRequest::new(HelixMethod::Post, WHISPERS_PATH)
         .query("from_user_id", from_user_id)
         .query("to_user_id", to_user_id)

@@ -246,6 +246,16 @@ mod tests {
 
         let cases: Vec<(&str, SubActionConfig, bool)> = vec![
             ("non-empty", config("777"), true),
+            (
+                "reason at limit",
+                with_reason(config("777"), &"a".repeat(100)),
+                true,
+            ),
+            (
+                "reason over limit",
+                with_reason(config("777"), &"a".repeat(101)),
+                false,
+            ),
             ("empty", config(""), false),
             ("missing", BTreeMap::new(), false),
             (
@@ -260,6 +270,38 @@ mod tests {
                 runner.validate_config(&cfg).is_ok(),
                 expect_ok,
                 "case: {label}"
+            );
+        }
+    }
+
+    fn with_reason(mut config: SubActionConfig, reason: &str) -> SubActionConfig {
+        config.insert("reason".to_owned(), Variant::String(reason.to_owned()));
+        config
+    }
+
+    #[tokio::test]
+    async fn execute_posts_the_interpolated_reason_only_when_it_is_not_blank() {
+        for (template, expected) in [("%why%", Some("spam links")), ("  ", None)] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/moderation/bans"))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+            let stack =
+                ArgStack::new().set("why".to_owned(), Variant::String("spam links".to_owned()));
+
+            let (telemetry, _) = runner_on(&server)
+                .execute(&with_reason(config("777"), template), &make_ctx(&stack))
+                .await;
+
+            assert_eq!(telemetry.outcome, SubActionOutcome::Success);
+            let reqs = server.received_requests().await.unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&reqs[0].body).unwrap();
+            assert_eq!(
+                body.get("reason").and_then(serde_json::Value::as_str),
+                expected,
+                "template {template:?}"
             );
         }
     }

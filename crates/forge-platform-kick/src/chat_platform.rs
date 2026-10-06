@@ -353,4 +353,228 @@ mod tests {
         assert_eq!(body["content"], "hello");
         assert_eq!(body["reply_to_message_id"], "parent-7");
     }
+
+    const BANNED_STEP_DEADLINE: StdDuration = StdDuration::from_secs(5);
+
+    #[derive(Default)]
+    struct GatedBanLedger {
+        upserts: StdMutex<Vec<forge_storage::BanLedgerEntry>>,
+        entered: tokio::sync::Notify,
+        release: tokio::sync::Notify,
+    }
+
+    #[async_trait]
+    impl BanLedgerRepo for GatedBanLedger {
+        async fn upsert(
+            &self,
+            entry: &forge_storage::BanLedgerEntry,
+            _now: OffsetDateTime,
+        ) -> Result<forge_storage::BanLedgerEntry, StorageError> {
+            self.upserts.lock().unwrap().push(entry.clone());
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(entry.clone())
+        }
+
+        async fn remove(&self, _key: &forge_storage::BanLedgerKey) -> Result<bool, StorageError> {
+            Ok(false)
+        }
+
+        async fn get(
+            &self,
+            _key: &forge_storage::BanLedgerKey,
+            _now: OffsetDateTime,
+        ) -> Result<Option<forge_storage::BanLedgerEntry>, StorageError> {
+            Ok(None)
+        }
+
+        async fn list_active(
+            &self,
+            _platform: forge_storage::ViewerPlatform,
+            _channel_id: &str,
+            _now: OffsetDateTime,
+            _limit: usize,
+        ) -> Result<Vec<forge_storage::BanLedgerEntry>, StorageError> {
+            Ok(Vec::new())
+        }
+    }
+
+    fn user_banned_frame(duration_secs: Option<u64>) -> String {
+        let mut inner = serde_json::json!({
+            "user": { "id": 77, "username": "Troll" },
+            "banned_by": { "id": 2, "username": "ModAlice" },
+            "permanent_ban_reason": ""
+        });
+        if let Some(seconds) = duration_secs {
+            inner["duration"] = serde_json::json!(seconds);
+        }
+        serde_json::json!({
+            "event": "App\\Events\\UserBannedEvent",
+            "channel": "chatrooms.4242.v2",
+            "data": inner.to_string()
+        })
+        .to_string()
+    }
+
+    async fn pusher_peer_sending(frame: String) -> String {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket_addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            while let Some(Ok(message)) = ws.next().await {
+                if matches!(message, Message::Text(_)) {
+                    break;
+                }
+            }
+            ws.send(Message::Text(frame.into())).await.unwrap();
+            while let Some(Ok(_)) = ws.next().await {}
+        });
+        format!("ws://{socket_addr}/app")
+    }
+
+    async fn platform_on_chat(
+        frame: String,
+        ledger: Arc<dyn BanLedgerRepo>,
+    ) -> (KickPlatform, wiremock::MockServer) {
+        use forge_platform_core::EndpointSurface;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v2/channels/streamer"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "chatroom": { "id": 4242 },
+                "livestream": null
+            })))
+            .mount(&server)
+            .await;
+        let socket_base = pusher_peer_sending(frame).await;
+        let overrides = [
+            (
+                EndpointSurface::KickChannelApi.env_var(),
+                format!("{}/api/v2", server.uri()),
+            ),
+            (EndpointSurface::KickChatSocket.env_var(), socket_base),
+        ];
+        let endpoints = PlatformEndpoints::resolve(|variable| {
+            overrides
+                .iter()
+                .find(|(name, _)| *name == variable)
+                .map(|(_, base)| std::ffi::OsString::from(base))
+        })
+        .unwrap();
+        let manager = Arc::new(KickCredentialsManager::new(
+            &endpoints,
+            InMemRepo::with_valid_creds(),
+            "test_cid".to_owned(),
+            "test_secret".to_owned(),
+        ));
+        let platform = KickPlatform::new(&endpoints, manager, Arc::new(GrantLimiter), ledger);
+        (platform, server)
+    }
+
+    async fn next_banned_event(stream: &mut EventStream) -> Event {
+        tokio::time::timeout(BANNED_STEP_DEADLINE, async {
+            loop {
+                let event = stream.recv().await.unwrap();
+                if event.kind == USER_BANNED_EVENT_KIND {
+                    return event;
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn observed_ban_is_recorded_before_the_event_is_published() {
+        use futures::FutureExt;
+
+        let ledger = Arc::new(GatedBanLedger::default());
+        let (platform, _server) = platform_on_chat(
+            user_banned_frame(None),
+            Arc::clone(&ledger) as Arc<dyn BanLedgerRepo>,
+        )
+        .await;
+        let mut stream = platform.events();
+        platform.connect().await.unwrap();
+
+        tokio::time::timeout(BANNED_STEP_DEADLINE, ledger.entered.notified())
+            .await
+            .unwrap();
+        let mut published_while_recording = Vec::new();
+        while let Some(Ok(event)) = stream.recv().now_or_never() {
+            published_while_recording.push(event.kind);
+        }
+        ledger.release.notify_one();
+
+        assert!(
+            !published_while_recording
+                .iter()
+                .any(|kind| kind == USER_BANNED_EVENT_KIND),
+            "published before the ledger write finished: {published_while_recording:?}"
+        );
+        next_banned_event(&mut stream).await;
+        platform.disconnect().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn observed_ban_is_recorded_under_the_connected_broadcaster_with_its_term() {
+        for (duration_secs, expected_term) in
+            [(None, None), (Some(600), Some(Duration::minutes(10)))]
+        {
+            let ledger = Arc::new(crate::ban_ledger_test_support::MemoryBanLedger::default());
+            let (platform, _server) = platform_on_chat(
+                user_banned_frame(duration_secs),
+                Arc::clone(&ledger) as Arc<dyn BanLedgerRepo>,
+            )
+            .await;
+            let mut stream = platform.events();
+            platform.connect().await.unwrap();
+
+            next_banned_event(&mut stream).await;
+            platform.disconnect().await.unwrap();
+
+            let stored = ledger
+                .stored(&forge_storage::BanLedgerKey {
+                    platform: forge_storage::ViewerPlatform::Kick,
+                    channel_id: "42".to_owned(),
+                    viewer_id: "77".to_owned(),
+                })
+                .unwrap();
+            assert_eq!(
+                (
+                    stored.origin,
+                    stored
+                        .expires_at
+                        .map(|expires_at| expires_at - stored.banned_at),
+                ),
+                (forge_storage::BanOrigin::Observed, expected_term),
+                "duration {duration_secs:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn observed_ban_is_published_when_the_ledger_write_fails() {
+        let (platform, _server) = platform_on_chat(
+            user_banned_frame(None),
+            Arc::new(crate::ban_ledger_test_support::MemoryBanLedger::failing_on(
+                crate::ban_ledger_test_support::LedgerOp::Upsert,
+            )),
+        )
+        .await;
+        let mut stream = platform.events();
+        platform.connect().await.unwrap();
+
+        let event = next_banned_event(&mut stream).await;
+        platform.disconnect().await.unwrap();
+
+        assert_eq!(event.payload["banned_user"]["id"], 77);
+    }
 }

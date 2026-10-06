@@ -76,3 +76,93 @@ fn non_empty_str<'a>(object: &'a Value, field: &str) -> Option<&'a str> {
         .and_then(Value::as_str)
         .filter(|text| !text.is_empty())
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::chat::build_event;
+
+    fn banned_at() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_791_316_800).unwrap()
+    }
+
+    fn observed_from_wire(raw: Value) -> Option<BanLedgerEntry> {
+        let event = build_event("App\\Events\\UserBannedEvent", raw).unwrap();
+        observed_ban(&event.payload, 42, banned_at())
+    }
+
+    #[test]
+    fn observed_ban_records_viewer_moderator_and_reason_under_the_broadcaster() {
+        let entry = observed_from_wire(json!({
+            "user": { "id": 77, "username": "Troll" },
+            "banned_by": { "id": 2, "username": "ModAlice" },
+            "permanent_ban_reason": "spam"
+        }));
+
+        assert_eq!(
+            entry,
+            Some(BanLedgerEntry {
+                key: BanLedgerKey {
+                    platform: ViewerPlatform::Kick,
+                    channel_id: "42".to_owned(),
+                    viewer_id: "77".to_owned(),
+                },
+                viewer_name: "Troll".to_owned(),
+                reason: Some("spam".to_owned()),
+                moderator: Some("ModAlice".to_owned()),
+                banned_at: banned_at(),
+                expires_at: None,
+                platform_ban_id: None,
+                origin: BanOrigin::Observed,
+            })
+        );
+    }
+
+    #[test]
+    fn observed_ban_expiry_is_the_ban_time_plus_the_duration_in_seconds() {
+        for (duration, expected) in [
+            (None, None),
+            (Some(1), Some(banned_at() + Duration::seconds(1))),
+            (Some(300), Some(banned_at() + Duration::minutes(5))),
+            (Some(604_800), Some(banned_at() + Duration::days(7))),
+        ] {
+            let mut raw = json!({ "user": { "id": 77, "username": "Troll" } });
+            if let Some(seconds) = duration {
+                raw["duration"] = json!(seconds);
+            }
+
+            let entry = observed_from_wire(raw).unwrap();
+
+            assert_eq!(entry.expires_at, expected, "duration {duration:?}");
+        }
+    }
+
+    #[test]
+    fn observed_ban_falls_back_to_the_viewer_id_and_drops_empty_fields() {
+        let entry = observed_from_wire(json!({
+            "user": { "id": 77, "username": "" },
+            "banned_by": { "id": 2, "username": "" },
+            "permanent_ban_reason": ""
+        }))
+        .unwrap();
+
+        assert_eq!(
+            (entry.viewer_name.as_str(), entry.moderator, entry.reason),
+            ("77", None, None)
+        );
+    }
+
+    #[test]
+    fn observed_ban_without_a_numeric_viewer_id_is_not_recorded() {
+        for raw in [
+            json!({ "user": { "username": "Troll" } }),
+            json!({ "user": { "id": "77", "username": "Troll" } }),
+            json!({ "banned_by": { "id": 2, "username": "ModAlice" } }),
+        ] {
+            assert_eq!(observed_from_wire(raw.clone()), None, "payload {raw}");
+        }
+    }
+}

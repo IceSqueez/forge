@@ -223,7 +223,9 @@ async fn map_moderation_response(response: reqwest::Response) -> Result<(), Plat
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+    use crate::ban_ledger_test_support::{LedgerOp, MemoryBanLedger};
     use forge_platform_core::RateLimitOutcome;
+    use forge_storage::{BanLedgerEntry, BanOrigin, ViewerPlatform};
     use std::time::Duration;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -382,5 +384,252 @@ mod tests {
             server.received_requests().await.unwrap().is_empty(),
             "an exhausted limiter must short-circuit before any HTTP call"
         );
+    }
+
+    const TARGET: u64 = 99;
+    const BROADCASTER: u64 = 42;
+
+    fn moderation_over(server: &MockServer, ledger: &Arc<MemoryBanLedger>) -> KickModeration {
+        KickModeration::new(
+            &forge_platform_core::PlatformEndpoints::default(),
+            Arc::new(GrantLimiter),
+            Arc::clone(ledger) as Arc<dyn BanLedgerRepo>,
+        )
+        .with_api_base(server.uri())
+    }
+
+    async fn server_answering(http_method: &str, status: u16) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method(http_method))
+            .and(path("/moderation/bans"))
+            .respond_with(ResponseTemplate::new(status))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    fn target_key() -> BanLedgerKey {
+        BanLedgerKey {
+            platform: ViewerPlatform::Kick,
+            channel_id: "42".to_owned(),
+            viewer_id: "99".to_owned(),
+        }
+    }
+
+    fn standing_row(viewer_name: &str, origin: BanOrigin) -> BanLedgerEntry {
+        BanLedgerEntry {
+            key: target_key(),
+            viewer_name: viewer_name.to_owned(),
+            reason: None,
+            moderator: Some("ModAlice".to_owned()),
+            banned_at: OffsetDateTime::now_utc() - time::Duration::minutes(1),
+            expires_at: None,
+            platform_ban_id: None,
+            origin,
+        }
+    }
+
+    async fn issue(
+        moderation: &KickModeration,
+        duration_minutes: Option<u32>,
+        reason: Option<&str>,
+    ) -> Result<(), PlatformError> {
+        match duration_minutes {
+            None => moderation.ban(TARGET, BROADCASTER, reason, "tok").await,
+            Some(minutes) => {
+                moderation
+                    .timeout(TARGET, BROADCASTER, minutes, reason, "tok")
+                    .await
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn successful_ban_records_a_forge_row_under_broadcaster_and_target() {
+        let server = server_answering("POST", 200).await;
+        let ledger = Arc::new(MemoryBanLedger::default());
+        let before = OffsetDateTime::now_utc();
+
+        issue(&moderation_over(&server, &ledger), None, Some("spam"))
+            .await
+            .unwrap();
+
+        let stored = ledger.stored(&target_key()).unwrap();
+        assert!(stored.banned_at >= before);
+        assert_eq!(
+            stored,
+            BanLedgerEntry {
+                key: target_key(),
+                viewer_name: "99".to_owned(),
+                reason: Some("spam".to_owned()),
+                moderator: None,
+                banned_at: stored.banned_at,
+                expires_at: None,
+                platform_ban_id: None,
+                origin: BanOrigin::IssuedByForge,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn issued_ban_term_matches_the_posted_duration_in_minutes() {
+        for (duration_minutes, expected_term) in [
+            (None, None),
+            (Some(1), Some(time::Duration::seconds(60))),
+            (Some(15), Some(time::Duration::seconds(900))),
+            (Some(10080), Some(time::Duration::seconds(604_800))),
+        ] {
+            let server = server_answering("POST", 200).await;
+            let ledger = Arc::new(MemoryBanLedger::default());
+
+            issue(&moderation_over(&server, &ledger), duration_minutes, None)
+                .await
+                .unwrap();
+
+            let stored = ledger.stored(&target_key()).unwrap();
+            assert_eq!(
+                stored
+                    .expires_at
+                    .map(|expires_at| expires_at - stored.banned_at),
+                expected_term,
+                "duration {duration_minutes:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn issued_ban_keeps_the_name_of_an_already_known_viewer() {
+        let server = server_answering("POST", 200).await;
+        let ledger = Arc::new(MemoryBanLedger::default());
+        ledger.seed(standing_row("Troll", BanOrigin::Observed));
+
+        issue(&moderation_over(&server, &ledger), Some(10), None)
+            .await
+            .unwrap();
+
+        let stored = ledger.stored(&target_key()).unwrap();
+        assert_eq!(
+            (stored.viewer_name.as_str(), stored.origin),
+            ("Troll", BanOrigin::IssuedByForge)
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_ban_or_timeout_records_nothing() {
+        for (status, duration_minutes) in [
+            (400_u16, None),
+            (401, None),
+            (403, Some(10)),
+            (429, None),
+            (500, Some(10)),
+        ] {
+            let server = server_answering("POST", status).await;
+            let ledger = Arc::new(MemoryBanLedger::default());
+
+            let result = issue(&moderation_over(&server, &ledger), duration_minutes, None).await;
+
+            assert!(result.is_err(), "status {status}");
+            assert_eq!(ledger.row_count(), 0, "status {status}");
+        }
+    }
+
+    #[tokio::test]
+    async fn ban_and_timeout_succeed_when_the_ledger_fails() {
+        for (failing, duration_minutes) in [
+            (LedgerOp::Upsert, None),
+            (LedgerOp::Upsert, Some(10)),
+            (LedgerOp::Get, None),
+        ] {
+            let server = server_answering("POST", 200).await;
+            let ledger = Arc::new(MemoryBanLedger::failing_on(failing));
+
+            let result = issue(&moderation_over(&server, &ledger), duration_minutes, None).await;
+
+            assert!(
+                result.is_ok(),
+                "{failing:?} {duration_minutes:?}: {result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_name_lookup_still_records_the_ban_under_the_numeric_id() {
+        let server = server_answering("POST", 200).await;
+        let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Get));
+
+        issue(&moderation_over(&server, &ledger), None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            ledger.stored(&target_key()).map(|entry| entry.viewer_name),
+            Some("99".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn ban_body_carries_the_reason_only_when_given() {
+        for (duration_minutes, reason) in [
+            (None, Some("spam")),
+            (Some(10), Some("calm down")),
+            (None, None),
+            (Some(10), None),
+        ] {
+            let server = server_answering("POST", 200).await;
+            let ledger = Arc::new(MemoryBanLedger::default());
+
+            issue(&moderation_over(&server, &ledger), duration_minutes, reason)
+                .await
+                .unwrap();
+
+            let body = last_body(&server).await;
+            assert_eq!(
+                body.get("reason").and_then(serde_json::Value::as_str),
+                reason,
+                "duration {duration_minutes:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn successful_unban_removes_the_ledger_row() {
+        let server = server_answering("DELETE", 204).await;
+        let ledger = Arc::new(MemoryBanLedger::default());
+        ledger.seed(standing_row("Troll", BanOrigin::IssuedByForge));
+
+        moderation_over(&server, &ledger)
+            .unban(TARGET, BROADCASTER, "tok")
+            .await
+            .unwrap();
+
+        assert_eq!(ledger.stored(&target_key()), None);
+    }
+
+    #[tokio::test]
+    async fn rejected_unban_keeps_the_ledger_row() {
+        for status in [400_u16, 401, 429, 500] {
+            let server = server_answering("DELETE", status).await;
+            let ledger = Arc::new(MemoryBanLedger::default());
+            ledger.seed(standing_row("Troll", BanOrigin::IssuedByForge));
+
+            let result = moderation_over(&server, &ledger)
+                .unban(TARGET, BROADCASTER, "tok")
+                .await;
+
+            assert!(result.is_err(), "status {status}");
+            assert!(ledger.stored(&target_key()).is_some(), "status {status}");
+        }
+    }
+
+    #[tokio::test]
+    async fn unban_succeeds_when_the_ledger_row_cannot_be_removed() {
+        let server = server_answering("DELETE", 204).await;
+        let ledger = Arc::new(MemoryBanLedger::failing_on(LedgerOp::Remove));
+
+        let result = moderation_over(&server, &ledger)
+            .unban(TARGET, BROADCASTER, "tok")
+            .await;
+
+        assert!(result.is_ok(), "{result:?}");
     }
 }

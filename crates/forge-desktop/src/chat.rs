@@ -532,9 +532,26 @@ impl ChatView {
         toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
         cx: &mut Context<Self>,
     ) {
-        if let Some(step) = target.step(&action) {
-            self.dispatch_quick_action(step, target.builtin_id(), target.label(&action), toast, cx);
-        }
+        let Some(step) = target.step(&action) else {
+            return;
+        };
+        let moderated = matches!(
+            action,
+            ViewerAction::Ban | ViewerAction::Unban | ViewerAction::Timeout { .. }
+        )
+        .then_some(target.platform);
+        self.dispatch_quick_action_then(
+            step,
+            target.builtin_id(),
+            target.label(&action),
+            toast,
+            move |this, outcome_ok, cx| {
+                if let (true, Some(platform)) = (outcome_ok, moderated) {
+                    this.note_moderated(platform, cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn dispatch_quick_action(
@@ -543,6 +560,18 @@ impl ChatView {
         builtin_id: String,
         label: String,
         toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        self.dispatch_quick_action_then(step, builtin_id, label, toast, |_, _, _| {}, cx);
+    }
+
+    fn dispatch_quick_action_then(
+        &self,
+        step: SubActionStep,
+        builtin_id: String,
+        label: String,
+        toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        after: impl FnOnce(&mut Self, bool, &mut Context<Self>) + 'static,
         cx: &mut Context<Self>,
     ) {
         let engine = self.action_engine.clone();
@@ -555,9 +584,11 @@ impl ChatView {
             let outcome = rx
                 .await
                 .unwrap_or_else(|_| Err(tr!("chat_dispatch_cancelled")));
-            let _ = this.update(cx, |_this, cx| {
+            let _ = this.update(cx, |this, cx| {
+                let succeeded = outcome.is_ok();
                 let (kind, message) = toast(outcome);
                 cx.push_toast(kind, message);
+                after(this, succeeded, cx);
             });
         })
         .detach();

@@ -371,7 +371,7 @@ impl BannedPanel {
             let stale: Vec<Platform> = self
                 .groups
                 .iter()
-                .filter(|group| group.stale)
+                .filter(|group| group.stale || lists_only_what_forge_saw(group.platform))
                 .map(|group| group.platform)
                 .collect();
             for platform in stale {
@@ -379,6 +379,12 @@ impl BannedPanel {
             }
         }
         cx.notify();
+    }
+
+    pub(crate) fn note_moderated(&mut self, platform: Platform, cx: &mut Context<Self>) {
+        if lists_only_what_forge_saw(platform) {
+            self.schedule_relist(platform, cx);
+        }
     }
 
     fn relist(&mut self, platform: Platform, cx: &mut Context<Self>) {

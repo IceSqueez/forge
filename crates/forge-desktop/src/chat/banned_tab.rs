@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use forge_components::{ForgePalette, Icon, segment, segmented, tr};
+use forge_components::{ForgePalette, Icon, Platform, segment, segmented, tr};
 use forge_runtime::EventBus;
 use gpui::{AnyElement, AppContext, ClickEvent, Context, Entity, IntoElement};
 
@@ -35,6 +35,12 @@ impl ChatView {
         self.banned.builtins = builtins;
         self.banned.bus = Some(bus);
         self
+    }
+
+    pub(crate) fn note_moderated(&mut self, platform: Platform, cx: &mut Context<Self>) {
+        if let Some(panel) = &self.banned.panel {
+            panel.update(cx, |panel, cx| panel.note_moderated(platform, cx));
+        }
     }
 
     pub(crate) fn set_tab(&mut self, tab: ChatTab, cx: &mut Context<Self>) {

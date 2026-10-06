@@ -3,6 +3,7 @@ use forge_storage::{
     OverlayConfig, OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, StorageError,
 };
 use rand::rand_core::Rng;
+use sqlx::SqliteConnection;
 use time::OffsetDateTime;
 
 use crate::error::SqliteStorageError;
@@ -99,36 +100,39 @@ impl SqliteOverlayRepo {
     pub fn new(db: impl Into<SqlitePools>) -> Self {
         Self { db: db.into() }
     }
+}
 
-    async fn mint_unique_id(&self, base: &str) -> Result<OverlayId, StorageError> {
-        let base_slug = slugify(base);
-        let mut candidate = base_slug.clone();
-        let mut suffix: u32 = 1;
+async fn mint_unique_id(
+    conn: &mut SqliteConnection,
+    base: &str,
+) -> Result<OverlayId, StorageError> {
+    let base_slug = slugify(base);
+    let mut candidate = base_slug.clone();
+    let mut suffix: u32 = 1;
 
-        loop {
-            let existing: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM overlays WHERE id = ?")
-                .bind(&candidate)
-                .fetch_optional(self.db.reader())
-                .await
-                .map_err(SqliteStorageError::Sqlx)?;
-
-            if existing.is_none() {
-                return Ok(OverlayId::new(candidate));
-            }
-
-            suffix += 1;
-            candidate = format!("{base_slug}-{suffix}");
-        }
-    }
-
-    async fn next_position(&self) -> Result<i64, StorageError> {
-        let (max,): (Option<i64>,) = sqlx::query_as("SELECT MAX(position) FROM overlays")
-            .fetch_one(self.db.reader())
+    loop {
+        let existing: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM overlays WHERE id = ?")
+            .bind(&candidate)
+            .fetch_optional(&mut *conn)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
 
-        Ok(max.map(|m| m + 1).unwrap_or(0))
+        if existing.is_none() {
+            return Ok(OverlayId::new(candidate));
+        }
+
+        suffix += 1;
+        candidate = format!("{base_slug}-{suffix}");
     }
+}
+
+async fn next_position(conn: &mut SqliteConnection) -> Result<i64, StorageError> {
+    let (max,): (Option<i64>,) = sqlx::query_as("SELECT MAX(position) FROM overlays")
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?;
+
+    Ok(max.map(|m| m + 1).unwrap_or(0))
 }
 
 #[async_trait]
@@ -191,8 +195,15 @@ impl OverlayRepo for SqliteOverlayRepo {
         kind_id: &str,
         config_schema_version: u32,
     ) -> Result<OverlayDefinition, StorageError> {
-        let id = self.mint_unique_id(display_name).await?;
-        let position = self.next_position().await?;
+        let mut tx = self
+            .db
+            .writer()
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+
+        let id = mint_unique_id(&mut tx, display_name).await?;
+        let position = next_position(&mut tx).await?;
         let credential = generate_credential();
         let now_ms = epoch_ms_now();
 
@@ -211,9 +222,11 @@ impl OverlayRepo for SqliteOverlayRepo {
         .bind(credential.as_str())
         .bind(now_ms)
         .bind(now_ms)
-        .execute(self.db.writer())
+        .execute(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;
+
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
 
         Ok(OverlayDefinition {
             id,

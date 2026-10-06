@@ -1620,7 +1620,6 @@ chat_stat_messages = MESSAGES
 chat_stat_sub = SUB
 chat_stat_sub_yes = Yes
 chat_stat_follow = FOLLOW
-chat_drawer_history_title = RECENT MESSAGES
 chat_drawer_history_loading = Loading messages...
 chat_drawer_history_empty = No saved messages
 chat_drawer_history_needs_id = History needs a viewer id

@@ -17,7 +17,7 @@ use forge_storage::{ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
 use forge_types::{Shared, SubActionStep, Variant, is_bot_account};
 use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, FontWeight, ListAlignment, ListState,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FontWeight, ListAlignment, ListState,
     MouseButton, MouseDownEvent, Pixels, Point, Rgba, SharedString, Subscription, Window, div,
     list, prelude::*, px, uniform_list,
 };
@@ -43,7 +43,7 @@ mod viewer_history;
 
 pub use composer::ChatComposer;
 use viewer_actions::{ViewerAction, ViewerTarget};
-use viewer_history::ViewerHistory;
+use viewer_history::{ViewerHistory, ViewerHistoryDismissed};
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -176,7 +176,8 @@ pub struct ChatView {
     drawer_search: SearchState,
     drawer_menu_open: Option<Point<Pixels>>,
     selected_viewer: Option<AuthorKey>,
-    viewer_history: Entity<ViewerHistory>,
+    chat_history_repo: Arc<dyn ChatHistoryRepo>,
+    viewer_history: Option<ViewerHistoryHost>,
     viewers: ViewerDirectory,
     drawer_keys: Vec<AuthorKey>,
     whisper_open: bool,
@@ -195,6 +196,11 @@ pub struct ChatView {
     _reply_sub: Subscription,
     lifecycle: Option<Entity<IntegrationLifecycle>>,
     _lifecycle_obs: Option<Subscription>,
+}
+
+struct ViewerHistoryHost {
+    view: Entity<ViewerHistory>,
+    _dismissed: Subscription,
 }
 
 fn platform_display_name(platform: Platform) -> &'static str {
@@ -255,8 +261,6 @@ impl ChatView {
         });
 
         Self::spawn_viewer_refresh(viewer_repo, rt_handle.clone(), cx);
-        let viewer_history =
-            cx.new(|_| ViewerHistory::new(feed.clone(), chat_history_repo, rt_handle.clone()));
 
         let mut this = Self {
             feed,
@@ -277,7 +281,8 @@ impl ChatView {
             drawer_search,
             drawer_menu_open: None,
             selected_viewer: None,
-            viewer_history,
+            chat_history_repo,
+            viewer_history: None,
             viewers: ViewerDirectory::default(),
             drawer_keys: Vec::new(),
             whisper_open: false,
@@ -300,7 +305,6 @@ impl ChatView {
         this.rebuild_visible(cx);
         this.chat_list.reset(this.visible.len());
         this.refresh_drawer_keys(cx);
-        this.sync_viewer_history(cx);
         this
     }
 
@@ -358,14 +362,34 @@ impl ChatView {
         }
         self.last_seen_seq = end;
         self.refresh_drawer_keys(cx);
-        self.sync_viewer_history(cx);
         cx.notify();
     }
 
-    fn sync_viewer_history(&mut self, cx: &mut Context<Self>) {
-        let key = displayed_viewer(self.selected_viewer.as_ref(), self.feed.read(cx).authors());
-        self.viewer_history
-            .update(cx, |history, cx| history.show(key, cx));
+    fn open_viewer_history(&mut self, key: AuthorKey, viewer_name: String, cx: &mut Context<Self>) {
+        let feed = self.feed.clone();
+        let repo = Arc::clone(&self.chat_history_repo);
+        let rt_handle = self.rt_handle.clone();
+        let view = cx.new(|cx| {
+            let mut history = ViewerHistory::new(feed, repo, rt_handle).titled(viewer_name);
+            history.show(Some(key), cx);
+            history
+        });
+        let dismissed = cx.subscribe(&view, Self::on_viewer_history_dismissed);
+        self.viewer_history = Some(ViewerHistoryHost {
+            view,
+            _dismissed: dismissed,
+        });
+        cx.notify();
+    }
+
+    fn on_viewer_history_dismissed(
+        &mut self,
+        _view: Entity<ViewerHistory>,
+        _event: &ViewerHistoryDismissed,
+        cx: &mut Context<Self>,
+    ) {
+        self.viewer_history = None;
+        cx.notify();
     }
 
     fn rebuild_visible(&mut self, cx: &mut Context<Self>) {
@@ -459,7 +483,6 @@ impl ChatView {
 
     fn open_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
-        self.sync_viewer_history(cx);
         cx.notify();
     }
 
@@ -477,7 +500,6 @@ impl ChatView {
 
     fn select_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
-        self.sync_viewer_history(cx);
         cx.notify();
     }
 
@@ -810,7 +832,6 @@ impl ChatView {
 
     fn open_whisper(&mut self, key: AuthorKey, window: &mut Window, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
-        self.sync_viewer_history(cx);
         self.drawer_menu_open = None;
         self.whisper_open = true;
         self.whisper_input.update(cx, |input, cx| {
@@ -1402,21 +1423,31 @@ impl ChatView {
             .child(name_col);
 
         let (sub_value, sub_color) = sub_display(summary.sub, palette);
+        let tile_hover = palette.surface_overlay;
+        let history_key = summary.key.clone();
+        let history_name = summary.username.clone();
         let grid = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
             .child(
-                div()
-                    .flex()
-                    .gap(spacing(Spacing::Xs, density))
-                    .child(stat_cell(
+                div().flex().gap(spacing(Spacing::Xs, density)).child(
+                    stat_cell(
                         tr!("chat_stat_messages"),
                         summary.message_count.to_string(),
                         palette.text_primary,
                         palette,
                         density,
+                    )
+                    .id("chat-drawer-messages")
+                    .cursor_pointer()
+                    .hover(move |style| style.bg(tile_hover))
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _, cx| {
+                            this.open_viewer_history(history_key.clone(), history_name.clone(), cx)
+                        },
                     )),
+                ),
             )
             .child(
                 div()
@@ -1477,7 +1508,6 @@ impl ChatView {
             .child(grid)
             .child(actions)
             .children(whisper)
-            .child(self.viewer_history.clone())
             .into_any_element()
     }
 
@@ -1932,7 +1962,7 @@ fn stat_cell(
     color: Rgba,
     palette: &ForgePalette,
     density: Density,
-) -> impl IntoElement {
+) -> Div {
     div()
         .flex_1()
         .flex()
@@ -2099,6 +2129,7 @@ impl Render for ChatView {
             .bg(palette.base)
             .child(frame)
             .children(user_menu)
+            .children(self.viewer_history.as_ref().map(|host| host.view.clone()))
     }
 }
 

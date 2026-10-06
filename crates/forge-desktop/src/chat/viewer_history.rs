@@ -3,23 +3,23 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use forge_components::{
-    Density, FONT_XS, FONT_XXS, ForgePalette, Platform, Spacing, body_family, fmt_relative_time,
-    mono_family, section_label, spacing, tr,
+    Density, FONT_XS, FONT_XXS, ForgePalette, Icon, ModalSize, OverlayPosition, Platform, Spacing,
+    body_family, fmt_relative_time, modal, mono_family, overlay, spacing, tr,
 };
 use forge_storage::{ChatAuthorKey, ChatHistoryRepo};
 use forge_types::{ChatSource, UnifiedChatRow};
 use gpui::{
-    AnyElement, Context, Entity, IntoElement, Pixels, Render, Rgba, SharedString, Task, Window,
-    div, prelude::*, px,
+    AnyElement, ClickEvent, Context, Entity, EventEmitter, IntoElement, Pixels, Render, Rgba,
+    SharedString, Subscription, Task, Window, div, prelude::*, px,
 };
 
-use super::body_export_text;
+use super::{body_export_text, platform_display_name};
 use crate::chat_author::{AuthorHandle, AuthorKey};
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::presentation::ActivePresentation;
 
 const HISTORY_LOAD_CAP: usize = 100;
-const HISTORY_MAX_H: Pixels = px(180.0);
+const HISTORY_MAX_H: Pixels = px(420.0);
 
 #[derive(Clone, Debug)]
 enum HistoryState {
@@ -30,15 +30,21 @@ enum HistoryState {
     Loaded(Vec<ChatMessage>),
 }
 
+pub(crate) struct ViewerHistoryDismissed;
+
 pub(crate) struct ViewerHistory {
     feed: Entity<ChatFeed>,
     repo: Arc<dyn ChatHistoryRepo>,
     rt_handle: tokio::runtime::Handle,
+    viewer_name: SharedString,
     key: Option<AuthorKey>,
     state: HistoryState,
     scanned_through: u64,
     _load: Option<Task<()>>,
+    _feed_obs: Option<Subscription>,
 }
+
+impl EventEmitter<ViewerHistoryDismissed> for ViewerHistory {}
 
 fn history_query(key: &AuthorKey) -> Option<ChatAuthorKey> {
     match &key.handle {
@@ -66,6 +72,30 @@ fn feed_messages_by(feed: &ChatFeed, key: &AuthorKey, from_seq: u64) -> Vec<Chat
         .collect();
     found.reverse();
     found
+}
+
+fn moderated_ids_by(feed: &ChatFeed, key: &AuthorKey) -> HashSet<SharedString> {
+    feed.messages()
+        .iter()
+        .filter(|message| {
+            message.moderated
+                && !message.id.is_empty()
+                && message.author_key().as_ref() == Some(key)
+        })
+        .map(|message| message.id.clone())
+        .collect()
+}
+
+fn mark_moderated(shown: &mut [ChatMessage], moderated_ids: &HashSet<SharedString>) -> bool {
+    let mut changed = false;
+    for message in shown
+        .iter_mut()
+        .filter(|message| !message.moderated && moderated_ids.contains(&message.id))
+    {
+        message.moderated = true;
+        changed = true;
+    }
+    changed
 }
 
 fn merge_newest_first(
@@ -98,11 +128,19 @@ impl ViewerHistory {
             feed,
             repo,
             rt_handle,
+            viewer_name: SharedString::default(),
             key: None,
             state: HistoryState::Hidden,
             scanned_through: 0,
             _load: None,
+            _feed_obs: None,
         }
+    }
+
+    #[must_use]
+    pub fn titled(mut self, viewer_name: impl Into<SharedString>) -> Self {
+        self.viewer_name = viewer_name.into();
+        self
     }
 
     pub fn show(&mut self, key: Option<AuthorKey>, cx: &mut Context<Self>) {
@@ -112,6 +150,9 @@ impl ViewerHistory {
         }
         self.key = key.clone();
         self._load = None;
+        self._feed_obs = key
+            .is_some()
+            .then(|| cx.observe(&self.feed, |this, _feed, cx| this.absorb_live(cx)));
         self.state = match key {
             None => HistoryState::Hidden,
             Some(key) => match history_query(&key) {
@@ -164,7 +205,9 @@ impl ViewerHistory {
             Some(rows) => {
                 let stored = rows.iter().map(ChatMessage::from_row).collect();
                 let live = feed_messages_by(feed, key, feed.start_seq());
-                HistoryState::Loaded(merge_newest_first(stored, live, HISTORY_LOAD_CAP))
+                let mut merged = merge_newest_first(stored, live, HISTORY_LOAD_CAP);
+                mark_moderated(&mut merged, &moderated_ids_by(feed, key));
+                HistoryState::Loaded(merged)
             }
         };
         self.scanned_through = feed.end_seq();
@@ -178,11 +221,18 @@ impl ViewerHistory {
         let feed = self.feed.read(cx);
         let arrived = feed_messages_by(feed, key, self.scanned_through);
         self.scanned_through = feed.end_seq();
-        if arrived.is_empty() {
+        let remarked = mark_moderated(known, &moderated_ids_by(feed, key));
+        if arrived.is_empty() && !remarked {
             return;
         }
-        *known = merge_newest_first(std::mem::take(known), arrived, HISTORY_LOAD_CAP);
+        if !arrived.is_empty() {
+            *known = merge_newest_first(std::mem::take(known), arrived, HISTORY_LOAD_CAP);
+        }
         cx.notify();
+    }
+
+    fn dismiss(&mut self, cx: &mut Context<Self>) {
+        cx.emit(ViewerHistoryDismissed);
     }
 
     fn render_note(text: impl Into<SharedString>, color: Rgba) -> AnyElement {
@@ -223,14 +273,10 @@ impl ViewerHistory {
             )
             .into_any_element()
     }
-}
 
-impl Render for ViewerHistory {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = cx.palette();
-        let density = cx.density();
-        let body = match &self.state {
-            HistoryState::Hidden => return div().into_any_element(),
+    fn render_body(&self, palette: &ForgePalette, density: Density) -> AnyElement {
+        match &self.state {
+            HistoryState::Hidden => div().into_any_element(),
             HistoryState::NeedsViewerId => {
                 Self::render_note(tr!("chat_drawer_history_needs_id"), palette.text_faint)
             }
@@ -249,20 +295,49 @@ impl Render for ViewerHistory {
                 .overflow_y_scroll()
                 .flex()
                 .flex_col()
-                .gap(spacing(Spacing::Xxs, density))
+                .gap(spacing(Spacing::Xs, density))
                 .children(
                     messages
                         .iter()
-                        .map(|message| Self::render_row(message, &palette, density)),
+                        .map(|message| Self::render_row(message, palette, density)),
                 )
                 .into_any_element(),
+        }
+    }
+}
+
+impl Render for ViewerHistory {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(key) = self.key.as_ref() else {
+            return div().into_any_element();
         };
+        let palette = cx.palette();
+        let density = cx.density();
+        let card = modal(
+            self.viewer_name.clone(),
+            self.render_body(&palette, density),
+            &palette,
+        )
+        .size(ModalSize::Md)
+        .header_icon(Icon::History, palette.brand)
+        .subtitle(platform_display_name(key.platform))
+        .on_close(
+            "chat-viewer-history-close",
+            cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss(cx)),
+        );
+        let view = cx.entity();
         div()
-            .flex()
-            .flex_col()
-            .gap(spacing(Spacing::Xs, density))
-            .child(section_label(tr!("chat_drawer_history_title"), &palette))
-            .child(body)
+            .absolute()
+            .top_0()
+            .left_0()
+            .size_full()
+            .child(
+                overlay(card, &palette)
+                    .position(OverlayPosition::Center)
+                    .on_dismiss("chat-viewer-history-scrim", move |_window, cx| {
+                        view.update(cx, |this, cx| this.dismiss(cx));
+                    }),
+            )
             .into_any_element()
     }
 }

@@ -1658,7 +1658,6 @@ chat_stat_messages = ПОВІДОМЛЕННЯ
 chat_stat_sub = ПІДПИСКА
 chat_stat_sub_yes = Так
 chat_stat_follow = ФОЛОУ
-chat_drawer_history_title = ОСТАННІ ПОВІДОМЛЕННЯ
 chat_drawer_history_loading = Завантаження повідомлень...
 chat_drawer_history_empty = Немає збережених повідомлень
 chat_drawer_history_needs_id = Для історії потрібен id глядача

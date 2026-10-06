@@ -67,6 +67,7 @@ pub mod reserved_keys {
 
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
 pub const DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 50;
+pub const UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 0;
 pub const MIN_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 1;
 pub const MAX_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 10_000;
 
@@ -384,6 +385,9 @@ pub async fn set_json_setting<T: Serialize>(
 }
 
 pub fn clamp_chat_history_per_viewer_limit(limit: u32) -> u32 {
+    if limit == UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT {
+        return limit;
+    }
     limit.clamp(
         MIN_CHAT_HISTORY_PER_VIEWER_LIMIT,
         MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,

@@ -5,7 +5,8 @@ use std::time::Duration;
 use forge_events::Event;
 use forge_storage::{
     ChatAuthorKey, ChatHistoryRepo, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, SettingsRepo,
-    chat_history_per_viewer_limit, clamp_chat_history_per_viewer_limit,
+    UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, chat_history_per_viewer_limit,
+    clamp_chat_history_per_viewer_limit,
 };
 use forge_types::{ChatModerationAction, ChatSource, UnifiedChatRow};
 use time::OffsetDateTime;
@@ -173,20 +174,24 @@ impl ChatHistorySink {
     }
 
     async fn retain_written_authors(&self) {
-        let authors: Vec<ChatAuthorKey> = self
-            .pending
-            .iter()
-            .filter_map(|row| {
-                row.author_id.as_ref().map(|author_id| ChatAuthorKey {
-                    source: row.source,
-                    author_id: author_id.clone(),
-                })
-            })
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
         let per_viewer = (*self.per_viewer_limit.borrow())
             .unwrap_or(DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT as usize);
+        let authors: Vec<ChatAuthorKey> =
+            if per_viewer == UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT as usize {
+                Vec::new()
+            } else {
+                self.pending
+                    .iter()
+                    .filter_map(|row| {
+                        row.author_id.as_ref().map(|author_id| ChatAuthorKey {
+                            source: row.source,
+                            author_id: author_id.clone(),
+                        })
+                    })
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect()
+            };
         match tokio::time::timeout(
             PERSIST_OP_TIMEOUT,
             self.repo.apply_retention(&authors, per_viewer),

@@ -12,9 +12,9 @@ use forge_storage::{
     DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
     DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,
     MAX_EVENT_LOG_RETENTION_DAYS, MIN_CHAT_HISTORY_PER_VIEWER_LIMIT, MIN_EVENT_LOG_RETENTION_DAYS,
-    SettingsRepo, chat_history_display_limit, chat_history_per_viewer_limit,
-    event_log_retention_days, set_chat_history_display_limit, set_chat_history_per_viewer_limit,
-    set_event_log_retention_days,
+    SettingsRepo, UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, chat_history_display_limit,
+    chat_history_per_viewer_limit, event_log_retention_days, set_chat_history_display_limit,
+    set_chat_history_per_viewer_limit, set_event_log_retention_days,
 };
 use gpui::{
     ClickEvent, Context, Entity, FontWeight, Pixels, SharedString, Subscription, Window, div,
@@ -33,11 +33,16 @@ const PER_VIEWER_PRESETS: [u32; 3] = [25, 50, 100];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PerViewerChoice {
     Preset(u32),
+    Unlimited,
     Custom,
 }
 
 pub(crate) fn per_viewer_choice(limit: u32, custom_selected: bool) -> PerViewerChoice {
-    if !custom_selected && PER_VIEWER_PRESETS.contains(&limit) {
+    if custom_selected {
+        PerViewerChoice::Custom
+    } else if limit == UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT {
+        PerViewerChoice::Unlimited
+    } else if PER_VIEWER_PRESETS.contains(&limit) {
         PerViewerChoice::Preset(limit)
     } else {
         PerViewerChoice::Custom
@@ -168,6 +173,9 @@ impl SettingsStorageView {
     fn commit_custom_per_viewer(&mut self, cx: &mut Context<Self>) {
         match parse_per_viewer_limit(self.per_viewer_input.read(cx).content()) {
             Some(value) => {
+                if value == UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT {
+                    self.custom_selected = false;
+                }
                 self.per_viewer_input
                     .update(cx, |i, cx| i.set_content(value.to_string(), cx));
                 self.apply_per_viewer_limit(value);
@@ -216,6 +224,14 @@ impl SettingsStorageView {
             })
             .collect();
         segments.push(segment(
+            "settings-storage-per-viewer-unlimited",
+            tr!("settings_storage_per_viewer_limit_unlimited"),
+            choice == PerViewerChoice::Unlimited,
+            cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.select_per_viewer_preset(UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT, cx)
+            }),
+        ));
+        segments.push(segment(
             "settings-storage-per-viewer-custom",
             tr!("settings_storage_per_viewer_limit_custom"),
             choice == PerViewerChoice::Custom,
@@ -237,7 +253,7 @@ impl SettingsStorageView {
             );
         }
 
-        div()
+        let mut field = div()
             .flex()
             .flex_col()
             .gap(spacing(Spacing::Xs, density))
@@ -249,7 +265,14 @@ impl SettingsStorageView {
                 tr!("settings_storage_per_viewer_limit_hint"),
                 palette,
             ))
-            .child(controls)
+            .child(controls);
+        if choice == PerViewerChoice::Unlimited {
+            field = field.child(field_hint(
+                tr!("settings_storage_per_viewer_limit_unlimited_hint"),
+                palette,
+            ));
+        }
+        field
     }
 
     fn commit_display(&mut self, cx: &mut Context<Self>) {
@@ -436,7 +459,8 @@ fn parse_limit(raw: &str) -> Option<u32> {
 
 fn parse_per_viewer_limit(raw: &str) -> Option<u32> {
     raw.trim().parse::<u32>().ok().filter(|v| {
-        (MIN_CHAT_HISTORY_PER_VIEWER_LIMIT..=MAX_CHAT_HISTORY_PER_VIEWER_LIMIT).contains(v)
+        *v == UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT
+            || (MIN_CHAT_HISTORY_PER_VIEWER_LIMIT..=MAX_CHAT_HISTORY_PER_VIEWER_LIMIT).contains(v)
     })
 }
 

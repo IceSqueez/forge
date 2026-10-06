@@ -1,19 +1,21 @@
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_storage::{
-    ActionRepo, DEFAULT_EVENT_LOG_RETENTION_DAYS, HistoryRepo, ScheduledRunRepo, SettingsRepo,
+    ActionRepo, DEFAULT_EVENT_LOG_RETENTION_DAYS, ScheduledRunRepo, SettingsRepo,
     event_log_retention_days,
 };
 use time::OffsetDateTime;
 use tokio::sync::Notify;
 
-use crate::SqliteEventLogRepo;
+use crate::error::SqliteStorageError;
+use crate::{SqliteEventLogRepo, SqliteHistoryRepo};
 
 const MIN_EXECUTION_RETENTION_DAYS: u32 = 7;
 const FIRST_SWEEP_DELAY: Duration = Duration::from_secs(30);
-const EVENT_LOG_PRUNE_CHUNK_ROWS: u32 = 1_000;
-const EVENT_LOG_PRUNE_CHUNK_GAP: Duration = Duration::from_millis(100);
+const PRUNE_CHUNK_ROWS: u32 = 1_000;
+const PRUNE_CHUNK_GAP: Duration = Duration::from_millis(100);
 
 pub(crate) struct RetentionSignals {
     pub(crate) window_changed: Arc<Notify>,
@@ -22,7 +24,7 @@ pub(crate) struct RetentionSignals {
 
 pub(crate) struct RetentionTargets {
     pub(crate) event_log: Arc<SqliteEventLogRepo>,
-    pub(crate) history: Arc<dyn HistoryRepo>,
+    pub(crate) history: Arc<SqliteHistoryRepo>,
     pub(crate) action: Arc<dyn ActionRepo>,
     pub(crate) settings: Arc<dyn SettingsRepo>,
     pub(crate) scheduled_run: Arc<dyn ScheduledRunRepo>,
@@ -86,19 +88,14 @@ async fn sweep(
     let cutoff = now - time::Duration::days(i64::from(days));
     let exec_cutoff = now - time::Duration::days(i64::from(days.max(MIN_EXECUTION_RETENTION_DAYS)));
 
-    prune_event_log(&targets.event_log, cutoff, signals).await?;
-
-    match targets.history.prune_before(cutoff).await {
-        Ok(pruned) => tracing::info!(
-            pruned_rows = pruned,
-            ?cutoff,
-            "action_history pruning complete"
-        ),
-        Err(e) => tracing::warn!(
-            error = %e,
-            "action_history pruning failed; will retry on next cycle"
-        ),
-    }
+    prune_in_chunks("event_log", cutoff, signals, |chunk_rows| {
+        targets.event_log.prune_chunk_before(cutoff, chunk_rows)
+    })
+    .await?;
+    prune_in_chunks("action_history", cutoff, signals, |chunk_rows| {
+        targets.history.prune_chunk_before(cutoff, chunk_rows)
+    })
+    .await?;
 
     match targets.action.prune_executions_before(exec_cutoff).await {
         Ok(pruned) => tracing::info!(
@@ -126,34 +123,36 @@ async fn sweep(
     Ok(())
 }
 
-async fn prune_event_log(
-    event_log: &SqliteEventLogRepo,
+async fn prune_in_chunks<F, Fut>(
+    table: &'static str,
     cutoff: OffsetDateTime,
     signals: &RetentionSignals,
-) -> Result<(), Interrupt> {
+    prune_chunk: F,
+) -> Result<(), Interrupt>
+where
+    F: Fn(u32) -> Fut,
+    Fut: Future<Output = Result<u64, SqliteStorageError>>,
+{
     let mut pruned = 0u64;
     loop {
-        match event_log
-            .prune_chunk_before(cutoff, EVENT_LOG_PRUNE_CHUNK_ROWS)
-            .await
-        {
+        match prune_chunk(PRUNE_CHUNK_ROWS).await {
             Ok(rows) => {
                 pruned += rows;
-                if rows < u64::from(EVENT_LOG_PRUNE_CHUNK_ROWS) {
+                if rows < u64::from(PRUNE_CHUNK_ROWS) {
                     break;
                 }
             }
             Err(e) => {
-                tracing::warn!(error = %e, pruned_rows = pruned, "event_log pruning failed; will retry on next cycle");
+                tracing::warn!(error = %e, table, pruned_rows = pruned, "pruning failed; will retry on next cycle");
                 return Ok(());
             }
         }
         tokio::select! {
-            _ = tokio::time::sleep(EVENT_LOG_PRUNE_CHUNK_GAP) => {}
+            _ = tokio::time::sleep(PRUNE_CHUNK_GAP) => {}
             _ = signals.window_changed.notified() => return Err(Interrupt::WindowChanged),
             _ = signals.shutdown.notified() => return Err(Interrupt::Shutdown),
         }
     }
-    tracing::info!(pruned_rows = pruned, ?cutoff, "event_log pruning complete");
+    tracing::info!(table, pruned_rows = pruned, ?cutoff, "pruning complete");
     Ok(())
 }

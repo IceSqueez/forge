@@ -76,6 +76,23 @@ pub struct SqliteHistoryRepo {
 }
 
 impl SqliteHistoryRepo {
+    pub(crate) async fn prune_chunk_before(
+        &self,
+        cutoff: OffsetDateTime,
+        max_rows: u32,
+    ) -> Result<u64, SqliteStorageError> {
+        let result = sqlx::query(
+            "DELETE FROM action_history WHERE rowid IN (
+                 SELECT rowid FROM action_history WHERE started_at < ? LIMIT ?
+             )",
+        )
+        .bind(to_epoch_ms(cutoff))
+        .bind(i64::from(max_rows))
+        .execute(self.db.writer())
+        .await?;
+        Ok(result.rows_affected())
+    }
+
     pub fn new(db: impl Into<SqlitePools>) -> Self {
         Self { db: db.into() }
     }

@@ -334,7 +334,7 @@ pub fn accept_media(label: &str, bytes: &[u8]) -> Result<AcceptedMedia, StorageE
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String")]
 pub struct MediaBlobId(String);
 
 impl MediaBlobId {
@@ -374,6 +374,14 @@ fn is_blob_id_shape(raw: &str) -> bool {
                     .bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         })
+}
+
+impl TryFrom<String> for MediaBlobId {
+    type Error = StorageError;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        Self::from_stored(raw)
+    }
 }
 
 impl std::fmt::Display for MediaBlobId {

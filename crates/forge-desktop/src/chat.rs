@@ -25,8 +25,8 @@ use gpui::{
 use crate::async_bridge;
 use crate::chat_author::AuthorKey;
 use crate::chat_drawer::{
-    DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, current_name, drawer_matches,
-    selected_summary,
+    DASH, SubStatus, ViewerDirectory, ViewerSummary, author_summary, current_name,
+    displayed_viewer, drawer_matches, selected_summary,
 };
 use crate::chat_feed::{ChatFeed, ChatMessage};
 use crate::home_stats::HomeStats;
@@ -38,8 +38,10 @@ use crate::window_presence::PresenceGate;
 mod composer;
 mod platform_gate;
 mod send_plan;
+mod viewer_actions;
 
 pub use composer::ChatComposer;
+use viewer_actions::{ViewerAction, ViewerTarget};
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -62,76 +64,11 @@ const BADGE_DETAIL: Pixels = px(9.0);
 const BADGE_ROW: Pixels = px(8.5);
 const VIEWER_REFRESH: Duration = Duration::from_secs(15);
 const INFINITY_GLYPH: &str = "\u{221e}";
+const DISABLED_OPACITY: f32 = 0.5;
 const DRAWER_TIMEOUT_SECONDS: i64 = 600;
 const CTX_TIMEOUT_10M: i64 = 600;
 const CTX_TIMEOUT_1H: i64 = 3600;
 const CTX_TIMEOUT_2W: i64 = 1_209_600;
-
-fn build_shoutout_step(login: &str) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "to_broadcaster_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    SubActionStep {
-        kind_id: "twitch.channel.send_shoutout".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Shoutout {login}")),
-    }
-}
-
-fn build_whisper_step(login: &str, message: &str) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "to_user_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    config.insert("message".to_owned(), Variant::String(message.to_owned()));
-    SubActionStep {
-        kind_id: "twitch.chat.send_whisper".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Whisper {login}")),
-    }
-}
-
-fn build_timeout_step(login: &str, seconds: i64) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "target_user_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    config.insert("duration_seconds".to_owned(), Variant::Int(seconds));
-    SubActionStep {
-        kind_id: "twitch.moderation.timeout_user".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Timeout {login}")),
-    }
-}
-
-fn build_ban_step(login: &str) -> SubActionStep {
-    let mut config = BTreeMap::new();
-    config.insert(
-        "target_user_login".to_owned(),
-        Variant::String(login.to_owned()),
-    );
-    SubActionStep {
-        kind_id: "twitch.moderation.ban_user".to_owned(),
-        config,
-        enabled: true,
-        continue_on_error: false,
-        condition: None,
-        label: Some(format!("Ban {login}")),
-    }
-}
 
 fn build_reply_step(username: &str, message: &str, parent_message_id: &str) -> SubActionStep {
     let mut config = BTreeMap::new();
@@ -172,9 +109,8 @@ pub(crate) enum PlatformFilter {
 #[derive(Clone)]
 struct UserMenuTarget {
     position: Point<Pixels>,
-    username: String,
+    viewer: ViewerTarget,
     message_id: String,
-    platform: Platform,
 }
 
 #[derive(Clone)]
@@ -528,9 +464,11 @@ impl ChatView {
         cx.notify();
     }
 
-    fn selected_login(&self, cx: &App) -> Option<String> {
-        let key = self.selected_viewer.as_ref()?;
-        current_name(key, self.feed.read(cx).authors(), &self.viewers).map(|name| name.to_string())
+    fn displayed_target(&self, cx: &App) -> Option<ViewerTarget> {
+        let authors = self.feed.read(cx).authors();
+        let key = displayed_viewer(self.selected_viewer.as_ref(), authors)?;
+        let name = current_name(&key, authors, &self.viewers)?;
+        Some(ViewerTarget::new(&key, name.to_string()))
     }
 
     fn toggle_drawer_menu(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
@@ -549,9 +487,22 @@ impl ChatView {
         }
     }
 
+    fn run_viewer_action(
+        &self,
+        target: &ViewerTarget,
+        action: ViewerAction,
+        toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(step) = target.step(&action) {
+            self.dispatch_quick_action(step, target.builtin_id(), target.label(&action), toast, cx);
+        }
+    }
+
     fn dispatch_quick_action(
         &self,
         step: SubActionStep,
+        builtin_id: String,
         label: String,
         toast: impl FnOnce(Result<(), String>) -> (ToastKind, String) + 'static,
         cx: &mut Context<Self>,
@@ -559,8 +510,7 @@ impl ChatView {
         let engine = self.action_engine.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.rt_handle.spawn(async move {
-            let outcome =
-                async_bridge::run_quick_step(engine, step, "twitch".to_owned(), label).await;
+            let outcome = async_bridge::run_quick_step(engine, step, builtin_id, label).await;
             let _ = tx.send(outcome);
         });
         cx.spawn(async move |this, cx| {
@@ -575,16 +525,11 @@ impl ChatView {
         .detach();
     }
 
-    fn shoutout_viewer(&mut self, cx: &mut Context<Self>) {
+    fn shoutout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_login(cx) else {
-            cx.notify();
-            return;
-        };
-        let step = build_shoutout_step(&login);
-        self.dispatch_quick_action(
-            step,
-            format!("Shoutout {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Shoutout,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_shoutout_sent")),
                 Err(e) => (
@@ -597,16 +542,13 @@ impl ChatView {
         cx.notify();
     }
 
-    fn timeout_viewer(&mut self, cx: &mut Context<Self>) {
+    fn timeout_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_login(cx) else {
-            cx.notify();
-            return;
-        };
-        let step = build_timeout_step(&login, DRAWER_TIMEOUT_SECONDS);
-        self.dispatch_quick_action(
-            step,
-            format!("Timeout {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Timeout {
+                seconds: DRAWER_TIMEOUT_SECONDS,
+            },
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_timeout_sent")),
                 Err(e) => (
@@ -619,16 +561,11 @@ impl ChatView {
         cx.notify();
     }
 
-    fn ban_viewer(&mut self, cx: &mut Context<Self>) {
+    fn ban_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(login) = self.selected_login(cx) else {
-            cx.notify();
-            return;
-        };
-        let step = build_ban_step(&login);
-        self.dispatch_quick_action(
-            step,
-            format!("Ban {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Ban,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
                 Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
@@ -641,16 +578,14 @@ impl ChatView {
     fn open_user_menu(
         &mut self,
         position: Point<Pixels>,
-        username: String,
+        viewer: ViewerTarget,
         message_id: String,
-        platform: Platform,
         cx: &mut Context<Self>,
     ) {
         self.user_menu = Some(UserMenuTarget {
             position,
-            username,
+            viewer,
             message_id,
-            platform,
         });
         cx.notify();
     }
@@ -667,11 +602,9 @@ impl ChatView {
             cx.notify();
             return;
         };
-        let login = target.username;
-        let step = build_timeout_step(&login, seconds);
-        self.dispatch_quick_action(
-            step,
-            format!("Timeout {login}"),
+        self.run_viewer_action(
+            &target.viewer,
+            ViewerAction::Timeout { seconds },
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_ctx_timeout_sent")),
                 Err(e) => (
@@ -689,11 +622,9 @@ impl ChatView {
             cx.notify();
             return;
         };
-        let login = target.username;
-        let step = build_ban_step(&login);
-        self.dispatch_quick_action(
-            step,
-            format!("Ban {login}"),
+        self.run_viewer_action(
+            &target.viewer,
+            ViewerAction::Ban,
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_ban_sent")),
                 Err(e) => (ToastKind::Error, tr!("chat_drawer_ban_failed", error = e)),
@@ -708,12 +639,12 @@ impl ChatView {
             cx.notify();
             return;
         };
-        if target.platform != Platform::Twitch {
+        if target.viewer.platform != Platform::Twitch {
             cx.notify();
             return;
         }
         self.reply_target = Some(ReplyTarget {
-            username: target.username,
+            username: target.viewer.name,
             message_id: target.message_id,
         });
         self.reply_input.update(cx, |input, cx| {
@@ -743,6 +674,9 @@ impl ChatView {
         let username = target.username;
         self.dispatch_quick_action(
             step,
+            platform_gate::platform_integration(Platform::Twitch)
+                .id_str()
+                .to_owned(),
             format!("Reply to {username}"),
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_reply_sent")),
@@ -773,11 +707,11 @@ impl ChatView {
     ) -> Option<AnyElement> {
         let target = self.user_menu.as_ref()?;
         let position = target.position;
-        let login = target.username.clone();
-        let can_reply = target.platform == Platform::Twitch;
+        let viewer = &target.viewer;
+        let can_reply = viewer.platform == Platform::Twitch;
         let view = cx.entity();
 
-        let mut items = vec![menu_header(SharedString::from(login))];
+        let mut items = vec![menu_header(SharedString::from(viewer.name.clone()))];
         if can_reply {
             items.push(
                 menu_item(
@@ -788,53 +722,64 @@ impl ChatView {
                 .icon(Icon::MessageCircle)
                 .into(),
             );
-            items.push(menu_divider());
         }
-        items.push(
-            menu_item(
+        let timeouts = [
+            (
                 "chat-ctx-timeout-10m",
                 tr!("chat_ctx_timeout_10m"),
-                cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.ctx_timeout_viewer(CTX_TIMEOUT_10M, cx)
-                }),
-            )
-            .icon(Icon::Clock)
-            .into(),
-        );
-        items.push(
-            menu_item(
+                CTX_TIMEOUT_10M,
+                None,
+            ),
+            (
                 "chat-ctx-timeout-1h",
                 tr!("chat_ctx_timeout_1h"),
-                cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.ctx_timeout_viewer(CTX_TIMEOUT_1H, cx)
-                }),
-            )
-            .icon(Icon::Clock)
-            .into(),
-        );
-        items.push(
-            menu_item(
+                CTX_TIMEOUT_1H,
+                None,
+            ),
+            (
                 "chat-ctx-timeout-2w",
                 tr!("chat_ctx_timeout_2w"),
-                cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.ctx_timeout_viewer(CTX_TIMEOUT_2W, cx)
+                CTX_TIMEOUT_2W,
+                Some(palette.warning),
+            ),
+        ];
+        let mut moderation = Vec::new();
+        for (id, label, seconds, color) in timeouts {
+            if !viewer.supports(&ViewerAction::Timeout { seconds }) {
+                continue;
+            }
+            let mut item = menu_item(
+                id,
+                label,
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.ctx_timeout_viewer(seconds, cx)
                 }),
             )
-            .icon(Icon::Clock)
-            .color(palette.warning)
-            .into(),
-        );
-        items.push(menu_divider());
-        items.push(
-            menu_item(
-                "chat-ctx-ban",
-                tr!("chat_ctx_ban"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.ctx_ban_viewer(cx)),
-            )
-            .icon(Icon::BellOff)
-            .color(palette.random)
-            .into(),
-        );
+            .icon(Icon::Clock);
+            if let Some(color) = color {
+                item = item.color(color);
+            }
+            moderation.push(item.into());
+        }
+        if viewer.supports(&ViewerAction::Ban) {
+            if !moderation.is_empty() {
+                moderation.push(menu_divider());
+            }
+            moderation.push(
+                menu_item(
+                    "chat-ctx-ban",
+                    tr!("chat_ctx_ban"),
+                    cx.listener(|this, _: &ClickEvent, _, cx| this.ctx_ban_viewer(cx)),
+                )
+                .icon(Icon::BellOff)
+                .color(palette.random)
+                .into(),
+            );
+        }
+        if can_reply && !moderation.is_empty() {
+            items.push(menu_divider());
+        }
+        items.extend(moderation);
 
         Some(
             context_menu(position, palette)
@@ -846,10 +791,8 @@ impl ChatView {
         )
     }
 
-    fn open_whisper(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.selected_viewer.is_none() {
-            return;
-        }
+    fn open_whisper(&mut self, key: AuthorKey, window: &mut Window, cx: &mut Context<Self>) {
+        self.selected_viewer = Some(key);
         self.drawer_menu_open = None;
         self.whisper_open = true;
         self.whisper_input.update(cx, |input, cx| {
@@ -866,7 +809,7 @@ impl ChatView {
     }
 
     fn send_whisper(&mut self, cx: &mut Context<Self>) {
-        let Some(login) = self.selected_login(cx) else {
+        let Some(target) = self.displayed_target(cx) else {
             return;
         };
         let message = self.whisper_input.read(cx).content().trim().to_owned();
@@ -875,10 +818,9 @@ impl ChatView {
         }
         self.whisper_open = false;
         self.whisper_input.update(cx, |input, cx| input.clear(cx));
-        let step = build_whisper_step(&login, &message);
-        self.dispatch_quick_action(
-            step,
-            format!("Whisper {login}"),
+        self.run_viewer_action(
+            &target,
+            ViewerAction::Whisper(message),
             |outcome| match outcome {
                 Ok(()) => (ToastKind::Success, tr!("chat_drawer_whisper_sent")),
                 Err(e) => (
@@ -904,13 +846,9 @@ impl ChatView {
         }
     }
 
-    fn block_tts_viewer(&mut self, cx: &mut Context<Self>) {
+    fn block_tts_viewer(&mut self, target: ViewerTarget, cx: &mut Context<Self>) {
         self.drawer_menu_open = None;
-        let Some(viewer) = self.selected_login(cx) else {
-            cx.notify();
-            return;
-        };
-        let alias = blocked_alias(&viewer);
+        let alias = blocked_alias(&target.name);
         let repo = Arc::clone(&self.voice_alias_repo);
         let speak = self.speak.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -1166,10 +1104,10 @@ impl ChatView {
             };
             let author_key = msg.author_key();
             let menu_view = view.clone();
-            let menu_username = msg.username.clone();
+            let menu_target = author_key
+                .as_ref()
+                .map(|key| ViewerTarget::new(key, msg.username.to_string()));
             let menu_message_id = msg.id.clone();
-            let menu_platform = msg.platform;
-            let has_user = !msg.username.is_empty();
             let view = view.clone();
             let row = chat_row(&pal, data).on_username_click(
                 (gpui::ElementId::from("chat-username"), msg.id.clone()),
@@ -1188,15 +1126,15 @@ impl ChatView {
                 )));
             }
             framed = framed.child(row);
-            if has_user {
+            if let Some(menu_target) = menu_target {
                 framed = framed.on_mouse_down(
                     MouseButton::Right,
                     move |event: &MouseDownEvent, _window, app| {
                         let position = event.position;
-                        let login = menu_username.to_string();
+                        let viewer = menu_target.clone();
                         let message_id = menu_message_id.to_string();
                         menu_view.update(app, |this, cx| {
-                            this.open_user_menu(position, login, message_id, menu_platform, cx)
+                            this.open_user_menu(position, viewer, message_id, cx)
                         });
                     },
                 );
@@ -1482,6 +1420,10 @@ impl ChatView {
                     )),
             );
 
+        let target = ViewerTarget::new(&summary.key, summary.username.clone());
+        let can_whisper = target.supports(&ViewerAction::Whisper(String::new()));
+        let shoutout_target = target.clone();
+        let whisper_key = summary.key.clone();
         let actions = div()
             .flex()
             .gap(spacing(Spacing::Xs, density))
@@ -1489,22 +1431,27 @@ impl ChatView {
                 "chat-drawer-shoutout",
                 Icon::Bolt,
                 tr!("chat_drawer_shoutout"),
+                target.supports(&ViewerAction::Shoutout),
                 palette,
                 density,
-                cx.listener(|this, _: &ClickEvent, _, cx| this.shoutout_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.shoutout_viewer(shoutout_target.clone(), cx)
+                }),
             ))
             .child(drawer_ghost_button(
                 "chat-drawer-whisper",
                 Icon::MessageCircle,
                 tr!("chat_drawer_whisper"),
+                can_whisper,
                 palette,
                 density,
-                cx.listener(|this, _: &ClickEvent, window, cx| this.open_whisper(window, cx)),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.open_whisper(whisper_key.clone(), window, cx)
+                }),
             ))
-            .child(self.render_drawer_menu(palette, cx));
+            .child(self.render_drawer_menu(&summary.key, &target, palette, cx));
 
-        let whisper = self
-            .whisper_open
+        let whisper = (self.whisper_open && can_whisper)
             .then(|| self.render_whisper_compose(summary.username.clone(), palette, density, cx));
 
         frame
@@ -1689,22 +1636,39 @@ impl ChatView {
             .child(card)
     }
 
-    fn render_drawer_menu(&self, palette: &ForgePalette, cx: &mut Context<Self>) -> AnyElement {
+    fn render_drawer_menu(
+        &self,
+        key: &AuthorKey,
+        target: &ViewerTarget,
+        palette: &ForgePalette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let view = cx.entity();
+        let shoutout_target = target.clone();
+        let whisper_key = key.clone();
+        let block_target = target.clone();
+        let timeout_target = target.clone();
+        let ban_target = target.clone();
         let items = vec![
             menu_item(
                 "chat-drawer-menu-shoutout",
                 tr!("chat_drawer_shoutout"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.shoutout_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.shoutout_viewer(shoutout_target.clone(), cx)
+                }),
             )
             .icon(Icon::Flag)
+            .disabled(!target.supports(&ViewerAction::Shoutout))
             .into(),
             menu_item(
                 "chat-drawer-menu-whisper",
                 tr!("chat_drawer_whisper"),
-                cx.listener(|this, _: &ClickEvent, window, cx| this.open_whisper(window, cx)),
+                cx.listener(move |this, _: &ClickEvent, window, cx| {
+                    this.open_whisper(whisper_key.clone(), window, cx)
+                }),
             )
             .icon(Icon::MessageCircle)
+            .disabled(!target.supports(&ViewerAction::Whisper(String::new())))
             .into(),
             menu_item(
                 "chat-drawer-menu-tts-voice",
@@ -1718,23 +1682,33 @@ impl ChatView {
             menu_item(
                 "chat-drawer-menu-block-tts",
                 tr!("chat_drawer_block_tts"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.block_tts_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.block_tts_viewer(block_target.clone(), cx)
+                }),
             )
             .color(palette.warning)
             .into(),
             menu_item(
                 "chat-drawer-menu-timeout",
                 tr!("chat_drawer_timeout"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.timeout_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.timeout_viewer(timeout_target.clone(), cx)
+                }),
             )
             .color(palette.warning)
+            .disabled(!target.supports(&ViewerAction::Timeout {
+                seconds: DRAWER_TIMEOUT_SECONDS,
+            }))
             .into(),
             menu_item(
                 "chat-drawer-menu-ban",
                 tr!("chat_drawer_ban"),
-                cx.listener(|this, _: &ClickEvent, _, cx| this.ban_viewer(cx)),
+                cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.ban_viewer(ban_target.clone(), cx)
+                }),
             )
             .color(palette.random)
+            .disabled(!target.supports(&ViewerAction::Ban))
             .into(),
         ];
 
@@ -1980,6 +1954,7 @@ fn drawer_ghost_button(
     id: &'static str,
     glyph: Icon,
     label: impl Into<SharedString>,
+    enabled: bool,
     palette: &ForgePalette,
     density: Density,
     handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -1989,7 +1964,7 @@ fn drawer_ghost_button(
     let surf = palette.surface_overlay;
     let text = palette.text_secondary;
     let text_hover = palette.text_primary;
-    div()
+    let button = div()
         .id(id)
         .flex_1()
         .flex()
@@ -2001,9 +1976,6 @@ fn drawer_ghost_button(
         .rounded(radius(Radius::Sm))
         .border(BORDER_THIN)
         .border_color(border)
-        .cursor_pointer()
-        .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
-        .on_click(handler)
         .child(icon(glyph, DRAWER_ICON, text))
         .child(
             div()
@@ -2011,7 +1983,15 @@ fn drawer_ghost_button(
                 .text_size(FONT_XS)
                 .text_color(text)
                 .child(label.into()),
-        )
+        );
+    if enabled {
+        button
+            .cursor_pointer()
+            .hover(move |s| s.bg(surf).border_color(border_hover).text_color(text_hover))
+            .on_click(handler)
+    } else {
+        button.opacity(DISABLED_OPACITY)
+    }
 }
 
 fn body_export_text(body: &ChatBody) -> String {

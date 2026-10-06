@@ -124,12 +124,18 @@ pub(crate) fn selected_summary(
     directory: &ViewerDirectory,
     palette: &ForgePalette,
 ) -> Option<ViewerSummary> {
+    let key = displayed_viewer(selected, authors)?;
+    author_summary(&key, authors, directory, palette)
+}
+
+pub(crate) fn displayed_viewer(
+    selected: Option<&AuthorKey>,
+    authors: &AuthorIndex,
+) -> Option<AuthorKey> {
     selected
-        .and_then(|key| author_summary(key, authors, directory, palette))
-        .or_else(|| {
-            let (newest, _) = authors.newest()?;
-            author_summary(newest, authors, directory, palette)
-        })
+        .filter(|key| authors.get(key).is_some())
+        .or_else(|| authors.newest().map(|(newest, _)| newest))
+        .cloned()
 }
 
 pub(crate) fn current_name(

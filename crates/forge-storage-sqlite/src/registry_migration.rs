@@ -4,6 +4,11 @@ use forge_types::{SubActionStep, Variant};
 
 use crate::error::SqliteStorageError;
 
+const LEGACY_ENUM_FORMAT: i64 = 0;
+const REGISTRY_KIND_ID_FORMAT: i64 = 1;
+const DISCORD_WEBHOOK_KIND_ID_FORMAT: i64 = 2;
+pub(crate) const CURRENT_ACTION_FORMAT_VERSION: i64 = DISCORD_WEBHOOK_KIND_ID_FORMAT;
+
 pub async fn migrate_registry_format(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     migrate_actions(pool).await?;
     migrate_discord_sub_action_ids(pool).await?;
@@ -24,7 +29,8 @@ struct ActionSubActionsRow {
 
 async fn migrate_discord_sub_action_ids(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     let rows: Vec<ActionSubActionsRow> =
-        sqlx::query_as("SELECT id, sub_actions FROM actions WHERE format_version = 1")
+        sqlx::query_as("SELECT id, sub_actions FROM actions WHERE format_version = ?")
+            .bind(REGISTRY_KIND_ID_FORMAT)
             .fetch_all(pool)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -37,8 +43,9 @@ async fn migrate_discord_sub_action_ids(pool: &sqlx::SqlitePool) -> Result<(), S
 
     for row in rows {
         let new_sub_actions_json = remap_discord_kind_ids(&row.sub_actions)?;
-        sqlx::query("UPDATE actions SET sub_actions = ?, format_version = 2 WHERE id = ?")
+        sqlx::query("UPDATE actions SET sub_actions = ?, format_version = ? WHERE id = ?")
             .bind(&new_sub_actions_json)
+            .bind(DISCORD_WEBHOOK_KIND_ID_FORMAT)
             .bind(&row.id)
             .execute(&mut *tx)
             .await
@@ -68,7 +75,8 @@ fn remap_discord_kind_ids(sub_actions_json: &str) -> Result<String, SqliteStorag
 
 async fn migrate_actions(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageError> {
     let rows: Vec<ActionSubActionsRow> =
-        sqlx::query_as("SELECT id, sub_actions FROM actions WHERE format_version = 0")
+        sqlx::query_as("SELECT id, sub_actions FROM actions WHERE format_version = ?")
+            .bind(LEGACY_ENUM_FORMAT)
             .fetch_all(pool)
             .await
             .map_err(SqliteStorageError::Sqlx)?;
@@ -81,8 +89,9 @@ async fn migrate_actions(pool: &sqlx::SqlitePool) -> Result<(), SqliteStorageErr
 
     for row in rows {
         let new_sub_actions_json = convert_sub_actions(&row.sub_actions)?;
-        sqlx::query("UPDATE actions SET sub_actions = ?, format_version = 1 WHERE id = ?")
+        sqlx::query("UPDATE actions SET sub_actions = ?, format_version = ? WHERE id = ?")
             .bind(&new_sub_actions_json)
+            .bind(REGISTRY_KIND_ID_FORMAT)
             .bind(&row.id)
             .execute(&mut *tx)
             .await

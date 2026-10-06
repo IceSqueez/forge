@@ -10,6 +10,7 @@ use time::OffsetDateTime;
 use crate::batch::insert_rows;
 use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
+use crate::registry_migration::CURRENT_ACTION_FORMAT_VERSION;
 
 const ACTION_EXECUTION_COLUMNS: usize = 4;
 
@@ -135,8 +136,8 @@ impl ActionRepo for SqliteActionRepo {
         let execution_mode = encode_execution_mode(action.execution_mode);
 
         sqlx::query(
-            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode, format_version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                  name           = excluded.name,
                  group_name     = excluded.group_name,
@@ -146,7 +147,8 @@ impl ActionRepo for SqliteActionRepo {
                  bypass_pause   = excluded.bypass_pause,
                  description    = excluded.description,
                  sub_actions    = excluded.sub_actions,
-                 execution_mode = excluded.execution_mode",
+                 execution_mode = excluded.execution_mode,
+                 format_version = excluded.format_version",
         )
         .bind(&id_str)
         .bind(&action.name)
@@ -158,6 +160,7 @@ impl ActionRepo for SqliteActionRepo {
         .bind(&description)
         .bind(&sub_actions_json)
         .bind(execution_mode)
+        .bind(CURRENT_ACTION_FORMAT_VERSION)
         .execute(self.db.writer())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
@@ -266,8 +269,8 @@ impl ActionRepo for SqliteActionRepo {
         })?;
 
         sqlx::query(
-            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO actions (id, name, group_name, queue_id, enabled, concurrent, bypass_pause, description, sub_actions, execution_mode, format_version)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT format_version FROM actions WHERE id = ?))",
         )
         .bind(&new_id_str)
         .bind(new_name)
@@ -279,6 +282,7 @@ impl ActionRepo for SqliteActionRepo {
         .bind(&row.description)
         .bind(&row.sub_actions)
         .bind(&row.execution_mode)
+        .bind(&source_id_str)
         .execute(&mut *tx)
         .await
         .map_err(SqliteStorageError::Sqlx)?;

@@ -38,11 +38,13 @@ mod composer;
 mod platform_gate;
 mod send_plan;
 mod viewer_actions;
+mod viewer_follow;
 mod viewer_history;
 mod viewer_tts;
 
 pub use composer::ChatComposer;
 use viewer_actions::{ViewerAction, ViewerTarget};
+use viewer_follow::{FollowLookups, follow_display};
 use viewer_history::{ViewerHistory, ViewerHistoryDismissed};
 use viewer_tts::TtsVoiceHost;
 
@@ -164,6 +166,7 @@ pub struct ChatView {
     drawer_search: SearchState,
     drawer_menu_open: Option<Point<Pixels>>,
     selected_viewer: Option<AuthorKey>,
+    follows: FollowLookups,
     chat_history_repo: Arc<dyn ChatHistoryRepo>,
     viewer_history: Option<ViewerHistoryHost>,
     tts_voice: Option<TtsVoiceHost>,
@@ -270,6 +273,7 @@ impl ChatView {
             drawer_search,
             drawer_menu_open: None,
             selected_viewer: None,
+            follows: FollowLookups::default(),
             chat_history_repo,
             viewer_history: None,
             tts_voice: None,
@@ -470,6 +474,7 @@ impl ChatView {
 
     fn open_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
+        self.request_selected_follow(cx);
         cx.notify();
     }
 
@@ -487,6 +492,7 @@ impl ChatView {
 
     fn select_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
+        self.request_selected_follow(cx);
         cx.notify();
     }
 
@@ -819,6 +825,7 @@ impl ChatView {
 
     fn open_whisper(&mut self, key: AuthorKey, window: &mut Window, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
+        self.request_selected_follow(cx);
         self.drawer_menu_open = None;
         self.whisper_open = true;
         self.whisper_input.update(cx, |input, cx| {
@@ -1375,6 +1382,12 @@ impl ChatView {
             .child(name_col);
 
         let (sub_value, sub_color) = sub_display(summary.sub, palette);
+        let follow = follow_display(
+            summary.key.platform,
+            summary.role,
+            self.follows.status_of(&summary.key),
+            palette,
+        );
         let tile_hover = palette.surface_overlay;
         let history_key = summary.key.clone();
         let history_name = summary.username.clone();
@@ -1412,13 +1425,15 @@ impl ChatView {
                         palette,
                         density,
                     ))
-                    .child(stat_cell(
-                        tr!("chat_stat_follow"),
-                        summary.follow.clone(),
-                        palette.text_faint,
-                        palette,
-                        density,
-                    )),
+                    .children(follow.map(|(follow_value, follow_color)| {
+                        stat_cell(
+                            tr!("chat_stat_follow"),
+                            follow_value,
+                            follow_color,
+                            palette,
+                            density,
+                        )
+                    })),
             );
 
         let target = ViewerTarget::new(&summary.key, summary.username.clone());

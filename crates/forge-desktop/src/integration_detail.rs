@@ -190,6 +190,7 @@ impl IntegrationDetail {
             collections,
             obs_client: obs_source,
             vtube_client: _,
+            follow: _,
         } = object;
         let is_obs_detail = status.id().as_str() == "obs";
         let obs_password_rejected = is_obs_detail && connectivity.read(cx).obs_password_rejected();

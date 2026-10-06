@@ -4,7 +4,7 @@ use std::sync::Arc;
 use forge_events::{Event, EventPublisher, EventSource, EventStream, EventsError};
 use forge_platform_core::{
     BuiltinCollections, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus, ChatPlatform,
-    PlatformEndpoints, QuickActions, SectionIcon,
+    FollowLookup, PlatformEndpoints, QuickActions, SectionIcon,
 };
 use forge_registry::{SubActionRegistry, TriggerRegistry};
 use forge_runtime::{DonationIngest, EventBus};
@@ -39,6 +39,7 @@ pub struct BuiltinObject {
     pub collections: Option<Arc<dyn BuiltinCollections>>,
     pub obs_client: Option<Arc<forge_obs::ObsClient>>,
     pub vtube_client: Option<Arc<forge_vtube::VTubeClient>>,
+    pub follow: Option<Arc<dyn FollowLookup>>,
 }
 
 #[derive(Clone, Default)]
@@ -178,6 +179,7 @@ pub fn vtube_builtin_object(client: Arc<forge_vtube::VTubeClient>) -> BuiltinObj
         collections: None,
         obs_client: None,
         vtube_client: Some(client),
+        follow: None,
     }
 }
 
@@ -192,6 +194,7 @@ pub fn obs_builtin_object(client: Arc<forge_obs::ObsClient>) -> BuiltinObject {
         collections: None,
         obs_client: Some(client),
         vtube_client: None,
+        follow: None,
     }
 }
 
@@ -205,9 +208,10 @@ pub fn twitch_builtin_object(
         content: bundle.clone(),
         quick: bundle.clone(),
         control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
-        collections: Some(bundle as Arc<dyn BuiltinCollections>),
+        collections: Some(Arc::clone(&bundle) as Arc<dyn BuiltinCollections>),
         obs_client: None,
         vtube_client: None,
+        follow: Some(bundle as Arc<dyn FollowLookup>),
     }
 }
 
@@ -220,10 +224,11 @@ pub fn youtube_builtin_object(
         health: bundle.clone(),
         content: bundle.clone(),
         quick: bundle.clone(),
-        control: Some(bundle as Arc<dyn BuiltinControl>),
+        control: Some(Arc::clone(&bundle) as Arc<dyn BuiltinControl>),
         collections: None,
         obs_client: None,
         vtube_client: None,
+        follow: Some(bundle as Arc<dyn FollowLookup>),
     }
 }
 
@@ -240,6 +245,7 @@ pub fn kick_builtin_object(
         collections: None,
         obs_client: None,
         vtube_client: None,
+        follow: None,
     }
 }
 

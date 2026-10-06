@@ -227,6 +227,7 @@ impl AppShell {
                 let speak = handles.speak.clone();
                 let bot_accounts = handles.bot_accounts.clone();
                 let bus = Arc::clone(&handles.bus);
+                let builtins = handles.builtins.clone();
                 cx.new(|cx| {
                     ChatView::new(
                         topics.chat_feed.clone(),
@@ -241,6 +242,7 @@ impl AppShell {
                         palette,
                         cx,
                     )
+                    .with_follow_lookups(builtins)
                     .with_lifecycle(topics.integration_lifecycle.clone(), cx)
                     .with_chat_bus(bus, cx)
                 })

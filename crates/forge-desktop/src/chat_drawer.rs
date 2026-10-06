@@ -26,7 +26,6 @@ pub(crate) struct ViewerSummary {
     pub avatar_letter: char,
     pub avatar_color: Rgba,
     pub sub: SubStatus,
-    pub follow: String,
 }
 
 pub(crate) fn drawer_matches(username: &str, search: &str) -> bool {
@@ -90,7 +89,6 @@ pub(crate) fn summary_from_activity(
         avatar_letter,
         avatar_color: hash_accent(username, palette),
         sub: sub_status(activity.role),
-        follow: DASH.to_owned(),
     }
 }
 

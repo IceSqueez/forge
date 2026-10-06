@@ -1112,6 +1112,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
         (poller, tx)
@@ -1132,6 +1133,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
         (poller, rx)
@@ -1495,6 +1497,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
 
@@ -1587,6 +1590,7 @@ mod tests {
             live.clone(),
             broadcast.clone(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
         (poller, live, broadcast, rx)
@@ -1640,6 +1644,7 @@ mod tests {
             live.clone(),
             broadcast.clone(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
 
@@ -1970,6 +1975,7 @@ mod tests {
             live.clone(),
             ActiveBroadcastIdHandle::new(),
             quota,
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
         (poller, live, rx)
@@ -2365,6 +2371,7 @@ mod tests {
                 live_chat_id.clone(),
                 ActiveBroadcastIdHandle::new(),
                 make_quota(),
+                crate::ban_ledger_test_support::MemoryBanLedger::shared(),
             )
             .with_api_base(server.uri());
             let cancel = CancellationToken::new();
@@ -2440,6 +2447,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(api_base)
     }
@@ -2518,6 +2526,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         poller
             .build_event(&raw, &mut DedupSet::bounded(DEDUP_WINDOW_SIZE))
@@ -2557,6 +2566,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             make_quota(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
 
         let ev = poller

@@ -445,8 +445,10 @@ mod tests {
         let moderation = YoutubeModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
+            crate::ban_ledger_test_support::broadcaster_source(),
             handle,
             quota.clone(),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         )
         .with_api_base(server.uri());
         (moderation, quota)

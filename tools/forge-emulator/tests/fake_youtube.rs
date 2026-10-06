@@ -192,6 +192,7 @@ impl ForgePoller {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             quota(),
+            Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
         );
         let cancel = tokio_util::sync::CancellationToken::new();
         let task = tokio::spawn(async move {

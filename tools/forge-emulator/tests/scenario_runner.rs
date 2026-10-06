@@ -1779,6 +1779,7 @@ fn forge_youtube_echo(fake: &FakeYouTube) -> tokio::task::JoinHandle<()> {
         live_chat.clone(),
         forge_platform_youtube::ActiveBroadcastIdHandle::new(),
         Arc::clone(&quota),
+        Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
     );
     let sender = forge_platform_youtube::YoutubeSendChat::new(
         &endpoints,

@@ -1598,8 +1598,17 @@ mod tests {
             Arc::new(yt::YoutubeModeration::new(
                 &forge_platform_core::PlatformEndpoints::default(),
                 youtube_token_source(),
+                Arc::new(|| {
+                    Box::pin(async {
+                        Ok(yt::YoutubeBroadcaster {
+                            channel_id: "UCtest".to_owned(),
+                            channel_title: "Test".to_owned(),
+                        })
+                    })
+                }),
                 chat,
                 Arc::clone(&quota),
+                Arc::new(forge_storage::ban_ledger::MockBanLedgerRepo::new()),
             )),
             Arc::new(yt::YoutubeStreamMetadata::new(
                 &forge_platform_core::PlatformEndpoints::default(),

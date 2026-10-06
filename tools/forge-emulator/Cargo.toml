@@ -67,6 +67,7 @@ async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["ws"] }
 forge-discord = { path = "../../crates/forge-discord" }
 forge-registry = { path = "../../crates/forge-registry" }
+forge-storage = { path = "../../crates/forge-storage", features = ["test-mocks"] }
 tempfile = { version = "3.27" }
 time = { version = "0.3", features = ["macros"] }
 tokio = { version = "1.53", features = ["test-util"] }

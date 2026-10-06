@@ -785,6 +785,7 @@ mod tests {
             LiveChatIdHandle::new(),
             ActiveBroadcastIdHandle::new(),
             Arc::new(tokio::sync::Mutex::new(QuotaState::default())),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let (bundle, _health_tx) = YoutubeIntegrationBundle::new(
             "UCabc123".to_owned(),
@@ -806,8 +807,10 @@ mod tests {
         let moderation = Arc::new(YoutubeModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             token_source(),
+            crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
             Arc::clone(&quota),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         ));
         let metadata = Arc::new(YoutubeStreamMetadata::new(
             &forge_platform_core::PlatformEndpoints::default(),

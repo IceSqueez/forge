@@ -122,8 +122,10 @@ mod tests {
         let moderation = YoutubeModeration::new(
             &forge_platform_core::PlatformEndpoints::default(),
             source,
+            crate::ban_ledger_test_support::broadcaster_source(),
             LiveChatIdHandle::new(),
             Arc::new(Mutex::new(QuotaState::default())),
+            crate::ban_ledger_test_support::MemoryBanLedger::shared(),
         );
         UnbanUserRunner::new(Arc::new(moderation))
     }

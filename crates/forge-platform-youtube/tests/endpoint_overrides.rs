@@ -11,10 +11,11 @@ use forge_platform_core::{
 };
 use forge_platform_youtube::{
     ActiveBroadcastIdHandle, GoogleAuthFlow, LiveChatIdHandle, QuotaState, YoutubeAdBreak,
-    YoutubeAuthBundle, YoutubeChannelLookup, YoutubeCredentialsManager, YoutubeModeration,
-    YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats, YoutubeThumbnail,
-    YoutubeViewerPoll,
+    YoutubeAuthBundle, YoutubeBroadcaster, YoutubeChannelLookup, YoutubeCredentialsManager,
+    YoutubeModeration, YoutubePlatform, YoutubeSendChat, YoutubeStreamMetadata, YoutubeStreamStats,
+    YoutubeThumbnail, YoutubeViewerPoll,
 };
+use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::{CredentialId, CredentialsRepo, StorageError};
 use forge_types::OAuthToken;
 use futures::future::BoxFuture;
@@ -30,6 +31,19 @@ const LIVE_CHAT_ID: &str = "live-chat-override";
 const DATA_API_PREFIX: &str = "/youtube/v3";
 
 type TokenSource = Arc<dyn Fn() -> BoxFuture<'static, Result<String, PlatformError>> + Send + Sync>;
+type BroadcasterSource =
+    Arc<dyn Fn() -> BoxFuture<'static, Result<YoutubeBroadcaster, PlatformError>> + Send + Sync>;
+
+fn broadcaster_source() -> BroadcasterSource {
+    Arc::new(|| {
+        Box::pin(async {
+            Ok(YoutubeBroadcaster {
+                channel_id: "UCoverride".to_owned(),
+                channel_title: "Override".to_owned(),
+            })
+        })
+    })
+}
 
 #[derive(Default)]
 struct MemoryRepo {
@@ -163,10 +177,17 @@ async fn data_api_override_carries_every_rest_client_to_the_override_host() {
         .send("hi")
         .await
         .ok();
-    YoutubeModeration::new(&endpoints, token_source(), live_chat(), quota())
-        .add_moderator("UCviewer")
-        .await
-        .ok();
+    YoutubeModeration::new(
+        &endpoints,
+        token_source(),
+        broadcaster_source(),
+        live_chat(),
+        quota(),
+        Arc::new(MockBanLedgerRepo::new()),
+    )
+    .add_moderator("UCviewer")
+    .await
+    .ok();
     YoutubeStreamMetadata::new(&endpoints, token_source(), active_broadcast(), quota())
         .set_title("New title")
         .await
@@ -350,6 +371,7 @@ async fn platform_carries_its_override_into_the_chat_poller_and_the_sender() {
         LiveChatIdHandle::new(),
         ActiveBroadcastIdHandle::new(),
         quota(),
+        Arc::new(MockBanLedgerRepo::new()),
     );
     let mut events = platform.events();
 

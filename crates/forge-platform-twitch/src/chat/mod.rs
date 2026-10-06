@@ -8,7 +8,7 @@ mod whisper;
 
 pub use send::{ChatSendError, SentMessageId, send_chat, send_chat_reply};
 pub use session::ChatConnectionState;
-pub(crate) use whisper::{WhisperError, send_whisper};
+pub(crate) use whisper::{WhisperError, send_whisper, send_whisper_to};
 
 use crate::builtin::ChatSessionConfig;
 use crate::credentials_manager::TwitchCredentialsManager;

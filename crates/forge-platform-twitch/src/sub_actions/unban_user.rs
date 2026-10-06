@@ -4,15 +4,18 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_registry::runner::SubActionConfig;
-use forge_registry::{
-    FormField, RegistryError, RunContext, SubActionCategory, SubActionConfigExt, SubActionRunner,
-};
+use forge_registry::{FormField, RegistryError, RunContext, SubActionCategory, SubActionRunner};
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::{SelfIdentity, resolve_user_id};
+use super::identity::SelfIdentity;
+use super::user_target::{TargetKeys, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
+const TARGET_KEYS: TargetKeys = TargetKeys {
+    id: "target_user_id",
+    login: "target_user_login",
+};
 const KIND_ID: &str = "twitch.moderation.unban_user";
 
 pub struct UnbanUserRunner {
@@ -28,17 +31,15 @@ impl UnbanUserRunner {
         }
     }
 
-    async fn unban(&self, target_login: &str) -> SubActionOutcome {
-        if target_login.is_empty() {
-            return SubActionOutcome::Failed(
-                "target_user_login is empty after interpolation".to_owned(),
-            );
-        }
+    async fn unban(&self, target: Option<UserTarget<'_>>) -> SubActionOutcome {
+        let Some(target) = target else {
+            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+        };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        let target_user_id = match resolve_user_id(self.transport.as_ref(), target_login).await {
+        let target_user_id = match target.user_id(self.transport.as_ref()).await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
@@ -77,30 +78,19 @@ impl SubActionRunner for UnbanUserRunner {
     }
 
     fn default_config(&self) -> SubActionConfig {
-        BTreeMap::from([(
-            "target_user_login".to_owned(),
-            Variant::String(String::new()),
-        )])
+        BTreeMap::from([(TARGET_KEYS.login.to_owned(), Variant::String(String::new()))])
     }
 
     fn config_fields(&self) -> Vec<FormField> {
         vec![FormField::Text {
-            key: "target_user_login",
+            key: TARGET_KEYS.login,
             label: "Target Username",
             placeholder: "%user_login%",
         }]
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("target_user_login") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'target_user_login' must be a non-empty string"
-                )));
-            }
-        }
-        Ok(())
+        TARGET_KEYS.validate(KIND_ID, config)
     }
 
     async fn execute(
@@ -111,10 +101,9 @@ impl SubActionRunner for UnbanUserRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config.str("target_user_login").unwrap_or_default();
-        let target_login = ctx.arg_stack.interpolate(login_template);
+        let interpolated = TARGET_KEYS.interpolate(config, ctx);
 
-        let outcome = self.unban(&target_login).await;
+        let outcome = self.unban(interpolated.target()).await;
 
         (
             SubActionTelemetry {
@@ -187,20 +176,5 @@ mod tests {
             "user_id query must carry the RESOLVED target id"
         );
         assert!(request.body.is_none(), "unban sends no body");
-    }
-
-    #[tokio::test]
-    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new();
-
-        let (telemetry, _) = runner.execute(&config(""), &make_ctx(&stack)).await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty target must fail before the resolve call"
-        );
     }
 }

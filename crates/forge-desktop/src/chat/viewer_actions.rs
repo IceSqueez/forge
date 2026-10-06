@@ -16,6 +16,10 @@ const YOUTUBE_BAN_KIND: &str = "youtube.moderation.ban_user";
 const KICK_TIMEOUT_KIND: &str = "kick.moderation.timeout";
 const KICK_BAN_KIND: &str = "kick.moderation.ban";
 
+const TWITCH_SHOUTOUT_TARGET_KEY: &str = "to_broadcaster_id";
+const TWITCH_WHISPER_TARGET_KEY: &str = "to_user_id";
+const TWITCH_MODERATION_TARGET_KEY: &str = "target_user_id";
+
 const TWITCH_MAX_TIMEOUT_SECONDS: i64 = 1_209_600;
 const YOUTUBE_MAX_TIMEOUT_SECONDS: i64 = 86_400;
 const KICK_MAX_TIMEOUT_MINUTES: i64 = 10_080;
@@ -96,19 +100,21 @@ impl ViewerTarget {
         &self,
         action: &ViewerAction,
     ) -> Option<(&'static str, BTreeMap<String, Variant>)> {
-        if self.name.is_empty() {
-            return None;
-        }
-        let login = Variant::String(self.name.clone());
+        let user_id = self
+            .viewer_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())?;
+        let id = Variant::String(user_id.to_owned());
         match action {
             ViewerAction::Shoutout => Some((
                 TWITCH_SHOUTOUT_KIND,
-                BTreeMap::from([("to_broadcaster_login".to_owned(), login)]),
+                BTreeMap::from([(TWITCH_SHOUTOUT_TARGET_KEY.to_owned(), id)]),
             )),
             ViewerAction::Whisper(message) => Some((
                 TWITCH_WHISPER_KIND,
                 BTreeMap::from([
-                    ("to_user_login".to_owned(), login),
+                    (TWITCH_WHISPER_TARGET_KEY.to_owned(), id),
                     ("message".to_owned(), Variant::String(message.clone())),
                 ]),
             )),
@@ -117,7 +123,7 @@ impl ViewerTarget {
                     (
                         TWITCH_TIMEOUT_KIND,
                         BTreeMap::from([
-                            ("target_user_login".to_owned(), login),
+                            (TWITCH_MODERATION_TARGET_KEY.to_owned(), id),
                             ("duration_seconds".to_owned(), Variant::Int(*seconds)),
                         ]),
                     )
@@ -125,7 +131,7 @@ impl ViewerTarget {
             }
             ViewerAction::Ban => Some((
                 TWITCH_BAN_KIND,
-                BTreeMap::from([("target_user_login".to_owned(), login)]),
+                BTreeMap::from([(TWITCH_MODERATION_TARGET_KEY.to_owned(), id)]),
             )),
         }
     }
@@ -251,31 +257,28 @@ mod tests {
                 by_id(Platform::Twitch, "1001"),
                 ViewerAction::Shoutout,
                 "twitch.channel.send_shoutout",
-                config(&[("to_broadcaster_login", text("alice"))]),
+                config(&[("to_broadcaster_id", text("1001"))]),
             ),
             (
                 by_id(Platform::Twitch, "1001"),
                 ViewerAction::Whisper("hi there".to_owned()),
                 "twitch.chat.send_whisper",
-                config(&[
-                    ("to_user_login", text("alice")),
-                    ("message", text("hi there")),
-                ]),
+                config(&[("to_user_id", text("1001")), ("message", text("hi there"))]),
             ),
             (
                 by_id(Platform::Twitch, "1001"),
                 ten_minutes.clone(),
                 "twitch.moderation.timeout_user",
                 config(&[
-                    ("target_user_login", text("alice")),
+                    ("target_user_id", text("1001")),
                     ("duration_seconds", Variant::Int(600)),
                 ]),
             ),
             (
-                by_name(Platform::Twitch, "alice"),
+                by_id(Platform::Twitch, "1001"),
                 ViewerAction::Ban,
                 "twitch.moderation.ban_user",
-                config(&[("target_user_login", text("alice"))]),
+                config(&[("target_user_id", text("1001"))]),
             ),
             (
                 by_id(Platform::YouTube, "UCabc"),
@@ -326,7 +329,9 @@ mod tests {
             by_id(Platform::Kick, "alice"),
             by_id(Platform::Kick, "-5"),
             by_id(Platform::Kick, ""),
-            by_name(Platform::Twitch, ""),
+            by_name(Platform::Twitch, "alice"),
+            by_id(Platform::Twitch, ""),
+            by_id(Platform::Twitch, "  "),
         ] {
             for action in every_action() {
                 assert_eq!(

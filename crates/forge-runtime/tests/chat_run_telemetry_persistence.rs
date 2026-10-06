@@ -18,7 +18,6 @@ use forge_storage::{CatalogRevision, EventLogRepo, StorageError};
 use forge_types::{
     Action, ActionId, ArgStack, EventId, ExecutionMetadata, ExecutionMode, QueueId, TriggerConfig,
 };
-use time::OffsetDateTime;
 
 const CHAT_KIND: &str = "twitch.channel.chat.message";
 const RUN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
@@ -87,9 +86,6 @@ impl EventLogRepo for StoredEvents {
     }
     async fn recent_since(&self, _: usize, _: Option<EventId>) -> Result<Vec<Event>, StorageError> {
         Ok(Vec::new())
-    }
-    async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
     }
 }
 

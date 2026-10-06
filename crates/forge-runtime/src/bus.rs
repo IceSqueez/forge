@@ -466,10 +466,6 @@ mod tests {
         ) -> Result<Vec<Event>, StorageError> {
             self.0.event_log_repo().recent_since(limit, since).await
         }
-
-        async fn prune_before(&self, cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-            self.0.event_log_repo().prune_before(cutoff).await
-        }
     }
 
     async fn backed_bus_with_caps(
@@ -731,10 +727,6 @@ mod tests {
                 .cloned()
                 .collect())
         }
-
-        async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-            Ok(0)
-        }
     }
 
     #[tokio::test]
@@ -937,10 +929,6 @@ mod tests {
             _since: Option<EventId>,
         ) -> Result<Vec<Event>, StorageError> {
             Ok(Vec::new())
-        }
-
-        async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-            Ok(0)
         }
     }
 

@@ -335,10 +335,6 @@ impl EventLogRepo for StubEventLog {
     async fn recent_since(&self, _: usize, _: Option<EventId>) -> Result<Vec<Event>, StorageError> {
         Ok(Vec::new())
     }
-
-    async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
-    }
 }
 
 pub(crate) struct StubOverlays;
@@ -468,10 +464,6 @@ impl HistoryRepo for StubHistory {
         _: OffsetDateTime,
     ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
         Ok(HashMap::new())
-    }
-
-    async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
     }
 }
 

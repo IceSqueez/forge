@@ -214,10 +214,6 @@ mod tests {
         ) -> Result<Vec<Event>, StorageError> {
             Ok(Vec::new())
         }
-
-        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
-            Ok(0)
-        }
     }
 
     #[derive(Clone, Default)]
@@ -275,10 +271,6 @@ mod tests {
             _: Option<EventId>,
         ) -> Result<Vec<Event>, StorageError> {
             Ok(Vec::new())
-        }
-
-        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
-            Ok(0)
         }
     }
 

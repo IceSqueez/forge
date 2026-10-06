@@ -819,12 +819,6 @@ mod tests {
         ) -> Result<Vec<Event>, forge_storage::StorageError> {
             Ok(Vec::new())
         }
-        async fn prune_before(
-            &self,
-            _: time::OffsetDateTime,
-        ) -> Result<u64, forge_storage::StorageError> {
-            Ok(0)
-        }
     }
 
     fn publish_mixed_traffic(bus: &crate::EventBus) -> Vec<EventId> {

@@ -1278,7 +1278,6 @@ mod tests {
     use forge_events::Event;
     use forge_storage::{EventLogRepo, Language, StorageError};
     use gpui::TestAppContext;
-    use time::OffsetDateTime;
     use tokio::sync::Notify;
 
     use super::*;
@@ -1338,10 +1337,6 @@ mod tests {
             _: Option<EventId>,
         ) -> Result<Vec<Event>, StorageError> {
             Ok(Vec::new())
-        }
-
-        async fn prune_before(&self, _: OffsetDateTime) -> Result<u64, StorageError> {
-            Ok(0)
         }
     }
 

@@ -339,10 +339,6 @@ impl forge_storage::EventLogRepo for StuckEventLog {
     ) -> Result<Vec<Event>, StorageError> {
         Ok(Vec::new())
     }
-
-    async fn prune_before(&self, _: time::OffsetDateTime) -> Result<u64, StorageError> {
-        Ok(0)
-    }
 }
 
 struct StuckChatHistory;

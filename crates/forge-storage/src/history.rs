@@ -74,9 +74,6 @@ mod tests {
         ) -> Result<HashMap<ActionId, ActionStats>, StorageError> {
             Ok(HashMap::new())
         }
-        async fn prune_before(&self, _cutoff: OffsetDateTime) -> Result<u64, StorageError> {
-            Ok(0)
-        }
     }
 
     #[tokio::test]

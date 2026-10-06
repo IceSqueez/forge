@@ -60,3 +60,23 @@ pub trait ChatHistoryRepo: Send + Sync {
 
     async fn clear_platform(&self, source: ChatSource) -> Result<u64, StorageError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use forge_types::unified_chat::ChatSource;
+
+    use super::ChatAuthorKey;
+
+    #[test]
+    fn chat_author_key_debug_hides_the_author_id_but_keeps_the_source() {
+        let key = ChatAuthorKey {
+            source: ChatSource::Kick,
+            author_id: "SENTINEL_VIEWER_ID".to_owned(),
+        };
+
+        let rendered = format!("{key:?}");
+
+        assert!(!rendered.contains("SENTINEL"), "{rendered}");
+        assert!(rendered.contains("Kick"), "{rendered}");
+    }
+}

@@ -769,8 +769,9 @@ mod tests {
     use super::disclosure::{self, SettingDisclosure};
     use super::{
         CredentialsKeyLoss, DEFAULT_DIAGNOSTIC_LOG_LEVEL, Density, Language, SettingsRepo,
-        StorageError, diagnostic_log_level, get_json_setting, record_credentials_key_loss,
-        reserved_keys, set_diagnostic_log_level, set_json_setting, take_credentials_key_loss,
+        StorageError, chat_history_per_viewer_limit, diagnostic_log_level, get_json_setting,
+        record_credentials_key_loss, reserved_keys, set_chat_history_per_viewer_limit,
+        set_diagnostic_log_level, set_json_setting, take_credentials_key_loss,
     };
 
     #[derive(Default)]
@@ -1119,5 +1120,68 @@ mod tests {
             None,
             "the unreadable record must still be cleared",
         );
+    }
+
+    #[tokio::test]
+    async fn chat_history_per_viewer_limit_falls_back_to_fifty_when_absent_or_unparseable() {
+        for stored in [None, Some(""), Some("many"), Some("-5"), Some("12.5")] {
+            let repo = MapRepo::default();
+            if let Some(raw) = stored {
+                repo.set_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT, raw)
+                    .await
+                    .unwrap();
+            }
+
+            let limit = chat_history_per_viewer_limit(&repo).await.unwrap();
+
+            assert_eq!(limit, 50, "stored={stored:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_history_per_viewer_limit_clamps_a_stored_value_into_range_on_read() {
+        for (stored, expected) in [
+            ("0", 1),
+            ("1", 1),
+            ("2", 2),
+            ("9999", 9999),
+            ("10000", 10000),
+            ("10001", 10000),
+        ] {
+            let repo = MapRepo::default();
+            repo.set_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT, stored)
+                .await
+                .unwrap();
+
+            let limit = chat_history_per_viewer_limit(&repo).await.unwrap();
+
+            assert_eq!(limit, expected, "stored={stored}");
+        }
+    }
+
+    #[tokio::test]
+    async fn set_chat_history_per_viewer_limit_persists_the_clamped_value() {
+        for (requested, persisted) in [
+            (0, "1"),
+            (1, "1"),
+            (10000, "10000"),
+            (10001, "10000"),
+            (u32::MAX, "10000"),
+        ] {
+            let repo = MapRepo::default();
+
+            set_chat_history_per_viewer_limit(&repo, requested)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                repo.get_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT)
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some(persisted),
+                "requested={requested}"
+            );
+        }
     }
 }

@@ -398,6 +398,8 @@ mod tests {
     };
     use time::OffsetDateTime;
 
+    use forge_storage::{AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey};
+
     use super::SqliteChatHistoryRepo;
     use crate::{apply_migrations, connect};
 
@@ -641,5 +643,239 @@ mod tests {
         );
         assert!(moderation_of(&repo, "t2").await.deleted);
         assert_eq!(moderation_of(&repo, "y1").await, ModerationMarks::default());
+    }
+
+    const EVERY_ROW: usize = 100_000;
+
+    fn authored(
+        id: &str,
+        source: ChatSource,
+        author_id: Option<&str>,
+        is_event: bool,
+    ) -> UnifiedChatRow {
+        UnifiedChatRow {
+            source,
+            author_id: author_id.map(str::to_owned),
+            is_event,
+            ..row_at(id, 100)
+        }
+    }
+
+    fn key(source: ChatSource, author_id: &str) -> ChatAuthorKey {
+        ChatAuthorKey {
+            source,
+            author_id: author_id.to_owned(),
+        }
+    }
+
+    async fn append_all(repo: &SqliteChatHistoryRepo, rows: &[UnifiedChatRow]) {
+        for row in rows {
+            repo.append(row).await.unwrap();
+        }
+    }
+
+    async fn stored_ids(repo: &SqliteChatHistoryRepo) -> Vec<String> {
+        let mut ids: Vec<String> = repo
+            .list_recent(EVERY_ROW)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    fn messages_of(prefix: &str, count: usize) -> Vec<UnifiedChatRow> {
+        (0..count)
+            .map(|i| {
+                authored(
+                    &format!("{prefix}{i}"),
+                    ChatSource::Twitch,
+                    Some(prefix),
+                    false,
+                )
+            })
+            .collect()
+    }
+
+    async fn ids_by_author(
+        repo: &SqliteChatHistoryRepo,
+        author: &ChatAuthorKey,
+        limit: usize,
+    ) -> Vec<String> {
+        repo.list_recent_messages_by_author(author, limit)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.id)
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn list_recent_messages_by_author_returns_newest_by_insertion_order_capped_at_limit() {
+        let repo = make_repo().await;
+        for (id, secs) in [("m1", 400), ("m2", 300), ("m3", 200), ("m4", 100)] {
+            repo.append(&UnifiedChatRow {
+                received_at: OffsetDateTime::from_unix_timestamp(secs).unwrap(),
+                ..authored(id, ChatSource::Twitch, Some("42"), false)
+            })
+            .await
+            .unwrap();
+        }
+
+        let ids = ids_by_author(&repo, &key(ChatSource::Twitch, "42"), 3).await;
+
+        assert_eq!(ids, ["m4", "m3", "m2"]);
+    }
+
+    #[tokio::test]
+    async fn list_recent_messages_by_author_skips_events_other_authors_and_other_sources() {
+        let repo = make_repo().await;
+        append_all(
+            &repo,
+            &[
+                authored("mine", ChatSource::Twitch, Some("42"), false),
+                authored("my_event", ChatSource::Twitch, Some("42"), true),
+                authored("other_author", ChatSource::Twitch, Some("43"), false),
+                authored(
+                    "same_id_other_source",
+                    ChatSource::YouTube,
+                    Some("42"),
+                    false,
+                ),
+                authored("authorless", ChatSource::Twitch, None, false),
+            ],
+        )
+        .await;
+
+        let ids = ids_by_author(&repo, &key(ChatSource::Twitch, "42"), 10).await;
+
+        assert_eq!(ids, ["mine"]);
+    }
+
+    #[tokio::test]
+    async fn apply_retention_keeps_at_most_the_newest_per_author_rows_around_the_bound() {
+        for (stored, expected_kept, expected_deleted) in [
+            (2, vec!["a0", "a1"], 0),
+            (3, vec!["a0", "a1", "a2"], 0),
+            (4, vec!["a1", "a2", "a3"], 1),
+            (6, vec!["a3", "a4", "a5"], 3),
+        ] {
+            let repo = make_repo().await;
+            append_all(&repo, &messages_of("a", stored)).await;
+
+            let deleted = repo
+                .apply_retention(&[key(ChatSource::Twitch, "a")], 3)
+                .await
+                .unwrap();
+
+            assert_eq!(stored_ids(&repo).await, expected_kept, "stored={stored}");
+            assert_eq!(deleted, expected_deleted, "stored={stored}");
+        }
+    }
+
+    #[tokio::test]
+    async fn apply_retention_leaves_unlisted_authors_and_the_same_id_on_another_source_untouched() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 3)).await;
+        append_all(&repo, &messages_of("b", 3)).await;
+        append_all(
+            &repo,
+            &[
+                authored("yt0", ChatSource::YouTube, Some("a"), false),
+                authored("yt1", ChatSource::YouTube, Some("a"), false),
+            ],
+        )
+        .await;
+
+        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 1)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            stored_ids(&repo).await,
+            ["a2", "b0", "b1", "b2", "yt0", "yt1"]
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_retention_with_no_listed_authors_keeps_every_authored_message() {
+        let repo = make_repo().await;
+        append_all(&repo, &messages_of("a", 4)).await;
+
+        let deleted = repo.apply_retention(&[], 1).await.unwrap();
+
+        assert_eq!((deleted, stored_ids(&repo).await.len()), (0, 4));
+    }
+
+    #[tokio::test]
+    async fn apply_retention_spares_event_rows_of_a_listed_author_from_the_per_author_bound() {
+        let repo = make_repo().await;
+        append_all(
+            &repo,
+            &[
+                authored("event_old", ChatSource::Twitch, Some("a"), true),
+                authored("msg_old", ChatSource::Twitch, Some("a"), false),
+                authored("msg_new", ChatSource::Twitch, Some("a"), false),
+            ],
+        )
+        .await;
+
+        repo.apply_retention(&[key(ChatSource::Twitch, "a")], 1)
+            .await
+            .unwrap();
+
+        assert_eq!(stored_ids(&repo).await, ["event_old", "msg_new"]);
+    }
+
+    fn authorless_rows(count: usize) -> Vec<UnifiedChatRow> {
+        (0..count)
+            .map(|i| authored(&format!("n{i:05}"), ChatSource::Twitch, None, false))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn apply_retention_keeps_exactly_the_authorless_bound_of_newest_rows() {
+        for (extra, expected_deleted) in [(0, 0), (1, 1)] {
+            let repo = make_repo().await;
+            let rows = authorless_rows(AUTHORLESS_CHAT_HISTORY_RETAINED + extra);
+            repo.append_batch(&rows).await.unwrap();
+
+            let deleted = repo.apply_retention(&[], 1).await.unwrap();
+
+            let ids = stored_ids(&repo).await;
+            assert_eq!(deleted, expected_deleted, "extra={extra}");
+            assert_eq!(ids.len(), AUTHORLESS_CHAT_HISTORY_RETAINED, "extra={extra}");
+            assert_eq!(ids.first(), Some(&rows[extra].id), "extra={extra}");
+        }
+    }
+
+    #[tokio::test]
+    async fn apply_retention_counts_authored_events_against_the_authorless_bound_but_not_messages()
+    {
+        let repo = make_repo().await;
+        append_all(
+            &repo,
+            &[
+                authored("authored_event", ChatSource::Twitch, Some("a"), true),
+                authored("authored_message", ChatSource::Twitch, Some("a"), false),
+            ],
+        )
+        .await;
+        repo.append_batch(&authorless_rows(AUTHORLESS_CHAT_HISTORY_RETAINED))
+            .await
+            .unwrap();
+
+        repo.apply_retention(&[], 1).await.unwrap();
+
+        let ids = stored_ids(&repo).await;
+        assert_eq!(
+            (
+                ids.contains(&"authored_event".to_owned()),
+                ids.contains(&"authored_message".to_owned()),
+            ),
+            (false, true)
+        );
     }
 }

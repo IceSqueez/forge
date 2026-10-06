@@ -298,17 +298,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upsert_and_list() {
-        let backend = open().await;
-        let repo = backend.voice_alias_repo();
-        let alias = sample_alias();
-        repo.upsert(&alias).await.expect("upsert");
-        let all = repo.list().await.expect("list");
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].viewer_id, alias.viewer_id);
-    }
-
-    #[tokio::test]
     async fn delete_removes_alias() {
         let backend = open().await;
         let repo = backend.voice_alias_repo();
@@ -317,5 +306,63 @@ mod tests {
         repo.delete(&alias.id).await.expect("delete");
         let found = repo.find_by_viewer(&alias.viewer_id).await.expect("find");
         assert!(found.is_none());
+    }
+
+    fn alias(id: &str, viewer_id: &str, voice: &str) -> VoiceAlias {
+        VoiceAlias {
+            id: AliasId(id.into()),
+            viewer_id: viewer_id.into(),
+            voice_id: VoiceId(voice.into()),
+            ..sample_alias()
+        }
+    }
+
+    async fn rows(repo: &dyn VoiceAliasRepo) -> Vec<(String, String, String)> {
+        let mut rows: Vec<(String, String, String)> = repo
+            .list()
+            .await
+            .expect("list")
+            .into_iter()
+            .map(|a| (a.id.0, a.viewer_id, a.voice_id.0))
+            .collect();
+        rows.sort();
+        rows
+    }
+
+    fn row(id: &str, viewer_id: &str, voice: &str) -> (String, String, String) {
+        (id.into(), viewer_id.into(), voice.into())
+    }
+
+    #[tokio::test]
+    async fn upsert_for_a_known_viewer_under_a_fresh_id_updates_the_stored_alias_in_place() {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("stored", "v1", "old-voice"))
+            .await
+            .expect("first upsert");
+
+        repo.upsert(&alias("fresh", "v1", "new-voice"))
+            .await
+            .expect("second upsert");
+
+        assert_eq!(
+            rows(repo.as_ref()).await,
+            [row("stored", "v1", "new-voice")]
+        );
+    }
+
+    #[tokio::test]
+    async fn upsert_by_id_with_a_new_viewer_key_moves_the_alias_to_that_key() {
+        let backend = open().await;
+        let repo = backend.voice_alias_repo();
+        repo.upsert(&alias("a", "v1", "voice"))
+            .await
+            .expect("first upsert");
+
+        repo.upsert(&alias("a", "v2", "voice"))
+            .await
+            .expect("rename upsert");
+
+        assert_eq!(rows(repo.as_ref()).await, [row("a", "v2", "voice")]);
     }
 }

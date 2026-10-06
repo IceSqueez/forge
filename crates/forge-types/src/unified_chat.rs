@@ -595,6 +595,7 @@ mod tests {
 
     const AUTHOR: &str = "SENTINEL_AUTHOR";
     const BODY: &str = "SENTINEL_BODY";
+    const AUTHOR_ID: &str = "SENTINEL_AUTHOR_ID";
 
     fn payload_with_planted_content() -> ChatPayload {
         ChatPayload {
@@ -628,6 +629,7 @@ mod tests {
             },
         ]);
         row.author = AUTHOR.to_string();
+        row.author_id = Some(AUTHOR_ID.to_string());
         row
     }
 

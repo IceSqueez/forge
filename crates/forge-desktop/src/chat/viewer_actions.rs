@@ -362,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn shoutout_whisper_and_unban_are_offered_only_on_twitch() {
+    fn shoutout_and_whisper_are_offered_only_on_twitch() {
         for (target, offered) in [
             (by_id(Platform::Twitch, "1001"), true),
             (by_id(Platform::YouTube, "UCabc"), false),
@@ -372,9 +372,8 @@ mod tests {
                 [
                     target.supports(&ViewerAction::Shoutout),
                     target.supports(&ViewerAction::Whisper("hi".to_owned())),
-                    target.supports(&ViewerAction::Unban),
                 ],
-                [offered, offered, offered],
+                [offered, offered],
                 "{:?}",
                 target.platform
             );

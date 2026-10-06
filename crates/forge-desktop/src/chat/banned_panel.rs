@@ -1299,7 +1299,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn can_unban_only_an_allowed_idle_or_failed_twitch_row_with_a_viewer_id() {
+    fn can_unban_only_an_allowed_idle_or_failed_row_with_a_viewer_id() {
         let refused = UnbanAbility::Refused(UnbanRefusal::BannedOutsideForge);
         for (platform, viewer_id, ability, state, expected) in [
             (
@@ -1336,14 +1336,14 @@ pub(super) mod tests {
                 "UCabc",
                 UnbanAbility::Allowed,
                 UnbanState::Idle,
-                false,
+                true,
             ),
             (
                 Platform::Kick,
                 "4242",
                 UnbanAbility::Allowed,
                 UnbanState::Idle,
-                false,
+                true,
             ),
         ] {
             let mut row = BanRow::listed(entry(viewer_id, ability));

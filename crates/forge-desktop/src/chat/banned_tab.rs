@@ -85,7 +85,9 @@ impl ChatView {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
+    use forge_events::{Event, EventSource};
     use forge_runtime::EventBus;
     use forge_storage::chat_history::MockChatHistoryRepo;
     use gpui::{Entity, TestAppContext};
@@ -97,16 +99,27 @@ mod tests {
     use crate::home_stats::Integration;
     use crate::test_support::{StubEventLog, runtime};
 
+    const PAST_ANY_RELIST_DEBOUNCE: Duration = Duration::from_secs(10);
+
     fn mount_with_bans(
         cx: &mut TestAppContext,
         rt: &tokio::runtime::Runtime,
         source: &Arc<FakeBans>,
     ) -> Entity<ChatView> {
+        mount_with_bans_on(cx, rt, source, EventBus::new(Arc::new(StubEventLog)))
+    }
+
+    fn mount_with_bans_on(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        source: &Arc<FakeBans>,
+        bus: Arc<EventBus>,
+    ) -> Entity<ChatView> {
         let (_feed, view) = mount_gated(cx, rt, None, MockChatHistoryRepo::new());
         let builtins = registry_with(&[(Integration::Twitch, Some(Arc::clone(source)))]);
         view.update(cx, |view, _| {
             view.banned.builtins = builtins;
-            view.banned.bus = Some(EventBus::new(Arc::new(StubEventLog)));
+            view.banned.bus = Some(bus);
         });
         view
     }
@@ -151,5 +164,33 @@ mod tests {
 
         assert!(panel_shown(cx, &view));
         assert_eq!(source.calls(), 1);
+    }
+
+    #[gpui::test]
+    fn ban_changes_while_the_feed_tab_is_shown_are_fetched_only_when_banned_is_reopened(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let source = FakeBans::answering(Vec::new());
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let view = mount_with_bans_on(cx, &rt, &source, Arc::clone(&bus));
+        show(cx, &view, ChatTab::Banned);
+        settle(cx, &rt);
+        show(cx, &view, ChatTab::Feed);
+
+        bus.publish(Event::new(
+            EventSource::Twitch,
+            "twitch.channel.ban",
+            serde_json::Value::Null,
+        ));
+        settle(cx, &rt);
+        cx.executor().advance_clock(PAST_ANY_RELIST_DEBOUNCE);
+        settle(cx, &rt);
+        assert_eq!(source.calls(), 1);
+
+        show(cx, &view, ChatTab::Banned);
+        settle(cx, &rt);
+
+        assert_eq!(source.calls(), 2);
     }
 }

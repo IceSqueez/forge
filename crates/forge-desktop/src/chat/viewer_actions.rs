@@ -314,6 +314,12 @@ mod tests {
                 config(&[("channel_id", text("UCabc"))]),
             ),
             (
+                by_id(Platform::YouTube, "UCabc"),
+                ViewerAction::Unban,
+                "youtube.moderation.unban_user",
+                config(&[("channel_id", text("UCabc"))]),
+            ),
+            (
                 by_id(Platform::Kick, "4242"),
                 ten_minutes,
                 "kick.moderation.timeout",
@@ -326,6 +332,12 @@ mod tests {
                 by_id(Platform::Kick, "4242"),
                 ViewerAction::Ban,
                 "kick.moderation.ban",
+                config(&[("user_id", text("4242"))]),
+            ),
+            (
+                by_id(Platform::Kick, "4242"),
+                ViewerAction::Unban,
+                "kick.moderation.unban",
                 config(&[("user_id", text("4242"))]),
             ),
         ] {

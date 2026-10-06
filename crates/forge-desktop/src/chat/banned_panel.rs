@@ -919,9 +919,9 @@ impl Render for BannedPanel {
 pub(super) mod tests {
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
-    use forge_components::Platform;
+    use forge_components::{Density, Platform, ThemeId};
     use forge_events::{Event, EventSource};
     use forge_platform_core::{
         BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
@@ -932,15 +932,20 @@ pub(super) mod tests {
         SubActionRunner,
     };
     use forge_runtime::{ActionCancelRegistry, ActionEngineHandle, EventBus, spawn_action_engine};
+    use forge_storage::Language;
     use forge_storage::history::MockHistoryRepo;
     use forge_types::{ArgStack, SubActionConfig, SubActionOutcome, SubActionTelemetry, Variant};
     use gpui::{AppContext as _, Entity, TestAppContext};
 
     use super::{
-        BAN_RELIST_DEBOUNCE, BanGroup, BanRow, BannedPanel, GroupStatus, ListResult, UnbanState,
+        BAN_RELIST_DEBOUNCE, BanGroup, BanRow, BannedPanel, GroupStatus, ListResult,
+        UNBAN_RELIST_SUPPRESSION, UnbanState, list_pages, lists_only_what_forge_saw,
     };
+    use crate::chat::platform_gate::platform_integration;
     use crate::chat::tests::chat_states;
     use crate::home_stats::Integration;
+    use crate::i18n::{install_language, message_in};
+    use crate::integration_disabled::disclaimer_line;
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::integration_supervisor::LifecycleState;
     use crate::integrations::{BuiltinObject, BuiltinRegistry};
@@ -1345,6 +1350,13 @@ pub(super) mod tests {
                 UnbanState::Idle,
                 true,
             ),
+            (
+                Platform::Kick,
+                "kick_user",
+                UnbanAbility::Allowed,
+                UnbanState::Idle,
+                false,
+            ),
         ] {
             let mut row = BanRow::listed(entry(viewer_id, ability));
             row.unban = state.clone();
@@ -1644,17 +1656,39 @@ pub(super) mod tests {
         entries: Vec<BanEntry>,
         result: SubActionOutcome,
     ) -> (Entity<BannedPanel>, Arc<Mutex<Vec<SubActionConfig>>>) {
-        let twitch = FakeBans::answering(vec![BanListOutcome::Page(BanPage {
-            entries,
-            next: None,
-        })]);
+        let (panel, seen, _twitch) = unban_panel_listing(
+            cx,
+            rt,
+            vec![BanListOutcome::Page(BanPage {
+                entries,
+                next: None,
+            })],
+            result,
+        );
+        (panel, seen)
+    }
+
+    fn unban_panel_listing(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        answers: Vec<BanListOutcome>,
+        result: SubActionOutcome,
+    ) -> (
+        Entity<BannedPanel>,
+        Arc<Mutex<Vec<SubActionConfig>>>,
+        Arc<FakeBans>,
+    ) {
+        let twitch = FakeBans::answering(answers);
         let (engine, seen) = {
             let _enter = rt.enter();
             unban_engine(result)
         };
-        let mut mount = Mount::over(registry_with(&[(Integration::Twitch, Some(twitch))]));
+        let mut mount = Mount::over(registry_with(&[(
+            Integration::Twitch,
+            Some(Arc::clone(&twitch)),
+        )]));
         mount.engine = Some(engine);
-        (mount.open(cx, rt), seen)
+        (mount.open(cx, rt), seen, twitch)
     }
 
     fn unban(cx: &mut TestAppContext, panel: &Entity<BannedPanel>, viewer_id: &str) {
@@ -1753,5 +1787,408 @@ pub(super) mod tests {
 
         assert!(seen.lock().unwrap().is_empty());
         assert_eq!(twitch_row_state(cx, &panel, "1001"), Some(UnbanState::Idle));
+    }
+
+    fn group_of<R>(
+        cx: &mut TestAppContext,
+        panel: &Entity<BannedPanel>,
+        platform: Platform,
+        read: impl FnOnce(&BanGroup) -> R,
+    ) -> R {
+        panel.read_with(cx, |panel, _| {
+            read(
+                panel
+                    .groups
+                    .iter()
+                    .find(|group| group.platform == platform)
+                    .expect("the platform has a group"),
+            )
+        })
+    }
+
+    fn set_visible(cx: &mut TestAppContext, panel: &Entity<BannedPanel>, visible: bool) {
+        panel.update(cx, |panel, cx| panel.set_visible(visible, cx));
+    }
+
+    fn with_bus(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        sources: &[(Integration, Option<Arc<FakeBans>>)],
+    ) -> (Entity<BannedPanel>, Arc<EventBus>) {
+        let bus = EventBus::new(Arc::new(StubEventLog));
+        let mut mount = Mount::over(registry_with(sources));
+        mount.bus = Some(Arc::clone(&bus));
+        (mount.open(cx, rt), bus)
+    }
+
+    fn quiet_past_debounce(cx: &mut TestAppContext, rt: &tokio::runtime::Runtime) {
+        settle(cx, rt);
+        cx.executor()
+            .advance_clock(BAN_RELIST_DEBOUNCE + Duration::from_millis(1));
+        settle(cx, rt);
+    }
+
+    fn unavailable() -> BanListOutcome {
+        BanListOutcome::Unavailable(BanListUnavailable::Transport)
+    }
+
+    #[test]
+    fn a_relist_walks_the_loaded_depth_page_by_page_and_keeps_what_it_got_before_a_failure() {
+        let some = |token: &str| Some(token.to_owned());
+        for (answers, depth, asked, expected_ids, expected_next) in [
+            (
+                vec![
+                    outcome(&["1", "2"], Some("a")),
+                    outcome(&["2", "3"], Some("b")),
+                    outcome(&["4"], Some("c")),
+                ],
+                3,
+                vec![None, some("a"), some("b")],
+                Some(vec!["1", "2", "3", "4"]),
+                Some("c"),
+            ),
+            (
+                vec![outcome(&["1"], Some("a")), outcome(&["2"], None)],
+                3,
+                vec![None, some("a")],
+                Some(vec!["1", "2"]),
+                None,
+            ),
+            (
+                vec![outcome(&["1"], Some("a")), unavailable()],
+                3,
+                vec![None, some("a")],
+                Some(vec!["1"]),
+                Some("a"),
+            ),
+            (
+                vec![
+                    outcome(&["1"], Some("a")),
+                    outcome(&["2"], Some("b")),
+                    unavailable(),
+                ],
+                3,
+                vec![None, some("a"), some("b")],
+                Some(vec!["1", "2"]),
+                Some("b"),
+            ),
+            (
+                vec![outcome(&["1"], Some("a")), outcome(&["2"], Some("b"))],
+                1,
+                vec![None],
+                Some(vec!["1"]),
+                Some("a"),
+            ),
+            (
+                vec![unavailable(), outcome(&["2"], None)],
+                3,
+                vec![None],
+                None,
+                None,
+            ),
+        ] {
+            let source = FakeBans::answering(answers);
+
+            let result = runtime().block_on(list_pages(source.as_ref(), None, depth));
+
+            let listed = match result {
+                ListResult::Page { rows, next } => Some((
+                    rows.into_iter()
+                        .map(|row| row.entry.viewer_id)
+                        .collect::<Vec<_>>(),
+                    next,
+                )),
+                ListResult::Unavailable(_) => None,
+            };
+            assert_eq!(source.asked(), asked, "depth {depth}");
+            assert_eq!(
+                listed,
+                expected_ids.map(|ids| (
+                    ids.into_iter().map(str::to_owned).collect::<Vec<_>>(),
+                    expected_next.map(BanPageToken::new)
+                )),
+                "depth {depth}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_load_more_continues_from_its_token_for_one_page() {
+        let source = FakeBans::answering(vec![outcome(&["5"], Some("c")), outcome(&["6"], None)]);
+
+        let result =
+            runtime().block_on(list_pages(source.as_ref(), Some(BanPageToken::new("b")), 1));
+
+        assert_eq!(source.asked(), [Some("b".to_owned())]);
+        assert!(matches!(
+            result,
+            ListResult::Page { next: Some(ref next), .. } if *next == BanPageToken::new("c")
+        ));
+    }
+
+    #[test]
+    fn the_relist_depth_counts_successful_load_mores_and_resets_when_the_first_page_fails() {
+        let mut group = loaded(&["1"], Some("p2"));
+        let mut depths = vec![group.pages];
+
+        group.apply(true, page(&["2"], Some("p3")));
+        depths.push(group.pages);
+        group.apply(true, ListResult::Unavailable(BanListUnavailable::Transport));
+        depths.push(group.pages);
+        group.apply(false, page(&["1", "2"], Some("p3")));
+        depths.push(group.pages);
+        group.apply(
+            false,
+            ListResult::Unavailable(BanListUnavailable::NotConnected),
+        );
+        depths.push(group.pages);
+
+        assert_eq!(depths, [1, 2, 2, 2, 1]);
+    }
+
+    #[test]
+    fn a_recent_unban_hides_the_viewer_until_its_suppression_window_ends() {
+        let start = Instant::now();
+        let until = start + UNBAN_RELIST_SUPPRESSION;
+        for (now, expected, still_suppressed) in [
+            (start, vec!["2"], true),
+            (until - Duration::from_millis(1), vec!["2"], true),
+            (until, vec!["1", "2"], false),
+            (until + Duration::from_secs(1), vec!["1", "2"], false),
+        ] {
+            let mut group = BanGroup::new(Platform::Kick);
+            group.recently_unbanned = vec![("1".to_owned(), until)];
+
+            let shown = match group.without_recent_unbans(page(&["1", "2"], None), now) {
+                ListResult::Page { rows, .. } => rows
+                    .into_iter()
+                    .map(|row| row.entry.viewer_id)
+                    .collect::<Vec<_>>(),
+                ListResult::Unavailable(_) => Vec::new(),
+            };
+
+            assert_eq!(
+                (shown, !group.recently_unbanned.is_empty()),
+                (
+                    expected.into_iter().map(str::to_owned).collect(),
+                    still_suppressed
+                ),
+                "{:?} after start",
+                now - start
+            );
+        }
+    }
+
+    #[test]
+    fn each_ban_group_notes_what_its_platform_list_can_and_cannot_show() {
+        let palette = ThemeId::ForgeDefault.palette();
+        for (platform, seen_by_forge, disclaimer) in [
+            (Platform::Twitch, false, false),
+            (Platform::YouTube, true, false),
+            (Platform::Kick, true, true),
+        ] {
+            let notes = BannedPanel::render_group_notes(platform, &palette, Density::Cozy);
+            let kick_disclaimer =
+                disclaimer_line(&platform_integration(platform).builtin_id(), &palette);
+
+            assert_eq!(
+                (
+                    lists_only_what_forge_saw(platform),
+                    kick_disclaimer.is_some(),
+                    notes.is_some()
+                ),
+                (seen_by_forge, disclaimer, seen_by_forge || disclaimer),
+                "{platform:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn while_hidden_a_ban_event_fetches_nothing_and_marks_the_group_stale(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let twitch = FakeBans::answering(Vec::new());
+        let (panel, bus) = with_bus(cx, &rt, &[(Integration::Twitch, Some(Arc::clone(&twitch)))]);
+
+        set_visible(cx, &panel, false);
+        bus.publish(ban_event("twitch.channel.ban"));
+        quiet_past_debounce(cx, &rt);
+
+        assert_eq!(twitch.calls(), 1);
+        assert!(group_of(cx, &panel, Platform::Twitch, |group| group.stale));
+    }
+
+    #[gpui::test]
+    fn showing_again_relists_only_the_groups_that_went_stale(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let twitch = FakeBans::answering(vec![outcome(&["1"], None), outcome(&["2"], None)]);
+        let kick = FakeBans::answering(Vec::new());
+        let (panel, bus) = with_bus(
+            cx,
+            &rt,
+            &[
+                (Integration::Twitch, Some(Arc::clone(&twitch))),
+                (Integration::Kick, Some(Arc::clone(&kick))),
+            ],
+        );
+        set_visible(cx, &panel, false);
+        bus.publish(ban_event("twitch.channel.ban"));
+        quiet_past_debounce(cx, &rt);
+
+        set_visible(cx, &panel, true);
+        settle(cx, &rt);
+
+        assert_eq!((twitch.calls(), kick.calls()), (2, 1));
+        assert_eq!(twitch_ids(cx, &panel), ["2"]);
+        assert!(!group_of(cx, &panel, Platform::Twitch, |group| group.stale));
+    }
+
+    #[gpui::test]
+    fn a_debounced_relist_that_comes_due_after_hiding_waits_for_the_tab(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let twitch = FakeBans::answering(Vec::new());
+        let (panel, bus) = with_bus(cx, &rt, &[(Integration::Twitch, Some(Arc::clone(&twitch)))]);
+
+        bus.publish(ban_event("twitch.channel.ban"));
+        settle(cx, &rt);
+        set_visible(cx, &panel, false);
+        quiet_past_debounce(cx, &rt);
+
+        assert_eq!(twitch.calls(), 1);
+        assert!(group_of(cx, &panel, Platform::Twitch, |group| group.stale));
+    }
+
+    #[gpui::test]
+    fn a_platform_restart_while_hidden_is_listed_only_once_shown(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let twitch = FakeBans::answering(vec![outcome(&["1"], None), outcome(&["2"], None)]);
+        let lifecycle = cx.new(|_| {
+            IntegrationLifecycle::new(chat_states(&[(
+                Integration::Twitch,
+                LifecycleState::Running,
+            )]))
+        });
+        let mut mount = Mount::over(registry_with(&[(
+            Integration::Twitch,
+            Some(Arc::clone(&twitch)),
+        )]));
+        mount.lifecycle = Some(lifecycle.clone());
+        let panel = mount.open(cx, &rt);
+        set_visible(cx, &panel, false);
+
+        for state in [LifecycleState::Starting, LifecycleState::Running] {
+            switch_lifecycle(cx, &lifecycle, chat_states(&[(Integration::Twitch, state)]));
+            settle(cx, &rt);
+        }
+        assert_eq!(twitch.calls(), 1);
+
+        set_visible(cx, &panel, true);
+        settle(cx, &rt);
+
+        assert_eq!(twitch.calls(), 2);
+        assert_eq!(twitch_ids(cx, &panel), ["2"]);
+    }
+
+    #[gpui::test]
+    fn a_relist_after_load_more_keeps_every_page_the_viewer_had_loaded(cx: &mut TestAppContext) {
+        let rt = runtime();
+        let twitch = FakeBans::answering(vec![
+            outcome(&["1", "2"], Some("p2")),
+            outcome(&["3"], Some("p3")),
+            outcome(&["1", "2"], Some("p2")),
+            outcome(&["3", "4"], Some("p3")),
+        ]);
+        let (panel, bus) = with_bus(cx, &rt, &[(Integration::Twitch, Some(Arc::clone(&twitch)))]);
+        panel.update(cx, |panel, cx| panel.load_more(Platform::Twitch, cx));
+        settle(cx, &rt);
+
+        bus.publish(ban_event("twitch.channel.ban"));
+        quiet_past_debounce(cx, &rt);
+
+        let p2 = Some("p2".to_owned());
+        assert_eq!(twitch.asked(), [None, p2.clone(), None, p2]);
+        assert_eq!(twitch_ids(cx, &panel), ["1", "2", "3", "4"]);
+        assert_eq!(
+            group_of(cx, &panel, Platform::Twitch, |group| group.next.clone()),
+            Some(BanPageToken::new("p3"))
+        );
+    }
+
+    #[gpui::test]
+    fn an_unbanned_viewer_stays_off_every_list_inside_the_suppression_window(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (panel, _seen, _twitch) = unban_panel_listing(
+            cx,
+            &rt,
+            vec![
+                outcome(&["1001", "1002"], Some("p2")),
+                outcome(&["1001", "1002"], Some("p2")),
+                outcome(&["1001", "1003"], None),
+            ],
+            SubActionOutcome::Success,
+        );
+        unban(cx, &panel, "1001");
+        settle(cx, &rt);
+        cx.executor()
+            .advance_clock(UNBAN_RELIST_SUPPRESSION - Duration::from_millis(1));
+
+        panel.update(cx, |panel, cx| panel.retry(Platform::Twitch, cx));
+        settle(cx, &rt);
+        panel.update(cx, |panel, cx| panel.load_more(Platform::Twitch, cx));
+        settle(cx, &rt);
+
+        assert_eq!(twitch_ids(cx, &panel), ["1002", "1003"]);
+    }
+
+    #[gpui::test]
+    fn an_unbanned_viewer_listed_again_after_the_suppression_window_is_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let rt = runtime();
+        let (panel, _seen, _twitch) = unban_panel_listing(
+            cx,
+            &rt,
+            vec![
+                outcome(&["1001", "1002"], None),
+                outcome(&["1001", "1002"], None),
+            ],
+            SubActionOutcome::Success,
+        );
+        unban(cx, &panel, "1001");
+        settle(cx, &rt);
+        cx.executor().advance_clock(UNBAN_RELIST_SUPPRESSION);
+
+        panel.update(cx, |panel, cx| panel.retry(Platform::Twitch, cx));
+        settle(cx, &rt);
+
+        assert_eq!(twitch_ids(cx, &panel), ["1001", "1002"]);
+    }
+
+    #[gpui::test]
+    fn an_unban_cancelled_before_it_finished_is_reported_in_the_ui_language(
+        cx: &mut TestAppContext,
+    ) {
+        install_language(Language::Uk);
+        let rt = runtime();
+        let (panel, seen) = unban_panel(
+            cx,
+            &rt,
+            vec![entry("1001", UnbanAbility::Allowed)],
+            SubActionOutcome::Success,
+        );
+
+        let cancelled = message_in(Language::Uk, "chat_dispatch_cancelled");
+        assert_ne!(cancelled, "chat_dispatch_cancelled");
+
+        unban(cx, &panel, "1001");
+        drop(rt);
+        cx.run_until_parked();
+
+        assert!(seen.lock().unwrap().is_empty());
+        assert_eq!(
+            twitch_row_state(cx, &panel, "1001"),
+            Some(UnbanState::Failed(cancelled))
+        );
     }
 }

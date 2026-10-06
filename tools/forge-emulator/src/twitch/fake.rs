@@ -8,6 +8,7 @@ use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use super::bans;
 use super::chat::{self, Viewer};
 use super::config::FakeTwitchConfig;
 use super::ids;
@@ -126,6 +127,10 @@ impl FakeTwitch {
     ) -> Result<usize, EmulatorError> {
         if subscription_type == FOLLOW_SUBSCRIPTION {
             self.shared.mutate(|inner| inner.remember_follow(&event));
+        }
+        if subscription_type == bans::BAN || subscription_type == bans::UNBAN {
+            self.shared
+                .mutate(|inner| inner.bans.remember(subscription_type, &event));
         }
         let deliveries = self
             .shared

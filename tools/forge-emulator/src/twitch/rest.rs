@@ -36,6 +36,8 @@ enum Route {
     CreateReward,
     UpdateReward,
     DeleteReward,
+    BannedUsers,
+    Unban,
 }
 
 impl Route {
@@ -54,6 +56,8 @@ impl Route {
             ("POST", CUSTOM_REWARDS) => Self::CreateReward,
             ("PATCH", CUSTOM_REWARDS) => Self::UpdateReward,
             ("DELETE", CUSTOM_REWARDS) => Self::DeleteReward,
+            ("GET", "/helix/moderation/banned") => Self::BannedUsers,
+            ("DELETE", "/helix/moderation/bans") => Self::Unban,
             _ => return None,
         };
         Some(route)
@@ -179,6 +183,8 @@ fn serve(
         Route::CreateReward => inner.rewards.create(config, query, body),
         Route::UpdateReward => inner.rewards.update(config, query, body),
         Route::DeleteReward => inner.rewards.delete(config, query),
+        Route::BannedUsers => inner.bans.list(config, query),
+        Route::Unban => inner.bans.unban(config, query),
         other => plain(serve_plain(inner, config, other, query, body)),
     }
 }
@@ -203,9 +209,12 @@ fn serve_plain(
         Route::ChannelFollowers => channel_followers(inner, config, query),
         Route::SendChatMessage => send_chat_message(body),
         Route::SendWhisper => send_whisper(config, query, body),
-        Route::ListRewards | Route::CreateReward | Route::UpdateReward | Route::DeleteReward => {
-            error_body(StatusCode::NOT_FOUND, "")
-        }
+        Route::ListRewards
+        | Route::CreateReward
+        | Route::UpdateReward
+        | Route::DeleteReward
+        | Route::BannedUsers
+        | Route::Unban => error_body(StatusCode::NOT_FOUND, ""),
     }
 }
 

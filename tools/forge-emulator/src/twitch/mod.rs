@@ -1,3 +1,4 @@
+mod bans;
 mod chat;
 mod config;
 mod fake;

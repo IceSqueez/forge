@@ -543,6 +543,14 @@ same user replaces the earlier row. `user_id` narrows the answer to that viewer 
 the rows (newest first). A missing `broadcaster_id` answers 400; another broadcaster's id answers
 200 with no rows, as Twitch does for a token without moderator access to that channel.
 
+`GET /helix/moderation/banned` answers from the `channel.ban` events the run injected (newest
+first; `expires_at` is `ends_at`, or `""` for a permanent ban). A later ban of the same user
+replaces the row, and a `channel.unban` event or `DELETE /helix/moderation/bans` lifts it. `first`
+defaults to 20 and must be 1-100; `pagination.cursor` names the next page and is absent on the
+last one. `DELETE /helix/moderation/bans` answers 204 and notifies `channel.unban` when the user is
+banned, and 400 "The user is not banned or in a timeout." when not. A missing parameter answers 400,
+another broadcaster or moderator id 401.
+
 `go-live-pings-the-discord-role.json` follows a `stream.online` notification to a Discord
 webhook post and judges the post's `allowed_mentions`: the role ping is parsed and
 `@everyone` is not.

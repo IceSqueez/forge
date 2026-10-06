@@ -796,3 +796,310 @@ async fn channel_followers_answers_from_the_injected_follows() {
     }
     assert_eq!(fake.ledger().unexpected_requests().count(), 0);
 }
+
+const VIEWER: &str = "200000042";
+
+fn ban_event(user_id: &str, login: &str, ends_at: Option<&str>) -> Value {
+    json!({
+        "user_id": user_id,
+        "user_login": login,
+        "user_name": login.to_uppercase(),
+        "broadcaster_user_id": "100000001",
+        "broadcaster_user_login": "streamer",
+        "broadcaster_user_name": "streamer",
+        "moderator_user_id": "300000001",
+        "moderator_user_login": "modbot",
+        "moderator_user_name": "ModBot",
+        "reason": "spam",
+        "banned_at": "2026-10-06T10:00:00Z",
+        "ends_at": ends_at,
+        "is_permanent": ends_at.is_none(),
+    })
+}
+
+async fn fake_with_bans(events: &[(&str, Value)]) -> (FakeTwitch, Socket) {
+    let fake = start().await;
+    let (socket, session_id) = connect_to(fake.eventsub_ws_url()).await;
+    subscribe(&fake, "channel.ban", &session_id).await;
+    subscribe(&fake, "channel.unban", &session_id).await;
+    for (subscription_type, event) in events {
+        fake.inject_notification(subscription_type, event.clone())
+            .await
+            .unwrap();
+    }
+    (fake, socket)
+}
+
+async fn get_banned(fake: &FakeTwitch, query: &str) -> (reqwest::StatusCode, Value) {
+    let url = format!("{}/helix/moderation/banned{query}", fake.api_base_url());
+    let response = authorized(&reqwest::Client::new(), reqwest::Method::GET, url)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response.json().await.unwrap())
+}
+
+async fn delete_ban(fake: &FakeTwitch, query: &str) -> (reqwest::StatusCode, String) {
+    let url = format!("{}/helix/moderation/bans{query}", fake.api_base_url());
+    let response = authorized(&reqwest::Client::new(), reqwest::Method::DELETE, url)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response.text().await.unwrap())
+}
+
+fn banned_ids(body: &Value) -> Vec<&str> {
+    body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["user_id"].as_str().unwrap())
+        .collect()
+}
+
+#[tokio::test]
+async fn banned_users_maps_an_injected_ban_to_a_helix_row() {
+    let cases = [
+        ("permanent", None, ""),
+        (
+            "timeout",
+            Some("2026-10-06T10:10:00Z"),
+            "2026-10-06T10:10:00Z",
+        ),
+    ];
+
+    for (label, ends_at, expected_expiry) in cases {
+        let (fake, _socket) =
+            fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", ends_at))]).await;
+        let owner = TwitchAccount::default().user_id;
+
+        let (status, body) = get_banned(&fake, &format!("?broadcaster_id={owner}")).await;
+
+        assert_eq!(status, reqwest::StatusCode::OK, "{label}");
+        assert_eq!(
+            body["data"][0],
+            json!({
+                "user_id": VIEWER,
+                "user_login": "alice",
+                "user_name": "ALICE",
+                "expires_at": expected_expiry,
+                "created_at": "2026-10-06T10:00:00Z",
+                "reason": "spam",
+                "moderator_id": "300000001",
+                "moderator_login": "modbot",
+                "moderator_name": "ModBot",
+            }),
+            "{label}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn banned_users_pages_newest_first_through_the_cursor() {
+    let events: Vec<(&str, Value)> = ["200000001", "200000002", "200000003"]
+        .into_iter()
+        .map(|id| ("channel.ban", ban_event(id, "viewer", None)))
+        .collect();
+    let (fake, _socket) = fake_with_bans(&events).await;
+    let owner = TwitchAccount::default().user_id;
+
+    let (_, first_page) = get_banned(&fake, &format!("?broadcaster_id={owner}&first=2")).await;
+    let cursor = first_page["pagination"]["cursor"].as_str().unwrap();
+    let (_, last_page) = get_banned(
+        &fake,
+        &format!("?broadcaster_id={owner}&first=2&after={cursor}"),
+    )
+    .await;
+
+    assert_eq!(
+        (
+            banned_ids(&first_page),
+            banned_ids(&last_page),
+            last_page["pagination"].clone(),
+        ),
+        (vec!["200000003", "200000002"], vec!["200000001"], json!({}),)
+    );
+}
+
+#[tokio::test]
+async fn banned_users_page_size_is_capped_at_one_hundred_and_defaults_to_twenty() {
+    let events: Vec<(&str, Value)> = (0..101)
+        .map(|n| {
+            (
+                "channel.ban",
+                ban_event(&format!("2000{n:05}"), "viewer", None),
+            )
+        })
+        .collect();
+    let (fake, _socket) = fake_with_bans(&events).await;
+    let owner = TwitchAccount::default().user_id;
+    let cases = [
+        ("", reqwest::StatusCode::OK, 20),
+        ("&first=1", reqwest::StatusCode::OK, 1),
+        ("&first=100", reqwest::StatusCode::OK, 100),
+        ("&first=101", reqwest::StatusCode::BAD_REQUEST, 0),
+        ("&first=0", reqwest::StatusCode::BAD_REQUEST, 0),
+        ("&first=many", reqwest::StatusCode::BAD_REQUEST, 0),
+    ];
+
+    for (extra, expected_status, expected_rows) in cases {
+        let (status, body) = get_banned(&fake, &format!("?broadcaster_id={owner}{extra}")).await;
+        let rows = body["data"].as_array().map_or(0, Vec::len);
+        assert_eq!(
+            (status, rows),
+            (expected_status, expected_rows),
+            "query {extra:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn banned_users_refuses_requests_twitch_would_refuse() {
+    let (fake, _socket) =
+        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+    let owner = TwitchAccount::default().user_id;
+    let cases = [
+        ("".to_owned(), reqwest::StatusCode::BAD_REQUEST),
+        (
+            "?broadcaster_id=".to_owned(),
+            reqwest::StatusCode::BAD_REQUEST,
+        ),
+        (
+            "?broadcaster_id=999".to_owned(),
+            reqwest::StatusCode::UNAUTHORIZED,
+        ),
+        (
+            format!("?broadcaster_id={owner}&after="),
+            reqwest::StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("?broadcaster_id={owner}&after=garbage"),
+            reqwest::StatusCode::BAD_REQUEST,
+        ),
+    ];
+
+    for (query, expected_status) in cases {
+        let (status, _) = get_banned(&fake, &query).await;
+        assert_eq!(status, expected_status, "query {query:?}");
+    }
+    assert_eq!(fake.ledger().unexpected_requests().count(), 0);
+}
+
+#[tokio::test]
+async fn injected_unban_and_reban_keep_one_current_row_per_user() {
+    let (fake, _socket) = fake_with_bans(&[
+        ("channel.ban", ban_event(VIEWER, "alice", None)),
+        ("channel.ban", ban_event("200000043", "bob", None)),
+        ("channel.unban", ban_event("200000043", "bob", None)),
+        (
+            "channel.ban",
+            ban_event(VIEWER, "alice", Some("2026-10-06T11:00:00Z")),
+        ),
+    ])
+    .await;
+    let owner = TwitchAccount::default().user_id;
+
+    let (_, body) = get_banned(&fake, &format!("?broadcaster_id={owner}")).await;
+
+    assert_eq!(
+        (banned_ids(&body), body["data"][0]["expires_at"].clone()),
+        (vec![VIEWER], json!("2026-10-06T11:00:00Z"))
+    );
+}
+
+#[tokio::test]
+async fn unbanning_a_banned_user_answers_no_content_and_lifts_the_ban() {
+    let (fake, _socket) =
+        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+    let owner = TwitchAccount::default().user_id;
+
+    let (status, _) = delete_ban(
+        &fake,
+        &format!("?broadcaster_id={owner}&moderator_id={owner}&user_id={VIEWER}"),
+    )
+    .await;
+    let (_, list) = get_banned(&fake, &format!("?broadcaster_id={owner}")).await;
+
+    assert_eq!(
+        (status, banned_ids(&list)),
+        (reqwest::StatusCode::NO_CONTENT, Vec::<&str>::new())
+    );
+}
+
+#[tokio::test]
+async fn unbanning_a_banned_user_notifies_channel_unban() {
+    let (fake, mut socket) =
+        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+    let _ban_notification = next_frame(&mut socket).await;
+    let owner = TwitchAccount::default().user_id;
+
+    delete_ban(
+        &fake,
+        &format!("?broadcaster_id={owner}&moderator_id={owner}&user_id={VIEWER}"),
+    )
+    .await;
+    let frame = next_frame(&mut socket).await;
+
+    assert_eq!(
+        (
+            frame["payload"]["subscription"]["type"].clone(),
+            frame["payload"]["event"]["user_id"].clone(),
+        ),
+        (json!("channel.unban"), json!(VIEWER))
+    );
+}
+
+#[tokio::test]
+async fn unbanning_a_user_who_is_not_banned_answers_400_saying_so() {
+    let (fake, _socket) =
+        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+    let owner = TwitchAccount::default().user_id;
+    let query = format!("?broadcaster_id={owner}&moderator_id={owner}&user_id=200000099");
+
+    let (status, body) = delete_ban(&fake, &query).await;
+
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert!(body.to_lowercase().contains("not banned"), "{body}");
+}
+
+#[tokio::test]
+async fn unban_requests_twitch_would_refuse_never_claim_the_user_is_not_banned() {
+    let (fake, _socket) =
+        fake_with_bans(&[("channel.ban", ban_event(VIEWER, "alice", None))]).await;
+    let owner = TwitchAccount::default().user_id;
+    let cases = [
+        (
+            format!("?broadcaster_id={owner}&moderator_id={owner}"),
+            reqwest::StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("?broadcaster_id={owner}&user_id={VIEWER}"),
+            reqwest::StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("?moderator_id={owner}&user_id={VIEWER}"),
+            reqwest::StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("?broadcaster_id=999&moderator_id={owner}&user_id={VIEWER}"),
+            reqwest::StatusCode::UNAUTHORIZED,
+        ),
+        (
+            format!("?broadcaster_id={owner}&moderator_id=999&user_id={VIEWER}"),
+            reqwest::StatusCode::UNAUTHORIZED,
+        ),
+    ];
+
+    for (query, expected_status) in cases {
+        let (status, body) = delete_ban(&fake, &query).await;
+        assert_eq!(status, expected_status, "query {query:?}");
+        assert!(
+            !body.to_lowercase().contains("not banned"),
+            "query {query:?}"
+        );
+    }
+    let (_, list) = get_banned(&fake, &format!("?broadcaster_id={owner}")).await;
+    assert_eq!(banned_ids(&list), vec![VIEWER]);
+}

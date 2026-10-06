@@ -4,6 +4,7 @@ use std::sync::{Mutex, MutexGuard};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 
+use super::bans::BanStore;
 use super::chat::Viewer;
 use super::config::FakeTwitchConfig;
 use super::frames;
@@ -35,6 +36,7 @@ pub(crate) struct Inner {
     pub(crate) viewers: HashMap<String, Viewer>,
     pub(crate) rewards: RewardStore,
     pub(crate) followers: Vec<Value>,
+    pub(crate) bans: BanStore,
     request_tap: Option<mpsc::UnboundedSender<TappedRequest>>,
 }
 

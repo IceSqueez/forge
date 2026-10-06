@@ -1036,6 +1036,48 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_read_only_input_ignores_every_edit(cx: &mut gpui::TestAppContext) {
+        type Edit = fn(&mut TextInput, &mut Window, &mut Context<TextInput>);
+        let edits: [(&str, Edit); 6] = [
+            ("type", |input, window, cx| {
+                input.replace_text_in_range(None, "x", window, cx)
+            }),
+            ("compose", |input, window, cx| {
+                input.replace_and_mark_text_in_range(None, "x", None, window, cx)
+            }),
+            ("backspace", |input, window, cx| {
+                input.end(&End, window, cx);
+                input.backspace(&Backspace, window, cx)
+            }),
+            ("delete", |input, window, cx| {
+                input.home(&Home, window, cx);
+                input.delete(&Delete, window, cx)
+            }),
+            ("cut", |input, window, cx| {
+                input.select_all(&SelectAll, window, cx);
+                input.cut(&Cut, window, cx)
+            }),
+            ("paste", |input, window, cx| {
+                cx.write_to_clipboard(ClipboardItem::new_string("x".to_owned()));
+                input.paste(&Paste, window, cx)
+            }),
+        ];
+        for (label, edit) in edits {
+            let window =
+                cx.add_window(|_window, cx| TextInput::new("placeholder", cx).read_only(true));
+            let content = window
+                .update(cx, |input, window, cx| {
+                    input.set_content("alice", cx);
+                    edit(input, window, cx);
+                    input.content().to_owned()
+                })
+                .unwrap();
+
+            assert_eq!(content, "alice", "{label}");
+        }
+    }
+
+    #[gpui::test]
     fn backspace_deletes_the_whole_previous_grapheme_cluster(cx: &mut gpui::TestAppContext) {
         for (before, after) in [("a😀", "a"), ("café", "caf"), ("🇺🇦", ""), ("👨‍👩‍👧", "")]
         {

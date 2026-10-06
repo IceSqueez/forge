@@ -534,3 +534,235 @@ fn form_to_alias(form: &AliasForm, cx: &App) -> VoiceAlias {
         },
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::expect_used)]
+mod tests {
+    use forge_components::Platform;
+    use forge_storage::Language;
+    use gpui::{Entity, EntityInputHandler, Subscription, TestAppContext};
+
+    use super::*;
+    use crate::i18n::install_language;
+    use crate::test_support::{AliasShape, alias_shape, install_presentation};
+
+    struct Submitted {
+        seen: Vec<VoiceAlias>,
+        _sub: Subscription,
+    }
+
+    struct Mounted {
+        form: Entity<AliasForm>,
+        submitted: Entity<Submitted>,
+    }
+
+    fn identity(key: &str, name: &str, platform: PlatformScope) -> AliasIdentity {
+        AliasIdentity {
+            key: key.to_owned(),
+            name: name.to_owned(),
+            platform,
+        }
+    }
+
+    fn mount(
+        cx: &mut TestAppContext,
+        editing: Option<AliasId>,
+        identity: Option<AliasIdentity>,
+        locked: bool,
+        values: AliasValues,
+    ) -> Mounted {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| {
+            let form = cx.new(|cx| AliasForm::new(editing, identity, locked, values, cx));
+            let submitted = cx.new(|cx| Submitted {
+                seen: Vec::new(),
+                _sub: cx.subscribe(&form, |this: &mut Submitted, _form, event, _cx| {
+                    if let AliasFormEvent::Submit(alias) = event {
+                        this.seen.push(alias.clone());
+                    }
+                }),
+            });
+            Mounted { form, submitted }
+        })
+    }
+
+    fn submit(cx: &mut TestAppContext, mounted: &Mounted) -> Vec<AliasShape> {
+        mounted.form.update(cx, |form, cx| form.submit(cx));
+        cx.run_until_parked();
+        mounted.submitted.read_with(cx, |submitted, _| {
+            submitted.seen.iter().map(alias_shape).collect()
+        })
+    }
+
+    fn type_viewer(cx: &mut TestAppContext, mounted: &Mounted, text: &str) {
+        mounted.form.update(cx, |form, cx| {
+            form.viewer
+                .update(cx, |field, cx| field.set_content(text.to_owned(), cx))
+        });
+    }
+
+    #[gpui::test]
+    fn submit_keeps_a_locked_identity_key_and_recomputes_an_unlocked_one(cx: &mut TestAppContext) {
+        for (locked, viewer_id) in [(true, "twitch:141981764"), (false, "twitch:alice")] {
+            let mounted = mount(
+                cx,
+                None,
+                Some(identity("twitch:141981764", "alice", PlatformScope::Twitch)),
+                locked,
+                AliasValues::default(),
+            );
+
+            let seen = submit(cx, &mounted);
+
+            assert_eq!(
+                seen.iter()
+                    .map(|shape| (shape.1.as_str(), shape.2.as_str()))
+                    .collect::<Vec<_>>(),
+                [(viewer_id, "alice")],
+                "locked = {locked}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_new_alias_typed_by_hand_is_keyed_by_the_trimmed_name_on_the_picked_platform(
+        cx: &mut TestAppContext,
+    ) {
+        for (platform, viewer_id) in [
+            (PlatformScope::Any, "Зірка"),
+            (PlatformScope::Kick, "kick:Зірка"),
+        ] {
+            let mounted = mount(cx, None, None, false, AliasValues::default());
+            type_viewer(cx, &mounted, "  Зірка ");
+            mounted
+                .form
+                .update(cx, |form, cx| form.set_platform(platform, cx));
+
+            let seen = submit(cx, &mounted);
+
+            assert_eq!(
+                seen.iter()
+                    .map(|shape| (shape.1.as_str(), shape.2.as_str()))
+                    .collect::<Vec<_>>(),
+                [(viewer_id, "Зірка")],
+                "{platform:?}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_locked_form_keeps_the_viewer_name_it_was_opened_with(cx: &mut TestAppContext) {
+        for (locked, viewer_name) in [(true, "alice"), (false, "alicex")] {
+            let mounted = mount(
+                cx,
+                None,
+                Some(identity("twitch:141981764", "alice", PlatformScope::Twitch)),
+                locked,
+                AliasValues::default(),
+            );
+            let vcx = cx.add_empty_window();
+            let viewer = vcx.update(|_window, cx| mounted.form.read(cx).viewer.clone());
+            vcx.update(|window, cx| {
+                viewer.update(cx, |field, cx| {
+                    field.replace_text_in_range(None, "x", window, cx)
+                })
+            });
+
+            let seen = submit(cx, &mounted);
+
+            assert_eq!(
+                seen.iter()
+                    .map(|shape| shape.2.as_str())
+                    .collect::<Vec<_>>(),
+                [viewer_name],
+                "locked = {locked}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_locked_form_keeps_its_platform_when_another_is_picked(cx: &mut TestAppContext) {
+        for (locked, kept) in [(true, PlatformScope::Twitch), (false, PlatformScope::Kick)] {
+            let mounted = mount(
+                cx,
+                None,
+                Some(identity("twitch:141981764", "alice", PlatformScope::Twitch)),
+                locked,
+                AliasValues::default(),
+            );
+
+            mounted
+                .form
+                .update(cx, |form, cx| form.set_platform(PlatformScope::Kick, cx));
+
+            assert_eq!(
+                mounted.form.read_with(cx, |form, _| form.platform),
+                kept,
+                "locked = {locked}"
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn an_active_alias_opened_for_editing_submits_back_unchanged(cx: &mut TestAppContext) {
+        let existing = VoiceAlias {
+            id: AliasId("a1".to_owned()),
+            viewer_id: "youtube:UCx9".to_owned(),
+            viewer_name: "alice".to_owned(),
+            engine_id: EngineId("piper".to_owned()),
+            voice_id: VoiceId("en_US-amy".to_owned()),
+            pitch_semitones: Some(-2.5),
+            rate_multiplier: Some(1.25),
+            state: AliasState::Active,
+        };
+        let mounted = mount(
+            cx,
+            Some(existing.id.clone()),
+            Some(identity(
+                &existing.viewer_id,
+                &existing.viewer_name,
+                platform_scope(Platform::YouTube),
+            )),
+            true,
+            AliasValues::of(&existing),
+        );
+
+        assert_eq!(submit(cx, &mounted), [alias_shape(&existing)]);
+    }
+
+    #[gpui::test]
+    fn submit_emits_nothing_without_a_viewer_name_or_while_saving(cx: &mut TestAppContext) {
+        for (label, typed, saving) in [
+            ("empty viewer", "", false),
+            ("blank viewer", "   ", false),
+            ("saving", "alice", true),
+        ] {
+            let mounted = mount(cx, None, None, false, AliasValues::default());
+            type_viewer(cx, &mounted, typed);
+            mounted
+                .form
+                .update(cx, |form, cx| form.set_saving(saving, cx));
+
+            assert!(submit(cx, &mounted).is_empty(), "{label}");
+        }
+    }
+
+    #[test]
+    fn alias_key_round_trips_through_split_for_every_platform_scope() {
+        for scope in PlatformScope::ALL {
+            for name in ["Alice", "Зірка", "user_42"] {
+                let key = alias_key(scope, name);
+
+                assert_eq!(split_alias_key(&key), (scope, name), "{key:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn split_alias_key_keeps_an_unknown_prefix_as_part_of_a_bare_name() {
+        for key in ["discord:Alice", ":Alice", "Twitch:Alice"] {
+            assert_eq!(split_alias_key(key), (PlatformScope::Any, key), "{key:?}");
+        }
+    }
+}

@@ -2099,19 +2099,24 @@ mod tests {
     use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
     use forge_registry::SubActionRegistry;
     use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
+    use forge_storage::Language;
     use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::viewer::MockViewerRepo;
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
     use forge_types::EventId;
-    use gpui::{AppContext as _, Entity, TestAppContext};
+    use gpui::{App, AppContext as _, Context, Entity, TestAppContext, VisualTestContext};
     use time::OffsetDateTime;
 
     use super::{ChatView, PlatformFilter};
     use crate::chat_feed::{ChatFeed, ChatMessage};
     use crate::home_stats::{HomeStats, Integration};
+    use crate::i18n::install_language;
     use crate::integration_lifecycle::IntegrationLifecycle;
     use crate::integration_supervisor::{LifecycleState, LifecycleStates};
-    use crate::test_support::{StubActions, StubEventLog, StubHistory, runtime, switch_lifecycle};
+    use crate::test_support::{
+        StubActions, StubEventLog, StubHistory, install_presentation, runtime, switch_lifecycle,
+    };
+    use crate::toasts::Toasts;
 
     const CAP: usize = 5;
     const OVERFLOW: usize = 8;
@@ -2150,18 +2155,13 @@ mod tests {
         mount_gated(cx, rt, None, chat_history)
     }
 
-    fn mount_gated(
-        cx: &mut TestAppContext,
+    fn new_view(
+        feed: Entity<ChatFeed>,
         rt: &tokio::runtime::Runtime,
-        lifecycle: Option<Entity<IntegrationLifecycle>>,
         chat_history: MockChatHistoryRepo,
-    ) -> (Entity<ChatFeed>, Entity<ChatView>) {
-        let _enter = rt.enter();
-        let feed = cx.new(|_| {
-            let mut feed = ChatFeed::new();
-            feed.set_capacity(CAP);
-            feed
-        });
+        voice_aliases: MockVoiceAliasRepo,
+        cx: &mut Context<ChatView>,
+    ) -> ChatView {
         let home_stats = cx.new(|_| HomeStats::new());
         let mut viewers = MockViewerRepo::new();
         viewers.expect_list().returning(|| Ok(Vec::new()));
@@ -2173,18 +2173,43 @@ mod tests {
             Arc::new(SubActionRegistry::new()),
             Arc::new(ActionCancelRegistry::new()),
         );
+        ChatView::new(
+            feed,
+            home_stats,
+            rt.handle().clone(),
+            Arc::new(viewers),
+            Arc::new(chat_history),
+            engine,
+            Arc::new(voice_aliases),
+            None,
+            forge_types::Shared::default(),
+            FORGE_DEFAULT,
+            cx,
+        )
+    }
+
+    fn capped_feed(cx: &mut App) -> Entity<ChatFeed> {
+        cx.new(|_| {
+            let mut feed = ChatFeed::new();
+            feed.set_capacity(CAP);
+            feed
+        })
+    }
+
+    fn mount_gated(
+        cx: &mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        lifecycle: Option<Entity<IntegrationLifecycle>>,
+        chat_history: MockChatHistoryRepo,
+    ) -> (Entity<ChatFeed>, Entity<ChatView>) {
+        let _enter = rt.enter();
+        let feed = cx.update(capped_feed);
         let view = cx.new(|cx| {
-            let view = ChatView::new(
+            let view = new_view(
                 feed.clone(),
-                home_stats,
-                rt.handle().clone(),
-                Arc::new(viewers),
-                Arc::new(chat_history),
-                engine,
-                Arc::new(MockVoiceAliasRepo::new()),
-                None,
-                forge_types::Shared::default(),
-                FORGE_DEFAULT,
+                rt,
+                chat_history,
+                MockVoiceAliasRepo::new(),
                 cx,
             );
             match lifecycle {
@@ -2193,6 +2218,26 @@ mod tests {
             }
         });
         (feed, view)
+    }
+
+    pub(super) fn mount_in_window<'a>(
+        cx: &'a mut TestAppContext,
+        rt: &tokio::runtime::Runtime,
+        voice_aliases: MockVoiceAliasRepo,
+    ) -> (Entity<ChatView>, &'a mut VisualTestContext) {
+        install_language(Language::En);
+        install_presentation(cx);
+        cx.update(|cx| cx.set_global(Toasts::new()));
+        let _enter = rt.enter();
+        let feed = cx.update(capped_feed);
+        let (view, vcx) = cx.add_window_view(|_window, cx| {
+            new_view(feed, rt, MockChatHistoryRepo::new(), voice_aliases, cx)
+        });
+        vcx.update(|window, cx| {
+            window.activate_window();
+            forge_components::bind_text_input_keys(cx);
+        });
+        (view, vcx)
     }
 
     pub(super) fn push_each(

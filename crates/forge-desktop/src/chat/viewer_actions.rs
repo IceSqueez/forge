@@ -183,19 +183,30 @@ impl ViewerTarget {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use std::collections::BTreeMap;
 
     use forge_components::Platform;
     use forge_types::Variant;
 
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use forge_runtime::{SpeakDispatcher, SpeechOrigin};
+    use forge_speak_queue::SpeakEvent;
+    use forge_types::ArgStack;
+    use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
+
     use super::{ViewerAction, ViewerTarget};
     use crate::chat_author::AuthorKey;
+    use crate::speak_bridge::SpeakBridge;
+    use crate::test_support::spawn_speak_queue;
 
     const ONE_WEEK_SECONDS: i64 = 604_800;
     const TWO_WEEKS_SECONDS: i64 = 1_209_600;
     const ONE_DAY_SECONDS: i64 = 86_400;
+    const QUEUE_DEADLINE: Duration = Duration::from_secs(5);
 
     fn by_id(platform: Platform, viewer_id: &str) -> ViewerTarget {
         ViewerTarget::new(&AuthorKey::by_viewer_id(platform, viewer_id), "alice")
@@ -429,6 +440,86 @@ mod tests {
             (by_id(Platform::Kick, "4242"), "kick"),
         ] {
             assert_eq!(target.builtin_id(), builtin);
+        }
+    }
+    #[test]
+    fn a_viewer_without_a_usable_id_has_no_tts_alias_key() {
+        for target in [
+            by_name(Platform::Twitch, "alice"),
+            by_name(Platform::YouTube, "alice"),
+            by_name(Platform::Kick, "alice"),
+            by_id(Platform::Twitch, ""),
+            by_id(Platform::Kick, "   "),
+        ] {
+            assert_eq!(target.tts_alias_key(), None, "{target:?}");
+        }
+    }
+
+    async fn first_outcome(stream: &mut forge_speak_queue::SpeakEventStream) -> SpeakEvent {
+        tokio::time::timeout(QUEUE_DEADLINE, async {
+            loop {
+                if let Ok(
+                    event @ (SpeakEvent::Skipped { .. }
+                    | SpeakEvent::Failed { .. }
+                    | SpeakEvent::Finished { .. }),
+                ) = stream.recv().await
+                {
+                    return event;
+                }
+            }
+        })
+        .await
+        .expect("the queue never decided the speech")
+    }
+
+    #[tokio::test]
+    async fn the_tts_alias_key_is_the_identity_the_speech_queue_sees_for_that_viewer() {
+        for (platform, viewer_id, ingest_platform, ingest_id) in [
+            (Platform::Twitch, " 141981764 ", "twitch", "141981764"),
+            (Platform::YouTube, "UCx9-abc_DEF", "youtube", "UCx9-abc_DEF"),
+            (Platform::Kick, "4242", "kick", "4242"),
+        ] {
+            let target = by_id(platform, viewer_id);
+            let key = target
+                .tts_alias_key()
+                .expect("an id-keyed viewer has a key");
+            let (speak, mut stream, _resolver) = spawn_speak_queue(vec![VoiceAlias {
+                id: AliasId::new(),
+                viewer_id: key.clone(),
+                viewer_name: target.name.clone(),
+                engine_id: EngineId(String::new()),
+                voice_id: VoiceId(String::new()),
+                pitch_semitones: None,
+                rate_multiplier: None,
+                state: AliasState::Blocked,
+            }]);
+            let bridge = SpeakBridge::new(Arc::new(speak));
+            let args = [
+                ("user_platform", ingest_platform),
+                ("user_id", ingest_id),
+                ("user_name", "renamed_since"),
+            ]
+            .into_iter()
+            .fold(ArgStack::new(), |stack, (name, value)| {
+                stack.set(name.to_owned(), text(value))
+            });
+
+            SpeakDispatcher::speak(
+                &bridge,
+                "hello chat".to_owned(),
+                None,
+                SpeechOrigin::from_args(&args, None),
+            )
+            .await
+            .expect("dispatch");
+
+            assert!(
+                matches!(
+                    first_outcome(&mut stream).await,
+                    SpeakEvent::Skipped { ref reason, .. } if reason.contains("blocked")
+                ),
+                "{key:?} did not match the queued speaker"
+            );
         }
     }
 }

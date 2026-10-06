@@ -1338,3 +1338,79 @@ where
 pub(crate) fn quiet_bus(rt: &tokio::runtime::Runtime) -> Arc<EventBus> {
     rt.block_on(async { EventBus::new(Arc::new(StubEventLog)) })
 }
+
+pub(crate) type LiveAliases = Arc<std::sync::RwLock<forge_voice::VoiceAliasResolver>>;
+
+struct SilentPublisher;
+
+impl forge_events::EventPublisher for SilentPublisher {
+    fn publish(&self, _: Event) {}
+}
+
+pub(crate) fn spawn_speak_queue(
+    aliases: Vec<forge_voice::VoiceAlias>,
+) -> (
+    forge_speak_queue::SpeakQueueHandle,
+    forge_speak_queue::SpeakEventStream,
+    LiveAliases,
+) {
+    let resolver = Arc::new(std::sync::RwLock::new(
+        forge_voice::VoiceAliasResolver::new(
+            aliases,
+            forge_voice::AssignmentStrategy::DeterministicByName,
+            forge_voice::IgnoreProfile::default(),
+            forge_voice::SynthesisDefaults::default(),
+        ),
+    ));
+    let deps = forge_speak_queue::QueueDeps {
+        registry: Arc::new(std::sync::RwLock::new(forge_tts_core::TtsRegistry::new())),
+        resolver: Arc::clone(&resolver),
+        pipeline: forge_speak_queue::PipelineConfigHandle::new(
+            forge_tts_pipeline::PipelineConfig::default(),
+        ),
+        audio_sink: Arc::new(forge_audio::NullSink),
+        event_bus: Arc::new(SilentPublisher),
+        disabled_engines: std::collections::HashSet::new(),
+        engine_gains: HashMap::new(),
+    };
+    let (handle, stream) =
+        forge_speak_queue::spawn(forge_speak_queue::QueueConfig::default(), deps);
+    (handle, stream, resolver)
+}
+
+pub(crate) fn live_alias(
+    resolver: &LiveAliases,
+    viewer_id: &str,
+) -> Option<forge_voice::VoiceAlias> {
+    resolver
+        .read()
+        .expect("resolver lock")
+        .aliases
+        .iter()
+        .find(|alias| alias.viewer_id == viewer_id)
+        .cloned()
+}
+
+pub(crate) type AliasShape = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<f32>,
+    Option<f32>,
+    forge_voice::AliasState,
+);
+
+pub(crate) fn alias_shape(alias: &forge_voice::VoiceAlias) -> AliasShape {
+    (
+        alias.id.0.clone(),
+        alias.viewer_id.clone(),
+        alias.viewer_name.clone(),
+        alias.engine_id.0.clone(),
+        alias.voice_id.0.clone(),
+        alias.pitch_semitones,
+        alias.rate_multiplier,
+        alias.state.clone(),
+    )
+}

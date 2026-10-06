@@ -15,6 +15,7 @@ use super::rewards::RewardAnswer;
 use super::state::{Inner, Shared, SubscriptionOutcome, SubscriptionRequest};
 
 const CUSTOM_REWARDS: &str = "/helix/channel_points/custom_rewards";
+const DEFAULT_FOLLOWERS_PAGE: usize = 20;
 const GOAL_CREATED_AT: &str = "2026-10-01T12:00:00Z";
 const MISSING_BROADCASTER_ID: &str = "Missing required parameter broadcaster_id";
 const FOREIGN_BROADCASTER_ID: &str =
@@ -28,6 +29,7 @@ enum Route {
     Polls,
     Predictions,
     Goals,
+    ChannelFollowers,
     SendChatMessage,
     SendWhisper,
     ListRewards,
@@ -45,6 +47,7 @@ impl Route {
             ("GET", "/helix/polls") => Self::Polls,
             ("GET", "/helix/predictions") => Self::Predictions,
             ("GET", "/helix/goals") => Self::Goals,
+            ("GET", "/helix/channels/followers") => Self::ChannelFollowers,
             ("POST", "/helix/chat/messages") => Self::SendChatMessage,
             ("POST", "/helix/whispers") => Self::SendWhisper,
             ("GET", CUSTOM_REWARDS) => Self::ListRewards,
@@ -197,6 +200,7 @@ fn serve_plain(
             (StatusCode::OK, json!({ "data": [], "pagination": {} }))
         }
         Route::Goals => goals(config, query),
+        Route::ChannelFollowers => channel_followers(inner, config, query),
         Route::SendChatMessage => send_chat_message(body),
         Route::SendWhisper => send_whisper(config, query, body),
         Route::ListRewards | Route::CreateReward | Route::UpdateReward | Route::DeleteReward => {
@@ -324,6 +328,45 @@ fn goals(config: &FakeTwitchConfig, query: &[(String, String)]) -> (StatusCode, 
             (StatusCode::OK, json!({ "data": data }))
         }
     }
+}
+
+fn channel_followers(
+    inner: &Inner,
+    config: &FakeTwitchConfig,
+    query: &[(String, String)],
+) -> (StatusCode, Value) {
+    let param = |key: &str| {
+        query
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+            .filter(|value| !value.is_empty())
+    };
+    let Some(broadcaster_id) = param("broadcaster_id") else {
+        return error_body(StatusCode::BAD_REQUEST, MISSING_BROADCASTER_ID);
+    };
+    if broadcaster_id != config.broadcaster_user_id {
+        return (
+            StatusCode::OK,
+            json!({ "total": 0, "data": [], "pagination": {} }),
+        );
+    }
+    let page = param("first")
+        .and_then(|first| first.parse().ok())
+        .unwrap_or(DEFAULT_FOLLOWERS_PAGE);
+    let wanted = param("user_id");
+    let data: Vec<Value> = inner
+        .followers
+        .iter()
+        .rev()
+        .filter(|row| wanted.is_none_or(|id| row["user_id"] == id))
+        .take(page)
+        .cloned()
+        .collect();
+    (
+        StatusCode::OK,
+        json!({ "total": inner.followers.len(), "data": data, "pagination": {} }),
+    )
 }
 
 fn send_chat_message(body: Option<&Value>) -> (StatusCode, Value) {

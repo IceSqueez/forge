@@ -534,6 +534,12 @@ fires the goal-progress trigger before any observer is attached, so the scenario
 goal overlay and opens the page afterwards: the retained content, flagged `synced true`, is the
 proof. A `session_reconnect` then must not request the goals a second time.
 
+`GET /helix/channels/followers` answers from the `channel.follow` events the run injected: each
+one records its `user_id`, `user_login`, `user_name` and `followed_at`, and a repeat follow by the
+same user replaces the earlier row. `user_id` narrows the answer to that viewer and `first` caps
+the rows (newest first). A missing `broadcaster_id` answers 400; another broadcaster's id answers
+200 with no rows, as Twitch does for a token without moderator access to that channel.
+
 `go-live-pings-the-discord-role.json` follows a `stream.online` notification to a Discord
 webhook post and judges the post's `allowed_mentions`: the role ping is parsed and
 `@everyone` is not.

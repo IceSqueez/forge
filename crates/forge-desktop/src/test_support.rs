@@ -14,11 +14,11 @@ use forge_runtime::{ActionCancelRegistry, Catalog, EventBus, spawn_action_engine
 use forge_server::{ServerConfig, ServerHandle, stopped_server};
 use forge_storage::trigger_instance::MockTriggerInstanceRepo;
 use forge_storage::{
-    ActionRepo, ActionStats, ActionTelemetry, CatalogRevision, ChatHistoryRepo, CredentialId,
-    CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry,
-    GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayConfig, OverlayCredential,
-    OverlayDefinition, OverlayId, OverlayRepo, QueueRepo, ScheduledRunRepo, ScriptRecord,
-    ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
+    ActionRepo, ActionStats, ActionTelemetry, BanLedgerRepo, CatalogRevision, ChatHistoryRepo,
+    CredentialId, CredentialsRepo, DataProvider, DonationRepo, EventLogRepo, ExecutionStatus,
+    GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayConfig,
+    OverlayCredential, OverlayDefinition, OverlayId, OverlayRepo, QueueRepo, ScheduledRunRepo,
+    ScriptRecord, ScriptRepo, ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError,
     TriggerInstanceRepo, TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo,
     VoiceAliasRepo,
 };
@@ -290,6 +290,10 @@ impl DataProvider for TestBackend {
     }
 
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo> {
+        unreachable!("the settings pane reaches no sub-repo")
+    }
+
+    fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
         unreachable!("the settings pane reaches no sub-repo")
     }
 

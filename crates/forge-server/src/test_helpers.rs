@@ -7,6 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use forge_storage::CatalogRevision;
 use forge_storage::action::MockActionRepo;
+use forge_storage::ban_ledger::MockBanLedgerRepo;
 use forge_storage::chat_history::MockChatHistoryRepo;
 use forge_storage::credentials::MockCredentialsRepo;
 use forge_storage::donation::MockDonationRepo;
@@ -27,11 +28,11 @@ use forge_storage::user_globals::MockUserGlobalsRepo;
 use forge_storage::viewer::MockViewerRepo;
 use forge_storage::voice_aliases::MockVoiceAliasRepo;
 use forge_storage::{
-    ActionRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider, DonationRepo,
-    EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo, LatestValueRepo,
-    MediaRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptRepo, ScriptTelemetry,
-    SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo, TtsFiltersRepo,
-    UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    ActionRepo, BanLedgerRepo, ChatHistoryRepo, CredentialId, CredentialsRepo, DataProvider,
+    DonationRepo, EventLogRepo, ExecutionStatus, GlobalEntry, GlobalsRepo, HistoryRepo,
+    LatestValueRepo, MediaRepo, QueueRepo, ScheduledRunRepo, ScriptRecord, ScriptRepo,
+    ScriptTelemetry, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
+    TtsFiltersRepo, UserGlobalEntry, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 use forge_types::{ScriptId, Variant};
 use time::OffsetDateTime;
@@ -51,6 +52,7 @@ pub struct TestDataProvider {
     pub media_repo: Arc<MockMediaRepo>,
     pub donation_repo: Arc<MockDonationRepo>,
     pub latest_value_repo: Arc<MockLatestValueRepo>,
+    pub ban_ledger_repo: Arc<MockBanLedgerRepo>,
     pub scheduled_run_repo: Arc<MockScheduledRunRepo>,
     pub scheduled_run_revision: CatalogRevision,
     pub globals_repo: Arc<MockGlobalsRepo>,
@@ -78,6 +80,7 @@ impl TestDataProvider {
             media_repo: Arc::new(MockMediaRepo::new()),
             donation_repo: Arc::new(MockDonationRepo::new()),
             latest_value_repo: Arc::new(MockLatestValueRepo::new()),
+            ban_ledger_repo: Arc::new(MockBanLedgerRepo::new()),
             scheduled_run_repo: Arc::new(MockScheduledRunRepo::new()),
             scheduled_run_revision: CatalogRevision::new(),
             voice_alias_repo: Arc::new(MockVoiceAliasRepo::new()),
@@ -394,6 +397,10 @@ impl DataProvider for TestDataProvider {
 
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo> {
         Arc::clone(&self.latest_value_repo) as Arc<dyn LatestValueRepo>
+    }
+
+    fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
+        Arc::clone(&self.ban_ledger_repo) as Arc<dyn BanLedgerRepo>
     }
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {

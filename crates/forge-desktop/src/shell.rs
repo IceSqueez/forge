@@ -221,6 +221,7 @@ impl AppShell {
                 let palette = cx.palette();
                 let rt_handle = handles.rt_handle.clone();
                 let viewer_repo = handles.backend.viewer_repo();
+                let chat_history_repo = handles.backend.chat_history_repo();
                 let action_engine = handles.action_engine.clone();
                 let voice_alias_repo = handles.backend.voice_alias_repo();
                 let speak = handles.speak.clone();
@@ -232,6 +233,7 @@ impl AppShell {
                         topics.home_stats.clone(),
                         rt_handle,
                         viewer_repo,
+                        chat_history_repo,
                         action_engine,
                         voice_alias_repo,
                         speak,

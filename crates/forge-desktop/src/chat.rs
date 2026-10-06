@@ -13,7 +13,7 @@ use forge_components::{
 };
 use forge_runtime::ActionEngineHandle;
 use forge_speak_queue::{SpeakCommand, SpeakQueueHandle};
-use forge_storage::{Viewer, ViewerRepo, VoiceAliasRepo};
+use forge_storage::{ChatHistoryRepo, Viewer, ViewerRepo, VoiceAliasRepo};
 use forge_types::{Shared, SubActionStep, Variant, is_bot_account};
 use forge_voice::{AliasId, AliasState, EngineId, VoiceAlias, VoiceId};
 use gpui::{
@@ -39,9 +39,11 @@ mod composer;
 mod platform_gate;
 mod send_plan;
 mod viewer_actions;
+mod viewer_history;
 
 pub use composer::ChatComposer;
 use viewer_actions::{ViewerAction, ViewerTarget};
+use viewer_history::ViewerHistory;
 
 const LIST_OVERDRAW: Pixels = px(240.0);
 const PILL_BOTTOM_LIFT: Pixels = px(16.0);
@@ -174,6 +176,7 @@ pub struct ChatView {
     drawer_search: SearchState,
     drawer_menu_open: Option<Point<Pixels>>,
     selected_viewer: Option<AuthorKey>,
+    viewer_history: Entity<ViewerHistory>,
     viewers: ViewerDirectory,
     drawer_keys: Vec<AuthorKey>,
     whisper_open: bool,
@@ -209,6 +212,7 @@ impl ChatView {
         home_stats: Entity<HomeStats>,
         rt_handle: tokio::runtime::Handle,
         viewer_repo: Arc<dyn ViewerRepo>,
+        chat_history_repo: Arc<dyn ChatHistoryRepo>,
         action_engine: ActionEngineHandle,
         voice_alias_repo: Arc<dyn VoiceAliasRepo>,
         speak: Option<SpeakQueueHandle>,
@@ -251,6 +255,8 @@ impl ChatView {
         });
 
         Self::spawn_viewer_refresh(viewer_repo, rt_handle.clone(), cx);
+        let viewer_history =
+            cx.new(|_| ViewerHistory::new(feed.clone(), chat_history_repo, rt_handle.clone()));
 
         let mut this = Self {
             feed,
@@ -271,6 +277,7 @@ impl ChatView {
             drawer_search,
             drawer_menu_open: None,
             selected_viewer: None,
+            viewer_history,
             viewers: ViewerDirectory::default(),
             drawer_keys: Vec::new(),
             whisper_open: false,
@@ -293,6 +300,7 @@ impl ChatView {
         this.rebuild_visible(cx);
         this.chat_list.reset(this.visible.len());
         this.refresh_drawer_keys(cx);
+        this.sync_viewer_history(cx);
         this
     }
 
@@ -350,7 +358,14 @@ impl ChatView {
         }
         self.last_seen_seq = end;
         self.refresh_drawer_keys(cx);
+        self.sync_viewer_history(cx);
         cx.notify();
+    }
+
+    fn sync_viewer_history(&mut self, cx: &mut Context<Self>) {
+        let key = displayed_viewer(self.selected_viewer.as_ref(), self.feed.read(cx).authors());
+        self.viewer_history
+            .update(cx, |history, cx| history.show(key, cx));
     }
 
     fn rebuild_visible(&mut self, cx: &mut Context<Self>) {
@@ -444,6 +459,7 @@ impl ChatView {
 
     fn open_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
+        self.sync_viewer_history(cx);
         cx.notify();
     }
 
@@ -461,6 +477,7 @@ impl ChatView {
 
     fn select_viewer(&mut self, key: AuthorKey, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
+        self.sync_viewer_history(cx);
         cx.notify();
     }
 
@@ -793,6 +810,7 @@ impl ChatView {
 
     fn open_whisper(&mut self, key: AuthorKey, window: &mut Window, cx: &mut Context<Self>) {
         self.selected_viewer = Some(key);
+        self.sync_viewer_history(cx);
         self.drawer_menu_open = None;
         self.whisper_open = true;
         self.whisper_input.update(cx, |input, cx| {
@@ -1459,6 +1477,7 @@ impl ChatView {
             .child(grid)
             .child(actions)
             .children(whisper)
+            .child(self.viewer_history.clone())
             .into_any_element()
     }
 

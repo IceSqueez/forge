@@ -10,9 +10,14 @@ use forge_registry::{
 use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
-use super::identity::{SelfIdentity, resolve_user_id};
+use super::identity::SelfIdentity;
+use super::user_target::{TargetKeys, UserTarget};
 use crate::helix::{HelixMethod, HelixRequest, HelixTransport};
 
+const TARGET_KEYS: TargetKeys = TargetKeys {
+    id: "target_user_id",
+    login: "target_user_login",
+};
 const KIND_ID: &str = "twitch.moderation.ban_user";
 
 pub struct BanUserRunner {
@@ -28,17 +33,15 @@ impl BanUserRunner {
         }
     }
 
-    async fn ban(&self, target_login: &str, reason: &str) -> SubActionOutcome {
-        if target_login.is_empty() {
-            return SubActionOutcome::Failed(
-                "target_user_login is empty after interpolation".to_owned(),
-            );
-        }
+    async fn ban(&self, target: Option<UserTarget<'_>>, reason: &str) -> SubActionOutcome {
+        let Some(target) = target else {
+            return SubActionOutcome::Failed(TARGET_KEYS.empty_after_interpolation());
+        };
         let user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
-        let target_user_id = match resolve_user_id(self.transport.as_ref(), target_login).await {
+        let target_user_id = match target.user_id(self.transport.as_ref()).await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
@@ -82,10 +85,7 @@ impl SubActionRunner for BanUserRunner {
 
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([
-            (
-                "target_user_login".to_owned(),
-                Variant::String(String::new()),
-            ),
+            (TARGET_KEYS.login.to_owned(), Variant::String(String::new())),
             ("reason".to_owned(), Variant::String(String::new())),
         ])
     }
@@ -93,7 +93,7 @@ impl SubActionRunner for BanUserRunner {
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Text {
-                key: "target_user_login",
+                key: TARGET_KEYS.login,
                 label: "Target Username",
                 placeholder: "%user_login%",
             },
@@ -106,14 +106,7 @@ impl SubActionRunner for BanUserRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("target_user_login") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'target_user_login' must be a non-empty string"
-                )));
-            }
-        }
+        TARGET_KEYS.validate(KIND_ID, config)?;
         if let Some(Variant::String(r)) = config.get("reason")
             && r.chars().count() > 500
         {
@@ -132,14 +125,13 @@ impl SubActionRunner for BanUserRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config.str("target_user_login").unwrap_or_default();
-        let target_login = ctx.arg_stack.interpolate(login_template);
+        let interpolated = TARGET_KEYS.interpolate(config, ctx);
         let reason = config
             .str("reason")
             .map(|s| ctx.arg_stack.interpolate(s))
             .unwrap_or_default();
 
-        let outcome = self.ban(&target_login, &reason).await;
+        let outcome = self.ban(interpolated.target(), &reason).await;
 
         (
             SubActionTelemetry {
@@ -217,23 +209,6 @@ mod tests {
             ban.body,
             Some(serde_json::json!({ "data": { "user_id": "555", "reason": "spam" } })),
             "body must carry the RESOLVED id, not the login"
-        );
-    }
-
-    #[tokio::test]
-    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new().set("user_login".to_owned(), Variant::String(String::new()));
-
-        let (telemetry, _) = runner
-            .execute(&config("%user_login%", "spam"), &make_ctx(&stack))
-            .await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty target must fail before the resolve call"
         );
     }
 

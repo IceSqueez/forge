@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod backoff;
+pub mod ban_list;
 pub mod builtin;
 pub mod capabilities;
 pub mod chat;
@@ -19,6 +20,10 @@ pub mod poll;
 pub mod rate_limit;
 pub use auth::AuthFlow;
 pub use backoff::Backoff;
+pub use ban_list::{
+    BanDuration, BanEntry, BanListOutcome, BanListSource, BanListUnavailable, BanPage,
+    BanPageToken, UnbanAbility, UnbanRefusal,
+};
 pub use builtin::{
     ActiveRow, BannerLevel, BuiltinContent, BuiltinControl, BuiltinHealth, BuiltinStatus,
     CapabilityFlags, ContentList, ContentListItem, ControlFailure, ControlOutcome, DetailSection,

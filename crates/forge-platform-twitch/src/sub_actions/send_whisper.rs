@@ -11,10 +11,15 @@ use forge_types::{ArgStack, SubActionOutcome, SubActionTelemetry, Variant};
 use time::OffsetDateTime;
 
 use super::identity::SelfIdentity;
-use crate::chat::send_whisper;
+use super::user_target::{TargetKeys, UserTarget};
+use crate::chat::send_whisper_to;
 use crate::helix::HelixTransport;
 
 const KIND_ID: &str = "twitch.chat.send_whisper";
+const RECIPIENT_KEYS: TargetKeys = TargetKeys {
+    id: "to_user_id",
+    login: "to_user_login",
+};
 
 pub struct SendWhisperRunner {
     transport: Arc<dyn HelixTransport>,
@@ -29,19 +34,13 @@ impl SendWhisperRunner {
         }
     }
 
-    async fn whisper(&self, to_user_login: &str, message: &str) -> SubActionOutcome {
+    async fn whisper(&self, recipient: Option<UserTarget<'_>>, message: &str) -> SubActionOutcome {
         let from_user_id = match self.identity.user_id().await {
             Ok(id) => id,
             Err(e) => return SubActionOutcome::Failed(e.to_string()),
         };
         SubActionOutcome::from_result(
-            &send_whisper(
-                self.transport.as_ref(),
-                &from_user_id,
-                to_user_login,
-                message,
-            )
-            .await,
+            &send_whisper_to(self.transport.as_ref(), &from_user_id, recipient, message).await,
         )
     }
 }
@@ -74,7 +73,10 @@ impl SubActionRunner for SendWhisperRunner {
 
     fn default_config(&self) -> SubActionConfig {
         BTreeMap::from([
-            ("to_user_login".to_owned(), Variant::String(String::new())),
+            (
+                RECIPIENT_KEYS.login.to_owned(),
+                Variant::String(String::new()),
+            ),
             ("message".to_owned(), Variant::String(String::new())),
         ])
     }
@@ -82,7 +84,7 @@ impl SubActionRunner for SendWhisperRunner {
     fn config_fields(&self) -> Vec<FormField> {
         vec![
             FormField::Text {
-                key: "to_user_login",
+                key: RECIPIENT_KEYS.login,
                 label: "Recipient Username",
                 placeholder: "%user_login%",
             },
@@ -94,14 +96,7 @@ impl SubActionRunner for SendWhisperRunner {
     }
 
     fn validate_config(&self, config: &SubActionConfig) -> Result<(), RegistryError> {
-        match config.get("to_user_login") {
-            Some(Variant::String(s)) if !s.is_empty() => {}
-            _ => {
-                return Err(RegistryError::InvalidConfig(format!(
-                    "{KIND_ID}: 'to_user_login' must be a non-empty string"
-                )));
-            }
-        }
+        RECIPIENT_KEYS.validate(KIND_ID, config)?;
         match config.get("message") {
             Some(Variant::String(s)) if !s.is_empty() => {}
             _ => {
@@ -121,13 +116,12 @@ impl SubActionRunner for SendWhisperRunner {
         let started_at = OffsetDateTime::now_utc();
         let start = Instant::now();
 
-        let login_template = config.str("to_user_login").unwrap_or_default();
-        let to_user_login = ctx.arg_stack.interpolate(login_template);
+        let recipient = RECIPIENT_KEYS.interpolate(config, ctx);
 
         let msg_template = config.str("message").unwrap_or_default();
         let message = ctx.arg_stack.interpolate(msg_template);
 
-        let outcome = self.whisper(&to_user_login, &message).await;
+        let outcome = self.whisper(recipient.target(), &message).await;
 
         (
             SubActionTelemetry {

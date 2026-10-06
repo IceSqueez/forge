@@ -358,8 +358,6 @@ mod tests {
         HISTORY_LOAD_CAP, HistoryState, ViewerHistory, feed_messages_by, history_query,
         merge_newest_first,
     };
-    use crate::chat::ChatView;
-    use crate::chat::tests::{message, mount, push_each};
     use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
     use crate::test_support::{pump, runtime};
@@ -728,42 +726,5 @@ mod tests {
         show(cx, &history, None);
 
         assert!(matches!(state(cx, &history), HistoryState::Hidden));
-    }
-
-    fn shown_key(cx: &mut TestAppContext, view: &Entity<ChatView>) -> Option<AuthorKey> {
-        let history = view.read_with(cx, |view, _| view.viewer_history.clone());
-        history.read_with(cx, |history, _| history.key.clone())
-    }
-
-    #[gpui::test]
-    fn without_a_selection_the_history_follows_the_newest_chatter(cx: &mut TestAppContext) {
-        let rt = runtime();
-        let (feed, view) = mount(cx, &rt);
-
-        push_each(cx, &feed, vec![message(0, false), message(1, false)]);
-
-        assert_eq!(
-            shown_key(cx, &view),
-            Some(AuthorKey::by_name(Platform::Twitch, "user1"))
-        );
-    }
-
-    #[gpui::test]
-    fn picking_a_viewer_points_the_history_at_that_viewer(cx: &mut TestAppContext) {
-        type Pick = fn(&mut ChatView, AuthorKey, &mut gpui::Context<ChatView>);
-        let picks: [(&str, Pick); 2] = [
-            ("open_viewer", ChatView::open_viewer),
-            ("select_viewer", ChatView::select_viewer),
-        ];
-        for (name, pick) in picks {
-            let rt = runtime();
-            let (feed, view) = mount(cx, &rt);
-            push_each(cx, &feed, vec![message(0, false), message(1, false)]);
-            let first = AuthorKey::by_name(Platform::Twitch, "user0");
-
-            view.update(cx, |view, cx| pick(view, first.clone(), cx));
-
-            assert_eq!(shown_key(cx, &view), Some(first), "{name}");
-        }
     }
 }

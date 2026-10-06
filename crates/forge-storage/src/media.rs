@@ -351,13 +351,29 @@ impl MediaBlobId {
         Self(id)
     }
 
-    pub fn from_stored(raw: impl Into<String>) -> Self {
-        Self(raw.into())
+    pub fn from_stored(raw: impl Into<String>) -> Result<Self, StorageError> {
+        let raw = raw.into();
+        if is_blob_id_shape(&raw) {
+            Ok(Self(raw))
+        } else {
+            Err(StorageError::MalformedMediaBlobId { raw })
+        }
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+fn is_blob_id_shape(raw: &str) -> bool {
+    raw.strip_prefix(MEDIA_CONTENT_HASH)
+        .and_then(|rest| rest.strip_prefix(MEDIA_BLOB_ID_SEPARATOR))
+        .is_some_and(|hex| {
+            hex.len() == MEDIA_CONTENT_DIGEST_BYTES * 2
+                && hex
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
 }
 
 impl std::fmt::Display for MediaBlobId {

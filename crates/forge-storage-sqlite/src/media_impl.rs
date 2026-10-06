@@ -177,7 +177,8 @@ fn decode_row(row: MediaBlobRow) -> Result<MediaBlob, SqliteStorageError> {
     })?;
 
     Ok(MediaBlob {
-        id: MediaBlobId::from_stored(row.id),
+        id: MediaBlobId::from_stored(row.id)
+            .map_err(|e| SqliteStorageError::Decode(e.to_string()))?,
         format,
         byte_size: row.byte_size.max(0) as u64,
         label: row.label,
@@ -461,6 +462,7 @@ impl MediaRepo for SqliteMediaRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        Ok(row.map(|(blob_id,)| MediaBlobId::from_stored(blob_id)))
+        row.map(|(blob_id,)| MediaBlobId::from_stored(blob_id))
+            .transpose()
     }
 }

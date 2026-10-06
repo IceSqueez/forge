@@ -68,6 +68,9 @@ pub enum StorageError {
     #[error("cannot delete media: still referenced by {referrer_count} item(s)")]
     MediaReferenced { referrer_count: u32 },
 
+    #[error("'{raw}' is not a media blob id")]
+    MalformedMediaBlobId { raw: String },
+
     #[error("parse error: {0}")]
     Parse(String),
 

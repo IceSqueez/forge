@@ -190,7 +190,12 @@ impl OverlayMediaLibrary {
         &self,
         reference: &ImageReference,
     ) -> Result<(MediaBlobId, ResolvedMedia), MediaIssue> {
-        let id = MediaBlobId::from_stored(reference.image.clone());
+        let id = MediaBlobId::from_stored(reference.image.clone()).map_err(|_| {
+            MediaIssue::UnknownImage {
+                key: reference.key.clone(),
+                image: reference.image.clone(),
+            }
+        })?;
 
         let Some(blob) = self
             .blobs

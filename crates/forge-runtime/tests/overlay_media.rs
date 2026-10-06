@@ -65,6 +65,7 @@ fn clip_row() -> StoredClip {
 struct MediaWorld {
     clip_row: Option<StoredClip>,
     clip_lookup_fails: bool,
+    blob_lookup_fails: bool,
     source_blob: Option<MediaBlobId>,
     blob: Option<MediaBlob>,
     bytes: Option<Vec<u8>>,
@@ -119,9 +120,13 @@ fn media_library(world: &World) -> OverlayMediaLibrary {
     });
 
     let seen = Arc::clone(world);
-    blobs
-        .expect_get()
-        .returning(move |_| Ok(seen.lock().expect("world").blob.clone()));
+    blobs.expect_get().returning(move |_| {
+        let seen = seen.lock().expect("world");
+        if seen.blob_lookup_fails {
+            return Err(offline());
+        }
+        Ok(seen.blob.clone())
+    });
 
     let seen = Arc::clone(world);
     blobs.expect_read().returning(move |id| {
@@ -503,33 +508,38 @@ async fn an_icon_naming_a_blob_that_is_not_a_picture_leaves_the_page_iconless() 
 }
 
 #[tokio::test]
-async fn an_icon_reference_shaped_like_a_path_is_refused_before_anything_is_written() {
-    let escaping = "../../etc/passwd";
-    let harness = harness(
-        icon_config(&image_reference(escaping)),
-        Some(MediaWorld {
-            blob: Some(blob(MediaFormat::Png)),
-            ..MediaWorld::resolvable()
-        }),
-    );
+async fn an_icon_reference_that_is_not_a_blob_id_is_refused_without_a_lookup() {
+    for malformed in [
+        "../../etc/passwd".to_owned(),
+        BLOB_ID.to_uppercase(),
+        BLOB_ID[..BLOB_ID.len() - 1].to_owned(),
+        BLOB_ID.trim_start_matches("sha256-").to_owned(),
+    ] {
+        let harness = harness(
+            icon_config(&image_reference(&malformed)),
+            Some(MediaWorld {
+                blob_lookup_fails: true,
+                ..MediaWorld::resolvable()
+            }),
+        );
 
-    let report = pass(&harness).await;
+        let report = pass(&harness).await;
 
-    assert!(
-        matches!(
-            report.media_issues.as_slice(),
-            [MediaIssue::UnknownImage { key, image }]
-                if key == ICON && image == escaping
-        ),
-        "{:?}",
-        report.media_issues
-    );
-    assert_eq!(harness.icon_file(), "");
-    assert!(
-        report.media_written.is_empty(),
-        "{:?} was written",
-        report.media_written
-    );
+        assert_eq!(
+            report.media_issues,
+            vec![MediaIssue::UnknownImage {
+                key: ICON.to_owned(),
+                image: malformed.clone(),
+            }],
+            "{malformed:?} reached the library instead of being refused up front"
+        );
+        assert_eq!(harness.icon_file(), "", "{malformed:?} still named a file");
+        assert!(
+            report.media_written.is_empty(),
+            "{malformed:?} wrote {:?}",
+            report.media_written
+        );
+    }
 }
 
 #[tokio::test]

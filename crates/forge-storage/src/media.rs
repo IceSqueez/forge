@@ -741,6 +741,54 @@ mod tests {
     }
 
     #[test]
+    fn from_stored_accepts_the_shape_from_digest_produces() {
+        for digest in [
+            [0x00u8; MEDIA_CONTENT_DIGEST_BYTES],
+            [0xffu8; MEDIA_CONTENT_DIGEST_BYTES],
+            core::array::from_fn(|i| i as u8),
+        ] {
+            let minted = MediaBlobId::from_digest(&digest);
+            assert_eq!(
+                MediaBlobId::from_stored(minted.as_str()).unwrap(),
+                minted,
+                "{minted} was refused"
+            );
+        }
+    }
+
+    #[test]
+    fn from_stored_refuses_anything_but_the_prefix_and_sixty_four_lowercase_hex() {
+        let hex = "0123456789abcdef".repeat(4);
+        let one_short = &hex[1..];
+        for raw in [
+            format!("sha256-{}", hex.to_uppercase()),
+            format!("sha256-{}A", &hex[1..]),
+            format!("sha256-{one_short}"),
+            format!("sha256-{hex}0"),
+            format!("sha256-{}g", &hex[1..]),
+            hex.clone(),
+            format!("sha256{hex}"),
+            format!("sha256_{hex}"),
+            format!("SHA256-{hex}"),
+            format!("sha512-{hex}"),
+            format!(" sha256-{hex}"),
+            format!("sha256-{}\n", &hex[1..]),
+            format!("sha256-{}\u{e9}", &hex[2..]),
+            format!("sha256-{}", &hex[..62]) + "/x",
+            format!("../sha256-{hex}"),
+            "../../etc/passwd".to_owned(),
+            "sha256-".to_owned(),
+            String::new(),
+        ] {
+            let error = MediaBlobId::from_stored(raw.clone()).unwrap_err();
+            assert!(
+                matches!(&error, StorageError::MalformedMediaBlobId { raw: echoed } if *echoed == raw),
+                "{raw:?} was answered with {error:?}"
+            );
+        }
+    }
+
+    #[test]
     fn from_extension_resolves_the_container_aliases_and_refuses_the_rest() {
         for (extension, expected) in [
             ("mp3", Some(MediaFormat::Mp3)),

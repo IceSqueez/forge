@@ -1,13 +1,16 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::path::PathBuf;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use forge_storage::{
     DataProvider, MediaBlobId, MediaFormat, MediaKind, MediaReferrer, MediaReferrerKind, MediaRepo,
     StorageError,
 };
-use forge_storage_sqlite::SqliteBackend;
+use forge_storage_sqlite::{SqliteBackend, SqliteMediaRepo, apply_migrations, connect};
+use sqlx::SqlitePool;
 use tempfile::TempDir;
 
 const TEST_KEY: [u8; 32] = [0x5c; 32];
@@ -546,4 +549,170 @@ async fn read_returns_the_exact_bytes_that_were_stored() {
         .expect("store");
 
     assert_eq!(fx.media().read(&blob.id).await.expect("read"), TINY_GIF);
+}
+
+const STALE_INCOMING_AGE: Duration = Duration::from_hours(1);
+const ONE_MINUTE: Duration = Duration::from_mins(1);
+const STARTUP_SWEEP_DEADLINE: Duration = Duration::from_secs(5);
+const STARTUP_SWEEP_POLL: Duration = Duration::from_millis(10);
+#[cfg(windows)]
+const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+
+async fn direct_repo(root: &Path) -> (SqliteMediaRepo, SqlitePool) {
+    let pool = connect("sqlite::memory:").await.expect("connect");
+    apply_migrations(&pool).await.expect("apply migrations");
+    (SqliteMediaRepo::new(pool.clone(), root.to_owned()), pool)
+}
+
+#[cfg(windows)]
+fn open_for_timestamps(path: &Path) -> File {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .expect("open for timestamps")
+}
+
+#[cfg(not(windows))]
+fn open_for_timestamps(path: &Path) -> File {
+    File::open(path).expect("open for timestamps")
+}
+
+fn age(path: &Path, by: Duration) {
+    let modified = SystemTime::now()
+        .checked_sub(by)
+        .expect("the clock reaches back far enough");
+    open_for_timestamps(path)
+        .set_modified(modified)
+        .expect("set mtime");
+}
+
+fn staged_file(root: &Path, name: &str, aged_by: Duration) {
+    let path = root.join(name);
+    std::fs::write(&path, TINY_GIF).expect("write staged file");
+    age(&path, aged_by);
+}
+
+#[tokio::test]
+async fn sweep_stale_incoming_removes_only_staging_files_at_least_an_hour_old() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path();
+    let (repo, _pool) = direct_repo(root).await;
+    staged_file(root, ".incoming-abandoned", STALE_INCOMING_AGE * 2);
+    staged_file(root, ".incoming-on-the-threshold", STALE_INCOMING_AGE);
+    staged_file(
+        root,
+        ".incoming-still-writing",
+        STALE_INCOMING_AGE - ONE_MINUTE,
+    );
+    staged_file(root, "incoming-without-the-dot", STALE_INCOMING_AGE * 2);
+    staged_file(root, TINY_GIF_FILE, STALE_INCOMING_AGE * 2);
+    let staging_directory = root.join(".incoming-directory");
+    std::fs::create_dir(&staging_directory).expect("create directory");
+    age(&staging_directory, STALE_INCOMING_AGE * 2);
+
+    let removed = repo.sweep_stale_incoming().await.expect("sweep");
+
+    assert_eq!(removed, 2);
+    assert_eq!(
+        entries(root),
+        vec![
+            ".incoming-directory".to_owned(),
+            ".incoming-still-writing".to_owned(),
+            "incoming-without-the-dot".to_owned(),
+            TINY_GIF_FILE.to_owned(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn sweep_stale_incoming_of_a_root_that_does_not_exist_yet_removes_nothing() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (repo, _pool) = direct_repo(&dir.path().join(MEDIA_SUBDIR)).await;
+
+    assert_eq!(repo.sweep_stale_incoming().await.expect("sweep"), 0);
+}
+
+#[tokio::test]
+async fn opening_the_backend_sweeps_abandoned_staging_files() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path().join(MEDIA_SUBDIR);
+    std::fs::create_dir(&root).expect("create media root");
+    staged_file(&root, ".incoming-abandoned", STALE_INCOMING_AGE * 2);
+
+    let _backend = SqliteBackend::open_for_test("sqlite::memory:", TEST_KEY, root.clone(), None)
+        .await
+        .expect("open backend");
+
+    tokio::time::timeout(STARTUP_SWEEP_DEADLINE, async {
+        while !entries(&root).is_empty() {
+            tokio::time::sleep(STARTUP_SWEEP_POLL).await;
+        }
+    })
+    .await
+    .expect("the startup sweep never removed the abandoned staging file");
+}
+
+async fn insert_blob_row(pool: &SqlitePool, id: &str) {
+    sqlx::query(
+        "INSERT INTO media_blobs (id, format, byte_size, label, imported_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(MediaFormat::Gif.as_str())
+    .bind(TINY_GIF_BYTES as i64)
+    .bind("tampered.gif")
+    .bind(0_i64)
+    .execute(pool)
+    .await
+    .expect("insert blob row");
+}
+
+const MALFORMED_STORED_IDS: [&str; 3] = [
+    "../../escape",
+    "SHA256-610F5AE4D76E332636A17BD357FD6CE99029316A99D320280D4D77A746BF29E8",
+    "sha256-610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e",
+];
+
+#[tokio::test]
+async fn a_stored_row_whose_id_is_not_a_blob_id_fails_to_decode() {
+    for malformed in MALFORMED_STORED_IDS {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (repo, pool) = direct_repo(dir.path()).await;
+        insert_blob_row(&pool, malformed).await;
+
+        let error = repo.list().await.unwrap_err();
+
+        assert!(
+            matches!(&error, StorageError::Parse(reason) if reason.contains(malformed)),
+            "{malformed:?} was answered with {error:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn blob_of_a_slot_holding_a_malformed_id_reports_it_as_malformed() {
+    for malformed in MALFORMED_STORED_IDS {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (repo, pool) = direct_repo(dir.path()).await;
+        insert_blob_row(&pool, malformed).await;
+        let referrer = overlay_icon();
+        sqlx::query(
+            "INSERT INTO media_references (referrer_kind, referrer_id, slot, blob_id) VALUES (?, ?, ?, ?)",
+        )
+        .bind(referrer.kind.as_str())
+        .bind(&referrer.id)
+        .bind(&referrer.slot)
+        .bind(malformed)
+        .execute(&pool)
+        .await
+        .expect("insert reference row");
+
+        let error = repo.blob_of(&referrer).await.unwrap_err();
+
+        assert!(
+            matches!(&error, StorageError::MalformedMediaBlobId { raw } if raw == malformed),
+            "{malformed:?} was answered with {error:?}"
+        );
+    }
 }

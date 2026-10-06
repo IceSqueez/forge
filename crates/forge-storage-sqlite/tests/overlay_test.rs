@@ -1,9 +1,10 @@
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use forge_storage::{OverlayConfig, OverlayCredential, OverlayId, OverlayRepo, StorageError};
-use forge_storage_sqlite::{SqliteOverlayRepo, apply_migrations, connect};
+use forge_storage_sqlite::{SqliteOverlayRepo, apply_migrations, connect, connect_pools};
 use forge_types::Variant;
 use sqlx::SqlitePool;
 use time::OffsetDateTime;
@@ -101,6 +102,52 @@ async fn create_positions_past_the_highest_survivor_after_deletions() {
         fourth.position, 3,
         "a new overlay must sort after every survivor, not reuse a freed slot"
     );
+}
+
+const CONCURRENT_CREATES: usize = 16;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_creates_of_one_name_each_get_their_own_slug_and_position() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let url = format!("sqlite://{}", dir.path().join("forge.db").display());
+    let pools = connect_pools(&url).await.expect("connect");
+    apply_migrations(pools.writer())
+        .await
+        .expect("apply migrations");
+    let repo = Arc::new(SqliteOverlayRepo::new(pools));
+
+    let creates: Vec<_> = (0..CONCURRENT_CREATES)
+        .map(|_| {
+            let repo = Arc::clone(&repo);
+            tokio::spawn(async move { repo.create("Alert Box", "forge.chat", 1).await })
+        })
+        .collect();
+    let mut created = Vec::new();
+    for create in creates {
+        created.push(
+            create
+                .await
+                .expect("task")
+                .expect("every concurrent create succeeds"),
+        );
+    }
+
+    let slugs: BTreeSet<String> = created.iter().map(|o| o.id.as_str().to_owned()).collect();
+    let positions: BTreeSet<i64> = created.iter().map(|o| o.position).collect();
+    let stored_positions: BTreeSet<i64> = repo
+        .list()
+        .await
+        .expect("list")
+        .iter()
+        .map(|o| o.position)
+        .collect();
+    assert_eq!(slugs.len(), CONCURRENT_CREATES, "{slugs:?}");
+    assert_eq!(
+        positions,
+        (0..CONCURRENT_CREATES as i64).collect(),
+        "positions collided or skipped"
+    );
+    assert_eq!(stored_positions, positions);
 }
 
 #[tokio::test]

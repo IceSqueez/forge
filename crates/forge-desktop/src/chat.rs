@@ -2110,6 +2110,7 @@ mod tests {
     use forge_components::{ChatBody, FORGE_DEFAULT, Platform};
     use forge_registry::SubActionRegistry;
     use forge_runtime::{ActionCancelRegistry, EventBus, spawn_action_engine};
+    use forge_storage::chat_history::MockChatHistoryRepo;
     use forge_storage::viewer::MockViewerRepo;
     use forge_storage::voice_aliases::MockVoiceAliasRepo;
     use forge_types::EventId;
@@ -2180,6 +2181,7 @@ mod tests {
                 home_stats,
                 rt.handle().clone(),
                 Arc::new(viewers),
+                Arc::new(MockChatHistoryRepo::new()),
                 engine,
                 Arc::new(MockVoiceAliasRepo::new()),
                 None,

@@ -980,6 +980,7 @@ mod tests {
 
     use forge_components::ThemeId;
     use forge_storage::{DataProvider, Language};
+    use forge_voice::{EngineId, VoiceId};
     use gpui::TestAppContext;
 
     use super::*;

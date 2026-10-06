@@ -284,6 +284,7 @@ mod tests {
                 obs_client: None,
                 vtube_client: None,
                 follow: Some(Arc::clone(lookup) as Arc<dyn FollowLookup>),
+                ban_list: None,
             });
         }
         registry

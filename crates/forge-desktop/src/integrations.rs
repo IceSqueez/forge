@@ -1450,6 +1450,7 @@ mod tests {
                 obs_client: None,
                 vtube_client: None,
                 follow: None,
+                ban_list: None,
             };
             let bus = EventBus::new(Arc::new(StubEventLog));
             let engine = spawn_action_engine(

@@ -3,13 +3,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::{
-    ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, DonationRepo, EventLogRepo,
-    GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo, ScheduledRunRepo,
-    ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError, TriggerInstanceRepo,
-    TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
+    ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialsRepo, DonationRepo,
+    EventLogRepo, GlobalsRepo, HistoryRepo, LatestValueRepo, MediaRepo, OverlayRepo, QueueRepo,
+    ScheduledRunRepo, ScriptRepo, SettingsRepo, SoundboardClipsRepo, StorageError,
+    TriggerInstanceRepo, TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 51;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 52;
 
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 
@@ -31,6 +31,7 @@ pub trait DataProvider:
     fn media_repo(&self) -> Arc<dyn MediaRepo>;
     fn donation_repo(&self) -> Arc<dyn DonationRepo>;
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo>;
+    fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo>;
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo>;
 

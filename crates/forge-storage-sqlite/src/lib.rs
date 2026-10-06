@@ -1,4 +1,5 @@
 pub mod action_impl;
+pub mod ban_ledger_impl;
 mod batch;
 pub mod chat_history_impl;
 mod checkpoint_task;
@@ -32,6 +33,7 @@ pub mod viewer_impl;
 pub mod voice_alias_impl;
 
 pub use action_impl::SqliteActionRepo;
+pub use ban_ledger_impl::SqliteBanLedgerRepo;
 pub use chat_history_impl::SqliteChatHistoryRepo;
 pub use credentials_impl::SqliteCredentialsRepo;
 pub use donation_impl::SqliteDonationRepo;

@@ -1,6 +1,7 @@
 #![doc = "DataProvider trait + per-domain repo traits. Backend-agnostic storage contract."]
 
 pub mod action;
+pub mod ban_ledger;
 pub mod catalog;
 pub mod chat_history;
 pub mod credentials;
@@ -27,6 +28,10 @@ pub mod viewer;
 pub mod voice_aliases;
 
 pub use action::{ActionExecution, ActionRepo, ActionTelemetry, ExecutionStatus};
+pub use ban_ledger::{
+    BAN_LEDGER_LIST_CAP, BAN_TERM_MATCH_TOLERANCE, BanLedgerEntry, BanLedgerKey, BanLedgerRepo,
+    BanOrigin, merge_ban_entry,
+};
 pub use catalog::{
     CatalogChanges, CatalogRevision, RevisingActionRepo, RevisingQueueRepo,
     RevisingTriggerInstanceRepo,
@@ -87,6 +92,8 @@ pub use user_globals::{UserGlobalEntry, UserGlobalsRepo};
 pub use viewer::{Viewer, ViewerMessage, ViewerPlatform, ViewerRepo};
 pub use voice_aliases::{AliasId, AssignmentStrategy, IgnoreProfile, VoiceAlias, VoiceAliasRepo};
 
+#[cfg(feature = "test-mocks")]
+pub use ban_ledger::MockBanLedgerRepo;
 #[cfg(feature = "test-mocks")]
 pub use donation::MockDonationRepo;
 #[cfg(feature = "test-mocks")]

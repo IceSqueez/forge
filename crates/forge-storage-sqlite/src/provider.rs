@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use forge_storage::{
-    ActionRepo, CatalogRevision, ChatHistoryRepo, CredentialId, CredentialsKeyLoss,
+    ActionRepo, BanLedgerRepo, CatalogRevision, ChatHistoryRepo, CredentialId, CredentialsKeyLoss,
     CredentialsRepo, DataProvider, DonationRepo, EXPECTED_SCHEMA_VERSION, EventLogRepo,
     ExecutionStatus, GlobalEntry, GlobalTransit, GlobalsRepo, HistoryRepo, LatestValueRepo,
     MediaRepo, OverlayRepo, QueueRepo, RevisingActionRepo, RevisingQueueRepo,
@@ -22,11 +22,12 @@ use crate::error::SqliteStorageError;
 use crate::pool::SqlitePools;
 use crate::retention_task::{RetentionSignals, RetentionTargets, spawn_retention_task};
 use crate::{
-    SqliteActionRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo, SqliteDonationRepo,
-    SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo, SqliteLatestValueRepo,
-    SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo, SqliteScheduledRunRepo, SqliteScriptRepo,
-    SqliteSettingsRepo, SqliteSoundboardClipsRepo, SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo,
-    SqliteUserGlobalsRepo, SqliteViewerRepo, SqliteVoiceAliasRepo, apply_migrations, connect_pools,
+    SqliteActionRepo, SqliteBanLedgerRepo, SqliteChatHistoryRepo, SqliteCredentialsRepo,
+    SqliteDonationRepo, SqliteEventLogRepo, SqliteGlobalsRepo, SqliteHistoryRepo,
+    SqliteLatestValueRepo, SqliteMediaRepo, SqliteOverlayRepo, SqliteQueueRepo,
+    SqliteScheduledRunRepo, SqliteScriptRepo, SqliteSettingsRepo, SqliteSoundboardClipsRepo,
+    SqliteTriggerInstanceRepo, SqliteTtsFiltersRepo, SqliteUserGlobalsRepo, SqliteViewerRepo,
+    SqliteVoiceAliasRepo, apply_migrations, connect_pools,
 };
 
 const PRUNE_INTERVAL_PRODUCTION: Duration = Duration::from_secs(3600);
@@ -76,6 +77,7 @@ pub struct SqliteBackend {
     media: Arc<SqliteMediaRepo>,
     donation: Arc<SqliteDonationRepo>,
     latest_value: Arc<SqliteLatestValueRepo>,
+    ban_ledger: Arc<SqliteBanLedgerRepo>,
     retention_window_changed: Arc<Notify>,
     shutdown: Arc<Notify>,
 }
@@ -211,6 +213,7 @@ impl SqliteBackend {
             media: Arc::new(SqliteMediaRepo::new(pool.clone(), media_root)),
             donation: Arc::new(SqliteDonationRepo::new(pool.clone())),
             latest_value: Arc::new(SqliteLatestValueRepo::new(pool.clone())),
+            ban_ledger: Arc::new(SqliteBanLedgerRepo::new(pool.clone())),
             credentials,
             retention_window_changed,
             shutdown,
@@ -557,6 +560,10 @@ impl DataProvider for SqliteBackend {
 
     fn latest_value_repo(&self) -> Arc<dyn LatestValueRepo> {
         Arc::clone(&self.latest_value) as Arc<dyn LatestValueRepo>
+    }
+
+    fn ban_ledger_repo(&self) -> Arc<dyn BanLedgerRepo> {
+        Arc::clone(&self.ban_ledger) as Arc<dyn BanLedgerRepo>
     }
 
     fn scheduled_run_repo(&self) -> Arc<dyn ScheduledRunRepo> {

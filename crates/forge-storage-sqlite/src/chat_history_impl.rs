@@ -414,6 +414,7 @@ mod tests {
             source: ChatSource::Twitch,
             received_at: OffsetDateTime::from_unix_timestamp(unix_secs).unwrap(),
             author: "user".to_string(),
+            author_id: None,
             author_color: None,
             body_segments: vec![],
             badges: vec![],
@@ -438,6 +439,7 @@ mod tests {
             source: ChatSource::YouTube,
             received_at: OffsetDateTime::from_unix_timestamp(1_700_000_123).unwrap(),
             author: "Стрімер".to_string(),
+            author_id: None,
             author_color: Some([0x12, 0xAB, 0xFF]),
             body_segments: vec![
                 ChatSegment::Text {
@@ -488,47 +490,6 @@ mod tests {
 
         let ids: Vec<&str> = got.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, ["e", "d", "c"]);
-    }
-
-    #[tokio::test]
-    async fn prune_to_limit_keeps_newest_rows_and_reports_deleted_count() {
-        let repo = make_repo().await;
-        seed(
-            &repo,
-            &[("a", 100), ("b", 200), ("c", 300), ("d", 400), ("e", 500)],
-        )
-        .await;
-
-        let deleted = repo.prune_to_limit(2).await.unwrap();
-
-        assert_eq!(deleted, 3);
-        let remaining: Vec<String> = repo
-            .list_recent(10)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|r| r.id)
-            .collect();
-        assert_eq!(remaining, ["e", "d"]);
-    }
-
-    #[tokio::test]
-    async fn prune_to_limit_is_noop_when_limit_meets_or_exceeds_row_count() {
-        let repo = make_repo().await;
-        seed(&repo, &[("a", 100), ("b", 200), ("c", 300)]).await;
-
-        assert_eq!(repo.prune_to_limit(3).await.unwrap(), 0);
-        assert_eq!(repo.prune_to_limit(10).await.unwrap(), 0);
-        assert_eq!(repo.list_recent(10).await.unwrap().len(), 3);
-    }
-
-    #[tokio::test]
-    async fn prune_to_limit_zero_deletes_all_rows() {
-        let repo = make_repo().await;
-        seed(&repo, &[("a", 100), ("b", 200)]).await;
-
-        assert_eq!(repo.prune_to_limit(0).await.unwrap(), 2);
-        assert!(repo.list_recent(10).await.unwrap().is_empty());
     }
 
     fn row_full(id: &str, source: ChatSource, author: &str, secs: i64) -> UnifiedChatRow {

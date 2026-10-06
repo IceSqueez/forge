@@ -245,6 +245,7 @@ mod tests {
             source,
             received_at,
             author: author.to_string(),
+            author_id: None,
             author_color: None,
             body_segments: vec![],
             badges: vec![],
@@ -474,7 +475,19 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn prune_to_limit(&self, _: usize) -> Result<u64, StorageError> {
+        async fn list_recent_messages_by_author(
+            &self,
+            _: &forge_storage::ChatAuthorKey,
+            _: usize,
+        ) -> Result<Vec<UnifiedChatRow>, StorageError> {
+            Ok(Vec::new())
+        }
+
+        async fn apply_retention(
+            &self,
+            _: &[forge_storage::ChatAuthorKey],
+            _: usize,
+        ) -> Result<u64, StorageError> {
             Ok(0)
         }
 

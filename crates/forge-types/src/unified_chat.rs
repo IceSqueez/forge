@@ -444,6 +444,7 @@ mod tests {
             source: ChatSource::Twitch,
             received_at: OffsetDateTime::now_utc(),
             author: "testuser".to_string(),
+            author_id: None,
             author_color: None,
             body_segments: segments,
             badges: vec![],

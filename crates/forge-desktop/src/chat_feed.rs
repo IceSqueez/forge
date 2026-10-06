@@ -632,6 +632,7 @@ mod tests {
             source: ChatSource::Twitch,
             received_at: OffsetDateTime::from_unix_timestamp(0).unwrap(),
             author: "user".to_string(),
+            author_id: None,
             author_color: None,
             body_segments: segments,
             badges,

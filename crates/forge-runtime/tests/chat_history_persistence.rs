@@ -95,10 +95,10 @@ async fn prune_runs_on_cadence_with_a_freshly_read_store_limit() {
 
     let mut repo = MockChatHistoryRepo::new();
     repo.expect_append_batch().returning(|_| Ok(()));
-    repo.expect_prune_to_limit()
+    repo.expect_apply_retention()
         .times(1..)
-        .returning(move |max_rows| {
-            let _ = prune_tx.send(max_rows);
+        .returning(move |_, per_viewer| {
+            let _ = prune_tx.send(per_viewer);
             Ok(0)
         });
 
@@ -235,7 +235,19 @@ impl ChatHistoryRepo for StuckChatHistory {
         Ok(Vec::new())
     }
 
-    async fn prune_to_limit(&self, _: usize) -> Result<u64, StorageError> {
+    async fn list_recent_messages_by_author(
+        &self,
+        _: &forge_storage::ChatAuthorKey,
+        _: usize,
+    ) -> Result<Vec<forge_types::UnifiedChatRow>, StorageError> {
+        Ok(Vec::new())
+    }
+
+    async fn apply_retention(
+        &self,
+        _: &[forge_storage::ChatAuthorKey],
+        _: usize,
+    ) -> Result<u64, StorageError> {
         Ok(0)
     }
 

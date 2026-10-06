@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use forge_storage::{ChatHistoryRepo, StorageError};
+use forge_storage::{
+    AUTHORLESS_CHAT_HISTORY_RETAINED, ChatAuthorKey, ChatHistoryRepo, StorageError,
+};
 use forge_types::EventId;
 use forge_types::unified_chat::{
     ChatEventDetail, ChatSegment, ChatSource, ModerationMarks, UnifiedChatRow, UserBadge,
@@ -31,7 +33,7 @@ fn encode_source(source: ChatSource) -> Result<String, StorageError> {
         .to_string())
 }
 
-const CHAT_HISTORY_COLUMNS: usize = 11;
+const CHAT_HISTORY_COLUMNS: usize = 12;
 
 struct EncodedChatRow<'a> {
     id: &'a str,
@@ -39,6 +41,7 @@ struct EncodedChatRow<'a> {
     source: String,
     received_at: i64,
     author: &'a str,
+    author_id: Option<&'a str>,
     author_color: Option<String>,
     body_segments: String,
     badges: String,
@@ -55,6 +58,7 @@ impl<'a> EncodedChatRow<'a> {
             source: encode_source(row.source)?,
             received_at: to_epoch_ms(row.received_at),
             author: &row.author,
+            author_id: row.author_id.as_deref(),
             author_color: row
                 .author_color
                 .map(|c| serde_json::to_string(&c))
@@ -83,6 +87,7 @@ struct ChatHistoryRow {
     source: String,
     received_at: i64,
     author: String,
+    author_id: Option<String>,
     author_color: Option<String>,
     body_segments: String,
     badges: String,
@@ -124,6 +129,7 @@ fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError>
         source,
         received_at,
         author: row.author,
+        author_id: row.author_id,
         author_color,
         body_segments,
         badges,
@@ -131,6 +137,12 @@ fn decode_row(row: ChatHistoryRow) -> Result<UnifiedChatRow, SqliteStorageError>
         event_detail,
         moderation,
     })
+}
+
+fn decode_rows(rows: Vec<ChatHistoryRow>) -> Result<Vec<UnifiedChatRow>, StorageError> {
+    rows.into_iter()
+        .map(|r| decode_row(r).map_err(StorageError::from))
+        .collect()
 }
 
 pub struct SqliteChatHistoryRepo {
@@ -149,15 +161,16 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         let row = EncodedChatRow::encode(row)?;
         sqlx::query(
             "INSERT INTO chat_history
-                (id, event_id, source, received_at, author, author_color,
+                (id, event_id, source, received_at, author, author_id, author_color,
                  body_segments, badges, is_event, event_detail, moderation)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(row.id)
         .bind(&row.event_id)
         .bind(&row.source)
         .bind(row.received_at)
         .bind(row.author)
+        .bind(row.author_id)
         .bind(row.author_color.as_deref())
         .bind(&row.body_segments)
         .bind(&row.badges)
@@ -189,7 +202,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         insert_rows(
             &mut tx,
             "INSERT INTO chat_history
-                (id, event_id, source, received_at, author, author_color,
+                (id, event_id, source, received_at, author, author_id, author_color,
                  body_segments, badges, is_event, event_detail, moderation) ",
             CHAT_HISTORY_COLUMNS,
             " ON CONFLICT(id) DO NOTHING",
@@ -201,6 +214,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
                     .push_bind(row.source.as_str())
                     .push_bind(row.received_at)
                     .push_bind(row.author)
+                    .push_bind(row.author_id)
                     .push_bind(row.author_color.as_deref())
                     .push_bind(row.body_segments.as_str())
                     .push_bind(row.badges.as_str())
@@ -216,7 +230,7 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
 
     async fn list_recent(&self, limit: usize) -> Result<Vec<UnifiedChatRow>, StorageError> {
         let rows: Vec<ChatHistoryRow> = sqlx::query_as(
-            "SELECT id, event_id, source, received_at, author, author_color,
+            "SELECT id, event_id, source, received_at, author, author_id, author_color,
                     body_segments, badges, is_event, event_detail, moderation
              FROM chat_history
              ORDER BY seq DESC
@@ -227,24 +241,86 @@ impl ChatHistoryRepo for SqliteChatHistoryRepo {
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        rows.into_iter()
-            .map(|r| decode_row(r).map_err(StorageError::from))
-            .collect()
+        decode_rows(rows)
     }
 
-    async fn prune_to_limit(&self, max_rows: usize) -> Result<u64, StorageError> {
-        let result = sqlx::query(
-            "DELETE FROM chat_history
-             WHERE seq NOT IN (
-                 SELECT seq FROM chat_history ORDER BY seq DESC LIMIT ?
-             )",
+    async fn list_recent_messages_by_author(
+        &self,
+        author: &ChatAuthorKey,
+        limit: usize,
+    ) -> Result<Vec<UnifiedChatRow>, StorageError> {
+        let rows: Vec<ChatHistoryRow> = sqlx::query_as(
+            "SELECT id, event_id, source, received_at, author, author_id, author_color,
+                    body_segments, badges, is_event, event_detail, moderation
+             FROM chat_history
+             WHERE source = ? AND author_id = ? AND is_event = 0
+             ORDER BY seq DESC
+             LIMIT ?",
         )
-        .bind(max_rows as i64)
-        .execute(self.db.writer())
+        .bind(encode_source(author.source)?)
+        .bind(&author.author_id)
+        .bind(limit as i64)
+        .fetch_all(self.db.reader())
         .await
         .map_err(SqliteStorageError::Sqlx)?;
 
-        Ok(result.rows_affected())
+        decode_rows(rows)
+    }
+
+    async fn apply_retention(
+        &self,
+        authors: &[ChatAuthorKey],
+        per_author: usize,
+    ) -> Result<u64, StorageError> {
+        let encoded = authors
+            .iter()
+            .map(|author| Ok((encode_source(author.source)?, author.author_id.as_str())))
+            .collect::<Result<Vec<_>, StorageError>>()?;
+
+        let mut tx = self
+            .db
+            .writer()
+            .begin()
+            .await
+            .map_err(SqliteStorageError::Sqlx)?;
+        let mut deleted = 0;
+        for (source, author_id) in &encoded {
+            deleted += sqlx::query(
+                "DELETE FROM chat_history
+                 WHERE source = ?1 AND author_id = ?2 AND is_event = 0
+                   AND seq <= (
+                       SELECT seq FROM chat_history
+                       WHERE source = ?1 AND author_id = ?2 AND is_event = 0
+                       ORDER BY seq DESC
+                       LIMIT 1 OFFSET ?3
+                   )",
+            )
+            .bind(source)
+            .bind(author_id)
+            .bind(per_author as i64)
+            .execute(&mut *tx)
+            .await
+            .map_err(SqliteStorageError::Sqlx)?
+            .rows_affected();
+        }
+        deleted += sqlx::query(
+            "DELETE FROM chat_history
+             WHERE (author_id IS NULL OR is_event = 1)
+               AND seq <= (
+                   SELECT seq FROM chat_history
+                   WHERE (author_id IS NULL OR is_event = 1)
+                   ORDER BY seq DESC
+                   LIMIT 1 OFFSET ?
+               )",
+        )
+        .bind(AUTHORLESS_CHAT_HISTORY_RETAINED as i64)
+        .execute(&mut *tx)
+        .await
+        .map_err(SqliteStorageError::Sqlx)?
+        .rows_affected();
+        tx.commit().await.map_err(SqliteStorageError::Sqlx)?;
+
+        Ok(deleted)
     }
 
     async fn mark_message_deleted(&self, platform_msg_id: &str) -> Result<u64, StorageError> {

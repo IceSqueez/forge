@@ -9,7 +9,7 @@ use crate::{
     TtsFiltersRepo, UserGlobalsRepo, ViewerRepo, VoiceAliasRepo,
 };
 
-pub const EXPECTED_SCHEMA_VERSION: u32 = 50;
+pub const EXPECTED_SCHEMA_VERSION: u32 = 51;
 
 pub const LAST_PRE_BASELINE_RELEASE: &str = "0.5.5";
 

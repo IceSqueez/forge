@@ -72,7 +72,16 @@ impl VoiceAliasRepo for SqliteVoiceAliasRepo {
                 (id, viewer_id, viewer_name, engine_id, voice_id,
                  pitch_semitones, rate_multiplier, state, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+             ON CONFLICT(viewer_id) DO UPDATE SET
+                viewer_name     = excluded.viewer_name,
+                engine_id       = excluded.engine_id,
+                voice_id        = excluded.voice_id,
+                pitch_semitones = excluded.pitch_semitones,
+                rate_multiplier = excluded.rate_multiplier,
+                state           = excluded.state,
+                updated_at      = excluded.updated_at
              ON CONFLICT(id) DO UPDATE SET
+                viewer_id       = excluded.viewer_id,
                 viewer_name     = excluded.viewer_name,
                 engine_id       = excluded.engine_id,
                 voice_id        = excluded.voice_id,

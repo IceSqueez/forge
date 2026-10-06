@@ -438,6 +438,7 @@ fn row_from_payload(source: ChatSource, event: &Event, payload: ChatPayload) -> 
         source,
         received_at: event.timestamp,
         author: payload.author,
+        author_id: None,
         author_color,
         body_segments: payload.segments,
         badges: payload.badges,

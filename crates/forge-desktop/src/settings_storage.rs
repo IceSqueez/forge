@@ -8,10 +8,12 @@ use forge_components::{
     spacing, tr,
 };
 use forge_storage::{
-    DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider,
-    MAX_EVENT_LOG_RETENTION_DAYS, MIN_EVENT_LOG_RETENTION_DAYS, SettingsRepo,
-    chat_history_display_limit, chat_history_store_limit, event_log_retention_days,
-    set_chat_history_display_limit, set_chat_history_store_limit, set_event_log_retention_days,
+    DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    DEFAULT_EVENT_LOG_RETENTION_DAYS, DataProvider, MAX_EVENT_LOG_RETENTION_DAYS,
+    MIN_EVENT_LOG_RETENTION_DAYS, SettingsRepo, chat_history_display_limit,
+    chat_history_per_viewer_limit, clamp_chat_history_per_viewer_limit, event_log_retention_days,
+    set_chat_history_display_limit, set_chat_history_per_viewer_limit,
+    set_event_log_retention_days,
 };
 use gpui::{
     ClickEvent, Context, Entity, FontWeight, SharedString, Subscription, Window, div, prelude::*,
@@ -23,7 +25,6 @@ use crate::data_backup;
 use crate::presentation::ActivePresentation;
 use crate::toasts::PushToast;
 
-const DEFAULT_STORE_LIMIT: u32 = 5000;
 const BACKUP_TOAST_DURATION: Duration = Duration::from_secs(10);
 
 pub struct SettingsStorageView {
@@ -49,7 +50,7 @@ impl SettingsStorageView {
     ) -> Self {
         let palette = cx.palette();
         let store_input = cx.new(|cx| {
-            TextInput::new(DEFAULT_STORE_LIMIT.to_string(), cx)
+            TextInput::new(DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT.to_string(), cx)
                 .with_palette(palette)
                 .with_font_size(FONT_SM)
         });
@@ -85,7 +86,7 @@ impl SettingsStorageView {
         let mut view = Self {
             backend,
             rt_handle,
-            store_limit: DEFAULT_STORE_LIMIT,
+            store_limit: DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
             display_limit: DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT,
             retention_days: DEFAULT_EVENT_LOG_RETENTION_DAYS,
             backing_up: false,
@@ -131,13 +132,14 @@ impl SettingsStorageView {
     fn commit_store(&mut self, cx: &mut Context<Self>) {
         match parse_limit(self.store_input.read(cx).content()) {
             Some(value) => {
+                let value = clamp_chat_history_per_viewer_limit(value);
                 self.store_limit = value;
                 self.store_input
                     .update(cx, |i, cx| i.set_content(value.to_string(), cx));
                 let repo = Arc::clone(&self.backend) as Arc<dyn SettingsRepo>;
                 self.rt_handle.spawn(async move {
-                    if let Err(e) = set_chat_history_store_limit(repo.as_ref(), value).await {
-                        tracing::warn!(error = %e, "failed to persist chat history keep limit");
+                    if let Err(e) = set_chat_history_per_viewer_limit(repo.as_ref(), value).await {
+                        tracing::warn!(error = %e, "failed to persist chat history per-viewer limit");
                     }
                 });
             }
@@ -322,7 +324,7 @@ impl Render for SettingsStorageView {
 }
 
 async fn load_limits(repo: Arc<dyn SettingsRepo>) -> Result<(u32, u32, u32), String> {
-    let store = chat_history_store_limit(repo.as_ref())
+    let store = chat_history_per_viewer_limit(repo.as_ref())
         .await
         .map_err(|e| e.to_string())?;
     let display = chat_history_display_limit(repo.as_ref())

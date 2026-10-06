@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_events::Event;
-use forge_storage::{ChatHistoryRepo, SettingsRepo, chat_history_store_limit};
+use forge_storage::{ChatHistoryRepo, SettingsRepo, chat_history_per_viewer_limit};
 use forge_types::{ChatModerationAction, ChatSource, UnifiedChatRow};
 use time::OffsetDateTime;
 
@@ -184,14 +184,14 @@ async fn apply_moderation(
 }
 
 async fn prune(repo: &dyn ChatHistoryRepo, settings: &dyn SettingsRepo) {
-    let limit = match chat_history_store_limit(settings).await {
+    let per_viewer = match chat_history_per_viewer_limit(settings).await {
         Ok(limit) => limit as usize,
         Err(e) => {
-            tracing::warn!(error = %e, "reading chat history store limit failed; skipping prune");
+            tracing::warn!(error = %e, "reading chat history per-viewer limit failed; skipping prune");
             return;
         }
     };
-    match tokio::time::timeout(PERSIST_OP_TIMEOUT, repo.prune_to_limit(limit)).await {
+    match tokio::time::timeout(PERSIST_OP_TIMEOUT, repo.apply_retention(&[], per_viewer)).await {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => tracing::warn!(error = %e, "chat history prune failed"),
         Err(_) => tracing::warn!("chat history prune timed out"),

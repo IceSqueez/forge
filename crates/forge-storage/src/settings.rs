@@ -42,7 +42,7 @@ pub mod reserved_keys {
     pub const AUDIO_SPEECH_ROUTE: &str = "audio.speech_route";
     pub const AUDIO_CLIPS_ROUTE: &str = "audio.clips_route";
     pub const AUDIO_OVERLAY_ID: &str = "audio.overlay_id";
-    pub const CHAT_HISTORY_STORE_LIMIT: &str = "chat_history.store_limit";
+    pub const CHAT_HISTORY_PER_VIEWER_LIMIT: &str = "chat_history.per_viewer_limit";
     pub const CHAT_HISTORY_DISPLAY_LIMIT: &str = "chat_history.display_limit";
     pub const PICKER_FAVORITES_SUB_ACTIONS: &str = "picker.favorites.sub_actions";
     pub const PICKER_FAVORITES_TRIGGERS: &str = "picker.favorites.triggers";
@@ -66,6 +66,9 @@ pub mod reserved_keys {
 }
 
 pub const DEFAULT_CHAT_HISTORY_DISPLAY_LIMIT: u32 = 500;
+pub const DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 50;
+pub const MIN_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 1;
+pub const MAX_CHAT_HISTORY_PER_VIEWER_LIMIT: u32 = 10_000;
 
 pub mod disclosure {
     use std::collections::{BTreeMap, HashMap};
@@ -115,7 +118,7 @@ pub mod disclosure {
             | reserved_keys::AUDIO_VOICE_GATE_HOLD_MS
             | reserved_keys::AUDIO_SPEECH_ROUTE
             | reserved_keys::AUDIO_CLIPS_ROUTE
-            | reserved_keys::CHAT_HISTORY_STORE_LIMIT
+            | reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT
             | reserved_keys::CHAT_HISTORY_DISPLAY_LIMIT
             | reserved_keys::TTS_DISABLED_ENGINES
             | reserved_keys::TTS_SYNTHESIS_DEFAULTS
@@ -380,19 +383,32 @@ pub async fn set_json_setting<T: Serialize>(
     repo.set_string(key, &json).await
 }
 
-pub async fn chat_history_store_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
-    let raw = repo
-        .get_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT)
-        .await?;
-    Ok(raw.as_deref().and_then(|s| s.parse().ok()).unwrap_or(5000))
+pub fn clamp_chat_history_per_viewer_limit(limit: u32) -> u32 {
+    limit.clamp(
+        MIN_CHAT_HISTORY_PER_VIEWER_LIMIT,
+        MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,
+    )
 }
 
-pub async fn set_chat_history_store_limit(
+pub async fn chat_history_per_viewer_limit(repo: &dyn SettingsRepo) -> Result<u32, StorageError> {
+    let raw = repo
+        .get_string(reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT)
+        .await?;
+    Ok(raw.as_deref().and_then(|s| s.parse().ok()).map_or(
+        DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT,
+        clamp_chat_history_per_viewer_limit,
+    ))
+}
+
+pub async fn set_chat_history_per_viewer_limit(
     repo: &dyn SettingsRepo,
     limit: u32,
 ) -> Result<(), StorageError> {
-    repo.set_string(reserved_keys::CHAT_HISTORY_STORE_LIMIT, &limit.to_string())
-        .await
+    repo.set_string(
+        reserved_keys::CHAT_HISTORY_PER_VIEWER_LIMIT,
+        &clamp_chat_history_per_viewer_limit(limit).to_string(),
+    )
+    .await
 }
 
 pub async fn disabled_tts_engines(repo: &dyn SettingsRepo) -> Result<Vec<String>, StorageError> {

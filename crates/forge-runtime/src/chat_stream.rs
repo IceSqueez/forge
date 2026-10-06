@@ -90,6 +90,7 @@ fn try_map_chat_event(
         source,
         received_at: ev.timestamp,
         author: payload.author,
+        author_id: None,
         author_color,
         body_segments: payload.segments,
         badges: payload.badges,

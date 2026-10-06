@@ -159,7 +159,12 @@ mod tests {
         SubStatus, ViewerDirectory, author_summary, drawer_matches, enrich_with_storage,
         selected_summary, sub_status,
     };
+    use crate::chat_author::AuthorKey;
     use crate::chat_feed::{ChatFeed, ChatMessage};
+
+    fn key(name: &str) -> AuthorKey {
+        AuthorKey::by_name(Platform::Twitch, name)
+    }
 
     fn feed_of(messages: &[ChatMessage]) -> ChatFeed {
         let mut feed = ChatFeed::new();
@@ -171,7 +176,7 @@ mod tests {
         feed_of(messages)
             .authors()
             .newest_first()
-            .map(ToString::to_string)
+            .map(|(_, activity)| activity.name.to_string())
             .collect()
     }
 
@@ -180,7 +185,7 @@ mod tests {
         messages: &[ChatMessage],
     ) -> Option<super::ViewerSummary> {
         author_summary(
-            username,
+            &key(username),
             feed_of(messages).authors(),
             &ViewerDirectory::default(),
             &FORGE_DEFAULT,
@@ -196,6 +201,7 @@ mod tests {
             platform: Platform::Twitch,
             badges,
             username: username.into(),
+            author_id: None,
             author_color: None,
             body: ChatBody::Message("".into()),
             is_event: false,
@@ -310,7 +316,10 @@ mod tests {
         let summary = synthesize_from_chat("alice", &messages).unwrap();
         let now = OffsetDateTime::now_utc();
         let other = viewer("someone-else", 99, now, now);
-        let enriched = enrich_with_storage(summary, ViewerDirectory::new(vec![other]).get("alice"));
+        let enriched = enrich_with_storage(
+            summary,
+            ViewerDirectory::new(vec![other]).get(&key("alice")),
+        );
 
         assert_eq!(enriched.message_count, 1);
         assert_eq!(enriched.last_seen_label, "fmt_relative_seconds");
@@ -361,7 +370,7 @@ mod tests {
     fn selected_summary_uses_the_selected_author() {
         let messages = [msg("alice", vec![]), msg("bob", vec![])];
         let summary = selected_summary(
-            Some("alice"),
+            Some(&key("alice")),
             feed_of(&messages).authors(),
             &ViewerDirectory::default(),
             &FORGE_DEFAULT,
@@ -374,7 +383,7 @@ mod tests {
     fn selected_summary_absent_selection_falls_back_to_latest_author() {
         let messages = [msg("alice", vec![])];
         let summary = selected_summary(
-            Some("ghost"),
+            Some(&key("ghost")),
             feed_of(&messages).authors(),
             &ViewerDirectory::default(),
             &FORGE_DEFAULT,
@@ -404,8 +413,8 @@ mod tests {
             viewer("alice", 99, now, now),
         ]);
 
-        assert_eq!(directory.get("alice").unwrap().message_count, 7);
-        assert!(directory.get("bob").is_none());
+        assert_eq!(directory.get(&key("alice")).unwrap().message_count, 7);
+        assert!(directory.get(&key("bob")).is_none());
     }
 
     #[test]
@@ -418,7 +427,7 @@ mod tests {
 
         let summary = |name: &str| {
             author_summary(
-                name,
+                &key(name),
                 feed.authors(),
                 &ViewerDirectory::default(),
                 &FORGE_DEFAULT,
@@ -438,7 +447,7 @@ mod tests {
         }
 
         let summary = selected_summary(
-            Some("alice"),
+            Some(&key("alice")),
             feed.authors(),
             &ViewerDirectory::default(),
             &FORGE_DEFAULT,

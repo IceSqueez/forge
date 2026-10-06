@@ -592,6 +592,7 @@ mod tests {
             platform: Platform::Twitch,
             badges: vec![],
             username: "user".into(),
+            author_id: None,
             author_color: None,
             body,
             is_event: false,
@@ -1309,10 +1310,9 @@ mod tests {
     fn indexed_authors(feed: &ChatFeed) -> Vec<Recomputed> {
         feed.authors()
             .newest_first()
-            .map(|name| {
-                let activity = feed.authors().get(name).unwrap();
+            .map(|(_, activity)| {
                 (
-                    name.to_string(),
+                    activity.name.to_string(),
                     activity.message_count,
                     activity.last_seq,
                     activity.role,
@@ -1360,7 +1360,9 @@ mod tests {
                     "seed={seed} step={step}"
                 );
                 assert_eq!(
-                    feed.authors().newest().map(ToString::to_string),
+                    feed.authors()
+                        .newest()
+                        .map(|(_, activity)| activity.name.to_string()),
                     recomputed_authors(&feed).first().map(|a| a.0.clone()),
                     "seed={seed} step={step}"
                 );

@@ -2136,6 +2136,7 @@ mod tests {
             platform: Platform::Twitch,
             badges: vec![],
             username: format!("user{ix}").into(),
+            author_id: None,
             author_color: None,
             body: ChatBody::Message("hi".into()),
             is_event: false,

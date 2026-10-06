@@ -94,6 +94,24 @@ mod tests {
         assert_eq!(whisper.body, Some(serde_json::json!({ "message": "psst" })));
     }
 
+    #[tokio::test]
+    async fn whisper_to_a_user_id_posts_without_resolving_a_login() {
+        let transport = MockTransport::returning(Ok(serde_json::Value::Null));
+
+        send_whisper_to(&transport, "100", Some(UserTarget::Id("1001")), "psst")
+            .await
+            .unwrap();
+
+        assert_eq!(transport.call_count(), 1, "no Get Users lookup for an id");
+        let whisper = transport.last_request();
+        assert_eq!(whisper.path, WHISPERS_PATH);
+        assert!(
+            whisper
+                .query
+                .contains(&("to_user_id".to_owned(), "1001".to_owned()))
+        );
+    }
+
     type WhisperExpectation = fn(&WhisperError) -> bool;
 
     #[tokio::test]

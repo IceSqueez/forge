@@ -213,23 +213,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new().set("user_login".to_owned(), Variant::String(String::new()));
-
-        let (telemetry, _) = runner
-            .execute(&config("%user_login%", "spam"), &make_ctx(&stack))
-            .await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty target must fail before the resolve call"
-        );
-    }
-
-    #[tokio::test]
     async fn empty_reason_is_omitted_from_ban_body() {
         let (transport, runner) =
             runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);

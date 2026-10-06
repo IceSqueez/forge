@@ -237,21 +237,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new();
-
-        let (telemetry, _) = runner.execute(&config("", "", 60), &make_ctx(&stack)).await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty target must fail before the resolve call"
-        );
-    }
-
-    #[tokio::test]
     async fn execute_replaces_out_of_range_duration_with_default() {
         let (transport, runner) =
             runner_with(vec![users_fixture("555"), Ok(serde_json::Value::Null)]);

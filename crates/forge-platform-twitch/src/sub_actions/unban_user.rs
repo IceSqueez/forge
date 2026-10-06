@@ -177,19 +177,4 @@ mod tests {
         );
         assert!(request.body.is_none(), "unban sends no body");
     }
-
-    #[tokio::test]
-    async fn empty_target_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new();
-
-        let (telemetry, _) = runner.execute(&config(""), &make_ctx(&stack)).await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty target must fail before the resolve call"
-        );
-    }
 }

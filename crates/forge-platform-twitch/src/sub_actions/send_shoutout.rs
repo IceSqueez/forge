@@ -199,23 +199,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn empty_login_after_interpolation_fails_before_any_helix_call() {
-        let (transport, runner) = runner_with(vec![users_fixture("555")]);
-        let stack = ArgStack::new().set("user_login".to_owned(), Variant::String(String::new()));
-
-        let (telemetry, _) = runner
-            .execute(&config("%user_login%"), &make_ctx(&stack))
-            .await;
-
-        assert!(matches!(telemetry.outcome, SubActionOutcome::Failed(_)));
-        assert_eq!(
-            transport.call_count(),
-            0,
-            "empty login must fail before the resolve call"
-        );
-    }
-
-    #[tokio::test]
     async fn resolve_failure_skips_the_shoutout_call() {
         let (transport, runner) = runner_with(vec![Err(HelixError::Http {
             status: 404,

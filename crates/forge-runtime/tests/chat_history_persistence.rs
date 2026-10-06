@@ -48,7 +48,9 @@ fn mod_event(source: EventSource, action: ChatModerationAction) -> Event {
 }
 
 fn no_settings() -> Arc<dyn SettingsRepo> {
-    Arc::new(MockSettingsRepo::new())
+    let mut settings = MockSettingsRepo::new();
+    settings.expect_get_string().returning(|_| Ok(None));
+    Arc::new(settings)
 }
 
 #[tokio::test]
@@ -69,6 +71,7 @@ async fn a_failed_batch_is_counted_unwritten_and_the_next_batch_is_still_written
             Ok(())
         }
     });
+    repo.expect_apply_retention().returning(|_, _| Ok(0));
 
     spawn_chat_history_persistence(Arc::clone(&bus), Arc::new(repo), no_settings());
 
@@ -89,7 +92,7 @@ async fn a_failed_batch_is_counted_unwritten_and_the_next_batch_is_still_written
 }
 
 #[tokio::test]
-async fn prune_runs_on_cadence_with_a_freshly_read_store_limit() {
+async fn retention_runs_after_a_written_batch_with_the_stored_per_viewer_limit() {
     let bus = bus();
     let (prune_tx, mut prune_rx) = mpsc::unbounded_channel::<usize>();
 
@@ -109,9 +112,7 @@ async fn prune_runs_on_cadence_with_a_freshly_read_store_limit() {
 
     spawn_chat_history_persistence(Arc::clone(&bus), Arc::new(repo), Arc::new(settings));
 
-    for i in 0..256 {
-        bus.publish(chat_event(&format!("msg-{i}")));
-    }
+    bus.publish(chat_event("msg"));
 
     let pruned_to = timeout(RECV_TIMEOUT, prune_rx.recv())
         .await

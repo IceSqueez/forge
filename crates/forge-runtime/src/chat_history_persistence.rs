@@ -254,7 +254,6 @@ async fn stored_per_viewer_limit(settings: &dyn SettingsRepo) -> usize {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use forge_storage::chat_history::MockChatHistoryRepo;
-    use forge_storage::settings::MockSettingsRepo;
     use forge_storage::{DataProvider, StorageError};
     use forge_types::{ModerationMarks, UnifiedChatRow};
 
@@ -282,10 +281,9 @@ mod tests {
     fn sink_over(repo: Arc<dyn ChatHistoryRepo>, bus: &EventBus) -> ChatHistorySink {
         ChatHistorySink {
             repo,
-            settings: Arc::new(MockSettingsRepo::new()),
+            per_viewer_limit: watch::channel(None).1,
             loss: bus.loss_counters(CHAT_HISTORY, DeliveryTier::Critical),
             pending: Vec::new(),
-            appended_since_prune: 0,
             recent_moderation: VecDeque::new(),
         }
     }

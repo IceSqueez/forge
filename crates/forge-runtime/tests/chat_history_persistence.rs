@@ -9,7 +9,7 @@ use forge_storage::chat_history::MockChatHistoryRepo;
 use forge_storage::settings::MockSettingsRepo;
 use forge_storage::{
     ChatHistoryRepo, DEFAULT_CHAT_HISTORY_PER_VIEWER_LIMIT, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT,
-    MIN_CHAT_HISTORY_PER_VIEWER_LIMIT, SettingsRepo, StorageError,
+    SettingsRepo, StorageError, UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT,
 };
 use forge_types::{
     ChatModerationAction, ChatModerationPayload, ChatPayload, ChatSource, ModerationMarks,
@@ -144,7 +144,7 @@ async fn a_limit_set_on_the_handle_drives_later_retention_clamped_into_range() {
     let handle = spawn_chat_history_persistence(Arc::clone(&bus), repo, no_settings());
 
     for (set, expected) in [
-        (0, MIN_CHAT_HISTORY_PER_VIEWER_LIMIT),
+        (0, UNLIMITED_CHAT_HISTORY_PER_VIEWER_LIMIT),
         (25, 25),
         (u32::MAX, MAX_CHAT_HISTORY_PER_VIEWER_LIMIT),
     ] {

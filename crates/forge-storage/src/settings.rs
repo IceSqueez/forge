@@ -1145,7 +1145,7 @@ mod tests {
     #[tokio::test]
     async fn chat_history_per_viewer_limit_clamps_a_stored_value_into_range_on_read() {
         for (stored, expected) in [
-            ("0", 1),
+            ("0", 0),
             ("1", 1),
             ("2", 2),
             ("9999", 9999),
@@ -1166,7 +1166,7 @@ mod tests {
     #[tokio::test]
     async fn set_chat_history_per_viewer_limit_persists_the_clamped_value() {
         for (requested, persisted) in [
-            (0, "1"),
+            (0, "0"),
             (1, "1"),
             (10000, "10000"),
             (10001, "10000"),

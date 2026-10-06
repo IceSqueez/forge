@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn parse_per_viewer_limit_accepts_exactly_the_range_storage_honours() {
         for (raw, expected) in [
-            ("0", None),
+            ("0", Some(0)),
             ("1", Some(1)),
             ("10000", Some(10_000)),
             ("10001", None),
